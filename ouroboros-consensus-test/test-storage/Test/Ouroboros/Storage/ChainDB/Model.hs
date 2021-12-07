@@ -131,10 +131,9 @@ data Model blk = Model {
     , immutableDbChain :: Chain blk
       -- ^ The ImmutableDB
     , cps              :: CPS.ChainProducerState blk
-    , currentLedger    :: ExtLedgerState EmptyMK blk
-    , initLedger       :: ExtLedgerState EmptyMK blk
+    , currentLedger    :: ExtLedgerState blk EmptyMK
+    , initLedger       :: ExtLedgerState blk EmptyMK
     , iterators        :: Map IteratorId [blk]
-    , valid            :: Set (HeaderHash blk)
     , invalid          :: InvalidBlocks blk
     , currentSlot      :: SlotNo
     , maxClockSkew     :: Word64
@@ -152,6 +151,7 @@ deriving instance
   , LedgerSupportsProtocol           blk
   , StandardHash                     blk
   , Show                             blk
+  , Show (ExtLedgerState blk EmptyMK) -- TODO find out why this was not needed before
   ) => Show (Model blk)
 
 {-------------------------------------------------------------------------------
@@ -314,27 +314,35 @@ immutableSlotNo :: HasHeader blk
                 -> WithOrigin SlotNo
 immutableSlotNo k = Chain.headSlot . immutableChain k
 
-getIsValid :: forall blk. LedgerSupportsProtocol blk
-           => Model blk
+getIsValid :: forall blk. (LedgerSupportsProtocol blk, InMemory (ExtLedgerState blk))
+           => TopLevelConfig blk
+           -> Model blk
            -> (RealPoint blk -> Maybe Bool)
-getIsValid m = \(RealPoint _ hash) -> if
-    | Map.member hash (volatileDbBlocks m) &&
-      Set.member hash (valid m)               -> Just True
-    | Map.member hash (volatileDbBlocks m) &&
-      Map.member hash (invalid m)             -> Just False
-    | otherwise                               -> Nothing
+getIsValid cfg m = \pt@(RealPoint _ hash) -> if
+    | Set.member pt validPoints   -> Just True
+    | Map.member hash (invalid m) -> Just False
+    | otherwise                   -> Nothing
+  where
+    validPoints :: Set (RealPoint blk)
+    validPoints =
+          foldMap (Set.fromList . map blockRealPoint . Chain.toOldestFirst . fst)
+        . snd
+        . validChains cfg m
+        . blocks
+        $ m
 
-isValid :: forall blk. LedgerSupportsProtocol blk
-        => RealPoint blk
+isValid :: forall blk. (LedgerSupportsProtocol blk, InMemory (ExtLedgerState blk))
+        => TopLevelConfig blk
+        -> RealPoint blk
         -> Model blk
         -> Maybe Bool
-isValid = flip getIsValid
+isValid = flip . getIsValid
 
 getLedgerDB ::
      LedgerSupportsProtocol blk
   => TopLevelConfig blk
   -> Model blk
-  -> LedgerDB (ExtLedgerState EmptyMK blk)
+  -> LedgerDB (ExtLedgerState blk)
 getLedgerDB cfg m@Model{..} =
       ledgerDbPrune (SecurityParam (maxActualRollback k m))
     $ ledgerDbPushMany' ledgerDbCfg blks
@@ -354,7 +362,7 @@ getLedgerDB cfg m@Model{..} =
 -------------------------------------------------------------------------------}
 
 empty
-  :: ExtLedgerState EmptyMK blk
+  :: ExtLedgerState blk EmptyMK
   -> Word64   -- ^ Max clock skew in number of blocks
   -> Model blk
 empty initLedger maxClockSkew = Model {
@@ -365,7 +373,6 @@ empty initLedger maxClockSkew = Model {
     , initLedger       = initLedger
     , iterators        = Map.empty
     , invalid          = Map.empty
-    , valid            = Set.empty
     , currentSlot      = 0
     , maxClockSkew     = maxClockSkew
     , isOpen           = True
@@ -378,7 +385,7 @@ advanceCurSlot
   -> Model blk -> Model blk
 advanceCurSlot curSlot m = m { currentSlot = curSlot `max` currentSlot m }
 
-addBlock :: forall blk. (Eq blk, LedgerSupportsProtocol blk)
+addBlock :: forall blk. (LedgerSupportsProtocol blk, InMemory (ExtLedgerState blk))
          => TopLevelConfig blk
          -> blk
          -> Model blk -> Model blk
@@ -390,7 +397,6 @@ addBlock cfg blk m = Model {
     , initLedger       = initLedger m
     , iterators        = iterators  m
     , invalid          = invalid'
-    , valid            = valid'
     , currentSlot      = currentSlot  m
     , maxClockSkew     = maxClockSkew m
     , isOpen           = True
@@ -419,7 +425,7 @@ addBlock cfg blk m = Model {
     -- @invalid'@ will be a (non-strict) superset of the previous value of
     -- @invalid@, see 'validChains', thus no need to union.
     invalid'   :: InvalidBlocks blk
-    candidates :: [(Chain blk, ExtLedgerState EmptyMK blk)]
+    candidates :: [(Chain blk, ExtLedgerState blk EmptyMK)]
     (invalid', candidates) =
         validChains cfg m (immutableDbBlocks m <> volatileDbBlocks')
 
@@ -434,123 +440,18 @@ addBlock cfg blk m = Model {
       immutableChainHashes `isPrefixOf`
       map blockHash (Chain.toOldestFirst fork)
 
-    consideredCandidates = filter (extendsImmutableChain . fst)
-      $ candidates
-
     newChain  :: Chain blk
-    newLedger :: ExtLedgerState EmptyMK blk
+    newLedger :: ExtLedgerState blk EmptyMK
     (newChain, newLedger) =
         fromMaybe (currentChain m, currentLedger m)
       . selectChain
           (Proxy @(BlockProtocol blk))
           (selectView (configBlock cfg) . getHeader)
           (currentChain m)
-      $ consideredCandidates
+      . filter (extendsImmutableChain . fst)
+      $ candidates
 
-    -- See note [Getting the valid blocks] just below
-    valid' = foldl
-               (Chain.foldChain (\s b -> Set.insert (blockHash b) s))
-               (valid m)
-               (takeWhile (not . Chain.isPrefixOf newChain) (map fst consideredCandidates) ++ [newChain])
-
--- = Getting the valid blocks
---
--- The chain selection algorithms implemented by the model and by the SUT differ
--- but have the same outcome.We illustrate this with an example. Imagine having
--- the following candidate chains where @v@ represents a valid block and @x@
--- represents an invalid block:
---
--- > C0: vvvvvxxxxx
--- > C1: vvvvvvvx
--- > C2: vvv
---
--- For candidate Cx, we will call CxV the valid prefix and CxI the invalid suffix.
---
--- The chain selection algorithm will run whenever we add a block, although it
--- will only select a new chain when adding a block results in a chain that is
--- longer than the currently selected chain. Note that the chain selection
--- algorithm doesn't know beforehand the validity of the blocks in the
--- candidates. The process it follows will be:
---
--- 1. Sort the chains by 'SelectView'. Note that for Praos this will trivially
--- imply first consider the candidates by length.
---
---    > sortedCandidates == [C0, C1, C2]
---
--- 2. Until a candidate is found to be valid and longer than the currently selected
---    chain, take the head of the (sorted) list of candidates and validate the
---    blocks in it one by one.
---
---    If a block in the candidate is found to be invalid, the candidate is
---    truncated, added back to the list, and the algorithm starts again at step 1.
---    The valid blocks in the candidate are recorded in the set of known-valid
---    blocks, so that the next time they are applied, it is known that applying
---    said block can't fail and therefore some checks can be skipped. The invalid
---    blocks in the candidate are recorded in the set of known-invalid blocks so
---    that they are not applied again.
---
---    The steps on the example are as follows:
---
---    1.  Start with the sorted candidate chains: [C0, C1, C2]
---    2.  Validate first chain C0 resulting in C0V and C0I.
---    3.  Append C0V to the list of remaining candidates: [C1, C2] ++ [C0V]
---    4.  Add the valid blocks to the state:
---        > knownValid = append C0V knownValid
---    5.  Add the invalid blocks to the state:
---        > knownInvalid = append C0I knownInvalid
---    6.  Re-sort list
---        > sortBy `selectView` [C1, C2, C0V] == [C1, C0V, C2]
---    7.  Validate first chain C1 resulting in C1V and C1I.
---    8.  Append C1V to the list of remaining candidates: [C0V, C2] ++ [C1V]
---    9.  Add the valid blocks to the state:
---        > knownValid   = append C1V knownValid
---    10. Add the invalid blocks to the state:
---        > knownInvalid = append C1I knownInvalid
---    11. Re-sort list
---        > sortBy `selectView` [C0V, C2, C1V] == [C1V, C0V, C2]
---    12. Validate first chain C1V, which is fully valid and returned.
---
--- 3. If such a candidate is found, the algorithm will return it as a result.
---    Otherwise, the algorithm will return a 'Nothing'.
---
---    > chainSelection [C0, C1, C2] = Just C1V
---
--- On the other hand, the chain selection on the model takes some shortcuts to
--- achieve the same result:
---
--- 1. 'validChains' will return the list of candidates sorted by 'SelectView' and
---    each candidate is truncated to its valid prefix.
---
---    > validChains [C0, C1, C2] = (invalid == C0I + C1I, candidates == [C0V, C1V, C2])
---
--- 2. 'selectChain' will sort the chains by 'SelectView' but note that now it will
---    use the 'SelectView' of the already truncated candidate.
---
---    > selectChain [C0V, C1V, C2] = listToMaybe (sortBy `selectView` [C0V, C1V, C2])
---    >                            = listToMaybe ([C1V, C0V, C2])
---    >                            = Just C1V
---
---    The selected candidate will be the same one that the chain selection
---    algorithm would choose. However, as the chain selection algorithm will
---    consider the candidates as they were sorted by 'SelectView' on the
---    non-truncated candidates, blocks in 'C0V' are also considered valid by the
---    real algorithm.
---
---    To get as a result a set of valid blocks that mirrors the one from the
---    real algorithm, the model can process the list of candidates returned by
---    'validChains' until it find the one 'selectChain' chose as these will be
---    the ones that the real algorithm would test and re-add to the list once
---    truncated.
---
---    > knownInvalid = append (C0I + C1I) knownInvalid
---    > knownValid   = foldl append knownValid (takeWhile (/= C1V) candidates ++ [C1V])
---
---    Note that the set of known valid blocks is equivalent to the set computed
---    by real algorithm, but the set of known invalid blocks is a superset of
---    the ones known by the real algorithm. See the note
---    Ouroboros.Storage.ChainDB.StateMachine.[Invalid blocks].
-
-addBlocks :: (Eq blk, LedgerSupportsProtocol blk)
+addBlocks :: (LedgerSupportsProtocol blk, InMemory (ExtLedgerState blk))
           => TopLevelConfig blk
           -> [blk]
           -> Model blk -> Model blk
@@ -558,7 +459,7 @@ addBlocks cfg = repeatedly (addBlock cfg)
 
 -- | Wrapper around 'addBlock' that returns an 'AddBlockPromise'.
 addBlockPromise
-  :: forall m blk. (Eq blk, LedgerSupportsProtocol blk, MonadSTM m)
+  :: forall m blk. (LedgerSupportsProtocol blk, MonadSTM m, InMemory (ExtLedgerState blk))
   => TopLevelConfig blk
   -> blk
   -> Model blk
@@ -727,15 +628,25 @@ type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
 data ValidatedChain blk =
     ValidatedChain
       (Chain blk)           -- ^ Valid prefix
-      (ExtLedgerState EmptyMK blk)  -- ^ Corresponds to the tip of the valid prefix
+      (ExtLedgerState blk EmptyMK)  -- ^ Corresponds to the tip of the valid prefix
       (InvalidBlocks blk)   -- ^ Invalid blocks encountered while validating
                             -- the candidate chain.
+
+-- TODO: AFIK the complete ledger state will be in memory. As a result we'll be
+-- working with EmptyMK the whole time. This means that we'd be converting from
+-- to and from this map kind. What is the best way to deal with this problem?
+--
+-- In our tests we have a bunch of instances of ledger states for which all the
+-- data is in memory. I wonder if it'd make sense to have a class of ledger
+-- states for which we can define a function:
+--
+-- convertMapKind :: LedgerState blk mk -> LedgerState blk mk'
 
 -- | Validate the given 'Chain'.
 --
 -- The 'InvalidBlocks' in the returned 'ValidatedChain' will be >= the
 -- 'invalid' of the given 'Model'.
-validate :: forall blk. LedgerSupportsProtocol blk
+validate :: forall blk. (LedgerSupportsProtocol blk, InMemory (ExtLedgerState blk))
          => TopLevelConfig blk
          -> Model blk
          -> Chain blk
@@ -747,14 +658,14 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
     mkInvalid b reason =
       Map.singleton (blockHash b) (reason, blockSlot b)
 
-    go :: ExtLedgerState EmptyMK blk  -- ^ Corresponds to the tip of the valid prefix
+    go :: ExtLedgerState blk EmptyMK  -- ^ Corresponds to the tip of the valid prefix
        -> Chain blk           -- ^ Valid prefix
        -> [blk]               -- ^ Remaining blocks to validate
        -> ValidatedChain blk
     go ledger validPrefix = \case
       -- Return 'mbFinal' if it contains an "earlier" result
       []    -> ValidatedChain validPrefix ledger invalid
-      b:bs' -> case runExcept (tickThenApply (ExtLedgerCfg cfg) b ledger) of
+      b:bs' -> case runExcept (tickThenApply (ExtLedgerCfg cfg) b (convertMapKind ledger)) of
         -- Invalid block according to the ledger
         Left e
           -> ValidatedChain
@@ -789,11 +700,11 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
                validPrefix
                ledger
                (invalid <>
-                findInvalidBlockInTheFuture ledger' bs')
+                findInvalidBlockInTheFuture (convertMapKind ledger') bs')
 
           -- Block not in the future, this is the good path
           | otherwise
-          -> go ledger' (validPrefix :> b) bs'
+          -> go (convertMapKind ledger') (validPrefix :> b) bs'
 
     -- | Take the following chain:
     --
@@ -818,19 +729,19 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
     -- Note that ledger validation stops at the first invalid block, so this
     -- function should find 0 or 1 invalid blocks.
     findInvalidBlockInTheFuture
-      :: ExtLedgerState EmptyMK blk
+      :: ExtLedgerState blk EmptyMK
       -> [blk]
       -> InvalidBlocks blk
     findInvalidBlockInTheFuture ledger = \case
       []    -> Map.empty
-      b:bs' -> case runExcept (tickThenApply (ExtLedgerCfg cfg) b ledger) of
+      b:bs' -> case runExcept (tickThenApply (ExtLedgerCfg cfg) b (convertMapKind ledger)) of
         Left e        -> mkInvalid b (ValidationError e)
         Right ledger'
           | blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
           -> mkInvalid b (InFutureExceedsClockSkew (blockRealPoint b)) <>
-             findInvalidBlockInTheFuture ledger' bs'
+             findInvalidBlockInTheFuture (convertMapKind ledger') bs'
           | otherwise
-          -> findInvalidBlockInTheFuture ledger' bs'
+          -> findInvalidBlockInTheFuture (convertMapKind ledger') bs'
 
 
 chains :: forall blk. (GetPrevHash blk)
@@ -854,11 +765,11 @@ chains bs = go Chain.Genesis
     fwd :: Map (ChainHash blk) (Map (HeaderHash blk) blk)
     fwd = successors (Map.elems bs)
 
-validChains :: forall blk. LedgerSupportsProtocol blk
+validChains :: forall blk. (LedgerSupportsProtocol blk, InMemory (ExtLedgerState blk))
             => TopLevelConfig blk
             -> Model blk
             -> Map (HeaderHash blk) blk
-            -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState EmptyMK blk)])
+            -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState blk EmptyMK)])
 validChains cfg m bs =
     foldMap (classify . validate cfg m) $
     -- Note that we sort here to make sure we pick the same chain as the real
@@ -887,7 +798,7 @@ validChains cfg m bs =
         )
 
     classify :: ValidatedChain blk
-             -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState EmptyMK blk)])
+             -> (InvalidBlocks blk, [(Chain blk, ExtLedgerState blk EmptyMK)])
     classify (ValidatedChain chain ledger invalid) =
       (invalid, [(chain, ledger)])
 
@@ -1076,7 +987,7 @@ reopen :: Model blk -> Model blk
 reopen m = m { isOpen = True }
 
 wipeVolatileDB
-  :: forall blk. LedgerSupportsProtocol blk
+  :: forall blk. (LedgerSupportsProtocol blk, InMemory (ExtLedgerState blk))
   => TopLevelConfig blk
   -> Model blk
   -> (Point blk, Model blk)
@@ -1093,7 +1004,7 @@ wipeVolatileDB cfg m =
     -- Get the chain ending at the ImmutableDB by doing chain selection on the
     -- sole candidate (or none) in the ImmutableDB.
     newChain  :: Chain blk
-    newLedger :: ExtLedgerState EmptyMK blk
+    newLedger :: ExtLedgerState blk EmptyMK
     (newChain, newLedger) =
         isSameAsImmutableDbChain
       $ selectChain
