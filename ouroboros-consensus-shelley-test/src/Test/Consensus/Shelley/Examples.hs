@@ -39,8 +39,7 @@ import           Test.Util.Serialisation.Golden (labelled, unlabelled)
 import qualified Test.Util.Serialisation.Golden as Golden
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
-import           Ouroboros.Consensus.Shelley.Protocol
-                     (TPraosState (TPraosState))
+import           Ouroboros.Consensus.Protocol.TPraos (TPraosState (TPraosState))
 
 import           Test.Cardano.Ledger.Allegra.Examples.Consensus
                      (ledgerExamplesAllegra)

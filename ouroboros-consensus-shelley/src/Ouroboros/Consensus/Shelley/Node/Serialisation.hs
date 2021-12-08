@@ -24,10 +24,10 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import qualified Cardano.Ledger.Shelley.API as SL
 
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
-import           Ouroboros.Consensus.Shelley.Protocol
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk

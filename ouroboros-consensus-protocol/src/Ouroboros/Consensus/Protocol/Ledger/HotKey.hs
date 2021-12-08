@@ -8,7 +8,7 @@
 -- | Hot key
 --
 -- Intended for qualified import
-module Ouroboros.Consensus.Shelley.Protocol.HotKey (
+module Ouroboros.Consensus.Protocol.Ledger.HotKey (
     -- * KES Info
     KESEvolution
   , KESInfo (..)

@@ -79,14 +79,14 @@ import qualified Cardano.Ledger.Shelley.LedgerState as SL (stakeDistr)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 
+import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
+import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
-import           Ouroboros.Consensus.Shelley.Protocol
-import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey)
-import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 
 {-------------------------------------------------------------------------------
   Credentials

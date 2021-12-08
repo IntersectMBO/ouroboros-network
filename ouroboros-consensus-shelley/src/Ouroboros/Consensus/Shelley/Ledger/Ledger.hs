@@ -87,13 +87,13 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL (makeHeaderView)
 import qualified Control.State.Transition.Extended as STS
 
+import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
+import           Ouroboros.Consensus.Protocol.TPraos (MaxMajorProtVer (..),
+                     Ticked (TickedPraosLedgerView))
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
-import           Ouroboros.Consensus.Shelley.Protocol (MaxMajorProtVer (..),
-                     Ticked (TickedPraosLedgerView))
-import           Ouroboros.Consensus.Shelley.Protocol.Util (isNewEpoch)
 
 {-------------------------------------------------------------------------------
   Ledger errors

@@ -17,10 +17,10 @@ import           Ouroboros.Consensus.Protocol.Signed
 
 import qualified Cardano.Ledger.Shelley.API as SL
 
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
-import           Ouroboros.Consensus.Shelley.Protocol
 
 {-------------------------------------------------------------------------------
   Support for Transitional Praos consensus algorithm

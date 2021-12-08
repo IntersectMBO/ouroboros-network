@@ -48,10 +48,10 @@ import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Protocol
 
 import           Ouroboros.Consensus.Cardano.CanHardFork
                      (ShelleyPartialLedgerConfig (..), forecastAcrossShelley,
