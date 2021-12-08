@@ -11,6 +11,7 @@ module Ouroboros.Network.Testing.Data.Script (
     initScript,
     stepScript,
     stepScriptSTM,
+    stepScriptSTMTx,
     initScript',
     stepScript',
     stepScriptSTM',
@@ -78,6 +79,14 @@ stepScriptSTM scriptVar = do
       []     -> return ()
       x':xs' -> LazySTM.writeTVar scriptVar (Script (x' :| xs'))
     return x
+
+stepScriptSTMTx :: MonadSTMTx m => TVar_ m (Script (m b)) -> m b
+stepScriptSTMTx scriptVar = do
+    Script (x :| xs) <- LazySTM.readTVar scriptVar
+    case xs of
+      []     -> return ()
+      x':xs' -> LazySTM.writeTVar scriptVar (Script (x' :| xs'))
+    x
 
 initScript' :: MonadSTM m => Script a -> m (TVar m (Script a))
 initScript' = newTVarIO

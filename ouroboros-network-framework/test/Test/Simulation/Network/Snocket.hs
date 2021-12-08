@@ -42,6 +42,7 @@ import qualified Data.List as List
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Foldable (traverse_)
+import qualified Data.Map as Map
 import           Data.Monoid (Any (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -55,6 +56,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Util.ShowProxy
 import           Ouroboros.Network.Testing.Utils (Delay (..))
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
 import           Simulation.Network.Snocket
 
 import           Network.Mux
@@ -66,20 +68,21 @@ import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
 
 import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
-import           Ouroboros.Network.Testing.Data.Script (Script(..))
+-- ShowProxy ReqResp instance
+import           Ouroboros.Network.Testing.Data.Script
+                  (Script(..), singletonScript)
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
 
 import           Test.QuickCheck hiding (Result (..))
 import           Test.QuickCheck.Instances.ByteString
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-import Ouroboros.Network.Testing.Data.AbsBearerInfo
-
 
 tests :: TestTree
 tests =
     testGroup "Simulation.Network.Snocket"
-    [ testProperty "client-server" prop_client_server
-    ]
+      [ testProperty "client-server" prop_client_server
+      ]
 
 type TestAddr      = TestAddress Int
 type TestFD      m = FD m TestAddr
@@ -176,11 +179,11 @@ clientServerSimulation
        , Show payload
        , Ord (Async m ())
        )
-    => Script BearerInfo
-    -> [payload]
+    => [payload]
     -> m (Maybe Bool)
-clientServerSimulation script payloads =
-    withSnocket nullTracer script $ \snocket _ ->
+clientServerSimulation payloads =
+    withSnocket nullTracer noAttenuation Map.empty
+    $ \snocket _ ->
       withAsync (server snocket) $ \_serverAsync -> do
         res <- untilSuccess (client snocket)
         return (Just res)
@@ -338,9 +341,9 @@ toBearerInfo abi =
 -- Properties
 --
 
-prop_client_server :: [ByteString] -> BearerInfoScript -> Property
-prop_client_server payloads (BearerInfoScript script) =
-    let tr = runSimTrace $ clientServerSimulation script' payloads
+prop_client_server :: [ByteString] -> Property
+prop_client_server payloads =
+    let tr = runSimTrace $ clientServerSimulation payloads
     in -- Debug.traceShow script $
        case traceResult True tr of
          Left e         -> counterexample
@@ -355,9 +358,6 @@ prop_client_server payloads (BearerInfoScript script) =
                              False
          Right Nothing  -> property False
          Right (Just b) -> property b
-  where
-    script' = toBearerInfo <$> script
-
 
 --
 -- Utils

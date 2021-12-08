@@ -1057,22 +1057,31 @@ withConnectionManager ConnectionManagerArguments {
                       shouldTrace = absConnState /= TerminatedSt
                       isTerminating = absConnState' == TerminatingSt
 
-                  -- 'handleError' might be either a handshake negotiation
-                  -- a protocol failure (an IO exception, a timeout or
-                  -- codec failure).  In the first case we should not reset
-                  -- the connection as this is not a protocol error.
-                  writeTVar connVar connState'
-
                   updated <-
-                    modifyTMVarPure
+                    modifyTMVarSTM
                       stateVar
                       ( \state ->
                         case Map.lookup peerAddr state of
-                          Nothing -> (state, False)
+                          Nothing -> return (state, False)
                           Just mutableConnState'  ->
                             if mutableConnState' == mutableConnState
-                              then (Map.delete peerAddr state , True)
-                              else (state                     , False)
+                              then do
+                                -- 'handleError' might be either a handshake
+                                -- negotiation a protocol failure (an IO
+                                -- exception, a timeout or codec failure).  In
+                                -- the first case we should not reset the
+                                -- connection as this is not a protocol error.
+                                --
+                                -- If we are deleting the connState from the
+                                -- state then connState' can be TerminatingSt in
+                                -- which case we are going to transition
+                                -- TerminatingSt -> TerminatedSt. Otherwise,
+                                -- Connection Manager cleanup will take care of
+                                -- tracing accordingly.
+                                writeTVar connVar connState'
+
+                                return (Map.delete peerAddr state , True)
+                              else return (state                  , False)
                       )
 
                   let transitions =
