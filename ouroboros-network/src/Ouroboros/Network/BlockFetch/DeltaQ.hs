@@ -15,6 +15,7 @@ module Ouroboros.Network.BlockFetch.DeltaQ
   , estimateResponseDeadlineProbability
   , estimateExpectedResponseDuration
   , comparePeerGSV
+  , comparePeerGSV'
   ) where
 
 import           Control.Monad.Class.MonadTime
@@ -66,6 +67,18 @@ comparePeerGSV activePeers salt (a, a_p) (b, b_p) =
     gs PeerGSV { outboundGSV = GSV g_out _s_out _v_out,
                  inboundGSV  = GSV g_in  _s_in  _v_in
                } = g_out + g_in
+
+-- | Order two PeerGSVs based on `g`.
+-- Like comparePeerGSV but doesn't take active status into account
+comparePeerGSV' :: forall peer.
+      ( Hashable peer
+      , Ord peer
+      )
+      => Int
+      -> (PeerGSV, peer)
+      -> (PeerGSV, peer)
+      -> Ordering
+comparePeerGSV' = comparePeerGSV Set.empty
 
 
 calculatePeerFetchInFlightLimits :: PeerGSV -> PeerFetchInFlightLimits
