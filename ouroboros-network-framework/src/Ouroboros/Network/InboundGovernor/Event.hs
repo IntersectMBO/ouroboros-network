@@ -210,8 +210,8 @@ firstPeerPromotedToWarm InboundGovernorState { igsConnections } = runFirstToFini
               StatusRunning       -> return connId
 
 
--- | Detect when a first warm peer is promoted to hot (all established and hot
--- mini-protocols run running).
+-- | Detect when a first warm peer is promoted to hot (all hot mini-protocols
+-- run running).
 --
 firstPeerPromotedToHot
     :: forall muxMode peerAddr m a b. MonadSTM m
@@ -236,7 +236,7 @@ firstPeerPromotedToHot InboundGovernorState { igsConnections } = runFirstToFinis
       )
       igsConnections
   where
-    -- only hot or established mini-protocols;
+    -- only hot mini-protocols;
     hotMiniProtocolStateMap :: ConnectionState muxMode peerAddr m a b
                             -> Map (MiniProtocolNum, MiniProtocolDir)
                                    (STM m MiniProtocolStatus)
@@ -247,8 +247,9 @@ firstPeerPromotedToHot InboundGovernorState { igsConnections } = runFirstToFinis
        . Map.keysSet
        . Map.filter
            (\MiniProtocolData { mpdMiniProtocolTemp } ->
-                mpdMiniProtocolTemp == Hot
-             || mpdMiniProtocolTemp == Established
+              case mpdMiniProtocolTemp of
+                Hot -> True
+                _   -> False
            )
        $ csMiniProtocolMap
        )
