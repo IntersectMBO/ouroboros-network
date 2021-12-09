@@ -66,7 +66,6 @@ import           Data.Either (partitionEithers)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, listToMaybe)
-import           Data.Proxy
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -864,7 +863,7 @@ data TempRegistry st m = TempRegistry {
 newtype WithTempRegistry st m a = WithTempRegistry {
       unWithTempRegistry :: ReaderT (TempRegistry st m) m a
     }
-  deriving newtype (Functor, Applicative, Monad, MonadThrow, MonadCatch, MonadMask, MonadSTM)
+  deriving newtype (Functor, Applicative, Monad, MonadThrow, MonadCatch, MonadMask)
 
 instance MonadTrans (WithTempRegistry st) where
   lift = WithTempRegistry . lift
@@ -909,7 +908,7 @@ allocateTemp alloc free isTransferred = WithTempRegistry $ do
     TempRegistry rr varTransferredTo <- ask
     (key, a) <- lift $ fmap mustBeRight $
       allocateEither rr (fmap Right . const alloc) free
-    atomically $ modifyTVar varTransferredTo $ mappend $
+    lift $ atomically $ modifyTVar varTransferredTo $ mappend $
       TransferredTo $ \st ->
         if isTransferred st a
         then Set.singleton (resourceKeyId key)
@@ -1152,7 +1151,7 @@ forkThread rr label body = snd <$>
   where
     mkThread :: ResourceId -> Async m a -> Thread m a
     mkThread rid child = Thread {
-          threadId         = asyncThreadId (Proxy @m) child
+          threadId         = asyncThreadId child
         , threadResourceId = rid
         , threadAsync      = child
         , threadRegistry   = rr

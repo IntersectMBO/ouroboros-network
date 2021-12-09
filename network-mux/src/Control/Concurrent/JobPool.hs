@@ -17,7 +17,6 @@ module Control.Concurrent.JobPool (
 import           Data.Functor (($>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
 
 import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad.Class.MonadAsync
@@ -76,7 +75,7 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler group label) =
           writeTQueue completionQueue res
           modifyTVar' jobsVar (Map.delete (group, tid))
 
-      let !tid = asyncThreadId (Proxy :: Proxy m) jobAsync
+      let !tid = asyncThreadId jobAsync
       atomically $ modifyTVar' jobsVar (Map.insert (group, tid) jobAsync)
       return ()
   where

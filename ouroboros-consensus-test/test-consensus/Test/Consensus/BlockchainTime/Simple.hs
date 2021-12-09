@@ -8,10 +8,12 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Test.Consensus.BlockchainTime.Simple (tests) where
 
+import           Control.Applicative (Alternative (..))
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Tracer
@@ -23,6 +25,7 @@ import           Test.Tasty hiding (after)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck hiding (Fixed)
 
+import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
 
@@ -329,12 +332,10 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadThrow
            , MonadCatch
            , MonadMask
-           , MonadSTM
            , MonadMonotonicTime
            , MonadTime
            , MonadThread
            , MonadFork
-           , MonadAsync
            , MonadST
            , MonadEvaluate
            )
@@ -372,6 +373,98 @@ instance MonadDelay (OverrideDelay (IOSim s)) where
 -- | The IO instance just uses the default delay
 instance MonadDelay (OverrideDelay IO) where
   threadDelay d = OverrideDelay $ ReaderT $ \_schedule -> threadDelay d
+
+newtype OverrideDelaySTM m a = OverrideDelaySTM {
+      unOverrideDelaySTM :: ReaderT (StrictTVar m Schedule) (STM m) a
+    }
+
+deriving instance Alternative (STM m) => Alternative (OverrideDelaySTM m)
+deriving instance Applicative (STM m) => Applicative (OverrideDelaySTM m)
+deriving instance Functor     (STM m) => Functor     (OverrideDelaySTM m)
+deriving instance Monad       (STM m) => Monad       (OverrideDelaySTM m)
+deriving instance MonadPlus   (STM m) => MonadPlus   (OverrideDelaySTM m)
+
+instance (MonadSTM m, MonadThrow (STM m)) => MonadThrow (OverrideDelaySTM m) where
+    throwIO = OverrideDelaySTM . lift . throwIO
+    bracket before after f =
+         OverrideDelaySTM $ ReaderT $ \schedule ->
+          bracket       (runReaderT (unOverrideDelaySTM  before)   schedule)
+                  (\a -> runReaderT (unOverrideDelaySTM (after a)) schedule)
+                  (\a -> runReaderT (unOverrideDelaySTM (f a))     schedule)
+
+instance MonadSTM m => MonadSTM (OverrideDelay m) where
+  type STM   (OverrideDelay m) = OverrideDelaySTM m
+  atomically (OverrideDelaySTM (ReaderT stm)) =
+    OverrideDelay (ReaderT (atomically . stm))
+
+  type TVar    (OverrideDelay m) = LazySTM.TVar m
+  newTVar     = OverrideDelaySTM . lift . LazySTM.newTVar
+  readTVar    = OverrideDelaySTM . lift . LazySTM.readTVar
+  writeTVar v = OverrideDelaySTM . lift . LazySTM.writeTVar v
+  retry       = OverrideDelaySTM . lift $ retry
+  orElse (OverrideDelaySTM (ReaderT stm)) (OverrideDelaySTM (ReaderT stm')) =
+    OverrideDelaySTM (ReaderT $ \v -> stm v `orElse` stm' v)
+  modifyTVar v = OverrideDelaySTM . lift . LazySTM.modifyTVar v
+  stateTVar  v = OverrideDelaySTM . lift . LazySTM.stateTVar v
+  swapTVar   v = OverrideDelaySTM . lift . LazySTM.swapTVar v
+
+  type TMVar   (OverrideDelay m) = LazySTM.TMVar m
+  newTMVar      = OverrideDelaySTM . lift . LazySTM.newTMVar
+  newEmptyTMVar = OverrideDelaySTM . lift $ LazySTM.newEmptyTMVar
+  takeTMVar     = OverrideDelaySTM . lift . LazySTM.takeTMVar
+  tryTakeTMVar  = OverrideDelaySTM . lift . LazySTM.tryTakeTMVar
+  putTMVar v    = OverrideDelaySTM . lift . LazySTM.putTMVar v
+  tryPutTMVar v = OverrideDelaySTM . lift . LazySTM.tryPutTMVar v
+  readTMVar     = OverrideDelaySTM . lift . LazySTM.readTMVar
+  tryReadTMVar  = OverrideDelaySTM . lift . LazySTM.tryReadTMVar
+  swapTMVar v   = OverrideDelaySTM . lift . LazySTM.swapTMVar v
+  isEmptyTMVar  = OverrideDelaySTM . lift . LazySTM.isEmptyTMVar
+
+  type TQueue  (OverrideDelay m) = LazySTM.TQueue m
+  newTQueue     = OverrideDelaySTM . lift $ LazySTM.newTQueue
+  readTQueue    = OverrideDelaySTM . lift . LazySTM.readTQueue
+  tryReadTQueue = OverrideDelaySTM . lift . LazySTM.tryReadTQueue
+  peekTQueue    = OverrideDelaySTM . lift . LazySTM.peekTQueue
+  tryPeekTQueue = OverrideDelaySTM . lift . LazySTM.tryPeekTQueue
+  writeTQueue v = OverrideDelaySTM . lift . LazySTM.writeTQueue v
+  isEmptyTQueue = OverrideDelaySTM . lift . LazySTM.isEmptyTQueue
+
+  type TBQueue (OverrideDelay m) = LazySTM.TBQueue m
+  newTBQueue     = OverrideDelaySTM . lift . LazySTM.newTBQueue
+  readTBQueue    = OverrideDelaySTM . lift . LazySTM.readTBQueue
+  tryReadTBQueue = OverrideDelaySTM . lift . LazySTM.tryReadTBQueue
+  peekTBQueue    = OverrideDelaySTM . lift . LazySTM.peekTBQueue
+  tryPeekTBQueue = OverrideDelaySTM . lift . LazySTM.tryPeekTBQueue
+  writeTBQueue v = OverrideDelaySTM . lift . LazySTM.writeTBQueue v
+  lengthTBQueue  = OverrideDelaySTM . lift . LazySTM.lengthTBQueue
+  isEmptyTBQueue = OverrideDelaySTM . lift . LazySTM.isEmptyTBQueue
+  isFullTBQueue  = OverrideDelaySTM . lift . LazySTM.isFullTBQueue
+  flushTBQueue   = OverrideDelaySTM . lift . LazySTM.flushTBQueue
+
+newtype OverrideDelayAsync m a = OverrideDelayAsync {
+    unOverrideDelayAsync :: Async m a
+  }
+
+instance (MonadAsync m, MonadMask m, MonadThrow (STM m)) => MonadAsync (OverrideDelay m) where
+  type Async (OverrideDelay m) = OverrideDelayAsync m
+  async io = OverrideDelay $ ReaderT $
+    \schedule -> OverrideDelayAsync <$> async (runReaderT (unOverrideDelay io) schedule)
+  asyncThreadId (OverrideDelayAsync a) = asyncThreadId a
+  cancel       = OverrideDelay . lift . cancel . unOverrideDelayAsync
+  cancelWith a = OverrideDelay . lift . cancelWith (unOverrideDelayAsync a)
+  asyncWithUnmask f = OverrideDelay $ ReaderT $
+    \schedule ->
+      OverrideDelayAsync <$>
+      asyncWithUnmask
+        (\unmask ->
+            let unmask' :: forall x. OverrideDelay m x -> OverrideDelay m x
+                unmask' (OverrideDelay (ReaderT m)) =
+                  OverrideDelay $ ReaderT $ \schedule' -> unmask (m schedule')
+            in runReaderT (unOverrideDelay $ f unmask') schedule
+        )
+
+  waitCatchSTM = OverrideDelaySTM . lift . waitCatchSTM . unOverrideDelayAsync
+  pollSTM      = OverrideDelaySTM . lift . pollSTM . unOverrideDelayAsync
 
 instance (IOLike m, MonadDelay (OverrideDelay m)) => IOLike (OverrideDelay m) where
   forgetSignKeyKES = OverrideDelay . lift . forgetSignKeyKES

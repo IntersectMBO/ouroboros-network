@@ -1,15 +1,15 @@
-{-# LANGUAGE DefaultSignatures     #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE DefaultSignatures      #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE QuantifiedConstraints  #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE RankNTypes             #-}
+{-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
 
 module Control.Monad.Class.MonadAsync
   ( MonadAsync (..)
-  , MonadAsyncSTM (..)
   , AsyncCancelled(..)
   , ExceptionInLinkedThread(..)
   , link
@@ -30,40 +30,63 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad (forever)
 
 import           Control.Concurrent.Async (AsyncCancelled (..))
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Exception as E
-import           Control.Monad.Reader
-import qualified Control.Monad.STM as STM
 
 import           Data.Foldable (fold)
+import           Data.Functor (void)
 import           Data.Kind (Type)
-import           Data.Proxy
 
-class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
-  {-# MINIMAL waitCatchSTM, pollSTM #-}
+class ( MonadSTM m
+      , MonadThread m
+      ) => MonadAsync m where
 
-  waitSTM      :: async a -> stm a
-  pollSTM      :: async a -> stm (Maybe (Either SomeException a))
-  waitCatchSTM :: async a -> stm (Either SomeException a)
+  {-# MINIMAL async, asyncThreadId, cancel, cancelWith, asyncWithUnmask,
+              waitCatchSTM, pollSTM #-}
 
-  default waitSTM :: MonadThrow stm => async a -> stm a
+  -- | An asynchronous action
+  type Async m          = (async :: Type -> Type) | async -> m
+
+  async                 :: m a -> m (Async m a)
+  asyncThreadId         :: Async m a -> ThreadId m
+  withAsync             :: m a -> (Async m a -> m b) -> m b
+
+  waitSTM               :: Async m a -> STM m a
+  pollSTM               :: Async m a -> STM m (Maybe (Either SomeException a))
+  waitCatchSTM          :: Async m a -> STM m (Either SomeException a)
+
+  default waitSTM :: MonadThrow (STM m) => Async m a -> STM m a
   waitSTM action = waitCatchSTM action >>= either throwSTM return
 
-  waitAnySTM            :: [async a] -> stm (async a, a)
-  waitAnyCatchSTM       :: [async a] -> stm (async a, Either SomeException a)
-  waitEitherSTM         :: async a -> async b -> stm (Either a b)
-  waitEitherSTM_        :: async a -> async b -> stm ()
-  waitEitherCatchSTM    :: async a -> async b
-                        -> stm (Either (Either SomeException a)
+  waitAnySTM            :: [Async m a] -> STM m (Async m a, a)
+  waitAnyCatchSTM       :: [Async m a] -> STM m (Async m a, Either SomeException a)
+  waitEitherSTM         :: Async m a -> Async m b -> STM m (Either a b)
+  waitEitherSTM_        :: Async m a -> Async m b -> STM m ()
+  waitEitherCatchSTM    :: Async m a -> Async m b
+                        -> STM m (Either (Either SomeException a)
                                          (Either SomeException b))
-  waitBothSTM           :: async a -> async b -> stm (a, b)
+  waitBothSTM           :: Async m a -> Async m b -> STM m (a, b)
 
-  default waitAnySTM     :: MonadThrow stm => [async a] -> stm (async a, a)
-  default waitEitherSTM  :: MonadThrow stm => async a -> async b -> stm (Either a b)
-  default waitEitherSTM_ :: MonadThrow stm => async a -> async b -> stm ()
-  default waitBothSTM    :: MonadThrow stm => async a -> async b -> stm (a, b)
+  wait                  :: Async m a -> m a
+  poll                  :: Async m a -> m (Maybe (Either SomeException a))
+  waitCatch             :: Async m a -> m (Either SomeException a)
+  cancel                :: Async m a -> m ()
+  cancelWith            :: Exception e => Async m a -> e -> m ()
+  uninterruptibleCancel :: Async m a -> m ()
+
+  waitAny               :: [Async m a] -> m (Async m a, a)
+  waitAnyCatch          :: [Async m a] -> m (Async m a, Either SomeException a)
+  waitAnyCancel         :: [Async m a] -> m (Async m a, a)
+  waitAnyCatchCancel    :: [Async m a] -> m (Async m a, Either SomeException a)
+  waitEither            :: Async m a -> Async m b -> m (Either a b)
+
+  default waitAnySTM     :: MonadThrow (STM m) => [Async m a] -> STM m (Async m a, a)
+  default waitEitherSTM  :: MonadThrow (STM m) => Async m a -> Async m b -> STM m (Either a b)
+  default waitEitherSTM_ :: MonadThrow (STM m) => Async m a -> Async m b -> STM m ()
+  default waitBothSTM    :: MonadThrow (STM m) => Async m a -> Async m b -> STM m (a, b)
 
   waitAnySTM as =
     foldr orElse retry $
@@ -94,33 +117,6 @@ class (Functor async, MonadSTMTx stm) => MonadAsyncSTM async stm where
            (waitSTM right >> retry)
       b <- waitSTM right
       return (a,b)
-
-class ( MonadSTM m
-      , MonadThread m
-      , MonadAsyncSTM (Async m) (STM m)
-      ) => MonadAsync m where
-
-  {-# MINIMAL async, asyncThreadId, cancel, cancelWith, asyncWithUnmask #-}
-
-  -- | An asynchronous action
-  type Async m :: Type -> Type
-
-  async                 :: m a -> m (Async m a)
-  asyncThreadId         :: Proxy m -> Async m a -> ThreadId m
-  withAsync             :: m a -> (Async m a -> m b) -> m b
-
-  wait                  :: Async m a -> m a
-  poll                  :: Async m a -> m (Maybe (Either SomeException a))
-  waitCatch             :: Async m a -> m (Either SomeException a)
-  cancel                :: Async m a -> m ()
-  cancelWith            :: Exception e => Async m a -> e -> m ()
-  uninterruptibleCancel :: Async m a -> m ()
-
-  waitAny               :: [Async m a] -> m (Async m a, a)
-  waitAnyCatch          :: [Async m a] -> m (Async m a, Either SomeException a)
-  waitAnyCancel         :: [Async m a] -> m (Async m a, a)
-  waitAnyCatchCancel    :: [Async m a] -> m (Async m a, Either SomeException a)
-  waitEither            :: Async m a -> Async m b -> m (Either a b)
 
   -- | Note, IO-based implementations should override the default
   -- implementation. See the @async@ package implementation and comments.
@@ -258,24 +254,24 @@ replicateConcurrently_ cnt = runConcurrently . fold . replicate cnt . Concurrent
 -- Instance for IO uses the existing async library implementations
 --
 
-instance MonadAsyncSTM Async.Async STM.STM where
-  waitSTM            = Async.waitSTM
-  pollSTM            = Async.pollSTM
-  waitCatchSTM       = Async.waitCatchSTM
-  waitAnySTM         = Async.waitAnySTM
-  waitAnyCatchSTM    = Async.waitAnyCatchSTM
-  waitEitherSTM      = Async.waitEitherSTM
-  waitEitherSTM_     = Async.waitEitherSTM_
-  waitEitherCatchSTM = Async.waitEitherCatchSTM
-  waitBothSTM        = Async.waitBothSTM
-
 instance MonadAsync IO where
 
   type Async IO         = Async.Async
 
   async                 = Async.async
-  asyncThreadId         = \_proxy -> Async.asyncThreadId
+  asyncThreadId         = Async.asyncThreadId
   withAsync             = Async.withAsync
+
+  waitSTM               = Async.waitSTM
+  pollSTM               = Async.pollSTM
+  waitCatchSTM          = Async.waitCatchSTM
+
+  waitAnySTM            = Async.waitAnySTM
+  waitAnyCatchSTM       = Async.waitAnyCatchSTM
+  waitEitherSTM         = Async.waitEitherSTM
+  waitEitherSTM_        = Async.waitEitherSTM_
+  waitEitherCatchSTM    = Async.waitEitherCatchSTM
+  waitBothSTM           = Async.waitBothSTM
 
   wait                  = Async.wait
   poll                  = Async.poll
@@ -302,47 +298,6 @@ instance MonadAsync IO where
 
   asyncWithUnmask       = Async.asyncWithUnmask
 
---
--- Lift to ReaderT
---
-
-(.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)
-(f .: g) x y = f (g x y)
-
-instance MonadAsync m => MonadAsync (ReaderT r m) where
-  type Async (ReaderT r m) = Async m
-
-  asyncThreadId _ = asyncThreadId (Proxy @m)
-
-  async     (ReaderT ma)   = ReaderT $ \r -> async (ma r)
-  withAsync (ReaderT ma) f = ReaderT $ \r -> withAsync (ma r) $ \a -> runReaderT (f a) r
-  asyncWithUnmask        f = ReaderT $ \r ->
-                              asyncWithUnmask $ \unmask ->
-                                runReaderT (f (liftF unmask)) r
-    where
-      liftF :: (m a -> m a) ->  ReaderT r m a -> ReaderT r m a
-      liftF g (ReaderT r) = ReaderT (g . r)
-
-  race         (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> race         (ma r) (mb r)
-  race_        (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> race_        (ma r) (mb r)
-  concurrently (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> concurrently (ma r) (mb r)
-
-  wait                  = lift .  wait
-  poll                  = lift .  poll
-  waitCatch             = lift .  waitCatch
-  cancel                = lift .  cancel
-  uninterruptibleCancel = lift .  uninterruptibleCancel
-  cancelWith            = lift .: cancelWith
-  waitAny               = lift .  waitAny
-  waitAnyCatch          = lift .  waitAnyCatch
-  waitAnyCancel         = lift .  waitAnyCancel
-  waitAnyCatchCancel    = lift .  waitAnyCatchCancel
-  waitEither            = lift .: waitEither
-  waitEitherCatch       = lift .: waitEitherCatch
-  waitEitherCancel      = lift .: waitEitherCancel
-  waitEitherCatchCancel = lift .: waitEitherCatchCancel
-  waitEither_           = lift .: waitEither_
-  waitBoth              = lift .: waitBoth
 
 --
 -- Linking
@@ -401,7 +356,7 @@ linkToOnly tid shouldThrow a = do
         _otherwise             -> return ()
   where
     linkedThreadId :: ThreadId m
-    linkedThreadId = asyncThreadId (Proxy @m) a
+    linkedThreadId = asyncThreadId a
 
     exceptionInLinkedThread :: SomeException -> ExceptionInLinkedThread
     exceptionInLinkedThread =

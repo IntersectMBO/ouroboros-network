@@ -48,7 +48,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable ( (:~:) (..)
                                , eqT
-                               , Proxy (..)
                                )
 
 import           Control.Monad.Class.MonadAsync
@@ -123,13 +122,13 @@ instance ( MonadAsync m
     show (HotPeer producers consumers)
        = "HotPeer"
       ++ " "
-      ++ show (Set.map (asyncThreadId (Proxy :: Proxy m)) producers)
+      ++ show (Set.map asyncThreadId producers)
       ++ " "
-      ++ show (Set.map (asyncThreadId (Proxy :: Proxy m)) consumers)
+      ++ show (Set.map asyncThreadId consumers)
     show (SuspendedConsumer producers consT)
        = "SuspendedConsumer"
       ++ " "
-      ++ show (Set.map (asyncThreadId (Proxy :: Proxy m)) producers)
+      ++ show (Set.map asyncThreadId producers)
       ++ " "
       ++ show consT
     show (SuspendedPeer prodT consT)

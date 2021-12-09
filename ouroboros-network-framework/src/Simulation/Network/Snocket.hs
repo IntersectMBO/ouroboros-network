@@ -1317,7 +1317,7 @@ hush Left {}   = Nothing
 hush (Right a) = Just a
 {-# INLINE hush #-}
 
-drainTBQueue :: MonadSTMTx stm => TBQueue_ stm a -> stm [a]
+drainTBQueue :: MonadSTM m => TBQueue m a -> STM m [a]
 drainTBQueue q = do
   ma <- tryReadTBQueue q
   case ma of
@@ -1327,10 +1327,10 @@ drainTBQueue q = do
 
 -- | Return first element which satisfy the given predicate.
 --
-readTBQueueUntil :: MonadSTMTx stm
-                 => (a -> stm Bool) -- ^ a monadic predicate
-                 -> TBQueue_ stm a  -- ^ queue
-                 -> stm a
+readTBQueueUntil :: MonadSTM m
+                 => (a -> STM m Bool) -- ^ a monadic predicate
+                 -> TBQueue m a  -- ^ queue
+                 -> STM m a
 readTBQueueUntil p q = do
   a <- readTBQueue q
   b <- p a

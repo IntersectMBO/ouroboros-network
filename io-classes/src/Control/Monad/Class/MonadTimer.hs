@@ -234,15 +234,3 @@ microsecondsAsIntToDiffTime = (/ 1_000_000) . fromIntegral
 
 instance MonadDelay m => MonadDelay (ReaderT r m) where
   threadDelay = lift . threadDelay
-
-instance (MonadTimer m, MonadFork m) => MonadTimer (ReaderT r m) where
-  newtype Timeout (ReaderT r m) = WrapTimeoutReader {
-      unwrapTimeoutReader :: Timeout m
-    }
-
-  newTimeout    d = lift $ WrapTimeoutReader <$> newTimeout d
-  updateTimeout t = lift . updateTimeout (unwrapTimeoutReader t)
-  cancelTimeout t = lift $ cancelTimeout (unwrapTimeoutReader t)
-
-  timeout     d ma = ReaderT $ timeout d . runReaderT ma
-  readTimeout t    = readTimeout $ unwrapTimeoutReader t
