@@ -17,6 +17,7 @@ module Ouroboros.Network.InboundGovernor.Event
   , firstMiniProtocolToFinish
   , firstPeerPromotedToWarm
   , firstPeerPromotedToHot
+  , firstPeerDemotedToWarm
   , firstPeerDemotedToCold
   ) where
 
@@ -64,11 +65,15 @@ data Event (muxMode :: MuxMode) peerAddr m a b
     --
     | WaitIdleRemote         !(ConnectionId peerAddr)
 
-    -- | We track remote @warm → hot@ transitions.  The @hot → warm@ transition
-    -- is tracked by 'MiniProtocolTerminated' when
-    -- a any hot mini-protocol terminates.
+    -- | A remote @warm → hot@ transition.  It is scheduled as soon as all hot
+    -- mini-protocols are running.
     --
     | RemotePromotedToHot    !(ConnectionId peerAddr)
+
+    -- | A @hot → warm@ transition.  It is scheduled as soon as any hot
+    -- mini-protocol terminates.
+    --
+    | RemoteDemotedToWarm    !(ConnectionId peerAddr)
 
     -- | Transition from 'RemoteIdle' to 'RemoteCold'.
     --
@@ -256,6 +261,53 @@ firstPeerPromotedToHot InboundGovernorState { igsConnections } = runFirstToFinis
           StatusIdle          -> retry
           StatusStartOnDemand -> retry
           StatusRunning       -> return ()
+
+
+-- | Detect when a first hot mini-protocols terminates, which triggers the
+-- `RemoteHot → RemoteWarm` transition.
+--
+firstPeerDemotedToWarm
+  :: forall muxMode peerAddr m a b. MonadSTM m
+  => InboundGovernorState muxMode peerAddr m a b
+  -> STM m (ConnectionId peerAddr)
+firstPeerDemotedToWarm InboundGovernorState { igsConnections } = runFirstToFinish $
+    Map.foldMapWithKey
+      (\connId connState@ConnectionState { csRemoteState } ->
+        case csRemoteState of
+          RemoteHot ->
+                const connId
+            <$> foldMap fn (hotMiniProtocolStateMap connState)
+
+          _  -> mempty
+      )
+      igsConnections
+  where
+    -- only hot mini-protocols;
+    hotMiniProtocolStateMap :: ConnectionState muxMode peerAddr m a b
+                            -> Map (MiniProtocolNum, MiniProtocolDir)
+                                   (STM m MiniProtocolStatus)
+    hotMiniProtocolStateMap ConnectionState { csMux, csMiniProtocolMap } =
+       Mux.miniProtocolStateMap csMux
+       `Map.restrictKeys`
+       ( Set.map (,ResponderDir)
+       . Map.keysSet
+       . Map.filter
+           (\MiniProtocolData { mpdMiniProtocolTemp } ->
+                case mpdMiniProtocolTemp of
+                  Hot -> True
+                  _   -> False
+           )
+       $ csMiniProtocolMap
+       )
+
+    fn :: STM m MiniProtocolStatus
+       -> FirstToFinish (STM m) ()
+    fn miniProtocolStatus =
+      FirstToFinish $
+        miniProtocolStatus >>= \case
+          StatusIdle          -> return ()
+          StatusStartOnDemand -> return ()
+          StatusRunning       -> retry
 
 
 -- | Await for first peer demoted to cold, i.e. detect the

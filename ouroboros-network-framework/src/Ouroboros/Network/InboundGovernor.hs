@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -147,6 +148,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
             <|> (MiniProtocolTerminated <$> firstMiniProtocolToFinish state)
             <|> (AwakeRemote            <$> firstPeerPromotedToWarm state)
             <|> (RemotePromotedToHot    <$> firstPeerPromotedToHot state)
+            <|> (RemoteDemotedToWarm    <$> firstPeerDemotedToWarm state)
             <|>                             firstPeerDemotedToCold state
             <|> (NewConnection          <$> ControlChannel.readMessage
                                               serverControlChannel)
@@ -272,9 +274,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
           Terminated {
               tConnId,
               tMux,
-              tMiniProtocolData = MiniProtocolData { mpdMiniProtocol,
-                                                     mpdMiniProtocolTemp
-                                                   },
+              tMiniProtocolData = MiniProtocolData { mpdMiniProtocol },
               tResult
             } ->
           let num = miniProtocolNum mpdMiniProtocol in
@@ -295,23 +295,9 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
               case result of
                 Right completionAction -> do
                   traceWith tracer (TrResponderRestarted tConnId num)
-
-                  let isHot = mpdMiniProtocolTemp == Hot
-                      state' = ( if isHot
-                                 then mapRemoteState tConnId
-                                        $ \remoteState ->
-                                          case remoteState of
-                                            RemoteHot -> RemoteWarm
-                                            _         -> remoteState
-                                 else id
-                               )
-                             . updateMiniProtocol tConnId num completionAction
+                  let state' = updateMiniProtocol tConnId num completionAction
                              $ state
-
-                  -- remote state is only updated when 'isHot' is 'True'
-                  if isHot
-                     then return (Just tConnId, state')
-                     else return (Nothing, state')
+                  return (Nothing, state')
 
                 Left err -> do
                   -- there is no way to recover from synchronous exceptions; we
@@ -384,6 +370,12 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
         RemotePromotedToHot connId -> do
           traceWith tracer (TrPromotedToHotRemote connId)
           let state' = updateRemoteState connId RemoteHot state
+
+          return (Just connId, state')
+
+        RemoteDemotedToWarm connId -> do
+          traceWith tracer (TrDemotedToWarmRemote connId)
+          let state' = updateRemoteState connId RemoteWarm state
 
           return (Just connId, state')
 
@@ -548,6 +540,7 @@ data InboundGovernorTrace peerAddr
     | TrResponderTerminated          !(ConnectionId peerAddr) !MiniProtocolNum
     | TrPromotedToWarmRemote         !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrPromotedToHotRemote          !(ConnectionId peerAddr)
+    | TrDemotedToWarmRemote          !(ConnectionId peerAddr)
     | TrDemotedToColdRemote          !(ConnectionId peerAddr) !(OperationResult DemotedToColdRemoteTr)
     -- ^ All mini-protocols terminated.  The boolean is true if this connection
     -- was not used by p2p-governor, and thus the connection will be terminated.
