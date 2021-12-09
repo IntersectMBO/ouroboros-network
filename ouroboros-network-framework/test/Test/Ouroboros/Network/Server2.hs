@@ -3104,7 +3104,8 @@ multiNodeSim serverAcc dataFlow defaultBearerInfo
              acceptedConnLimit events attenuationMap = do
 
       let attenuationMap' = (fmap toBearerInfo <$>)
-                          . Map.mapKeys ( UnsafeNormalisedId mainServerAddr
+                          . Map.mapKeys ( normaliseId
+                                        . ConnectionId mainServerAddr
                                         . unTestAddr)
                           $ attenuationMap
 

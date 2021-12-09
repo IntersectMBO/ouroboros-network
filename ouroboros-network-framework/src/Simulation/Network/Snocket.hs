@@ -31,7 +31,7 @@ module Simulation.Network.Snocket
   , SockType (..)
   , OpenType (..)
 
-  , NormalisedId (..)
+  , normaliseId
   , BearerInfo (..)
   , IOErrType (..)
   , IOErrThrowOrReturn (..)
