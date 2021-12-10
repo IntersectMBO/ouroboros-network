@@ -144,13 +144,18 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
 
       event
         <- atomically $ runFirstToFinish $
-               firstMuxToFinish          state
-            <> firstMiniProtocolToFinish state
-            <> firstPeerPromotedToWarm   state
-            <> firstPeerPromotedToHot    state
-            <> firstPeerDemotedToWarm    state
-            <> firstPeerDemotedToCold    state
-            <> firstPeerCommitRemote     state
+               Map.foldMapWithKey
+                 (    firstMuxToFinish
+                   <> firstMiniProtocolToFinish
+                   <> firstPeerPromotedToWarm
+                   <> firstPeerPromotedToHot
+                   <> firstPeerDemotedToWarm
+                   <> firstPeerDemotedToCold
+                   <> firstPeerCommitRemote
+
+                   :: EventSignal muxMode peerAddr m a b
+                 )
+                 (igsConnections state)
             <> (FirstToFinish $
                  NewConnection <$> ControlChannel.readMessage serverControlChannel)
       (mbConnId, state') <- case event of
