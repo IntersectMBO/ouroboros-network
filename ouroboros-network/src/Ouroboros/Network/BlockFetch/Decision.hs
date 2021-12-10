@@ -47,6 +47,7 @@ import           Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
 import           Ouroboros.Network.BlockFetch.DeltaQ
                      (PeerFetchInFlightLimits (..), PeerGSV (..), SizeInBytes,
                      calculatePeerFetchInFlightLimits, comparePeerGSV,
+                     comparePeerGSV',
                      estimateExpectedResponseDuration,
                      estimateResponseDeadlineProbability)
 
@@ -650,7 +651,8 @@ prioritisePeerChains FetchModeDeadline salt compareCandidateChains blockFetchSiz
                    `on`
                       (\(band, chain, _fragments) -> (band, chain))))))
   . map annotateProbabilityBand
-  . sortBy (\(_, _, _, a, _) (_, _, _, b, _) -> compare (hashWithSalt salt a) (hashWithSalt salt b))
+  . sortBy (\(_,_,a,ap,_) (_,_,b,bp,_) ->
+      comparePeerGSV' salt (a,ap) (b,bp))
   where
     annotateProbabilityBand (Left decline, _, _, _, peer) = (Left decline, peer)
     annotateProbabilityBand (Right (chain,fragments), inflight, gsvs, _, peer) =
@@ -683,7 +685,8 @@ prioritisePeerChains FetchModeBulkSync salt compareCandidateChains blockFetchSiz
                 `on`
                   (\(duration, chain, _fragments) -> (chain, duration)))))
   . map annotateDuration
-  . sortBy (\(_, _, _, a, _) (_, _, _, b, _) -> compare (hashWithSalt salt a) (hashWithSalt salt b))
+  . sortBy (\(_,_,a,ap,_) (_,_,b,bp,_) ->
+      comparePeerGSV' salt (a,ap) (b,bp))
   where
     annotateDuration (Left decline, _, _, _, peer) = (Left decline, peer)
     annotateDuration (Right (chain,fragments), inflight, gsvs, _, peer) =

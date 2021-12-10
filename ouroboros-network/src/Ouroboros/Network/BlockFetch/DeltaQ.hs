@@ -15,6 +15,7 @@ module Ouroboros.Network.BlockFetch.DeltaQ (
     estimateResponseDeadlineProbability,
     estimateExpectedResponseDuration,
     comparePeerGSV,
+    comparePeerGSV',
 --    estimateBlockFetchResponse,
 --    blockArrivalShedule,
   ) where
@@ -64,6 +65,27 @@ comparePeerGSV activePeers salt (a, a_p) (b, b_p) =
     isActive :: peer -> Bool
     isActive p = Set.member p activePeers
 
+    gs :: PeerGSV -> DiffTime
+    gs PeerGSV { outboundGSV = GSV g_out _s_out _v_out,
+                 inboundGSV  = GSV g_in  _s_in  _v_in
+               } = g_out + g_in
+
+-- | Order two PeerGSVs based on `g`.
+-- Like comparePeerGSV but doesn't take active status into account
+comparePeerGSV' :: forall peer.
+      ( Hashable peer
+      )
+      => Int
+      -> (PeerGSV, peer)
+      -> (PeerGSV, peer)
+      -> Ordering
+comparePeerGSV' salt (a, a_p) (b, b_p) =
+    let gs_a = gs a
+        gs_b = gs b in
+    if abs (gs_a - gs_b) < 0.05*gs_a
+       then compare (hashWithSalt salt a_p) (hashWithSalt salt b_p)
+       else compare gs_a gs_b
+  where
     gs :: PeerGSV -> DiffTime
     gs PeerGSV { outboundGSV = GSV g_out _s_out _v_out,
                  inboundGSV  = GSV g_in  _s_in  _v_in
