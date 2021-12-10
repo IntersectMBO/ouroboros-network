@@ -33,7 +33,6 @@ module Ouroboros.Network.InboundGovernor
   ) where
 
 import           Control.Exception (SomeAsyncException (..), assert)
-import           Control.Applicative (Alternative (..), (<|>))
 import           Control.Monad (foldM, when)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
@@ -48,6 +47,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Monoid.Synchronisation
 
 import qualified Network.Mux as Mux
 
@@ -143,16 +143,16 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
         <$> igsConnections state
 
       event
-        <- atomically $
-                (uncurry MuxFinished    <$> firstMuxToFinish state)
-            <|> (MiniProtocolTerminated <$> firstMiniProtocolToFinish state)
-            <|> (AwakeRemote            <$> firstPeerPromotedToWarm state)
-            <|> (RemotePromotedToHot    <$> firstPeerPromotedToHot state)
-            <|> (RemoteDemotedToWarm    <$> firstPeerDemotedToWarm state)
-            <|> (WaitIdleRemote         <$> firstPeerDemotedToCold state)
-            <|> (CommitRemote           <$> firstPeerCommitRemote state)
-            <|> (NewConnection          <$> ControlChannel.readMessage
-                                              serverControlChannel)
+        <- atomically $ runFirstToFinish $
+               firstMuxToFinish          state
+            <> firstMiniProtocolToFinish state
+            <> firstPeerPromotedToWarm   state
+            <> firstPeerPromotedToHot    state
+            <> firstPeerDemotedToWarm    state
+            <> firstPeerDemotedToCold    state
+            <> firstPeerCommitRemote     state
+            <> (FirstToFinish $
+                 NewConnection <$> ControlChannel.readMessage serverControlChannel)
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
