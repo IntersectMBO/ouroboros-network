@@ -19,6 +19,7 @@ module Ouroboros.Network.InboundGovernor.Event
   , firstPeerPromotedToHot
   , firstPeerDemotedToWarm
   , firstPeerDemotedToCold
+  , firstPeerCommitRemote
   ) where
 
 import           Control.Applicative (Alternative (..))
@@ -190,7 +191,10 @@ firstPeerPromotedToWarm InboundGovernorState { igsConnections } = runFirstToFini
                (Mux.miniProtocolStateMap csMux)
 
            -- We skip it here; this case is done in 'firstPeerDemotedToCold'.
-           RemoteIdle {} -> mempty
+           RemoteIdle {} ->
+             Map.foldMapWithKey
+               (fn connId)
+               (Mux.miniProtocolStateMap csMux)
        )
        igsConnections
   where
@@ -319,7 +323,7 @@ firstPeerDemotedToWarm InboundGovernorState { igsConnections } = runFirstToFinis
 firstPeerDemotedToCold
     :: MonadSTM m
     => InboundGovernorState muxMode peerAddr m a b
-    -> STM m (Event muxMode peerAddr m a b)
+    -> STM m (ConnectionId peerAddr)
 firstPeerDemotedToCold InboundGovernorState { igsConnections } = runFirstToFinish $
     Map.foldMapWithKey
       (\connId
@@ -339,7 +343,7 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } = runFirstToFinis
           -- In compat mode, when established mini-protocols terminate they will
           -- not be restarted.
           RemoteEstablished ->
-                fmap (const (WaitIdleRemote connId))
+                fmap (const connId)
               . lastToFirstM
               $ (Map.foldMapWithKey
                   (\(_, miniProtocolDir) miniProtocolStatus ->
@@ -356,33 +360,25 @@ firstPeerDemotedToCold InboundGovernorState { igsConnections } = runFirstToFinis
                   (Mux.miniProtocolStateMap csMux)
                 )
 
-          -- Possible for both 'Unidirectional' and 'Duplex' connections.  Wait
-          -- for first of:
-          --
-          -- 1. timeout, in which case we will transition to 'RemoteCold',
-          -- 2. one of mini-protocols to wake up, in which case we transition
-          --    to 'RemoteWarm';
-          -- 3. mux stopped;
-          --
-          -- This is done to solve a situation where one of the mini-protocols
-          -- terminates quickly while other mini-protocols are inactive
-          -- (e.g. their initial messages are still in flight).
-          RemoteIdle timeoutSTM ->
-              -- At this stage we know that all mini-protocols terminated, and
-              -- we wait for a period of idleness.
-                    Map.foldMapWithKey
-                      (\(_, miniProtocolDir) miniProtocolStatus ->
-                          case miniProtocolDir of
-                            InitiatorDir -> mempty
-
-                            ResponderDir ->
-                              FirstToFinish $ do
-                                miniProtocolStatus >>= \case
-                                 StatusIdle          -> retry
-                                 StatusStartOnDemand -> retry
-                                 StatusRunning       -> return (AwakeRemote connId)
-                      )
-                      (Mux.miniProtocolStateMap csMux)
-                  <> FirstToFinish (timeoutSTM $> CommitRemote connId)
+          RemoteIdle {} -> mempty
       )
       igsConnections
+
+
+-- | First peer for which the 'RemoteIdle' timeout expires.
+--
+firstPeerCommitRemote
+    :: MonadSTM m
+    => InboundGovernorState muxMode peerAddr m a b
+    -> STM m (ConnectionId peerAddr)
+firstPeerCommitRemote InboundGovernorState { igsConnections } = runFirstToFinish $
+    Map.foldMapWithKey
+      (\connId ConnectionState { csRemoteState } ->
+        case csRemoteState of
+          -- the connection is already in 'RemoteCold' state
+          RemoteCold            -> mempty
+          RemoteEstablished     -> mempty
+          RemoteIdle timeoutSTM -> FirstToFinish (timeoutSTM $> connId)
+      )
+      igsConnections
+  

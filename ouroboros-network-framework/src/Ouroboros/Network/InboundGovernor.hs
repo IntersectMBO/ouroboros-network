@@ -149,7 +149,8 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
             <|> (AwakeRemote            <$> firstPeerPromotedToWarm state)
             <|> (RemotePromotedToHot    <$> firstPeerPromotedToHot state)
             <|> (RemoteDemotedToWarm    <$> firstPeerDemotedToWarm state)
-            <|>                             firstPeerDemotedToCold state
+            <|> (WaitIdleRemote         <$> firstPeerDemotedToCold state)
+            <|> (CommitRemote           <$> firstPeerCommitRemote state)
             <|> (NewConnection          <$> ControlChannel.readMessage
                                               serverControlChannel)
       (mbConnId, state') <- case event of
@@ -346,7 +347,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
         -- traffic.  This means that we'll observe this transition also if the
         -- first message that arrives is terminating a mini-protocol.
         AwakeRemote connId -> do
-          -- notify the connection manager about the transiton
+          -- notify the connection manager about the transition
           res <- promotedToWarmRemote connectionManager
                                       (remoteAddress connId)
           traceWith tracer (TrPromotedToWarmRemote connId res)
