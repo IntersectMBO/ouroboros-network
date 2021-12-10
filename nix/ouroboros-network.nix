@@ -9,7 +9,7 @@
 , config ? { }
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
-, libsodium ? pkgs.libsodium
+, libsodium-vrf ? pkgs.libsodium-vrf
 }:
 let
   compiler-nix-name = pkgs.localConfig.ghcVersion;
@@ -40,6 +40,9 @@ let
 
         # Command-line options for test suites:
         packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags = lib.mkForce [ "--no-create" ];
+
+        packages.cardano-crypto-praos.components.library.pkgconfig = lib.mkForce [ [ libsodium-vrf ] ];
+        packages.cardano-crypto-class.components.library.pkgconfig = lib.mkForce [ [ libsodium-vrf ] ];
       }
 
       # Options specific to the windows cross-compiled build:
@@ -92,13 +95,13 @@ let
         packages.network.components.library.build-tools = lib.mkForce [ ];
 
         # Make sure that libsodium DLLs are available for tests
-        packages.ouroboros-consensus-byron-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-mock-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-test.components.tests.test-consensus.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-test.components.tests.test-infra.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-test.components.tests.test-storage.postInstall = ''ln -s ${libsodium}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-byron-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-mock-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-test.components.tests.test-consensus.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-test.components.tests.test-infra.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
+        packages.ouroboros-consensus-test.components.tests.test-storage.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
       })
       # Options for when not compiling to windows:
       ({ pkgs, ... }: lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
