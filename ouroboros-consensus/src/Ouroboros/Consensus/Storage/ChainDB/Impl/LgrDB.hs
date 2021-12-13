@@ -21,6 +21,15 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , LgrDbArgs (..)
   , defaultArgs
   , openDB
+    -- * Ledger HD operations
+  , flush
+    -- ** Read/Write lock operations
+  , withReadLock
+  , withWriteLock
+  , unsafeAcquireReadLock
+  , unsafeReleaseReadLock
+  , unsafeAcquireWriteLock
+  , unsafeReleaseWriteLock
     -- * 'TraceReplayEvent' decorator
   , LedgerDB.decorateReplayTracerWithGoal
     -- * Wrappers
@@ -51,7 +60,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode))
-import           Control.Monad.Trans.Class
 import           Control.Tracer
 import           Data.Foldable (foldl')
 import           Data.Set (Set)
@@ -59,6 +67,7 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           Control.Monad.Trans.Class (lift)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -86,7 +95,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      DiskSnapshot, LedgerDB', NextBlock (..), ReplayGoal,
-                     StreamAPI (..), TraceEvent (..), TraceReplayEvent (..))
+                     StreamAPI (..), TraceEvent (..), TraceReplayEvent (..),
+                     OnDiskLedgerStDb (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
@@ -114,7 +124,12 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
-    , resolveBlock   :: !(RealPoint blk -> m blk)
+    , lgrOnDiskLedgerStDb :: !(LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk))
+      -- ^
+      --
+      -- TODO: align the other fields.
+    , lgrDbFlushLock :: !FlushLock
+    , resolveBlock   :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
       -- ^ Read a block from disk
     , cfg            :: !(TopLevelConfig blk)
     , diskPolicy     :: !DiskPolicy
@@ -148,6 +163,7 @@ data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: DiskPolicy
     , lgrGenesis        :: HKD f (m (ExtLedgerState blk EmptyMK))
     , lgrHasFS          :: SomeHasFS m
+    , lgrHasFSLedgerSt  :: SomeHasFS m
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (TraceEvent blk)
@@ -157,12 +173,16 @@ data LgrDbArgs f m blk = LgrDbArgs {
 defaultArgs ::
      Applicative m
   => SomeHasFS m
+  -> SomeHasFS m
+  -- ^ TODO: we need some type wrappers to distinguish the two kind of SomeHasFS
+  -- we use in this function.
   -> DiskPolicy
   -> LgrDbArgs Defaults m blk
-defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
+defaultArgs lgrHasFS lgrHasFSLedgerSt diskPolicy = LgrDbArgs {
       lgrDiskPolicy     = diskPolicy
     , lgrGenesis        = NoDefault
     , lgrHasFS
+    , lgrHasFSLedgerSt
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
@@ -196,10 +216,12 @@ openDB :: forall m blk.
        --
        -- The block may be in the immutable DB or in the volatile DB; the ledger
        -- DB does not know where the boundary is at any given point.
+       --
+       -- TODO: should we replace this type with @ResolveBlock blk m@?
        -> m (LgrDB m blk, Word64)
 openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock = do
     createDirectoryIfMissing hasFS True (mkFsPath [])
-    (db, replayed) <- initFromDisk args replayTracer immutableDB
+    (db, replayed, onDiskLedgerStDb) <- initFromDisk args replayTracer immutableDB
     -- When initializing the ledger DB from disk we:
     --
     -- - Look for the newest valid snapshot, say 'Lbs', which corresponds to the
@@ -220,10 +242,16 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
     let dbPrunedToImmDBTip = LedgerDB.ledgerDbPrune (SecurityParam 0) db
     (varDB, varPrevApplied) <-
       (,) <$> newTVarIO dbPrunedToImmDBTip <*> newTVarIO Set.empty
+    flock <- mkFlushLock -- TODO: do we want to register this lock in any
+                         -- resource registry? Depending on how the lock will be
+                         -- implemented an exception after lock creation might
+                         -- not be a problem (eg using MVars or TVars).
     return (
         LgrDB {
             varDB          = varDB
           , varPrevApplied = varPrevApplied
+          , lgrOnDiskLedgerStDb = onDiskLedgerStDb -- TODO: align the other fields.
+          , lgrDbFlushLock = flock
           , resolveBlock   = getBlock
           , cfg            = lgrTopLevelConfig
           , diskPolicy     = lgrDiskPolicy
@@ -244,22 +272,25 @@ initFromDisk
   => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> ImmutableDB m blk
-  -> m (LedgerDB' blk, Word64)
-initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
-             replayTracer
-             immutableDB = wrapFailure (Proxy @blk) $ do
+  -> m (LedgerDB' blk, Word64, OnDiskLedgerStDb m (ExtLedgerState blk))
+initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
+    onDiskLedgerStDb <- LedgerDB.mkOnDiskLedgerStDb lgrHasFSLedgerSt
+    -- TODO: is it correct that we pick a instance of the 'OnDiskLedgerStDb' here?
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
         lgrTracer
         hasFS
+        onDiskLedgerStDb
         decodeExtLedgerState'
         decode
         (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
-    return (db, replayed)
+    return (db, replayed, onDiskLedgerStDb)
   where
+    LgrDbArgs { lgrHasFS = hasFS, .. } = args
+
     ccfg = configCodec lgrTopLevelConfig
 
     decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk EmptyMK)
@@ -271,10 +302,12 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB' blk)
         -> StrictTVar m (Set (RealPoint blk))
+        -> LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk)
+        -> FlushLock
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs Identity m blk
         -> LgrDB m blk
-mkLgrDB varDB varPrevApplied resolveBlock args = LgrDB {..}
+mkLgrDB varDB varPrevApplied lgrOnDiskLedgerStDb lgrDbFlushLock resolveBlock args = LgrDB {..}
   where
     LgrDbArgs {
         lgrTopLevelConfig = cfg
@@ -336,6 +369,18 @@ trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy = diskPolicy
 
+flush :: IOLike m => LgrDB m blk -> m ()
+flush lgrDB@LgrDB { varDB, lgrOnDiskLedgerStDb } =
+  -- TODO: why putting the lock inside LgrDB and not in the CDB? I rather couple
+  -- the ledger DB with the flush lock that guards it. I don't feel comfortable
+  -- with the possiblility of having a lock as a parameter here that could come
+  -- from anywhere. Also, when we use this function, we don't have to pass the
+  -- extra argument.
+  withWriteLock lgrDB $ do
+    db  <- readTVarIO varDB
+    db' <- LedgerDB.ledgerDbFlush (flushDb lgrOnDiskLedgerStDb) db
+    atomically $ writeTVar varDB db'
+
 {-------------------------------------------------------------------------------
   Validation
 -------------------------------------------------------------------------------}
@@ -357,13 +402,15 @@ validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          -> m (ValidateResult blk)
 validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
-    res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
-             LedgerDB.ledgerDbSwitch
-               (configLedgerDb cfg)
-               numRollbacks
-               (lift . lift . trace)
-               aps
-               ledgerDB
+    res <- fmap rewrap $
+             LedgerDB.defaultReadKeySets (readKeySets lgrOnDiskLedgerStDb) $
+             LedgerDB.defaultResolveWithErrors (LedgerDB.DbReader . lift . resolveBlock) $
+               LedgerDB.ledgerDbSwitch
+                 (configLedgerDb cfg)
+                 numRollbacks
+                 (lift . lift . LedgerDB.DbReader . lift . trace)
+                 aps
+                 ledgerDB
     atomically $ modifyTVar varPrevApplied $
       addPoints (validBlockPoints res (map headerRealPoint hdrs))
     return res
@@ -378,13 +425,14 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
           => [Header blk]
           -> Set (RealPoint blk)
           -> [Ap n l blk ( LedgerDB.ResolvesBlocks    n   blk
+                         , LedgerDB.ReadsKeySets         n l
                          , LedgerDB.ThrowsLedgerError n l blk
                          )]
     mkAps hdrs prevApplied =
       [ case ( Set.member (headerRealPoint hdr) prevApplied
              , BlockCache.lookup (headerHash hdr) blockCache
              ) of
-          (False, Nothing)  ->          ApplyRef   (headerRealPoint hdr)
+          (False, Nothing)  -> Weaken $ ApplyRef   (headerRealPoint hdr)
           (True,  Nothing)  -> Weaken $ ReapplyRef (headerRealPoint hdr)
           (False, Just blk) -> Weaken $ ApplyVal   blk
           (True,  Just blk) -> Weaken $ ReapplyVal blk
@@ -475,3 +523,39 @@ configLedgerDb cfg = LedgerDbCfg {
       ledgerDbCfgSecParam = configSecurityParam cfg
     , ledgerDbCfg         = ExtLedgerCfg cfg
     }
+
+{-------------------------------------------------------------------------------
+  Flush lock operations
+-------------------------------------------------------------------------------}
+
+-- | Perform an action acquiring and holding the ledger DB read lock.
+withReadLock :: IOLike m => LgrDB m blk -> m a -> m a
+withReadLock lgrDB =
+  bracket_ (unsafeAcquireReadLock lgrDB) (unsafeReleaseReadLock lgrDB)
+
+-- | Perform an action acquiring and holding the ledger DB write lock.
+withWriteLock :: IOLike m => LgrDB m blk -> m () -> m ()
+withWriteLock lgrDB =
+  bracket_ (unsafeAcquireWriteLock lgrDB) (unsafeReleaseWriteLock lgrDB)
+
+-- | Acquire a read lock on the ledger DB.
+--
+-- This operation must be guarded against (asyncrhonous) exceptions, ensuring
+-- that the corresponding release operation is called.
+unsafeAcquireReadLock :: LgrDB m blk -> m ()
+unsafeAcquireReadLock = undefined
+
+unsafeReleaseReadLock :: LgrDB m blk -> m ()
+unsafeReleaseReadLock = undefined
+
+unsafeAcquireWriteLock :: LgrDB m blk -> m ()
+unsafeAcquireWriteLock = undefined
+
+unsafeReleaseWriteLock :: LgrDB m blk -> m ()
+unsafeReleaseWriteLock = undefined
+
+data FlushLock = FlushLock
+  deriving (Show, Eq, Generic, NoThunks)
+
+mkFlushLock :: IOLike m => m FlushLock
+mkFlushLock = undefined
