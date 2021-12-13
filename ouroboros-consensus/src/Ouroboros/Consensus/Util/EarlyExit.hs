@@ -38,7 +38,8 @@ import           Control.Monad.Class.MonadTimer
 
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
-                     MonadMonotonicTime (..), StrictMVar, StrictTVar)
+                     MonadMonotonicTime (..), MonadTimeOnlyForTracer (..),
+                     StrictMVar, StrictTVar)
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -210,6 +211,9 @@ instance MonadST m => MonadST (WithEarlyExit m) where
 
 instance MonadMonotonicTime m => MonadMonotonicTime (WithEarlyExit m) where
   getMonotonicTime = lift getMonotonicTime
+
+instance MonadTimeOnlyForTracer m => MonadTimeOnlyForTracer (WithEarlyExit m) where
+  getCurrentTimeOnlyForTracer = lift getCurrentTimeOnlyForTracer
 
 instance MonadDelay m => MonadDelay (WithEarlyExit m) where
   threadDelay = lift . threadDelay

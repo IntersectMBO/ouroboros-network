@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Util.IOLike (
     -- *** MonadTime
   , DiffTime
   , MonadMonotonicTime (..)
+  , MonadTimeOnlyForTracer (..)
   , Time (..)
   , addTime
   , diffTime
@@ -50,9 +51,10 @@ import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime hiding (MonadTime (..))
 import           Control.Monad.Class.MonadTimer
+-- note: intentionally no import of MonadTime!
 
+import           Ouroboros.Consensus.Util.IOLike.MonadTimeOnlyForTracer
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -72,6 +74,7 @@ class ( MonadAsync              m
       , MonadMonotonicTime      m
       , MonadEvaluate           m
       , MonadThrow         (STM m)
+      , MonadTimeOnlyForTracer  m
       , forall a. NoThunks (m a)
       , forall a. NoThunks a => NoThunks (StrictTVar m a)
       , forall a. NoThunks a => NoThunks (StrictMVar m a)
