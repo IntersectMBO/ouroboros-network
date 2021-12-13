@@ -45,6 +45,9 @@ module Ouroboros.Consensus.Ledger.Basics (
   , SMapKind
   , Sing (..)
   , TableKeySets
+  , AnnTableKeySets
+  , TableReadSets
+  , AnnTableReadSets
   , TableStuff (..)
   , TickedTableStuff (..)
   , emptyAppliedMK
@@ -213,6 +216,26 @@ class ( -- Requirements on the ledger state itself
     -> LedgerResult l (Ticked1 l EmptyMK)
 
 
+  -- | Given a block, get the key-sets that we need to apply it to a ledger
+  -- state.
+  --
+  -- TODO: we assume this function will be implemented in terms of
+  -- 'getTickKeySets'. Thus, the resulting keys set will contain the keys that
+  -- the ledger needs to tick to the slot of a given block.
+  --
+  -- TODO: this might not be the best place to define this function. Maybe we
+  -- want to make the on-disk ledger state storage concern orthogonal to the
+  -- ledger state transformation concern.
+  getBlockKeySets :: blk -> TableKeySets l
+
+  -- | We won't use this in the first iteration.
+  --
+  -- TODO: should we check in property tests that the result 'getTickKeySets' is a
+  -- subset of what 'getBlockKeySets' return?
+  ---
+  getTickKeySets :: SlotNo -> l EmptyMK  -> TableKeySets l
+
+
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
@@ -236,6 +259,8 @@ class ShowLedgerState (LedgerTables l) => TableStuff (l :: LedgerStateKind) wher
   -- 'Ouroboros.Consensus.HardFork.Combinator.Basics.HardForkBlock' ledger, the
   -- tables argument should not contain any data from eras that succeed the
   -- current era of the ledger state argument.
+  --
+  -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
   withLedgerTables :: HasCallStack => l any -> LedgerTables l mk -> l mk
 
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
@@ -244,6 +269,8 @@ class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
   forgetTickedLedgerStateTracking :: Ticked1 l TrackingMK -> Ticked1 l ValuesMK
 
   withLedgerTablesTicked :: HasCallStack => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
+
+  trackingTablesToDiffs :: l TrackingMK -> l DiffMK
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l EmptyMK -> Ticked1 l EmptyMK
@@ -255,7 +282,14 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 type LedgerStateKind = MapKind -> Type
 
-data MapKind = EmptyMK | KeysMK | ValuesMK | TrackingMK | DiffMK {- | AnnMK Type MapKind -}
+data MapKind = EmptyMK
+             | KeysMK
+             | ValuesMK
+             | TrackingMK
+             | DiffMK
+             -- | SnapshotsMK
+             --  TODO: we won't use snapshots in the first iteration.
+             | AnnMK Type MapKind
 
 data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyEmptyMK    ::                                 ApplyMapKind EmptyMK      k v
@@ -288,6 +322,7 @@ mapValuesAppliedMK f = \case
   ApplyValuesMK vs -> ApplyValuesMK (f <$> vs)
   ApplyTrackingMK  -> ApplyTrackingMK
   ApplyDiffMK      -> ApplyDiffMK
+
 
 instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
   ApplyEmptyMK    == _               = True
@@ -371,3 +406,9 @@ class InMemory (l :: LedgerStateKind) where
   -- This function is useful to combine functions that operate on functions that
   -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
   convertMapKind :: l mk -> l mk'
+
+type AnnTableKeySets l a = LedgerTables l (AnnMK a KeysMK)
+
+type TableReadSets l = LedgerTables l ValuesMK
+
+type AnnTableReadSets l a = LedgerTables l (AnnMK a ValuesMK)

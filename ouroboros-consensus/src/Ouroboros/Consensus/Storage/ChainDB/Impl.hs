@@ -139,10 +139,14 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
               immutableDbTipPoint
               (contramap TraceLedgerReplayEvent tracer)
       traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
+      -- At this point the LgrDB.changelogLock is not created, so the ledger DB
+      -- initialization from disk can flush freely.
       (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immutableDB
                             (Query.getAnyKnownBlock immutableDB volatileDB)
+      -- At this point have an initialized LgrDB.changelogLock that is ready to be
+      -- acquired.
       traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
       varInvalid      <- newTVarIO (WithFingerprint Map.empty (Fingerprint 0))
