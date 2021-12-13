@@ -333,6 +333,7 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadCatch
            , MonadMask
            , MonadMonotonicTime
+           , MonadTimeOnlyForTracer
            , MonadTime
            , MonadThread
            , MonadFork
