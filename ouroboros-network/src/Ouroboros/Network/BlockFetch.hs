@@ -126,6 +126,8 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
                    , bracketFetchClient, bracketKeepAliveClient
                    , bracketSyncWithFetchClient, setFetchClientContext )
 
+import           Ouroboros.Network.Tracers.OnlyForTracer (OnlyForTracer)
+
 
 -- | The consensus layer functionality that the block fetch logic requires.
 --
@@ -224,14 +226,14 @@ data BlockFetchConsensusInterface peer header block m =
        -- and consider its meaning at each call to this function. Relatedly,
        -- preserve that argument wrapper as much as possible when deriving
        -- ancillary functions\/interfaces from this function.
-       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime,
+       headerForgeUTCTime :: FromConsensus header -> STM m (OnlyForTracer UTCTime),
 
        -- | Calculate when a block was forged.
        --
        -- PRECONDITION: Same as 'headerForgeUTCTime'.
        --
        -- WARNING: Same as 'headerForgeUTCTime'.
-       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
+       blockForgeUTCTime  :: FromConsensus block -> STM m (OnlyForTracer UTCTime)
      }
 
 -- | Configuration for FetchDecisionPolicy.

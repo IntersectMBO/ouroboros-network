@@ -29,6 +29,7 @@ module Ouroboros.Network.BlockFetch.ClientState (
     FromConsensus(..),
   ) where
 
+import           Data.Functor ((<&>))
 import           Data.List (foldl')
 import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
@@ -54,6 +55,8 @@ import           Ouroboros.Network.BlockFetch.DeltaQ
                    , calculatePeerFetchInFlightLimits
                    , SizeInBytes, PeerGSV )
 import           Ouroboros.Network.Point (withOriginToMaybe)
+import           Ouroboros.Network.Tracers.OnlyForTracer (OnlyForTracer)
+import qualified Ouroboros.Network.Tracers.OnlyForTracer as OnlyForTracer
 
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.
@@ -74,7 +77,7 @@ data FetchClientPolicy header block m =
        blockFetchSize     :: header -> SizeInBytes,
        blockMatchesHeader :: header -> block -> Bool,
        addFetchedBlock    :: Point block -> block -> m (),
-       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
+       blockForgeUTCTime  :: FromConsensus block -> STM m (OnlyForTracer UTCTime)
      }
 
 -- | A set of variables shared between the block fetch logic thread and each
@@ -533,11 +536,11 @@ completeBlockDownload :: (MonadSTM m, HasHeader header)
                       -> (header -> SizeInBytes)
                       -> PeerFetchInFlightLimits
                       -> header
-                      -> NominalDiffTime
+                      -> OnlyForTracer NominalDiffTime
                       -> FetchClientStateVars m header
                       -> m ()
 
-completeBlockDownload tracer blockFetchSize inflightlimits header blockDelay
+completeBlockDownload tracer blockFetchSize inflightlimits header oftBlockDelay
                       FetchClientStateVars {
                         fetchClientInFlightVar,
                         fetchClientStatusVar
@@ -558,7 +561,7 @@ completeBlockDownload tracer blockFetchSize inflightlimits header blockDelay
 
       return (inflight', currentStatus')
 
-    traceWith tracer $
+    OnlyForTracer.traceWith tracer $ oftBlockDelay <&> \blockDelay ->
       CompletedBlockFetch
         (blockPoint header)
         inflight' inflightlimits
