@@ -41,7 +41,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
   Additional node configuration
 -------------------------------------------------------------------------------}
 
-data instance BlockConfig (ShelleyBlock era) = ShelleyConfig {
+data instance BlockConfig (ShelleyBlock proto era) = ShelleyConfig {
       -- | The highest protocol version this node supports. It will be stored
       -- the headers of produced blocks.
       shelleyProtocolVersion  :: !SL.ProtVer
@@ -59,15 +59,15 @@ data instance BlockConfig (ShelleyBlock era) = ShelleyConfig {
     }
   deriving stock (Generic)
 
-deriving instance ShelleyBasedEra era => Show     (BlockConfig (ShelleyBlock era))
-deriving instance ShelleyBasedEra era => NoThunks (BlockConfig (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => Show     (BlockConfig (ShelleyBlock proto era))
+deriving instance ShelleyBasedEra era => NoThunks (BlockConfig (ShelleyBlock proto era))
 
 mkShelleyBlockConfig ::
      ShelleyBasedEra era
   => SL.ProtVer
   -> SL.ShelleyGenesis era
   -> [SL.VKey 'SL.BlockIssuer (EraCrypto era)]
-  -> BlockConfig (ShelleyBlock era)
+  -> BlockConfig (ShelleyBlock proto era)
 mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
       shelleyProtocolVersion  = protVer
     , shelleySystemStart      = SystemStart  $ SL.sgSystemStart  genesis
@@ -83,14 +83,14 @@ mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
 -------------------------------------------------------------------------------}
 
 -- | No particular codec configuration is needed for Shelley
-data instance CodecConfig (ShelleyBlock era) = ShelleyCodecConfig
+data instance CodecConfig (ShelleyBlock proto era) = ShelleyCodecConfig
   deriving (Generic, NoThunks)
 
 {-------------------------------------------------------------------------------
   Storage config
 -------------------------------------------------------------------------------}
 
-data instance StorageConfig (ShelleyBlock era) = ShelleyStorageConfig {
+data instance StorageConfig (ShelleyBlock proto era) = ShelleyStorageConfig {
       -- | Needed for 'nodeCheckIntegrity'
       shelleyStorageConfigSlotsPerKESPeriod :: !Word64
       -- | Needed for 'nodeImmutableDbChunkInfo'

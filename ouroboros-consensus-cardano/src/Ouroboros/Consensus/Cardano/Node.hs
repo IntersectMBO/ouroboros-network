@@ -522,7 +522,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           initialNonceShelley
           genesisShelley
 
-    blockConfigShelley :: BlockConfig (ShelleyBlock (ShelleyEra c))
+    blockConfigShelley :: BlockConfig (ShelleyBlock (TPraos c) (ShelleyEra c))
     blockConfigShelley =
         Shelley.mkShelleyBlockConfig
           protVerShelley
@@ -530,10 +530,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           (tpraosBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigShelley ::
-         PartialConsensusConfig (BlockProtocol (ShelleyBlock (ShelleyEra c)))
+         PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (ShelleyEra c)))
     partialConsensusConfigShelley = tpraosParams
 
-    partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (ShelleyEra c))
+    partialLedgerConfigShelley :: PartialLedgerConfig (ShelleyBlock (TPraos c) (ShelleyEra c))
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
           genesisShelley
@@ -557,10 +557,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           (tpraosBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAllegra ::
-         PartialConsensusConfig (BlockProtocol (ShelleyBlock (AllegraEra c)))
+         PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (AllegraEra c)))
     partialConsensusConfigAllegra = tpraosParams
 
-    partialLedgerConfigAllegra :: PartialLedgerConfig (ShelleyBlock (AllegraEra c))
+    partialLedgerConfigAllegra :: PartialLedgerConfig (ShelleyBlock (TPraos c) (AllegraEra c))
     partialLedgerConfigAllegra =
         mkPartialLedgerConfigShelley
           genesisAllegra
@@ -694,8 +694,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
-          => LedgerState (ShelleyBlock era)
-          -> LedgerState (ShelleyBlock era)
+          => LedgerState (ShelleyBlock proto era)
+          -> LedgerState (ShelleyBlock proto era)
         register st = st {
               Shelley.shelleyLedgerState =
                 -- We must first register the initial funds, because the stake
@@ -796,7 +796,7 @@ mkPartialLedgerConfigShelley ::
   -> Core.TranslationContext era
   -> MaxMajorProtVer
   -> TriggerHardFork
-  -> PartialLedgerConfig (ShelleyBlock era)
+  -> PartialLedgerConfig (ShelleyBlock proto era)
 mkPartialLedgerConfigShelley
   genesisShelley
   transCtxt

@@ -53,7 +53,13 @@ import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
 import qualified Cardano.Protocol.TPraos.API as SL
-import           Ouroboros.Consensus.Protocol.TPraos
+import qualified Ouroboros.Consensus.Forecast as Forecast
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol, ledgerViewForecastAt)
+import           Ouroboros.Consensus.Protocol.Praos
+import           Ouroboros.Consensus.Protocol.TPraos hiding (PraosCrypto)
+import           Ouroboros.Consensus.Protocol.Translate (TranslateProto)
+import qualified Ouroboros.Consensus.Protocol.Translate as Proto
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
@@ -64,18 +70,20 @@ import           Ouroboros.Consensus.Shelley.Node ()
 -------------------------------------------------------------------------------}
 
 -- | Shelley as the single era in the hard fork combinator
-type ShelleyBlockHFC era = HardForkBlock '[ShelleyBlock era]
+type ShelleyBlockHFC proto era = HardForkBlock '[ShelleyBlock proto era]
 
 {-------------------------------------------------------------------------------
   NoHardForks instance
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
+instance
+  ( ShelleyCompatible proto era
+  , LedgerSupportsProtocol (ShelleyBlock proto era)
+  ) => NoHardForks (ShelleyBlock proto era) where
   getEraParams =
         shelleyEraParamsNeverHardForks
       . shelleyLedgerGenesis
       . configLedger
-  toPartialConsensusConfig _  = tpraosParams
   toPartialLedgerConfig _ cfg = ShelleyPartialLedgerConfig {
         shelleyLedgerConfig    = cfg
       , shelleyTriggerHardFork = TriggerHardForkNever
@@ -88,15 +96,15 @@ instance ShelleyBasedEra era => NoHardForks (ShelleyBlock era) where
 -- | Forward to the ShelleyBlock instance. Only supports
 -- 'HardForkNodeToNodeDisabled', which is compatible with nodes running with
 -- 'ShelleyBlock'.
-instance ShelleyBasedEra era
-      => SupportedNetworkProtocolVersion (ShelleyBlockHFC era) where
+instance (ShelleyCompatible proto era, LedgerSupportsProtocol (ShelleyBlock proto era))
+      => SupportedNetworkProtocolVersion (ShelleyBlockHFC proto era) where
   supportedNodeToNodeVersions _ =
       Map.map HardForkNodeToNodeDisabled $
-      supportedNodeToNodeVersions (Proxy @(ShelleyBlock era))
+      supportedNodeToNodeVersions (Proxy @(ShelleyBlock proto era))
 
   supportedNodeToClientVersions _ =
       Map.map HardForkNodeToClientDisabled $
-      supportedNodeToClientVersions (Proxy @(ShelleyBlock era))
+      supportedNodeToClientVersions (Proxy @(ShelleyBlock proto era))
 
   latestReleasedNodeVersion = latestReleasedNodeVersionDefault
 
@@ -107,24 +115,26 @@ instance ShelleyBasedEra era
 -- | Use the default implementations. This means the serialisation of blocks
 -- includes an era wrapper. Each block should do this from the start to be
 -- prepared for future hard forks without having to do any bit twiddling.
-instance ShelleyBasedEra era => SerialiseHFC '[ShelleyBlock era]
-instance ShelleyBasedEra era => SerialiseConstraintsHFC (ShelleyBlock era)
+instance (ShelleyCompatible proto era, LedgerSupportsProtocol (ShelleyBlock proto era))
+ => SerialiseHFC '[ShelleyBlock proto era]
+instance (ShelleyCompatible proto era, LedgerSupportsProtocol (ShelleyBlock proto era))
+  => SerialiseConstraintsHFC (ShelleyBlock proto era)
 
 {-------------------------------------------------------------------------------
   Protocol type definition
 -------------------------------------------------------------------------------}
 
-type ProtocolShelley = HardForkProtocol '[ ShelleyBlock StandardShelley ]
+type ProtocolShelley = HardForkProtocol '[ ShelleyBlock (TPraos StandardCrypto) StandardShelley ]
 
 {-------------------------------------------------------------------------------
   SingleEraBlock Shelley
 -------------------------------------------------------------------------------}
 
 shelleyTransition ::
-     forall era. ShelleyBasedEra era
-  => PartialLedgerConfig (ShelleyBlock era)
+     forall era proto. ShelleyCompatible proto era
+  => PartialLedgerConfig (ShelleyBlock proto era)
   -> Word16   -- ^ Next era's major protocol version
-  -> LedgerState (ShelleyBlock era)
+  -> LedgerState (ShelleyBlock proto era)
   -> Maybe EpochNo
 shelleyTransition ShelleyPartialLedgerConfig{..}
                   transitionMajorVersion
@@ -162,7 +172,10 @@ shelleyTransition ShelleyPartialLedgerConfig{..}
     takeAny :: [a] -> Maybe a
     takeAny = listToMaybe
 
-instance ShelleyBasedEra era => SingleEraBlock (ShelleyBlock era) where
+instance
+  ( ShelleyCompatible proto era,
+    LedgerSupportsProtocol (ShelleyBlock proto era)
+  ) => SingleEraBlock (ShelleyBlock proto era) where
   singleEraTransition pcfg _eraParams _eraStart ledgerState =
       case shelleyTriggerHardFork pcfg of
         TriggerHardForkNever                         -> Nothing
@@ -177,10 +190,19 @@ instance ShelleyBasedEra era => SingleEraBlock (ShelleyBlock era) where
       singleEraName = shelleyBasedEraName (Proxy @era)
     }
 
-instance PraosCrypto c => HasPartialConsensusConfig (TPraos c) where
+instance PraosCrypto c => HasPartialConsensusConfig (Praos c) where
+  type PartialConsensusConfig (Praos c) = PraosParams
+
+  completeConsensusConfig _ praosEpochInfo praosParams = PraosConfig {..}
+
+  toPartialConsensusConfig _ = praosParams
+
+instance SL.PraosCrypto c => HasPartialConsensusConfig (TPraos c) where
   type PartialConsensusConfig (TPraos c) = TPraosParams
 
   completeConsensusConfig _ tpraosEpochInfo tpraosParams = TPraosConfig {..}
+
+  toPartialConsensusConfig _ = tpraosParams
 
 data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
       -- | We cache the non-partial ledger config containing a dummy
@@ -195,8 +217,8 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
     }
   deriving (Generic, NoThunks)
 
-instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
-  type PartialLedgerConfig (ShelleyBlock era) = ShelleyPartialLedgerConfig era
+instance ShelleyCompatible proto era => HasPartialLedgerConfig (ShelleyBlock proto era) where
+  type PartialLedgerConfig (ShelleyBlock proto era) = ShelleyPartialLedgerConfig era
 
   -- Replace the dummy 'EpochInfo' with the real one
   completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
@@ -211,16 +233,16 @@ instance ShelleyBasedEra era => HasPartialLedgerConfig (ShelleyBlock era) where
 
 -- | Forecast from a Shelley-based era to the next Shelley-based era.
 forecastAcrossShelley ::
-     forall eraFrom eraTo.
-     ( EraCrypto eraFrom ~ EraCrypto eraTo
-     , ShelleyBasedEra eraFrom
+     forall protoFrom protoTo eraFrom eraTo.
+     ( TranslateProto protoFrom protoTo
+     , LedgerSupportsProtocol (ShelleyBlock protoFrom eraFrom)
      )
   => ShelleyLedgerConfig eraFrom
   -> ShelleyLedgerConfig eraTo
   -> Bound  -- ^ Transition between the two eras
   -> SlotNo -- ^ Forecast for this slot
-  -> LedgerState (ShelleyBlock eraFrom)
-  -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock eraTo)))
+  -> LedgerState (ShelleyBlock protoFrom eraFrom)
+  -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock protoTo eraTo)))
 forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
     | forecastFor < maxFor
     = return $ futureLedgerView forecastFor
@@ -233,16 +255,14 @@ forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
   where
     -- | 'SL.futureLedgerView' imposes its own bounds. Those bounds could
     -- /exceed/ the 'maxFor' we have computed, but should never be /less/.
-    futureLedgerView :: SlotNo -> Ticked (WrapLedgerView (ShelleyBlock eraTo))
+    futureLedgerView :: SlotNo -> Ticked (WrapLedgerView (ShelleyBlock protoTo era))
     futureLedgerView =
           WrapTickedLedgerView
-        . TickedPraosLedgerView
         . either
             (\e -> error ("futureLedgerView failed: " <> show e))
-            id
-        . SL.futureLedgerView
-            (shelleyLedgerGlobals cfgFrom)
-            (shelleyLedgerState ledgerStateFrom)
+            (Proto.translateTickedLedgerView @protoFrom @protoTo)
+        . runExcept
+        . Forecast.forecastFor (ledgerViewForecastAt cfgFrom ledgerStateFrom)
 
     -- Exclusive upper bound
     maxFor :: SlotNo
@@ -253,31 +273,32 @@ forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
                (SL.stabilityWindow (shelleyLedgerGlobals cfgTo))
 
 translateChainDepStateAcrossShelley ::
-     forall eraFrom eraTo.
-     EraCrypto eraFrom ~ EraCrypto eraTo
+     forall eraFrom eraTo protoFrom protoTo.
+     ( TranslateProto protoFrom protoTo
+     )
   => RequiringBoth
        WrapConsensusConfig
        (Translate WrapChainDepState)
-       (ShelleyBlock eraFrom)
-       (ShelleyBlock eraTo)
+       (ShelleyBlock protoFrom eraFrom)
+       (ShelleyBlock protoTo eraTo)
 translateChainDepStateAcrossShelley =
     ignoringBoth $
       Translate $ \_epochNo (WrapChainDepState chainDepState) ->
         -- Same protocol, same 'ChainDepState'. Note that we don't have to apply
         -- any changes related to an epoch transition, this is already done when
         -- ticking the state.
-        WrapChainDepState chainDepState
+        WrapChainDepState $ Proto.translateChainDepState @protoFrom @protoTo chainDepState
 
 translateLedgerViewAcrossShelley ::
-     forall eraFrom eraTo.
-     ( EraCrypto eraFrom ~ EraCrypto eraTo
-     , ShelleyBasedEra eraFrom
+     forall eraFrom eraTo protoFrom protoTo.
+     ( TranslateProto protoFrom protoTo
+     , LedgerSupportsProtocol (ShelleyBlock protoFrom eraFrom)
      )
   => RequiringBoth
        WrapLedgerConfig
        (TranslateForecast LedgerState WrapLedgerView)
-       (ShelleyBlock eraFrom)
-       (ShelleyBlock eraTo)
+       (ShelleyBlock protoFrom eraFrom)
+       (ShelleyBlock protoTo eraTo)
 translateLedgerViewAcrossShelley =
     RequireBoth $ \(WrapLedgerConfig cfgFrom)
                    (WrapLedgerConfig cfgTo) ->
@@ -290,15 +311,15 @@ translateLedgerViewAcrossShelley =
 instance ( ShelleyBasedEra era
          , ShelleyBasedEra (SL.PreviousEra era)
          , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
-         ) => SL.TranslateEra era ShelleyTip where
+         ) => SL.TranslateEra era (ShelleyTip proto) where
   translateEra _ (ShelleyTip sno bno (ShelleyHash hash)) =
       return $ ShelleyTip sno bno (ShelleyHash hash)
 
 instance ( ShelleyBasedEra era
-         , SL.TranslateEra era ShelleyTip
+         , SL.TranslateEra era (ShelleyTip proto)
          , SL.TranslateEra era SL.NewEpochState
          , SL.TranslationError era SL.NewEpochState ~ Void
-         ) => SL.TranslateEra era (LedgerState :.: ShelleyBlock) where
+         ) => SL.TranslateEra era (LedgerState :.: ShelleyBlock proto) where
   translateEra ctxt (Comp (ShelleyLedgerState tip state _transition)) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state
@@ -310,16 +331,16 @@ instance ( ShelleyBasedEra era
 
 instance ( ShelleyBasedEra era
          , SL.TranslateEra era WrapTx
-         ) => SL.TranslateEra era (GenTx :.: ShelleyBlock) where
-  type TranslationError era (GenTx :.: ShelleyBlock) = SL.TranslationError era WrapTx
+         ) => SL.TranslateEra era (GenTx :.: ShelleyBlock proto) where
+  type TranslationError era (GenTx :.: ShelleyBlock proto) = SL.TranslationError era WrapTx
   translateEra ctxt (Comp (ShelleyTx _txId tx)) =
         Comp . mkShelleyTx . unwrapTx @era
     <$> SL.translateEra ctxt (WrapTx @(SL.PreviousEra era) tx)
 
 instance ( ShelleyBasedEra era
          , SL.TranslateEra era WrapTx
-         ) => SL.TranslateEra era (WrapValidatedGenTx :.: ShelleyBlock) where
-  type TranslationError era (WrapValidatedGenTx :.: ShelleyBlock) = SL.TranslationError era WrapTx
+         ) => SL.TranslateEra era (WrapValidatedGenTx :.: ShelleyBlock proto) where
+  type TranslationError era (WrapValidatedGenTx :.: ShelleyBlock proto) = SL.TranslationError era WrapTx
   translateEra ctxt (Comp (WrapValidatedGenTx (ShelleyValidatedTx _txId vtx))) =
         Comp . WrapValidatedGenTx
       . mkShelleyValidatedTx . SL.coerceValidated

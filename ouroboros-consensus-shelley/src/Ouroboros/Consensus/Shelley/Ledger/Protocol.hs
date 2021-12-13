@@ -2,52 +2,49 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-
 module Ouroboros.Consensus.Shelley.Ledger.Protocol () where
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
-import           Cardano.Crypto.VRF (certifiedOutput)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Signed
 
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Protocol.TPraos.BHeader as SL
-import qualified Cardano.Protocol.TPraos.OCert as SL
 
-import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract
+                     (ShelleyProtocolHeader, pHeaderIssueNo, pHeaderIssuer,
+                     pHeaderVRFValue, protocolHeaderView)
 
 {-------------------------------------------------------------------------------
   Support for Transitional Praos consensus algorithm
 -------------------------------------------------------------------------------}
 
-type instance BlockProtocol (ShelleyBlock era) = TPraos (EraCrypto era)
+type instance BlockProtocol (ShelleyBlock proto era) = proto
 
-instance (SL.PraosCrypto (EraCrypto era), ShelleyBasedEra era)
-  => BlockSupportsProtocol (ShelleyBlock era) where
-  validateView _cfg (ShelleyHeader hdr _) = hdr
+instance ShelleyCompatible proto era => BlockSupportsProtocol (ShelleyBlock proto era) where
+  validateView _cfg = protocolHeaderView @proto . shelleyHeaderRaw
 
   selectView cfg hdr@(ShelleyHeader shdr _) = PraosChainSelectView {
         csvChainLength = blockNo hdr
       , csvSlotNo      = blockSlot hdr
       , csvSelfIssued  = selfIssued
-      , csvIssuer      = SL.bheaderVk hdrBody
-      , csvIssueNo     = SL.ocertN . SL.bheaderOCert $ hdrBody
-      , csvLeaderVRF   = certifiedOutput . SL.bheaderL $ hdrBody
+      , csvIssuer      = hdrIssuer
+      , csvIssueNo     = pHeaderIssueNo shdr
+      , csvLeaderVRF   = pHeaderVRFValue shdr
       }
     where
-      hdrBody :: SL.BHBody (EraCrypto era)
-      hdrBody = SL.bhbody shdr
+      hdrIssuer ::  SL.VKey 'SL.BlockIssuer (EraCrypto era)
+      hdrIssuer = pHeaderIssuer shdr
 
       issuerVKeys :: Map (SL.KeyHash 'SL.BlockIssuer (EraCrypto era))
                          (SL.VKey 'SL.BlockIssuer (EraCrypto era))
@@ -78,20 +75,23 @@ instance (SL.PraosCrypto (EraCrypto era), ShelleyBasedEra era)
           -- A block producing node with a single set of credentials: just do an
           -- equality check of the single VKey, skipping the more expensive
           -- computation of the hash.
-          1 | SL.bheaderVk hdrBody `elem` issuerVKeys
+          1 | hdrIssuer `elem` issuerVKeys
             -> SelfIssued
             | otherwise
             -> NotSelfIssued
           -- When we are running with multiple sets of credentials, which should
           -- only happen when benchmarking, do a hash lookup, as the number of
           -- keys can grow to 100-250.
-          _ | SL.hashKey (SL.bheaderVk hdrBody) `Map.member` issuerVKeys
+          _ | SL.hashKey hdrIssuer `Map.member` issuerVKeys
             -> SelfIssued
             | otherwise
             -> NotSelfIssued
 
 -- TODO correct place for these two?
-type instance Signed (Header (ShelleyBlock era)) = SL.BHBody (EraCrypto era)
+type instance Signed (Header (ShelleyBlock proto era)) =
+  Signed (ShelleyProtocolHeader proto)
 
-instance ShelleyBasedEra era => SignedHeader (Header (ShelleyBlock era)) where
-  headerSigned = SL.bhbody . shelleyHeaderRaw
+instance SignedHeader (ShelleyProtocolHeader proto) =>
+  SignedHeader (Header (ShelleyBlock proto era))
+  where
+  headerSigned = headerSigned . shelleyHeaderRaw

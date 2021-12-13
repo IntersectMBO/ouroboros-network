@@ -66,11 +66,12 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Rules.Ledger as SL
 import qualified Cardano.Ledger.Shelley.Rules.Utxow as SL
 import           Cardano.Ledger.ShelleyMA ()
+import qualified Cardano.Protocol.TPraos.API as SL
+
 import           Control.State.Transition (State)
 
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (DSignable, Hash)
-import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
 
@@ -124,9 +125,6 @@ type EraCrypto era = Crypto era
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
 class ( SL.ShelleyBasedEra era
 
-        -- Constraints that relate to the protocol. These should be dropped once
-        -- the protocol is independent of the ledger.
-      , SL.PraosCrypto (EraCrypto era)
       , SL.GetLedgerView era
 
       , State (Core.EraRule "PPUP" era) ~ SL.PPUPState era

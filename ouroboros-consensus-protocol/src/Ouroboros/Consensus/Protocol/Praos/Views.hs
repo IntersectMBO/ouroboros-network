@@ -13,12 +13,8 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import           Cardano.Protocol.TPraos.BHeader (PrevHash)
 import           Cardano.Protocol.TPraos.OCert (OCert)
 import           Cardano.Slotting.Slot (SlotNo)
-<<<<<<< HEAD
-import           Data.ByteString (ByteString)
-=======
 import           Numeric.Natural (Natural)
 import           Ouroboros.Consensus.Protocol.Praos.Header (HeaderBody)
->>>>>>> 82af5c751 (fixup! Implement Praos Protocol.)
 import           Ouroboros.Consensus.Protocol.Praos.VRF (UnifiedVRF)
 
 -- | View of the block header required by the Praos protocol.
@@ -48,4 +44,5 @@ data LedgerView crypto = LedgerView
     lvMaxHeaderSize :: !Natural,
     -- | Maximum block body size
     lvMaxBodySize   :: !Natural
-  } deriving Show
+  }
+  deriving (Show)
