@@ -35,7 +35,6 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy
 import qualified Data.Text as Text
-import           Data.Time.Clock (UTCTime)
 import           GHC.Stack (HasCallStack)
 import           System.Random (StdGen)
 
@@ -47,7 +46,6 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
-import qualified Ouroboros.Network.Tracers.OnlyForTracer as OnlyForTracer
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
@@ -61,8 +59,6 @@ import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Config.SupportsNode as SupportsNode
 import           Ouroboros.Consensus.Forecast
-import qualified Ouroboros.Consensus.HardFork.Abstract as History
-import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -217,14 +213,14 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
     let getCandidates :: STM m (Map remotePeer (AnchoredFragment (Header blk)))
         getCandidates = readTVar varCandidates >>= traverse readTVar
 
-    blockFetchInterface <-
-      initBlockFetchConsensusInterface
-        cfg
-        chainDB
-        getCandidates
-        blockFetchSize
-        btime
-    let _ = blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
+        blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
+        blockFetchInterface =
+          initBlockFetchConsensusInterface
+            cfg
+            chainDB
+            getCandidates
+            blockFetchSize
+            btime
 
     return IS {..}
 
@@ -233,68 +229,21 @@ initBlockFetchConsensusInterface
        ( IOLike m
        , BlockSupportsProtocol blk
        , SupportsNode.ConfigSupportsNode blk
-       , History.HasHardForkHistory blk
-       , IsLedger (LedgerState blk)
        )
     => TopLevelConfig blk
     -> ChainDB m blk
     -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> BlockchainTime m
-    -> m (BlockFetchConsensusInterface peer (Header blk) blk m)
-initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime = do
-    cache <-
-      History.runWithCachedSummary
-        (toSummary <$> ChainDB.getCurrentLedger chainDB)
-    let slotToUTCTime rp =
-              fmap
-                (OnlyForTracer.pure . either errMsg toAbsolute)
-            $ History.cachedRunQuery
-                cache
-                (fst <$> History.slotToWallclock (realPointSlot rp))
-          where
-            -- This @cachedRunQuery@ fail for the following reasons.
-            --
-            -- By the PRECONDITIONs documented in the 'headerForgeUTCTime', we
-            -- can assume that the given header was validated by the ChainSync
-            -- client. This means its slot was, at some point, within the ledger
-            -- view forecast range of the ledger state of our contemporary
-            -- intersection with the header itself (and that intersection
-            -- extended our contemporary immutable tip). A few additional facts
-            -- ensure that we will always be able to thereafter correctly
-            -- convert that header's slot using our current chain's ledger
-            -- state.
-            --
-            --   o For under-developed reasons, the ledger view forecast range
-            --     is equivalent to the time forecast range, ie " Definition
-            --     17.2 (Forecast range) " from The Consensus Report.
-            --
-            --   o Because rollback is bounded, our currently selected chain
-            --     will always be an evolution (ie " switch(n, bs) ") of that
-            --     intersection point. (This one is somewhat obvious in
-            --     retrospect, but we're being explicit here in order to
-            --     emphasize the relation to the " chain evolution " jargon.)
-            --
-            --   o Because " stability itself is stable ", the HFC satisfies "
-            --     Property 17.3 (Time conversions stable under chain evolution)
-            --     " from The Consensus Report.
-            errMsg err =
-              error $
-                 "Consensus could not determine forge UTCTime!"
-              <> " " <> show rp
-              <> " " <> show err
-        headerForgeUTCTime = slotToUTCTime . headerRealPoint . unFromConsensus
-        blockForgeUTCTime  = slotToUTCTime . blockRealPoint  . unFromConsensus
-    pure BlockFetchConsensusInterface {..}
+    -> BlockFetchConsensusInterface peer (Header blk) blk m
+initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime =
+    BlockFetchConsensusInterface {..}
   where
-    toSummary ::
-         ExtLedgerState blk
-      -> History.Summary (History.HardForkIndices blk)
-    toSummary = History.hardForkSummary (configLedger cfg) . ledgerState
-
-    toAbsolute :: RelativeTime -> UTCTime
-    toAbsolute =
-        fromRelativeTime (SupportsNode.getSystemStart (configBlock cfg))
+    blockForgeUTCTime      = headerForgeUTCTime . fmap getHeader
+    headerForgeUTCTime hdr =
+          fmap
+            (fromRelativeTime (SupportsNode.getSystemStart (configBlock cfg)))
+      <$> ChainDB.calculateHeaderSlotTime chainDB hdr
 
     bcfg :: BlockConfig blk
     bcfg = configBlock cfg
