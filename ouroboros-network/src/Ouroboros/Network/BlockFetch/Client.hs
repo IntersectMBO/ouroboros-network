@@ -294,7 +294,7 @@ blockFetchClient _version controlMessageSTM reportFetched
             addFetchedBlock (castPoint (blockPoint header)) block
 
             forgeTime <- atomically $ blockForgeUTCTime $ FromConsensus block
-            let blockDelay = diffUTCTime now forgeTime
+            let blockDelay = diffUTCTime now <$> forgeTime
 
             let hf = getHeaderFields header
                 slotNo = headerFieldSlot hf

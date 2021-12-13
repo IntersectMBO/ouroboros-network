@@ -47,6 +47,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import qualified Ouroboros.Network.Tracers.OnlyForTracer as OnlyForTracer
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
@@ -247,7 +248,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
         (toSummary <$> ChainDB.getCurrentLedger chainDB)
     let slotToUTCTime rp =
               fmap
-                (either errMsg toAbsolute)
+                (OnlyForTracer.pure . either errMsg toAbsolute)
             $ History.cachedRunQuery
                 cache
                 (fst <$> History.slotToWallclock (realPointSlot rp))

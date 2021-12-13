@@ -66,6 +66,8 @@ import qualified Ouroboros.Network.MockChain.Chain as C
 import           Ouroboros.Network.Point (withOrigin)
 import           Ouroboros.Network.Util.ShowProxy
 
+import qualified Ouroboros.Network.Tracers.OnlyForTracer as OnlyForTracer
+
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer
 
@@ -361,8 +363,10 @@ instance Serialise BlockBody where
 -- It is only intended for use in tests. Notably it assumes a fixed system
 -- start time, slot length, and the absence of a hard fork (ie no
 -- HardForkCombinator). This is how it's available as a pure function.
-convertSlotToTimeForTestsAssumingNoHardFork :: SlotNo -> UTCTime
+convertSlotToTimeForTestsAssumingNoHardFork ::
+  SlotNo -> OnlyForTracer.OnlyForTracer UTCTime
 convertSlotToTimeForTestsAssumingNoHardFork sl =
+    OnlyForTracer.pure $
     flip addUTCTime startTime $
       --   ^^^ arbitrary start time for testing
     secondsToNominalDiffTime $

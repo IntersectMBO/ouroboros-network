@@ -39,6 +39,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 import           Ouroboros.Network.Block
 
+import           Ouroboros.Network.Tracers.OnlyForTracer (OnlyForTracer)
+
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.Mux (ControlMessageSTM)
@@ -262,7 +264,7 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
 --
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
-                        => (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
+                        => (forall x. HasHeader x => FromConsensus x -> STM m (OnlyForTracer UTCTime))
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
