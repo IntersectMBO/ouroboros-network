@@ -67,11 +67,16 @@ import           Control.Monad (void)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
+import           Cardano.Slotting.Time (RelativeTime)
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo,
                      Serialised (..))
 import qualified Ouroboros.Network.Block as Network
+import           Ouroboros.Network.BlockFetch (FromConsensus)
+
+import           Ouroboros.Network.Tracers.OnlyForTracer (OnlyForTracer)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderStateHistory
@@ -316,6 +321,13 @@ data ChainDB m blk = ChainDB {
       -- longer detected by this function, the 'Fingerprint' doesn't have to
       -- change, since the function will not detect new invalid blocks.
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
+
+      -- | For a header that satisfies the 'FromConsensus' invariants, we can
+      -- always compute the corresponding slot's 'RelativeTime'. In the absence
+      -- of those invariants, it's possible we cannot translate the header's
+      -- slot to a 'RelativeTime' or can only (silently!) translate it
+      -- _incorrectly_.
+    , calculateHeaderSlotTime :: FromConsensus (Header blk) -> STM m (OnlyForTracer RelativeTime)
 
       -- | Close the ChainDB
       --

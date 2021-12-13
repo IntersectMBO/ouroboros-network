@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , currentPoint
   , getCurrent
   , getDiskPolicy
+  , getRunWithCachedSummary
   , setCurrent
   , takeSnapshot
   , trimSnapshots
@@ -70,6 +71,10 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
+
+import           Ouroboros.Consensus.HardFork.Abstract (HardForkIndices,
+                     HasHardForkHistory, hardForkSummary)
+import qualified Ouroboros.Consensus.HardFork.History as History
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
@@ -119,6 +124,8 @@ data LgrDB m blk = LgrDB {
     , diskPolicy     :: !DiskPolicy
     , hasFS          :: !(SomeHasFS m)
     , tracer         :: !(Tracer m (TraceEvent blk))
+    , hfSummaryCache :: !(History.RunWithCachedSummary (HardForkIndices blk) m)
+      -- ^ INVARIANT: this uses 'cfg' and re-reads 'varDB' on a cache miss
     } deriving (Generic)
 
 deriving instance (IOLike m, LedgerSupportsProtocol blk)
@@ -173,6 +180,7 @@ openDB :: forall m blk.
           , LedgerSupportsProtocol blk
           , LgrDbSerialiseConstraints blk
           , InspectLedger blk
+          , HasHardForkHistory blk
           , HasCallStack
           )
        => LgrDbArgs Identity m blk
@@ -216,6 +224,10 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
     let dbPrunedToImmDBTip = LedgerDB.ledgerDbPrune (SecurityParam 0) db
     (varDB, varPrevApplied) <-
       (,) <$> newTVarIO dbPrunedToImmDBTip <*> newTVarIO Set.empty
+
+    cache <- History.runWithCachedSummary
+               (toSummary lgrTopLevelConfig <$> readTVar varDB)
+
     return (
         LgrDB {
             varDB          = varDB
@@ -225,9 +237,22 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
           , diskPolicy     = lgrDiskPolicy
           , hasFS          = lgrHasFS
           , tracer         = lgrTracer
+          , hfSummaryCache = cache
           }
       , replayed
       )
+
+toSummary ::
+     ( HasHardForkHistory blk
+     , IsLedger (LedgerState blk)
+     )
+  => TopLevelConfig blk
+  -> LedgerDB' blk
+  -> History.Summary (HardForkIndices blk)
+toSummary cfg  =
+    hardForkSummary (configLedger cfg)
+  . ledgerState
+  . LedgerDB.ledgerDbCurrent
 
 initFromDisk
   :: forall blk m.
@@ -265,12 +290,20 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
                               (decodeDisk ccfg)
 
 -- | For testing purposes
-mkLgrDB :: StrictTVar m (LedgerDB' blk)
-        -> StrictTVar m (Set (RealPoint blk))
+mkLgrDB :: ( HasHardForkHistory blk
+           , MonadSTM m
+           , LedgerSupportsProtocol blk
+           )
+        => LedgerDB' blk
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs Identity m blk
-        -> LgrDB m blk
-mkLgrDB varDB varPrevApplied resolveBlock args = LgrDB {..}
+        -> m (LgrDB m blk)
+mkLgrDB genesisLedgerDB resolveBlock args = do
+    varDB          <- newTVarIO genesisLedgerDB
+    varPrevApplied <- newTVarIO mempty
+    hfSummaryCache <-
+      History.runWithCachedSummary (toSummary cfg <$> readTVar varDB)
+    pure LgrDB {..}
   where
     LgrDbArgs {
         lgrTopLevelConfig = cfg
@@ -331,6 +364,11 @@ trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
 
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy = diskPolicy
+
+getRunWithCachedSummary ::
+     LgrDB m blk
+  -> History.RunWithCachedSummary (HardForkIndices blk) m
+getRunWithCachedSummary = hfSummaryCache
 
 {-------------------------------------------------------------------------------
   Validation

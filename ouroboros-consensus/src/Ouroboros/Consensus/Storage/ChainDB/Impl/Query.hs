@@ -10,6 +10,7 @@
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
     -- * Queries
     getBlockComponent
+  , getCalculateHeaderSlotTime
   , getCurrentChain
   , getIsFetched
   , getIsInvalidBlock
@@ -28,9 +29,15 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
+import           Cardano.Slotting.Time (RelativeTime)
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
+import           Ouroboros.Network.BlockFetch (FromConsensus (..))
+
+import           Ouroboros.Network.Tracers.OnlyForTracer (OnlyForTracer)
+import qualified Ouroboros.Network.Tracers.OnlyForTracer as OnlyForTracer
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -38,6 +45,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
+
+import qualified Ouroboros.Consensus.HardFork.History as History
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDbFailure (..), InvalidBlockReason)
@@ -185,6 +194,52 @@ getMaxSlotNo CDB{..} = do
                      <$> readTVar cdbChain
     volatileDbMaxSlotNo    <- VolatileDB.getMaxSlotNo cdbVolatileDB
     return $ curChainMaxSlotNo `max` volatileDbMaxSlotNo
+
+-- | Find the start time of the header's labeled slot
+--
+-- This query cannot fail for the following reasons.
+--
+-- By the PRECONDITIONs documented in the 'FromConsensus', we can assume that
+-- the given header was validated by the ChainSync client (or else forged by the
+-- local node). This means its slot was, at some point, within the ledger view
+-- forecast range of the ledger state of our contemporary intersection with the
+-- header itself (and that intersection extended our contemporary immutable
+-- tip). A few additional facts ensure that we will always be able to thereafter
+-- correctly convert that header's slot using our current chain's ledger state.
+--
+--   o For under-developed reasons, the ledger view forecast range is equivalent
+--     to the time forecast range, ie " Definition 17.2 (Forecast range) " from
+--     The Consensus Report.
+--
+--   o Because rollback is bounded, our currently selected chain will always be
+--     an evolution (ie " switch(n, bs) ") of that intersection point. (This one
+--     is somewhat obvious in retrospect, but we're being explicit here in order
+--     to emphasize the relation to the " chain evolution " jargon.)
+--
+--   o Because " stability itself is stable ", the HFC satisfies " Property 17.3
+--     (Time conversions stable under chain evolution) " from The Consensus
+--     Report.
+getCalculateHeaderSlotTime ::
+     ( HasHeader (Header blk)
+     , MonadSTM m
+     )
+  => ChainDbEnv m blk
+  -> FromConsensus (Header blk)
+  -> STM m (OnlyForTracer RelativeTime)
+getCalculateHeaderSlotTime CDB{..} (FromConsensus hdr) = do
+    let cache = LgrDB.getRunWithCachedSummary cdbLgrDB
+        rp    = blockRealPoint hdr
+
+        errMsg err =
+          error $
+             "impossible! ChaindDB.calculateHeaderSlotTime was past the HardFork horizon"
+          <> " " <> show rp
+          <> " " <> show err
+
+    eRelTime <- History.cachedRunQuery
+                  cache
+                  (fst <$> History.slotToWallclock (realPointSlot rp))
+    pure $ OnlyForTracer.pure $ either errMsg id eRelTime
 
 {-------------------------------------------------------------------------------
   Unifying interface over the immutable DB and volatile DB, but independent

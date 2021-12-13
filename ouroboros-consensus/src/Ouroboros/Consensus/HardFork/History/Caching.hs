@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -10,6 +11,7 @@ module Ouroboros.Consensus.HardFork.History.Caching (
   ) where
 
 import           Data.Kind (Type)
+import           NoThunks.Class
 
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -28,9 +30,12 @@ data RunWithCachedSummary (xs :: [Type]) m = RunWithCachedSummary {
       -- internal state (compute a new summary) and try again. If that /still/
       -- fails, the 'PastHorizonException' is returned.
       --
-      cachedRunQuery :: forall a. Qry a
-                     -> STM m (Either PastHorizonException a)
+      cachedRunQuery ::
+        !(forall a. Qry a -> STM m (Either PastHorizonException a))
     }
+  deriving NoThunks via OnlyCheckWhnfNamed
+                          "RunWithCachedSummary"
+                          (RunWithCachedSummary xs m)
 
 -- | Construct 'RunWithCachedSummary' given action that computes the summary
 --
