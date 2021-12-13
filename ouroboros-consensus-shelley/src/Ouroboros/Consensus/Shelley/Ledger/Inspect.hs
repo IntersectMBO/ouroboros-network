@@ -104,9 +104,9 @@ data UpdateState c = UpdateState {
   deriving (Show, Eq)
 
 protocolUpdates ::
-       forall era. ShelleyBasedEra era
+       forall era proto. ShelleyBasedEra era
     => SL.ShelleyGenesis era
-    -> LedgerState (ShelleyBlock era)
+    -> LedgerState (ShelleyBlock proto era)
     -> [ProtocolUpdate era]
 protocolUpdates genesis st = [
       ProtocolUpdate {
@@ -165,9 +165,9 @@ deriving instance Show (Core.PParamsDelta era) => Show (ShelleyLedgerUpdate era)
 instance Show (Core.PParamsDelta era) => Condense (ShelleyLedgerUpdate era) where
   condense = show
 
-instance ShelleyBasedEra era => InspectLedger (ShelleyBlock era) where
-  type LedgerWarning (ShelleyBlock era) = Void
-  type LedgerUpdate  (ShelleyBlock era) = ShelleyLedgerUpdate era
+instance ShelleyBasedEra era => InspectLedger (ShelleyBlock proto era) where
+  type LedgerWarning (ShelleyBlock proto era) = Void
+  type LedgerUpdate  (ShelleyBlock proto era) = ShelleyLedgerUpdate era
 
   inspectLedger tlc before after = do
       guard $ updatesBefore /= updatesAfter

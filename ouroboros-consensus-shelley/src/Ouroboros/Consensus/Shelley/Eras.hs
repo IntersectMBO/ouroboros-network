@@ -53,6 +53,10 @@ import qualified Cardano.Ledger.Alonzo.Rules.Utxos as Alonzo
 import qualified Cardano.Ledger.Alonzo.Rules.Utxow as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
+import           Cardano.Ledger.Babbage (BabbageEra)
+import           Cardano.Ledger.Babbage.PParams (PParams' (..))
+import qualified Cardano.Ledger.Babbage.Rules.Utxo as Babbage
+import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)
@@ -66,11 +70,12 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Rules.Ledger as SL
 import qualified Cardano.Ledger.Shelley.Rules.Utxow as SL
 import           Cardano.Ledger.ShelleyMA ()
+import qualified Cardano.Protocol.TPraos.API as SL
+
 import           Control.State.Transition (State)
 
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (DSignable, Hash)
-import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
 
@@ -124,9 +129,6 @@ type EraCrypto era = Crypto era
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
 class ( SL.ShelleyBasedEra era
 
-        -- Constraints that relate to the protocol. These should be dropped once
-        -- the protocol is independent of the ledger.
-      , SL.PraosCrypto (EraCrypto era)
       , SL.GetLedgerView era
 
       , State (Core.EraRule "PPUP" era) ~ SL.PPUPState era

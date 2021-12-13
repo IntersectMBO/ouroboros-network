@@ -565,7 +565,7 @@ mkMASetDecentralizationParamTxs ::
   -> ProtVer   -- ^ The proposed protocol version
   -> SlotNo   -- ^ The TTL
   -> DecentralizationParam   -- ^ The new value
-  -> [GenTx (ShelleyBlock era)]
+  -> [GenTx (ShelleyBlock proto era)]
 mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $

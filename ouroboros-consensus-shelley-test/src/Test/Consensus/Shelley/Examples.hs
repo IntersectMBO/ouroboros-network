@@ -61,7 +61,7 @@ codecConfig = ShelleyCodecConfig
 fromShelleyLedgerExamples
   :: ShelleyBasedEra era
   => ShelleyLedgerExamples era
-  -> Golden.Examples (ShelleyBlock era)
+  -> Golden.Examples (ShelleyBlock proto era)
 fromShelleyLedgerExamples ShelleyLedgerExamples {
                             sleResultExamples = ShelleyResultExamples{..}
                             , ..} =

@@ -25,8 +25,8 @@ overShelleyBasedLedgerState ::
      forall c.
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => (   forall era. (EraCrypto era ~ c, ShelleyBasedEra era)
-      => LedgerState (ShelleyBlock era)
-      -> LedgerState (ShelleyBlock era)
+      => LedgerState (ShelleyBlock proto era)
+      -> LedgerState (ShelleyBlock proto era)
      )
   -> LedgerState (CardanoBlock c)
   -> LedgerState (CardanoBlock c)
