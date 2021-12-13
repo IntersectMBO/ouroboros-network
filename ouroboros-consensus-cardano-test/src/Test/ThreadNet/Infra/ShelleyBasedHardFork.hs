@@ -69,7 +69,7 @@ import           Test.ThreadNet.TxGen.Shelley ()
 
 -- | Two eras, both Shelley-based.
 type ShelleyBasedHardForkEras era1 era2 =
-    '[ShelleyBlock era1, ShelleyBlock era2]
+    '[ShelleyBlock era proto1, ShelleyBlock era proto2]
 
 type ShelleyBasedHardForkBlock era1 era2 =
   HardForkBlock (ShelleyBasedHardForkEras era1 era2)
@@ -82,12 +82,12 @@ type ShelleyBasedHardForkGenTx era1 era2 =
   GenTx (ShelleyBasedHardForkBlock era1 era2)
 
 pattern GenTxShelley1 ::
-     GenTx (ShelleyBlock era1)
+     GenTx (ShelleyBlock era proto1)
   -> ShelleyBasedHardForkGenTx era1 era2
 pattern GenTxShelley1 tx = HardForkGenTx (OneEraGenTx (Z tx))
 
 pattern GenTxShelley2 ::
-     GenTx (ShelleyBlock era2)
+     GenTx (ShelleyBlock era proto2)
   -> ShelleyBasedHardForkGenTx era1 era2
 pattern GenTxShelley2 tx = HardForkGenTx (OneEraGenTx (S (Z tx)))
 
@@ -120,8 +120,8 @@ pattern ShelleyBasedHardForkNodeToClientVersion1 =
 type ShelleyBasedHardForkConstraints era1 era2 =
   ( ShelleyBasedEra era1
   , ShelleyBasedEra era2
-  , TxLimits (ShelleyBlock era1)
-  , TxLimits (ShelleyBlock era2)
+  , TxLimits (ShelleyBlock era proto1)
+  , TxLimits (ShelleyBlock era proto2)
   , EraCrypto era1 ~ EraCrypto era2
   , SL.PreviousEra era2 ~ era1
 
@@ -151,8 +151,8 @@ instance ShelleyBasedHardForkConstraints era1 era2
            InPairs.RequiringBoth
              WrapLedgerConfig
              (HFC.Translate LedgerState)
-             (ShelleyBlock era1)
-             (ShelleyBlock era2)
+             (ShelleyBlock era proto1)
+             (ShelleyBlock era proto2)
       translateLedgerState =
           InPairs.RequireBoth
         $ \_cfg1 cfg2 -> HFC.Translate
@@ -166,8 +166,8 @@ instance ShelleyBasedHardForkConstraints era1 era2
            InPairs.RequiringBoth
               WrapLedgerConfig
               (HFC.TranslateForecast LedgerState WrapLedgerView)
-              (ShelleyBlock era1)
-              (ShelleyBlock era2)
+              (ShelleyBlock era proto1)
+              (ShelleyBlock era proto2)
       translateLedgerView =
           InPairs.RequireBoth $ \(WrapLedgerConfig cfg1) (WrapLedgerConfig cfg2) ->
             HFC.TranslateForecast $ forecastAcrossShelley cfg1 cfg2
@@ -185,8 +185,8 @@ instance ShelleyBasedHardForkConstraints era1 era2
     where
       translateTx ::
            SL.TranslationContext era2
-        ->        GenTx (ShelleyBlock era1)
-        -> Maybe (GenTx (ShelleyBlock era2))
+        ->        GenTx (ShelleyBlock era proto1)
+        -> Maybe (GenTx (ShelleyBlock era proto2))
       translateTx transCtxt =
           fmap unComp
         . eitherToMaybe . runExcept . SL.translateEra transCtxt
@@ -194,8 +194,8 @@ instance ShelleyBasedHardForkConstraints era1 era2
 
       translateValidatedTx ::
            SL.TranslationContext era2
-        ->        WrapValidatedGenTx (ShelleyBlock era1)
-        -> Maybe (WrapValidatedGenTx (ShelleyBlock era2))
+        ->        WrapValidatedGenTx (ShelleyBlock era proto1)
+        -> Maybe (WrapValidatedGenTx (ShelleyBlock era proto2))
       translateValidatedTx transCtxt =
             fmap unComp
           . eitherToMaybe . runExcept . SL.translateEra transCtxt
@@ -251,9 +251,9 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     genesis1 :: SL.ShelleyGenesis era1
     genesis1 = shelleyBasedGenesis
 
-    protocolInfo1 :: ProtocolInfo m (ShelleyBlock era1)
+    protocolInfo1 :: ProtocolInfo m (ShelleyBlock era proto1)
     protocolInfo1 =
-        protocolInfoShelleyBased
+        protocolInfoTPraosShelleyBased
           protocolParamsShelleyBased
           ()  -- trivial translation context
           protVer1
@@ -268,8 +268,8 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
       } = protocolTransitionParams
 
     toPartialLedgerConfig1 ::
-         LedgerConfig (ShelleyBlock era1)
-      -> PartialLedgerConfig (ShelleyBlock era1)
+         LedgerConfig (ShelleyBlock era proto1)
+      -> PartialLedgerConfig (ShelleyBlock era proto1)
     toPartialLedgerConfig1 cfg = ShelleyPartialLedgerConfig {
           shelleyLedgerConfig    = cfg
         , shelleyTriggerHardFork = transitionTrigger
@@ -280,9 +280,9 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     genesis2 :: SL.ShelleyGenesis era2
     genesis2 = SL.translateEra' transCtxt2 genesis1
 
-    protocolInfo2 :: ProtocolInfo m (ShelleyBlock era2)
+    protocolInfo2 :: ProtocolInfo m (ShelleyBlock era proto2)
     protocolInfo2 =
-        protocolInfoShelleyBased
+        protocolInfoTPraosShelleyBased
           ProtocolParamsShelleyBased {
               shelleyBasedGenesis = genesis2
             , shelleyBasedInitialNonce
@@ -296,8 +296,8 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     eraParams2 = shelleyEraParams genesis2
 
     toPartialLedgerConfig2 ::
-         LedgerConfig (ShelleyBlock era2)
-      -> PartialLedgerConfig (ShelleyBlock era2)
+         LedgerConfig (ShelleyBlock era proto2)
+      -> PartialLedgerConfig (ShelleyBlock era proto2)
     toPartialLedgerConfig2 cfg = ShelleyPartialLedgerConfig {
           shelleyLedgerConfig    = cfg
         , shelleyTriggerHardFork = TriggerHardForkNever
@@ -308,8 +308,8 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
 -------------------------------------------------------------------------------}
 
 -- | Use a generic implementation for 'TxGen'
-instance ( TxGen (ShelleyBlock era1)
-         , TxGen (ShelleyBlock era2)
+instance ( TxGen (ShelleyBlock era proto1)
+         , TxGen (ShelleyBlock era proto2)
          , ShelleyBasedHardForkConstraints era1 era2
          ) => TxGen (ShelleyBasedHardForkBlock era1 era2) where
   type TxGenExtra (ShelleyBasedHardForkBlock era1 era2) =

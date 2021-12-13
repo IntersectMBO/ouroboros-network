@@ -27,6 +27,7 @@ library
 
   exposed-modules:
                        Ouroboros.Consensus.Shelley.Eras
+                       Ouroboros.Consensus.Shelley.HFEras
                        Ouroboros.Consensus.Shelley.Ledger
                        Ouroboros.Consensus.Shelley.Ledger.Block
                        Ouroboros.Consensus.Shelley.Ledger.Config
@@ -39,8 +40,14 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.Query
                        Ouroboros.Consensus.Shelley.Ledger.PeerSelection
                        Ouroboros.Consensus.Shelley.Ledger.Protocol
+                       Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol
                        Ouroboros.Consensus.Shelley.Node
+                       Ouroboros.Consensus.Shelley.Node.Common
+                       Ouroboros.Consensus.Shelley.Node.TPraos
                        Ouroboros.Consensus.Shelley.Node.Serialisation
+                       Ouroboros.Consensus.Shelley.Protocol.Abstract
+                       Ouroboros.Consensus.Shelley.Protocol.Praos
+                       Ouroboros.Consensus.Shelley.Protocol.TPraos
                        Ouroboros.Consensus.Shelley.ShelleyBased
                        Ouroboros.Consensus.Shelley.ShelleyHFC
 

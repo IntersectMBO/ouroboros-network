@@ -274,7 +274,7 @@ ejectShelleyNS = \case
     S (Z x) -> Just x
     _       -> Nothing
 
-getUTxOShelley :: Ticked (LedgerState (ShelleyBlock era))
+getUTxOShelley :: Ticked (LedgerState (ShelleyBlock proto era))
                -> SL.UTxO era
 getUTxOShelley tls =
     SL._utxo $

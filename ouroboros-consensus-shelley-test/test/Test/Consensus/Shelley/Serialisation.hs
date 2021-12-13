@@ -54,7 +54,7 @@ tests = testGroup "Shelley"
 
     dictNestedHdr ::
          forall a era. ShelleyBasedEra era
-      => NestedCtxt_ (ShelleyBlock era) Header a -> Dict (Eq a, Show a)
+      => NestedCtxt_ (ShelleyBlock proto era) Header a -> Dict (Eq a, Show a)
     dictNestedHdr CtxtShelley = Dict
 
 {-------------------------------------------------------------------------------

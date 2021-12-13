@@ -22,15 +22,22 @@
 -- header (in 'Ouroboros.Consensus.Protocol.Praos.Views') which extracts just
 -- the fields needed for the Praos protocol. This also allows us to hide the
 -- more detailed construction of the header.
-module Ouroboros.Consensus.Protocol.Praos.Header (Header (Header, headerBody, headerSig)) where
+module Ouroboros.Consensus.Protocol.Praos.Header (
+    Header (Header, headerBody, headerSig)
+  , HeaderBody (..)
+  , headerHash
+  , headerSize
+  ) where
 
 import           Cardano.Binary (FromCBOR (fromCBOR), ToCBOR (toCBOR),
                      serialize')
+import qualified Cardano.Crypto.Hash as Hash
 import           Cardano.Crypto.Util
                      (SignableRepresentation (getSignableRepresentation))
 import           Cardano.Ledger.BaseTypes (ProtVer)
 import qualified Cardano.Ledger.Crypto as CC
-import           Cardano.Ledger.Hashes (EraIndependentBlockBody)
+import           Cardano.Ledger.Hashes (EraIndependentBlockBody,
+                     EraIndependentBlockHeader)
 import           Cardano.Ledger.Keys (CertifiedVRF, Hash, KeyRole (BlockIssuer),
                      SignedKES, VKey, VerKeyVRF, decodeSignedKES,
                      decodeVerKeyVRF, encodeSignedKES, encodeVerKeyVRF)

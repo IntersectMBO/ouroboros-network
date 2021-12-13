@@ -67,7 +67,7 @@ import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.TxIn as SL (txid)
 
-import qualified Cardano.Protocol.TPraos.API as SL
+import           Cardano.Ledger.Crypto (Crypto)
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
@@ -75,30 +75,32 @@ import           Ouroboros.Consensus.Shelley.Ledger.Ledger
                      Ticked (TickedShelleyLedgerState, tickedShelleyLedgerState),
                      getPParams)
 
-data instance GenTx (ShelleyBlock era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Core.Tx era)
+data instance GenTx (ShelleyBlock proto era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Core.Tx era)
   deriving stock    (Generic)
 
-deriving instance ShelleyBasedEra era => NoThunks (GenTx (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => NoThunks (GenTx (ShelleyBlock proto era))
 
-deriving instance ShelleyBasedEra era => Eq (GenTx (ShelleyBlock era))
+deriving instance ShelleyBasedEra era => Eq (GenTx (ShelleyBlock proto era))
 
-instance Typeable era => ShowProxy (GenTx (ShelleyBlock era)) where
+instance (Typeable era, Typeable proto)
+  => ShowProxy (GenTx (ShelleyBlock proto era)) where
 
-data instance Validated (GenTx (ShelleyBlock era)) =
+data instance Validated (GenTx (ShelleyBlock proto era)) =
     ShelleyValidatedTx
       !(SL.TxId (EraCrypto era))
       !(SL.Validated (Core.Tx era))
   deriving stock (Generic)
 
-deriving instance ShelleyBasedEra era => NoThunks (Validated (GenTx (ShelleyBlock era)))
+deriving instance ShelleyBasedEra era => NoThunks (Validated (GenTx (ShelleyBlock proto era)))
 
-deriving instance ShelleyBasedEra era => Eq (Validated (GenTx (ShelleyBlock era)))
+deriving instance ShelleyBasedEra era => Eq (Validated (GenTx (ShelleyBlock proto era)))
 
-deriving instance ShelleyBasedEra era => Show (Validated (GenTx (ShelleyBlock era)))
+deriving instance ShelleyBasedEra era => Show (Validated (GenTx (ShelleyBlock proto era)))
 
-instance Typeable era => ShowProxy (Validated (GenTx (ShelleyBlock era))) where
+instance (Typeable era, Typeable proto)
+  => ShowProxy (Validated (GenTx (ShelleyBlock proto era))) where
 
-type instance ApplyTxErr (ShelleyBlock era) = SL.ApplyTxError era
+type instance ApplyTxErr (ShelleyBlock proto era) = SL.ApplyTxError era
 
 -- orphaned instance
 instance Typeable era => ShowProxy (SL.ApplyTxError era) where
@@ -128,8 +130,8 @@ fixedBlockBodyOverhead = 1024
 perTxOverhead :: Num a => a
 perTxOverhead = 4
 
-instance ShelleyBasedEra era
-      => LedgerSupportsMempool (ShelleyBlock era) where
+instance ShelleyCompatible proto era
+      => LedgerSupportsMempool (ShelleyBlock proto era) where
   txInvariant = const True
 
   applyTx = applyShelleyTx
@@ -147,31 +149,32 @@ instance ShelleyBasedEra era
 
   txForgetValidated (ShelleyValidatedTx txid vtx) = ShelleyTx txid (SL.extractTx vtx)
 
-mkShelleyTx :: forall era. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock era)
+mkShelleyTx :: forall era proto. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock proto era)
 mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
 
-mkShelleyValidatedTx :: forall era.
+mkShelleyValidatedTx :: forall era proto.
      ShelleyBasedEra era
   => SL.Validated (Core.Tx era)
-  -> Validated (GenTx (ShelleyBlock era))
+  -> Validated (GenTx (ShelleyBlock proto era))
 mkShelleyValidatedTx vtx = ShelleyValidatedTx txid vtx
   where
     txid = SL.txid @era (getField @"body" (SL.extractTx vtx))
 
-newtype instance TxId (GenTx (ShelleyBlock era)) = ShelleyTxId (SL.TxId (EraCrypto era))
+newtype instance TxId (GenTx (ShelleyBlock proto era)) = ShelleyTxId (SL.TxId (EraCrypto era))
   deriving newtype (Eq, Ord, NoThunks)
 
-deriving newtype instance (SL.PraosCrypto (EraCrypto era), Typeable era)
-                       => ToCBOR (TxId (GenTx (ShelleyBlock era)))
-deriving newtype instance (SL.PraosCrypto (EraCrypto era), Typeable era)
-                       => FromCBOR (TxId (GenTx (ShelleyBlock era)))
+deriving newtype instance (Crypto (EraCrypto era), Typeable era, Typeable proto)
+                       => ToCBOR (TxId (GenTx (ShelleyBlock proto era)))
+deriving newtype instance (Crypto (EraCrypto era), Typeable era, Typeable proto)
+                       => FromCBOR (TxId (GenTx (ShelleyBlock proto era)))
 
-instance Typeable era => ShowProxy (TxId (GenTx (ShelleyBlock era))) where
+instance (Typeable era, Typeable proto)
+  => ShowProxy (TxId (GenTx (ShelleyBlock proto era))) where
 
-instance ShelleyBasedEra era => HasTxId (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => HasTxId (GenTx (ShelleyBlock proto era)) where
   txId (ShelleyTx i _) = ShelleyTxId i
 
-instance ShelleyBasedEra era => HasTxs (ShelleyBlock era) where
+instance ShelleyBasedEra era => HasTxs (ShelleyBlock proto era) where
   extractTxs =
         map mkShelleyTx
       . txSeqToList
@@ -185,12 +188,12 @@ instance ShelleyBasedEra era => HasTxs (ShelleyBlock era) where
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => ToCBOR (GenTx (ShelleyBlock era)) where
+instance ShelleyCompatible proto era => ToCBOR (GenTx (ShelleyBlock proto era)) where
   -- No need to encode the 'TxId', it's just a hash of the 'SL.TxBody' inside
   -- 'SL.Tx', so it can be recomputed.
   toCBOR (ShelleyTx _txid tx) = wrapCBORinCBOR toCBOR tx
 
-instance ShelleyBasedEra era => FromCBOR (GenTx (ShelleyBlock era)) where
+instance ShelleyCompatible proto era => FromCBOR (GenTx (ShelleyBlock proto era)) where
   fromCBOR = fmap mkShelleyTx $ unwrapCBORinCBOR
     $ (. Full) . runAnnotator <$> fromCBOR
 
@@ -198,32 +201,32 @@ instance ShelleyBasedEra era => FromCBOR (GenTx (ShelleyBlock era)) where
   Pretty-printing
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => Condense (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => Condense (GenTx (ShelleyBlock proto era)) where
   condense (ShelleyTx _ tx ) = show tx
 
-instance Condense (GenTxId (ShelleyBlock era)) where
+instance Condense (GenTxId (ShelleyBlock proto era)) where
   condense (ShelleyTxId i) = "txid: " <> show i
 
-instance ShelleyBasedEra era => Show (GenTx (ShelleyBlock era)) where
+instance ShelleyBasedEra era => Show (GenTx (ShelleyBlock proto era)) where
   show = condense
 
-instance Show (GenTxId (ShelleyBlock era)) where
+instance Show (GenTxId (ShelleyBlock proto era)) where
   show = condense
 
 {-------------------------------------------------------------------------------
   Applying transactions
 -------------------------------------------------------------------------------}
 
-applyShelleyTx :: forall era.
+applyShelleyTx :: forall era proto.
      ShelleyBasedEra era
-  => LedgerConfig (ShelleyBlock era)
+  => LedgerConfig (ShelleyBlock proto era)
   -> WhetherToIntervene
   -> SlotNo
-  -> GenTx (ShelleyBlock era)
-  -> TickedLedgerState (ShelleyBlock era)
-  -> Except (ApplyTxErr (ShelleyBlock era))
-       ( TickedLedgerState (ShelleyBlock era)
-       , Validated (GenTx (ShelleyBlock era))
+  -> GenTx (ShelleyBlock proto era)
+  -> TickedLedgerState (ShelleyBlock proto era)
+  -> Except (ApplyTxErr (ShelleyBlock proto era))
+       ( TickedLedgerState (ShelleyBlock proto era)
+       , Validated (GenTx (ShelleyBlock proto era))
        )
 applyShelleyTx cfg wti slot (ShelleyTx _ tx) st = do
     (mempoolState', vtx) <-
@@ -242,11 +245,11 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st = do
 
 reapplyShelleyTx ::
      ShelleyBasedEra era
-  => LedgerConfig (ShelleyBlock era)
+  => LedgerConfig (ShelleyBlock proto era)
   -> SlotNo
-  -> Validated (GenTx (ShelleyBlock era))
-  -> TickedLedgerState (ShelleyBlock era)
-  -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era))
+  -> Validated (GenTx (ShelleyBlock proto era))
+  -> TickedLedgerState (ShelleyBlock proto era)
+  -> Except (ApplyTxErr (ShelleyBlock proto era)) (TickedLedgerState (ShelleyBlock proto era))
 reapplyShelleyTx cfg slot vgtx st = do
     mempoolState' <-
         SL.reapplyTx
@@ -271,8 +274,8 @@ set lens inner outer =
 theLedgerLens ::
      Functor f
   => (SL.LedgerState era -> f (SL.LedgerState era))
-  -> TickedLedgerState (ShelleyBlock era)
-  -> f (TickedLedgerState (ShelleyBlock era))
+  -> TickedLedgerState (ShelleyBlock proto era)
+  -> f (TickedLedgerState (ShelleyBlock proto era))
 theLedgerLens f x =
         (\y -> x{tickedShelleyLedgerState = y})
     <$> SL.overNewEpochState f (tickedShelleyLedgerState x)
@@ -281,29 +284,29 @@ theLedgerLens f x =
   Tx Limits
 -------------------------------------------------------------------------------}
 
-instance (ShelleyBasedEra (ShelleyEra c)) => TxLimits (ShelleyBlock (ShelleyEra c)) where
-  type TxMeasure (ShelleyBlock (ShelleyEra c)) = ByteSize
+instance ShelleyCompatible p (ShelleyEra c) => TxLimits (ShelleyBlock p (ShelleyEra c)) where
+  type TxMeasure (ShelleyBlock p (ShelleyEra c)) = ByteSize
   txMeasure        = ByteSize . txInBlockSize . txForgetValidated
   txsBlockCapacity = ByteSize . txsMaxBytes
 
-instance (ShelleyBasedEra (AllegraEra c)) => TxLimits (ShelleyBlock (AllegraEra c)) where
-  type TxMeasure (ShelleyBlock (AllegraEra c)) = ByteSize
+instance ShelleyCompatible p (AllegraEra c) => TxLimits (ShelleyBlock p (AllegraEra c)) where
+  type TxMeasure (ShelleyBlock p (AllegraEra c)) = ByteSize
   txMeasure        = ByteSize . txInBlockSize . txForgetValidated
   txsBlockCapacity = ByteSize . txsMaxBytes
 
-instance (ShelleyBasedEra (MaryEra c)) => TxLimits (ShelleyBlock (MaryEra c)) where
-  type TxMeasure (ShelleyBlock (MaryEra c)) = ByteSize
+instance ShelleyCompatible p (MaryEra c) => TxLimits (ShelleyBlock p (MaryEra c)) where
+  type TxMeasure (ShelleyBlock p (MaryEra c)) = ByteSize
   txMeasure        = ByteSize . txInBlockSize . txForgetValidated
   txsBlockCapacity = ByteSize . txsMaxBytes
 
-instance ( ShelleyBasedEra (AlonzoEra c)
-         ) => TxLimits (ShelleyBlock (AlonzoEra c)) where
+instance ( ShelleyCompatible p (AlonzoEra c)
+         ) => TxLimits (ShelleyBlock p (AlonzoEra c)) where
 
-  type TxMeasure (ShelleyBlock (AlonzoEra c)) = AlonzoMeasure
+  type TxMeasure (ShelleyBlock p (AlonzoEra c)) = AlonzoMeasure
 
   txMeasure (ShelleyValidatedTx _txid vtx) =
     AlonzoMeasure {
-        byteSize = ByteSize $ txInBlockSize (mkShelleyTx @(AlonzoEra c) (SL.extractTx vtx))
+        byteSize = ByteSize $ txInBlockSize (mkShelleyTx @(AlonzoEra c) @p (SL.extractTx vtx))
       , exUnits  = fromExUnits $ totExUnits (SL.extractTx vtx)
       }
 

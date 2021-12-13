@@ -131,7 +131,7 @@ forgeTPraosFields ::
   -> IsLeader (TPraos c)
   -> (TPraosToSign c -> toSign)
   -> m (TPraosFields c toSign)
-forgeTPraosFields hotKey TPraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
+forgeTPraosFields hotKey PraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
     signature <- HotKey.sign hotKey toSign
     return TPraosFields {
         tpraosSignature = signature
@@ -141,11 +141,11 @@ forgeTPraosFields hotKey TPraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
     toSign = mkToSign signedFields
 
     signedFields = TPraosToSign {
-        tpraosToSignIssuerVK = tpraosCanBeLeaderColdVerKey
-      , tpraosToSignVrfVK    = VRF.deriveVerKeyVRF tpraosCanBeLeaderSignKeyVRF
+        tpraosToSignIssuerVK = praosCanBeLeaderColdVerKey
+      , tpraosToSignVrfVK    = VRF.deriveVerKeyVRF praosCanBeLeaderSignKeyVRF
       , tpraosToSignEta      = tpraosIsLeaderEta
       , tpraosToSignLeader   = tpraosIsLeaderProof
-      , tpraosToSignOCert    = tpraosCanBeLeaderOpCert
+      , tpraosToSignOCert    = praosCanBeLeaderOpCert
       }
 
 -- | Because we are using the executable spec, rather than implementing the
@@ -216,18 +216,6 @@ mkTPraosParams maxMajorPV initialNonce genesis = TPraosParams {
   where
     securityParam = SecurityParam $ SL.sgSecurityParam genesis
     systemStart   = SystemStart   $ SL.sgSystemStart   genesis
-
-data TPraosCanBeLeader c = TPraosCanBeLeader {
-      -- | Certificate delegating rights from the stake pool cold key (or
-      -- genesis stakeholder delegate cold key) to the online KES key.
-      tpraosCanBeLeaderOpCert     :: !(SL.OCert c)
-      -- | Stake pool cold key or genesis stakeholder delegate cold key.
-    , tpraosCanBeLeaderColdVerKey :: !(SL.VKey 'SL.BlockIssuer c)
-    , tpraosCanBeLeaderSignKeyVRF :: !(SL.SignKeyVRF c)
-    }
-  deriving (Generic)
-
-instance SL.PraosCrypto c => NoThunks (TPraosCanBeLeader c)
 
 -- | Assembled proof that the issuer has the right to issue a block in the
 -- selected slot.
@@ -302,7 +290,7 @@ data instance Ticked (TPraosState c) = TickedChainDepState {
 instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
   type ChainDepState (TPraos c) = TPraosState c
   type IsLeader      (TPraos c) = TPraosIsLeader c
-  type CanBeLeader   (TPraos c) = TPraosCanBeLeader c
+  type CanBeLeader   (TPraos c) = PraosCanBeLeader c
   type SelectView    (TPraos c) = PraosChainSelectView c
   type LedgerView    (TPraos c) = SL.LedgerView c
   type ValidationErr (TPraos c) = SL.ChainTransitionError c
@@ -310,7 +298,7 @@ instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIsLeader cfg TPraosCanBeLeader{..} slot cs = do
+  checkIsLeader cfg PraosCanBeLeader{..} slot cs = do
       -- First, check whether we're in the overlay schedule
       case SL.lookupInOverlaySchedule firstSlot gkeys d asc slot of
         -- Slot isn't in the overlay schedule, so we're in Praos
@@ -355,12 +343,12 @@ instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
             slot
       gkeys      = Map.keysSet dlgMap
       eta0       = SL.ticknStateEpochNonce $ SL.csTickn chainState
-      vkhCold    = SL.hashKey tpraosCanBeLeaderColdVerKey
+      vkhCold    = SL.hashKey praosCanBeLeaderColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
       y'         = SL.mkSeed SL.seedL   slot eta0
 
-      rho = VRF.evalCertified () rho' tpraosCanBeLeaderSignKeyVRF
-      y   = VRF.evalCertified () y'   tpraosCanBeLeaderSignKeyVRF
+      rho = VRF.evalCertified () rho' praosCanBeLeaderSignKeyVRF
+      y   = VRF.evalCertified () y'   praosCanBeLeaderSignKeyVRF
 
       SL.GenDelegs dlgMap = SL.lvGenDelegs lv
 

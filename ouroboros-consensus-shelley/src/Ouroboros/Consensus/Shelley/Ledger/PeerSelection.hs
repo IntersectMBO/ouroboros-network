@@ -32,7 +32,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 
 instance c ~ EraCrypto era
-      => LedgerSupportsPeerSelection (ShelleyBlock era) where
+      => LedgerSupportsPeerSelection (ShelleyBlock proto era) where
   getPeers ShelleyLedgerState { shelleyLedgerState } = catMaybes
       [ (poolStake,) <$> Map.lookup stakePool poolRelayAccessPoints
       | (stakePool, poolStake) <- orderByStake poolDistr

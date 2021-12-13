@@ -57,27 +57,27 @@ import           Test.Consensus.Shelley.MockCrypto (CanMock)
 
 -- | The upstream 'Arbitrary' instance for Shelley blocks does not generate
 -- coherent blocks, so neither does this.
-instance CanMock era => Arbitrary (ShelleyBlock era) where
+instance CanMock era => Arbitrary (ShelleyBlock proto era) where
   arbitrary = mkShelleyBlock <$> arbitrary
 
 -- | This uses a different upstream generator to ensure the header and block
 -- body relate as expected.
-instance CanMock era => Arbitrary (Coherent (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (Coherent (ShelleyBlock proto era)) where
   arbitrary = Coherent . mkShelleyBlock <$> genCoherentBlock
 
-instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (Header (ShelleyBlock proto era)) where
   arbitrary = getHeader <$> arbitrary
 
 instance SL.Mock c => Arbitrary (ShelleyHash c) where
   arbitrary = ShelleyHash <$> arbitrary
 
-instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (GenTx (ShelleyBlock proto era)) where
   arbitrary = mkShelleyTx <$> arbitrary
 
-instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (GenTxId (ShelleyBlock proto era)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock proto era)) where
   arbitrary = oneof
     [ pure $ SomeSecond GetLedgerTip
     , pure $ SomeSecond GetEpochNo
@@ -92,7 +92,7 @@ instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock era)) whe
     , pure $ SomeSecond DebugNewEpochState
     ]
 
-instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (SomeResult (ShelleyBlock proto era)) where
   arbitrary = oneof
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
@@ -112,7 +112,7 @@ instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
 instance PraosCrypto c => Arbitrary (NonMyopicMemberRewards c) where
   arbitrary = NonMyopicMemberRewards <$> arbitrary
 
-instance CanMock era => Arbitrary (Point (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (Point (ShelleyBlock proto era)) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
 
 instance PraosCrypto c => Arbitrary (TPraosState c) where
@@ -132,13 +132,13 @@ instance CanMock era => Arbitrary (ShelleyTip era) where
 instance Arbitrary ShelleyTransition where
   arbitrary = ShelleyTransitionInfo <$> arbitrary
 
-instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (LedgerState (ShelleyBlock proto era)) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
 
-instance CanMock era => Arbitrary (AnnTip (ShelleyBlock era)) where
+instance CanMock era => Arbitrary (AnnTip (ShelleyBlock proto era)) where
   arbitrary = AnnTip
     <$> arbitrary
     <*> (BlockNo <$> arbitrary)
@@ -151,7 +151,7 @@ instance Arbitrary ShelleyNodeToClientVersion where
   arbitrary = arbitraryBoundedEnum
 
 instance ShelleyBasedEra era
-      => Arbitrary (SomeSecond (NestedCtxt f) (ShelleyBlock era)) where
+      => Arbitrary (SomeSecond (NestedCtxt f) (ShelleyBlock proto era)) where
   arbitrary = return (SomeSecond indexIsTrivial)
 
 {-------------------------------------------------------------------------------
@@ -174,7 +174,7 @@ instance PraosCrypto c => Arbitrary (SL.ChainDepState c) where
 -- make sure to not generate those queries in combination with
 -- 'ShelleyNodeToClientVersion1'.
 instance CanMock era
-      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock era))) where
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock proto era))) where
   arbitrary = do
       query@(SomeSecond q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q
