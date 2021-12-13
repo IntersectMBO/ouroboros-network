@@ -27,6 +27,7 @@ library
     Ouroboros.Consensus.Protocol.Ledger.Util
     Ouroboros.Consensus.Protocol.Praos
     Ouroboros.Consensus.Protocol.Praos.Common
+    Ouroboros.Consensus.Protocol.Praos.Header
     Ouroboros.Consensus.Protocol.Praos.Views
     Ouroboros.Consensus.Protocol.Praos.VRF
     Ouroboros.Consensus.Protocol.TPraos
@@ -46,6 +47,7 @@ library
     nothunks,
     ouroboros-consensus,
     serialise,
+    small-steps,
     text
   ghc-options:
     -Wall
