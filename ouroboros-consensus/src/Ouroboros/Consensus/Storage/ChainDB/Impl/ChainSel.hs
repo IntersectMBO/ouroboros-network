@@ -421,7 +421,11 @@ chainSelectionForBlock
   -> BlockCache blk
   -> Header blk
   -> m (Point blk)
-chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
+chainSelectionForBlock cdb@CDB{..} blockCache hdr =
+  LgrDB.withReadLock cdbLgrDB $ do
+    -- We will read a copy of the ledger DB on the next line, so we have to make
+    -- sure the changelog it contains is not flushed during chain selection.
+
     (invalid, succsOf, lookupBlockInfo, curChain, tipPoint, ledgerDB)
       <- atomically $ (,,,,,)
           <$> (forgetFingerprint <$> readTVar cdbInvalid)
