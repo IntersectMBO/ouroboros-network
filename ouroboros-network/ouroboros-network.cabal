@@ -73,6 +73,7 @@ library
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.NodeToClient.Version
                        Ouroboros.Network.Tracers
+                       Ouroboros.Network.Tracers.OnlyForTracer
                        Ouroboros.Network.Point
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.EstablishedPeers
