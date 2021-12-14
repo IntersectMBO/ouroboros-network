@@ -56,6 +56,29 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2021-12-13
+
+### Added
+
+- Added `DoneAddingBlock` to the ChainDB tracer events:
+  - It contains important times for each block we received or minted ourselves.
+  - This new event is emitted by code whose functional semantics does not
+    otherwise involve time so explicitly. We therefore use the new
+    `EventConstrainedData` utility type to preserve the narrowness of those
+    functions semantics.
+
+- Added the `EventAuxData` and `EventConstrainedData` utility types.
+  - These incur some extra pattern matching noise downstream (which could be
+    hidden by a corresponding pattern synonym), but allow us to preserve
+    intentionally explicit separation of concerns in the Consensus codebase
+    itself.
+  - EG `ChainSel` does not need `ConfigSupportsNode`, but the principal use case
+    of `DoneAddingBlock`, which `ChainSel` emits, does. `EventConstrainedData`
+    mitigates that mismatch by deferring the need for the `ConfigSupportsNode`
+    dictionary downstream (ie the `cardano-node` code), where that constraint is
+    more obviously suitable.
+  - So far, these are only present in the new `DoneAddingBlock` event.
+
 ## Circa 2021-10-13
 
 ### Added
