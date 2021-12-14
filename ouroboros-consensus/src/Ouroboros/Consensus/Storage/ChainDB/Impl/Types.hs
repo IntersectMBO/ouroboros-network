@@ -48,8 +48,10 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , newBlocksToAdd
     -- * Trace types
   , NewTipInfo (..)
+  , module Ouroboros.Consensus.Util.EventAuxData
   , TraceAddBlockEvent (..)
   , TraceCopyToImmutableDBEvent (..)
+  , TraceDoneAddingBlockEvent (..)
   , TraceEvent (..)
   , TraceFollowerEvent (..)
   , TraceGCEvent (..)
@@ -61,18 +63,24 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
+import           Data.Time (UTCTime)
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
+import           Cardano.Slotting.Time (RelativeTime)
+
 import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 
+import           Ouroboros.Network.Tracers.OnlyForTracer (OnlyForTracer)
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Config.SupportsNode (ConfigSupportsNode)
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
@@ -81,6 +89,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Storage.LedgerDB.Types
                      (UpdateLedgerDbTraceEvent)
 import           Ouroboros.Consensus.Util.CallStack
+import           Ouroboros.Consensus.Util.EventAuxData
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
@@ -437,6 +446,10 @@ data BlockToAdd m blk = BlockToAdd
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
   , varBlockProcessed     :: !(StrictTMVar m (Point blk))
     -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
+  , whenItWasEnqueued     :: !(Time, OnlyForTracer UTCTime)
+    -- ^ Used for the 'addedBlockReception' field of
+    -- 'TraceDoneAddingBlockEvent', which is used to collect important
+    -- statistics for the Networking Team.
   }
 
 -- | Create a new 'BlocksToAdd' with the given size.
@@ -454,10 +467,13 @@ addBlockToAdd
 addBlockToAdd tracer (BlocksToAdd queue) blk = do
     varBlockWrittenToDisk <- newEmptyTMVarIO
     varBlockProcessed     <- newEmptyTMVarIO
+    whenItWasEnqueued     <-
+      (,) <$> getMonotonicTime <*> getCurrentTimeOnlyForTracer
     let !toAdd = BlockToAdd
           { blockToAdd = blk
           , varBlockWrittenToDisk
           , varBlockProcessed
+          , whenItWasEnqueued
           }
     queueSize <- atomically $ do
       writeTBQueue  queue toAdd
@@ -627,6 +643,21 @@ data TraceAddBlockEvent blk =
     -- This is done for all blocks from the future each time a new block is
     -- added.
   | ChainSelectionForFutureBlock (RealPoint blk)
+
+    -- | The ChainDB has finished processing an instruction to add a block.
+    --
+    -- There may be zero (eg invalid block), one (eg usual case), or many (eg
+    -- formerly-future blocks) chain selections per add instruction. If the
+    -- block is from the future (see 'BlockInTheFuture'), then that particular
+    -- chain selection invocation was partially truncated and this block will be
+    -- reconsidered again by some later chain selection. This event will /not/
+    -- fire again for such deferred chain selections (see
+    -- 'ChainSelectionForFutureBlock'). This event only fires once per add-block
+    -- instruction.
+    --
+    -- See 'TraceDoneAddingBlockEvent'.
+  | DoneAddingBlock (TraceDoneAddingBlockEvent blk)
+
   deriving (Generic)
 
 deriving instance
@@ -641,6 +672,61 @@ deriving instance
   , LedgerSupportsProtocol blk
   , InspectLedger blk
   ) => Show (TraceAddBlockEvent blk)
+
+-- | See 'DoneAddingBlock'
+--
+-- For each time of interest, we store the type that was directly available, be
+-- it 'Time' or 'RelativeTime', along with the translation to 'UTCTime'. For
+-- 'RelativeTime', that translation requires some additional context which is
+-- unavailable at the emission site but is typically available at the site that
+-- consumes the trace event; hence the use of 'EventConstrainedData'.
+data TraceDoneAddingBlockEvent blk =
+    TraceDoneAddingBlockEvent {
+        -- | The block itself
+        addedBlock             :: EventAuxData "addedBlock" blk
+        -- | The possibly-new ChainDB tip that resulted from this block having
+        -- been added
+      , addedBlockNewSelection :: Point blk
+        -- | The point of the added block
+      , addedBlockPoint        :: RealPoint blk
+
+        -- Each of the remaining fields is a time. They're ordered by expected
+        -- value instead of by name.
+
+        -- | When the block's labelled slot began
+      , addedBlockWhenSlotStart     :: RelativeTime
+        -- | 'addedBlockWhenSlotStart' as a 'UTCTime'
+      , addedBlockWhenSlotStartUTC  ::
+          EventAuxData
+            "addedBlockWhenSlotStartUTC"
+            (EventConstrainedData (ConfigSupportsNode blk) UTCTime)
+        -- | When the instruction was added to the 'cdbBlocksToAdd' queue (ie
+        -- when we downloaded the block)
+      , addedBlockWhenReceived      :: Time
+        -- | 'addedBlockWhenReceived' as a 'UTCTime'
+      , addedBlockWhenReceivedUTC   :: UTCTime
+        -- | When this node finished the chain selection resulting from the
+        -- addition of this block
+        --
+        -- See more details on the 'DoneAddingBlock' constructor.
+      , addedBlockWhenDoneAdding    :: Time
+        -- | 'addedBlockWhenDoneAdding' as a 'UTCTime'
+      , addedBlockWhenDoneAddingUTC :: UTCTime
+      }
+  deriving (Generic)
+
+deriving instance
+  ( HasHeader blk
+  , Eq (Header blk)
+  , LedgerSupportsProtocol blk
+  , InspectLedger blk
+  ) => Eq (TraceDoneAddingBlockEvent blk)
+deriving instance
+  ( HasHeader blk
+  , Show (Header blk)
+  , LedgerSupportsProtocol blk
+  , InspectLedger blk
+  ) => Show (TraceDoneAddingBlockEvent blk)
 
 data TraceValidationEvent blk =
     -- | A point was found to be invalid.

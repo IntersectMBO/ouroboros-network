@@ -246,8 +246,8 @@ addBlockSync
      )
   => ChainDbEnv m blk
   -> BlockToAdd m blk
-  -> m ()
-addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
+  -> m (Point blk)
+addBlockSync cdb@CDB {..} blkToAdd = do
     (isMember, invalid, curChain) <- atomically $ (,,)
       <$> VolatileDB.getIsMember          cdbVolatileDB
       <*> (forgetFingerprint <$> readTVar cdbInvalid)
@@ -295,7 +295,15 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
         chainSelectionForBlock cdb blockCache hdr
 
     deliverProcessed newTip
+
+    pure newTip
   where
+    BlockToAdd {
+        blockToAdd            = b
+      , varBlockWrittenToDisk
+      , varBlockProcessed
+      } = blkToAdd
+
     trace :: TraceAddBlockEvent blk -> m ()
     trace = traceWith (contramap TraceAddBlockEvent cdbTracer)
 

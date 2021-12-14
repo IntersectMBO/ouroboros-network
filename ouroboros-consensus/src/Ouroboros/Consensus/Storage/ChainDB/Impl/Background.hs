@@ -51,11 +51,16 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
+import           Cardano.Slotting.Time (fromRelativeTime)
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.BlockFetch (FromConsensus (..))
+import qualified Ouroboros.Network.Tracers.OnlyForTracer as OnlyForTracer
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.Config.SupportsNode as SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
@@ -63,6 +68,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.EventAuxData
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -72,6 +78,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
@@ -523,7 +530,8 @@ dumpGcSchedule (GcSchedule varQueue) = toList <$> readTVar varQueue
 -- | Read blocks from 'cdbBlocksToAdd' and add them synchronously to the
 -- ChainDB.
 addBlockRunner
-  :: ( IOLike m
+  :: forall m blk.
+     ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
@@ -532,5 +540,51 @@ addBlockRunner
   => ChainDbEnv m blk
   -> m Void
 addBlockRunner cdb@CDB{..} = forever $ do
-    blockToAdd <- getBlockToAdd cdbBlocksToAdd
-    addBlockSync cdb blockToAdd
+    blkToAdd <- getBlockToAdd cdbBlocksToAdd
+    newTip   <- addBlockSync cdb blkToAdd
+    traceWith
+      (OnlyForTracer.mkTracerWithPolyRun dabTracer)
+      (blkToAdd, newTip)
+  where
+    blkcfg :: BlockConfig blk
+    blkcfg = configBlock cdbTopLevelConfig
+
+    dabTracer
+      :: OnlyForTracer.PolyRun
+      -> Tracer m (BlockToAdd m blk, Point blk)
+    dabTracer (OnlyForTracer.PolyRun run) = Tracer $ \(blkToAdd, newTip) -> do
+        let BlockToAdd {
+                blockToAdd        = b
+              , whenItWasEnqueued
+              } = blkToAdd
+
+        whenDoneAdding <-
+          (,) <$> getMonotonicTime <*> getCurrentTimeOnlyForTracer
+
+        -- Any block that made it into the blockToAdd queue satisfies the
+        -- 'FromConsensus' invariants: either ChainSync vetted it or this
+        -- local node forged it
+        whenItWasForged <-
+            atomically
+          $ Query.getCalculateHeaderSlotTime
+              cdb
+              (FromConsensus (getHeader b))
+
+        let inj = TraceAddBlockEvent . DoneAddingBlock
+        traceWith cdbTracer $ inj $ TraceDoneAddingBlockEvent {
+            addedBlock                  = EventAuxData b
+          , addedBlockNewSelection      = newTip
+          , addedBlockPoint             = blockRealPoint b
+
+          , addedBlockWhenSlotStart     = run whenItWasForged
+          , addedBlockWhenSlotStartUTC  =
+                EventAuxData
+              $ EventConstrainedData
+              $ fromRelativeTime
+                  (SupportsNode.getSystemStart blkcfg)
+                  (run whenItWasForged)
+          , addedBlockWhenReceived      =       fst whenItWasEnqueued
+          , addedBlockWhenReceivedUTC   = run $ snd whenItWasEnqueued
+          , addedBlockWhenDoneAdding    =       fst whenDoneAdding
+          , addedBlockWhenDoneAddingUTC = run $ snd whenDoneAdding
+          }
