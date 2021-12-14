@@ -172,6 +172,7 @@ library
                        Ouroboros.Consensus.Util.Counting
                        Ouroboros.Consensus.Util.DepPair
                        Ouroboros.Consensus.Util.EarlyExit
+                       Ouroboros.Consensus.Util.EventAuxData
                        Ouroboros.Consensus.Util.FileLock
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.IOLike
