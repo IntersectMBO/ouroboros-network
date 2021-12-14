@@ -77,7 +77,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
-                     Pushing (..), UpdateLedgerDbTraceEvent (..))
+                     PushStart (..), Pushing (..),
+                     UpdateLedgerDbTraceEvent (..))
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
@@ -445,9 +446,10 @@ ledgerDbPushMany ::
 ledgerDbPushMany trace cfg aps initDb = (repeatedlyM pushAndTrace) aps initDb
   where
     pushAndTrace ap db = do
-      let pushing = Pushing . toRealPoint $ ap
+      let start   = PushStart . toRealPoint . head $ aps
+          pushing = Pushing . toRealPoint $ ap
           goal    = PushGoal . toRealPoint . last $ aps
-      trace $ StartedPushingBlockToTheLedgerDb pushing goal
+      trace $ StartedPushingBlockToTheLedgerDb start pushing goal
       ledgerDbPush cfg ap db
 
 -- | Switch to a fork

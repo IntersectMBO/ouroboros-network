@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 module Ouroboros.Consensus.Storage.LedgerDB.Types (
     PushGoal (..)
+  , PushStart (..)
   , Pushing (..)
   , UpdateLedgerDbTraceEvent (..)
   ) where
@@ -12,6 +13,9 @@ import           Ouroboros.Consensus.Block.RealPoint (RealPoint)
 {-------------------------------------------------------------------------------
   Trace events
 -------------------------------------------------------------------------------}
+newtype PushStart blk = PushStart { unPushStart :: RealPoint blk }
+  deriving (Show, Eq)
+
 newtype PushGoal blk = PushGoal { unPushGoal :: RealPoint blk }
   deriving (Show, Eq)
 
@@ -21,6 +25,8 @@ newtype Pushing blk = Pushing { unPushing :: RealPoint blk }
 data UpdateLedgerDbTraceEvent blk =
     -- | Event fired when we are about to push a block to the LedgerDB
       StartedPushingBlockToTheLedgerDb
+        !(PushStart blk)
+        -- ^ Point from which we started pushing new blocks
         !(Pushing blk)
         -- ^ Point which block we are about to push
         (PushGoal blk)
