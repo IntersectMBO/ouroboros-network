@@ -648,10 +648,6 @@ data TraceValidationEvent blk =
       (ExtValidationError blk)
       (RealPoint blk)
 
-    -- | A candidate chain was invalid.
-  | InvalidCandidate
-      (AnchoredFragment (Header blk))
-
     -- | A candidate chain was valid.
   | ValidCandidate (AnchoredFragment (Header blk))
 

@@ -92,9 +92,7 @@ deriving instance StandardHash blk => Show (ParseError blk)
 
 data TraceEvent blk
     = DBAlreadyClosed
-    | DBAlreadyOpen
     | BlockAlreadyHere (HeaderHash blk)
-    | TruncateCurrentFile FsPath
     | Truncate (ParseError blk) FsPath BlockOffset
     | InvalidFileNames [FsPath]
   deriving (Eq, Generic, Show)

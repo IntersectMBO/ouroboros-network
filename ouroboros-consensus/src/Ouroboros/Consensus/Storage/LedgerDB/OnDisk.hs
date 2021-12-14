@@ -565,8 +565,4 @@ data TraceReplayEvent blk
         [LedgerEvent blk]
         (ReplayStart blk) -- ^ the block at which this replay started
         (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
-  -- | Signals that we are about to compute and push a ledger state into the
-  -- LedgerDB. Used while replaying the VolatileDB (during Initial Chain
-  -- Selection).
-  | UpdateLedgerDbTraceEvent (UpdateLedgerDbTraceEvent blk)
   deriving (Generic, Eq, Show)
