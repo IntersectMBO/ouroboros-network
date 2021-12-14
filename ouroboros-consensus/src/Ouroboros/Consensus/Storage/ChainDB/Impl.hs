@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , NewTipInfo (..)
   , TraceAddBlockEvent (..)
   , TraceCopyToImmutableDBEvent (..)
+  , TraceDoneAddingBlockEvent (..)
   , TraceEvent (..)
   , TraceFollowerEvent (..)
   , TraceGCEvent (..)
