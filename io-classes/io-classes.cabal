@@ -40,7 +40,6 @@ library
                        Control.Monad.Class.MonadSay
                        Control.Monad.Class.MonadST
                        Control.Monad.Class.MonadSTM
-                       Control.Monad.Class.MonadSTM.Strict
                        Control.Monad.Class.MonadThrow
                        Control.Monad.Class.MonadTime
                        Control.Monad.Class.MonadTimer
@@ -70,9 +69,6 @@ library
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
-
-  if flag(checktvarinvariant)
-    cpp-options: -DCHECK_TVAR_INVARIANT
 
 test-suite test
   type:                exitcode-stdio-1.0

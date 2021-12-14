@@ -23,6 +23,7 @@ packages: ./typed-protocols
           ./ouroboros-consensus-test
           ./io-sim
           ./io-classes
+          ./strict-stm
           ./ntp-client
           ./cardano-client
 
@@ -37,6 +38,9 @@ package Win32-network
   tests: True
 
 package io-classes
+  flags: +asserts
+
+package strict-stm
   flags: +asserts
 
 package network-mux
