@@ -131,14 +131,22 @@
 \def\RemoteEstablished{\textsf{RemoteEstablished}}
 \def\RemoteIdle{\textsf{RemoteIdle}\textsuperscript{$\tau$}}
 \def\RemoteCold{\textsf{RemoteCold}}
+\def\RemoteWarm{\textsf{RemoteWarm}}
+\def\RemoteHot{\textsf{RemoteHot}}
 
 % Inbound governor transitions
 \def\NewInboundConnection{\textsf{NewConnection Inbound}}
 \def\NewOutboundConnection{\textsf{NewConnection Outbound}}
+\def\NewConnection{\textsf{NewConnection}}
 \def\NewConnectionAny{\textsf{NewConnection provenance}}
 \def\AwakeRemote{\textsf{AwakeRemote}}
 \def\RemoteToCold{\textsf{RemoteToCold}}
 \def\CommitRemote{\textsf{CommitRemote}}
+\def\MiniProtocolTerminated{\textsf{MiniProtocolTerminated}}
+\def\MuxTerminated{\textsf{MuxTerminated}}
+\def\PromotedToHotRemote{\textsf{PromotedToHotRemote}}
+\def\DemotedToWarmRemote{\textsf{DemotedToWarmRemote}}
+\def\WaitIdleRemote{\textsf{WaitIdleRemote}}
 
 % Peer states
 \def\cold{\textit{cold}}
@@ -1705,53 +1713,144 @@ changes to connection states tracked by \inbgov{}.  As in the connection
 manager case there is an implicit transition from every state to the
 terminating state, which represents mux or mini-protocol failures.
 
-\begin{figure}[h]
-  \begin{tikzpicture}
-    \node (InitialState)                     at (0, 0)  {\InitialState};
-    \node[inbound_state] (RemoteIdle)        at (0, -2) {\RemoteIdle};
-    \node[inbound_state] (RemoteEstablished) at (0, -4) {\RemoteEstablished};
-    \node[inbound_state] (RemoteCold)        at (0, -6) {\RemoteCold};
-    \node (FinalState)                       at (0, -8) {\FinalState};
+\begin{figure}[h!]
+  \begin{center}
+    \begin{tikzpicture}
+      \node (InitialState)              at (0, 0)   {\InitialState};
+      \node[inbound_state] (RemoteCold) at (0, -4)  {\RemoteCold};
+      \node[inbound_state] (RemoteIdle) at (0, -8)  {\RemoteIdle};
+      \node[inbound_state] (RemoteWarm) at (0, -12) {\RemoteWarm};
+      \node[inbound_state] (RemoteHot)  at (0, -16) {\RemoteHot};
 
-    \draw[->] (InitialState)        -- node[right]{\NewConnectionAny}      (RemoteIdle);
-    \draw[->] (RemoteIdle.205)      -- node[right]{\AwakeRemote} (RemoteEstablished.155);
-    \draw[->] (RemoteIdle.185)      to [out=-160,in=130] node[left]{\TimeoutExpired} (RemoteCold.175);
-    \draw[->] (RemoteEstablished.5) to [out=60,in=330] node[right]{\RemoteToCold} (RemoteIdle.355);
-    \draw[->] (RemoteCold.155)      -- node[right]{\AwakeRemote} (RemoteEstablished.205);
-    \draw[->] (RemoteCold)          -- node[right]{\CommitRemote} (FinalState);
-  \end{tikzpicture}
-  \caption{Inbound protocol governor state machine}
-  \label{fig:inbgov-state-machine}
+      \draw[->] (RemoteWarm.180)   to [out=120,in=240]                                (InitialState);
+      \draw[->] (RemoteHot.180)    to [out=120,in=240]                                (InitialState);
+      \draw[->] (RemoteIdle.180)   to [out=110,in=240]                                (InitialState);
+      \draw[->] (RemoteCold.180)   to [out=100,in=240] node[fill=white,left=-30pt,pos=0.55]
+                                                           {\MuxTerminated}           (InitialState);
+
+      \draw[->] (InitialState)     to [out=350,in=20]  node[fill=white,pos=0.55]
+                                                           {\NewConnection}           (RemoteIdle.0);
+
+      \draw[->] (RemoteWarm.140)   to [out=120,in=240] node[fill=white,left=-50pt,pos=0.4]
+                                                           {\WaitIdleRemote}          (RemoteIdle.220);
+
+      \draw[->] (RemoteIdle)       to [out=55,in=305]                                 (InitialState);
+      \draw[->] (RemoteIdle)       to [out=70,in=290]  node[fill=white,left=-40pt,pos=0.3]
+                                                           {\CommitRemote}            (RemoteCold);
+
+      \draw[->] (RemoteCold.340)   to [out=300,in=60]                                 (RemoteWarm.30);
+      \draw[->] (RemoteIdle.320)   to [out=330,in=60]  node[fill=white,left=-45pt]
+                                                            {\AwakeRemote}            (RemoteWarm.30);
+
+      \draw[->] (RemoteWarm)       edge[loop right]    node[right]
+                                                           {\MiniProtocolTerminated}  (RemoteWarm);
+      \draw[->] (RemoteHot)        edge[loop right]    node[right]
+                                                           {\MiniProtocolTerminated}  (RemoteHot);
+
+      \draw[->] (RemoteHot.70)     to [out=60,in=300]   node[fill=white,right=-25pt,pos=0.4]
+                                                            {\DemotedToWarmRemote}    (RemoteWarm.290);
+      \draw[->] (RemoteWarm.250)   to [out=240,in=120]  node[fill=white,left=-80pt,pos=0.4]
+                                                            {\PromotedToHotRemote}    (RemoteHot.110);
+    \end{tikzpicture}
+    \caption{Inbound protocol governor state machine}
+    \label{fig:inbgov-state-machine}
+  \end{center}
 \end{figure}
 
-There is a map \(\Phi\) from the sub-graph of connection manager state machine
-which represents negotiated inbound or duplex outbound connections to the
-\inbgov{} state machine. \(\Phi\) is specified by the following table:
-\begin{align*}
-  & \Phi(\text{\InboundIdleStateAny}) & =\; & \text{\RemoteIdle}\\
-  & \Phi(\text{\OutboundStateDupTau}) & =\; & \text{\RemoteIdle}\\
-  & \Phi(\text{\OutboundStateDup})    & =\; & \text{\RemoteCold} \\
-  & \Phi(\text{\DuplexState})         & =\; & \text{\RemoteEstablished} \\
-  & \Phi(\text{\InboundStateAny})     & =\; & \text{\RemoteEstablished} \\
-  & \Phi(\text{\TerminatingState})    & =\; & \text{\FinalState} \\
-  & \Phi(\text{\TerminatedState})     & =\; & \text{\FinalState} \\
-\end{align*}
-Furthermore, \(\Phi\) gives rise to a functor: any transformation that has
-\textsf{Local} subscript is mapped to identity:
-\begin{lstlisting}
-*'$\Phi$(\textsf{a\textsubscript{Local}}) = \textsf{id}'*
-*'$\Phi$(\DemotedToColdAnyRem:\InboundIdleStateAny{}$\rightarrow$\TerminatingState)'*
-  = *'$\text{\CommitRemote}\circ\text{\TimeoutExpired}$'*
-*'$\Phi$(\DemotedToColdAnyRem:\DuplexState{}$\rightarrow$\OutboundStateDupTau)'*
-  = *'\RemoteToCold'*
-*'$\Phi$(\PromotedToWarmAnyRem) = \AwakeRemote'*
-*'$\Phi$(\TimeoutExpired)       = \TimeoutExpired'*
-*'$\Phi$(\AwakeAnyRem)          = \AwakeRemote'*
-\end{lstlisting}
+\subsection{States}
 
-\noindent The relation given by \(\Phi\) drives state changes in the connection manager
-state machine: if transition \texttt{f} of inbound protocol governor takes
-places, the connection manager does the transition
-\(\Phi^{-1}(\text{\texttt{f}})\) which starts at the current connection state
-(there's only one such\footnote{In categorical terms \(\Phi\) is a discrete
-opfibration}).
+States of the inbound governor are similar to the outbound governor, but there
+are crucial differences.
+
+\subsubsection{\RemoteCold}
+The remote cold state signifies that the remote peer is not using the
+connection, however the only reason why the inbound governor needs to track
+that connection is because the outbound side of this connection is used.  The
+inbound governor will wait until any of the responder mini-protocols wakes up
+(\AwakeRemote{}) or the mux will be shutdown (\MuxTerminated{}).
+
+\subsubsection{\RemoteIdle}
+The \RemoteIdle{} state is the initial state of each new connection
+(\NewConnection{}).  An active connection will become \RemoteIdle{} once the
+inbound governor detects that all responder mini-protocols terminated
+(\WaitIdleRemote{}).  When a connection enters this state, an idle timeout is
+started.  If no activity is detected on the responders, the connection will
+either be closed by the connection manager and forgotten by the inbound
+governor, or progress to the \RemoteCold{} state.  This depends whether the
+connection is used (\warm{} or \hot{}) or not (\cold{}) by the outbound side.
+
+\subsubsection{\RemoteWarm}
+A connection enters \RemoteWarm{} state once any of the mini-protocols starts
+to operate.  Once all hot mini-protocols started the state will transition to
+\RemoteHot{}.  Note that this is slightly different than the notion of a \warm{}
+peer, for which all \established{} and \warm{} mini-protocols are active, but
+\hot{} ones are idle.
+
+\subsubsection{\RemoteHot}
+A connection enters \RemoteHot{} transition once all hot protocol started, if
+any of them terminates the connection will be put in \RemoteWarm{}.
+
+\subsection{Transitions}
+
+\subsubsection{\NewConnection}
+Inbound and outbound duplex connections are passed to the inbound governor.
+They are then put in \RemoteIdle{} state.
+
+\subsubsection{\CommitRemote}
+Once the \RemoteIdle{} timeout expires the inbound governor will call
+\texttt{unregisterInboundConnection}.  Depending on the returned value the
+connection will either be forgotten or kept in \RemoteCold{} state.
+
+\subsubsection{\AwakeRemote}
+While a connection was put in \RemoteIdle{} state it is possible that the
+remote end will start using it.  When the inbound governor detects that any
+of the responders is active it will put that connection in \RemoteWarm{} state.
+
+\begin{detail}
+  The inbound governor calls \texttt{promotedToWarmRemote} to notify the
+  connection manager about the state change.
+\end{detail}
+
+\subsubsection{\WaitIdleRemote}
+\WaitIdleRemote{} transition happens once all mini-protocol terminated.
+
+\begin{detail}
+  The inbound governor calls \texttt{demotedToColdRemote}.   If it returns
+  \texttt{TerminatedConnection} the connection will be forgotten (as in
+  \MuxTerminated{} transition), if it returns \texttt{OperationSuccess} it will
+  register a idle timeout.
+\end{detail}
+
+\subsubsection{\MiniProtocolTerminated}
+When any of the mini-protocols terminates the inbound governor will restart the
+responder and update the internal state of the connection (e.g. update the stm
+transaction which tracks the state of the mini-protocol).
+
+\begin{detail}
+  The implementation distinguishes two situations: whether the mini-protocol
+  terminated or errored.  The multiplexer guarantees that if it errors, the
+  multiplexer will be closed (and thus the connection thread will exit and the
+  associated socket closed).   Hence, the inbound governor can forget about the
+  connection
+  (perform \MuxTerminated{}).
+
+  The inbound governor does not notify the connection manager about a terminating
+  responder mini-protocol.
+\end{detail}
+
+\subsubsection{\MuxTerminated}
+The inbound governor monitors the multiplexer.  As soon as it exists, the
+connection will be forgotten.
+
+The inbound governor does not notify the connection manager about the
+termination of the connection, as it will be able to detect this by itself.
+
+\subsubsection{\PromotedToHotRemote}
+The inbound governor detects when all \hot{} mini-protocols started.   In such
+case a \RemoteWarm{} connection is put in \RemoteHot{} state.
+
+\subsubsection{\DemotedToWarmRemote}
+Dually to \PromotedToHotRemote{} state transition, as soon as any of the \hot{}
+mini-protocols terminates, the connection will transition to \RemoteWarm{}
+state.
+

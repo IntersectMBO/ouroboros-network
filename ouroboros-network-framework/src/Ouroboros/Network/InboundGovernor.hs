@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -32,7 +33,6 @@ module Ouroboros.Network.InboundGovernor
   ) where
 
 import           Control.Exception (SomeAsyncException (..), assert)
-import           Control.Applicative (Alternative (..), (<|>))
 import           Control.Monad (foldM, when)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
@@ -47,6 +47,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Monoid.Synchronisation
 
 import qualified Network.Mux as Mux
 
@@ -142,14 +143,21 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
         <$> igsConnections state
 
       event
-        <- atomically $
-                (uncurry MuxFinished    <$> firstMuxToFinish state)
-            <|> (MiniProtocolTerminated <$> firstMiniProtocolToFinish state)
-            <|> (AwakeRemote            <$> firstPeerPromotedToWarm state)
-            <|> (RemotePromotedToHot    <$> firstPeerPromotedToHot state)
-            <|>                             firstPeerDemotedToCold state
-            <|> (NewConnection          <$> ControlChannel.readMessage
-                                              serverControlChannel)
+        <- atomically $ runFirstToFinish $
+               Map.foldMapWithKey
+                 (    firstMuxToFinish
+                   <> firstMiniProtocolToFinish
+                   <> firstPeerPromotedToWarm
+                   <> firstPeerPromotedToHot
+                   <> firstPeerDemotedToWarm
+                   <> firstPeerDemotedToCold
+                   <> firstPeerCommitRemote
+
+                   :: EventSignal muxMode peerAddr m a b
+                 )
+                 (igsConnections state)
+            <> (FirstToFinish $
+                 NewConnection <$> ControlChannel.readMessage serverControlChannel)
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
@@ -272,9 +280,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
           Terminated {
               tConnId,
               tMux,
-              tMiniProtocolData = MiniProtocolData { mpdMiniProtocol,
-                                                     mpdMiniProtocolTemp
-                                                   },
+              tMiniProtocolData = MiniProtocolData { mpdMiniProtocol },
               tResult
             } ->
           let num = miniProtocolNum mpdMiniProtocol in
@@ -295,23 +301,9 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
               case result of
                 Right completionAction -> do
                   traceWith tracer (TrResponderRestarted tConnId num)
-
-                  let isHot = mpdMiniProtocolTemp == Hot
-                      state' = ( if isHot
-                                 then mapRemoteState tConnId
-                                        $ \remoteState ->
-                                          case remoteState of
-                                            RemoteHot -> RemoteWarm
-                                            _         -> remoteState
-                                 else id
-                               )
-                             . updateMiniProtocol tConnId num completionAction
+                  let state' = updateMiniProtocol tConnId num completionAction
                              $ state
-
-                  -- remote state is only updated when 'isHot' is 'True'
-                  if isHot
-                     then return (Just tConnId, state')
-                     else return (Nothing, state')
+                  return (Nothing, state')
 
                 Left err -> do
                   -- there is no way to recover from synchronous exceptions; we
@@ -360,7 +352,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
         -- traffic.  This means that we'll observe this transition also if the
         -- first message that arrives is terminating a mini-protocol.
         AwakeRemote connId -> do
-          -- notify the connection manager about the transiton
+          -- notify the connection manager about the transition
           res <- promotedToWarmRemote connectionManager
                                       (remoteAddress connId)
           traceWith tracer (TrPromotedToWarmRemote connId res)
@@ -384,6 +376,12 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
         RemotePromotedToHot connId -> do
           traceWith tracer (TrPromotedToHotRemote connId)
           let state' = updateRemoteState connId RemoteHot state
+
+          return (Just connId, state')
+
+        RemoteDemotedToWarm connId -> do
+          traceWith tracer (TrDemotedToWarmRemote connId)
+          let state' = updateRemoteState connId RemoteWarm state
 
           return (Just connId, state')
 
@@ -548,6 +546,7 @@ data InboundGovernorTrace peerAddr
     | TrResponderTerminated          !(ConnectionId peerAddr) !MiniProtocolNum
     | TrPromotedToWarmRemote         !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrPromotedToHotRemote          !(ConnectionId peerAddr)
+    | TrDemotedToWarmRemote          !(ConnectionId peerAddr)
     | TrDemotedToColdRemote          !(ConnectionId peerAddr) !(OperationResult DemotedToColdRemoteTr)
     -- ^ All mini-protocols terminated.  The boolean is true if this connection
     -- was not used by p2p-governor, and thus the connection will be terminated.
