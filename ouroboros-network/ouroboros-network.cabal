@@ -186,10 +186,11 @@ library
                        contra-tracer,
                        monoidal-synchronisation,
 
-                       io-classes        >=0.1 && < 0.3,
+                       io-classes        >=0.1 && <0.3,
                        network-mux       >=0.1 && <1.0,
                        ouroboros-network-framework
                                          >=0.1 && <1.0,
+                       strict-stm        >=0.1 && <0.2,
                        typed-protocols   >=0.1 && < 1.0,
                        typed-protocols-cborg
                                          >=0.1 && < 1.0
@@ -270,6 +271,7 @@ library ouroboros-protocol-tests
                        ouroboros-network,
                        ouroboros-network-framework,
                        ouroboros-network-testing,
+                       strict-stm,
                        typed-protocols
 
   ghc-options:         -Wall
@@ -345,6 +347,7 @@ test-suite test
                        ouroboros-network-framework,
                        ouroboros-network-testing,
                        ouroboros-protocol-tests,
+                       strict-stm,
                        typed-protocols,
                        typed-protocols-examples
 

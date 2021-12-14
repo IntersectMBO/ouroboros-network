@@ -71,6 +71,7 @@ test-suite test
                        io-classes,
                        io-sim,
                        QuickCheck,
+                       strict-stm,
                        tasty,
                        tasty-quickcheck,
                        time               >= 1.9.1

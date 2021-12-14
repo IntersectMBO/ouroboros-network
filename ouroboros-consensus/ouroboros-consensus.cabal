@@ -328,6 +328,7 @@ library
                      , network-mux
                      , ouroboros-network-framework
                      , ouroboros-network
+                     , strict-stm        >=0.1   && <0.2
 
 
   if os(windows)
