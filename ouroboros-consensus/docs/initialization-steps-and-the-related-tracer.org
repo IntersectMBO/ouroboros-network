@@ -1,0 +1,625 @@
+#+AUTHOR: Pawel Szulc
+#+TITLE: CAD-3564 Catalogue node initialization steps and the related tracer events that already exist
+#+LaTeX_CLASS: article
+#+LATEX_CLASS_OPTIONS: [a4paper,10pt]
+#+LATEX_HEADER: \usepackage[margin=0.9in]{geometry}
+#+OPTIONS: toc:nil
+
+#+begin_export latex
+  \tableofcontents \clearpage
+#+end_export
+Consensus entry point for Node is ~Ouroboros.Consensus.Node~ and its function
+~runWith~ - this function starts at consensus. It will:
++ open the Chain DB
+  + open ImmutableDb
+  + open VolatileDB
+  + open LedgerDB
++ setup the NodeKernel
++ initialize the network layer
+
+This document focuses solely on the initialization steps of opening ChainDB. The
+[[*Tracers & events][Tracers & events]] chapter lists and describes possible events that might get
+fired by the Consensus while we open the ChainDB. The [[*Open Chain DB execution steps][Open Chain DB execution
+steps]] chapter describes in detail the execution steps that Consensus takes while
+opening the ChainDB. Lastly the [[*Node execution logs][Node execution logs]] chapter describes potential
+places where we could add more events.
+
+
+* Tracers & events
+
+   When calling a ~runWith~ function, on of the arguments we pass is a
+   ~LowLevelRunNodeArgs~
+
+#+BEGIN_SRC haskell
+   runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
+#+END_SRC
+
+   Please note that ~LowLevelRunNodeArgs~ is a datatype that holds
+   ~llrnChainDbArgsDefaults~
+
+#+BEGIN_SRC haskell
+
+data LowLevelRunNodeArgs m (...) blk =
+  LowLevelRunNodeArgs {
+    (...)
+      -- | The " static " ChainDB arguments
+    , llrnChainDbArgsDefaults :: ChainDbArgs Defaults m blk
+    (...)
+}
+#+END_SRC
+
+
+   ~ChainDbArgs Defaults m blk~ is the single argument we pass to ~ChainDB.open~
+
+   #+BEGIN_SRC haskell
+openDB
+  :: forall m blk.
+     ( IOLike m
+       (...)
+     )
+  => ChainDbArgs Identity m blk
+  -> m (ChainDB m blk)
+   #+END_SRC
+
+   ~runWith~ calls ~ChainDB.openDB~ and passes ~llrnChainDbArgsDefaults~ as an
+   argument. When we look closely at ~ChainDbArgs Identity m blk~ we will notice
+   that internally it holds two tracers: ~cdbTracer~ and ~cdbTraceLedger~.
+
+  #+BEGIN_SRC haskell
+
+    import Ouroboros.Consensus.Storage.ChainDB.Impl.Types(TraceEvent(..))
+
+    data ChainDbArgs f m blk = ChainDbArgs {
+	(...)
+	, cdbTracer                 :: Tracer m (TraceEvent blk)
+	, cdbTraceLedger            :: Tracer m (LedgerDB' blk)
+	(...)
+    }
+  #+END_SRC
+
+  Thus we see that all events - while ~ChainDB~ opens - will be
+  triggered by either:
+
+  1. ~cdbTracer~ tracing ~TraceEvent~ from ~Ouroboros.Consensus.Storage.ChainDB.Impl.Types~
+  2. ~cdbTraceLedger~ tracing ~LedgerDB' blk~
+
+** cdbTracer
+
+   ~cdbTracer~ traces events of type ~TraceEvent~ that are defined in
+   ~Ouroboros.Consensus.Storage.ChainDB.Impl.Types~.
+
+#+BEGIN_SRC haskell
+data TraceEvent blk
+  = TraceAddBlockEvent          (TraceAddBlockEvent           blk)
+  | TraceFollowerEvent          (TraceFollowerEvent           blk)
+  | TraceCopyToImmutableDBEvent (TraceCopyToImmutableDBEvent  blk)
+  | TraceGCEvent                (TraceGCEvent                 blk)
+  | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
+  | TraceOpenEvent              (TraceOpenEvent               blk)
+  | TraceIteratorEvent          (TraceIteratorEvent           blk)
+  | TraceLedgerEvent            (LgrDB.TraceEvent             blk)
+  | TraceLedgerReplayEvent      (LgrDB.TraceLedgerReplayEvent blk)
+  | TraceImmutableDBEvent       (ImmutableDB.TraceEvent       blk)
+  | TraceVolatileDBEvent        (VolatileDB.TraceEvent        blk)
+  deriving (Generic)
+#+END_SRC
+
+    There are a few events that are relevant to ~ChainDB.openDB~
+    + ~TraceOpenEvent~
+    + ~TraceImmutableDBEvent~
+    + ~TraceVolatileDBEvent~
+    + ~TraceLedgerEvent~
+    + ~TraceLedgerReplayEvent~
+    + ~TraceInitChainSelEvent~
+
+    Below we look at each event more closely.
+
+*** ~TraceOpenEvent~ - a.k.a opening events
+
+#+BEGIN_SRC haskell
+   | TraceOpenEvent              (TraceOpenEvent               blk)
+#+END_SRC
+
+     Constructor ~TraceOpenEvent~ wraps a ~TraceOpenEvent blk~. Those events are
+     fired when a particular DB is opened.
+
+    #+BEGIN_SRC haskell
+data TraceOpenEvent blk =
+    -- | The ChainDB was opened.
+    OpenedDB
+      (Point blk)  -- ^ Immutable tip
+      (Point blk)  -- ^ Tip of the current chain
+
+    -- | The ChainDB was closed.
+  | ClosedDB
+      (Point blk)  -- ^ Immutable tip
+      (Point blk)  -- ^ Tip of the current chain
+
+    -- | The ImmutableDB was opened.
+  | OpenedImmutableDB
+      (Point blk)          -- ^ Immutable tip
+      ImmutableDB.ChunkNo  -- ^ Chunk number of the immutable tip
+
+    -- | The VolatileDB was opened.
+  | OpenedVolatileDB
+
+    -- | The LedgerDB was opened.
+  | OpenedLgrDB
+  deriving (Generic, Eq, Show)
+    #+END_SRC
+
+*** ~TraceImmutableDBEvent~ - a.k.a ~ImmutableDB~'s events
+
+#+BEGIN_SRC haskell
+   | TraceImmutableDBEvent       (ImmutableDB.TraceEvent       blk)
+#+END_SRC
+
+     ImmutableDB has its own set of events defined at ~Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types~
+
+     #+BEGIN_SRC haskell
+ data TraceEvent blk =
+     NoValidLastLocation
+   | ValidatedLastLocation ChunkNo (Tip blk)
+     -- Validation of previous DB
+   | ValidatingChunk  ChunkNo
+   | MissingChunkFile ChunkNo
+   | InvalidChunkFile ChunkNo (ChunkFileError blk)
+   | ChunkFileDoesntFit (ChainHash blk) (ChainHash blk)
+     -- ^ The hash of the last block in the previous epoch doesn't match the
+     -- previous hash of the first block in the current epoch
+   | MissingPrimaryIndex   ChunkNo
+   | MissingSecondaryIndex ChunkNo
+   | InvalidPrimaryIndex   ChunkNo
+   | InvalidSecondaryIndex ChunkNo
+   | RewritePrimaryIndex   ChunkNo
+   | RewriteSecondaryIndex ChunkNo
+   | Migrating Text
+     -- ^ Performing a migration of the on-disk files
+
+     -- Delete after
+   | DeletingAfter (WithOrigin (Tip blk))
+     -- Closing the DB
+   | DBAlreadyClosed
+   | DBClosed
+     -- Events traced by the index cache
+   | TraceCacheEvent !TraceCacheEvent
+   deriving (Eq, Generic, Show)
+     #+END_SRC
+
+     Because we have a constructor ~TraceImmutableDBEvent ::
+     ImmutableDB.TraceEvent -> ChainDB.TraceEvent~  we can define a tracer for
+     ImmutableDB's events with a ~contramap~ from ~Data.Functor.Contravariant~
+     using existing ~cdbTracer~ (from ~ChainDbArgs~).
+
+     #+BEGIN_SRC haskell
+         , immTracer           = contramap TraceImmutableDBEvent cdbTracer
+     #+END_SRC
+
+     There are a few events worth noticing
+     + ~TraceCacheEvent~
+     + ~Migrating~
+     + ~ValidatingChunk~
+
+*** ~TraceVolatileDBEvent~ - a.k.a ~VolatileDB~'s events
+
+    #+BEGIN_SRC haskell
+  | TraceVolatileDBEvent        (VolatileDB.TraceEvent        blk)
+    #+END_SRC
+
+    VolatileDB has its own set of events defined at ~Ouroboros.Consensus.Storage.VolatileDB.Impl.Types~
+
+    #+BEGIN_SRC haskell
+data TraceEvent blk
+    = DBAlreadyClosed
+    | DBAlreadyOpen
+    | BlockAlreadyHere (HeaderHash blk)
+    | TruncateCurrentFile FsPath
+    | Truncate (ParseError blk) FsPath BlockOffset
+    | InvalidFileNames [FsPath]
+  deriving (Eq, Generic, Show)
+    #+END_SRC
+
+    Because we have a constructor ~TraceVolatileDBEvent ::
+    VolatileDB.TraceEvent -> ChainDB.TraceEvent~  we can define a tracer for
+    ~VolatileDB~'s events with a ~contramap~ from ~Data.Functor.Contravariant~
+    using existing ~cdbTracer~ (from ~ChainDbArgs~).
+
+    #+BEGIN_SRC haskell
+        , volTracer           = contramap TraceVolatileDBEvent cdbTracer
+    #+END_SRC
+*** ~TraceLedgerEvent~ & ~TraceLedgerReplayEvent~ - a.k.a ~LedgerDB~'s events
+
+
+    ~LedgerDB~ has two sets of events defined in
+    ~Ouroboros.Consensus.Storage.LedgerDB.OnDisk~, those are ~TraceEvent~ and
+    ~TraceLedgerReplayEvent~
+
+**** ~TraceEvent~
+
+    #+BEGIN_SRC haskell
+  | TraceLedgerEvent            (LgrDB.TraceEvent             blk)
+    #+END_SRC
+
+     #+BEGIN_SRC haskell
+data TraceEvent blk
+  = InvalidSnapshot DiskSnapshot (InitFailure blk)
+    -- ^ An on disk snapshot was skipped because it was invalid.
+  | TookSnapshot DiskSnapshot (RealPoint blk)
+    -- ^ A snapshot was written to disk.
+  | DeletedSnapshot DiskSnapshot
+    -- ^ An old or invalid on-disk snapshot was deleted
+  deriving (Generic, Eq, Show)
+     #+END_SRC
+
+    Because we have a constructor ~TraceLedgerEvent ::
+    LedgerDB.TraceEvent -> ChainDB.TraceEvent~  we can define a tracer for
+    ~LedgerDB~'s events with a ~contramap~ from ~Data.Functor.Contravariant~
+    using existing ~cdbTracer~ (from ~ChainDbArgs~).
+
+    #+BEGIN_SRC haskell
+    , lgrTracer           = contramap TraceLedgerEvent cdbTracer
+    #+END_SRC
+
+
+
+**** ~TraceLedgerReplayEvent~
+
+     #+BEGIN_SRC haskell
+   | TraceLedgerReplayEvent      (LgrDB.TraceLedgerReplayEvent blk)
+     #+END_SRC
+
+      ~TraceLedgerReplayEvent~ is just a type alias to ~TraceReplayEvent~ with
+      additional information about the tip of the immutable db.
+
+      #+BEGIN_SRC haskell
+ -- | 'TraceReplayEvent' instantiated with additional information.
+ --
+ -- The @replayTo@ parameter is instantiated with the 'Point' of
+ -- the tip of the ImmutableDB.
+ type TraceLedgerReplayEvent blk = TraceReplayEvent blk (Point blk)
+       (...)
+ -- | Events traced while replaying blocks against the ledger to bring it up to
+ -- date w.r.t. the tip of the ImmutableDB during initialisation. As this
+ -- process takes a while, we trace events to inform higher layers of our
+ -- progress.
+ --
+ -- The @replayTo@ parameter is meant to be filled in by a higher layer,
+ -- i.e., the ChainDB.
+ data TraceReplayEvent blk replayTo
+   = ReplayFromGenesis replayTo
+     -- ^ There were no LedgerDB snapshots on disk, so we're replaying all
+     -- blocks starting from Genesis against the initial ledger.
+     --
+     -- The @replayTo@ parameter corresponds to the block at the tip of the
+     -- ImmutableDB, i.e., the last block to replay.
+   | ReplayFromSnapshot DiskSnapshot (RealPoint blk) replayTo
+     -- ^ There was a LedgerDB snapshot on disk corresponding to the given tip.
+     -- We're replaying more recent blocks against it.
+     --
+     -- The @replayTo@ parameter corresponds to the block at the tip of the
+     -- ImmutableDB, i.e., the last block to replay.
+   | ReplayedBlock (RealPoint blk) [LedgerEvent blk] replayTo
+     -- ^ We replayed the given block (reference) on the genesis snapshot
+     -- during the initialisation of the LedgerDB.
+     --
+     -- The @blockInfo@ parameter corresponds replayed block and the @replayTo@
+     -- parameter corresponds to the block at the tip of the ImmutableDB, i.e.,
+     -- the last block to replay.
+   deriving (Generic, Eq, Show, Functor, Foldable, Traversable)
+      #+END_SRC
+
+     Because we have a constructor ~TraceLedgerReplayEvent ::
+     LedgerDB.TraceLedgerReplayEvent -> ChainDB.TraceEvent~ we can define a
+     tracer for ~LedgerDB~'s events with a ~contramap~ from
+     ~Data.Functor.Contravariant~ using existing ~cdbTracer~ (from
+     ~ChainDbArgs~).
+
+     After we have ~Tracer m (TraceLedgerReplayEvent blk)~ we decorate it with
+     ~ImmutableDB~'s tip again using a ~contramap~.
+
+#+BEGIN_SRC haskell
+    let lgrReplayTracer =
+          LgrDB.decorateReplayTracer
+            immutableDbTipPoint
+            (contramap TraceLedgerReplayEvent tracer) -- tracer is the cdbTracer
+#+END_SRC
+
+     This nice little trick allows us to create a ~Tracer m (TraceReplayEvent
+     blk ())~, thus firing events (like ~ReplayedBlock (RealPoint blk)
+     [LedgerEvent blk] replayTo~) where ~replayTo~ will be ~()~ but thanks to
+     magic of ~ContravariantFunctor~ it will be mapped to provided tip.
+
+*** ~TraceInitChainSelEvent~ - a.k.a init chain selection's events
+
+     #+BEGIN_SRC haskell
+   | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
+     #+END_SRC
+
+     Constructor ~TraceInitChainSelEvent~ wraps a ~TraceInitChainSelEvent blk~.
+     Those events are fired when we initialize chain selection.
+
+#+BEGIN_SRC haskell
+data TraceInitChainSelEvent blk
+  = InitChainSelValidation (TraceValidationEvent blk)
+    -- ^ An event traced during validation performed while performing initial
+    -- chain selection.
+  deriving (Generic)
+#+END_SRC
+
+     Tracer used to fire those events is built with a ~ContravariantFunctor~ so
+     that events that are fired are of type ~TraceValidationEvent~
+
+     #+BEGIN_SRC haskell
+trace = traceWith
+  (contramap (TraceInitChainSelEvent . InitChainSelValidation) tracer)
+
+data TraceValidationEvent blk =
+    -- | A point was found to be invalid.
+    InvalidBlock
+      (ExtValidationError blk)
+      (RealPoint blk)
+
+    -- | A candidate chain was invalid.
+  | InvalidCandidate
+      (AnchoredFragment (Header blk))
+
+    -- | A candidate chain was valid.
+  | ValidCandidate (AnchoredFragment (Header blk))
+
+    -- | Candidate contains headers from the future which do no exceed the
+    -- clock skew.
+  | CandidateContainsFutureBlocks
+      (AnchoredFragment (Header blk))
+      -- ^ Candidate chain containing headers from the future
+      [Header blk]
+      -- ^ Headers from the future, not exceeding clock skew
+
+    -- | Candidate contains headers from the future which exceed the
+    -- clock skew, making them invalid.
+  | CandidateContainsFutureBlocksExceedingClockSkew
+      (AnchoredFragment (Header blk))
+      -- ^ Candidate chain containing headers from the future
+      [Header blk]
+      -- ^ Headers from the future, exceeding clock skew
+  deriving (Generic)
+
+     #+END_SRC
+
+
+
+** cdbTraceLedger
+
+    The ~cdbTraceLedger~ is used only once in the module
+    ~Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel~ in the function
+    ~chainSelectionForBlock~.
+
+#+BEGIN_SRC haskell
+chainSelectionForBlock
+  :: forall m blk.
+     ( IOLike m
+     , HasHeader blk
+     , LedgerSupportsProtocol blk
+     , InspectLedger blk
+     , HasHardForkHistory blk
+     , HasCallStack
+     )
+  => ChainDbEnv m blk
+  -> BlockCache blk
+  -> Header blk
+  -> m (Point blk)
+chainSelectionForBlock cdb@CDB{..} blockCache hdr = do
+  (...)
+  where
+    switchTo
+      :: HasCallStack
+      => ValidatedChainDiff (Header blk) (LedgerDB' blk)
+      -> (    [LedgerEvent blk]
+           -> NewTipInfo blk
+           -> AnchoredFragment (Header blk)
+           -> AnchoredFragment (Header blk)
+           -> TraceAddBlockEvent blk
+         )
+      -> m (Point blk)
+    switchTo (ValidatedChainDiff chainDiff newLedger) mkTraceEvent = do
+        (...)
+        traceWith cdbTraceLedger newLedger
+#+END_SRC
+
+* Open Chain DB execution steps
+  Chain DB openDB executes in the following way:
+  + open a ImmutableDB
+  + fire a ~TraceOpenEvent $ OpenedImmutableDB immutableDbTipPoint immutableDbTipChunk~
+  + open a VolatileDB
+  + fire a ~TraceOpenEvent OpenedVolatileDb~
+  + open a LgrDB
+  + fire a ~TraceOpenEvent OpenedLgrDB~
+  + initialize chain selection
+  + fire a ~TraceOpenEvent $ OpenedDB~
+
+** open ImmutableDB
+
+   When ImmutableDB opens it will:
+   + create a directory in the file system if one does not exist
+   + perform migration of old files
+   + perform validation as per the ~ValidationPolicy~, this returns most recent
+     chunk
+   + create ~cachedIndex~ for the most recent chunk
+   + open state for the most recent chunk
+
+   While executing, ~ImmutableDB~ will use events described in [[*~TraceImmutableDBEvent~ - a.k.a ~ImmutableDB~'s
+    events][~TraceImmutableDBEvent~ - a.k.a ~ImmutableDB~'s events]]
+
+   Below more details about each execution step:
+
+*** create a directory
+
+    There are *no* events created.
+*** perform migration of old files
+
+    It will first migrate any old files. If migration happens it will fire a
+    ~Migrating~ event.
+
+    #+BEGIN_SRC haskell
+     traceWith tracer $ Migrating ".epoch files to .chunk files"
+    #+END_SRC
+
+*** perform validation
+
+    It will lookup the latest chunk or create one. Depending on the
+    ~ValidationPolicy~ it will either validate the that latest chunk or all
+    chunks.
+
+    For each chunk it validates it will:
+    + fire ~ValidatingChunk~
+    + if there are problems with the chunk it may fire ~MissingChunkFile~,
+      ~InvalidSecondaryIndex~, ~MissingSecondaryIndex~, ~InvalidChunkFile~,
+      ~InvalidPrimaryIndex~, ~MissingPrimaryIndex~ or ~RewritePrimaryIndex~
+
+*** create cachedIndex for most recent chunk
+
+    Spawns a background thread to expire past chunks from the cache that
+    haven't been used for a while.
+    Will create ~TraceCacheEvent~ events when chunks expire using
+    ~cacheTracer~ that is created from ~immTracer~:
+
+    #+BEGIN_SRC haskell
+   cacheTracer = contramap TraceCacheEvent tracer
+    #+END_SRC
+
+*** open state for the most recent chunk
+
+    There are *no* events created.
+
+** open VolatileDB
+
+   When VolatileDB opens it will:
+   + create a directory in the file system if one does not exist
+   + open state
+
+   While executing, ~VolatileDB~ will use events described in [[*~TraceVolatileDBEvent~ - a.k.a ~VolatileDB~'s events][~TraceVolatileDBEvent~ - a.k.a ~VolatileDB~'s events]]
+
+   Below more details about each execution step:
+
+*** create a directory
+
+    There are *no* events created.
+
+*** open state
+
+    While opening the DB files it may fire events regarding errors like:
+
+    + invalid file names (~traceWith tracer $ InvalidFileNames invalid~)
+    + validating files (~traceWith tracer $ Truncate e file offset~)
+
+    No other events are created
+
+** open LgrDB
+
+   When LgrDB opens it will:
+   + create a directory in the file system if one does not exist
+   + initialize ~LgrDB~ from disk
+   + prune ~LgrDB~
+
+   While executing, ~LgrDB~ will use events described in [[*~TraceLedgerEvent~ &
+ ~TraceLedgerReplayEvent~ - a.k.a ~LedgerDB~'s events][~TraceLedgerEvent~ &
+~TraceLedgerReplayEvent~ - a.k.a ~LedgerDB~'s events]]
+
+   Below more details about each execution step:
+
+*** create a directory
+
+    There are *no* events created.
+
+*** initialize ~LgrDB~ from disk
+
+    First it needs to select a starting ledger state with which it will
+    initialize ~LgrDB~. In order to do that, list of all available snapshots is
+    retrieved from the disk. Two things may happen:
+
+    + there are no valid snapshots available
+    + there is at least one valid snapshot available
+
+**** there are no valid snapshots available
+
+     If there are no valid snapshots available, it will:
+     + fire an event ~ReplayFromGenesis~
+     + create a ~LedgerDB~ anchored at Genesis
+     + start initialization with that ~LedgerDB~
+
+**** there is at least one valid snapshot available
+
+     If there is at least one valid snapshot available, it will:
+
+     + fire an event ~ReplayFromSnapshot~
+     + create a ~LedgerDB~ anchored at that snapshot
+     + start initialization with that ~LedgerDB~
+
+    Initialization builds a ~LedgerDB~ by folding over blocks returned by the
+    ~ImmutableDB~, starting from the block corresponding to the anchor of the
+    initial ~LedgerDB~ going up to the tip of the ~ImmutableDB~.
+    Each block is then validated, applied to existing ledger state, and extend
+    the current ~LedgerDB~ with a new state.
+    This process is called a replay.
+
+    For each block that we replay a ~ReplayedBlock~ is fired
+
+** initialize chain selection
+
+
+   Perform the initial chain selection based on the tip of the ImmutableDB and
+   the contents of the VolatileDB.
+   While executing, it will fire events described in [[*~TraceInitChainSelEvent~ - a.k.a init chain selection's events][~TraceInitChainSelEvent~ - a.k.a init chain selection's events]]
+
+   List of candidates is created based on blocks that live in the
+   ~VolatileDB~. If that is list empty, meaning that there are no candidates
+   available, an empty chain fragment (anchored at the ~ImmutableDB~ tip) is
+   returned. Otherwise a chain selection is initialized.
+
+   The chain selection algorithm will gather all chain candidates, sort them
+   (in order from best to worst) and then it will validated the first
+   candidate that is on the list. If candidate happens invalid it will move to
+   the next one, otherwise it will return it.
+   While the validation happens few (more then one during single validation)
+   events might be fired:
+   + ~ValidCandidate~ if the validation was successful
+   + ~InvalidBlock~
+   + ~CandidateContainsFutureBlocks~ - Candidate contains headers from the
+     future which do no exceed the clock skew.
+   + ~CandidateContainsFutureBlocksExceedingClockSkew~ - Candidate contains
+     headers from the future which exceed the clock skew, making them invalid.
+
+* Node execution logs
+
+  Reading the [[*Node execution logs][Node execution logs]] we can clearly see that there is a significant
+  time delay between ~TraceOpenEvent OpenedVolatileDB~ ("Opened vol db") and ~ReplayFromSnapshot~
+  ("Replaying ledger from snapshot DiskSnapshot").
+
+
+#+CAPTION: Node logs, with DEBUG mode disabled
+#+BEGIN_SRC
+> run
+
+Up to date
+Listening on http://127.0.0.1:12798
+(...)
+[2021-11-03 14:02:55.62 UTC] Opened imm db with immutable tip at 9344abd8dfa11e5a4313e4fbe9cc99a2c9cd4c3c20beedacb17eeffc51cfa84a at slot 44152233 and chunk 2044
+[2021-11-03 14:02:57.61 UTC] Opened vol db
+[2021-11-03 14:03:20.23 UTC] Replaying ledger from snapshot DiskSnapshot {dsNumber = 44148901, dsSuffix = Nothing} at 0b14749bf136d7fea9b527f0bf7f4d6d96e15e75b357cead4c784670f0d5e683 at slot 44148901
+[2021-11-03 14:03:20.64 UTC] Replayed block: slot SlotNo 44148918 of At (SlotNo 44152233)
+[2021-11-03 14:03:20.93 UTC] before next, messages elided = 44148950
+[2021-11-03 14:03:20.93 UTC] Replayed block: slot SlotNo 44150308 of At (SlotNo 44152233)
+[2021-11-03 14:03:20.94 UTC] Replayed block: slot SlotNo 44150342 of At (SlotNo 44152233)
+[2021-11-03 14:03:21.34 UTC] before next, messages elided = 44150408
+[2021-11-03 14:03:21.34 UTC] Replayed block: slot SlotNo 44152233 of At (SlotNo 44152233)
+[2021-11-03 14:03:21.34 UTC] Opened lgr db
+[2021-11-03 14:03:39.18 UTC] Opened db with immutable tip at 9344abd8dfa11e5a4313e4fbe9cc99a2c9cd4c3c20beedacb17eeffc51cfa84a at slot 44152233 and tip a3f4144c279544b2e38b136fa6b367fd175030637178fc4f794f2ca14bf5d22d at slot 44196470
+(...)
+[2021-11-03 14:03:39.62 UTC] Chain extended, new tip: 56813400a116a71eaed4873d9e965db9830019bbff2c719d8f9caefebc5de479 at slot 44196499
+[2021-11-03 14:03:39.80 UTC] Chain extended, new tip: f424ce974dd8fbddc1c8b9740f7cde0b46b7dfc73d1e44dfd964f7df507bb546 at slot 44196959
+[2021-11-03 14:07:02.27 UTC] Chain extended, new tip: 0afb99b3ae89fdac6ecb202e6cf75d18e52828fc08bcbc27a754bc97faea5a7c at slot 44333952
+(...)
+[sterling:cardano.node.ChainDB:Info:35] [2021-11-03 14:07:03.21 UTC] Valid candidate 1263f0d7e9c10aecaadc00ba332d401216941d8ac26a641ddb3217332dd895df at slot 44335889
+#+END_SRC
+
+** TODO Consider adding more events in between
+   So that there is no +20 seconds delay between two consecutive events
