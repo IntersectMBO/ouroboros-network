@@ -27,10 +27,10 @@ data UpdateLedgerDbTraceEvent blk =
       StartedPushingBlockToTheLedgerDb
         !(PushStart blk)
         -- ^ Point from which we started pushing new blocks
-        !(Pushing blk)
-        -- ^ Point which block we are about to push
         (PushGoal blk)
         -- ^ Point to which we are updating the ledger, the last event
         -- StartedPushingBlockToTheLedgerDb will have Pushing and PushGoal
         -- wrapping over the same RealPoint
+        !(Pushing blk)
+        -- ^ Point which block we are about to push
   deriving (Show, Eq, Generic)

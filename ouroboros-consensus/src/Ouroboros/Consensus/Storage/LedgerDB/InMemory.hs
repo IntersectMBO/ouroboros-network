@@ -440,16 +440,14 @@ ledgerDbPush cfg ap db =
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany ::
      forall m c l blk . (ApplyBlock l blk, Monad m, c)
-  => (UpdateLedgerDbTraceEvent blk -> m ())
+  => (Pushing blk -> m ())
   -> LedgerDbCfg l
   -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
 ledgerDbPushMany trace cfg aps initDb = (repeatedlyM pushAndTrace) aps initDb
   where
     pushAndTrace ap db = do
-      let start   = PushStart . toRealPoint . head $ aps
-          pushing = Pushing . toRealPoint $ ap
-          goal    = PushGoal . toRealPoint . last $ aps
-      trace $ StartedPushingBlockToTheLedgerDb start pushing goal
+      let pushing = Pushing . toRealPoint $ ap
+      trace pushing
       ledgerDbPush cfg ap db
 
 -- | Switch to a fork
@@ -467,8 +465,16 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
             rollbackMaximum   = ledgerDbMaxRollback db
           , rollbackRequested = numRollbacks
           }
-      Just db' ->
-        Right <$> ledgerDbPushMany trace cfg newBlocks db'
+      Just db' -> case newBlocks of
+        [] -> pure $ Right db'
+        -- ^ no blocks to apply to ledger state, return current LedgerDB
+        (firstBlock:_) -> do
+          let start   = PushStart . toRealPoint $ firstBlock
+              goal    = PushGoal  . toRealPoint . last $ newBlocks
+          Right <$> ledgerDbPushMany (trace . (StartedPushingBlockToTheLedgerDb start goal))
+                                     cfg
+                                     newBlocks
+                                     db'
 
 {-------------------------------------------------------------------------------
   The LedgerDB itself behaves like a ledger
