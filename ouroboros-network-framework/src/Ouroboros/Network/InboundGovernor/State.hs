@@ -108,19 +108,25 @@ data InboundGovernorState muxMode peerAddr m a b =
 -- | Counters for tracing and analysis purposes
 --
 data InboundGovernorCounters = InboundGovernorCounters {
+      coldPeersRemote :: !Int,
+      -- ^ the number of remote peers which are in 'RemoteCold' state
+      idlePeersRemote :: !Int,
+      -- ^ the number of remote peers which are in 'RemoteIdle' state
       warmPeersRemote :: !Int,
-      -- ^ number of remote peers that have the local peer as warm
+      -- ^ the number of remote peers which are in 'RemoteWarm' state (a close
+      -- approximation of peers that have the node as a warm peer)
       hotPeersRemote  :: !Int
-      -- ^ number of remote peers that have the local peer as hot
+      -- ^ the number of remote peers which are in 'RemoteHot' state (a close
+      -- approximation of peers that have the node as a hot peer)
     }
   deriving (Eq, Ord, Show)
 
 instance Semigroup InboundGovernorCounters where
-    InboundGovernorCounters w h <> InboundGovernorCounters w' h' =
-      InboundGovernorCounters (w + w') (h + h')
+    InboundGovernorCounters c i w h <> InboundGovernorCounters c' i' w' h' =
+      InboundGovernorCounters (c + c') (i + i') (w + w') (h + h')
 
 instance Monoid InboundGovernorCounters where
-    mempty = InboundGovernorCounters 0 0
+    mempty = InboundGovernorCounters 0 0 0 0
 
 
 inboundGovernorCounters :: InboundGovernorState muxMode peerAddr m a b
@@ -128,9 +134,10 @@ inboundGovernorCounters :: InboundGovernorState muxMode peerAddr m a b
 inboundGovernorCounters InboundGovernorState { igsConnections } =
     foldMap (\ConnectionState { csRemoteState } ->
               case csRemoteState of
-                RemoteWarm -> InboundGovernorCounters 1 0
-                RemoteHot  -> InboundGovernorCounters 0 1
-                _          -> mempty
+                RemoteCold    -> InboundGovernorCounters 1 0 0 0
+                RemoteIdle {} -> InboundGovernorCounters 0 1 0 0
+                RemoteWarm    -> InboundGovernorCounters 0 0 1 0
+                RemoteHot     -> InboundGovernorCounters 0 0 0 1
             )
             igsConnections
 
