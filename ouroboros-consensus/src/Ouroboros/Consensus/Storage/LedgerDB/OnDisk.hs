@@ -66,8 +66,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Storage.LedgerDB.Types
-                     (UpdateLedgerDbTraceEvent (..))
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
 import           Ouroboros.Consensus.Util.IOLike
@@ -565,8 +563,4 @@ data TraceReplayEvent blk
         [LedgerEvent blk]
         (ReplayStart blk) -- ^ the block at which this replay started
         (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
-  -- | Signals that we are about to compute and push a ledger state into the
-  -- LedgerDB. Used while replaying the VolatileDB (during Initial Chain
-  -- Selection).
-  | UpdateLedgerDbTraceEvent (UpdateLedgerDbTraceEvent blk)
   deriving (Generic, Eq, Show)
