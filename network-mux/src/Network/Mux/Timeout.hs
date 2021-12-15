@@ -16,12 +16,14 @@
 -- but is not currently needed.
 --
 module Network.Mux.Timeout
-    ( TimeoutFn
-    , withTimeoutSerial
-    , withTimeoutSerialNative
-    , withTimeoutSerialAlternative
-    ) where
+  ( TimeoutFn
+  , withTimeoutSerial
+  , withTimeoutSerialNative
+  , withTimeoutSerialAlternative
+  ) where
 
+import           Control.Exception (asyncExceptionFromException,
+                     asyncExceptionToException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -30,8 +32,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer (MonadTimer, registerDelay)
 import qualified Control.Monad.Class.MonadTimer as MonadTimer
-import           Control.Exception (asyncExceptionFromException,
-                     asyncExceptionToException)
 
 
 -- | The type of the 'System.Timeout.timeout' function.
@@ -131,10 +131,10 @@ withTimeoutSerialAlternative body = do
 data MonitorState m =
      MonitorState {
        -- written by timeout combinator, read and reset by monitoring thread
-       nextTimeoutVar :: !(TVar m (NextTimeout m)),
+       nextTimeoutVar   :: !(TVar m (NextTimeout m)),
 
        -- written by monitoring thread, read by timeout combinator
-       curDeadlineVar :: !(TVar m Time),
+       curDeadlineVar   :: !(TVar m Time),
 
        -- written by timeout combinator, read and reset by monitoring thread
        deadlineResetVar :: !(TVar m Bool)

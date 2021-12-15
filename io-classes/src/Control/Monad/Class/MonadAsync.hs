@@ -2,35 +2,37 @@
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE QuantifiedConstraints  #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE RankNTypes             #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 
 module Control.Monad.Class.MonadAsync
   ( MonadAsync (..)
-  , AsyncCancelled(..)
-  , ExceptionInLinkedThread(..)
+  , AsyncCancelled (..)
+  , ExceptionInLinkedThread (..)
   , link
   , linkTo
   , linkOnly
   , linkToOnly
-
-  , mapConcurrently, forConcurrently
-  , mapConcurrently_, forConcurrently_
-  , replicateConcurrently, replicateConcurrently_
+  , mapConcurrently
+  , forConcurrently
+  , mapConcurrently_
+  , forConcurrently_
+  , replicateConcurrently
+  , replicateConcurrently_
   , Concurrently (..)
   ) where
 
 import           Prelude hiding (read)
 
 import           Control.Applicative (Alternative (..), liftA2)
+import           Control.Monad (forever)
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad (forever)
+import           Control.Monad.Class.MonadTimer
 
 import           Control.Concurrent.Async (AsyncCancelled (..))
 import qualified Control.Concurrent.Async as Async

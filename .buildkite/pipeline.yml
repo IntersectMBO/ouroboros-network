@@ -1,5 +1,9 @@
 steps:
-  - label: 'Check Stylish Haskell'
+  - label: 'Check Network Stylish Haskell'
+    command: 'nix-shell --run scripts/buildkite/check-stylish-network.sh'
+    agents:
+      system: x86_64-linux
+  - label: 'Check Consensus Stylish Haskell'
     command: 'nix-shell --run scripts/buildkite/check-stylish.sh'
     agents:
       system: x86_64-linux

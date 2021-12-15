@@ -1,11 +1,11 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE NumericUnderscores #-}
 
 module Ouroboros.Network.Testing.Data.AbsBearerInfo
-  ( AbsBearerInfoScript(..)
+  ( AbsBearerInfoScript (..)
   , canFail
-  , NonFailingAbsBearerInfoScript(..)
+  , NonFailingAbsBearerInfoScript (..)
   , AbsDelay (..)
   , delay
   , AbsSpeed (..)
@@ -20,29 +20,21 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , toNonFailingAbsBearerInfoScript
   ) where
 
-import           Control.Monad.Class.MonadTime
-                   ( addTime, Time(..), DiffTime )
+import           Control.Monad.Class.MonadTime (DiffTime, Time (..), addTime)
 
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Monoid (Any (..))
 
+import           Network.Mux.Bearer.AttenuatedChannel (Size,
+                     SuccessOrFailure (..))
 import           Network.Mux.Types (SDUSize (..))
-import           Network.Mux.Bearer.AttenuatedChannel (Size, SuccessOrFailure(..))
 
+import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (Delay (..))
-import           Ouroboros.Network.Testing.Data.Script (Script(..))
 
-import           Test.QuickCheck
-                   ( arbitrarySizedNatural,
-                     shrinkList,
-                     elements,
-                     frequency,
-                     listOf1,
-                     resize,
-                     suchThat,
-                     Arbitrary(..),
-                     Gen )
+import           Test.QuickCheck (Arbitrary (..), Gen, arbitrarySizedNatural,
+                     elements, frequency, listOf1, resize, shrinkList, suchThat)
 
 data AbsDelay = SmallDelay
               | NormalDelay
@@ -201,11 +193,11 @@ canFail abi = getAny $
          NoAttenuation {} -> Any False
          _                -> Any True
     <> case abiInboundWriteFailure abi of
-         Nothing          -> Any False
-         _                -> Any True
+         Nothing -> Any False
+         _       -> Any True
     <> case abiOutboundWriteFailure abi of
-         Nothing          -> Any False
-         _                -> Any True
+         Nothing -> Any False
+         _       -> Any True
 
 instance Arbitrary AbsBearerInfo where
     arbitrary =
@@ -291,7 +283,7 @@ toNonFailingAbsBearerInfoScript (AbsBearerInfoScript script) =
 
     unfailAtt (ErrorInterval    speed _ _) = NoAttenuation speed
     unfailAtt (SpeedAttenuation speed _ _) = NoAttenuation speed
-    unfailAtt a = a
+    unfailAtt a                            = a
 
 instance Arbitrary NonFailingAbsBearerInfoScript where
   arbitrary = toNonFailingAbsBearerInfoScript <$> arbitrary

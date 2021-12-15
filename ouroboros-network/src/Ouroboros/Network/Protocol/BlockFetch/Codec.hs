@@ -10,7 +10,6 @@
 module Ouroboros.Network.Protocol.BlockFetch.Codec
   ( codecBlockFetch
   , codecBlockFetchId
-
   , byteLimitsBlockFetch
   , timeLimitsBlockFetch
   ) where

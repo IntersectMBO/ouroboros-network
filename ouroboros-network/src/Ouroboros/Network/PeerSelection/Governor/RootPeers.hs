@@ -1,21 +1,19 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.Governor.RootPeers 
-  ( belowTarget
-  ) where
+module Ouroboros.Network.PeerSelection.Governor.RootPeers (belowTarget) where
 
-import           Data.Semigroup (Min(..))
+import           Data.Semigroup (Min (..))
 import qualified Data.Set as Set
 
-import           Control.Concurrent.JobPool (Job(..))
+import           Control.Concurrent.JobPool (Job (..))
+import           Control.Exception (SomeException, assert)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (SomeException, assert)
 
+import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
 --------------------------

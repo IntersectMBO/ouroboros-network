@@ -10,13 +10,11 @@
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE UndecidableInstances   #-}
 {-# LANGUAGE ViewPatterns           #-}
-module Ouroboros.Network.AnchoredSeq (
-    -- * 'AnchoredSeq' type
-    AnchoredSeq(Empty, (:>), (:<))
-
+module Ouroboros.Network.AnchoredSeq
+  ( -- * 'AnchoredSeq' type
+    AnchoredSeq (Empty, (:>), (:<))
     -- * 'Anchorable'
-  , Anchorable(..)
-
+  , Anchorable (..)
     -- * Basic operations
   , anchor
   , head
@@ -39,7 +37,6 @@ module Ouroboros.Network.AnchoredSeq (
   , bimap
   , mapPreservingMeasure
   , bimapPreservingMeasure
-
     -- * Special operations
   , rollback
   , isPrefixOf
@@ -52,11 +49,9 @@ module Ouroboros.Network.AnchoredSeq (
   , selectOffsets
   , filter
   , filterWithStop
-
     -- * Helper functions
   , prettyPrint
-
-  -- * Reference implementations for testing
+    -- * Reference implementations for testing
   , filterWithStopSpec
   ) where
 

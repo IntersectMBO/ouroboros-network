@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A simple ReqResp protocol, togetether with an incremental decoder.  Mux is
 -- chopping messages into 'MuxSDU's of a fixed size, for that reasone the
@@ -16,8 +16,8 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Codec.Serialise (Serialise (..), serialise)
 import           Control.Monad.ST
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 
 import           Control.Monad.Class.MonadST
 import           Control.Tracer (Tracer, traceWith)

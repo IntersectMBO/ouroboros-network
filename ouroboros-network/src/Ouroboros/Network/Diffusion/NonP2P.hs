@@ -15,56 +15,41 @@ module Ouroboros.Network.Diffusion.NonP2P
   , ApplicationsExtra (..)
   , ArgumentsExtra (..)
   , run
-  )
-  where
+  ) where
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception
-import           Control.Tracer (Tracer, traceWith, nullTracer)
+import           Control.Tracer (Tracer, nullTracer, traceWith)
+import           Data.Foldable (asum)
 import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
-import           Data.Foldable (asum)
 import           Data.Void (Void)
 
-import           Network.Socket (Socket, SockAddr)
+import           Network.Socket (SockAddr, Socket)
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.Snocket
-                  ( LocalAddress
-                  , LocalSnocket
-                  , LocalSocket (..)
-                  , SocketSnocket
-                  , localSocketFileDescriptor
-                  )
+import           Ouroboros.Network.Snocket (LocalAddress, LocalSnocket,
+                     LocalSocket (..), SocketSnocket, localSocketFileDescriptor)
 import qualified Ouroboros.Network.Snocket as Snocket
 
+import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient
-                  ( NodeToClientVersion
-                  , NodeToClientVersionData
-                  )
+import           Ouroboros.Network.NodeToClient (NodeToClientVersion,
+                     NodeToClientVersionData)
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode
-                  ( AcceptConnectionsPolicyTrace (..)
-                  , DiffusionMode (..)
-                  , RemoteAddress
-                  , NodeToNodeVersion
-                  , NodeToNodeVersionData
-                  )
-import qualified Ouroboros.Network.NodeToNode   as NodeToNode
-import           Ouroboros.Network.Socket
-                  ( NetworkMutableState
-                  , newNetworkMutableState
-                  , cleanNetworkMutableState
-                  , NetworkServerTracers (..)
-                  )
-import           Ouroboros.Network.Subscription.Ip
+                     (AcceptConnectionsPolicyTrace (..), DiffusionMode (..),
+                     NodeToNodeVersion, NodeToNodeVersionData, RemoteAddress)
+import qualified Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.Socket (NetworkMutableState,
+                     NetworkServerTracers (..), cleanNetworkMutableState,
+                     newNetworkMutableState)
 import           Ouroboros.Network.Subscription.Dns
+import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Tracers
-import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 
 -- | NonP2P DiffusionTracers Extras
 --
@@ -319,7 +304,7 @@ run Tracers
         -- Return an IPv4 address with an emphemeral portnumber if we use IPv4
         anyIPv4Addr :: SockAddr -> Maybe SockAddr
         anyIPv4Addr Socket.SockAddrInet {} = Just (Socket.SockAddrInet 0 0)
-        anyIPv4Addr _ = Nothing
+        anyIPv4Addr _                      = Nothing
 
         -- Return an IPv6 address with an emphemeral portnumber if we use IPv6
         anyIPv6Addr :: SockAddr -> Maybe SockAddr
@@ -380,7 +365,7 @@ run Tracers
                   . ConfiguringLocalSocket addr
                     =<< localSocketFileDescriptor sd
 
-                 Snocket.bind sn sd addr 
+                 Snocket.bind sn sd addr
 
                  traceWith dtDiffusionInitializationTracer
                   . ListeningLocalSocket addr

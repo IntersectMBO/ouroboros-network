@@ -5,25 +5,22 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.LocalStateQuery.Client (
-      -- * Protocol type for the client
-      -- | The protocol states from the point of view of the client.
-      LocalStateQueryClient(..)
-    , ClientStIdle(..)
-    , ClientStAcquiring(..)
-    , ClientStAcquired(..)
-    , ClientStQuerying(..)
-
-      -- * Execution as a typed protocol
-    , localStateQueryClientPeer
-
-      -- * Null local state query client
-    , localStateQueryClientNull
-
-      -- * Utilities
-    , mapLocalStateQueryClient
-    , Some (..)
-    ) where
+module Ouroboros.Network.Protocol.LocalStateQuery.Client
+  ( -- * Protocol type for the client
+    -- | The protocol states from the point of view of the client.
+    LocalStateQueryClient (..)
+  , ClientStIdle (..)
+  , ClientStAcquiring (..)
+  , ClientStAcquired (..)
+  , ClientStQuerying (..)
+    -- * Execution as a typed protocol
+  , localStateQueryClientPeer
+    -- * Null local state query client
+  , localStateQueryClientNull
+    -- * Utilities
+  , mapLocalStateQueryClient
+  , Some (..)
+  ) where
 
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadTimer
@@ -31,8 +28,8 @@ import           Data.Kind (Type)
 
 import           Network.TypedProtocol.Core
 
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some(..))
 
 
 newtype LocalStateQueryClient block point (query :: Type -> Type) m a =

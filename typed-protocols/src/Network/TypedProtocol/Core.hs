@@ -1,45 +1,37 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeInType            #-}
 
 
 -- | This module defines the core of the typed protocol framework.
 --
 
-module Network.TypedProtocol.Core (
-
-  -- * Introduction
-  -- $intro
-
-
-  -- * Defining protocols
-  -- $defining
-  Protocol(..),
-  -- $lemmas
-
-  -- * Engaging in protocols
-  -- $using
-  PeerRole(..),
-  TokPeerRole(..),
-  FlipAgency,
-  PeerHasAgency(..),
-  WeHaveAgency,
-  TheyHaveAgency,
-  Peer(..),
-
-  -- * Protocol proofs and tests
-  -- $tests
-  -- $lemmas
+module Network.TypedProtocol.Core
+  ( -- * Introduction
+    -- $intro
+    -- * Defining protocols
+    -- $defining
+    Protocol (..)
+    -- $lemmas
+    -- * Engaging in protocols
+    -- $using
+  , PeerRole (..)
+  , TokPeerRole (..)
+  , FlipAgency
+  , PeerHasAgency (..)
+  , WeHaveAgency
+  , TheyHaveAgency
+  , Peer (..)
   ) where
 
-import Data.Void (Void)
+import           Data.Void (Void)
 
 -- $intro
 -- A typed protocol between two peers is defined via a state machine: a
@@ -255,7 +247,7 @@ import Data.Void (Void)
 --   agency, or the server has agency, or neither have agency.
 --
 -- The labelling of each protocol state with the peer that has agency in that
--- state is done by giving a definition to the data families 
+-- state is done by giving a definition to the data families
 -- 'ClientHasAgency', 'ServerHasAgency' and 'NobodyHasAgency'. These
 -- definitions are expected to be singleton-style GADTs with one constructor
 -- per protocol state.

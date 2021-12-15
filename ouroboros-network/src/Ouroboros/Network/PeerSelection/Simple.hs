@@ -6,19 +6,19 @@
 
 module Ouroboros.Network.PeerSelection.Simple
   ( withPeerSelectionActions
-  -- * Re-exports
+    -- * Re-exports
   , PeerSelectionTargets (..)
   , PeerAdvertise (..)
   ) where
 
 
-import           Data.Foldable (toList)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Tracer (Tracer)
+import           Data.Foldable (toList)
 
 import           Data.Map (Map)
 import           Data.Set (Set)
@@ -27,10 +27,10 @@ import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
+import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 
 
 withPeerSelectionActions

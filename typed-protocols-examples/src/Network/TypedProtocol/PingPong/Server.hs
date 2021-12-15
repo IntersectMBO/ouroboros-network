@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE GADTs           #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Network.TypedProtocol.PingPong.Server where
@@ -11,11 +11,11 @@ import           Network.TypedProtocol.PingPong.Type
 data PingPongServer m a = PingPongServer {
     -- | The client sent us a ping message. We have no choices here, and
     -- the response is nullary, all we have are local effects.
-    recvMsgPing  :: m (PingPongServer m a)
+    recvMsgPing :: m (PingPongServer m a)
 
     -- | The client terminated. Here we have a pure return value, but we
     -- could have done another action in 'm' if we wanted to.
-  , recvMsgDone  :: a
+  , recvMsgDone :: a
   }
 
 

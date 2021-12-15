@@ -5,11 +5,10 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE TypeFamilies       #-}
 
-module Control.Monad.Class.MonadTimer (
-    MonadDelay(..)
-  , MonadTimer(..)
-  , TimeoutState(..)
-
+module Control.Monad.Class.MonadTimer
+  ( MonadDelay (..)
+  , MonadTimer (..)
+  , TimeoutState (..)
   , DiffTime
   , diffTimeToMicrosecondsAsInt
   , microsecondsAsIntToDiffTime

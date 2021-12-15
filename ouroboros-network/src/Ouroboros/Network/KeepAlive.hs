@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -8,7 +8,6 @@ module Ouroboros.Network.KeepAlive
   ( KeepAliveInterval (..)
   , keepAliveClient
   , keepAliveServer
-
   , TraceKeepAliveClient (..)
   ) where
 
@@ -18,12 +17,12 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
-import           Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M
+import           Data.Maybe (fromJust)
 import           System.Random (StdGen, random)
 
-import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.DeltaQ
+import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Type

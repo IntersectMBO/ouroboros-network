@@ -1,10 +1,10 @@
 {-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -34,7 +34,7 @@ module Ouroboros.Network.ConnectionHandler
   , MuxConnectionHandler
   , makeConnectionHandler
   , MuxConnectionManager
-  -- * tracing
+    -- * tracing
   , ConnectionHandlerTrace (..)
   ) where
 
@@ -52,12 +52,12 @@ import           Data.Typeable (Typeable)
 
 import           Network.Mux hiding (miniProtocolNum)
 
+import           Ouroboros.Network.ConnectionId (ConnectionId (..))
+import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.RethrowPolicy
-import           Ouroboros.Network.ConnectionManager.Types
 
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
 -- There is no upper bound on the time we wait when waiting for a new SDU.
@@ -224,7 +224,7 @@ makeConnectionHandler muxTracer singMuxMode
       -- handle non-async exceptions
       catchJust
         (\e -> case fromException e :: Maybe SomeAsyncException of
-                Just _ -> Nothing
+                Just _  -> Nothing
                 Nothing -> Just e)
         io
         $ \err -> do
@@ -341,7 +341,7 @@ makeConnectionHandler muxTracer singMuxMode
               `catch` \(err :: SomeException) -> do
                 atomically $ writePromise (Left (HandleError err))
                 throwIO err
- 
+
             case hsResult of
               Left !err -> do
                 atomically $ writePromise (Left (HandleHandshakeServerError err))

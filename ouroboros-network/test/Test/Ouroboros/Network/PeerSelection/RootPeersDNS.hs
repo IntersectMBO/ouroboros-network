@@ -1,57 +1,58 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
- module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-   ( tests
-   , mockDNSActions
-   , DNSTimeout (..)
-   , DNSLookupDelay (..)
-   ) where
+module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+  ( tests
+  , mockDNSActions
+  , DNSTimeout (..)
+  , DNSLookupDelay (..)
+  ) where
 
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 
-import           Data.Dynamic (fromDynamic, Typeable)
-import           Data.Foldable (toList, foldl')
-import           Data.Functor (void)
-import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Map.Strict as Map
-import           Data.Map.Strict (Map)
-import           Data.Maybe (catMaybes)
 import           Control.Monad (replicateM_)
-import qualified Data.Sequence as Seq
-import           Data.Sequence (Seq)
-import           Data.IP (toIPv4w, fromHostAddress, toSockAddr)
-import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.ByteString.Char8 (pack)
+import           Data.Dynamic (Typeable, fromDynamic)
+import           Data.Foldable (foldl', toList)
+import           Data.Functor (void)
+import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
+import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (catMaybes)
+import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.Void (Void)
+import           Network.DNS (DNSError (NameError, TimeoutExpired))
 import qualified Network.DNS.Resolver as DNSResolver
-import           Network.DNS (DNSError(NameError, TimeoutExpired))
 import           Network.Socket (SockAddr (..))
 
 import           Control.Exception (throw)
-import           Control.Monad.IOSim
 import           Control.Monad.Class.MonadAsync
+import qualified Control.Monad.Class.MonadSTM as LazySTM
+import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, newTVarIO,
+                     readTVar)
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer
 import qualified Control.Monad.Class.MonadTimer as MonadTimer
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer(Tracer), contramap)
-import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, newTVarIO, readTVar)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadTime (Time (..))
+import           Control.Monad.IOSim
+import           Control.Tracer (Tracer (Tracer), contramap)
 
-import           Ouroboros.Network.Testing.Data.Script
-                  (Script(Script), stepScript, NonEmpty ((:|)), initScript')
-import           Test.Ouroboros.Network.PeerSelection.Instances()
+import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
+                     Script (Script), initScript', stepScript)
+import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)

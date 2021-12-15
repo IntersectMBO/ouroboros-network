@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -11,13 +11,11 @@ module Test.Ouroboros.Network.Diffusion.Node
   , Interfaces (..)
   , Arguments (..)
   , run
-
     -- * node types
   , NtNAddr
   , NtNFD
   , NtCAddr
   , NtCFD
-
     -- * extra types used by the node
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
@@ -32,15 +30,15 @@ import           Control.Applicative (Alternative)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import qualified Control.Monad.Class.MonadSTM as LazySTM
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (nullTracer)
 
-import qualified Data.IntPSQ as IntPSQ
 import           Data.IP (IP)
+import qualified Data.IntPSQ as IntPSQ
 import           Data.Map (Map)
 import           Data.Set (Set)
 import qualified Data.Text as Text
@@ -55,37 +53,39 @@ import           Ouroboros.Network.BlockFetch.Decision (FetchMode (..))
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
-import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import qualified Ouroboros.Network.NodeToNode as NtN
+import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import           Ouroboros.Network.PeerSelection.Governor
+                     (PeerSelectionTargets (..))
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (DomainAccessPoint (..), LookupReqs (..),
+                     RelayAccessPoint (..))
+import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
 import           Ouroboros.Network.RethrowPolicy
-import           Ouroboros.Network.PeerSelection.Governor
-                   (PeerSelectionTargets (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                  (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAccessPoint (..),
-                   LookupReqs (..), RelayAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
-import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import           Ouroboros.Network.Server.RateLimiting
+                     (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
-                   TestAddress (..))
+                     TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import qualified Ouroboros.Network.Testing.Data.Script as Script
 
 import           Simulation.Network.Snocket
 
-import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NtNAddr,
-                   NtNVersion, NtNVersionData (..), NtCAddr, NtCVersion,
-                   NtCVersionData)
-import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSTimeout,
-                   DNSLookupDelay, mockDNSActions)
-import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel    as Node
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
+import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NtCAddr,
+                     NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
+                     NtNVersionData (..))
+import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
+import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (DNSLookupDelay, DNSTimeout, mockDNSActions)
 
 
 data Interfaces m = Interfaces

@@ -1,28 +1,28 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE DerivingStrategies        #-}
+{-# LANGUAGE DerivingVia               #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 
-module Network.Mux.Trace (
-      MuxError(..)
-    , MuxErrorType(..)
-    , handleIOException
-    , MuxTrace(..)
-    , MuxBearerState(..)
-    , WithMuxBearer(..)
-    , TraceLabelPeer(..)
-    ) where
+module Network.Mux.Trace
+  ( MuxError (..)
+  , MuxErrorType (..)
+  , handleIOException
+  , MuxTrace (..)
+  , MuxBearerState (..)
+  , WithMuxBearer (..)
+  , TraceLabelPeer (..)
+  ) where
 
 import           Prelude hiding (read)
 
 import           Text.Printf
 
+import           Control.Exception hiding (throwIO)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Exception hiding (throwIO)
 import           GHC.Generics (Generic (..))
 import           Quiet (Quiet (..))
 
@@ -36,8 +36,8 @@ import           Network.Mux.Types
 -- | Error type used in accross the mux layer.
 --
 data MuxError = MuxError {
-      errorType  :: !MuxErrorType
-    , errorMsg   :: !String
+      errorType :: !MuxErrorType
+    , errorMsg  :: !String
     }
   deriving Generic
   deriving Show via Quiet MuxError
@@ -58,7 +58,7 @@ data MuxErrorType = MuxUnknownMiniProtocol
                   -- ^ thrown when data arrives on a responder channel when the
                   -- mux was set up as an 'InitiatorApp'.
                   | MuxIOException IOException
-                  -- ^ 'IOException' thrown by 
+                  -- ^ 'IOException' thrown by
                   | MuxSDUReadTimeout
                   -- ^ thrown when reading of a single SDU takes too long
                   | MuxSDUWriteTimeout

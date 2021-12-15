@@ -9,31 +9,31 @@ import           Control.Exception (SomeException (..))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim hiding (SimResult)
-import           Control.Tracer (showTracing, Tracer (..), traceWith)
+import           Control.Tracer (Tracer (..), showTracing, traceWith)
+import qualified Data.IP as IP
 import           Data.List (foldl', intercalate, nub)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.IP as IP
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
-import           Data.Ratio
 import           System.Random
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-import           Network.Socket (SockAddr)
 import           Network.DNS (Domain)
+import           Network.Socket (SockAddr)
+import           Ouroboros.Network.PeerSelection.LedgerPeers
 
+import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-import           Test.QuickCheck
 import           Text.Printf
 
 tests :: TestTree

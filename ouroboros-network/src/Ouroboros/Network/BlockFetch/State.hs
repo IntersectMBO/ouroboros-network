@@ -1,58 +1,47 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE BangPatterns     #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TypeFamilies     #-}
 
-module Ouroboros.Network.BlockFetch.State (
-    fetchLogicIterations,
-    FetchDecisionPolicy(..),
-    FetchTriggerVariables(..),
-    FetchNonTriggerVariables(..),
-    FetchDecision,
-    FetchDecline(..),
-    FetchMode(..),
-    TraceLabelPeer(..),
-    TraceFetchClientState(..),
+module Ouroboros.Network.BlockFetch.State
+  ( fetchLogicIterations
+  , FetchDecisionPolicy (..)
+  , FetchTriggerVariables (..)
+  , FetchNonTriggerVariables (..)
+  , FetchDecision
+  , FetchDecline (..)
+  , FetchMode (..)
+  , TraceLabelPeer (..)
+  , TraceFetchClientState (..)
   ) where
 
 import           Data.Functor.Contravariant (contramap)
 import           Data.Hashable (Hashable)
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Void
 
+import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block
 
 import           Ouroboros.Network.BlockFetch.ClientState
-                   ( FetchRequest(..)
-                   , PeerFetchInFlight(..)
-                   , PeerFetchStatus(..)
-                   , FetchClientStateVars(..)
-                   , addNewFetchRequest
-                   , readFetchClientState
-                   , TraceFetchClientState(..)
-                   , TraceLabelPeer(..)
-                   )
-import           Ouroboros.Network.BlockFetch.Decision
-                   ( fetchDecisions
-                   , PeerInfo
-                   , FetchDecisionPolicy(..)
-                   , FetchMode(..)
-                   , FetchDecision
-                   , FetchDecline(..)
-                   )
-import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..) )
+                     (FetchClientStateVars (..), FetchRequest (..),
+                     PeerFetchInFlight (..), PeerFetchStatus (..),
+                     TraceFetchClientState (..), TraceLabelPeer (..),
+                     addNewFetchRequest, readFetchClientState)
+import           Ouroboros.Network.BlockFetch.Decision (FetchDecision,
+                     FetchDecisionPolicy (..), FetchDecline (..),
+                     FetchMode (..), PeerInfo, fetchDecisions)
+import           Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 
 
 fetchLogicIterations

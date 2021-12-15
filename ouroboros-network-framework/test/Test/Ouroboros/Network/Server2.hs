@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
@@ -23,19 +22,17 @@
 -- should be reverted once, `prop_multinode_pruning_Sim` is fixed.
 {-# OPTIONS_GHC -Wno-unused-top-binds      #-}
 
-module Test.Ouroboros.Network.Server2
-  ( tests
-  ) where
+module Test.Ouroboros.Network.Server2 (tests) where
 
 import           Control.Exception (AssertionFailed, SomeAsyncException (..))
 import           Control.Monad (replicateM, when, (>=>))
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST    (MonadST)
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
@@ -50,14 +47,13 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
-import           Data.List
-                   (dropWhileEnd, find, mapAccumL, intercalate, (\\), delete,
-                    foldl', nub)
+import           Data.List (delete, dropWhileEnd, find, foldl', intercalate,
+                     mapAccumL, nub, (\\))
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, fromJust, isJust)
+import           Data.Maybe (fromJust, fromMaybe, isJust)
 import           Data.Monoid (Sum (..))
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import qualified Data.Set as Set
@@ -69,8 +65,8 @@ import qualified GHC.IO.Exception as IO
 import           Text.Printf
 
 import           Test.QuickCheck
-import           Test.Tasty.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck
 
 import           Control.Concurrent.JobPool
 
@@ -81,55 +77,58 @@ import           Network.Mux.Types (MuxRuntimeError)
 import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Core
 
-import           Network.TypedProtocol.ReqResp.Type
-import           Network.TypedProtocol.ReqResp.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Client
-import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Examples
+import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Type
 
 import           Ouroboros.Network.Channel (fromChannel)
-import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
-                   RemoteSt (..))
+                     RemoteSt (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.InboundGovernor.State
-                   (InboundGovernorCounters(..))
+                     (InboundGovernorCounters (..))
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec ( cborTermVersionDataCodec
-                                                            , noTimeLimitsHandshake
-                                                            , timeLimitsHandshake)
+import           Ouroboros.Network.Protocol.Handshake.Codec
+                     (cborTermVersionDataCodec, noTimeLimitsHandshake,
+                     timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
-import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2 (ServerArguments (..), RemoteTransition, RemoteTransitionTrace)
+import           Ouroboros.Network.Server.RateLimiting
+                     (AcceptedConnectionsLimit (..))
+import           Ouroboros.Network.Server2 (RemoteTransition,
+                     RemoteTransitionTrace, ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
-import           Ouroboros.Network.Snocket (Snocket, TestAddress (..), socketSnocket)
+import           Ouroboros.Network.Snocket (Snocket, TestAddress (..),
+                     socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
 
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                   (NonFailingAbsBearerInfoScript(..), AbsBearerInfo (..),
-                    AbsDelay (..), AbsAttenuation (..), AbsSpeed (..),
-                    AbsSDUSize (..), absNoAttenuation,
-                    toNonFailingAbsBearerInfoScript,
-                    AbsBearerInfoScript (..))
+                     (AbsAttenuation (..), AbsBearerInfo (..),
+                     AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
+                     AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
+                     absNoAttenuation, toNonFailingAbsBearerInfoScript)
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 
-import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
+import           Test.Ouroboros.Network.ConnectionManager
+                     (verifyAbstractTransition)
+import           Test.Ouroboros.Network.Orphans ()
 import           Test.Simulation.Network.Snocket hiding (tests)
-import           Test.Ouroboros.Network.ConnectionManager (verifyAbstractTransition)
 
 tests :: TestTree
 tests =
@@ -776,12 +775,12 @@ runInitiatorProtocols
         mux
         (miniProtocolNum ptcl)
         (case singMuxMode of
-          SingInitiatorMode -> Mux.InitiatorDirectionOnly
+          SingInitiatorMode          -> Mux.InitiatorDirectionOnly
           SingInitiatorResponderMode -> Mux.InitiatorDirection)
         Mux.StartEagerly
         (runMuxPeer
           (case miniProtocolRun ptcl of
-            InitiatorProtocolOnly initiator -> initiator
+            InitiatorProtocolOnly initiator           -> initiator
             InitiatorAndResponderProtocol initiator _ -> initiator)
           . fromChannel)
 
@@ -855,7 +854,7 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
                 (\ (r, expected) acc ->
                   case r of
                     Left err -> counterexample (show err) False
-                    Right a -> a === expected .&&. acc)
+                    Right a  -> a === expected .&&. acc)
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
 
@@ -1007,7 +1006,7 @@ bidirectionalExperiment
                   (\ (r, expected) acc ->
                     case r of
                       Left err -> counterexample (show err) False
-                      Right a -> a === expected .&&. acc)
+                      Right a  -> a === expected .&&. acc)
                   (property True)
                   (zip rs0 (expectedResult clientAndServerData0 clientAndServerData1))
                 .&&.
@@ -1015,7 +1014,7 @@ bidirectionalExperiment
                   (\ (r, expected) acc ->
                     case r of
                       Left err -> counterexample (show err) False
-                      Right a -> a === expected .&&. acc)
+                      Right a  -> a === expected .&&. acc)
                   (property True)
                   (zip rs1 (expectedResult clientAndServerData1 clientAndServerData0))
                 ))
@@ -1195,7 +1194,7 @@ genAttenuationMap events = do
                 (\ev -> case ev of
                   StartClient _ addr   -> pure addr
                   StartServer _ addr _ -> pure addr
-                  _ -> error "Impossible happened"
+                  _                    -> error "Impossible happened"
                 )
             . filter
                 (\ev -> case ev of

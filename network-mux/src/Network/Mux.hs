@@ -9,41 +9,36 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
 
-module Network.Mux (
-
-    -- * Defining 'Mux' protocol bundles
-      newMux
-    , Mux
-    , MuxMode (..)
-    , HasInitiator
-    , HasResponder
-    , MiniProtocolBundle (..)
-    , MiniProtocolInfo (..)
-    , MiniProtocolNum (..)
-    , MiniProtocolDirection (..)
-    , MiniProtocolLimits (..)
-
-      -- * Running the Mux
-    , runMux
-    , MuxBearer
-    , runMiniProtocol
-    , StartOnDemandOrEagerly (..)
-    , stopMux
-
-     -- * Monitoring
-    , miniProtocolStateMap
-    , muxStopped
-
-      -- * Errors
-    , MuxError (..)
-    , MuxErrorType (..)
-
-      -- * Tracing
-    , traceMuxBearerState
-    , MuxBearerState (..)
-    , MuxTrace (..)
-    , WithMuxBearer (..)
-    ) where
+module Network.Mux
+  ( -- * Defining 'Mux' protocol bundles
+    newMux
+  , Mux
+  , MuxMode (..)
+  , HasInitiator
+  , HasResponder
+  , MiniProtocolBundle (..)
+  , MiniProtocolInfo (..)
+  , MiniProtocolNum (..)
+  , MiniProtocolDirection (..)
+  , MiniProtocolLimits (..)
+    -- * Running the Mux
+  , runMux
+  , MuxBearer
+  , runMiniProtocol
+  , StartOnDemandOrEagerly (..)
+  , stopMux
+    -- * Monitoring
+  , miniProtocolStateMap
+  , muxStopped
+    -- * Errors
+  , MuxError (..)
+  , MuxErrorType (..)
+    -- * Tracing
+  , traceMuxBearerState
+  , MuxBearerState (..)
+  , MuxTrace (..)
+  , WithMuxBearer (..)
+  ) where
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Int (Int64)
@@ -67,9 +62,9 @@ import           Control.Tracer
 import           Network.Mux.Channel
 import           Network.Mux.Egress as Egress
 import           Network.Mux.Ingress as Ingress
+import           Network.Mux.Timeout
 import           Network.Mux.Trace
 import           Network.Mux.Types
-import           Network.Mux.Timeout
 
 
 data Mux (mode :: MuxMode) m =

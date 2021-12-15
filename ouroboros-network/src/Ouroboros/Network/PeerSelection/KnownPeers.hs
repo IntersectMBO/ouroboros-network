@@ -1,53 +1,48 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.KnownPeers (
-    -- * Types
-    KnownPeers,
-    invariant,
-
+module Ouroboros.Network.PeerSelection.KnownPeers
+  ( -- * Types
+    KnownPeers
+  , invariant
     -- * Basic container operations
-    empty,
-    size,
-    insert,
-    delete,
-    toSet,
-    member,
-
+  , empty
+  , size
+  , insert
+  , delete
+  , toSet
+  , member
     -- * Special operations
-    setCurrentTime,
-    incrementFailCount,
-    resetFailCount,
-    lookupFailCount,
-    lookupTepidFlag,
-    setTepidFlag,
-    clearTepidFlag,
-
+  , setCurrentTime
+  , incrementFailCount
+  , resetFailCount
+  , lookupFailCount
+  , lookupTepidFlag
+  , setTepidFlag
+  , clearTepidFlag
     -- ** Tracking when we can gossip
-    minGossipTime,
-    setGossipTime,
-    availableForGossip,
-
+  , minGossipTime
+  , setGossipTime
+  , availableForGossip
     -- ** Tracking when we can (re)connect
-    minConnectTime,
-    setConnectTime,
-    availableToConnect
+  , minConnectTime
+  , setConnectTime
+  , availableToConnect
   ) where
 
 import qualified Data.List as List
-import qualified Data.Set as Set
-import           Data.Set (Set)
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import           Data.Semigroup (Min (..))
-import qualified Data.OrdPSQ as PSQ
+import qualified Data.Map.Strict as Map
 import           Data.OrdPSQ (OrdPSQ)
+import qualified Data.OrdPSQ as PSQ
+import           Data.Semigroup (Min (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 --import           System.Random (RandomGen(..))
 
-import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
+import           Control.Monad.Class.MonadTime
 
 
 -------------------------------

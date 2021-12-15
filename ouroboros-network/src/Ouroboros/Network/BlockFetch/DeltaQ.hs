@@ -1,29 +1,27 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 
-module Ouroboros.Network.BlockFetch.DeltaQ (
-    GSV,
-    Distribution,
-    DeltaQ,
-    PeerGSV(..),
-    SizeInBytes,
-    PeerFetchInFlightLimits(..),
-    calculatePeerFetchInFlightLimits,
-    estimateResponseDeadlineProbability,
-    estimateExpectedResponseDuration,
-    comparePeerGSV,
---    estimateBlockFetchResponse,
---    blockArrivalShedule,
+module Ouroboros.Network.BlockFetch.DeltaQ
+  ( GSV
+  , Distribution
+  , DeltaQ
+  , PeerGSV (..)
+  , SizeInBytes
+  , PeerFetchInFlightLimits (..)
+  , calculatePeerFetchInFlightLimits
+  , estimateResponseDeadlineProbability
+  , estimateExpectedResponseDuration
+  , comparePeerGSV
   ) where
 
+import           Control.Monad.Class.MonadTime
 import           Data.Fixed as Fixed (Pico)
 import           Data.Hashable
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.DeltaQ
 
@@ -121,7 +119,7 @@ calculatePeerFetchInFlightLimits PeerGSV {
 
     -- But note that the minimum here is based on the assumption that we can
     -- react as the /leading/ edge of the low watermark arrives, but in fact
-    -- we can only react when the /trailing/ edge arrives. So when we 
+    -- we can only react when the /trailing/ edge arrives. So when we
 
     -- The high watermark is a bit arbitrary. It's just about making sure we
     -- have a bit of a buffer so we can ask for more in one go, rather than

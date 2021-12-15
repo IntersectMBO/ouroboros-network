@@ -1,11 +1,10 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -19,68 +18,63 @@
 -- |
 -- Module exports interface for running a node over a socket over TCP \/ IP.
 --
-module Ouroboros.Network.Socket (
-    -- * High level socket interface
-      ConnectionTable
-    , ConnectionTableRef (..)
-    , ValencyCounter
-    , NetworkMutableState (..)
-    , SomeResponderApplication (..)
-    , newNetworkMutableState
-    , newNetworkMutableStateSTM
-    , cleanNetworkMutableState
-    , AcceptedConnectionsLimit (..)
-    , ConnectionId (..)
-    , withServerNode
-    , withServerNode'
-    , connectToNode
-    , connectToNodeSocket
-    , connectToNode'
-
+module Ouroboros.Network.Socket
+  ( -- * High level socket interface
+    ConnectionTable
+  , ConnectionTableRef (..)
+  , ValencyCounter
+  , NetworkMutableState (..)
+  , SomeResponderApplication (..)
+  , newNetworkMutableState
+  , newNetworkMutableStateSTM
+  , cleanNetworkMutableState
+  , AcceptedConnectionsLimit (..)
+  , ConnectionId (..)
+  , withServerNode
+  , withServerNode'
+  , connectToNode
+  , connectToNodeSocket
+  , connectToNode'
     -- * Traces
-    , NetworkConnectTracers (..)
-    , nullNetworkConnectTracers
-    , debuggingNetworkConnectTracers
-    , NetworkServerTracers (..)
-    , nullNetworkServerTracers
-    , debuggingNetworkServerTracers
-    , AcceptConnectionsPolicyTrace (..)
-
+  , NetworkConnectTracers (..)
+  , nullNetworkConnectTracers
+  , debuggingNetworkConnectTracers
+  , NetworkServerTracers (..)
+  , nullNetworkServerTracers
+  , debuggingNetworkServerTracers
+  , AcceptConnectionsPolicyTrace (..)
     -- * Helper function for creating servers
-    , fromSnocket
-    , beginConnection
-
+  , fromSnocket
+  , beginConnection
     -- * Re-export of PeerStates
-    , PeerStates
-
+  , PeerStates
     -- * Re-export connection table functions
-    , newConnectionTable
-    , refConnection
-    , addConnection
-    , removeConnection
-    , newValencyCounter
-    , addValencyCounter
-    , remValencyCounter
-    , waitValencyCounter
-    , readValencyCounter
-
+  , newConnectionTable
+  , refConnection
+  , addConnection
+  , removeConnection
+  , newValencyCounter
+  , addValencyCounter
+  , remValencyCounter
+  , waitValencyCounter
+  , readValencyCounter
     -- * Auxiliary functions
-    , sockAddrFamily
-    ) where
+  , sockAddrFamily
+  ) where
 
 import           Control.Concurrent.Async
 import           Control.Exception (SomeException (..))
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
-import qualified Control.Monad.STM as STM
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
-import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Term     as CBOR
-import           Data.Hashable
-import           Data.Typeable (Typeable)
+import           Control.Monad.Class.MonadTime
+import qualified Control.Monad.STM as STM
 import qualified Data.ByteString.Lazy as BL
+import           Data.Hashable
 import           Data.Proxy (Proxy (..))
+import           Data.Typeable (Typeable)
 import           Data.Void
 import           Data.Word (Word16)
 import           GHC.IO.Exception
@@ -94,24 +88,24 @@ import           Control.Tracer
 
 import qualified Network.Mux.Compat as Mx
 import           Network.Mux.DeltaQ.TraceTransformer
-import           Network.TypedProtocol.Codec hiding (encode, decode)
+import           Network.TypedProtocol.Codec hiding (decode, encode)
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.Mux
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.IOManager (IOManager)
+import           Ouroboros.Network.Mux
+import           Ouroboros.Network.Protocol.Handshake
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Server.ConnectionTable
+import           Ouroboros.Network.Server.Socket
+                     (AcceptConnectionsPolicyTrace (..),
+                     AcceptedConnectionsLimit (..))
+import qualified Ouroboros.Network.Server.Socket as Server
 import           Ouroboros.Network.Snocket (Snocket)
 import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Server.Socket ( AcceptedConnectionsLimit (..)
-                                                 , AcceptConnectionsPolicyTrace (..)
-                                                 )
-import qualified Ouroboros.Network.Server.Socket as Server
-import           Ouroboros.Network.Server.ConnectionTable
+import           Ouroboros.Network.Subscription.PeerState
 
 
 -- | Tracer used by 'connectToNode' (and derivatives, like
@@ -138,7 +132,7 @@ nullNetworkConnectTracers = NetworkConnectTracers {
 debuggingNetworkConnectTracers :: (Show addr, Show vNumber)
                                => NetworkConnectTracers addr vNumber
 debuggingNetworkConnectTracers = NetworkConnectTracers {
-      nctMuxTracer       = showTracing stdoutTracer, 
+      nctMuxTracer       = showTracing stdoutTracer,
       nctHandshakeTracer = showTracing stdoutTracer
     }
 
@@ -248,7 +242,7 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
     connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
- 
+
     handshakeBearer <- Snocket.toBearer sn sduHandshakeTimeout muxTracer sd
     app_e <-
       runHandshakeClient
@@ -304,7 +298,7 @@ connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tra
     connectToNode'
       (Snocket.socketSnocket iocp)
       handshakeCodec
-      handshakeTimeLimits 
+      handshakeTimeLimits
       versionDataCodec
       tracers
       acceptVersion

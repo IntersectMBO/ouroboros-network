@@ -1,26 +1,26 @@
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Ouroboros.Network.RateLimiting where
 
 
-import           Control.Tracer (Tracer (..), contramapM)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
+import           Control.Tracer (Tracer (..), contramapM)
 import           Data.List (scanl')
 
 import           Ouroboros.Network.Server.RateLimiting
 
 import           Test.QuickCheck
-import           Text.Show.Functions ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
 
 --
@@ -50,7 +50,7 @@ data Event
 
 
 data WithNumberOfConnections a = WithNumberOfConnections {
-    message :: a,
+    message             :: a,
     numberOfConnections :: Int
   }
 
@@ -80,7 +80,7 @@ fixEvents :: [Event] -> [Event]
 fixEvents = go 0
   where
     go :: Int -> [Event] -> [Event]
-    go _ [] = []
+    go _ []                                    = []
     go 0 (ConnectionTerminated _ : events)     =      go 0 events
     go n (ev@ConnectionTerminated {} : events) = ev : go (pred n) events
     go n (ev@IncomingConnection {}   : events) = ev : go (succ n) events

@@ -1,6 +1,6 @@
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes #-}
 
 module Ouroboros.Network.Channel
   ( Channel (..)
@@ -24,13 +24,12 @@ module Ouroboros.Network.Channel
 import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTimer
-import qualified Data.ByteString      as BS
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
 import           Numeric.Natural
 
-import qualified System.IO as IO
-                   ( Handle, hFlush, hIsEOF )
+import qualified System.IO as IO (Handle, hFlush, hIsEOF)
 
 import           Control.Monad.Class.MonadSTM
 
@@ -140,7 +139,7 @@ fixedInputChannel xs0 = do
 mvarsAsChannel :: MonadSTM m
                => TMVar m a
                -> TMVar m a
-               -> Channel m a 
+               -> Channel m a
 mvarsAsChannel bufferRead bufferWrite =
     Channel{send, recv}
   where
@@ -268,7 +267,7 @@ handlesAsChannel hndRead hndWrite =
 -- | Transform a channel to add an extra action before /every/ send and after
 -- /every/ receive.
 --
-channelEffect :: forall m a. 
+channelEffect :: forall m a.
                  Monad m
               => (a -> m ())        -- ^ Action before 'send'
               -> (Maybe a -> m ())  -- ^ Action after 'recv'

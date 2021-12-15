@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -13,17 +13,20 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.PeerSelection (tests, unfHydra) where
+module Test.Ouroboros.Network.PeerSelection
+  ( tests
+  , unfHydra
+  ) where
 
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
-import           Data.List (groupBy, foldl')
 import qualified Data.IP as IP
-import           Data.Maybe (listToMaybe, isNothing, fromMaybe)
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import           Data.List (foldl', groupBy)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe, isNothing, listToMaybe)
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Void (Void)
 
 import qualified Data.OrdPSQ as PSQ
@@ -36,25 +39,26 @@ import           Control.Tracer (Tracer (..))
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
 
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Ouroboros.Network.Testing.Data.Script (scriptHead)
-import           Ouroboros.Network.Testing.Data.Signal (signalProperty, Signal,
-                  Events, E (E), TS (TS))
+import           Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal,
+                     TS (TS), signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
-import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
+import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding
+                     (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup, after, DependencyType(..))
+import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 -- Exactly as named.

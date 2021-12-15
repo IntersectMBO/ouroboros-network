@@ -19,7 +19,6 @@ module Test.ChainGenerators
   , TestChainAndRange (..)
   , TestChainAndPoints (..)
   , TestChainFork (..)
-
     -- * Utility functions
   , genNonNegative
   , genSlotGap
@@ -27,11 +26,9 @@ module Test.ChainGenerators
   , genChainAnchor
   , mkPartialBlock
   , mkRollbackPoint
-
     -- * Tests of the generators
   , tests
-  )
-  where
+  ) where
 
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.List as L

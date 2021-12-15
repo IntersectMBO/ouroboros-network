@@ -11,18 +11,17 @@ module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
   , ClientStNext (..)
   , ClientPipelinedStIntersect (..)
   , ChainSyncInstruction (..)
-
   , chainSyncClientPeerPipelined
   , chainSyncClientPeerSender
   , mapChainSyncClientPipelined
   ) where
 
-import Data.Kind (Type)
+import           Data.Kind (Type)
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Pipelined
 
-import Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | Pipelined chain sync client.  It can only pipeline 'MsgRequestNext'

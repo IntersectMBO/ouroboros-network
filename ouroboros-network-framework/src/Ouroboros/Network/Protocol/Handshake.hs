@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | API for running 'Handshake' protocol.
@@ -23,10 +23,10 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 import           Control.Tracer (Tracer, contramap)
 import qualified Data.ByteString.Lazy as BL
-import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Term     as CBOR
 
 import           Network.Mux.Trace
 import           Network.Mux.Types
@@ -35,11 +35,11 @@ import           Network.TypedProtocol.Codec
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Limits
 
+import           Ouroboros.Network.Protocol.Handshake.Client
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Server
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Client
-import           Ouroboros.Network.Protocol.Handshake.Server
 
 
 -- | The handshake protocol number.

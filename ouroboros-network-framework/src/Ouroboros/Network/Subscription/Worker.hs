@@ -1,7 +1,7 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecursiveDo         #-}
@@ -17,7 +17,6 @@ module Ouroboros.Network.Subscription.Worker
   , Main
   , StateVar
   , LocalAddresses (..)
-
     -- * Subscription worker
   , WorkerCallbacks (..)
   , WorkerParams (..)
@@ -36,26 +35,28 @@ module Ouroboros.Network.Subscription.Worker
   ) where
 
 import           Control.Applicative ((<|>))
-import           Control.Exception (SomeException (..))
 import qualified Control.Concurrent.STM as STM
-import           Control.Monad (forever, join, when, unless)
+import           Control.Exception (SomeException (..))
+import           Control.Monad (forever, join, unless, when)
 import           Control.Monad.Fix (MonadFix)
 import           Data.Foldable (traverse_)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
 import           GHC.Stack
-import           Network.Socket (Family( AF_UNIX ))
+import           Network.Socket (Family (AF_UNIX))
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer
 
-import           Ouroboros.Network.ErrorPolicy (CompleteApplication, Result (..), CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
+import           Ouroboros.Network.ErrorPolicy (CompleteApplication,
+                     CompleteApplicationResult (..), ErrorPolicyTrace,
+                     Result (..), WithAddr)
 import           Ouroboros.Network.Server.ConnectionTable
 import           Ouroboros.Network.Snocket (Snocket (..))
 import qualified Ouroboros.Network.Snocket as Snocket
@@ -176,7 +177,7 @@ safeConnect sn remoteAddr localAddr malloc mclean k =
       (\sock -> mask $ \unmask -> do
           let doBind = case Snocket.addrFamily sn localAddr of
                             Snocket.SocketFamily fam -> fam /= AF_UNIX
-                            _ -> False -- Bind is a nop for Named Pipes anyway
+                            _                        -> False -- Bind is a nop for Named Pipes anyway
           when doBind $
             Snocket.bind sn sock localAddr
           res :: Either SomeException ()
@@ -499,7 +500,7 @@ mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main 
       case result of
         Act threads tr -> pure $ do
           traverse_ cancel threads
-          traverse_ (traceWith errorPolicyTracer) tr 
+          traverse_ (traceWith errorPolicyTracer) tr
           mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main
         Res r -> do
           s <- readTVar statusVar
@@ -533,7 +534,7 @@ data WorkerParams m localAddrs addr = WorkerParams {
     wpLocalAddresses         :: localAddrs addr,
     -- ^ local addresses of the server
     wpSelectAddress          :: addr -> localAddrs addr -> Maybe addr,
-    -- ^ given remote addr pick the local address 
+    -- ^ given remote addr pick the local address
     wpConnectionAttemptDelay :: addr -> Maybe DiffTime,
     -- ^ delay after a connection attempt to 'addr'
     wpSubscriptionTarget     :: m (SubscriptionTarget m addr),

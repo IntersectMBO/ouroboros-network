@@ -4,9 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.LocalTxSubmission.Direct (
-    direct
-  ) where
+module Ouroboros.Network.Protocol.LocalTxSubmission.Direct (direct) where
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server

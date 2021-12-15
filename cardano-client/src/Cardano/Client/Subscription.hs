@@ -3,8 +3,8 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Cardano.Client.Subscription (
-    subscribe
+module Cardano.Client.Subscription
+  ( subscribe
   , MuxMode (..)
   , ClientCodecs
   , ConnectionId
@@ -31,19 +31,17 @@ import           Data.Void (Void)
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer)
 
 import           Ouroboros.Network.Magic (NetworkMagic)
-import           Ouroboros.Network.Mux (MuxMode (..), MuxPeer (..),
-                     OuroborosApplication, RunMiniProtocol (..),
-                     ControlMessage (..))
+import           Ouroboros.Network.Mux (ControlMessage (..), MuxMode (..),
+                     MuxPeer (..), OuroborosApplication, RunMiniProtocol (..))
 import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                      ConnectionId, LocalAddress,
                      NetworkClientSubcriptionTracers,
-                     NodeToClientProtocols (..),
+                     NodeToClientProtocols (..), NodeToClientVersion,
                      NodeToClientVersionData (NodeToClientVersionData),
                      ncSubscriptionWorker, newNetworkMutableState,
                      versionedNodeToClientProtocols)
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion)
 import           Ouroboros.Network.Protocol.Handshake.Version (Versions,
-                   foldMapVersions)
+                     foldMapVersions)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Consensus.Block (CodecConfig)

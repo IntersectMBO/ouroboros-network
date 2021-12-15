@@ -1,9 +1,8 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
@@ -18,21 +17,19 @@
 
 -- | 'demo-connection-manager LOCAL_ADDR LOCAL_PORT REMOTE_ADDR REMOTE_PORT'
 --
-module Main
-  ( main
-  ) where
+module Main (main) where
 
+import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST    (MonadST)
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTime  (MonadTime (..))
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime (MonadTime (..))
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
-import           Control.Exception (IOException)
 
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Either (partitionEithers)
@@ -49,27 +46,29 @@ import           Options.Applicative
 import           System.Random (RandomGen)
 import qualified System.Random as Random
 
-import           Network.TypedProtocol.ReqResp.Type (ReqResp)
-import           Network.TypedProtocol.ReqResp.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Client
-import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Examples
+import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Type (ReqResp)
 
 import           Ouroboros.Network.Channel (fromChannel)
-import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
-import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.IOManager
+import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
+import           Ouroboros.Network.Protocol.Handshake.Codec
+                     (timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
-import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import           Ouroboros.Network.RethrowPolicy
+import           Ouroboros.Network.Server.RateLimiting
+                     (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Server2 (ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
 import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
@@ -88,12 +87,12 @@ instance ShowProxy (ReqResp req resp) where
 -- state: warm, hot and established.
 --
 data ClientAndServerData = ClientAndServerData {
-    hotInitiatorRequests            :: [[Int]],
+    hotInitiatorRequests         :: [[Int]],
     -- ^ list of requests run by the hot intiator in each round; Running
     -- multiple rounds allows us to test restarting of responders.
-    warmInitiatorRequests           :: [[Int]],
+    warmInitiatorRequests        :: [[Int]],
     -- ^ list of requests run by the warm intiator in each round
-    establishedInitiatorRequests    :: [[Int]]
+    establishedInitiatorRequests :: [[Int]]
     -- ^ lsit of requests run by the established intiator in each round
   }
   deriving Show
@@ -441,12 +440,12 @@ runInitiatorProtocols
         mux
         (miniProtocolNum ptcl)
         (case singMuxMode of
-          SingInitiatorMode -> Mux.InitiatorDirectionOnly
+          SingInitiatorMode          -> Mux.InitiatorDirectionOnly
           SingInitiatorResponderMode -> Mux.InitiatorDirection)
         Mux.StartEagerly
         (runMuxPeer
           (case miniProtocolRun ptcl of
-            InitiatorProtocolOnly initiator -> initiator
+            InitiatorProtocolOnly initiator           -> initiator
             InitiatorAndResponderProtocol initiator _ -> initiator)
           . fromChannel)
 

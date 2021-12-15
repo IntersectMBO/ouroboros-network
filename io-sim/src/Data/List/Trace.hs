@@ -16,8 +16,8 @@ import           Prelude hiding (filter, head, length, tail)
 import           Control.Applicative (Alternative (..))
 import           Control.Monad (MonadPlus (..))
 import           Control.Monad.Fix (MonadFix (..), fix)
-import           Data.Bifunctor
 import           Data.Bifoldable
+import           Data.Bifunctor
 import           Data.Bitraversable
 import           Data.Functor.Classes
 
@@ -35,11 +35,11 @@ data Trace a b
 
 head :: Trace a b -> b
 head (Cons b _) = b
-head _ = error "Trace.head: empty"
+head _          = error "Trace.head: empty"
 
 tail :: Trace a b -> Trace a b
 tail (Cons _ o) = o
-tail Nil {} = error "Trace.tail: empty"
+tail Nil {}     = error "Trace.tail: empty"
 
 filter :: (b -> Bool) -> Trace a b -> Trace a b
 filter _fn o@Nil {}   = o

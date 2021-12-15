@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -13,56 +12,47 @@
 -- matches.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 module Ouroboros.Network.PeerSelection.PeerStateActions
-  (
-  -- $doc
+  ( -- $doc
     PeerStateActionsArguments (..)
   , PeerConnectionHandle
   , withPeerStateActions
-
-  -- * Exceptions
+    -- * Exceptions
   , PeerSelectionActionException (..)
   , EstablishConnectionException (..)
   , PeerSelectionTimeoutException (..)
-
-  -- * Trace
+    -- * Trace
   , PeerSelectionActionsTrace (..)
   ) where
 
 import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadSTM.Strict
 
-import           Control.Concurrent.JobPool (JobPool, Job (..))
+import           Control.Concurrent.JobPool (Job (..), JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Tracer (Tracer, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>))
-import           Data.Typeable (Typeable, cast)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Typeable (Typeable, cast)
 
-import qualified Network.Mux        as Mux
+import qualified Network.Mux as Mux
 
-import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Channel (fromChannel)
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import           Ouroboros.Network.PeerSelection.Governor
-                   ( PeerStateActions (..)
-                   )
-import           Ouroboros.Network.PeerSelection.Types
-                   ( PeerStatus (..)
-                   )
+                     (PeerStateActions (..))
+import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import           Ouroboros.Network.Protocol.Handshake (HandshakeException)
 
-import           Ouroboros.Network.ConnectionHandler
-                   ( MuxConnectionManager
-                   , Handle (..)
-                   , HandleError (..)
-                   )
+import           Ouroboros.Network.ConnectionHandler (Handle (..),
+                     HandleError (..), MuxConnectionManager)
 import           Ouroboros.Network.ConnectionManager.Types
 
 -- $doc
@@ -148,7 +138,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 -- change.
 --
 -- = Implementation details
--- 
+--
 -- 'PeerStateActions' are build on top of 'ConnectionManager' which provides
 -- a primitive to present us a negotiated connection (i.e. after running
 -- the handshake) and the multiplexer api which allows to start mini-protocols
@@ -337,8 +327,8 @@ data FirstToFinishResult
   deriving Show
 
 instance Semigroup FirstToFinishResult where
-    err@MiniProtocolError{} <> _ = err
-    _ <> err@MiniProtocolError{} = err
+    err@MiniProtocolError{} <> _                       = err
+    _ <> err@MiniProtocolError{}                       = err
     res@MiniProtocolSuccess{} <> MiniProtocolSuccess{} = res
 
 
@@ -708,7 +698,7 @@ withPeerStateActions PeerStateActionsArguments {
                               (Job (handleJust
                                      (\e -> case fromException e of
                                         Just SomeAsyncException {} -> Nothing
-                                        Nothing -> Just e)
+                                        Nothing                    -> Just e)
                                      (\e -> do
                                         traceWith spsTracer (PeerMonitoringError connectionId e)
                                         throwIO e)
@@ -966,8 +956,8 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
               ahMiniProtocolResults = projectBundle tok awaitVarsBundle
             }
       in case tok of
-          TokHot -> WithHot app
-          TokWarm -> WithWarm app
+          TokHot         -> WithHot app
+          TokWarm        -> WithWarm app
           TokEstablished -> WithEstablished app
 
 

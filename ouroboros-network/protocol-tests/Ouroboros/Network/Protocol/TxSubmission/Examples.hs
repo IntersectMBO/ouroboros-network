@@ -1,33 +1,32 @@
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 
-module Ouroboros.Network.Protocol.TxSubmission.Examples (
-    txSubmissionClient,
-    txSubmissionServer,
-
-    TraceEventClient(..),
-    TraceEventServer(..),
+module Ouroboros.Network.Protocol.TxSubmission.Examples
+  ( txSubmissionClient
+  , txSubmissionServer
+  , TraceEventClient (..)
+  , TraceEventServer (..)
   ) where
 
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.List.NonEmpty (NonEmpty(..))
-import           Data.Word (Word16)
-import qualified Data.Map.Strict as Map
-import           Data.Map.Strict (Map)
-import qualified Data.Sequence.Strict as Seq
-import           Data.Sequence.Strict (StrictSeq)
 import           Data.Foldable as Foldable (foldl', toList)
+import           Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Sequence.Strict (StrictSeq)
+import qualified Data.Sequence.Strict as Seq
+import           Data.Word (Word16)
 
-import           Control.Monad (when)
 import           Control.Exception (assert)
+import           Control.Monad (when)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Network.TypedProtocol.Pipelined (N, Nat(..))
+import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 import           Ouroboros.Network.Protocol.TxSubmission.Server
@@ -176,27 +175,27 @@ data ServerState txid tx = ServerState {
        -- the order in which the client gave them to us. This is the same order
        -- in which we submit them to the mempool (or for this example, the final
        -- result order). It is also the order we acknowledge in.
-       unacknowledgedTxIds :: StrictSeq txid,
+       unacknowledgedTxIds    :: StrictSeq txid,
 
        -- | Those transactions (by their identifier) that we can request. These
        -- are a subset of the 'unacknowledgedTxIds' that we have not yet
        -- requested. This is not ordered to illustrate the fact that we can
        -- request txs out of order. We also remember the sizes, though this
        -- example does not make use of the size information.
-       availableTxids      :: Map txid TxSizeInBytes,
+       availableTxids         :: Map txid TxSizeInBytes,
 
        -- | Transactions we have successfully downloaded but have not yet added
        -- to the mempool or acknowledged. This is needed because we request
        -- transactions out of order but we must use the original order when
        -- adding to the mempool or acknowledging transactions.
        --
-       bufferedTxs         :: Map txid (Maybe tx),
+       bufferedTxs            :: Map txid (Maybe tx),
 
        -- | The number of transactions we can acknowledge on our next request
        -- for more transactions. The number here have already been removed from
        -- 'unacknowledgedTxIds'.
        --
-       numTxsToAcknowledge :: Word16
+       numTxsToAcknowledge    :: Word16
      }
   deriving Show
 

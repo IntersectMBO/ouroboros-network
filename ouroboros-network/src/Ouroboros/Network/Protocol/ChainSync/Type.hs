@@ -1,10 +1,10 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | The type of the chain synchronisation protocol.
 --
@@ -13,11 +13,11 @@
 --
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
-import           Data.Proxy (Proxy(..))
+import           Data.Proxy (Proxy (..))
 
 import           Network.TypedProtocol.Core (Protocol (..))
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy(..))
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | A kind to identify our protocol, and the types of the states in the state

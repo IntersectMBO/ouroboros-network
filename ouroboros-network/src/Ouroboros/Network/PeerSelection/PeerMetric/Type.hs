@@ -12,7 +12,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer)
 
 import           Cardano.Slotting.Slot (SlotNo (..))
-import           Ouroboros.Network.DeltaQ ( SizeInBytes )
+import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
 import           Network.Mux.Trace (TraceLabelPeer (..))
 

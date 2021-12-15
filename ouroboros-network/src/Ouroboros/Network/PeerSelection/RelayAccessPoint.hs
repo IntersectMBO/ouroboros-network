@@ -8,9 +8,8 @@ module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ( DomainAccessPoint (..)
   , RelayAccessPoint (.., RelayDomainAccessPoint)
   , IP.IP (..)
-
-  -- * Socket type re-exports
-  , Socket.PortNumber,
+    -- * Socket type re-exports
+  , Socket.PortNumber
   ) where
 
 import           Control.DeepSeq (NFData (..))

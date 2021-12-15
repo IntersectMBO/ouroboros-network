@@ -4,9 +4,9 @@
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE QuantifiedConstraints #-}
 module Ouroboros.Network.Protocol.Trans.Hello.Codec
   ( codecHello
   , byteLimitsHello
@@ -21,8 +21,8 @@ import           Control.Monad.Class.MonadTime
 import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.Protocol.Trans.Hello.Type
 import           Ouroboros.Network.Protocol.Limits
+import           Ouroboros.Network.Protocol.Trans.Hello.Type
 import           Ouroboros.Network.Util.ShowProxy
 
 import qualified Data.ByteString.Lazy as LBS
@@ -44,7 +44,7 @@ byteLimitsHello ProtocolSizeLimits { sizeLimitForState, dataSize }
           sizeLimitForState = sizeLimitForStateHello,
           dataSize
         }
-  where 
+  where
     sizeLimitForStateHello :: forall (pr :: PeerRole) (st :: Hello ps stIdle).
                               PeerHasAgency pr st -> Word
     sizeLimitForStateHello (ClientAgency TokHello) =

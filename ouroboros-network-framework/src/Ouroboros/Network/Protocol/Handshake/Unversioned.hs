@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | Unversioned protocol, used in tests and demo applications.
 --
@@ -18,9 +18,9 @@ import           Control.Monad.Class.MonadST
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
+import           Data.ByteString.Lazy (ByteString)
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           Data.ByteString.Lazy (ByteString)
 
 import           Network.TypedProtocol.Codec
 

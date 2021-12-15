@@ -1,9 +1,7 @@
-{-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE DeriveFunctor         #-}
-{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -16,7 +14,7 @@
 module Ouroboros.Network.Subscription.PeerState
   ( SuspendDecision (..)
   , suspend
-  -- * PeerStates and its operations
+    -- * PeerStates and its operations
   , PeerState (..)
   , threadsToCancel
   , PeerStates (..)
@@ -32,23 +30,19 @@ module Ouroboros.Network.Subscription.PeerState
   , ConnectDecision (..)
   , runBeforeConnect
   , beforeConnectTx
-
-  -- * Re-exports
+    -- * Re-exports
   , DiffTime
-
-  -- * Auxiliary functions
+    -- * Auxiliary functions
   , alterAndLookup
   ) where
 
 import           Control.Exception (Exception, SomeException (..), assert)
 import           Control.Monad.State
-import           Data.Map.Strict (Map)
 import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Typeable ( (:~:) (..)
-                               , eqT
-                               )
+import           Data.Typeable (eqT, (:~:) (..))
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -84,8 +78,8 @@ consumerSuspendedUntil Throw                   = Nothing
 
 producerSuspendedUntil :: SuspendDecision t -> Maybe t
 producerSuspendedUntil (SuspendPeer prodT _) = Just prodT
-producerSuspendedUntil (SuspendConsumer _) = Nothing
-producerSuspendedUntil Throw               = Nothing
+producerSuspendedUntil (SuspendConsumer _)   = Nothing
+producerSuspendedUntil Throw                 = Nothing
 
 -- | The semigroup instance.  Note that composing 'SuspendPeer' with
 -- 'SuspendConsumer' gives 'SuspendPeer'.  'SuspendPeer' and 'SuspendConsumer'

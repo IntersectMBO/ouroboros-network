@@ -1,7 +1,7 @@
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A view of the local transaction submission protocol from the point of view
@@ -12,11 +12,10 @@
 --
 -- For execution, a conversion into the typed protocol is provided.
 --
-module Ouroboros.Network.Protocol.LocalTxSubmission.Server (
-    -- * Protocol type for the server
+module Ouroboros.Network.Protocol.LocalTxSubmission.Server
+  ( -- * Protocol type for the server
     -- | The protocol states from the point of view of the server.
     LocalTxSubmissionServer (..)
-
     -- * Execution as a typed protocol
   , localTxSubmissionServerPeer
   ) where

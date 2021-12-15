@@ -1,19 +1,19 @@
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE TypeFamilies      #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE EmptyCase         #-}
-{-# LANGUAGE PolyKinds         #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Protocol.TipSample.Type where
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined (N (..), Nat)
-import Cardano.Slotting.Slot (SlotNo)
+import           Cardano.Slotting.Slot (SlotNo)
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Pipelined (N (..), Nat)
 
-import Ouroboros.Network.Util.ShowProxy
+import           Ouroboros.Network.Util.ShowProxy
 
 
 -- | There are three of blocking requests: awiat until slot, await until

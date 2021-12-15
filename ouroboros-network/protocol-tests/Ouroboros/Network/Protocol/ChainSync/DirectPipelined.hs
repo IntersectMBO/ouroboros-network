@@ -1,13 +1,12 @@
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.Protocol.ChainSync.DirectPipelined
-  ( directPipelined ) where
+module Ouroboros.Network.Protocol.ChainSync.DirectPipelined (directPipelined) where
 
-import Network.TypedProtocol.Proofs
+import           Network.TypedProtocol.Proofs
 
-import Ouroboros.Network.Protocol.ChainSync.ClientPipelined as ClientPipelined
-import Ouroboros.Network.Protocol.ChainSync.Server as Server
+import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined as ClientPipelined
+import           Ouroboros.Network.Protocol.ChainSync.Server as Server
 
 
 directPipelined :: Monad m

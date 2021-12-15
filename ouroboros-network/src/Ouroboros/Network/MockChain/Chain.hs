@@ -8,69 +8,60 @@
 
 -- | Reference implementation of a representation of a block chain
 --
-module Ouroboros.Network.MockChain.Chain (
-  -- * Chain type and fundamental operations
-  Chain(..),
-  valid,
-  validExtension,
-  foldChain,
-  chainToList,
-
-  -- ** Block re-exports
-  HasHeader(..),
-  HeaderHash,
-
-  -- * Point type
-  Point(..),
-  blockPoint,
-
-  -- * Chain construction and inspection
-  -- ** Genesis
-  genesis,
-
-  -- ** Head inspection
-  headPoint,
-  headSlot,
-  headHash,
-  headTip,
-  headBlockNo,
-  headAnchor,
-
-  -- ** Basic operations
-  head,
-  toNewestFirst,
-  toOldestFirst,
-  fromNewestFirst,
-  fromOldestFirst,
-  drop,
-  length,
-  null,
-
-  -- ** Update type and operations
-  ChainUpdate(..),
-  addBlock,
-  rollback,
-  applyChainUpdate,
-  applyChainUpdates,
-
-  -- * Special operations
-  pointOnChain,
-  pointIsAfter,
-  successorBlock,
-  selectChain,
-  selectPoints,
-  findBlock,
-  selectBlockRange,
-  findFirstPoint,
-  intersectChains,
-  isPrefixOf,
-
-  -- * Conversion to/from AnchoredFragment
-  fromAnchoredFragment,
-  toAnchoredFragment,
-
-  -- * Helper functions
-  prettyPrintChain
+module Ouroboros.Network.MockChain.Chain
+  ( -- * Chain type and fundamental operations
+    Chain (..)
+  , valid
+  , validExtension
+  , foldChain
+  , chainToList
+    -- ** Block re-exports
+  , HasHeader (..)
+  , HeaderHash
+    -- * Point type
+  , Point (..)
+  , blockPoint
+    -- * Chain construction and inspection
+    -- ** Genesis
+  , genesis
+    -- ** Head inspection
+  , headPoint
+  , headSlot
+  , headHash
+  , headTip
+  , headBlockNo
+  , headAnchor
+    -- ** Basic operations
+  , head
+  , toNewestFirst
+  , toOldestFirst
+  , fromNewestFirst
+  , fromOldestFirst
+  , drop
+  , length
+  , null
+    -- ** Update type and operations
+  , ChainUpdate (..)
+  , addBlock
+  , rollback
+  , applyChainUpdate
+  , applyChainUpdates
+    -- * Special operations
+  , pointOnChain
+  , pointIsAfter
+  , successorBlock
+  , selectChain
+  , selectPoints
+  , findBlock
+  , selectBlockRange
+  , findFirstPoint
+  , intersectChains
+  , isPrefixOf
+    -- * Conversion to/from AnchoredFragment
+  , fromAnchoredFragment
+  , toAnchoredFragment
+    -- * Helper functions
+  , prettyPrintChain
   ) where
 
 import           Prelude hiding (drop, head, length, null)

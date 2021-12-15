@@ -1,81 +1,70 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Network.PeerSelection.RootPeersDNS (
-    -- * DNS based actions for local and public root providers
-    DNSActions (..),
-
+module Ouroboros.Network.PeerSelection.RootPeersDNS
+  ( -- * DNS based actions for local and public root providers
+    DNSActions (..)
     -- * DNS resolver IO auxiliar functions
-    constantResource,
+  , constantResource
     -- ** DNSActions IO
-    ioDNSActions,
-    LookupReqs (..),
-
+  , ioDNSActions
+  , LookupReqs (..)
     -- * DNS based provider for local root peers
-    localRootPeersProvider,
-    DomainAccessPoint (..),
-    RelayAccessPoint (..),
-    IP.IP (..),
-    TraceLocalRootPeers(..),
-
+  , localRootPeersProvider
+  , DomainAccessPoint (..)
+  , RelayAccessPoint (..)
+  , IP.IP (..)
+  , TraceLocalRootPeers (..)
     -- * DNS based provider for public root peers
-    publicRootPeersProvider,
-    TracePublicRootPeers(..),
-
+  , publicRootPeersProvider
+  , TracePublicRootPeers (..)
     -- DNS lookup support
-    resolveDomainAccessPoint,
-
+  , resolveDomainAccessPoint
     -- * DNS type re-exports
-    DNS.ResolvConf,
-    DNS.Domain,
-    DNS.TTL,
-
+  , DNS.ResolvConf
+  , DNS.Domain
+  , DNS.TTL
     -- * Socket type re-exports
-    Socket.PortNumber,
+  , Socket.PortNumber
   ) where
 
 import           Data.Foldable (foldlM)
-import           Data.Word (Word32)
 import           Data.List (elemIndex)
 import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.Set as Set
-import           Data.Set (Set)
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Void (Void, absurd)
+import           Data.Word (Word32)
 
 import           Control.Applicative ((<|>))
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer(..), contramap, traceWith)
+import           Control.Tracer (Tracer (..), contramap, traceWith)
 
 
 import qualified Data.IP as IP
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                 ( DNSorIOError (..)
-                 , DNSActions (..)
-                 , LookupReqs (..)
-                 , Resource (..)
-                 , ioDNSActions
-                 , constantResource
-                 , withResource'
-                 )
+                     (DNSActions (..), DNSorIOError (..), LookupReqs (..),
+                     Resource (..), constantResource, ioDNSActions,
+                     withResource')
+import           Ouroboros.Network.PeerSelection.Types
 
 -----------------------------------------------
 -- local root peer set provider based on DNS

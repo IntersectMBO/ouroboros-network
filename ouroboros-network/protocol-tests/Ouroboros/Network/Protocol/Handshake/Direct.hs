@@ -1,8 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 
-module Ouroboros.Network.Protocol.Handshake.Direct
-  ( pureHandshake
-  ) where
+module Ouroboros.Network.Protocol.Handshake.Direct (pureHandshake) where
 
 import qualified Data.Map as Map
 
@@ -25,7 +23,7 @@ pureHandshake acceptVersion (Versions serverVersions) (Versions clientVersions) 
 
         []             -> (Nothing, Nothing)
 
-        (vNumber, _):_ -> 
+        (vNumber, _):_ ->
           case (serverVersions Map.! vNumber, clientVersions Map.! vNumber) of
             ( version, version' ) ->
                 ( versionApplication version

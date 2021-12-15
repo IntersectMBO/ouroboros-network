@@ -19,8 +19,7 @@
 -- TODO: Create a 'snocket' package, in order to avoid having to have
 -- ouroboros-network-testing as a dependency for this cabal library.
 module Simulation.Network.Snocket
-  (
-  -- * Simulated Snocket
+  ( -- * Simulated Snocket
     withSnocket
   , ObservableNetworkState (..)
   , ResourceException (..)
@@ -30,7 +29,6 @@ module Simulation.Network.Snocket
   , SnocketTrace (..)
   , SockType (..)
   , OpenType (..)
-
   , normaliseId
   , BearerInfo (..)
   , IOErrType (..)
@@ -39,7 +37,6 @@ module Simulation.Network.Snocket
   , TimeoutDetail (..)
   , noAttenuation
   , FD
-
   , GlobalAddressScheme (..)
   , AddressType (..)
   ) where
@@ -49,9 +46,9 @@ import           Prelude hiding (read)
 import           Control.Monad (when)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
 import           GHC.IO.Exception
@@ -62,23 +59,23 @@ import           Data.Functor (($>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
+import           Foreign.C.Error
 import           Numeric.Natural (Natural)
 import           Text.Printf (printf)
-import           Foreign.C.Error
 
-import           Data.Wedge
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
+import           Data.Wedge
 
 import           Network.Mux.Bearer.AttenuatedChannel
-import           Network.Mux.Types (MuxBearer, SDUSize (..))
 import           Network.Mux.Trace (MuxTrace)
+import           Network.Mux.Types (MuxBearer, SDUSize (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types (AddressType (..))
 import           Ouroboros.Network.Snocket
 
-import           Ouroboros.Network.Testing.Data.Script
-                  (Script(..), stepScriptSTM)
+import           Ouroboros.Network.Testing.Data.Script (Script (..),
+                     stepScriptSTM)
 
 data Connection m addr = Connection
     { -- | Attenuated channels of a connection.

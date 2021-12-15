@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -11,12 +10,12 @@ module Test.Ouroboros.Network.KeepAlive (tests) where
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
@@ -26,17 +25,17 @@ import           System.Random
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.DeltaQ
+import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.KeepAlive.Client
-import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
+import           Ouroboros.Network.Protocol.KeepAlive.Server
 
-import Test.QuickCheck
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree

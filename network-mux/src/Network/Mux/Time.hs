@@ -1,17 +1,17 @@
 
-module Network.Mux.Time (
-    -- * DiffTime
-    DiffTime,
-    diffTimeToMicroseconds,
-    microsecondsToDiffTime,
-
+module Network.Mux.Time
+  ( -- * DiffTime
+    DiffTime
+  , diffTimeToMicroseconds
+  , microsecondsToDiffTime
     -- * Compact timestamp
-    timestampMicrosecondsLow32Bits,
+  , timestampMicrosecondsLow32Bits
   ) where
 
-import Data.Word (Word32)
-import Data.Time.Clock (DiffTime, diffTimeToPicoseconds, picosecondsToDiffTime)
-import Control.Monad.Class.MonadTime (Time(..))
+import           Control.Monad.Class.MonadTime (Time (..))
+import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds,
+                     picosecondsToDiffTime)
+import           Data.Word (Word32)
 
 diffTimeToMicroseconds :: DiffTime -> Integer
 diffTimeToMicroseconds = (`div` 1000000) . diffTimeToPicoseconds

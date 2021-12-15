@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -24,8 +23,8 @@ import           Data.Functor (($>))
 
 import           Network.Mux.Types (MuxMode)
 
-import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Types
 
 
@@ -65,7 +64,7 @@ data ControlChannel m msg =
   ControlChannel {
     -- | Read a single 'NewConnection' instructrion from the channel.
     --
-    readMessage :: STM m msg,
+    readMessage  :: STM m msg,
 
     -- | Write a 'NewConnection' to the channel.
     --

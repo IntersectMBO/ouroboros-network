@@ -8,12 +8,12 @@
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
-module Ouroboros.Network.TxSubmission.Inbound (
-    txSubmissionInbound,
-    TxSubmissionMempoolWriter(..),
-    TraceTxSubmissionInbound(..),
-    TxSubmissionProtocolError(..),
-    ProcessedTxCount(..),
+module Ouroboros.Network.TxSubmission.Inbound
+  ( txSubmissionInbound
+  , TxSubmissionMempoolWriter (..)
+  , TraceTxSubmissionInbound (..)
+  , TxSubmissionProtocolError (..)
+  , ProcessedTxCount (..)
   ) where
 
 import           Data.Foldable (foldl', toList)

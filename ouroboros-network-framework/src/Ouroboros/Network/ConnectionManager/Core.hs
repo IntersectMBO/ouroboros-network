@@ -1,16 +1,15 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveFoldable       #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 -- Undecidable instances are need for 'Show' instance of 'ConnectionState'.
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- | The implementation of connection manager.
 --
@@ -20,24 +19,23 @@ module Ouroboros.Network.ConnectionManager.Core
   , defaultTimeWaitTimeout
   , defaultProtocolIdleTimeout
   , defaultResetTimeout
-
   , ConnectionState (..)
   , abstractState
   ) where
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when)
-import           Control.Monad.Class.MonadFork  (MonadFork, ThreadId, throwTo)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork (MonadFork, ThreadId, throwTo)
+import qualified Control.Monad.Class.MonadSTM as LazySTM
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadSTM.Strict
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Tracer (Tracer, traceWith, contramap)
-import           Data.Foldable (traverse_, foldMap')
-import           Data.Functor (($>), void)
+import           Control.Tracer (Tracer, contramap, traceWith)
+import           Data.Foldable (foldMap', traverse_)
 import           Data.Function (on)
+import           Data.Functor (void, ($>))
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
@@ -51,17 +49,19 @@ import           Data.Monoid.Synchronisation
 import           Data.Wedge
 import           Data.Word (Word32)
 
-import           Network.Mux.Types (MuxMode)
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
+import           Network.Mux.Types (MuxMode)
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.InboundGovernor.ControlChannel (ControlChannel)
+import           Ouroboros.Network.InboundGovernor.ControlChannel
+                     (ControlChannel)
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.MuxMode
+import           Ouroboros.Network.Server.RateLimiting
+                     (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
@@ -395,21 +395,21 @@ getConnType TerminatedState {}                                       = Nothing
 -- 'connectionStateToCounters'.  Both are used for prunning.
 --
 isInboundConn :: ConnectionState peerAddr handle handleError version m -> Bool
-isInboundConn ReservedOutboundState = False
+isInboundConn ReservedOutboundState                      = False
 isInboundConn (UnnegotiatedState pr _connId _connThread) = pr == Inbound
-isInboundConn OutboundUniState {}   = False
-isInboundConn OutboundDupState {}   = False
-isInboundConn OutboundIdleState {}  = False
-isInboundConn InboundIdleState {}   = True
-isInboundConn InboundState {}       = True
-isInboundConn DuplexState {}        = True
-isInboundConn TerminatingState {}   = False
-isInboundConn TerminatedState {}    = False
+isInboundConn OutboundUniState {}                        = False
+isInboundConn OutboundDupState {}                        = False
+isInboundConn OutboundIdleState {}                       = False
+isInboundConn InboundIdleState {}                        = True
+isInboundConn InboundState {}                            = True
+isInboundConn DuplexState {}                             = True
+isInboundConn TerminatingState {}                        = False
+isInboundConn TerminatedState {}                         = False
 
 
 abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b) -> AbstractState
 abstractState = \s -> case s of
-    Unknown -> UnknownConnectionSt
+    Unknown  -> UnknownConnectionSt
     Race s'  -> go s'
     Known s' -> go s'
   where
@@ -829,7 +829,7 @@ withConnectionManager ConnectionManagerArguments {
                          forceThreadDelay delay = do
                            t <- getMonotonicTime
                            unmask (threadDelay delay)
-                             `catch` \e -> 
+                             `catch` \e ->
                                 case fromException e
                                 of Just (AsyncCancelled) -> do
                                      t' <- getMonotonicTime

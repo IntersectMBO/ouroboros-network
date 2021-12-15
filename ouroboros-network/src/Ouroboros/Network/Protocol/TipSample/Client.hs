@@ -1,17 +1,15 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.TipSample.Client (
-    -- * Protocol type for the client
+module Ouroboros.Network.Protocol.TipSample.Client
+  ( -- * Protocol type for the client
     TipSampleClient (..)
   , ClientStIdle (..)
   , HandleTips (..)
-
     -- * Execution as a typed protocol
   , tipSampleClientPeer
-
     -- * Null tip sample client
   , tipSampleClientNull
   ) where

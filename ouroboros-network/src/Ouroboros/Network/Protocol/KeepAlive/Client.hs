@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs     #-}
 
-module Ouroboros.Network.Protocol.KeepAlive.Client (
-    KeepAliveClient (..),
-    keepAliveClientPeer
+module Ouroboros.Network.Protocol.KeepAlive.Client
+  ( KeepAliveClient (..)
+  , keepAliveClientPeer
   ) where
 
 import           Control.Monad.Class.MonadThrow

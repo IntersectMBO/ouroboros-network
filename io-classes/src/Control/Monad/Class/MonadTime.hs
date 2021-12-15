@@ -1,16 +1,14 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Control.Monad.Class.MonadTime (
-    MonadTime(..)
-  , MonadMonotonicTime(..)
-
-  -- * 'DiffTime' and its action on 'Time'
-  , Time(..)
+module Control.Monad.Class.MonadTime
+  ( MonadTime (..)
+  , MonadMonotonicTime (..)
+    -- * 'DiffTime' and its action on 'Time'
+  , Time (..)
   , diffTime
   , addTime
   , DiffTime
-
-  -- * 'NominalTime' and its action on 'UTCTime'
+    -- * 'NominalTime' and its action on 'UTCTime'
   , UTCTime
   , diffUTCTime
   , addUTCTime
@@ -19,7 +17,7 @@ module Control.Monad.Class.MonadTime (
 
 import           Control.Monad.Reader
 import           Data.Time.Clock (DiffTime, NominalDiffTime, UTCTime,
-                   addUTCTime, diffUTCTime)
+                     addUTCTime, diffUTCTime)
 import qualified Data.Time.Clock as Time
 import           Data.Word (Word64)
 import           GHC.Generics (Generic (..))

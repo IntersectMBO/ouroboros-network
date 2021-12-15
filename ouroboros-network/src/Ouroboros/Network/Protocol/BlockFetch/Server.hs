@@ -3,13 +3,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.BlockFetch.Server where
 
-import Network.TypedProtocol.Core
-        ( Peer (..)
-        , PeerRole (..)
-        , PeerHasAgency (..)
-        )
+import           Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..),
+                     PeerRole (..))
 
-import Ouroboros.Network.Protocol.BlockFetch.Type
+import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 
 data BlockFetchServer block point m a where

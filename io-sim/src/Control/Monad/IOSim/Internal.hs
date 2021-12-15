@@ -20,36 +20,35 @@
 -- and 'reschedule'.
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Control.Monad.IOSim.Internal (
-  IOSim (..),
-  SimM,
-  runIOSim,
-  runSimTraceST,
-  traceM,
-  traceSTM,
-  STM,
-  STMSim,
-  SimSTM,
-  setCurrentTime,
-  unshareClock,
-  TimeoutException (..),
-  EventlogEvent (..),
-  EventlogMarker (..),
-  ThreadId,
-  ThreadLabel,
-  Labelled (..),
-  SimTrace,
-  Trace.Trace(SimTrace, Trace, TraceMainReturn, TraceMainException, TraceDeadlock),
-  SimEvent (..),
-  SimResult (..),
-  SimEventType (..),
-  TraceEvent,
-  ppTrace,
-  ppTrace_,
-  ppSimEvent,
-  liftST,
-  execReadTVar
-
+module Control.Monad.IOSim.Internal
+  ( IOSim (..)
+  , SimM
+  , runIOSim
+  , runSimTraceST
+  , traceM
+  , traceSTM
+  , STM
+  , STMSim
+  , SimSTM
+  , setCurrentTime
+  , unshareClock
+  , TimeoutException (..)
+  , EventlogEvent (..)
+  , EventlogMarker (..)
+  , ThreadId
+  , ThreadLabel
+  , Labelled (..)
+  , SimTrace
+  , Trace.Trace (SimTrace, Trace, TraceMainReturn, TraceMainException, TraceDeadlock)
+  , SimEvent (..)
+  , SimResult (..)
+  , SimEventType (..)
+  , TraceEvent
+  , ppTrace
+  , ppTrace_
+  , ppSimEvent
+  , liftST
+  , execReadTVar
   ) where
 
 import           Prelude hiding (read)
@@ -69,9 +68,9 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Typeable (Typeable)
-import           Text.Printf
-import           Quiet (Quiet (..))
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
+import           Text.Printf
 
 import           Control.Applicative (Alternative (..), liftA2)
 import           Control.Exception (ErrorCall (..), assert,
@@ -93,10 +92,10 @@ import qualified Control.Monad.Class.MonadAsync as MonadAsync
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import qualified Control.Monad.Class.MonadFork as MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
 import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime

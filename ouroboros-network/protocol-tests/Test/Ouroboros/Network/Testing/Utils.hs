@@ -1,14 +1,14 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE BangPatterns     #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RankNTypes       #-}
 module Test.Ouroboros.Network.Testing.Utils where
 
+import qualified Codec.CBOR.FlatTerm as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
-import qualified Codec.CBOR.Read      as CBOR
-import qualified Codec.CBOR.Term      as CBOR
-import qualified Codec.CBOR.FlatTerm as CBOR
 
 import           Network.TypedProtocol.Codec
 

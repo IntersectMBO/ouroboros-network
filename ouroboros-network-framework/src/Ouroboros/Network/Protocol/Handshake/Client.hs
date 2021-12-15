@@ -1,9 +1,9 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.Handshake.Client
   ( handshakeClientPeer
@@ -13,7 +13,7 @@ module Ouroboros.Network.Protocol.Handshake.Client
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
-import qualified Codec.CBOR.Term     as CBOR
+import qualified Codec.CBOR.Term as CBOR
 
 import           Network.TypedProtocol.Core
 
@@ -44,11 +44,11 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
     Await (ServerAgency TokConfirm) $ \msg -> case msg of
-      MsgReplyVersions vMap -> 
+      MsgReplyVersions vMap ->
         -- simultaneous open; 'accept' will choose version (the greatest common
         -- version), and check if we can accept received version data.
         Done TokDone $ case acceptOrRefuse codec acceptVersion versions vMap of
-          Right r -> Right r
+          Right r      -> Right r
           Left vReason -> Left (HandshakeError vReason)
 
       -- the server refused common highest version

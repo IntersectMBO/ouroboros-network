@@ -27,10 +27,10 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Coerce (coerce)
 import qualified Data.IP as IP
@@ -61,7 +61,7 @@ import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 
 import           Simulation.Network.Snocket (AddressType (..),
-                   GlobalAddressScheme (..))
+                     GlobalAddressScheme (..))
 
 
 -- | Node-to-node address type.
@@ -134,7 +134,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
                                       --
                                       $ ConcreteBlock.BlockBody (BSC.pack "")
                             in case randomR (0, 100) seed of
-                                (r, seed') | r <= quota -> 
+                                (r, seed') | r <= quota ->
                                              (Just block, seed')
                                            | otherwise  ->
                                              (Nothing, seed')
@@ -167,7 +167,7 @@ registerClient :: MonadSTM m
                => NodeKernel block m
                -> NtNAddr
                -> m (StrictTVar m (Chain block))
-registerClient NodeKernel { nkClientChains } peerAddr = atomically $do
+registerClient NodeKernel { nkClientChains } peerAddr = atomically $ do
     chainVar <- newTVar Chain.Genesis
     modifyTVar nkClientChains (Map.insert peerAddr chainVar)
     return chainVar

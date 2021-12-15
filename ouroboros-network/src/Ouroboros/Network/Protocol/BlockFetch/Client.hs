@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -43,8 +43,8 @@ data BlockFetchResponse block m a = BlockFetchResponse {
 -- it also needs to handle errors sent back from the server.
 --
 data BlockFetchReceiver block m = BlockFetchReceiver {
-    handleBlock      :: block -> m (BlockFetchReceiver block m),
-    handleBatchDone  :: m ()
+    handleBlock     :: block -> m (BlockFetchReceiver block m),
+    handleBatchDone :: m ()
   }
 
 blockFetchClientPeer

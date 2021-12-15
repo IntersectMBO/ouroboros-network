@@ -9,43 +9,40 @@
 
 module Ouroboros.Network.Protocol.Handshake.Codec
   ( codecHandshake
-
   , byteLimitsHandshake
   , timeLimitsHandshake
   , noTimeLimitsHandshake
-
   , encodeRefuseReason
   , decodeRefuseReason
-
     -- ** Version data codec
   , VersionDataCodec (..)
   , cborTermVersionDataCodec
   ) where
 
+import           Control.Monad (replicateM, unless)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime
-import           Control.Monad (unless, replicateM)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Either (partitionEithers)
-import           Data.Text (Text)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
+import           Data.Text (Text)
 import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Term     as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Driver.Limits
 
-import           Ouroboros.Network.Protocol.Limits
 import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Limits
 
 -- | Codec for version data ('vData' in code) exchanged by the handshake
 -- protocol.
@@ -268,7 +265,7 @@ decodeRefuseReason versionNumberCodec = do
         rs <- replicateM len
                 (decodeTerm versionNumberCodec <$> CBOR.decodeTerm)
         case partitionEithers rs of
-          (errs, vNumbers) -> 
+          (errs, vNumbers) ->
             pure $ VersionMismatch vNumbers (mapMaybe snd errs)
       1 -> do
         v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm

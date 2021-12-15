@@ -4,23 +4,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Network.BlockFetch.Decision (
-    -- * Deciding what to fetch
-    fetchDecisions,
-    FetchDecisionPolicy(..),
-    FetchMode(..),
-    PeerInfo,
-    FetchDecision,
-    FetchDecline(..),
-
+module Ouroboros.Network.BlockFetch.Decision
+  ( -- * Deciding what to fetch
+    fetchDecisions
+  , FetchDecisionPolicy (..)
+  , FetchMode (..)
+  , PeerInfo
+  , FetchDecision
+  , FetchDecline (..)
     -- ** Components of the decision-making process
-    filterPlausibleCandidates,
-    selectForkSuffixes,
-    filterNotAlreadyFetched,
-    filterNotAlreadyInFlightWithPeer,
-    prioritisePeerChains,
-    filterNotAlreadyInFlightWithOtherPeers,
-    fetchRequestDecisions,
+  , filterPlausibleCandidates
+  , selectForkSuffixes
+  , filterNotAlreadyFetched
+  , filterNotAlreadyInFlightWithPeer
+  , prioritisePeerChains
+  , filterNotAlreadyInFlightWithOtherPeers
+  , fetchRequestDecisions
   ) where
 
 import qualified Data.Set as Set

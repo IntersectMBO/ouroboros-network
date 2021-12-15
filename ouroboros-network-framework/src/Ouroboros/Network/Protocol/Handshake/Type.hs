@@ -1,20 +1,18 @@
-{-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE EmptyCase             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Protocol.Handshake.Type
-  (
-  -- * Handshake Protocol
+  ( -- * Handshake Protocol
     Handshake (..)
   , Message (..)
   , ClientHasAgency (..)
@@ -23,14 +21,13 @@ module Ouroboros.Network.Protocol.Handshake.Type
     -- $simultanous-open
   , RefuseReason (..)
   , HandshakeProtocolError (..)
-  )
-  where
+  ) where
 
 
 import           Control.Exception
+import           Data.Map (Map)
 import           Data.Text (Text)
 import           Data.Typeable (Typeable)
-import           Data.Map (Map)
 
 import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
@@ -94,7 +91,7 @@ instance Protocol (Handshake vNumber vParams) where
 
       -- |
       -- The remote end decides which version to use and sends chosen version.
-      -- The server is allowed to modify version parameters. 
+      -- The server is allowed to modify version parameters.
       --
       MsgAcceptVersion
         :: vNumber

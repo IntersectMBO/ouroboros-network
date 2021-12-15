@@ -1,18 +1,17 @@
 {-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Network.Mux.Egress (
-      muxer
+module Network.Mux.Egress
+  ( muxer
     -- $egress
     -- $servicingsSemantics
-
-    , EgressQueue
-    , TranslocationServiceRequest (..)
-    , Wanton (..)
-    ) where
+  , EgressQueue
+  , TranslocationServiceRequest (..)
+  , Wanton (..)
+  ) where
 
 import           Control.Monad
 import qualified Data.ByteString.Lazy as BL
@@ -24,8 +23,8 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
 
-import           Network.Mux.Types
 import           Network.Mux.Timeout
+import           Network.Mux.Types
 
 -- $servicingsSemantics
 -- = Desired Servicing Semantics

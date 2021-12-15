@@ -118,12 +118,12 @@ instance Protocol ps => Protocol (Hello ps stIdle) where
 
 instance (forall (from' :: ps) (to' :: ps). Show (Message ps from' to'))
       => Show (Message (Hello ps stIdle) from to) where
-    show MsgHello         = "MsgHello"
+    show MsgHello      = "MsgHello"
     show (MsgTalk msg) = "MsgTalk " ++ show msg
 
 instance (forall (st' :: ps). Show (ClientHasAgency st'))
       => Show (ClientHasAgency (st :: Hello ps (stIdle :: ps))) where
-    show TokHello= "TokHello"
+    show TokHello=           "TokHello"
     show (TokClientTalk tok) = "TokClientTalk " ++ show tok
 
 instance (forall (st' :: ps). Show (ServerHasAgency st'))

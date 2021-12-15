@@ -1,8 +1,8 @@
-{-# LANGUAGE DeriveFunctor         #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Error policies, and integration with 'SuspendDecision'-semigroup action on
 -- 'PeerState'.
@@ -17,13 +17,11 @@ module Ouroboros.Network.ErrorPolicy
   , CompleteApplicationResult (..)
   , Result (..)
   , completeApplicationTx
-
-  -- * Traces
+    -- * Traces
   , ErrorPolicyTrace (..)
   , traceErrorPolicy
   , WithAddr (..)
-
-  -- * Re-exports of PeerState
+    -- * Re-exports of PeerState
   , PeerStates
   , SuspendDecision (..)
   ) where
@@ -35,12 +33,8 @@ import           Data.Maybe (mapMaybe)
 import           Data.Semigroup (sconcat)
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Typeable ( Proxy (..)
-                               , cast
-                               , tyConName
-                               , typeRepTyCon
-                               , typeRep
-                               )
+import           Data.Typeable (Proxy (..), cast, tyConName, typeRep,
+                     typeRepTyCon)
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
@@ -99,16 +93,16 @@ evalErrorPolicies e =
 --
 data ErrorPolicies = ErrorPolicies {
     -- | Application Error Policies
-    epAppErrorPolicies  :: [ErrorPolicy]
+    epAppErrorPolicies :: [ErrorPolicy]
     -- | `connect` Error Policies
-  , epConErrorPolicies  :: [ErrorPolicy]
+  , epConErrorPolicies :: [ErrorPolicy]
   }
 
 nullErrorPolicies :: ErrorPolicies
 nullErrorPolicies = ErrorPolicies [] []
 
 instance Semigroup ErrorPolicies where
-    ErrorPolicies aep cep <> ErrorPolicies aep' cep' 
+    ErrorPolicies aep cep <> ErrorPolicies aep' cep'
       = ErrorPolicies (aep <> aep') (cep <> cep')
 
 -- | Sum type which distinguishes between connection and application

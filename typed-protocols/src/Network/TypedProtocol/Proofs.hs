@@ -1,12 +1,11 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeInType          #-}
 
 
 -- This is already implied by the -Wall in the .cabal file, but lets just be
@@ -18,30 +17,26 @@
 --
 -- It also provides helpful testing utilities.
 --
-module Network.TypedProtocol.Proofs (
-  -- * About these proofs
-  -- $about
-
-  -- * Connect proof
-  connect,
-  TerminalStates(..),
-
-  -- * Pipelining proofs
-  -- | Additional proofs specific to the pipelining features
-  connectPipelined,
-  forgetPipelined,
-
-  -- ** Pipeline proof helpers
-  Queue(..),
-  enqueue,
-
-  -- ** Auxilary functions
-  pipelineInterleaving,
+module Network.TypedProtocol.Proofs
+  ( -- * About these proofs
+    -- $about
+    -- * Connect proof
+    connect
+  , TerminalStates (..)
+    -- * Pipelining proofs
+    -- | Additional proofs specific to the pipelining features
+  , connectPipelined
+  , forgetPipelined
+    -- ** Pipeline proof helpers
+  , Queue (..)
+  , enqueue
+    -- ** Auxilary functions
+  , pipelineInterleaving
   ) where
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
-import Data.Void (absurd)
+import           Data.Void (absurd)
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Pipelined
 
 -- $about
 --

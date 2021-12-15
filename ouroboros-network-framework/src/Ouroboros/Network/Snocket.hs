@@ -25,7 +25,6 @@ module Ouroboros.Network.Snocket
   , LocalAddress (..)
   , localAddressFromPath
   , TestAddress (..)
-
   , FileDescriptor (..)
   , socketFileDescriptor
   , localSocketFileDescriptor
@@ -35,33 +34,31 @@ import           Control.Exception
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
-import           Data.Bifunctor (Bifunctor (..))
 import           Data.Bifoldable (Bifoldable (..))
+import           Data.Bifunctor (Bifunctor (..))
 import           Data.Hashable
 import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
 #if !defined(mingw32_HOST_OS)
-import           Network.Socket ( Family (AF_UNIX) )
+import           Network.Socket (Family (AF_UNIX))
 #endif
-import           Network.Socket ( Socket
-                                , SockAddr (..)
-                                )
+import           Network.Socket (SockAddr (..), Socket)
 #if defined(mingw32_HOST_OS)
 import           Data.Bits
 import           Foreign.Ptr (IntPtr (..), ptrToIntPtr)
-import qualified System.Win32            as Win32
+import qualified System.Win32 as Win32
+import qualified System.Win32.Async as Win32.Async
 import qualified System.Win32.NamedPipes as Win32
-import qualified System.Win32.Async      as Win32.Async
 
 import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
 import qualified Network.Socket as Socket
 
-import           Network.Mux.Types (MuxBearer)
-import           Network.Mux.Trace (MuxTrace)
 import qualified Network.Mux.Bearer.Socket as Mx
+import           Network.Mux.Trace (MuxTrace)
+import           Network.Mux.Types (MuxBearer)
 
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Linger (StructLinger (..))
@@ -123,7 +120,7 @@ instance Bifunctor Accepted where
 
 instance Bifoldable Accepted where
     bifoldMap f g (Accepted fd addr) = f fd <> g addr
-    bifoldMap _ _ (AcceptFailure _) = mempty
+    bifoldMap _ _ (AcceptFailure _)  = mempty
 
 
 -- | BSD accept loop.
@@ -229,7 +226,7 @@ data Snocket m fd addr = Snocket {
     getLocalAddr  :: fd -> m addr
   , getRemoteAddr :: fd -> m addr
 
-  , addrFamily :: addr -> AddressFamily addr
+  , addrFamily    :: addr -> AddressFamily addr
 
   -- | Open a file descriptor  (socket / namedPipe).  For named pipes this is
   -- using 'CreateNamedPipe' syscall, for Berkeley sockets 'socket' is used.

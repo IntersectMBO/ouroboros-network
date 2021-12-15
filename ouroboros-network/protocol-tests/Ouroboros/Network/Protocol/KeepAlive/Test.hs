@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE TypeApplications  #-}
 
@@ -7,19 +7,18 @@
 
 module Ouroboros.Network.Protocol.KeepAlive.Test where
 
-import           Control.Monad.ST (runST)
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
 
-import qualified Codec.CBOR.Read  as CBOR
+import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
 
@@ -27,24 +26,21 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
-import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.KeepAlive.Client
-import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
-import           Ouroboros.Network.Protocol.KeepAlive.Examples
 import           Ouroboros.Network.Protocol.KeepAlive.Direct
+import           Ouroboros.Network.Protocol.KeepAlive.Examples
+import           Ouroboros.Network.Protocol.KeepAlive.Server
+import           Ouroboros.Network.Protocol.KeepAlive.Type
 
-import Test.Ouroboros.Network.Testing.Utils
-        ( prop_codec_valid_cbor_encoding
-        , splits2
-        , splits3
-        )
+import           Test.Ouroboros.Network.Testing.Utils
+                     (prop_codec_valid_cbor_encoding, splits2, splits3)
 
 
-import Test.QuickCheck
-import Text.Show.Functions ()
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
 
 --
@@ -182,7 +178,7 @@ prop_byteLimits :: AnyMessageAndAgency KeepAlive
                          -> Bool
 prop_byteLimits (AnyMessageAndAgency agency msg) =
         dataSize (encode agency msg)
-     <= sizeLimitForState agency  
+     <= sizeLimitForState agency
   where
     Codec { encode } = (codecKeepAlive :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString)
     ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive (fromIntegral . BL.length)

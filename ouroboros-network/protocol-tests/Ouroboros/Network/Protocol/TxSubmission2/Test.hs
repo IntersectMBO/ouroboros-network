@@ -15,29 +15,28 @@ module Ouroboros.Network.Protocol.TxSubmission2.Test (tests) where
 
 import           Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.ST (runST)
-import           Control.Monad.IOSim
-import           Control.Tracer (nullTracer)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Control.Monad.IOSim
+import           Control.Monad.ST (runST)
+import           Control.Tracer (nullTracer)
 
 import           Codec.Serialise (DeserialiseFailure)
-import qualified Codec.Serialise as Serialise (encode, decode)
+import qualified Codec.Serialise as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Proofs
 import           Network.TypedProtocol.Codec hiding (prop_codec)
+import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple
-                   (runConnectedPeersPipelined)
+import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
 import           Ouroboros.Network.Protocol.Trans.Hello.Type (Hello)
 import qualified Ouroboros.Network.Protocol.Trans.Hello.Type as Hello
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 import           Ouroboros.Network.Protocol.TxSubmission.Server
 import           Ouroboros.Network.Protocol.TxSubmission.Test hiding (tests)
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)

@@ -1,69 +1,65 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DeriveFunctor #-}
 
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
-module Ouroboros.Network.PeerSelection.Governor (
-    -- * Design overview
+module Ouroboros.Network.PeerSelection.Governor
+  ( -- * Design overview
     -- $overview
-
     -- * Peer selection governor
     -- $peer-selection-governor
-
-    PeerSelectionPolicy(..),
-    PeerSelectionTargets(..),
-    PeerSelectionActions(..),
-    PeerStateActions(..),
-    TracePeerSelection(..),
-    DebugPeerSelection(..),
-    peerSelectionGovernor,
-
+    PeerSelectionPolicy (..)
+  , PeerSelectionTargets (..)
+  , PeerSelectionActions (..)
+  , PeerStateActions (..)
+  , TracePeerSelection (..)
+  , DebugPeerSelection (..)
+  , peerSelectionGovernor
     -- * Peer churn governor
     -- $peer-churn-governor
-    peerChurnGovernor,
-
+  , peerChurnGovernor
     -- * Internals exported for testing
-    assertPeerSelectionState,
-    sanePeerSelectionTargets,
-    establishedPeersStatus,
-    PeerSelectionState(..),
-    PeerSelectionCounters(..),
-    nullPeerSelectionTargets,
-    emptyPeerSelectionState,
-    ChurnMode (..)
-) where
+  , assertPeerSelectionState
+  , sanePeerSelectionTargets
+  , establishedPeersStatus
+  , PeerSelectionState (..)
+  , PeerSelectionCounters (..)
+  , nullPeerSelectionTargets
+  , emptyPeerSelectionState
+  , ChurnMode (..)
+  ) where
 
 import           Data.Cache
+import           Data.Semigroup (Min (..))
 import           Data.Void (Void)
-import           Data.Semigroup (Min(..))
 
-import           Control.Applicative (Alternative((<|>)))
-import qualified Control.Concurrent.JobPool as JobPool
+import           Control.Applicative (Alternative ((<|>)))
 import           Control.Concurrent.JobPool (JobPool)
+import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Tracer (Tracer(..), traceWith)
+import           Control.Tracer (Tracer (..), traceWith)
 import           System.Random
 
+import           Ouroboros.Network.BlockFetch (FetchMode (..))
 import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers      as ActivePeers
+import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers as ActivePeers
 import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers       as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.Governor.Monitor          as Monitor
-import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers        as RootPeers
+import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.Governor.Monitor as Monitor
+import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.PeerMetric
-import           Ouroboros.Network.BlockFetch (FetchMode (..))
 
 {- $overview
 

@@ -2,16 +2,16 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Network.Mux.DeltaQ.TraceTransformer
-  (initDeltaQTracer
-  ,initDeltaQTracer')
-where
+  ( initDeltaQTracer
+  , initDeltaQTracer'
+  ) where
 
-import Control.Tracer
-import Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Tracer
 
-import Network.Mux.Types
-import Network.Mux.Trace
-import Network.Mux.DeltaQ.TraceStats
+import           Network.Mux.DeltaQ.TraceStats
+import           Network.Mux.Trace
+import           Network.Mux.Types
 
 
 -- | Create a trace transformer that will emit

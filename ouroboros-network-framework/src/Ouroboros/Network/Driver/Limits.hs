@@ -1,55 +1,52 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeInType #-}
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeInType            #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- | Drivers for running 'Peer's.
 --
-module Ouroboros.Network.Driver.Limits (
-
-  -- * Limits
-  ProtocolSizeLimits(..),
-  ProtocolTimeLimits(..),
-  ProtocolLimitFailure(..),
-
-  -- * Normal peers
-  runPeerWithLimits,
-  TraceSendRecv(..),
-
-  -- * Pipelined peers
-  runPipelinedPeerWithLimits,
-
-  -- * Driver utilities
-  driverWithLimits,
+module Ouroboros.Network.Driver.Limits
+  ( -- * Limits
+    ProtocolSizeLimits (..)
+  , ProtocolTimeLimits (..)
+  , ProtocolLimitFailure (..)
+    -- * Normal peers
+  , runPeerWithLimits
+  , TraceSendRecv (..)
+    -- * Pipelined peers
+  , runPipelinedPeerWithLimits
+    -- * Driver utilities
+  , driverWithLimits
   ) where
 
-import Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe)
 
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime
-import Control.Monad.Class.MonadTimer
-import Control.Tracer (Tracer (..), traceWith)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
+import           Control.Tracer (Tracer (..), traceWith)
 
-import Network.Mux.Timeout
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Pipelined
-import Network.TypedProtocol.Driver
+import           Network.Mux.Timeout
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Pipelined
 
-import Ouroboros.Network.Channel
-import Ouroboros.Network.Driver.Simple (TraceSendRecv(..), DecoderFailure (..))
-import Ouroboros.Network.Util.ShowProxy
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Driver.Simple (DecoderFailure (..),
+                     TraceSendRecv (..))
+import           Ouroboros.Network.Util.ShowProxy
 
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {

@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveFunctor      #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE GADTs              #-}
 {-# LANGUAGE PatternSynonyms    #-}

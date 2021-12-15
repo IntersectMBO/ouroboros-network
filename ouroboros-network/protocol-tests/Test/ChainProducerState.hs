@@ -7,8 +7,7 @@ module Test.ChainProducerState
   ( ChainProducerStateTest (..)
   , ChainProducerStateForkTest (..)
   , tests
-  )
- where
+  ) where
 
 import           Data.List (unfoldr)
 import qualified Data.Map as Map

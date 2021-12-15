@@ -1,17 +1,14 @@
-module Test.Ouroboros.Network.Testing.Data.AbsBearerInfo
-  ( tests
-  ) where
+module Test.Ouroboros.Network.Testing.Data.AbsBearerInfo (tests) where
 
 import qualified Data.List.NonEmpty as NonEmpty
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                   ( AbsBearerInfo,
-                     AbsBearerInfoScript(..),
-                     NonFailingAbsBearerInfoScript(..), canFail )
-import           Ouroboros.Network.Testing.Data.Script (Script(Script))
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo (AbsBearerInfo,
+                     AbsBearerInfoScript (..),
+                     NonFailingAbsBearerInfoScript (..), canFail)
+import           Ouroboros.Network.Testing.Data.Script (Script (Script))
 
-import           Test.Tasty ( testGroup, TestTree )
-import           Test.QuickCheck (Fixed (..), Arbitrary (..))
+import           Test.QuickCheck (Arbitrary (..), Fixed (..))
+import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree

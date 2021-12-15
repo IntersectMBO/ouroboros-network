@@ -1,10 +1,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.Mux.DeltaQ.TraceTypes
- ( SISec(..)
- , SISec2(..)
- , squareSISec
- )
-where
+  ( SISec (..)
+  , SISec2 (..)
+  , squareSISec
+  ) where
 
 -- Map time intervals to real numbers, for the arithmetic.
 newtype SISec  = S  Float -- this is all the precision we need,

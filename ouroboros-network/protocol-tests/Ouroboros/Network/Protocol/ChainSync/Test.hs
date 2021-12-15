@@ -18,24 +18,24 @@ import           Data.Word
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (nullTracer)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Proofs (connect, connectPipelined)
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 
-import           Ouroboros.Network.Block (pattern GenesisPoint,
-                     BlockNo, pattern BlockPoint, Serialised (..), StandardHash,
-                     Tip (..), castPoint, decodeTip, encodeTip,
-                     unwrapCBORinCBOR, wrapCBORinCBOR)
+import           Ouroboros.Network.Block (BlockNo, Serialised (..),
+                     StandardHash, Tip (..), castPoint, decodeTip, encodeTip,
+                     pattern BlockPoint, pattern GenesisPoint, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 import           Ouroboros.Network.MockChain.Chain (Chain, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
@@ -52,7 +52,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block,
-                   BlockHeader (..))
+                     BlockHeader (..))
 import           Test.ChainGenerators ()
 import           Test.ChainProducerState (ChainProducerStateForkTest (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,

@@ -1,35 +1,34 @@
-{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.Protocol.LocalTxSubmission.Test (
-    tests
+module Ouroboros.Network.Protocol.LocalTxSubmission.Test
+  ( tests
   , Tx (..)
   , Reject (..)
   ) where
 
 import           Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.ST (runST)
-import           Control.Monad.IOSim
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Control.Monad.IOSim
+import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
 
-import           Codec.Serialise (Serialise, DeserialiseFailure)
-import qualified Codec.Serialise as Serialise (encode, decode)
+import           Codec.Serialise (DeserialiseFailure, Serialise)
+import qualified Codec.Serialise as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Proofs
 import           Network.TypedProtocol.Codec hiding (prop_codec)
+import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
@@ -45,10 +44,10 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
-import           Text.Show.Functions ()
 import           Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
 
 --

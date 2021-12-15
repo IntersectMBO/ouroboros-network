@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE GADTs           #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Network.TypedProtocol.ReqResp.Server where
@@ -11,11 +11,11 @@ import           Network.TypedProtocol.ReqResp.Type
 data ReqRespServer req resp m a = ReqRespServer {
     -- | The client sent us a ping message. We have no choices here, and
     -- the response is nullary, all we have are local effects.
-    recvMsgReq   :: req -> m (resp, ReqRespServer req resp m a)
+    recvMsgReq  :: req -> m (resp, ReqRespServer req resp m a)
 
     -- | The client terminated. Here we have a pure return value, but we
     -- could have done another action in 'm' if we wanted to.
-  , recvMsgDone  :: m a
+  , recvMsgDone :: m a
   }
 
 

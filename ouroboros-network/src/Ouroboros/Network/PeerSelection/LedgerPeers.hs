@@ -6,21 +6,20 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-module Ouroboros.Network.PeerSelection.LedgerPeers (
-    DomainAccessPoint (..),
-    IP.IP (..),
-    LedgerPeersConsensusInterface (..),
-    RelayAccessPoint (..),
-    PoolStake (..),
-    AccPoolStake (..),
-    TraceLedgerPeers (..),
-    NumberOfPeers (..),
-    accPoolStake,
-    withLedgerPeers,
-    UseLedgerAfter (..),
-
-    Socket.PortNumber
-    ) where
+module Ouroboros.Network.PeerSelection.LedgerPeers
+  ( DomainAccessPoint (..)
+  , IP.IP (..)
+  , LedgerPeersConsensusInterface (..)
+  , RelayAccessPoint (..)
+  , PoolStake (..)
+  , AccPoolStake (..)
+  , TraceLedgerPeers (..)
+  , NumberOfPeers (..)
+  , accPoolStake
+  , withLedgerPeers
+  , UseLedgerAfter (..)
+  , Socket.PortNumber
+  ) where
 
 
 import           Control.DeepSeq (NFData (..))
@@ -37,16 +36,16 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Ratio
-import qualified Data.Set as Set
 import           Data.Set (Set)
-import           Data.Word
+import qualified Data.Set as Set
 import           Data.Void (Void)
+import           Data.Word
 import qualified Network.Socket as Socket
 import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (RelayAccessPoint (..), DomainAccessPoint (..))
+                     (DomainAccessPoint (..), RelayAccessPoint (..))
 
 import           Text.Printf
 
@@ -312,7 +311,7 @@ withLedgerPeers :: forall peerAddr m a.
                      -> m a )
                 -> m a
 withLedgerPeers inRng toPeerAddr tracer readUseLedgerAfter interface doResolve k = do
-    reqVar  <- newEmptyTMVarIO 
+    reqVar  <- newEmptyTMVarIO
     respVar <- newEmptyTMVarIO
     let getRequest  = takeTMVar reqVar
         putResponse = putTMVar  respVar

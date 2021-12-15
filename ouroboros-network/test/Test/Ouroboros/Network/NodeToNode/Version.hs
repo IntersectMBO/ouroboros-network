@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Ouroboros.Network.NodeToNode.Version (tests) where

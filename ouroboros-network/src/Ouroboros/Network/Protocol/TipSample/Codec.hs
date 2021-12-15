@@ -9,7 +9,6 @@
 module Ouroboros.Network.Protocol.TipSample.Codec
   ( codecTipSample
   , codecTipSampleId
-
   , byteLimitsTipSample
   , timeLimitsTipSample
   ) where
@@ -17,12 +16,13 @@ module Ouroboros.Network.Protocol.TipSample.Codec
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime
 
-import           Network.TypedProtocol.Pipelined (Nat (Succ, Zero), natToInt, unsafeIntToNat)
 import           Network.TypedProtocol.Codec.CBOR
+import           Network.TypedProtocol.Pipelined (Nat (Succ, Zero), natToInt,
+                     unsafeIntToNat)
 
 import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.Protocol.TipSample.Type
 import           Ouroboros.Network.Protocol.Limits
+import           Ouroboros.Network.Protocol.TipSample.Type
 
 import qualified Data.ByteString.Lazy as LBS
 

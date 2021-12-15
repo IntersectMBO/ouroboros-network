@@ -2,9 +2,9 @@
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.Protocol.KeepAlive.Server (
-    KeepAliveServer (..),
-    keepAliveServerPeer
+module Ouroboros.Network.Protocol.KeepAlive.Server
+  ( KeepAliveServer (..)
+  , keepAliveServerPeer
   ) where
 
 import           Network.TypedProtocol.Core

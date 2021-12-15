@@ -6,11 +6,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Network.BlockFetch.Examples (
-    blockFetchExample0,
-    blockFetchExample1,
-    mockBlockFetchServer1,
-    exampleFixedPeerGSVs,
+module Ouroboros.Network.BlockFetch.Examples
+  ( blockFetchExample0
+  , blockFetchExample1
+  , mockBlockFetchServer1
+  , exampleFixedPeerGSVs
   ) where
 
 import           Codec.Serialise (Serialise (..))

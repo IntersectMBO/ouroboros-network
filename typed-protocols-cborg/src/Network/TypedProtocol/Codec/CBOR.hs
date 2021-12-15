@@ -1,6 +1,6 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Network.TypedProtocol.Codec.CBOR
@@ -10,21 +10,21 @@ module Network.TypedProtocol.Codec.CBOR
   , mkCodecCborStrictBS
   ) where
 
-import           Control.Monad.ST
 import           Control.Monad.Class.MonadST (MonadST (..))
+import           Control.Monad.ST
 
 import qualified Codec.CBOR.Decoding as CBOR (Decoder)
 import qualified Codec.CBOR.Encoding as CBOR (Encoding)
-import qualified Codec.CBOR.Read  as CBOR
+import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
 
 
 type DeserialiseFailure = CBOR.DeserialiseFailure

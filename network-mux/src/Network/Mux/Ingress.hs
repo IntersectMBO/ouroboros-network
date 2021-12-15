@@ -1,19 +1,19 @@
 {-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
-module Network.Mux.Ingress (
-    -- $ingress
-      demuxer
-    ) where
+module Network.Mux.Ingress
+  ( -- $ingress
+    demuxer
+  ) where
 
 import           Data.Array
-import           Data.List (nub)
 import qualified Data.ByteString.Lazy as BL
+import           Data.List (nub)
 import           Text.Printf
 
 import           Control.Monad

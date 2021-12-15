@@ -7,7 +7,7 @@ module Control.Monad.Class.MonadFork
   ( MonadThread (..)
   , MonadFork (..)
   , labelThisThread
-  -- * Deprecated API
+    -- * Deprecated API
   , fork
   , forkWithUnmask
   ) where

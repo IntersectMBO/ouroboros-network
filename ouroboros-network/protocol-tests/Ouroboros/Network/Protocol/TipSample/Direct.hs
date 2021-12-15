@@ -3,8 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Network.Protocol.TipSample.Direct
-  ( direct ) where
+module Ouroboros.Network.Protocol.TipSample.Direct (direct) where
 
 import           Ouroboros.Network.Protocol.TipSample.Client
 import           Ouroboros.Network.Protocol.TipSample.Server

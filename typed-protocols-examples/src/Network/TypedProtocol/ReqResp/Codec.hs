@@ -1,16 +1,16 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE TypeInType          #-}
 
 module Network.TypedProtocol.ReqResp.Codec where
 
 import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.ReqResp.Type
 import           Network.TypedProtocol.PingPong.Codec (decodeTerminatedFrame)
+import           Network.TypedProtocol.ReqResp.Type
 import           Text.Read (readMaybe)
 
 

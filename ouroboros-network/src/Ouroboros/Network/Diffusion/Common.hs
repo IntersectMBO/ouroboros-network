@@ -2,47 +2,33 @@
 {-# LANGUAGE DataKinds #-}
 
 module Ouroboros.Network.Diffusion.Common
-  ( InitializationTracer(..)
-  , Failure(..)
-  , Tracers(..)
+  ( InitializationTracer (..)
+  , Failure (..)
+  , Tracers (..)
   , nullTracers
-  , Arguments(..)
-  , Applications(..)
+  , Arguments (..)
+  , Applications (..)
   ) where
 
-import           Data.List.NonEmpty (NonEmpty)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.List.NonEmpty (NonEmpty)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
-import           Control.Exception (SomeException, Exception)
+import           Control.Exception (Exception, SomeException)
 import           Control.Tracer (Tracer, nullTracer)
 
-import           Network.Mux
-                  ( WithMuxBearer
-                  , MuxTrace
-                  , MuxMode(..)
-                  )
+import           Network.Mux (MuxMode (..), MuxTrace, WithMuxBearer)
 
-import           Ouroboros.Network.Mux
-                  ( OuroborosBundle
-                  , OuroborosApplication
-                  )
-import           Ouroboros.Network.Snocket (FileDescriptor)
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                  ( TraceLedgerPeers
-                  , LedgerPeersConsensusInterface
-                  )
-import           Ouroboros.Network.NodeToNode
-                  ( ConnectionId
-                  , AcceptedConnectionsLimit
-                  , DiffusionMode
-                  )
-import qualified Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.NodeToClient
-                  ( Versions
-                  )
+import           Ouroboros.Network.Mux (OuroborosApplication, OuroborosBundle)
+import           Ouroboros.Network.NodeToClient (Versions)
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
+import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit,
+                     ConnectionId, DiffusionMode)
+import qualified Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface, TraceLedgerPeers)
+import           Ouroboros.Network.Snocket (FileDescriptor)
 
 -- TODO: use LocalAddress where appropriate rather than 'path'.
 --
@@ -128,15 +114,15 @@ nullTracers = Tracers {
 data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       -- | an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
       --
-      daIPv4Address  :: Maybe (Either ntnFd ntnAddr)
+      daIPv4Address              :: Maybe (Either ntnFd ntnAddr)
 
       -- | an @IPV4@ socket ready to accept connections or an @IPv6@ addresses
       --
-    , daIPv6Address  :: Maybe (Either ntnFd ntnAddr)
+    , daIPv6Address              :: Maybe (Either ntnFd ntnAddr)
 
       -- | an @AF_UNIX@ socket ready to accept connections or an @AF_UNIX@
       -- socket path
-    , daLocalAddress :: Maybe (Either ntcFd ntcAddr)
+    , daLocalAddress             :: Maybe (Either ntcFd ntcAddr)
 
       -- | parameters for limiting number of accepted connections
       --
@@ -144,7 +130,7 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
 
       -- | run in initiator only mode
       --
-    , daMode         :: DiffusionMode
+    , daMode                     :: DiffusionMode
   }
 
 -- | Common DiffusionArguments interface between P2P and NonP2P

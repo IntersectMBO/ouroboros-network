@@ -1,24 +1,22 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.Mux.Bearer.Queues
-  ( queuesAsMuxBearer
-  ) where
+module Network.Mux.Bearer.Queues (queuesAsMuxBearer) where
 
 import qualified Data.ByteString.Lazy as BL
 
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 
 import qualified Network.Mux as Mx
-import           Network.Mux.Types (MuxBearer, SDUSize)
-import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Codec as Mx
 import           Network.Mux.Time as Mx
 import qualified Network.Mux.Timeout as Mx
+import           Network.Mux.Types (MuxBearer, SDUSize)
+import qualified Network.Mux.Types as Mx
 
 
 queuesAsMuxBearer

@@ -25,14 +25,14 @@ import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Channel

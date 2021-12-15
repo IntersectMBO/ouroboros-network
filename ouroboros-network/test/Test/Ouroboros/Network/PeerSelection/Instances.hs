@@ -1,31 +1,28 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.PeerSelection.Instances (
-
-    -- test types
-    PeerAddr(..),
-
+module Test.Ouroboros.Network.PeerSelection.Instances
+  ( -- test types
+    PeerAddr (..)
     -- generator tests
-    prop_arbitrary_PeerSelectionTargets,
-    prop_shrink_PeerSelectionTargets,
-
+  , prop_arbitrary_PeerSelectionTargets
+  , prop_shrink_PeerSelectionTargets
   ) where
 
-import           Data.Word (Word32)
 import           Data.Text.Encoding (encodeUtf8)
+import           Data.Word (Word32)
 
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                   (DomainAccessPoint (..), RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.Governor
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (DomainAccessPoint (..), RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.Types
 
-import           Ouroboros.Network.Testing.Utils
-                   (prop_shrink_valid, prop_shrink_nonequal)
-import           Test.QuickCheck
 import qualified Data.IP as IP
+import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
+                     prop_shrink_valid)
+import           Test.QuickCheck
 
 
 --

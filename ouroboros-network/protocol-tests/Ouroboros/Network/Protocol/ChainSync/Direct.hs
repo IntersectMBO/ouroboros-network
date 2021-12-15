@@ -2,8 +2,8 @@
 
 module Ouroboros.Network.Protocol.ChainSync.Direct where
 
-import Ouroboros.Network.Protocol.ChainSync.Client as Client
-import Ouroboros.Network.Protocol.ChainSync.Server as Server
+import           Ouroboros.Network.Protocol.ChainSync.Client as Client
+import           Ouroboros.Network.Protocol.ChainSync.Server as Server
 
 -- | The 'ClientStream m' and 'ServerStream m' types are complementary. The
 -- former can be used to feed the latter directly, in the same thread.

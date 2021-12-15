@@ -2,33 +2,27 @@
 -- | This package defines the typed protocol framework. This module re-exports
 -- the public API.
 --
-module Network.TypedProtocol (
-
-  -- * Introduction
-  -- $intro
-
-  -- * Defining and implementing protocols
-  -- $defining
-  module Network.TypedProtocol.Core,
-
-  -- ** Protocol proofs and tests
-  -- $tests
-  module Network.TypedProtocol.Proofs,
-
-  -- * Running protocols
-  -- $running
-  module Network.TypedProtocol.Driver,
-
-  -- * Pipelining protocols
-  -- $pipelining
-  module Network.TypedProtocol.Pipelined,
-
+module Network.TypedProtocol
+  ( -- * Introduction
+    -- $intro
+    -- * Defining and implementing protocols
+    -- $defining
+    module Network.TypedProtocol.Core
+    -- ** Protocol proofs and tests
+    -- $tests
+  , module Network.TypedProtocol.Proofs
+    -- * Running protocols
+    -- $running
+  , module Network.TypedProtocol.Driver
+    -- * Pipelining protocols
+    -- $pipelining
+  , module Network.TypedProtocol.Pipelined
   ) where
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
-import Network.TypedProtocol.Proofs
-import Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Proofs
 
 
 -- $intro
@@ -111,7 +105,7 @@ import Network.TypedProtocol.Driver
 -- Given a protocol peer, and a channel and a codec we can run the protocol
 -- peer so that it engages in the protocol sending and receiving messages
 -- over the channel. The "Network.TypedProtocol.Driver" module provides drivers
--- for normal and pipelined peers. 
+-- for normal and pipelined peers.
 
 
 -- $pipelining

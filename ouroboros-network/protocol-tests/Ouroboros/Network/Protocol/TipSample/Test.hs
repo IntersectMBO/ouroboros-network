@@ -3,45 +3,47 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Network.Protocol.TipSample.Test where
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import qualified Control.Monad.ST as ST
 import           Control.Tracer (nullTracer)
 
+import           Codec.Serialise (Serialise)
+import qualified Codec.Serialise as Serialise (DeserialiseFailure,
+                     Serialise (..))
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Functor.Identity (Identity (..))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Functor.Identity (Identity (..))
 import           Data.Typeable (Typeable)
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as Serialise (Serialise (..), DeserialiseFailure)
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 
 import           Control.Monad.IOSim (runSimOrThrow)
-import           Network.TypedProtocol.Pipelined (Nat (Succ, Zero), natToInt, unsafeIntToNat)
-import           Network.TypedProtocol.Proofs
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Pipelined (Nat (Succ, Zero), natToInt,
+                     unsafeIntToNat)
+import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
-import           Ouroboros.Network.Protocol.TipSample.Type
 import           Ouroboros.Network.Protocol.TipSample.Client
-import           Ouroboros.Network.Protocol.TipSample.Server
+import           Ouroboros.Network.Protocol.TipSample.Codec
 import           Ouroboros.Network.Protocol.TipSample.Direct
 import           Ouroboros.Network.Protocol.TipSample.Examples
-import           Ouroboros.Network.Protocol.TipSample.Codec
+import           Ouroboros.Network.Protocol.TipSample.Server
+import           Ouroboros.Network.Protocol.TipSample.Type
 
 import           Test.Ouroboros.Network.Testing.Utils (splits2, splits3)
 

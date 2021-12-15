@@ -1,7 +1,7 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -13,59 +13,51 @@ module Ouroboros.Network.Protocol.Handshake.Test where
 
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Text (Text)
-import qualified Data.Text as T
 import           Data.List (nub)
-import           Data.Maybe (fromMaybe)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
+import           Data.Text (Text)
+import qualified Data.Text as T
 import           GHC.Generics
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
-import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadThrow ( MonadCatch
-                                                , MonadMask
-                                                , MonadThrow
-                                                , bracket
-                                                )
+import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
+                     MonadThrow, bracket)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Core
+import           Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),
+                     muxBearerAsChannel)
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs
-import           Network.Mux.Types ( MiniProtocolNum (..)
-                                   , MiniProtocolDir (..)
-                                   , muxBearerAsChannel
-                                   )
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Driver.Simple ( runPeer
-                                                 , runConnectedPeers
-                                                 , runConnectedPeersAsymmetric
-                                                 )
+import           Ouroboros.Network.Driver.Simple (runConnectedPeers,
+                     runConnectedPeersAsymmetric, runPeer)
 import           Ouroboros.Network.Snocket (TestAddress (..))
 import qualified Ouroboros.Network.Snocket as Snocket
 import           Simulation.Network.Snocket
 
-import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Client
-import           Ouroboros.Network.Protocol.Handshake.Server
 import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Protocol.Handshake.Direct
+import           Ouroboros.Network.Protocol.Handshake.Server
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version
 
-import qualified Codec.CBOR.Write    as CBOR
+import qualified Codec.CBOR.Write as CBOR
 
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient.Version
@@ -398,8 +390,8 @@ prop_arbitrary_ArbitraryVersions (ArbitraryVersions (Versions vs) (Versions vs')
 
     -- in 25% of cases the common max version is valid
     cover 25 (case Map.lookupMax intersection of
-               Nothing -> False
-               Just (vn, s)  -> validVersion vn s)
+               Nothing      -> False
+               Just (vn, s) -> validVersion vn s)
                "valid common max version" $
 
     -- in 25% of cases all the versions in @vs'@ are either not in @vs@ or are
@@ -1169,7 +1161,7 @@ prop_codec_RefuseReason (ArbitraryRefuseReason vReason) =
   case CBOR.deserialiseFromBytes
         (decodeRefuseReason versionNumberCodec)
         (CBOR.toLazyByteString $ encodeRefuseReason versionNumberCodec vReason) of
-    Left _ -> False
+    Left _                  -> False
     Right (bytes, vReason') -> BL.null bytes && vReason' == vReason
 
 prop_codec_Handshake

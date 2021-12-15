@@ -1,39 +1,35 @@
-{-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia       #-}
 
-module Ouroboros.Network.Testing.Data.Script (
-
-    -- * Test scripts
-    Script(..),
-    NonEmpty(..),
-    scriptHead,
-    singletonScript,
-    initScript,
-    stepScript,
-    stepScriptSTM,
-    initScript',
-    stepScript',
-    stepScriptSTM',
-    arbitraryScriptOf,
-    prop_shrink_Script,
-
+module Ouroboros.Network.Testing.Data.Script
+  ( -- * Test scripts
+    Script (..)
+  , NonEmpty (..)
+  , scriptHead
+  , singletonScript
+  , initScript
+  , stepScript
+  , stepScriptSTM
+  , initScript'
+  , stepScript'
+  , stepScriptSTM'
+  , arbitraryScriptOf
+  , prop_shrink_Script
     -- * Timed scripts
-    ScriptDelay(..),
-    TimedScript,
-    playTimedScript,
-
+  , ScriptDelay (..)
+  , TimedScript
+  , playTimedScript
     -- * Pick scripts
-    PickScript,
-    PickMembers(..),
-    arbitraryPickScript,
-    interpretPickScript,
-
+  , PickScript
+  , PickMembers (..)
+  , arbitraryPickScript
+  , interpretPickScript
   ) where
 
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Set (Set)
+import qualified Data.Set as Set
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
@@ -41,8 +37,9 @@ import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 
+import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
+                     shrinkVector)
 import           Test.QuickCheck
-import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal, shrinkVector)
 
 --
 -- Test script abstraction

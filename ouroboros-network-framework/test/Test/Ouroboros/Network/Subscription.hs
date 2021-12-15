@@ -39,9 +39,9 @@ import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 import           Network.Mux.Time (microsecondsToDiffTime)
 
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -51,14 +51,15 @@ import           Ouroboros.Network.Driver
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Snocket
+import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses(..), WorkerParams(..))
+import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
+                     WorkerParams (..))
 
 import           Test.Ouroboros.Network.Orphans ()
 

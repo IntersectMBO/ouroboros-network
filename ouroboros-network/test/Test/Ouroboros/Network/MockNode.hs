@@ -1,15 +1,15 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 
 module Test.Ouroboros.Network.MockNode where
 
-import           Control.Monad (forM, forM_, replicateM, filterM, unless)
+import           Control.Monad (filterM, forM, forM_, replicateM, unless)
 import           Control.Monad.State (execStateT, lift, modify')
 import           Data.Array
 import           Data.Fixed (Micro)
@@ -25,9 +25,9 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -36,7 +36,8 @@ import qualified Control.Monad.IOSim as Sim
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState (..))
+import           Ouroboros.Network.MockChain.ProducerState
+                     (ChainProducerState (..))
 import           Ouroboros.Network.MockNode
 import           Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 

@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -11,9 +10,9 @@ module Network.Mux.Bearer.AttenuatedChannel
   , Attenuation (..)
   , newConnectedAttenuatedChannelPair
   , attenuationChannelAsMuxBearer
-  -- * Trace
+    -- * Trace
   , AttenuatedChannelTrace (..)
-  -- * Utils
+    -- * Utils
   , resourceVanishedIOError
   ) where
 
@@ -22,9 +21,9 @@ import           Prelude hiding (read)
 import           Control.Monad (when)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer, traceWith)
 
 import           GHC.IO.Exception
@@ -60,8 +59,8 @@ data Message =
 -- 'MsgClose' is written.
 --
 data QueueChannel m = QueueChannel {
-    qcRead        :: StrictTVar m (Maybe (TQueue m Message)),
-    qcWrite       :: StrictTVar m (Maybe (TQueue m Message))
+    qcRead  :: StrictTVar m (Maybe (TQueue m Message)),
+    qcWrite :: StrictTVar m (Maybe (TQueue m Message))
   }
 
 --

@@ -1,12 +1,10 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.Mux.Bearer.Socket
-  ( socketAsMuxBearer
-  ) where
+module Network.Mux.Bearer.Socket (socketAsMuxBearer) where
 
 import           Control.Monad (when)
 import           Control.Tracer
@@ -25,12 +23,12 @@ import qualified System.Win32.Async.Socket.ByteString.Lazy as Win32.Async
 #endif
 
 import qualified Network.Mux as Mx
-import           Network.Mux.Types (MuxBearer)
-import qualified Network.Mux.Types as Mx
-import qualified Network.Mux.Trace as Mx
 import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
 import qualified Network.Mux.Timeout as Mx
+import qualified Network.Mux.Trace as Mx
+import           Network.Mux.Types (MuxBearer)
+import qualified Network.Mux.Types as Mx
 
 
 -- |

@@ -13,7 +13,7 @@ module Ouroboros.Network.InboundGovernor.State
   , newObservableStateVar
   , newObservableStateVarIO
   , newObservableStateVarFromSeed
-  -- * Internals
+    -- * Internals
   , InboundGovernorState (..)
   , ConnectionState (..)
   , InboundGovernorCounters (..)
@@ -30,8 +30,8 @@ import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
-import           Data.Cache (Cache)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Cache (Cache)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           System.Random (StdGen)
@@ -138,11 +138,11 @@ inboundGovernorCounters InboundGovernorState { igsConnections } =
 data MiniProtocolData muxMode m a b = MiniProtocolData {
     -- | Static 'MiniProtocol' description.
     --
-    mpdMiniProtocol      :: !(MiniProtocol muxMode ByteString m a b),
+    mpdMiniProtocol     :: !(MiniProtocol muxMode ByteString m a b),
 
     -- | Static mini-protocol temperature.
     --
-    mpdMiniProtocolTemp  :: !ProtocolTemperature
+    mpdMiniProtocolTemp :: !ProtocolTemperature
   }
 
 

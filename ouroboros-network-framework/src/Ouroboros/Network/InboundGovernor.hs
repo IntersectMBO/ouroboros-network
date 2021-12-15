@@ -22,9 +22,9 @@ module Ouroboros.Network.InboundGovernor
   , newObservableStateVar
   , newObservableStateVarIO
   , newObservableStateVarFromSeed
-  -- * Run Inbound Protocol Governor
+    -- * Run Inbound Protocol Governor
   , inboundGovernor
-  -- * Trace
+    -- * Trace
   , InboundGovernorTrace (..)
   , RemoteSt (..)
   , RemoteTransition
@@ -42,25 +42,27 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 
-import           Data.Cache
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Void (Void)
+import           Data.Cache
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid.Synchronisation
+import           Data.Void (Void)
 
 import qualified Network.Mux as Mux
 
-import           Ouroboros.Network.ConnectionId (ConnectionId (..))
-import           Ouroboros.Network.ConnectionManager.Types hiding (TrUnexpectedlyFalseAssertion)
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.Mux hiding (ControlMessage)
 import           Ouroboros.Network.Channel (fromChannel)
-import           Ouroboros.Network.Server.RateLimiting
+import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.ConnectionId (ConnectionId (..))
+import           Ouroboros.Network.ConnectionManager.Types hiding
+                     (TrUnexpectedlyFalseAssertion)
+import           Ouroboros.Network.InboundGovernor.ControlChannel
+                     (ServerControlChannel)
+import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.InboundGovernor.Event
 import           Ouroboros.Network.InboundGovernor.State
-import           Ouroboros.Network.InboundGovernor.ControlChannel (ServerControlChannel)
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
+import           Ouroboros.Network.Mux hiding (ControlMessage)
+import           Ouroboros.Network.Server.RateLimiting
 
 
 

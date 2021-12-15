@@ -10,15 +10,17 @@ import           Control.Monad.Class.MonadST
 
 import           Data.ByteString.Lazy (ByteString)
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeListLen, encodeWord)
-import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeListLen, decodeWord)
+import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeListLen,
+                     decodeWord)
+import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeListLen,
+                     encodeWord)
+import qualified Codec.CBOR.Read as CBOR
 import           Codec.Serialise.Class (Serialise)
 import qualified Codec.Serialise.Class as CBOR
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Codec.CBOR
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.ReqResp.Type
 
 codecReqResp

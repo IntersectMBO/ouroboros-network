@@ -1,37 +1,37 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE QuantifiedConstraints      #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeInType                 #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeInType            #-}
 -- @UndecidableInstances@ extension is required for defining @Show@ instance of
 -- @'AnyMessage'@ and @'AnyMessageAndAgency'@.
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
-module Network.TypedProtocol.Codec (
-    -- * Defining and using Codecs
-    Codec(..)
+module Network.TypedProtocol.Codec
+  ( -- * Defining and using Codecs
+    Codec (..)
   , hoistCodec
   , isoCodec
   , mapFailureCodec
     -- ** Related types
-  , PeerRole(..)
-  , PeerHasAgency(..)
+  , PeerRole (..)
+  , PeerHasAgency (..)
   , WeHaveAgency
   , TheyHaveAgency
-  , SomeMessage(..)
-  , CodecFailure(..)
+  , SomeMessage (..)
+  , CodecFailure (..)
     -- ** Incremental decoding
-  , DecodeStep(..)
+  , DecodeStep (..)
   , runDecoder
   , runDecoderPure
     -- ** Codec properties
-  , AnyMessage(..)
-  , AnyMessageAndAgency(..)
+  , AnyMessage (..)
+  , AnyMessageAndAgency (..)
   , prop_codecM
   , prop_codec
   , prop_codec_splitsM
@@ -40,17 +40,16 @@ module Network.TypedProtocol.Codec (
   , prop_codec_binary_compat
   , prop_codecs_compatM
   , prop_codecs_compat
-  , SamePeerHasAgency(..)
+  , SamePeerHasAgency (..)
   ) where
 
 import           Control.Exception (Exception)
 import           Data.Kind (Type)
 import           Data.Monoid (All (..))
 
-import           Network.TypedProtocol.Core
-                   ( Protocol(..), PeerRole(..)
-                   , PeerHasAgency(..), WeHaveAgency, TheyHaveAgency )
-import           Network.TypedProtocol.Driver (SomeMessage(..))
+import           Network.TypedProtocol.Core (PeerHasAgency (..), PeerRole (..),
+                     Protocol (..), TheyHaveAgency, WeHaveAgency)
+import           Network.TypedProtocol.Driver (SomeMessage (..))
 
 -- | A codec for a 'Protocol' handles the encoding and decoding of typed
 -- protocol messages. This is typically used when sending protocol messages

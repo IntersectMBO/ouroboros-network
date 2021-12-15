@@ -5,13 +5,11 @@
 module Test.Version (tests) where
 
 import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.NodeToClient ( NodeToClientVersion (..)
-                                                , nodeToClientVersionCodec
-                                                )
-import           Ouroboros.Network.NodeToNode   ( nodeToNodeVersionCodec )
+import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
+                     nodeToClientVersionCodec)
+import           Ouroboros.Network.NodeToNode (nodeToNodeVersionCodec)
 
-import           Test.Tasty (TestTree,
-                             testGroup)
+import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 
 

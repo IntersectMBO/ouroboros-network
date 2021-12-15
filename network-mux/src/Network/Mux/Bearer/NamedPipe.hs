@@ -1,14 +1,13 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
 
-module Network.Mux.Bearer.NamedPipe
-  ( namedPipeAsBearer ) where
+module Network.Mux.Bearer.NamedPipe (namedPipeAsBearer) where
 
 import           Control.Monad (when)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
 import           Data.Foldable (traverse_)
+import           Data.Int (Int64)
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -16,16 +15,16 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 
 import qualified Network.Mux as Mx
-import           Network.Mux.Types (MuxBearer)
-import qualified Network.Mux.Types as Mx
-import           Network.Mux.Trace (MuxTrace)
-import qualified Network.Mux.Trace as Mx
+import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
 import qualified Network.Mux.Timeout as Mx
-import qualified Network.Mux.Codec as Mx
+import           Network.Mux.Trace (MuxTrace)
+import qualified Network.Mux.Trace as Mx
+import           Network.Mux.Types (MuxBearer)
+import qualified Network.Mux.Types as Mx
 
-import           System.Win32               (HANDLE)
-import qualified System.Win32.Async      as Win32.Async
+import           System.Win32 (HANDLE)
+import qualified System.Win32.Async as Win32.Async
 
 
 -- | Named pipe bearer.  The 'HANDLE' must be associated with IO completion port

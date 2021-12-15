@@ -1,34 +1,32 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.PeerSelection.LocalRootPeers (
-    -- * Types
-    LocalRootPeers,
-    invariant,
-
+module Ouroboros.Network.PeerSelection.LocalRootPeers
+  ( -- * Types
+    LocalRootPeers
+  , invariant
     -- * Basic operations
-    empty,
-    null,
-    size,
-    member,
-    target,
-    fromGroups,
-    toGroups,
-    toGroupSets,
-    toMap,
-    keysSet,
-
+  , empty
+  , null
+  , size
+  , member
+  , target
+  , fromGroups
+  , toGroups
+  , toGroupSets
+  , toMap
+  , keysSet
     -- * Special operations
-    clampToLimit
+  , clampToLimit
   ) where
 
 import           Prelude hiding (null)
 
-import qualified Data.Set as Set
-import           Data.Set (Set)
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
 
 import           Ouroboros.Network.PeerSelection.Types
 
