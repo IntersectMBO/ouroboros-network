@@ -103,8 +103,8 @@ newtype TranslateForecast f g x y = TranslateForecast {
 newtype TranslateLedgerState x y = TranslateLedgerState {
       translateLedgerStateWith ::
            EpochNo
-        -> LedgerState x ValuesMK
-        -> LedgerState y ValuesMK
+        -> LedgerState x EmptyMK
+        -> LedgerState y EmptyMK
     }
 
 -- | Knowledge in a particular era of the transition to the next era

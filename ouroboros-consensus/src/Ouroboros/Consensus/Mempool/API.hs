@@ -302,7 +302,7 @@ data ForgeLedgerState blk =
     --
     -- This will only be the case when we realized that we are the slot leader
     -- and we are actually producing a block.
-    ForgeInKnownSlot SlotNo (TickedLedgerState blk ValuesMK)
+    ForgeInKnownSlot SlotNo (TickedLedgerState blk EmptyMK)
 
     -- | The slot number of the block is not yet known
     --

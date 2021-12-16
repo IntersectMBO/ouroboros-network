@@ -605,11 +605,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
                 snap1 <- getSnapshotFor mempool $
                   -- This node would include these crucial txs if it leads in
                   -- this slot.
-                  ForgeInKnownSlot slot $ forgetLedgerStateTracking $ applyChainTick lcfg slot (error "UTxO HD hole" ledger)
+                  ForgeInKnownSlot slot $ applyChainTick lcfg slot ledger
                 snap2 <- getSnapshotFor mempool $
                   -- Other nodes might include these crucial txs when leading
                   -- in the next slot.
-                  ForgeInKnownSlot (succ slot) $ forgetLedgerStateTracking $ applyChainTick lcfg (succ slot) (error "UTxO HD hole" ledger)
+                  ForgeInKnownSlot (succ slot) $ applyChainTick lcfg (succ slot) ledger
                 -- This loop will repeat for the next slot, so we only need to
                 -- check for this one and the next.
                 pure (snap1, snap2)
@@ -877,7 +877,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                     Right st -> pure $ applyChainTick
                                         (configLedger pInfoConfig)
                                         currentSlot
-                                        (forgetLedgerStateTracking st)
+                                        (forgetLedgerStateTables st)
 
                   -- forge the block usings the ledger state that includes
                   -- the EBB

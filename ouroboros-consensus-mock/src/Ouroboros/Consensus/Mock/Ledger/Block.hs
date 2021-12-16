@@ -386,6 +386,10 @@ instance TableStuff (LedgerState (SimpleBlock c ext)) where
 
   -- TODO methods
 
+instance TickedTableStuff (LedgerState (SimpleBlock c ext)) where
+
+  -- TODO methods
+
 instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
   showsLedgerState _sing = shows
 

@@ -139,11 +139,12 @@ tickThenApplyLedgerResult ::
   -> l ValuesMK
   -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
 tickThenApplyLedgerResult cfg blk l = do
-  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) l
-  lrBlock <-   applyBlockLedgerResult     cfg            blk  (forgetTickedLedgerStateTracking (lrResult lrTick))
+  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
+  lrBlock <-   applyBlockLedgerResult     cfg            blk
+                 (lrResult lrTick `withLedgerTablesTicked` projectLedgerTables l)
   pure LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = lrResult lrTick `prependLedgerStateTracking` lrResult lrBlock
+    , lrResult = lrResult lrBlock
     }
 
 tickThenReapplyLedgerResult ::
@@ -153,11 +154,12 @@ tickThenReapplyLedgerResult ::
   -> l ValuesMK
   -> LedgerResult l (l TrackingMK)
 tickThenReapplyLedgerResult cfg blk l =
-  let lrTick  = applyChainTickLedgerResult cfg (blockSlot blk) l
-      lrBlock = reapplyBlockLedgerResult   cfg            blk (forgetTickedLedgerStateTracking (lrResult lrTick))
+  let lrTick  = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
+      lrBlock = reapplyBlockLedgerResult   cfg            blk
+                  (lrResult lrTick `withLedgerTablesTicked` projectLedgerTables l)
   in LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = lrResult lrTick `prependLedgerStateTracking` lrResult lrBlock
+    , lrResult = lrResult lrBlock
     }
 
 tickThenApply ::
