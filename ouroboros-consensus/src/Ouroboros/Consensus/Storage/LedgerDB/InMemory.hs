@@ -467,7 +467,7 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
           }
       Just db' -> case newBlocks of
         [] -> pure $ Right db'
-        -- ^ no blocks to apply to ledger state, return current LedgerDB
+        -- no blocks to apply to ledger state, return current LedgerDB
         (firstBlock:_) -> do
           let start   = PushStart . toRealPoint $ firstBlock
               goal    = PushGoal  . toRealPoint . last $ newBlocks
