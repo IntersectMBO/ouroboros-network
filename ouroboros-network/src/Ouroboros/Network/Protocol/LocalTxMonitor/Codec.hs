@@ -14,13 +14,15 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Codec (
 
 import           Control.Monad.Class.MonadST
 
+import           Network.TypedProtocol.Codec.CBOR
+
 import           Data.ByteString.Lazy (ByteString)
+
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read     as CBOR
 import           Text.Printf
 
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 codecLocalTxMonitor ::

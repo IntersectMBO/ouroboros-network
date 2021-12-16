@@ -20,12 +20,11 @@ import           Control.Monad.IOSim
 import           Control.Tracer (nullTracer)
 import qualified Control.Monad.ST as ST
 
-import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Block (SlotNo)
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Codec
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy
 
