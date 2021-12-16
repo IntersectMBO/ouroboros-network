@@ -132,7 +132,7 @@ exampleBlock =
       (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
       (BlockNo 1)
       (SlotNo 1)
-      (applyChainTick ledgerConfig (SlotNo 1) ledgerStateAfterEBB)
+      (applyChainTick ledgerConfig (SlotNo 1) (forgetLedgerStateTables ledgerStateAfterEBB))
       [ValidatedByronTx exampleGenTx]
       (fakeMkIsLeader leaderCredentials)
   where
@@ -192,7 +192,7 @@ ledgerStateAfterEBB :: LedgerState ByronBlock ValuesMK
 ledgerStateAfterEBB =
       forgetLedgerStateTracking
     . reapplyLedgerBlock ledgerConfig exampleEBB
-    . forgetTickedLedgerStateTracking
+    . (`withLedgerTablesTicked` NoByronLedgerTables SValuesMK)
     . applyChainTick ledgerConfig (SlotNo 0)
     $ emptyLedgerState
 
@@ -200,8 +200,9 @@ exampleLedgerState :: LedgerState ByronBlock ValuesMK
 exampleLedgerState =
       forgetLedgerStateTracking
     . reapplyLedgerBlock ledgerConfig exampleBlock
-    . forgetTickedLedgerStateTracking
+    . (`withLedgerTablesTicked` NoByronLedgerTables SValuesMK)
     . applyChainTick ledgerConfig (SlotNo 1)
+    . forgetLedgerStateTables
     $ ledgerStateAfterEBB
 
 exampleHeaderState :: HeaderState ByronBlock

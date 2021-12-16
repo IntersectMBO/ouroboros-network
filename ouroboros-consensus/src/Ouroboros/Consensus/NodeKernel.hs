@@ -508,12 +508,12 @@ forkBlockForging IS{..} blockForging =
         trace $ TraceNodeIsLeader currentSlot
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: TickedLedgerState blk TrackingMK
+        let tickedLedgerState :: TickedLedgerState blk EmptyMK
             tickedLedgerState =
               applyChainTick
                 (configLedger cfg)
                 currentSlot
-                (error "UTxO HD forge pretick" $ ledgerState unticked :: LedgerState blk ValuesMK)
+                (ledgerState unticked)
 
         -- Get a snapshot of the mempool that is consistent with the ledger
         --
@@ -527,7 +527,7 @@ forkBlockForging IS{..} blockForging =
                                mempool
                                (ForgeInKnownSlot
                                   currentSlot
-                                  (forgetLedgerStateTracking tickedLedgerState))
+                                  tickedLedgerState)
         let txs = map fst $ snapshotTxs mempoolSnapshot
 
         -- Actually produce the block

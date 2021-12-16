@@ -130,12 +130,12 @@ initInternalState
   => MempoolCapacityBytesOverride
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
   -> SlotNo
-  -> TickedLedgerState blk ValuesMK    -- TODO maybe this should be EmptyMK?
+  -> TickedLedgerState blk EmptyMK
   -> InternalState blk
 initInternalState capacityOverride lastTicketNo slot st = IS {
       isTxs          = TxSeq.Empty
     , isTxIds        = Set.empty
-    , isLedgerState  = st
+    , isLedgerState  = st `withLedgerTables` emptyLedgerStateTables
     , isTip          = castHash (getTipHash st)
     , isSlotNo       = slot
     , isLastTicketNo = lastTicketNo
@@ -309,7 +309,7 @@ revalidateTxsFor
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
   -> SlotNo
-  -> TickedLedgerState blk ValuesMK
+  -> TickedLedgerState blk EmptyMK
   -> TicketNo
      -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
   -> [TxTicket (Validated (GenTx blk))]
@@ -331,15 +331,10 @@ tickLedgerState
   :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
   => LedgerConfig     blk
   -> ForgeLedgerState blk
-  -> (SlotNo, TickedLedgerState blk ValuesMK)
+  -> (SlotNo, TickedLedgerState blk EmptyMK)
 tickLedgerState _cfg (ForgeInKnownSlot slot st) = (slot, st)
 tickLedgerState  cfg (ForgeInUnknownSlot st) =
-    (slot,   forgetTickedLedgerStateTracking
-           $ applyChainTick
-               cfg
-               slot
-               (error "UTxO HD in tickLedgerState" st :: LedgerState blk ValuesMK)
-    )
+    (slot, applyChainTick cfg slot st)
   where
     -- Optimistically assume that the transactions will be included in a block
     -- in the next available slot
