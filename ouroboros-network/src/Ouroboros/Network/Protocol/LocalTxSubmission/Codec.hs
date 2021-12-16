@@ -1,22 +1,22 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Network.Protocol.LocalTxSubmission.Codec (
-    codecLocalTxSubmission
+module Ouroboros.Network.Protocol.LocalTxSubmission.Codec
+  ( codecLocalTxSubmission
   , codecLocalTxSubmissionId
   ) where
 
 import           Control.Monad.Class.MonadST
 
-import           Data.ByteString.Lazy (ByteString)
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import           Data.ByteString.Lazy (ByteString)
 import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR

@@ -3,62 +3,62 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Control.Monad.IOSim (
-  -- * Simulation monad
-  IOSim,
-  STMSim,
-  -- ** Run simulation
-  runSim,
-  runSimOrThrow,
-  runSimStrictShutdown,
-  Failure(..),
-  runSimTrace,
-  runSimTraceST,
-  liftST,
-  traceM,
-  traceSTM,
-  -- * Simulation time
-  setCurrentTime,
-  unshareClock,
-  -- * Simulation trace
-  type SimTrace,
-  Trace (Cons, Nil, Trace, SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock),
-  ppTrace,
-  ppTrace_,
-  ppEvents,
-  SimResult(..),
-  SimEvent(..),
-  SimEventType(..),
-  ThreadLabel,
-  Labelled (..),
-  traceEvents,
-  traceResult,
-  selectTraceEvents,
-  selectTraceEvents',
-  selectTraceEventsDynamic,
-  selectTraceEventsDynamic',
-  selectTraceEventsSay,
-  selectTraceEventsSay',
-  traceSelectTraceEvents,
-  traceSelectTraceEventsDynamic,
-  traceSelectTraceEventsSay,
-  printTraceEventsSay,
-  -- * Eventlog
-  EventlogEvent(..),
-  EventlogMarker(..),
-  -- * Low-level API
-  execReadTVar,
-  -- * Deprecated interfaces
-  SimM,
-  SimSTM,
-  TraceEvent
+module Control.Monad.IOSim
+  ( -- * Simulation monad
+    IOSim
+  , STMSim
+    -- ** Run simulation
+  , runSim
+  , runSimOrThrow
+  , runSimStrictShutdown
+  , Failure (..)
+  , runSimTrace
+  , runSimTraceST
+  , liftST
+  , traceM
+  , traceSTM
+    -- * Simulation time
+  , setCurrentTime
+  , unshareClock
+    -- * Simulation trace
+  , type SimTrace
+  , Trace (Cons, Nil, Trace, SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock)
+  , ppTrace
+  , ppTrace_
+  , ppEvents
+  , SimResult (..)
+  , SimEvent (..)
+  , SimEventType (..)
+  , ThreadLabel
+  , Labelled (..)
+  , traceEvents
+  , traceResult
+  , selectTraceEvents
+  , selectTraceEvents'
+  , selectTraceEventsDynamic
+  , selectTraceEventsDynamic'
+  , selectTraceEventsSay
+  , selectTraceEventsSay'
+  , traceSelectTraceEvents
+  , traceSelectTraceEventsDynamic
+  , traceSelectTraceEventsSay
+  , printTraceEventsSay
+    -- * Eventlog
+  , EventlogEvent (..)
+  , EventlogMarker (..)
+    -- * Low-level API
+  , execReadTVar
+    -- * Deprecated interfaces
+  , SimM
+  , SimSTM
+  , TraceEvent
   ) where
 
 import           Prelude
 
+import           Data.Bifoldable
 import           Data.Dynamic (fromDynamic)
 import           Data.List (intercalate)
-import           Data.Bifoldable
 import           Data.Typeable (Typeable)
 
 import           Data.List.Trace (Trace (..))

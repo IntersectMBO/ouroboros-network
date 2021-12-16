@@ -30,8 +30,8 @@ import           Control.Tracer (nullTracer)
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Proofs
 import           Network.TypedProtocol.Codec hiding (prop_codec)
+import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)

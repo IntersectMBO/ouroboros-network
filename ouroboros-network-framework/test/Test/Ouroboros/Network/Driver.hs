@@ -1,46 +1,46 @@
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
 
 module Test.Ouroboros.Network.Driver (tests) where
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
 
-import Ouroboros.Network.Channel
-import Ouroboros.Network.Driver
-import Ouroboros.Network.Driver.Limits
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Driver.Limits
 
-import Network.TypedProtocol.ReqResp.Type
-import Network.TypedProtocol.ReqResp.Client
-import Network.TypedProtocol.ReqResp.Server
-import Network.TypedProtocol.ReqResp.Codec
-import Network.TypedProtocol.ReqResp.Examples
+import           Network.TypedProtocol.ReqResp.Client
+import           Network.TypedProtocol.ReqResp.Codec
+import           Network.TypedProtocol.ReqResp.Examples
+import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Type
 
-import Control.Monad (void, replicateM)
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadTime
-import Control.Monad.Class.MonadTimer
-import Control.Monad.Class.MonadThrow
-import Control.Monad.IOSim (runSimOrThrow)
-import Control.Tracer
+import           Control.Monad (replicateM, void)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Tracer
 
-import Test.Ouroboros.Network.Orphans ()
+import           Test.Ouroboros.Network.Orphans ()
 
-import Test.QuickCheck
-import Text.Show.Functions ()
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
 --
 -- The list of all properties
@@ -131,12 +131,12 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
           pure $ case shouldFail reqPayloads of
             Just ShouldExceededSizeLimit -> True
             Just ShouldExceededTimeLimit -> False
-            Nothing -> False
+            Nothing                      -> False
         Left ExceededTimeLimit{} ->
           pure $ case shouldFail reqPayloads of
             Just ShouldExceededTimeLimit -> True
             Just ShouldExceededSizeLimit -> False
-            Nothing -> False
+            Nothing                      -> False
 
     where
       sendPeer :: Peer (ReqResp String ()) AsClient StIdle m [()]
@@ -147,7 +147,7 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
         (\a _ -> case a of
           [] -> error "prop_runPeerWithLimits: empty list"
           delay : acc -> do
-            threadDelay delay 
+            threadDelay delay
             return (acc, ()))
         (map snd reqPayloads)
 
@@ -162,7 +162,7 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
              else Nothing
       shouldFail ((msg, delay):cmds) =
           let msg' = encode (codecReqResp @String @() @m) (ClientAgency TokIdle) (MsgReq msg) in
-          if length msg' > fromIntegral limit 
+          if length msg' > fromIntegral limit
           then Just ShouldExceededSizeLimit
           else if delay >= serverTimeout
           then Just ShouldExceededTimeLimit

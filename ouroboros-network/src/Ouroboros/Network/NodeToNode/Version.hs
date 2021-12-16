@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns   #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.NodeToNode.Version
@@ -18,8 +17,8 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Protocol.Handshake.Version
-                  (Acceptable (..), Accept (..))
+import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
+                     Acceptable (..))
 
 
 -- | Enumeration of node to node protocol versions.
@@ -62,14 +61,14 @@ data NodeToNodeVersion
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
-    encodeTerm NodeToNodeV_1  = CBOR.TInt 1
-    encodeTerm NodeToNodeV_2  = CBOR.TInt 2
-    encodeTerm NodeToNodeV_3  = CBOR.TInt 3
-    encodeTerm NodeToNodeV_4  = CBOR.TInt 4
-    encodeTerm NodeToNodeV_5  = CBOR.TInt 5
-    encodeTerm NodeToNodeV_6  = CBOR.TInt 6
-    encodeTerm NodeToNodeV_7  = CBOR.TInt 7
-    encodeTerm NodeToNodeV_8  = CBOR.TInt 8
+    encodeTerm NodeToNodeV_1 = CBOR.TInt 1
+    encodeTerm NodeToNodeV_2 = CBOR.TInt 2
+    encodeTerm NodeToNodeV_3 = CBOR.TInt 3
+    encodeTerm NodeToNodeV_4 = CBOR.TInt 4
+    encodeTerm NodeToNodeV_5 = CBOR.TInt 5
+    encodeTerm NodeToNodeV_6 = CBOR.TInt 6
+    encodeTerm NodeToNodeV_7 = CBOR.TInt 7
+    encodeTerm NodeToNodeV_8 = CBOR.TInt 8
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
     decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2

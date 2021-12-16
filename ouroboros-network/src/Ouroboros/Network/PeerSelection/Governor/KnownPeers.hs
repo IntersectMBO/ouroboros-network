@@ -9,20 +9,20 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   ) where
 
 import           Data.Maybe (fromMaybe)
-import           Data.Semigroup (Min(..))
+import           Data.Semigroup (Min (..))
 import qualified Data.Set as Set
 
-import           Control.Concurrent.JobPool (Job(..))
+import           Control.Concurrent.JobPool (Job (..))
+import           Control.Exception (Exception (..), SomeException, assert)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Exception (Exception(..), SomeException, assert)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
 ---------------------------

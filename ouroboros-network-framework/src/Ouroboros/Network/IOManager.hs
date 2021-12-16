@@ -3,8 +3,6 @@
 
 -- | A shim layer for `Win32-network`'s `IOManager`
 --
-module Ouroboros.Network.IOManager
-  ( module X
-  ) where
+module Ouroboros.Network.IOManager (module X) where
 
-import System.IOManager as X
+import           System.IOManager as X

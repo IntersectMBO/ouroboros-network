@@ -1,8 +1,8 @@
-module Control.Monad.Class.MonadEventlog (
-    MonadEventlog(..),
+module Control.Monad.Class.MonadEventlog
+  ( MonadEventlog (..)
     -- * Deprecated API
-    traceEventM,
-    traceMarkerM
+  , traceEventM
+  , traceMarkerM
   ) where
 
 import           Control.Monad.Reader

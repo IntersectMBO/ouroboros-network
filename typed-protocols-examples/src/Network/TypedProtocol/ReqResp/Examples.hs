@@ -1,12 +1,12 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE BangPatterns        #-}
 
 module Network.TypedProtocol.ReqResp.Examples where
 
-import           Network.TypedProtocol.ReqResp.Server
 import           Network.TypedProtocol.ReqResp.Client
+import           Network.TypedProtocol.ReqResp.Server
 
 import           Network.TypedProtocol.Pipelined
 

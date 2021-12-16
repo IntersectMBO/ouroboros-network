@@ -1,31 +1,26 @@
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 
-module Test.Ouroboros.Network.PeerSelection.MockEnvironment (
-
-    PeerGraph(..),
-    GovernorMockEnvironment(..),
-    GovernorMockEnvironmentWithoutAsyncDemotion(..),
-    runGovernorInMockEnvironment,
-
-    TraceMockEnv(..),
-    TestTraceEvent(..),
-    selectGovernorEvents,
-    selectPeerSelectionTraceEvents,
-    firstGossipReachablePeers,
-
-    module Ouroboros.Network.Testing.Data.Script,
-    module Ouroboros.Network.PeerSelection.Types,
-
-    tests,
-
+module Test.Ouroboros.Network.PeerSelection.MockEnvironment
+  ( PeerGraph (..)
+  , GovernorMockEnvironment (..)
+  , GovernorMockEnvironmentWithoutAsyncDemotion (..)
+  , runGovernorInMockEnvironment
+  , TraceMockEnv (..)
+  , TestTraceEvent (..)
+  , selectGovernorEvents
+  , selectPeerSelectionTraceEvents
+  , firstGossipReachablePeers
+  , module Ouroboros.Network.Testing.Data.Script
+  , module Ouroboros.Network.PeerSelection.Types
+  , tests
   ) where
 
 import           Data.Dynamic (fromDynamic)
@@ -42,8 +37,8 @@ import           Control.Exception (throw)
 import           Control.Monad (forM_)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import qualified Control.Monad.Fail as Fail
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
@@ -52,21 +47,21 @@ import           Control.Monad.IOSim
 
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
 
-import           Ouroboros.Network.Testing.Data.Script
-                   (TimedScript, PickScript, ScriptDelay (..), prop_shrink_Script,
-                     singletonScript, initScript', stepScript, playTimedScript,
-                     arbitraryPickScript, interpretPickScript)
-import           Ouroboros.Network.Testing.Utils
-                   (arbitrarySubset, prop_shrink_valid, prop_shrink_nonequal)
+import           Ouroboros.Network.Testing.Data.Script (PickScript,
+                     ScriptDelay (..), TimedScript, arbitraryPickScript,
+                     initScript', interpretPickScript, playTimedScript,
+                     prop_shrink_Script, singletonScript, stepScript)
+import           Ouroboros.Network.Testing.Utils (arbitrarySubset,
+                     prop_shrink_nonequal, prop_shrink_valid)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
+import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
+                     (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
-import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers
-                   as LocalRootPeers hiding (tests)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, localOption, testGroup)

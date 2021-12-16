@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
+{-# LANGUAGE ExplicitForAll        #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
@@ -7,16 +8,15 @@
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE ExplicitForAll        #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Type where
 
+import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
-import           Data.Proxy (Proxy(..))
 
 import           Network.TypedProtocol.Core (Protocol (..))
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy(..))
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | Range of blocks, defined by a lower and upper point, inclusive.
@@ -99,7 +99,7 @@ instance (Show block, Show point)
   show MsgClientDone           = "MsgClientDone"
 
 instance Show (ClientHasAgency (st :: BlockFetch block point)) where
-  show TokIdle = "TokIdle" 
+  show TokIdle = "TokIdle"
 
 instance Show (ServerHasAgency (st :: BlockFetch block point)) where
   show TokBusy      = "TokBusy"

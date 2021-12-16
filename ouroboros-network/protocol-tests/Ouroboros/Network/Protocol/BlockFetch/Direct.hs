@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.BlockFetch.Direct
   ( direct
   , directPipelined
@@ -83,7 +83,7 @@ directPipelined (BlockFetchClientPipelined client0) server =
   go q (SendMsgRequestRangePipelined range c receive next) (BlockFetchServer requestHandler _) =
     requestHandler range >>= sendBatch q c receive next
 
-  go (ConsQ c q) (CollectBlocksPipelined _ k) srv = 
+  go (ConsQ c q) (CollectBlocksPipelined _ k) srv =
     go q (k c) srv
 
   go EmptyQ (SendMsgDonePipelined a) (BlockFetchServer _ b) =

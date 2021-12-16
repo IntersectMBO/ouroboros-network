@@ -5,10 +5,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Diffusion
-  (
-  -- * Common API
+  ( -- * Common API
     P2P (..)
-  , InitializationTracer(..)
+  , InitializationTracer (..)
   , Tracers (..)
   , nullTracers
   , ExtraTracers (..)
@@ -17,31 +16,23 @@ module Ouroboros.Network.Diffusion
   , ExtraArguments (..)
   , Applications (..)
   , ExtraApplications (..)
-  -- * Run data diffusion
+    -- * Run data diffusion
   , run
-  )
-  where
+  ) where
 
-import           Data.Functor (void)
 import           Control.Exception (IOException)
+import           Data.Functor (void)
 
 import           Network.Socket (Socket)
 
-import           Ouroboros.Network.NodeToNode
-                  ( RemoteAddress
-                  , NodeToNodeVersionData
-                  , NodeToNodeVersion
-                  )
-import           Ouroboros.Network.NodeToClient
-                  ( LocalAddress
-                  , LocalSocket
-                  , NodeToClientVersionData
-                  , NodeToClientVersion
-                  )
+import           Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
+                     NodeToClientVersion, NodeToClientVersionData)
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersion,
+                     NodeToNodeVersionData, RemoteAddress)
 
 import           Ouroboros.Network.Diffusion.Common as Common
-import qualified Ouroboros.Network.Diffusion.P2P    as P2P
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
+import qualified Ouroboros.Network.Diffusion.P2P as P2P
 
 -- | Promoted data types.
 --

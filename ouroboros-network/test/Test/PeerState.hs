@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -12,27 +12,25 @@
 module Test.PeerState (tests) where
 
 
-import           Control.Exception ( ArithException (..)
-                                   , AsyncException (..)
-                                   , NonTermination (..)
-                                   )
+import           Control.Exception (ArithException (..), AsyncException (..),
+                     NonTermination (..))
 import           Data.Functor (void)
-import           Data.Monoid (First (..))
 import qualified Data.Map.Strict as Map
+import           Data.Monoid (First (..))
 import qualified Data.Set as Set
 import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 
 import           Data.Semigroup.Action
 import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Server.ConnectionTable
+import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Worker
@@ -234,8 +232,8 @@ data SnocketType where
 
 instance Show SnocketType where
     show (AllocateError e) = "AllocateError " ++show e
-    show (ConnectError e) = "ConnectError " ++show e
-    show WorkingSnocket = "WorkingSnocket"
+    show (ConnectError e)  = "ConnectError " ++show e
+    show WorkingSnocket    = "WorkingSnocket"
 
 instance Arbitrary SnocketType where
     arbitrary = oneof
@@ -378,7 +376,7 @@ prop_subscriptionWorker
                    },
                  wpSelectAddress = \_ LocalAddresses {laIpv4, laIpv6} -> getFirst (First laIpv4 <> First laIpv6),
                  wpConnectionAttemptDelay = const Nothing,
-                 wpSubscriptionTarget = 
+                 wpSubscriptionTarget =
                    pure $ ipSubscriptionTarget nullTracer peerStatesVar [remoteAddr],
                  wpValency = 1
                }
@@ -500,6 +498,6 @@ transitionSpec addr ps0 (Just cmd) (PeerStates peerStates) =
           -> True
   where
     getProducers :: PeerState IO -> Set.Set (Async IO ())
-    getProducers (HotPeer producers _) = producers
+    getProducers (HotPeer producers _)           = producers
     getProducers (SuspendedConsumer producers _) = producers
-    getProducers _ = Set.empty
+    getProducers _                               = Set.empty

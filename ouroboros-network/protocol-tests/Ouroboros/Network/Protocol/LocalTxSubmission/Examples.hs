@@ -1,14 +1,13 @@
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 
-module Ouroboros.Network.Protocol.LocalTxSubmission.Examples (
-    localTxSubmissionClient,
-    localTxSubmissionServer,
+module Ouroboros.Network.Protocol.LocalTxSubmission.Examples
+  ( localTxSubmissionClient
+  , localTxSubmissionServer
   ) where
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client

@@ -1,17 +1,16 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE KindSignatures      #-}
 
-module Ouroboros.Network.Protocol.TipSample.Server (
-    -- * Protocol type for the server
+module Ouroboros.Network.Protocol.TipSample.Server
+  ( -- * Protocol type for the server
     TipSampleServer (..)
   , ServerStIdle (..)
   , SendTips (..)
-
     -- * Execution as a typed protocol
   , tipSampleServerPeer
   ) where

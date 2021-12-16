@@ -1,15 +1,15 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Ouroboros.Network.PeerSelection.Types (
-    PeerSource(..),
-    PeerAdvertise(..),
-    PeerStatus(..),
+module Ouroboros.Network.PeerSelection.Types
+  ( PeerSource (..)
+  , PeerAdvertise (..)
+  , PeerStatus (..)
   ) where
 
-import           GHC.Generics (Generic)
 import           Data.Aeson
 import           Data.Bool (bool)
+import           GHC.Generics (Generic)
 
 
 -- | Where did this peer come from? Policy functions can choose to treat

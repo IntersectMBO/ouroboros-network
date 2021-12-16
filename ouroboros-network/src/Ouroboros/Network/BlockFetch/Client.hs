@@ -1,30 +1,30 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- hic sunt dracones!
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Ouroboros.Network.BlockFetch.Client (
-    -- * Block fetch protocol client implementation
-    blockFetchClient,
-    BlockFetchClient,
-    FetchClientContext,
-    TraceFetchClientState,
-    FetchRequest(..),
-    FetchClientStateVars,
+module Ouroboros.Network.BlockFetch.Client
+  ( -- * Block fetch protocol client implementation
+    blockFetchClient
+  , BlockFetchClient
+  , FetchClientContext
+  , TraceFetchClientState
+  , FetchRequest (..)
+  , FetchClientStateVars
     -- * Exception types
-    BlockFetchProtocolFailure,
+  , BlockFetchProtocolFailure
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (assert)
 
 import qualified Data.Set as Set
 
@@ -32,31 +32,26 @@ import           Control.Tracer (traceWith)
 
 import           Ouroboros.Network.Block
 
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.Mux (ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch.ClientState
-                   ( FetchClientContext(..)
-                   , FetchClientPolicy(..)
-                   , FetchClientStateVars (fetchClientInFlightVar)
-                   , FetchRequest(..)
-                   , FromConsensus (..)
-                   , PeerFetchInFlight(..)
-                   , TraceFetchClientState (..)
-                   , fetchClientCtxStateVars
-                   , acknowledgeFetchRequest
-                   , startedFetchBatch
-                   , completeBlockDownload
-                   , completeFetchBatch
-                   , rejectedFetchBatch )
+                     (FetchClientContext (..), FetchClientPolicy (..),
+                     FetchClientStateVars (fetchClientInFlightVar),
+                     FetchRequest (..), FromConsensus (..),
+                     PeerFetchInFlight (..), TraceFetchClientState (..),
+                     acknowledgeFetchRequest, completeBlockDownload,
+                     completeFetchBatch, fetchClientCtxStateVars,
+                     rejectedFetchBatch, startedFetchBatch)
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerGSV(..), PeerFetchInFlightLimits(..) )
-import           Ouroboros.Network.PeerSelection.PeerMetric.Type (FetchedMetricsTracer)
+                     (PeerFetchInFlightLimits (..), PeerGSV (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric.Type
+                     (FetchedMetricsTracer)
 
 
 data BlockFetchProtocolFailure =

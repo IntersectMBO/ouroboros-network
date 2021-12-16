@@ -15,13 +15,13 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
 
+import           Control.Concurrent (ThreadId)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Concurrent (ThreadId)
 import           Control.Tracer
 
 import           Ouroboros.Network.Mux
@@ -40,11 +40,9 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (cborTermVersionDataCodec)
+                     (cborTermVersionDataCodec, noTimeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
                      (acceptableVersion)
-import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (noTimeLimitsHandshake)
 import           Ouroboros.Network.Testing.Serialise
 import           Ouroboros.Network.Util.ShowProxy
 

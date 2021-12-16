@@ -17,11 +17,11 @@
 module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
 import           Data.Kind (Type)
-import           Data.Proxy (Proxy(..))
+import           Data.Proxy (Proxy (..))
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy(..))
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | The kind of the local state query protocol, and the types of

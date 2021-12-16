@@ -1,14 +1,14 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs     #-}
 
-module Network.TypedProtocol.ReqResp.Client (
-    -- * Normal client
-    ReqRespClient(..),
-    reqRespClientPeer,
+module Network.TypedProtocol.ReqResp.Client
+  ( -- * Normal client
+    ReqRespClient (..)
+  , reqRespClientPeer
     -- * Pipelined client
-    ReqRespClientPipelined(..),
-    ReqRespSender(..),
-    reqRespClientPeerPipelined,
+  , ReqRespClientPipelined (..)
+  , ReqRespSender (..)
+  , reqRespClientPeerPipelined
   ) where
 
 import           Network.TypedProtocol.Core

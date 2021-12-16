@@ -1,15 +1,14 @@
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DeriveFunctor #-}
 module Data.Cache
   ( Cache (..)
   , withCacheA
   , traceWithCache
   , mapTraceWithCache
-  )
-  where
+  ) where
 
-import Control.Monad (when)
-import Control.Tracer (Tracer, traceWith)
+import           Control.Monad (when)
+import           Control.Tracer (Tracer, traceWith)
 
 -- | Cache newtype wrapper allows to perform an action only if the cache
 -- is not up-to-date, i.e. different than another value dimmed more recent.

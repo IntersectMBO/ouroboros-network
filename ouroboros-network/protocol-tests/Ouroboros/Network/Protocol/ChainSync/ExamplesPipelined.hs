@@ -6,11 +6,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
-    ( Client (..)
-    , chainSyncClientPipelinedMax
-    , chainSyncClientPipelinedMin
-    , chainSyncClientPipelinedLowHigh
-    ) where
+  ( Client (..)
+  , chainSyncClientPipelinedMax
+  , chainSyncClientPipelinedMin
+  , chainSyncClientPipelinedLowHigh
+  ) where
 
 import           Control.Monad.Class.MonadSTM.Strict
 import           Data.Word

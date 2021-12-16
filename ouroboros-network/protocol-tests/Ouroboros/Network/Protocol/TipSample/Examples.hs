@@ -12,7 +12,7 @@ import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 
 import           Network.TypedProtocol.Pipelined (N (..), Nat (Succ, Zero),
-                   natToInt, unsafeIntToNat)
+                     natToInt, unsafeIntToNat)
 
 import           Ouroboros.Network.Protocol.TipSample.Client
 import           Ouroboros.Network.Protocol.TipSample.Server

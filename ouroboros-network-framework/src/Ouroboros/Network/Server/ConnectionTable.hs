@@ -5,24 +5,23 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Server.ConnectionTable (
-      ConnectionTable
-    , ConnectionTableRef (..)
-    , ValencyCounter
-
-    , newConnectionTableSTM
-    , newConnectionTable
-    , refConnectionSTM
-    , refConnection
-    , addConnection
-    , removeConnectionSTM
-    , removeConnection
-    , newValencyCounter
-    , addValencyCounter
-    , remValencyCounter
-    , waitValencyCounter
-    , readValencyCounter
-    ) where
+module Ouroboros.Network.Server.ConnectionTable
+  ( ConnectionTable
+  , ConnectionTableRef (..)
+  , ValencyCounter
+  , newConnectionTableSTM
+  , newConnectionTable
+  , refConnectionSTM
+  , refConnection
+  , addConnection
+  , removeConnectionSTM
+  , removeConnection
+  , newValencyCounter
+  , addValencyCounter
+  , remValencyCounter
+  , waitValencyCounter
+  , readValencyCounter
+  ) where
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM.Strict

@@ -9,35 +9,30 @@ module Ouroboros.Network.PeerSelection.EstablishedPeers
   , toMap
   , toSet
   , readyPeers
-
   , size
   , sizeReady
-
   , member
-
   , insert
   , delete
   , deletePeers
-
   , setCurrentTime
   , minActivateTime
   , setActivateTime
-
   , invariant
   ) where
 
 import           Prelude
 
 import           Data.Foldable (foldl')
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
-import qualified Data.Set as Set
 import           Data.Set (Set)
+import qualified Data.Set as Set
 
-import           Control.Monad.Class.MonadTime
 import           Control.Exception (assert)
+import           Control.Monad.Class.MonadTime
 
 
 data EstablishedPeers peeraddr peerconn = EstablishedPeers {

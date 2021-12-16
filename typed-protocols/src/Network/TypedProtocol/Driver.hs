@@ -1,38 +1,34 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE EmptyCase           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeInType #-}
-{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeInType          #-}
 
 -- | Actions for running 'Peer's with a 'Driver'
 --
-module Network.TypedProtocol.Driver (
-
-  -- * Introduction
-  -- $intro
-
-  -- * Driver interface
-  Driver(..),
-  SomeMessage(..),
-
-  -- * Normal peers
-  runPeerWithDriver,
-
-  -- * Pipelined peers
-  runPipelinedPeerWithDriver,
+module Network.TypedProtocol.Driver
+  ( -- * Introduction
+    -- $intro
+    -- * Driver interface
+    Driver (..)
+  , SomeMessage (..)
+    -- * Normal peers
+  , runPeerWithDriver
+    -- * Pipelined peers
+  , runPipelinedPeerWithDriver
   ) where
 
-import Data.Void (Void)
+import           Data.Void (Void)
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Pipelined
 
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
 
 
 -- $intro

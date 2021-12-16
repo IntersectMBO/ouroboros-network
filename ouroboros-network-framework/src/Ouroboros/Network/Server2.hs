@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -23,15 +22,15 @@ module Ouroboros.Network.Server2
   , newObservableStateVar
   , newObservableStateVarIO
   , newObservableStateVarFromSeed
-  -- * Run server
+    -- * Run server
   , run
-  -- * Trace
+    -- * Trace
   , ServerTrace (..)
   , AcceptConnectionsPolicyTrace (..)
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
-  -- * ControlChannel
+    -- * ControlChannel
   , module ControlChannel
   ) where
 
@@ -44,17 +43,17 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Void (Void)
 import           Data.List (intercalate)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Void (Void)
 import           GHC.IO.Exception
 #if !defined(mingw32_HOST_OS)
 import           Foreign.C.Error
 #endif
 
-import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.InboundGovernor
 import           Ouroboros.Network.InboundGovernor.ControlChannel
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
@@ -168,7 +167,7 @@ run ServerArguments {
           \(e :: SomeException) -> do
             case fromException e of
               Just (_ :: AsyncCancelled) -> pure ()
-              Nothing -> traceWith tracer (TrServerError e)
+              Nothing                    -> traceWith tracer (TrServerError e)
             throwIO e
   where
 
@@ -227,7 +226,7 @@ run ServerArguments {
               (numberOfConnections serverConnectionManager)
               serverConnectionLimits
             runAccept acceptOne
-            
+
           case result of
             (AcceptFailure err, acceptNext) -> do
               traceWith tracer (TrAcceptError err)

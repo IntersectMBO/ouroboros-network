@@ -1,28 +1,23 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-  (
-    -- * DNS based actions for local and public root providers
-    DNSActions (..),
-
+  ( -- * DNS based actions for local and public root providers
+    DNSActions (..)
     -- * DNSActions IO
-    ioDNSActions,
-    LookupReqs (..),
-
+  , ioDNSActions
+  , LookupReqs (..)
     -- * Utils
     -- ** Resource
-    Resource (..),
-    withResource',
-    constantResource,
-
+  , Resource (..)
+  , withResource'
+  , constantResource
     -- ** Error type
-    DNSorIOError (..)
-  )
-  where
+  , DNSorIOError (..)
+  ) where
 
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
@@ -32,10 +27,10 @@ import           Control.Monad.Class.MonadAsync
 #if !defined(mingw32_HOST_OS)
 import           Control.Monad.Class.MonadSTM.Strict
 #endif
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer(..), traceWith)
+import           Control.Tracer (Tracer (..), traceWith)
 
 import           System.Directory (getModificationTime)
 
@@ -286,7 +281,7 @@ lookupAWithTTL resolvConf resolver domain = do
                       $ DNS.resolvTimeout resolvConf)
                     (DNS.lookupRaw resolver domain DNS.A)
     case reply of
-      Nothing -> return (Left DNS.TimeoutExpired)
+      Nothing          -> return (Left DNS.TimeoutExpired)
       Just (Left  err) -> return (Left err)
       Just (Right ans) -> return (DNS.fromDNSMessage ans selectA)
       --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
@@ -308,7 +303,7 @@ lookupAAAAWithTTL resolvConf resolver domain = do
                       $ DNS.resolvTimeout resolvConf)
                     (DNS.lookupRaw resolver domain DNS.AAAA)
     case reply of
-      Nothing -> return (Left DNS.TimeoutExpired)
+      Nothing          -> return (Left DNS.TimeoutExpired)
       Just (Left  err) -> return (Left err)
       Just (Right ans) -> return (DNS.fromDNSMessage ans selectAAAA)
       --TODO: we can get the SOA TTL on NXDOMAIN here if we want to

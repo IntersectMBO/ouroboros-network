@@ -1,19 +1,17 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.Handshake.Server
-  ( handshakeServerPeer
-  ) where
+module Ouroboros.Network.Protocol.Handshake.Server (handshakeServerPeer) where
 
-import qualified Codec.CBOR.Term     as CBOR
+import qualified Codec.CBOR.Term as CBOR
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse)
+import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
 

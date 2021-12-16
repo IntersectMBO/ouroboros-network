@@ -34,15 +34,15 @@ import           Data.Monoid.Synchronisation
 import qualified Data.Set as Set
 
 import qualified Network.Mux as Mux
-import           Network.Mux.Types ( MiniProtocolStatus (..),
-                                     MiniProtocolDir (..))
+import           Network.Mux.Types (MiniProtocolDir (..),
+                     MiniProtocolStatus (..))
 
+import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.Mux hiding (ControlMessage)
-import           Ouroboros.Network.InboundGovernor.State
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
+import           Ouroboros.Network.InboundGovernor.State
+import           Ouroboros.Network.Mux hiding (ControlMessage)
 
 
 -- | Edge triggered events to which the /inbound protocol governor/ reacts.
@@ -145,7 +145,7 @@ firstMiniProtocolToFinish
           <$> FirstToFinish completionAction
         )
         csCompletionMap
-      
+
 
 -- | Detect when one of the peers was promoted to warm, e.g.
 -- @PromotedToWarm^{Duplex}_{Remote}@ or
@@ -211,7 +211,7 @@ firstPeerPromotedToWarm
 firstPeerPromotedToHot :: forall muxMode peerAddr m a b.
                           MonadSTM m
                        => EventSignal muxMode peerAddr m a b
-firstPeerPromotedToHot 
+firstPeerPromotedToHot
    connId connState@ConnectionState { csRemoteState }
    = case csRemoteState of
        RemoteHot     -> mempty
@@ -261,7 +261,7 @@ firstPeerPromotedToHot
 firstPeerDemotedToWarm :: forall muxMode peerAddr m a b.
                           MonadSTM m
                        => EventSignal muxMode peerAddr m a b
-firstPeerDemotedToWarm 
+firstPeerDemotedToWarm
     connId connState@ConnectionState { csRemoteState }
     = case csRemoteState of
         RemoteHot ->

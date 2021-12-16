@@ -23,15 +23,15 @@ import           Network.Socket (SockAddr (..))
 import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo (..))
+import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Network.Diffusion.Policies
 import           Ouroboros.Network.PeerSelection.Governor
-import           Ouroboros.Network.PeerSelection.Types (PeerSource(..))
 import           Ouroboros.Network.PeerSelection.PeerMetric
-import           Ouroboros.Network.DeltaQ ( SizeInBytes )
+import           Ouroboros.Network.PeerSelection.Types (PeerSource (..))
 
+import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-import           Test.QuickCheck
 
 tests :: TestTree
 tests = testGroup "Policies"
@@ -118,14 +118,14 @@ instance Arbitrary ArbitraryPolicyArguments where
        fn (ArbitrarySockAddr addr) kpi = (addr, kpi)
 
        headerMetric :: [SockAddr]
-                    -> Int 
+                    -> Int
                     -> Gen (Int, SlotNo, (SockAddr, Time))
        headerMetric peers slotNo = do
            peer <- elements peers
            return (slotNo, SlotNo $ fromIntegral slotNo, (peer, Time 0))
 
        fetchedMetric :: [SockAddr]
-                    -> Int 
+                    -> Int
                     -> Gen (Int, SlotNo, ((SockAddr, SizeInBytes), Time))
        fetchedMetric peers slotNo = do
            peer <- elements peers
@@ -301,5 +301,5 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
         fn m addr = Map.alter add addr m
 
         add :: Maybe Int -> Maybe Int
-        add Nothing = Just 1
+        add Nothing  = Just 1
         add (Just c) = Just $! c + 1

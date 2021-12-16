@@ -1,10 +1,10 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecursiveDo         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 
 -- `accept` is shadowed, but so what?
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
@@ -20,26 +20,27 @@ module Ouroboros.Network.Server.Socket
   , Result (..)
   , Main
   , run
-
   , Socket (..)
   , ioSocket
   ) where
 
-import Control.Exception (SomeException (..), IOException, mask, mask_, finally, onException, try)
-import Control.Concurrent.Async (Async)
+import           Control.Concurrent.Async (Async)
 import qualified Control.Concurrent.Async as Async
-import Control.Concurrent.STM (STM)
+import           Control.Concurrent.STM (STM)
 import qualified Control.Concurrent.STM as STM
-import Control.Monad (forM_, join)
-import Control.Monad.Class.MonadTime (Time, getMonotonicTime)
-import Control.Monad.Class.MonadTimer (threadDelay)
-import Control.Tracer (Tracer, traceWith)
-import Data.Foldable (traverse_)
-import Data.Set (Set)
+import           Control.Exception (IOException, SomeException (..), finally,
+                     mask, mask_, onException, try)
+import           Control.Monad (forM_, join)
+import           Control.Monad.Class.MonadTime (Time, getMonotonicTime)
+import           Control.Monad.Class.MonadTimer (threadDelay)
+import           Control.Tracer (Tracer, traceWith)
+import           Data.Foldable (traverse_)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..), WithAddr, ErrorPolicyTrace)
-import Ouroboros.Network.Server.RateLimiting
+import           Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..),
+                     ErrorPolicyTrace, WithAddr)
+import           Ouroboros.Network.Server.RateLimiting
 
 -- | Abstraction of something that can provide connections.
 -- A `Network.Socket` can be used to get a
@@ -109,7 +110,7 @@ type ResultQ addr r = STM.TQueue (Result addr r)
 data Result addr r = Result
   { resultThread :: !(Async ())
   , resultAddr   :: !addr
-  , resultTime   :: !Time 
+  , resultTime   :: !Time
   , resultValue  :: !(Either SomeException r)
   }
 

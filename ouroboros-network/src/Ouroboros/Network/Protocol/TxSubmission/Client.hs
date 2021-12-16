@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes          #-}
 
 -- | A view of the transaction submission protocol from the point of view of
 -- the client.
@@ -14,17 +14,16 @@
 -- For execution, 'txSubmissionClientPeer' is provided for conversion
 -- into the typed protocol.
 --
-module Ouroboros.Network.Protocol.TxSubmission.Client (
-    -- * Protocol type for the client
+module Ouroboros.Network.Protocol.TxSubmission.Client
+  ( -- * Protocol type for the client
     -- | The protocol states from the point of view of the client.
-    TxSubmissionClient(..)
-  , ClientStIdle(..)
-  , ClientStTxIds(..)
-  , ClientStTxs(..)
+    TxSubmissionClient (..)
+  , ClientStIdle (..)
+  , ClientStTxIds (..)
+  , ClientStTxs (..)
   , TxSizeInBytes
-  , TokBlockingStyle(..)
-  , BlockingReplyList(..)
-
+  , TokBlockingStyle (..)
+  , BlockingReplyList (..)
     -- * Execution as a typed protocol
   , txSubmissionClientPeer
   ) where

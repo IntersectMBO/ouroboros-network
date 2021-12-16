@@ -9,7 +9,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
-module Test.Mux.Timeout ( tests ) where
+module Test.Mux.Timeout (tests) where
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -19,10 +19,9 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Monad.IOSim
 
-import           Network.Mux.Timeout (TimeoutFn,
-                                      withTimeoutSerialNative,
-                                      withTimeoutSerialAlternative)
 import           Network.Mux.Time (microsecondsToDiffTime)
+import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerialAlternative,
+                     withTimeoutSerialNative)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -107,7 +106,7 @@ data WithSanityCheck prop
   deriving (Functor)
 
 ignoreSanityCheck :: WithSanityCheck prop -> prop
-ignoreSanityCheck (WithSanityCheck    prop)   = prop
+ignoreSanityCheck (WithSanityCheck    prop)       = prop
 ignoreSanityCheck (WithSanityCheckFailure prop _) = prop
 
 withSanityCheck :: WithSanityCheck Property -> Property
@@ -197,7 +196,7 @@ experimentResult SchedulingTolerance {
     -- duration to the expected duration plus scheduling tolerance. In a perfect
     -- simulator the scheduling tolerance can be 0 so we have to make the
     -- bounds inclusive.
-    sanityCheck    =  
+    sanityCheck    =
          counterexamples
            [ "negativeSchedulingTolerance: " ++ show negativeSchedulingTolerance
            , "violation of timer sanity property:\n" ++

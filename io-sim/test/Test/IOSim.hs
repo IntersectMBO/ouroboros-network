@@ -3,16 +3,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.IOSim
-    ( tests
-    , TestThreadGraph (..)
-    , arbitraryAcyclicGraph
-    ) where
+  ( tests
+  , TestThreadGraph (..)
+  , arbitraryAcyclicGraph
+  ) where
 
 import           Data.Array
 import           Data.Either (isLeft)
 import           Data.Fixed (Fixed (..), Micro)
-import           Data.Graph
 import           Data.Function (on)
+import           Data.Graph
 import           Data.List (sortBy)
 import           Data.Time.Clock (picosecondsToDiffTime)
 
@@ -21,8 +21,8 @@ import           Control.Monad
 import           System.IO.Error (ioeGetErrorString, isUserError)
 
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
@@ -990,7 +990,7 @@ prop_unmask :: MonadMaskingState m
             => MaskingState
             -> MaskingState
             -> m Property
-prop_unmask ms ms' = 
+prop_unmask ms ms' =
     setMaskingState_ ms $
       setMaskingState ms' $ \unmask -> do
         ms'' <- unmask getMaskingState
@@ -1138,7 +1138,7 @@ unit_catch_throwTo_masking_state_async_ST ms =
 
 -- | Like 'prop_catch_throwTo_masking_state_async' but 'throwTo' will block if
 -- masking state is set to 'MaskedUninterruptible'.  This makes sure that the
--- 'willBlock' branch of 'ThrowTo' in 'schedule' is covered. 
+-- 'willBlock' branch of 'ThrowTo' in 'schedule' is covered.
 --
 prop_catch_throwTo_masking_state_async_mayblock :: forall m.
                                                 ( MonadMaskingState m

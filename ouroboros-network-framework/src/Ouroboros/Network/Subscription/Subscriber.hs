@@ -1,8 +1,8 @@
 
 module Ouroboros.Network.Subscription.Subscriber
-    ( SubscriptionTarget (..)
-    , listSubscriptionTarget
-    ) where
+  ( SubscriptionTarget (..)
+  , listSubscriptionTarget
+  ) where
 
 -- | Generate subscription targets in some monad.
 -- Examples include obtaining targets from a fixed list, or from a DNS lookup.

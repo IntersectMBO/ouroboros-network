@@ -16,24 +16,21 @@
 -- it is used; eventually it should be simplified and then moved to the
 -- network layer tests; the more sophiscated block abstraction (abstracted over
 -- an Ouroboros protocol) will live in the consensus layer.
-module Ouroboros.Network.Testing.ConcreteBlock (
-    Block(..)
-  , BlockHeader(..)
-  , BlockBody(..)
+module Ouroboros.Network.Testing.ConcreteBlock
+  ( Block (..)
+  , BlockHeader (..)
+  , BlockBody (..)
   , hashHeader
-  , BodyHash(..)
-  , ConcreteHeaderHash(..)
+  , BodyHash (..)
+  , ConcreteHeaderHash (..)
   , hashBody
-
     -- * Converting slots to times
   , convertSlotToTimeForTestsAssumingNoHardFork
-
     -- * Creating sample chains
   , mkChain
   , mkChainSimple
   , mkAnchoredFragment
   , mkAnchoredFragmentSimple
-
     -- * Generator utilities
   , mkPartialBlock
   , mkPartialBlockHeader
@@ -49,12 +46,13 @@ import           Data.Function (fix)
 import           Data.Hashable
 import           Data.String (IsString)
 import           Data.Time.Calendar (fromGregorian)
-import           Data.Time.Clock (UTCTime (..), addUTCTime, secondsToNominalDiffTime)
+import           Data.Time.Clock (UTCTime (..), addUTCTime,
+                     secondsToNominalDiffTime)
 import           NoThunks.Class (NoThunks)
 
-import           Codec.CBOR.Decoding (decodeInt, decodeListLenOf, decodeBytes,
+import           Codec.CBOR.Decoding (decodeBytes, decodeInt, decodeListLenOf,
                      decodeWord64)
-import           Codec.CBOR.Encoding (encodeInt, encodeListLen, encodeBytes,
+import           Codec.CBOR.Encoding (encodeBytes, encodeInt, encodeListLen,
                      encodeWord64)
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)

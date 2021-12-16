@@ -1,16 +1,16 @@
 {-# LANGUAGE CPP #-}
-module Ouroboros.Network.Testing.Serialise (
-      -- * Class
-      Serialise(..)
-    , prop_serialise
-    , prop_serialise_valid
-    , prop_serialise_roundtrip
-    )
-    where
+module Ouroboros.Network.Testing.Serialise
+  ( -- * Class
+    Serialise (..)
+  , prop_serialise
+  , prop_serialise_valid
+  , prop_serialise_roundtrip
+  ) where
 
 import           Codec.CBOR.FlatTerm
 import           Codec.Serialise
-import           Test.QuickCheck (Property, counterexample, property, (.&&.), (===))
+import           Test.QuickCheck (Property, counterexample, property, (.&&.),
+                     (===))
 
 -- Class properties
 --
@@ -29,5 +29,5 @@ prop_serialise_valid a =
 -- Written like this so that an Eq DeserialiseFailure is not required.
 prop_serialise_roundtrip :: (Serialise a, Eq a, Show a) => a -> Property
 prop_serialise_roundtrip x = case deserialiseOrFail (serialise x) of
-  Right y -> y === x
+  Right y                            -> y === x
   Left (DeserialiseFailure _ string) -> counterexample string (property False)

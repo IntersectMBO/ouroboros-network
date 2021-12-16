@@ -1,43 +1,42 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 
 
 module Network.TypedProtocol.ReqResp.Tests (tests) where
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Proofs
-import Network.TypedProtocol.Channel
-import Network.TypedProtocol.Driver.Simple
+import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Driver.Simple
+import           Network.TypedProtocol.Proofs
 
-import Network.TypedProtocol.ReqResp.Type
-import Network.TypedProtocol.ReqResp.Client
-import Network.TypedProtocol.ReqResp.Server
-import Network.TypedProtocol.ReqResp.Codec
-import Network.TypedProtocol.ReqResp.Examples
+import           Network.TypedProtocol.ReqResp.Client
+import           Network.TypedProtocol.ReqResp.Codec
+import           Network.TypedProtocol.ReqResp.Examples
+import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Type
 
-import Control.Monad.ST (runST)
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadThrow
-import Control.Monad.IOSim (runSimOrThrow)
-import Control.Tracer (nullTracer)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.ST (runST)
+import           Control.Tracer (nullTracer)
 
-import Data.Functor.Identity (Identity (..))
-import Data.Tuple (swap)
-import Data.List (mapAccumL)
+import           Data.Functor.Identity (Identity (..))
+import           Data.List (mapAccumL)
+import           Data.Tuple (swap)
 
-import Network.TypedProtocol.PingPong.Tests (splits2, splits3)
+import           Network.TypedProtocol.PingPong.Tests (splits2, splits3)
 
-import Test.QuickCheck
-import Text.Show.Functions ()
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
+import           Text.Show.Functions ()
 
 
 --

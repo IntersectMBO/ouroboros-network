@@ -1,11 +1,10 @@
 module Network.Mux.DeltaQ.TraceStats
- ( step
- , OneWayDeltaQSample(..)
- , constructSample
- , StatsA
- , initialStatsA
- )
-where
+  ( step
+  , OneWayDeltaQSample (..)
+  , constructSample
+  , StatsA
+  , initialStatsA
+  ) where
 
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM

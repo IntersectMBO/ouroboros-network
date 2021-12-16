@@ -1,7 +1,6 @@
 module Ouroboros.Network.TxSubmission.Mempool.Reader
   ( TxSubmissionMempoolReader (..)
   , MempoolSnapshot (..)
-
   , mapMempoolSnapshot
   , mapTxSubmissionMempoolReader
   ) where
@@ -21,11 +20,11 @@ data TxSubmissionMempoolReader txid tx idx m =
        -- | In STM, grab a snapshot of the contents of the mempool. This allows
        -- further pure queries on the snapshot.
        --
-       mempoolGetSnapshot  :: STM m (MempoolSnapshot txid tx idx),
+       mempoolGetSnapshot :: STM m (MempoolSnapshot txid tx idx),
 
        -- | 'mempoolTxIdsAfter' with 'mempoolZeroIdx' is expected to give all
        -- txs currently in the mempool.
-       mempoolZeroIdx      :: idx
+       mempoolZeroIdx     :: idx
     }
 
 mapTxSubmissionMempoolReader ::

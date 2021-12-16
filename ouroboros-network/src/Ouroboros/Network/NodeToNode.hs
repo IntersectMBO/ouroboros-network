@@ -3,15 +3,15 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
 --
-module Ouroboros.Network.NodeToNode (
-    nodeToNodeProtocols
+module Ouroboros.Network.NodeToNode
+  ( nodeToNodeProtocols
   , NodeToNodeProtocols (..)
   , MiniProtocolParameters (..)
   , chainSyncProtocolLimits
@@ -21,11 +21,9 @@ module Ouroboros.Network.NodeToNode (
   , defaultMiniProtocolParameters
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
-
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
-
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
   , NetworkMutableState (..)
@@ -34,14 +32,12 @@ module Ouroboros.Network.NodeToNode (
   , newNetworkMutableStateSTM
   , cleanNetworkMutableState
   , withServer
-
-  -- * P2P Governor
+    -- * P2P Governor
   , DomainAccessPoint (..)
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
-
-  -- * Subscription Workers
-  -- ** IP subscriptin worker
+    -- * Subscription Workers
+    -- ** IP subscriptin worker
   , IPSubscriptionTarget (..)
   , NetworkIPSubscriptionTracers
   , NetworkSubscriptionTracers (..)
@@ -49,14 +45,12 @@ module Ouroboros.Network.NodeToNode (
   , SubscriptionParams (..)
   , IPSubscriptionParams
   , ipSubscriptionWorker
-
-  -- ** DNS subscription worker
+    -- ** DNS subscription worker
   , DnsSubscriptionTarget (..)
   , DnsSubscriptionParams
   , NetworkDNSSubscriptionTracers (..)
   , nullNetworkDNSSubscriptionTracers
   , dnsSubscriptionWorker
-
     -- ** Versions
   , Versions (..)
   , DiffusionMode (..)
@@ -67,8 +61,7 @@ module Ouroboros.Network.NodeToNode (
   , nodeToNodeHandshakeCodec
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
-
-  -- * Re-exports
+    -- * Re-exports
   , ConnectionId (..)
   , RemoteAddress
   , RemoteConnectionId
@@ -76,16 +69,14 @@ module Ouroboros.Network.NodeToNode (
   , Handshake
   , LocalAddresses (..)
   , Socket
-
-  -- ** Error Policies and Peer state
+    -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , remoteNetworkErrorPolicy
   , localNetworkErrorPolicy
   , nullErrorPolicies
   , ErrorPolicy (..)
   , SuspendDecision (..)
-
-  -- ** Traces
+    -- ** Traces
   , AcceptConnectionsPolicyTrace (..)
   , TraceSendRecv (..)
   , SubscriptionTrace (..)
@@ -95,25 +86,24 @@ module Ouroboros.Network.NodeToNode (
   , WithDomainName (..)
   , WithAddr (..)
   , HandshakeTr
-
-  -- * For Consensus ThreadNet Tests
+    -- * For Consensus ThreadNet Tests
   , chainSyncMiniProtocolNum
   , blockFetchMiniProtocolNum
   , txSubmissionMiniProtocolNum
   , keepAliveMiniProtocolNum
   ) where
 
+import qualified Control.Concurrent.Async as Async
+import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime (DiffTime)
-import qualified Control.Concurrent.Async as Async
-import           Control.Exception (IOException)
 
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Term as CBOR
 import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)
 import           Data.Word
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
 import           Network.Mux (WithMuxBearer (..))
 import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.Socket (Socket)
@@ -121,38 +111,37 @@ import qualified Network.Socket as Socket
 
 import           Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.Simple (DecoderFailure)
+import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
+import           Ouroboros.Network.Driver.Simple (DecoderFailure)
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import           Ouroboros.Network.PeerSelection.Governor.Types
+                     (PeerSelectionTargets (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (DomainAccessPoint (..))
+import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import           Ouroboros.Network.Snocket
+import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams,
+                     DnsSubscriptionTarget (..), DnsTrace (..),
+                     WithDomainName (..))
+import qualified Ouroboros.Network.Subscription.Dns as Subscription
+import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams,
+                     IPSubscriptionTarget (..), SubscriptionParams (..),
+                     SubscriptionTrace (..), WithIPList (..))
+import qualified Ouroboros.Network.Subscription.Ip as Subscription
+import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
+                     SubscriberError)
+import           Ouroboros.Network.Tracers
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Tracers
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS (DomainAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionTargets (..))
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
-import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams, SubscriptionParams (..))
-import qualified Ouroboros.Network.Subscription.Ip as Subscription
-import           Ouroboros.Network.Subscription.Ip ( IPSubscriptionTarget (..)
-                                                   , WithIPList (..)
-                                                   , SubscriptionTrace (..)
-                                                   )
-import           Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams)
-import qualified Ouroboros.Network.Subscription.Dns as Subscription
-import           Ouroboros.Network.Subscription.Dns ( DnsSubscriptionTarget (..)
-                                                    , DnsTrace (..)
-                                                    , WithDomainName (..)
-                                                    )
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..), SubscriberError)
-import           Ouroboros.Network.Snocket
 
 
 -- The Handshake tracer types are simply terrible.
@@ -183,7 +172,7 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
 
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol :: RunMiniProtocol appType bytes m a b
+    keepAliveProtocol    :: RunMiniProtocol appType bytes m a b
 
   }
 
@@ -206,7 +195,7 @@ data MiniProtocolParameters = MiniProtocolParameters {
       blockFetchPipeliningMax     :: !Word,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
-      txSubmissionMaxUnacked       :: !Word16
+      txSubmissionMaxUnacked      :: !Word16
       -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
     }

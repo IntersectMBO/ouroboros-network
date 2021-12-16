@@ -2,7 +2,7 @@
 module Test.Ouroboros.Network.Orphans () where
 
 import           Network.TypedProtocol.PingPong.Type (PingPong)
-import           Network.TypedProtocol.ReqResp.Type  (ReqResp)
+import           Network.TypedProtocol.ReqResp.Type (ReqResp)
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 

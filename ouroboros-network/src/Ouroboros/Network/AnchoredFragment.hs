@@ -5,93 +5,84 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
-module Ouroboros.Network.AnchoredFragment (
-  -- * AnchoredFragment type and fundamental operations
-  AnchoredFragment,
-  AnchoredSeq(Empty, (:>), (:<)),
-  anchor,
-  anchorPoint,
-  anchorBlockNo,
-
-  -- * Anchor
-  Anchor(..),
-  anchorFromBlock,
-  anchorFromPoint,
-  anchorToPoint,
-  anchorToSlotNo,
-  anchorToBlockNo,
-  anchorToHash,
-  anchorIsGenesis,
-  anchorToHeaderFields,
-  anchorToTip,
-  castAnchor,
-
-  valid,
-  validExtension,
-
-  -- ** Block re-exports
-  HasHeader(..),
-  Point(..),
-  castPoint,
-  blockPoint,
-
-  -- * AnchoredFragment construction and inspection
-  -- ** Head inspection
-  headPoint,
-  headAnchor,
-  headSlot,
-  headHash,
-  headBlockNo,
-
-  -- ** Basic operations
-  head,
-  last,
-  lastPoint,
-  lastSlot,
-  toNewestFirst,
-  toOldestFirst,
-  fromNewestFirst,
-  fromOldestFirst,
-  splitAt,
-  dropNewest,
-  takeOldest,
-  dropWhileNewest,
-  takeWhileOldest,
-  length,
-  null,
-
-  -- ** Update type and operations
-  ChainUpdate(..),
-  addBlock,
-  rollback,
-  applyChainUpdate,
-  applyChainUpdates,
-
-  -- * Special operations
-  pointOnFragment,
-  withinFragmentBounds,
-  findFirstPoint,
-  successorBlock,
-  selectPoints,
-  isPrefixOf,
-  splitAfterPoint,
-  splitBeforePoint,
-  sliceRange,
-  join,
-  intersect,
-  intersectionPoint,
-  mapAnchoredFragment,
-  anchorNewest,
-  filter,
-  filterWithStop,
-
-  -- * Helper functions
-  prettyPrint,
-
-  -- * Reference implementations for testing
-  pointOnFragmentSpec,
-  selectPointsSpec,
-  filterWithStopSpec
+module Ouroboros.Network.AnchoredFragment
+  ( -- * AnchoredFragment type and fundamental operations
+    AnchoredFragment
+  , AnchoredSeq (Empty, (:>), (:<))
+  , anchor
+  , anchorPoint
+  , anchorBlockNo
+    -- * Anchor
+  , Anchor (..)
+  , anchorFromBlock
+  , anchorFromPoint
+  , anchorToPoint
+  , anchorToSlotNo
+  , anchorToBlockNo
+  , anchorToHash
+  , anchorIsGenesis
+  , anchorToHeaderFields
+  , anchorToTip
+  , castAnchor
+  , valid
+  , validExtension
+    -- ** Block re-exports
+  , HasHeader (..)
+  , Point (..)
+  , castPoint
+  , blockPoint
+    -- * AnchoredFragment construction and inspection
+    -- ** Head inspection
+  , headPoint
+  , headAnchor
+  , headSlot
+  , headHash
+  , headBlockNo
+    -- ** Basic operations
+  , head
+  , last
+  , lastPoint
+  , lastSlot
+  , toNewestFirst
+  , toOldestFirst
+  , fromNewestFirst
+  , fromOldestFirst
+  , splitAt
+  , dropNewest
+  , takeOldest
+  , dropWhileNewest
+  , takeWhileOldest
+  , length
+  , null
+    -- ** Update type and operations
+  , ChainUpdate (..)
+  , addBlock
+  , rollback
+  , applyChainUpdate
+  , applyChainUpdates
+    -- * Special operations
+  , pointOnFragment
+  , withinFragmentBounds
+  , findFirstPoint
+  , successorBlock
+  , selectPoints
+  , isPrefixOf
+  , splitAfterPoint
+  , splitBeforePoint
+  , sliceRange
+  , join
+  , intersect
+  , intersectionPoint
+  , mapAnchoredFragment
+  , anchorNewest
+  , filter
+  , filterWithStop
+    -- * Helper functions
+  , prettyPrint
+    -- * Reference implementations for testing
+  , pointOnFragmentSpec
+  , selectPointsSpec
+  , filterWithStopSpec
   ) where
 
 import           Prelude hiding (filter, head, last, length, map, null, splitAt)

@@ -2,17 +2,17 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 module Main (main) where
 
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Write    as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR
 import           Control.Exception
-import           Control.Monad (replicateM, when, unless)
+import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -25,20 +25,20 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BSC (pack, putStr)
 import           Data.List (foldl')
 import           Data.Maybe (fromMaybe, isNothing)
-import           Data.Word
 import           Data.TDigest
 import           Data.Text (unpack)
-import           Network.Socket ( AddrInfo)
+import           Data.Word
+import           Network.Socket (AddrInfo)
 import qualified Network.Socket as Socket
-import           Text.Printf
+import           System.Console.GetOpt
 import           System.Environment (getArgs, getProgName)
 import           System.Exit
-import           System.Console.GetOpt
-import           System.IO (hFlush, hPutStr, hPrint, stderr, stdout)
+import           System.IO (hFlush, hPrint, hPutStr, stderr, stdout)
+import           Text.Printf
 
 import           Network.Mux.Bearer.Socket
-import           Network.Mux.Types
 import           Network.Mux.Timeout
+import           Network.Mux.Types
 
 import           Linger
 
@@ -195,7 +195,7 @@ main = do
     partition :: ([(AddrInfo, SomeException)], [AddrInfo])
               -> (AddrInfo, Either SomeException ())
               -> ([(AddrInfo, SomeException)], [AddrInfo])
-    partition (es, as) (a, Left e) = ((a, e) : es, as)
+    partition (es, as) (a, Left e)  = ((a, e) : es, as)
     partition (es, as) (a, Right _) = (es, a : as)
 
     doLog :: StrictTMVar IO LogMsg -> LogMsg -> IO ()
@@ -288,7 +288,7 @@ handshakeReqEnc versions =
        <> CBOR.encodeBool mode
 
 handshakeReq :: [NodeVersion] -> ByteString
-handshakeReq [] = BL.empty
+handshakeReq []       = BL.empty
 handshakeReq versions = CBOR.toLazyByteString $ handshakeReqEnc versions
 
 data HandshakeFailure = UnknownVersionInRsp Word
@@ -361,7 +361,7 @@ handshakeDec = do
              (7, True)  -> Right . NodeToClientVersionV7 <$> CBOR.decodeWord32
              (8, True)  -> Right . NodeToClientVersionV8 <$> CBOR.decodeWord32
              (9, True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
-             _ -> return $ Left $ UnknownVersionInRsp version
+             _          -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> Bool -> NodeVersion)
                    -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
@@ -480,7 +480,7 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
                           -- send terminating message
                           _ <- write bearer timeoutfn $
                                  wrap keepaliveNum InitiatorDir (keepAliveDone version)
-                          -- protocol idle timeout 
+                          -- protocol idle timeout
                           threadDelay 5
 
     )
@@ -491,7 +491,7 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
         case Socket.addrFamily peer of
              Socket.AF_UNIX -> return $ show $ Socket.addrAddress peer
              _ -> do
-                  (Just host, Just port) <- 
+                  (Just host, Just port) <-
                     Socket.getNameInfo
                       [ Socket.NI_NUMERICHOST, Socket.NI_NUMERICSERV ]
                       True True (Socket.addrAddress peer)

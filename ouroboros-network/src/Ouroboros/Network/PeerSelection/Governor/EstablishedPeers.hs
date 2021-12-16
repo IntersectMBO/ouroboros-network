@@ -6,22 +6,22 @@ module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
   , aboveTarget
   ) where
 
-import           Data.Semigroup (Min(..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Semigroup (Min (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Control.Concurrent.JobPool (Job(..))
+import           Control.Concurrent.JobPool (Job (..))
+import           Control.Exception (SomeException)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (SomeException)
 import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.Governor.Types
 
 
 ---------------------------------

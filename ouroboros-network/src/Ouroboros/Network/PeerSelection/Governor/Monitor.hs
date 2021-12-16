@@ -17,22 +17,23 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
 import           Data.Set (Set)
+import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
+import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (assert)
 import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
+                     (jobDemoteActivePeer)
+import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.Governor.ActivePeers (jobDemoteActivePeer)
 
 
 -- | Monitor 'PeerSelectionTargets', if they change, we just need to update

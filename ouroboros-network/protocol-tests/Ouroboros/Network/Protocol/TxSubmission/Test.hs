@@ -1,48 +1,46 @@
-{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.Protocol.TxSubmission.Test (
-    tests
-   ,TxId (..)
-   ,Tx (..)
-   ,TxSubmissionTestParams (..)
-   ,testClient
-   ,testServer
-   ,codec
-   ,DistinctList (..)
-   ) where
+module Ouroboros.Network.Protocol.TxSubmission.Test
+  ( tests
+  , TxId (..)
+  , Tx (..)
+  , TxSubmissionTestParams (..)
+  , testClient
+  , testServer
+  , codec
+  , DistinctList (..)
+  ) where
 
+import           Data.ByteString.Lazy (ByteString)
 import           Data.List (nub)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Word (Word16)
-import           Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.ST (runST)
-import           Control.Monad.IOSim
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Control.Tracer (Tracer(..), nullTracer)
+import           Control.Monad.IOSim
+import           Control.Monad.ST (runST)
+import           Control.Tracer (Tracer (..), nullTracer)
 
-import           Codec.Serialise (Serialise, DeserialiseFailure)
-import qualified Codec.Serialise as Serialise (encode, decode)
+import           Codec.Serialise (DeserialiseFailure, Serialise)
+import qualified Codec.Serialise as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple
-                   (runConnectedPeersPipelined)
+import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client

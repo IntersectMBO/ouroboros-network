@@ -6,8 +6,8 @@ module Ouroboros.Network.Tracers
   , nullNetworkDNSSubscriptionTracers
   ) where
 
-import           Control.Tracer (Tracer, nullTracer)
 import qualified Codec.CBOR.Term as CBOR
+import           Control.Tracer (Tracer, nullTracer)
 
 import           Network.Mux.Trace
 
@@ -15,8 +15,8 @@ import           Ouroboros.Network.Driver (TraceSendRecv)
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Socket (ConnectionId)
-import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Dns
+import           Ouroboros.Network.Subscription.Ip
 
 -- | IP subscription tracers.
 --

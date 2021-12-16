@@ -1,9 +1,9 @@
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE EmptyCase         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE PolyKinds         #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 -- | The type of the keep alive protocol.
 --
@@ -23,10 +23,10 @@
 --
 module Ouroboros.Network.Protocol.KeepAlive.Type where
 
-import Control.Monad.Class.MonadThrow (Exception)
-import Data.Word (Word16)
-import Network.TypedProtocol.Core
-import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import           Control.Monad.Class.MonadThrow (Exception)
+import           Data.Word (Word16)
+import           Network.TypedProtocol.Core
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- | A 16bit value used to match responses to requests.
 newtype Cookie = Cookie {unCookie :: Word16 } deriving (Eq, Show)

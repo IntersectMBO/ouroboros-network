@@ -1,23 +1,23 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE GADTs #-}
 
 
 module Ouroboros.Network.PeerSelection.PeerMetric where
 
-import qualified Data.IntPSQ as Pq
-import           Data.IntPSQ (IntPSQ)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
+import           Data.IntPSQ (IntPSQ)
+import qualified Data.IntPSQ as Pq
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import           Cardano.Slotting.Slot (SlotNo (..))
-import           Ouroboros.Network.DeltaQ ( SizeInBytes )
-import           Ouroboros.Network.NodeToNode ( ConnectionId (..))
+import           Ouroboros.Network.DeltaQ (SizeInBytes)
+import           Ouroboros.Network.NodeToNode (ConnectionId (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
 
 
@@ -31,7 +31,7 @@ maxEntriesToTrack = 180
 type SlotMetric p = IntPSQ SlotNo (p, Time)
 
 data PeerMetrics m p = PeerMetrics {
-    headerMetrics :: StrictTVar m (SlotMetric p)
+    headerMetrics  :: StrictTVar m (SlotMetric p)
   , fetchedMetrics :: StrictTVar m (SlotMetric (p, SizeInBytes))
   }
 
@@ -139,7 +139,7 @@ upstreamyness = Pq.fold' count Map.empty
         Map.alter fn peer m
       where
         fn :: Maybe Int -> Maybe Int
-        fn Nothing = Just 1
+        fn Nothing  = Just 1
         fn (Just c) = Just $! c + 1
 
 
@@ -160,7 +160,7 @@ fetchynessBytes = Pq.fold' count Map.empty
         Map.alter fn peer m
       where
         fn :: Maybe Int -> Maybe Int
-        fn Nothing = Just $ fromIntegral bytes
+        fn Nothing         = Just $ fromIntegral bytes
         fn (Just oldBytes) = Just $! oldBytes + fromIntegral bytes
 
 -- Returns a Map which counts the number of times a given peer
@@ -180,7 +180,7 @@ fetchynessBlocks = Pq.fold' count Map.empty
         Map.alter fn peer m
       where
         fn :: Maybe Int -> Maybe Int
-        fn Nothing = Just 1
+        fn Nothing  = Just 1
         fn (Just c) = Just $! c + 1
 
 

@@ -1,30 +1,29 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.TxSubmission.Outbound (
-    txSubmissionOutbound,
-    TraceTxSubmissionOutbound(..),
-    TxSubmissionProtocolError(..),
+module Ouroboros.Network.TxSubmission.Outbound
+  ( txSubmissionOutbound
+  , TraceTxSubmissionOutbound (..)
+  , TxSubmissionProtocolError (..)
   ) where
 
-import           Data.Word (Word16)
-import           Data.Maybe (isNothing, catMaybes)
-import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Sequence.Strict as Seq
-import           Data.Sequence.Strict (StrictSeq)
 import           Data.Foldable (find)
+import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Maybe (catMaybes, isNothing)
+import           Data.Sequence.Strict (StrictSeq)
+import qualified Data.Sequence.Strict as Seq
+import           Data.Word (Word16)
 
-import           Control.Monad (when, unless)
+import           Control.Exception (assert)
+import           Control.Monad (unless, when)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Mux
-                    (ControlMessageSTM, ControlMessage,
+import           Ouroboros.Network.Mux (ControlMessage, ControlMessageSTM,
                      timeoutWithControlMessage)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.TxSubmission.Client

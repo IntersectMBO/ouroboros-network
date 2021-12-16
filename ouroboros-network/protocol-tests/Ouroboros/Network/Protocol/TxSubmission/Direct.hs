@@ -5,12 +5,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Network.Protocol.TxSubmission.Direct (
-    directPipelined
-  ) where
+module Ouroboros.Network.Protocol.TxSubmission.Direct (directPipelined) where
 
 import           Network.TypedProtocol.Pipelined
-import           Network.TypedProtocol.Proofs (Queue(..), enqueue)
+import           Network.TypedProtocol.Proofs (Queue (..), enqueue)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 import           Ouroboros.Network.Protocol.TxSubmission.Server

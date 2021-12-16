@@ -1,17 +1,16 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Network.Protocol.TxSubmission.Codec (
-    codecTxSubmission
+module Ouroboros.Network.Protocol.TxSubmission.Codec
+  ( codecTxSubmission
   , codecTxSubmissionId
   , encodeTxSubmission
   , decodeTxSubmission
-
   , byteLimitsTxSubmission
   , timeLimitsTxSubmission
   ) where
@@ -20,17 +19,17 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadTime
 import qualified Data.List.NonEmpty as NonEmpty
 
-import           Data.ByteString.Lazy (ByteString)
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import           Data.ByteString.Lazy (ByteString)
 import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Ouroboros.Network.Protocol.Limits
+import           Ouroboros.Network.Protocol.TxSubmission.Type
 
 -- | Byte Limits.
 byteLimitsTxSubmission :: forall bytes txid tx.

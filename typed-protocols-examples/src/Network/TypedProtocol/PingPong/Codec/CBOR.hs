@@ -10,13 +10,13 @@ import           Control.Monad.Class.MonadST
 
 import           Data.ByteString.Lazy (ByteString)
 
-import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeWord)
-import qualified Codec.CBOR.Read     as CBOR
 import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeWord)
+import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeWord)
+import qualified Codec.CBOR.Read as CBOR
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Codec.CBOR
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.PingPong.Type
 
 codecPingPong

@@ -3,21 +3,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.BlockFetch.Examples where
 
-import Control.Monad (unless)
-import Data.Functor (($>))
-import Data.Maybe (fromMaybe)
+import           Control.Monad (unless)
+import           Data.Functor (($>))
+import           Data.Maybe (fromMaybe)
 import qualified Pipes
 
-import Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 
-import Ouroboros.Network.MockChain.Chain (Chain, HasHeader, Point)
+import           Ouroboros.Network.MockChain.Chain (Chain, HasHeader, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
-import Ouroboros.Network.Protocol.BlockFetch.Client
-import Ouroboros.Network.Protocol.BlockFetch.Server
+import           Ouroboros.Network.Protocol.BlockFetch.Client
+import           Ouroboros.Network.Protocol.BlockFetch.Server
+import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 constantBlockFetchReceiver
   :: Functor m
@@ -103,7 +103,7 @@ blockFetchClientPipelinedMax ranges0 =
                                         Just b  -> return (b : c))
                                     (go (Left req : acc) reqs (Succ o))
   go acc []           (Succ o) = CollectBlocksPipelined
-                                    Nothing    
+                                    Nothing
                                     (\bs -> go (Right bs : acc) [] o)
   go acc []           Zero     = SendMsgDonePipelined acc
 

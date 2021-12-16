@@ -1,10 +1,9 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
@@ -15,32 +14,32 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.Functor (void)
 import           Data.Void (Void)
 
-import Control.Concurrent.Async
-import Control.Monad (when)
-import Control.Tracer
+import           Control.Concurrent.Async
+import           Control.Monad (when)
+import           Control.Tracer
 
-import System.IO
-import System.Directory
-import System.Environment
-import System.Exit
+import           System.Directory
+import           System.Environment
+import           System.Exit
+import           System.IO
 
-import Ouroboros.Network.Socket
-import Ouroboros.Network.Snocket
+import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.Mux
+import           Ouroboros.Network.Snocket
 import qualified Ouroboros.Network.Snocket as Snocket
-import Ouroboros.Network.Mux
-import Ouroboros.Network.ErrorPolicy
-import Ouroboros.Network.IOManager
-import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import           Ouroboros.Network.Socket
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
-import Ouroboros.Network.Protocol.Handshake.Codec
-import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Unversioned
+import           Ouroboros.Network.Protocol.Handshake.Version
 
-import Network.TypedProtocol.Pipelined
-import Network.TypedProtocol.PingPong.Type (PingPong)
-import Network.TypedProtocol.PingPong.Client as PingPong
-import Network.TypedProtocol.PingPong.Server as PingPong
-import Network.TypedProtocol.PingPong.Codec.CBOR  as PingPong
+import           Network.TypedProtocol.PingPong.Client as PingPong
+import           Network.TypedProtocol.PingPong.Codec.CBOR as PingPong
+import           Network.TypedProtocol.PingPong.Server as PingPong
+import           Network.TypedProtocol.PingPong.Type (PingPong)
+import           Network.TypedProtocol.Pipelined
 
 
 main :: IO ()

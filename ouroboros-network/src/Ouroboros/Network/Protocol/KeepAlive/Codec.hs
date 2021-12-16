@@ -20,18 +20,18 @@ import           Control.Monad.Class.MonadTime (DiffTime)
 import           Data.ByteString.Lazy (ByteString)
 import           Text.Printf
 
-import qualified Codec.CBOR.Encoding as CBOR ( Encoding, encodeListLen
-                                             , encodeWord, encodeWord16 )
-import qualified Codec.CBOR.Read     as CBOR
-import qualified Codec.CBOR.Decoding as CBOR ( Decoder, decodeListLen
-                                             , decodeWord, decodeWord16 )
+import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeListLen,
+                     decodeWord, decodeWord16)
+import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeListLen,
+                     encodeWord, encodeWord16)
+import qualified Codec.CBOR.Read as CBOR
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec.CBOR
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.Protocol.Limits
 import           Ouroboros.Network.Protocol.KeepAlive.Type
+import           Ouroboros.Network.Protocol.Limits
 
 
 codecKeepAlive

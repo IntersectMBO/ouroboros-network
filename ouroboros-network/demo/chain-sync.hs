@@ -19,8 +19,8 @@ import qualified Data.Map as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Text.Read (readMaybe)
 import           Data.Void (Void)
+import           Text.Read (readMaybe)
 
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
@@ -42,11 +42,11 @@ import           Network.TypedProtocol.Codec
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.IOManager
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient (LocalConnectionId)
 import           Ouroboros.Network.NodeToNode
-import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket

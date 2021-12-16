@@ -2,62 +2,55 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Testing.Data.Signal (
-  -- * Events
-  Events,
-  eventsFromList,
-  eventsFromListUpToTime,
-  eventsToList,
-  selectEvents,
-
-  -- * Low level access
-  primitiveTransformEvents,
-  TS(..),
-  E(..),
-
-  -- * Signals
-  Signal,
-  -- ** Construction and conversion
-  fromChangeEvents,
-  toChangeEvents,
-  fromEvents,
-
-  -- ** QuickCheck
-  signalProperty,
-
-  -- * Simple signal transformations
-  truncateAt,
-  stable,
-  nub,
-  nubBy,
-
-  -- * Temporal operations
-  linger,
-  timeout,
-  until,
-  difference,
-  scanl,
-
-  -- * Set-based temporal operations
-  keyedTimeout,
-  keyedLinger,
-  keyedUntil,
-
+module Ouroboros.Network.Testing.Data.Signal
+  ( -- * Events
+    Events
+  , eventsFromList
+  , eventsFromListUpToTime
+  , eventsToList
+  , selectEvents
+    -- * Low level access
+  , primitiveTransformEvents
+  , TS (..)
+  , E (..)
+    -- * Signals
+  , Signal
+    -- ** Construction and conversion
+  , fromChangeEvents
+  , toChangeEvents
+  , fromEvents
+    -- ** QuickCheck
+  , signalProperty
+    -- * Simple signal transformations
+  , truncateAt
+  , stable
+  , nub
+  , nubBy
+    -- * Temporal operations
+  , linger
+  , timeout
+  , until
+  , difference
+  , scanl
+    -- * Set-based temporal operations
+  , keyedTimeout
+  , keyedLinger
+  , keyedUntil
   ) where
 
-import           Prelude hiding (until, scanl)
+import           Prelude hiding (scanl, until)
 
-import           Data.Maybe (maybeToList)
-import           Data.List (groupBy)
-import qualified Data.Set as Set
-import           Data.Set (Set)
-import qualified Data.OrdPSQ as PSQ
-import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.Foldable as Deque (toList)
-import qualified Deque.Lazy as Deque
+import           Data.List (groupBy)
+import           Data.Maybe (maybeToList)
+import           Data.OrdPSQ (OrdPSQ)
+import qualified Data.OrdPSQ as PSQ
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Deque.Lazy (Deque)
+import qualified Deque.Lazy as Deque
 
-import           Control.Monad.Class.MonadTime (Time(..), DiffTime, addTime)
+import           Control.Monad.Class.MonadTime (DiffTime, Time (..), addTime)
 
 
 import           Test.QuickCheck
@@ -153,7 +146,7 @@ mergeSignals (Signal f0 fs0) (Signal x0 xs0) =
     Signal (f0 x0) (go f0 x0 (mergeBy compareTimestamp fs0 xs0))
   where
     go :: (a -> b) -> a -> [MergeResult (E (a -> b)) (E a)] -> [E b]
-    go _ _ [] = []
+    go _ _ []                                  = []
     go _ x (OnlyInLeft   (E t f)         : rs) = E t (f x) : go f x rs
     go f _ (OnlyInRight          (E t x) : rs) = E t (f x) : go f x rs
     go _ _ (InBoth       (E t f) (E _ x) : rs) = E t (f x) : go f x rs

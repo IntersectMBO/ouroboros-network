@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -12,30 +12,27 @@
 --
 -- For execution, a conversion into the typed protocol is provided.
 --
-module Ouroboros.Network.Protocol.ChainSync.Client (
-      -- * Protocol type for the client
-      -- | The protocol states from the point of view of the client.
-      ChainSyncClient(..)
-    , ClientStIdle(..)
-    , ClientStNext(..)
-    , ClientStIntersect(..)
+module Ouroboros.Network.Protocol.ChainSync.Client
+  ( -- * Protocol type for the client
+    -- | The protocol states from the point of view of the client.
+    ChainSyncClient (..)
+  , ClientStIdle (..)
+  , ClientStNext (..)
+  , ClientStIntersect (..)
+    -- * Execution as a typed protocol
+  , chainSyncClientPeer
+    -- * Null chain sync client
+  , chainSyncClientNull
+    -- * Utilities
+  , mapChainSyncClient
+  ) where
 
-      -- * Execution as a typed protocol
-    , chainSyncClientPeer
+import           Control.Monad (forever)
+import           Control.Monad.Class.MonadTimer
 
-      -- * Null chain sync client
-    , chainSyncClientNull
+import           Network.TypedProtocol.Core
 
-      -- * Utilities
-    , mapChainSyncClient
-    ) where
-
-import Control.Monad (forever)
-import Control.Monad.Class.MonadTimer
-
-import Network.TypedProtocol.Core
-
-import Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol client, on top of some effect 'm'.

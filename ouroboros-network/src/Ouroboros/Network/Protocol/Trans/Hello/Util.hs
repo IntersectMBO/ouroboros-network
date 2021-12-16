@@ -14,7 +14,6 @@ module Ouroboros.Network.Protocol.Trans.Hello.Util
   ( -- * Wrap 'Peer' in 'Hello' protocol
     wrapClientPeer
   , wrapServerPeer
-
     -- * Wrap 'PipelinedPeer' in 'Hello' protcol.
   , wrapClientPeerPipelined
   , wrapServerPeerPipelined
@@ -105,7 +104,7 @@ wrapPeerSender
   :: forall ps (pr :: PeerRole) (stIdle :: ps) (st :: ps) (n :: Outstanding) c m a.
      Functor m
   => PeerSender        ps         pr         st  n c m a
-  -> PeerSender (Hello ps stIdle) pr (StTalk st) n c m a 
+  -> PeerSender (Hello ps stIdle) pr (StTalk st) n c m a
 wrapPeerSender (SenderEffect mnext) = SenderEffect (wrapPeerSender <$> mnext)
 
 wrapPeerSender (SenderDone tok a)   = SenderDone (TokDone tok) a

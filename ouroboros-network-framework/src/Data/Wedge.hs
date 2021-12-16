@@ -1,5 +1,5 @@
-{-# LANGUAGE DeriveFunctor  #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor  #-}
 
 -- | This module is a simplified version of
 -- <https://hackage.haskell.org/package/smash/docs/Data-Wedge.html#t:Wedge>,
@@ -12,8 +12,8 @@ module Data.Wedge where
 
 import           Control.Monad (ap)
 
-import           Data.Bifunctor
 import           Data.Bifoldable
+import           Data.Bifunctor
 import           Data.Bitraversable
 
 -- | A wedge product

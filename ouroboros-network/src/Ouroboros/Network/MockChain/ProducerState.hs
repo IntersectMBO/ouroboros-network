@@ -4,7 +4,8 @@
 
 module Ouroboros.Network.MockChain.ProducerState where
 
-import           Ouroboros.Network.Block (HasFullHeader, castPoint, genesisPoint)
+import           Ouroboros.Network.Block (HasFullHeader, castPoint,
+                     genesisPoint)
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..),
                      HasHeader, HeaderHash, Point (..), blockPoint,
                      pointOnChain)

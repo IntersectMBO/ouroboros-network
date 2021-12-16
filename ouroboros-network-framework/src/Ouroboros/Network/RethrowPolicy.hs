@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE DerivingVia         #-}
@@ -39,7 +38,6 @@ module Ouroboros.Network.RethrowPolicy
   , mkRethrowPolicy
   , ErrorCommand (..)
   , ErrorContext (..)
-
     -- * Example policies
   , muxErrorRethrowPolicy
   , ioErrorRethrowPolicy
@@ -47,8 +45,8 @@ module Ouroboros.Network.RethrowPolicy
 
 import           Control.Exception
 
-import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.Mux.Trace (MuxError)
+import           Network.Mux.Types (MuxRuntimeError (..))
 
 
 data ErrorCommand =
@@ -64,8 +62,8 @@ data ErrorCommand =
 -- absorbing element, and 'ShutdownPeer' is the unit element.
 --
 instance Semigroup ErrorCommand where
-    ShutdownNode <> _ = ShutdownNode
-    _ <> ShutdownNode = ShutdownNode
+    ShutdownNode <> _            = ShutdownNode
+    _ <> ShutdownNode            = ShutdownNode
     ShutdownPeer <> ShutdownPeer = ShutdownPeer
 
 instance Monoid ErrorCommand where

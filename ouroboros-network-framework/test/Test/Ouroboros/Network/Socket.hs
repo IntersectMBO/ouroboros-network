@@ -11,54 +11,55 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Test.Ouroboros.Network.Socket (tests) where
 
-import           Data.Void (Void)
-import           Data.List (mapAccumL)
 import           Data.Bifoldable (bitraverse_)
 import qualified Data.ByteString.Lazy as BL
+import           Data.List (mapAccumL)
 import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (UTCTime, getCurrentTime)
+import           Data.Void (Void)
 #ifndef mingw32_HOST_OS
 import           System.Directory (removeFile)
 import           System.IO.Error
 #endif
 import qualified Network.Socket as Socket
 #if defined(mingw32_HOST_OS)
-import qualified System.Win32.Async.Socket.ByteString.Lazy as Win32.Async (sendAll)
+import qualified System.Win32.Async.Socket.ByteString.Lazy as Win32.Async
+                     (sendAll)
 #else
 import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #endif
 
+import           Control.Concurrent (ThreadId)
+import           Control.Exception (IOException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Monad.Class.MonadThrow
-import           Control.Concurrent (ThreadId)
-import           Control.Exception (IOException)
+import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Tracer
 
 import           Network.TypedProtocol.Core
-import qualified Network.TypedProtocol.ReqResp.Type   as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Examples   as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
+import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.Snocket
+import           Ouroboros.Network.Socket
 -- TODO: remove Mx prefixes
 import           Ouroboros.Network.Mux
 
-import qualified Network.Mux as Mx (MuxError(..), MuxErrorType(..))
-import qualified Network.Mux.Compat as Mx (muxStart)
+import qualified Network.Mux as Mx (MuxError (..), MuxErrorType (..))
 import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
-import           Network.Mux.Types ( MiniProtocolDir (..) , MuxSDU (..), MuxSDUHeader (..)
-                                   , RemoteClockModel (..), write)
+import qualified Network.Mux.Compat as Mx (muxStart)
 import           Network.Mux.Timeout
+import           Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..),
+                     MuxSDUHeader (..), RemoteClockModel (..), write)
 
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Unversioned

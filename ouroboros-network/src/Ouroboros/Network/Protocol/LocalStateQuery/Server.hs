@@ -4,18 +4,17 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Network.Protocol.LocalStateQuery.Server (
-      -- * Protocol type for the server
-      -- | The protocol states from the point of view of the server.
-      LocalStateQueryServer(..)
-    , ServerStIdle(..)
-    , ServerStAcquiring(..)
-    , ServerStAcquired(..)
-    , ServerStQuerying(..)
-
-      -- * Execution as a typed protocol
-    , localStateQueryServerPeer
-    ) where
+module Ouroboros.Network.Protocol.LocalStateQuery.Server
+  ( -- * Protocol type for the server
+    -- | The protocol states from the point of view of the server.
+    LocalStateQueryServer (..)
+  , ServerStIdle (..)
+  , ServerStAcquiring (..)
+  , ServerStAcquired (..)
+  , ServerStQuerying (..)
+    -- * Execution as a typed protocol
+  , localStateQueryServerPeer
+  ) where
 
 import           Data.Kind (Type)
 import           Network.TypedProtocol.Core

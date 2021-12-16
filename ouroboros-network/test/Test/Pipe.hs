@@ -24,23 +24,23 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
-import qualified Network.Mux.Compat      as Mx (muxStart)
 import qualified Network.Mux.Bearer.Pipe as Mx
+import qualified Network.Mux.Compat as Mx (muxStart)
 import           Ouroboros.Network.Mux
 
 #if defined(mingw32_HOST_OS)
 import           Data.Bits ((.|.))
 
-import qualified System.Win32.NamedPipes as Win32.NamedPipes
-import qualified System.Win32.Async      as Win32.Async
-import qualified System.Win32            as Win32
 import           System.IOManager
+import qualified System.Win32 as Win32
+import qualified System.Win32.Async as Win32.Async
+import qualified System.Win32.NamedPipes as Win32.NamedPipes
 #else
-import           System.Process (createPipe)
 import           System.IO (hClose)
+import           System.Process (createPipe)
 #endif
 
-import           Ouroboros.Network.Block (encodeTip, decodeTip)
+import           Ouroboros.Network.Block (decodeTip, encodeTip)
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.MockChain.Chain as Chain

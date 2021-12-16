@@ -11,21 +11,20 @@
  -}
 
 module Ouroboros.Network.Subscription.Dns
-    ( DnsSubscriptionTarget (..)
-    , Resolver (..)
-    , DnsSubscriptionParams
-    , dnsSubscriptionWorker'
-    , dnsSubscriptionWorker
-    , dnsResolve
-    , resolutionDelay
-
-      -- * Traces
-    , SubscriptionTrace (..)
-    , DnsTrace (..)
-    , ErrorPolicyTrace (..)
-    , WithDomainName (..)
-    , WithAddr (..)
-    ) where
+  ( DnsSubscriptionTarget (..)
+  , Resolver (..)
+  , DnsSubscriptionParams
+  , dnsSubscriptionWorker'
+  , dnsSubscriptionWorker
+  , dnsResolve
+  , resolutionDelay
+    -- * Traces
+  , SubscriptionTrace (..)
+  , DnsTrace (..)
+  , ErrorPolicyTrace (..)
+  , WithDomainName (..)
+  , WithAddr (..)
+  ) where
 
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as Lazy
@@ -35,18 +34,18 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 import qualified Data.IP as IP
+import           Data.Maybe (isJust)
 import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 import           Text.Printf
-import           Data.Maybe (isJust)
 
 import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.Snocket (Snocket)
+import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker
-import           Ouroboros.Network.Snocket (Snocket)
-import           Ouroboros.Network.Socket
 
 
 -- | Time to wait for an AAAA response after receiving an A response.
@@ -55,8 +54,8 @@ resolutionDelay = 0.05 -- 50ms delay
 
 
 data DnsSubscriptionTarget = DnsSubscriptionTarget {
-      dstDomain :: !DNS.Domain
-    , dstPort   :: !Socket.PortNumber
+      dstDomain  :: !DNS.Domain
+    , dstPort    :: !Socket.PortNumber
     , dstValency :: !Int
     } deriving (Eq, Show)
 
@@ -177,7 +176,7 @@ dnsResolve tracer getSeed withResolverFn peerStatesVar beforeConnect (DnsSubscri
       result <- poll asyn
       case result of
         -- The running thread finished, handle the result, then cycle over all results
-        Just r -> handleThreadResult r $ targetCycle a
+        Just r  -> handleThreadResult r $ targetCycle a
         -- The running thread is still going, emit an address of the finished thread, then check again
         Nothing -> targetCons addr $ threadTargetCycle asyn addrs
 
@@ -269,7 +268,7 @@ dnsSubscriptionWorker' snocket subTracer dnsTracer errorPolicyTracer
                                           (WithDomainName (dstDomain dst) `contramap` dnsTracer)
                                           setupResolver resolver nmsPeerStates beforeConnectTx dst
                                     , wpValency = dstValency dst
-                                    , wpSelectAddress = selectSockAddr 
+                                    , wpSelectAddress = selectSockAddr
                                     }
                        spErrorPolicies
                        main
@@ -294,7 +293,7 @@ dnsSubscriptionWorker snocket subTracer dnsTracer errTrace networkState
        subTracer dnsTracer errTrace
        networkState
        (DNS.makeResolvSeed DNS.defaultResolvConf)
-       (withResolver (dstPort spSubscriptionTarget)) 
+       (withResolver (dstPort spSubscriptionTarget))
        params
        mainTx
        k

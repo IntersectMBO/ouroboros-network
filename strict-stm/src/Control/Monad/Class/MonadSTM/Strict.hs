@@ -55,12 +55,12 @@ module Control.Monad.Class.MonadSTM.Strict
   ) where
 
 import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
-                     TMVar, TVar, isEmptyTMVar, labelTVar, labelTVarIO,
-                     labelTMVar, labelTMVarIO, modifyTVar, newEmptyTMVar,
+                     TMVar, TVar, isEmptyTMVar, labelTMVar, labelTMVarIO,
+                     labelTVar, labelTVarIO, modifyTVar, newEmptyTMVar,
                      newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
                      newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
-                     readTMVar, readTVarIO, readTVar, stateTVar, swapTVar,
-                     swapTMVar, takeTMVar, tryPutTMVar, tryReadTMVar,
+                     readTMVar, readTVar, readTVarIO, stateTVar, swapTMVar,
+                     swapTVar, takeTMVar, tryPutTMVar, tryReadTMVar,
                      tryTakeTMVar, writeTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           GHC.Stack
@@ -251,8 +251,8 @@ checkInvariant :: HasCallStack => Maybe String -> a -> a
 getInvariant StrictTVar {invariant} = invariant
 mkStrictTVar invariant  tvar = StrictTVar {invariant, tvar}
 
-checkInvariant Nothing    k  = k
-checkInvariant (Just err) _  = error $ "Invariant violation: " ++ err
+checkInvariant Nothing    k = k
+checkInvariant (Just err) _ = error $ "Invariant violation: " ++ err
 #else
 getInvariant _               = \_ -> Nothing
 mkStrictTVar _invariant tvar = StrictTVar {tvar}

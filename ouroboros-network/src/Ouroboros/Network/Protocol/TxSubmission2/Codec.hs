@@ -4,8 +4,8 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 
-module Ouroboros.Network.Protocol.TxSubmission2.Codec (
-    codecTxSubmission2
+module Ouroboros.Network.Protocol.TxSubmission2.Codec
+  ( codecTxSubmission2
   , codecTxSubmission2Id
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
@@ -13,17 +13,17 @@ module Ouroboros.Network.Protocol.TxSubmission2.Codec (
 
 import           Control.Monad.Class.MonadST
 
-import           Data.ByteString.Lazy (ByteString)
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import           Data.ByteString.Lazy (ByteString)
 
 import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
-import           Ouroboros.Network.Protocol.TxSubmission.Codec
 import           Ouroboros.Network.Protocol.Trans.Hello.Codec
+import           Ouroboros.Network.Protocol.TxSubmission.Codec
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.Util.ShowProxy
 
 

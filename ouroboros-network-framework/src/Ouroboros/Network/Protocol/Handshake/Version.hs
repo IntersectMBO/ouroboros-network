@@ -14,8 +14,7 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , Accept (..)
   , Acceptable (..)
   , VersionMismatch (..)
-
-  -- * Simple or no versioning
+    -- * Simple or no versioning
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions

@@ -1,63 +1,60 @@
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 
-module Network.Mux.Types (
-      MiniProtocolBundle (..)
-    , MiniProtocolInfo (..)
-    , MiniProtocolNum (..)
-    , MiniProtocolDirection (..)
-    , MiniProtocolLimits (..)
-
-    , MuxMode (..)
-    , HasInitiator
-    , HasResponder
-
-    , IngressQueue
-    , MiniProtocolIx
-    , MiniProtocolDir (..)
-    , protocolDirEnum
-    , MiniProtocolState (..)
-    , MiniProtocolStatus (..)
-    , MuxBearer (..)
-    , muxBearerAsChannel
-    , MuxSDU (..)
-    , MuxSDUHeader (..)
-    , SDUSize (..)
-    , msTimestamp
-    , setTimestamp
-    , msNum
-    , msDir
-    , msLength
-    , RemoteClockModel (..)
-    , remoteClockPrecision
-
-    , MuxRuntimeError (..)
-    ) where
+module Network.Mux.Types
+  ( MiniProtocolBundle (..)
+  , MiniProtocolInfo (..)
+  , MiniProtocolNum (..)
+  , MiniProtocolDirection (..)
+  , MiniProtocolLimits (..)
+  , MuxMode (..)
+  , HasInitiator
+  , HasResponder
+  , IngressQueue
+  , MiniProtocolIx
+  , MiniProtocolDir (..)
+  , protocolDirEnum
+  , MiniProtocolState (..)
+  , MiniProtocolStatus (..)
+  , MuxBearer (..)
+  , muxBearerAsChannel
+  , MuxSDU (..)
+  , MuxSDUHeader (..)
+  , SDUSize (..)
+  , msTimestamp
+  , setTimestamp
+  , msNum
+  , msDir
+  , msLength
+  , RemoteClockModel (..)
+  , remoteClockPrecision
+  , MuxRuntimeError (..)
+  ) where
 
 import           Prelude hiding (read)
 
 import           Control.Exception (Exception)
+import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
 import           Data.Ix (Ix (..))
 import           Data.Word
-import qualified Data.ByteString.Lazy as BL
 import           Quiet
 
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
+import           Control.Monad.Class.MonadTime
 
-import           Network.Mux.Channel (Channel(..))
+import           Network.Mux.Channel (Channel (..))
 import           Network.Mux.Timeout (TimeoutFn)
 
 
@@ -196,7 +193,7 @@ msTimestamp = mhTimestamp . msHeader
 
 setTimestamp :: MuxSDU -> RemoteClockModel -> MuxSDU
 setTimestamp sdu@MuxSDU { msHeader } mhTimestamp =
-    sdu { msHeader = msHeader { mhTimestamp } } 
+    sdu { msHeader = msHeader { mhTimestamp } }
 
 msNum :: MuxSDU -> MiniProtocolNum
 msNum = mhNum . msHeader

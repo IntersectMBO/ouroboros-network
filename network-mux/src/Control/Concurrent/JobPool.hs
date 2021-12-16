@@ -3,15 +3,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-module Control.Concurrent.JobPool (
-    JobPool,
-    Job(..),
-    withJobPool,
-    forkJob,
-    readSize,
-    readGroupSize,
-    collect,
-    cancelGroup
+module Control.Concurrent.JobPool
+  ( JobPool
+  , Job (..)
+  , withJobPool
+  , forkJob
+  , readSize
+  , readGroupSize
+  , collect
+  , cancelGroup
   ) where
 
 import           Data.Functor (($>))
@@ -19,11 +19,11 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
 import           Control.Exception (SomeAsyncException (..))
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadThread (..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad (when)
 
 
 data JobPool group m a = JobPool {

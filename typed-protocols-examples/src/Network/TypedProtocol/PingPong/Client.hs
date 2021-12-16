@@ -1,19 +1,19 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs     #-}
 
-module Network.TypedProtocol.PingPong.Client (
-    -- * Normal client
-    PingPongClient(..),
-    pingPongClientPeer,
+module Network.TypedProtocol.PingPong.Client
+  ( -- * Normal client
+    PingPongClient (..)
+  , pingPongClientPeer
     -- * Pipelined client
-    PingPongClientPipelined(..),
-    PingPongSender(..),
-    pingPongClientPeerPipelined,
+  , PingPongClientPipelined (..)
+  , PingPongSender (..)
+  , pingPongClientPeerPipelined
   ) where
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
 import           Network.TypedProtocol.PingPong.Type
+import           Network.TypedProtocol.Pipelined
 
 -- | A ping-pong client, on top of some effect 'm'.
 --
@@ -94,7 +94,7 @@ data PingPongClientPipelined m a where
 
 
 data PingPongSender n c m a where
-  -- | 
+  -- |
   -- Send a `Ping` message but alike in `PingPongClient` do not await for the
   -- resopnse, instead supply a monadic action which will run on a received
   -- `Pong` message.
@@ -116,7 +116,7 @@ data PingPongSender n c m a where
   -- of messages and then waiting for all replies, but also a maximum pipelining
   -- policy that keeps a large number of messages in flight but collects results
   -- eagerly.
-  -- 
+  --
   CollectPipelined
     :: Maybe (PingPongSender (S n) c m a)
     -> (c ->  PingPongSender    n  c m a)

@@ -1,10 +1,10 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE EmptyCase          #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE PolyKinds          #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 
 module Network.TypedProtocol.ReqResp.Type where

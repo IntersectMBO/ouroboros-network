@@ -7,9 +7,9 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE RankNTypes          #-}
 
 -- TODO: Create a 'snocket' package, in order to avoid having to have
 -- ouroboros-network-testing as a dependency for this cabal library.
@@ -20,9 +20,9 @@ module Test.Simulation.Network.Snocket
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -43,21 +43,21 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Text.Printf
 
-import           Ouroboros.Network.Driver.Simple
-import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.Driver.Simple
 import           Ouroboros.Network.Snocket
 import           Simulation.Network.Snocket
 
 import           Network.Mux
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec.CBOR
-import           Network.TypedProtocol.ReqResp.Type
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Server
+import           Network.TypedProtocol.ReqResp.Type
 
-import           Test.Ouroboros.Network.Orphans ()  -- ShowProxy ReqResp instance
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+import           Test.Ouroboros.Network.Orphans ()
 
 import           Test.QuickCheck hiding (Result (..))
 import           Test.QuickCheck.Instances.ByteString ()
@@ -448,7 +448,7 @@ prop_connect_to_not_accepting_socket defaultBearerInfo =
                             snocket (close snocket)
             case res of
               -- Should timeout
-              Left _ -> return (Right ())
+              Left _  -> return (Right ())
               Right _ -> return (Left DidNotTimeout)
 
     loop :: MonadDelay m => a -> m b
@@ -468,7 +468,7 @@ prop_connect_to_uninitialised_socket defaultBearerInfo =
                          snocket (close snocket)
         case res of
           -- Should complain about no such listening socket
-          Left _ -> return (Right ())
+          Left _  -> return (Right ())
           Right _ -> return (Left DidNotComplainAboutNoSuchListeningSockets)
 
 prop_connect_to_not_listening_socket :: AbsBearerInfo -> Property
@@ -486,7 +486,7 @@ prop_connect_to_not_listening_socket defaultBearerInfo =
                              snocket (close snocket)
             case res of
               -- Should complain about no such listening socket
-              Left _ -> return (Right ())
+              Left _  -> return (Right ())
               Right _ -> return (Left DidNotComplainAboutNoSuchListeningSockets)
 
     runServerNotListening

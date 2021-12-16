@@ -20,9 +20,9 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (nullTracer)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>))
@@ -33,35 +33,37 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.Serialise as Serialise
 
 import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.PingPong.Type
-import           Network.TypedProtocol.PingPong.Codec.CBOR
 import           Network.TypedProtocol.PingPong.Client as PingPong
-import           Network.TypedProtocol.PingPong.Server
+import           Network.TypedProtocol.PingPong.Codec.CBOR
 import           Network.TypedProtocol.PingPong.Examples
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.ChainSync.Type
-import           Ouroboros.Network.Protocol.ChainSync.Codec
+import           Network.TypedProtocol.PingPong.Server
+import           Network.TypedProtocol.PingPong.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.KeepAlive.Type
-import           Ouroboros.Network.Protocol.KeepAlive.Codec
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.Handshake.Type
+import           Ouroboros.Network.Protocol.Handshake.Unversioned
+import           Ouroboros.Network.Protocol.Handshake.Version
+                     (simpleSingletonVersions)
 import           Ouroboros.Network.Protocol.KeepAlive.Client
+import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.KeepAlive.Server
+import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 import           Data.Monoid.Synchronisation
 
 import           Ouroboros.Network.Block (HasHeader, Point)
 import qualified Ouroboros.Network.Block as Block
-import qualified Ouroboros.Network.Diffusion as Diff (Applications (..))
 import           Ouroboros.Network.ConnectionId
+import qualified Ouroboros.Network.Diffusion as Diff (Applications (..))
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersConsensusInterface)
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Testing.ConcreteBlock
@@ -74,7 +76,7 @@ import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 data Codecs block m = Codecs
   { chainSyncCodec :: Codec (ChainSync block (Point block) (Tip block))
                          CBOR.DeserialiseFailure m ByteString
-  , keepAliveCodec :: Codec KeepAlive 
+  , keepAliveCodec :: Codec KeepAlive
                          CBOR.DeserialiseFailure m ByteString
   , pingPongCodec  :: Codec PingPong
                          CBOR.DeserialiseFailure m ByteString
@@ -134,7 +136,7 @@ data AppArgs m = AppArgs
      :: LedgerPeersConsensusInterface m
   , aaKeepAliveStdGen
      :: StdGen
-  , aaDiffusionMode                  
+  , aaDiffusionMode
      :: DiffusionMode
   , aaKeepAliveInterval
      :: DiffTime
@@ -287,7 +289,7 @@ applications nodeKernel
       :: ConnectionId NtNAddr
       -> ControlMessageSTM m
       -> MuxPeer ByteString m ()
-    keepAliveInitiator ConnectionId { remoteAddress } 
+    keepAliveInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
       MuxPeerRaw $ \channel ->
         runPeerWithLimits

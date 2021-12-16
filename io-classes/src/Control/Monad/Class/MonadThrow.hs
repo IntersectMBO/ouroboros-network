@@ -7,18 +7,18 @@
 {-# LANGUAGE TypeFamilies              #-}
 
 module Control.Monad.Class.MonadThrow
-  ( MonadThrow(..)
-  , MonadCatch(..)
-  , MonadMask(..)
-  , MonadMaskingState(..)
-  , MonadEvaluate(..)
-  , MaskingState(..)
-  , Exception(..)
+  ( MonadThrow (..)
+  , MonadCatch (..)
+  , MonadMask (..)
+  , MonadMaskingState (..)
+  , MonadEvaluate (..)
+  , MaskingState (..)
+  , Exception (..)
   , SomeException
-  , ExitCase(..)
-  , Handler(..)
+  , ExitCase (..)
+  , Handler (..)
   , catches
-  -- * Deprecated interfaces
+    -- * Deprecated interfaces
   , throwM
   ) where
 

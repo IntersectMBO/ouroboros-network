@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -8,29 +7,26 @@
 
 -- | IP subscription worker implentation.
 module Ouroboros.Network.Subscription.Ip
-    ( SubscriptionParams (..)
-    , IPSubscriptionParams
-    , ipSubscriptionWorker
-    , subscriptionWorker
-    , IPSubscriptionTarget (..)
-    , ipSubscriptionTarget
-
+  ( SubscriptionParams (..)
+  , IPSubscriptionParams
+  , ipSubscriptionWorker
+  , subscriptionWorker
+  , IPSubscriptionTarget (..)
+  , ipSubscriptionTarget
     --  * Traces
-    , SubscriptionTrace (..)
-    , ErrorPolicyTrace (..)
-    , WithIPList (..)
-
+  , SubscriptionTrace (..)
+  , ErrorPolicyTrace (..)
+  , WithIPList (..)
     -- * 'PeerState' STM transactions
-    , BeforeConnect
-    , runBeforeConnect
-    , beforeConnectTx
-    , completeApplicationTx
-    , socketStateChangeTx
-    , mainTx
-
+  , BeforeConnect
+  , runBeforeConnect
+  , beforeConnectTx
+  , completeApplicationTx
+  , socketStateChangeTx
+  , mainTx
     -- * Utilitity functions
-    , selectSockAddr
-    ) where
+  , selectSockAddr
+  ) where
 
 
 {- The parallel connection attemps implemented in this module is inspired by
@@ -38,16 +34,16 @@ module Ouroboros.Network.Subscription.Ip
  -}
 
 import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
 import           Text.Printf
 
+import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Snocket (Snocket)
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.Subscription.PeerState
 import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker

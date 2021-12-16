@@ -1,10 +1,9 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PatternSynonyms     #-}
 
 module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
@@ -14,14 +13,12 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , sanePeerSelectionTargets
   , PickPolicy
   , pickPeers
-
-  -- * P2P governor low level API
-  -- These records are needed to run the peer selection.
+    -- * P2P governor low level API
+    -- These records are needed to run the peer selection.
   , PeerStateActions (..)
-  , PeerSelectionActions (..) 
+  , PeerSelectionActions (..)
   , ChurnMode (..)
-
-  -- * P2P govnernor internals
+    -- * P2P govnernor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
   , assertPeerSelectionState
@@ -33,34 +30,34 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , Completion (..)
   , PeerSelectionCounters (..)
   , peerStateToCounters
-
-  -- * Traces
+    -- * Traces
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
-  )where
+  ) where
 
-import           Data.Maybe (fromMaybe)
 import           Data.Cache (Cache (..))
-import           Data.Semigroup (Min(..))
-import qualified Data.Map.Strict as Map
 import           Data.Map.Strict (Map)
-import qualified Data.Set as Set
-import           Data.Set (Set)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
+import           Data.Semigroup (Min (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 
 import           Control.Applicative (Alternative)
 import           Control.Concurrent.JobPool (Job)
+import           Control.Exception (SomeException, assert)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (assert, SomeException)
 import           System.Random (StdGen)
 
+import           Ouroboros.Network.PeerSelection.EstablishedPeers
+                     (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.EstablishedPeers (EstablishedPeers)
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
 
 
@@ -179,7 +176,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- It is structured as a collection of (non-overlapping) groups of peers
        -- where we are supposed to select n from each group.
        --
-       readLocalRootPeers :: STM m [(Int, Map peeraddr PeerAdvertise)],
+       readLocalRootPeers       :: STM m [(Int, Map peeraddr PeerAdvertise)],
 
        -- | Request a sample of public root peers.
        --
@@ -189,7 +186,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- * stake pool relays published in the blockchain
        -- * a pre-distributed snapshot of stake pool relays from the blockchain
        --
-       requestPublicRootPeers :: Int -> m (Set peeraddr, DiffTime),
+       requestPublicRootPeers   :: Int -> m (Set peeraddr, DiffTime),
 
        -- | The action to contact a known peer and request a sample of its
        -- known peers.
@@ -197,11 +194,11 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- This is synchronous, but it should expect to be interrupted by a
        -- timeout asynchronous exception. Failures are throw as exceptions.
        --
-       requestPeerGossip :: peeraddr -> m [peeraddr],
+       requestPeerGossip        :: peeraddr -> m [peeraddr],
 
        -- | Core actions run by the governor to change 'PeerStatus'.
        --
-       peerStateActions :: PeerStateActions peeraddr peerconn m
+       peerStateActions         :: PeerStateActions peeraddr peerconn m
      }
 
 
@@ -240,7 +237,7 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
 --
 data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
-       targets              :: !PeerSelectionTargets,
+       targets                  :: !PeerSelectionTargets,
 
        -- | The current set of local root peers. This is structured as a
        -- bunch of groups, with a target for each group. This gives us a set of
@@ -249,34 +246,34 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- The targets must of course be achievable, and to keep things simple,
        -- the groups must be disjoint.
        --
-       localRootPeers       :: !(LocalRootPeers peeraddr),
+       localRootPeers           :: !(LocalRootPeers peeraddr),
 
-       publicRootPeers      :: !(Set peeraddr),
-
-       -- |
-       --
-       knownPeers           :: !(KnownPeers peeraddr),
+       publicRootPeers          :: !(Set peeraddr),
 
        -- |
        --
-       establishedPeers     :: !(EstablishedPeers peeraddr peerconn),
+       knownPeers               :: !(KnownPeers peeraddr),
 
        -- |
        --
-       activePeers          :: !(Set peeraddr),
+       establishedPeers         :: !(EstablishedPeers peeraddr peerconn),
+
+       -- |
+       --
+       activePeers              :: !(Set peeraddr),
 
        -- | A counter to manage the exponential backoff strategy for when to
        -- retry querying for more public root peers. It is negative for retry
        -- counts after failure, and positive for retry counts that are
        -- successful but make no progress.
        --
-       publicRootBackoffs   :: !Int,
+       publicRootBackoffs       :: !Int,
 
        -- | The earliest time we would be prepared to request more public root
        -- peers. This is used with the 'publicRootBackoffs' to manage the
        -- exponential backoff.
        --
-       publicRootRetryTime  :: !Time,
+       publicRootRetryTime      :: !Time,
 
        inProgressPublicRootsReq :: !Bool,
        inProgressGossipReqs     :: !Int,
@@ -291,7 +288,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- | 'PeerSelectionCounters' counters cache. Allows to only trace
        -- values when necessary.
        --
-       countersCache :: !(Cache PeerSelectionCounters)
+       countersCache            :: !(Cache PeerSelectionCounters)
 
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a

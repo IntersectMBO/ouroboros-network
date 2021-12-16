@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns   #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 -- | Rage limiting of accepted connections
@@ -6,19 +5,18 @@
 module Ouroboros.Network.Server.RateLimiting
   ( AcceptedConnectionsLimit (..)
   , runConnectionRateLimits
-
     -- * Tracing
   , AcceptConnectionsPolicyTrace (..)
   ) where
 
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad (when)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Data.Word
 import           Data.Typeable (Typeable)
+import           Data.Word
 import           Text.Printf
 
 

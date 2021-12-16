@@ -8,10 +8,8 @@
 module Ouroboros.Network.Protocol.ChainSync.Codec
   ( codecChainSync
   , codecChainSyncId
-
   , byteLimitsChainSync
   , timeLimitsChainSync
-
   , ChainSyncTimeout (..)
   ) where
 

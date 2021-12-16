@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs          #-}
 {-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE GADTs          #-}
 {-# LANGUAGE KindSignatures #-}
 
 -- 'withInitiatorMode' and 'withResponderMode' are using redundant constraints.

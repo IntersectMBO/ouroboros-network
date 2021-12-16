@@ -1,5 +1,5 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -10,16 +10,14 @@
 -- | This is the starting point for a module that will bring together the
 -- overall node to client protocol, as a collection of mini-protocols.
 --
-module Ouroboros.Network.NodeToClient (
-    nodeToClientProtocols
+module Ouroboros.Network.NodeToClient
+  ( nodeToClientProtocols
   , NodeToClientProtocols (..)
   , NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
-
   , NetworkServerTracers (..)
   , nullNetworkServerTracers
   , NetworkMutableState (..)
@@ -27,19 +25,15 @@ module Ouroboros.Network.NodeToClient (
   , newNetworkMutableStateSTM
   , cleanNetworkMutableState
   , withServer
-
-
   , NetworkClientSubcriptionTracers
   , NetworkSubscriptionTracers (..)
   , ClientSubscriptionParams (..)
   , ncSubscriptionWorker
-
-  -- * Null Protocol Peers
+    -- * Null Protocol Peers
   , chainSyncPeerNull
   , localStateQueryPeerNull
   , localTxSubmissionPeerNull
-
-  -- * Re-exported network interface
+    -- * Re-exported network interface
   , IOManager (..)
   , AssociateWithIOCP
   , withIOManager
@@ -47,7 +41,6 @@ module Ouroboros.Network.NodeToClient (
   , localSnocket
   , LocalSocket (..)
   , LocalAddress (..)
-
     -- * Versions
   , Versions (..)
   , versionedNodeToClientProtocols
@@ -58,8 +51,7 @@ module Ouroboros.Network.NodeToClient (
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
-
-  -- * Re-exports
+    -- * Re-exports
   , ConnectionId (..)
   , LocalConnectionId
   , ErrorPolicies (..)
@@ -79,49 +71,50 @@ module Ouroboros.Network.NodeToClient (
 
 import           Cardano.Prelude (FatalError)
 
-import           Control.Exception (ErrorCall, IOException)
 import qualified Control.Concurrent.Async as Async
+import           Control.Exception (ErrorCall, IOException)
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 
-import qualified Data.ByteString.Lazy as BL
-import           Data.Functor.Identity (Identity (..))
-import           Data.Functor.Contravariant (contramap)
-import           Data.Kind (Type)
-import           Data.Void (Void)
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
+import qualified Data.ByteString.Lazy as BL
+import           Data.Functor.Contravariant (contramap)
+import           Data.Functor.Identity (Identity (..))
+import           Data.Kind (Type)
+import           Data.Void (Void)
 
-import           Network.TypedProtocol (Peer)
-import           Network.TypedProtocol.Codec
 import           Network.Mux (WithMuxBearer (..))
 import           Network.Mux.Types (MuxRuntimeError (..))
+import           Network.TypedProtocol (Peer)
+import           Network.TypedProtocol.Codec
 
-import           Ouroboros.Network.Driver (TraceSendRecv(..))
-import           Ouroboros.Network.Driver.Simple (DecoderFailure)
+import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
+import           Ouroboros.Network.Driver.Simple (DecoderFailure)
+import           Ouroboros.Network.ErrorPolicy
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient.Version
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Tracers
-import qualified Ouroboros.Network.Protocol.ChainSync.Type   as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
-import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type   as LocalTxSubmission
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
-import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type   as LocalStateQuery
-import           Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
+import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
+import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type as LocalStateQuery
+import           Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
+import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Client ( ClientSubscriptionParams (..) )
+import           Ouroboros.Network.Subscription.Client
+                     (ClientSubscriptionParams (..))
 import qualified Ouroboros.Network.Subscription.Client as Subscription
 import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import           Ouroboros.Network.IOManager
+import           Ouroboros.Network.Tracers
 
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr ntcAddr ntcVersion =

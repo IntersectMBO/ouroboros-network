@@ -8,8 +8,7 @@ module Control.Monad.Class.MonadSTM
   , MonadLabelledSTM (..)
   , LazyTVar
   , LazyTMVar
-
-  -- * Default 'TMVar' implementation
+    -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , labelTMVarDefault
   , newTMVarDefault
@@ -24,8 +23,7 @@ module Control.Monad.Class.MonadSTM
   , tryReadTMVarDefault
   , swapTMVarDefault
   , isEmptyTMVarDefault
-
-  -- * Default 'TBQueue' implementation
+    -- * Default 'TBQueue' implementation
   , TQueueDefault (..)
   , labelTQueueDefault
   , newTQueueDefault
@@ -35,8 +33,7 @@ module Control.Monad.Class.MonadSTM
   , tryPeekTQueueDefault
   , writeTQueueDefault
   , isEmptyTQueueDefault
-
-  -- * Default 'TBQueue' implementation
+    -- * Default 'TBQueue' implementation
   , TBQueueDefault (..)
   , labelTBQueueDefault
   , newTBQueueDefault
@@ -49,12 +46,10 @@ module Control.Monad.Class.MonadSTM
   , isFullTBQueueDefault
   , lengthTBQueueDefault
   , flushTBQueueDefault
-
-  -- * MonadThrow aliases
+    -- * MonadThrow aliases
   , throwSTM
   , catchSTM
-
-  -- * Deprecated API
+    -- * Deprecated API
   , newTVarM
   , newTMVarM
   , newTMVarMDefault
@@ -68,8 +63,8 @@ import qualified Control.Concurrent.STM.TBQueue as STM
 import qualified Control.Concurrent.STM.TMVar as STM
 import qualified Control.Concurrent.STM.TQueue as STM
 import qualified Control.Concurrent.STM.TVar as STM
-import qualified Control.Monad.STM as STM
 import           Control.Monad (MonadPlus (..))
+import qualified Control.Monad.STM as STM
 
 import qualified Control.Monad.Class.MonadThrow as MonadThrow
 
@@ -516,8 +511,8 @@ tryReadTBQueueDefault (TBQueue rsize read _wsize write _size) = do
       case reverse ys of
         [] -> return Nothing
 
-        -- NB. lazy: we want the transaction to be 
-        -- short, otherwise it will conflict       
+        -- NB. lazy: we want the transaction to be
+        -- short, otherwise it will conflict
         (z:zs)  -> do
           writeTVar write []
           writeTVar read zs

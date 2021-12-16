@@ -1,11 +1,11 @@
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE DerivingStrategies         #-}
 
 module Ouroboros.Network.Testing.Utils where
 
-import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
 
 import           Data.Ratio

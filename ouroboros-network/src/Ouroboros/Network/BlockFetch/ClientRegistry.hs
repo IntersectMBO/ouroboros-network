@@ -1,38 +1,37 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.BlockFetch.ClientRegistry (
-    -- * Registry of block fetch clients
-    FetchClientRegistry,
-    newFetchClientRegistry,
-    bracketFetchClient,
-    bracketKeepAliveClient,
-    bracketSyncWithFetchClient,
-    setFetchClientContext,
-    FetchClientPolicy(..),
-    readFetchClientsStatus,
-    readFetchClientsStateVars,
-    readPeerGSVs,
+module Ouroboros.Network.BlockFetch.ClientRegistry
+  ( -- * Registry of block fetch clients
+    FetchClientRegistry
+  , newFetchClientRegistry
+  , bracketFetchClient
+  , bracketKeepAliveClient
+  , bracketSyncWithFetchClient
+  , setFetchClientContext
+  , FetchClientPolicy (..)
+  , readFetchClientsStatus
+  , readFetchClientsStateVars
+  , readPeerGSVs
   ) where
 
 import           Data.Functor.Contravariant (contramap)
-import qualified Data.Map as Map
 import           Data.Map (Map)
+import qualified Data.Map as Map
 
+import           Control.Exception (assert)
 import           Control.Monad (unless)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork (MonadFork (throwTo),
+                     MonadThread (ThreadId, myThreadId))
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-                   ( MonadThread(ThreadId, myThreadId), MonadFork(throwTo) )
-import           Control.Exception (assert)
 import           Control.Tracer (Tracer)
 
-import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.BlockFetch.ClientState
+import           Ouroboros.Network.DeltaQ
 
 
 

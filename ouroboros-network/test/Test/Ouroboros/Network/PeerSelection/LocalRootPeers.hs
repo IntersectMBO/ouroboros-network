@@ -2,10 +2,10 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.PeerSelection.LocalRootPeers (
-  arbitraryLocalRootPeers,
-  restrictKeys,
-  tests,
+module Test.Ouroboros.Network.PeerSelection.LocalRootPeers
+  ( arbitraryLocalRootPeers
+  , restrictKeys
+  , tests
   ) where
 
 import           Data.Map.Strict (Map)
@@ -13,14 +13,14 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.Types
 
-import           Ouroboros.Network.Testing.Utils
-                   (renderRanges, prop_shrink_valid, prop_shrink_nonequal)
+import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
+                     prop_shrink_valid, renderRanges)
 import           Test.Ouroboros.Network.PeerSelection.Instances
 
 

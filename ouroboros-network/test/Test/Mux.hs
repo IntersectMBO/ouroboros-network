@@ -7,17 +7,15 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
-module Test.Mux
-  ( tests)
-  where
+module Test.Mux (tests) where
 
 import           Codec.Serialise (Serialise (..))
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -43,9 +41,9 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 import           Ouroboros.Network.Util.ShowProxy
 
-import qualified Network.Mux.Compat        as Mx (muxStart)
 import qualified Network.Mux.Bearer.Queues as Mx
-import qualified Network.Mux.Types         as Mx
+import qualified Network.Mux.Compat as Mx (muxStart)
+import qualified Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux as Mx
 
 

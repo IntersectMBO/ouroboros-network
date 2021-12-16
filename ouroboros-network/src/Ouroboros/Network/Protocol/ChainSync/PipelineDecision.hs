@@ -4,14 +4,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-    ( PipelineDecision(..)
-    , MkPipelineDecision(..)
-    , runPipelineDecision
-    , constantPipelineDecision
-    , pipelineDecisionMax
-    , pipelineDecisionMin
-    , pipelineDecisionLowHighMark
-    ) where
+  ( PipelineDecision (..)
+  , MkPipelineDecision (..)
+  , runPipelineDecision
+  , constantPipelineDecision
+  , pipelineDecisionMax
+  , pipelineDecisionMin
+  , pipelineDecisionLowHighMark
+  ) where
 
 import           Control.Exception (assert)
 import           Data.Word

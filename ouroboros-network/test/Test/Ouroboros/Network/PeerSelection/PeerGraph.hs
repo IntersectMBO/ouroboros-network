@@ -1,31 +1,27 @@
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Ouroboros.Network.PeerSelection.PeerGraph (
-
-    PeerGraph(..),
-    validPeerGraph,
-    allPeers,
-    firstGossipReachablePeers,
-
-    GovernorScripts(..),
-    GossipScript,
-    ConnectionScript,
-    AsyncDemotion(..),
-    GossipTime(..),
-    interpretGossipTime,
-
-    prop_shrink_GovernorScripts,
-    prop_arbitrary_PeerGraph,
-    prop_shrink_PeerGraph,
-
+module Test.Ouroboros.Network.PeerSelection.PeerGraph
+  ( PeerGraph (..)
+  , validPeerGraph
+  , allPeers
+  , firstGossipReachablePeers
+  , GovernorScripts (..)
+  , GossipScript
+  , ConnectionScript
+  , AsyncDemotion (..)
+  , GossipTime (..)
+  , interpretGossipTime
+  , prop_shrink_GovernorScripts
+  , prop_arbitrary_PeerGraph
+  , prop_shrink_PeerGraph
   ) where
 
 import           Data.Graph (Graph)
 import qualified Data.Graph as Graph
-import           Data.List.NonEmpty (NonEmpty((:|)))
+import           Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
@@ -34,11 +30,10 @@ import qualified Data.Tree as Tree
 
 import           Control.Monad.Class.MonadTime
 
-import           Ouroboros.Network.Testing.Data.Script
-                   (Script(..), TimedScript, ScriptDelay(NoDelay),
-                    arbitraryScriptOf)
-import           Ouroboros.Network.Testing.Utils
-                   (prop_shrink_nonequal, renderRanges, prop_shrink_valid)
+import           Ouroboros.Network.Testing.Data.Script (Script (..),
+                     ScriptDelay (NoDelay), TimedScript, arbitraryScriptOf)
+import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
+                     prop_shrink_valid, renderRanges)
 import           Test.Ouroboros.Network.PeerSelection.Instances
 
 import           Test.QuickCheck

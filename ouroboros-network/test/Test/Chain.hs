@@ -4,9 +4,7 @@
 {-# LANGUAGE PatternSynonyms  #-}
 {-# LANGUAGE TypeOperators    #-}
 
-module Test.Chain
-  ( tests
-  ) where
+module Test.Chain (tests) where
 
 import qualified Data.List as L
 import           Data.Maybe (listToMaybe)
@@ -15,7 +13,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (pattern GenesisPoint, blockPrevHash,
+import           Ouroboros.Network.Block (blockPrevHash, pattern GenesisPoint,
                      pointHash)
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain

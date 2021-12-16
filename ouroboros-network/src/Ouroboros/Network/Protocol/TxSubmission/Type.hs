@@ -13,8 +13,8 @@
 --
 module Ouroboros.Network.Protocol.TxSubmission.Type where
 
-import           Data.Word (Word16, Word32)
 import           Data.List.NonEmpty (NonEmpty)
+import           Data.Word (Word16, Word32)
 
 import           Network.TypedProtocol.Core
 
@@ -85,7 +85,7 @@ data StBlockingStyle where
   -- | In this sub-state the reply need not be prompt. There is no timeout.
   --
   StBlocking    :: StBlockingStyle
-  
+
   -- | In this state the peer must reply. There is a timeout.
   --
   StNonBlocking :: StBlockingStyle

@@ -18,21 +18,21 @@
 --
 -- The network layer does not make any concrete assumptions about what blocks
 -- look like.
-module Ouroboros.Network.Block (
-    SlotNo(..)
-  , BlockNo(..)
+module Ouroboros.Network.Block
+  ( SlotNo (..)
+  , BlockNo (..)
   , HeaderHash
-  , HeaderFields(..)
+  , HeaderFields (..)
   , castHeaderFields
-  , HasHeader(..)
+  , HasHeader (..)
   , blockNo
   , blockSlot
   , blockHash
-  , HasFullHeader(..)
+  , HasFullHeader (..)
   , StandardHash
-  , ChainHash(..)
+  , ChainHash (..)
   , castHash
-  , Point(..)
+  , Point (..)
   , pointSlot
   , pointHash
   , castPoint
@@ -41,7 +41,7 @@ module Ouroboros.Network.Block (
   , pattern BlockPoint
   , atSlot
   , withHash
-  , Tip(..)
+  , Tip (..)
   , castTip
   , getTipPoint
   , getTipBlockNo
@@ -53,7 +53,7 @@ module Ouroboros.Network.Block (
   , encodeTip
   , encodedTipSize
   , decodeTip
-  , ChainUpdate(..)
+  , ChainUpdate (..)
   , MaxSlotNo (..)
   , maxSlotNoFromMaybe
   , maxSlotNoToMaybe
@@ -66,7 +66,7 @@ module Ouroboros.Network.Block (
   , decodePoint
   , decodeChainHash
     -- * Serialised block/header
-  , Serialised(..)
+  , Serialised (..)
   , wrapCBORinCBOR
   , unwrapCBORinCBOR
   , mkSerialised

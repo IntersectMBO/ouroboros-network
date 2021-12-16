@@ -1,7 +1,7 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 
 
@@ -14,32 +14,32 @@ module Network.TypedProtocol.PingPong.Tests
   ) where
 
 
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Proofs
-import Network.TypedProtocol.Channel
-import Network.TypedProtocol.Driver.Simple
+import           Network.TypedProtocol.Channel
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Driver.Simple
+import           Network.TypedProtocol.Proofs
 
-import Network.TypedProtocol.PingPong.Type
-import Network.TypedProtocol.PingPong.Client
-import Network.TypedProtocol.PingPong.Server
-import Network.TypedProtocol.PingPong.Examples
-import Network.TypedProtocol.PingPong.Codec
+import           Network.TypedProtocol.PingPong.Client
+import           Network.TypedProtocol.PingPong.Codec
 import qualified Network.TypedProtocol.PingPong.Codec.CBOR as CBOR
+import           Network.TypedProtocol.PingPong.Examples
+import           Network.TypedProtocol.PingPong.Server
+import           Network.TypedProtocol.PingPong.Type
 
-import Data.Functor.Identity (Identity (..))
-import Control.Monad.ST (runST)
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadThrow
-import Control.Monad.IOSim (runSimOrThrow)
-import Control.Tracer (Tracer, nullTracer)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.ST (runST)
+import           Control.Tracer (Tracer, nullTracer)
+import           Data.Functor.Identity (Identity (..))
 
-import Data.List (inits, tails)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.List (inits, tails)
 
-import Test.QuickCheck
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 
 --

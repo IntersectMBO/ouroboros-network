@@ -20,18 +20,17 @@ module Network.Mux.Channel
   , loggingChannel
   ) where
 
-import qualified Data.ByteString               as BS
-import qualified Data.ByteString.Lazy          as LBS
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Internal as LBS (smallChunkSize)
-import qualified System.Process as IO (createPipe)
-import qualified System.IO      as IO
-                   ( Handle, withFile, IOMode(..), hFlush, hIsEOF )
-import qualified Network.Socket            as Socket
+import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString as Socket
+import qualified System.IO as IO (Handle, IOMode (..), hFlush, hIsEOF, withFile)
+import qualified System.Process as IO (createPipe)
 
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadTimer
 
 
 data Channel m = Channel {

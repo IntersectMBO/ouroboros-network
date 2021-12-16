@@ -1,11 +1,10 @@
-{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveTraversable     #-}
-{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -40,11 +39,10 @@ module Ouroboros.Network.Mux
   , ControlMessageSTM
   , continueForever
   , timeoutWithControlMessage
-
     -- * Re-exports
     -- | from "Network.Mux"
-  , MuxError(..)
-  , MuxErrorType(..)
+  , MuxError (..)
+  , MuxErrorType (..)
   , HasInitiator
   , HasResponder
   ) where
@@ -54,18 +52,17 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
-import           Data.Void (Void)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Void (Void)
 
-import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
+import           Network.Mux (HasInitiator, HasResponder,
+                     MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
+                     MuxErrorType (..), MuxMode (..))
 import qualified Network.Mux.Compat as Mux
-import           Network.Mux
-                   ( MuxMode(..), HasInitiator, HasResponder
-                   , MiniProtocolNum, MiniProtocolLimits(..)
-                   , MuxError(..), MuxErrorType(..) )
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId
@@ -177,8 +174,8 @@ instance Applicative (WithProtocolTemperature Established) where
     (<*>) (WithEstablished f) = fmap f
 
 instance Semigroup a => Semigroup (WithProtocolTemperature pt a) where
-    WithHot a <> WithHot b = WithHot (a <> b)
-    WithWarm a <> WithWarm b = WithWarm (a <> b)
+    WithHot a <> WithHot b                 = WithHot (a <> b)
+    WithWarm a <> WithWarm b               = WithWarm (a <> b)
     WithEstablished a <> WithEstablished b = WithEstablished (a <> b)
 
 instance Monoid a => Monoid (WithProtocolTemperature Hot a) where

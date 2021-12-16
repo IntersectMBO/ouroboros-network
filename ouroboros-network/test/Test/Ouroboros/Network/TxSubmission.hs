@@ -15,25 +15,26 @@ import           NoThunks.Class (NoThunks)
 import           Control.Exception (SomeException (..))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim hiding (SimResult)
-import           Control.Tracer (nullTracer, contramap, Tracer (..), showTracing, traceWith)
+import           Control.Tracer (Tracer (..), contramap, nullTracer,
+                     showTracing, traceWith)
 
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
 
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BSL
-import           Data.List (nubBy, intercalate)
-import           Data.Foldable (toList, find, foldl')
+import           Data.Foldable (find, foldl', toList)
 import           Data.Function (on)
-import           Data.Maybe (isJust, fromMaybe)
+import           Data.List (intercalate, nubBy)
+import           Data.Maybe (fromMaybe, isJust)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
@@ -45,21 +46,21 @@ import           Network.TypedProtocol.Codec
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Util.ShowProxy
-import           Ouroboros.Network.Protocol.TxSubmission.Type
-import           Ouroboros.Network.Protocol.TxSubmission.Client
-import           Ouroboros.Network.Protocol.TxSubmission.Server
-import           Ouroboros.Network.Protocol.TxSubmission.Codec
-import           Ouroboros.Network.TxSubmission.Mempool.Reader
-import           Ouroboros.Network.TxSubmission.Inbound
-import           Ouroboros.Network.TxSubmission.Outbound
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
+import           Ouroboros.Network.Protocol.TxSubmission.Client
+import           Ouroboros.Network.Protocol.TxSubmission.Codec
+import           Ouroboros.Network.Protocol.TxSubmission.Server
+import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.TxSubmission.Inbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+import           Ouroboros.Network.TxSubmission.Outbound
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Testing.Utils
 
+import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-import           Test.QuickCheck
 import           Text.Printf
 
 

@@ -80,26 +80,24 @@ here. So here we define interfaces for interacting with the external state.
 These have to be provided when instantiating the block fetch logic.
 
 -}
-module Ouroboros.Network.BlockFetch (
-    blockFetchLogic,
-    BlockFetchConfiguration(..),
-    BlockFetchConsensusInterface(..),
+module Ouroboros.Network.BlockFetch
+  ( blockFetchLogic
+  , BlockFetchConfiguration (..)
+  , BlockFetchConsensusInterface (..)
     -- ** Tracer types
-    FetchDecision,
-    TraceFetchClientState(..),
-    TraceLabelPeer(..),
-
+  , FetchDecision
+  , TraceFetchClientState (..)
+  , TraceLabelPeer (..)
     -- * The 'FetchClientRegistry'
-    FetchClientRegistry,
-    newFetchClientRegistry,
-    bracketFetchClient,
-    bracketSyncWithFetchClient,
-    bracketKeepAliveClient,
-
+  , FetchClientRegistry
+  , newFetchClientRegistry
+  , bracketFetchClient
+  , bracketSyncWithFetchClient
+  , bracketKeepAliveClient
     -- * Re-export types used by 'BlockFetchConsensusInterface'
-    FetchMode (..),
-    FromConsensus (..),
-    SizeInBytes,
+  , FetchMode (..)
+  , FromConsensus (..)
+  , SizeInBytes
   ) where
 
 import           Data.Hashable (Hashable)
@@ -114,17 +112,16 @@ import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.DeltaQ ( SizeInBytes )
+import           Ouroboros.Network.DeltaQ (SizeInBytes)
 
-import           Ouroboros.Network.BlockFetch.State
-import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus(..))
 import           Ouroboros.Network.BlockFetch.ClientRegistry
-                   ( FetchClientPolicy(..)
-                   , FetchClientRegistry, newFetchClientRegistry
-                   , readFetchClientsStatus, readFetchClientsStateVars
-                   , readPeerGSVs
-                   , bracketFetchClient, bracketKeepAliveClient
-                   , bracketSyncWithFetchClient, setFetchClientContext )
+                     (FetchClientPolicy (..), FetchClientRegistry,
+                     bracketFetchClient, bracketKeepAliveClient,
+                     bracketSyncWithFetchClient, newFetchClientRegistry,
+                     readFetchClientsStateVars, readFetchClientsStatus,
+                     readPeerGSVs, setFetchClientContext)
+import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus (..))
+import           Ouroboros.Network.BlockFetch.State
 
 
 -- | The consensus layer functionality that the block fetch logic requires.

@@ -6,12 +6,12 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Ouroboros.Network.Protocol.ChainSync.Examples (
-    chainSyncClientExample
+module Ouroboros.Network.Protocol.ChainSync.Examples
+  ( chainSyncClientExample
   , Client (..)
   , pureClient
   , controlledClient
-  , Tip(..)
+  , Tip (..)
   , chainSyncServerExample
   ) where
 
@@ -25,7 +25,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
                      FollowerId)
 import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
-import           Ouroboros.Network.Mux (ControlMessageSTM, ControlMessage (..))
+import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 
@@ -142,7 +142,7 @@ chainSyncClientExample chainvar client = ChainSyncClient $
         chain <- readTVar chainvar
         --TODO: handle rollback failure
         let !chain' = case Chain.rollback p chain of
-              Just a -> a
+              Just a  -> a
               Nothing -> error "out of scope rollback"
         writeTVar chainvar chain'
 

@@ -1,25 +1,23 @@
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 
-module Test.Mux
-    ( tests
-    ) where
+module Test.Mux (tests) where
 
-import           Control.Applicative
-import           Control.Arrow ((&&&))
 import           Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
+import           Control.Applicative
+import           Control.Arrow ((&&&))
 import           Control.Monad
 import qualified Data.Binary.Put as Bin
 import           Data.Bits
@@ -30,17 +28,17 @@ import qualified Data.List as List
 import qualified Data.Map as M
 import           Data.Tuple (swap)
 import           Data.Word
+import qualified System.Random.SplitMix as SM
 import           Test.QuickCheck hiding ((.&.))
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
-import qualified System.Random.SplitMix as SM
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -48,9 +46,9 @@ import           Control.Monad.IOSim
 import           Control.Tracer
 
 #if defined(mingw32_HOST_OS)
+import qualified System.Win32.Async as Win32.Async
+import qualified System.Win32.File as Win32.File
 import qualified System.Win32.NamedPipes as Win32.NamedPipes
-import qualified System.Win32.File       as Win32.File
-import qualified System.Win32.Async      as Win32.Async
 #else
 import           System.IO (hClose)
 import           System.Process (createPipe)
@@ -60,15 +58,16 @@ import           System.IOManager
 import           Test.Mux.ReqResp
 
 import           Network.Mux
-import qualified Network.Mux.Compat as Compat
-import           Network.Mux.Codec
-import           Network.Mux.Channel
-import           Network.Mux.Types ( muxBearerAsChannel, MiniProtocolDir(..), MuxSDU(..), MuxSDUHeader(..)
-                                   , RemoteClockModel(..), SDUSize (..) )
 import           Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
-import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Pipe
+import           Network.Mux.Bearer.Queues
 import           Network.Mux.Bearer.Socket
+import           Network.Mux.Channel
+import           Network.Mux.Codec
+import qualified Network.Mux.Compat as Compat
+import           Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..),
+                     MuxSDUHeader (..), RemoteClockModel (..), SDUSize (..),
+                     muxBearerAsChannel)
 import qualified Network.Socket as Socket
 import           Text.Show.Functions ()
 -- import qualified Debug.Trace as Debug
@@ -352,7 +351,7 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
 
     serverMux <- newMux $ MiniProtocolBundle [serverApp]
 
-    withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync -> 
+    withAsync (runMux clientTracer clientMux clientBearer) $ \clientAsync ->
       withAsync (runMux serverTracer serverMux serverBearer) $ \serverAsync -> do
 
         r <- step clientMux clientApp serverMux serverApp messages
@@ -921,12 +920,12 @@ prop_mux_starvation (Uneven response0 response1) =
 
     -- First verify that all messages where received correctly
     let res_short = case (srvRes2, cliRes2) of
-                         (Left _, _) -> False
-                         (_, Left _) -> False
+                         (Left _, _)        -> False
+                         (_, Left _)        -> False
                          (Right a, Right b) -> a && b
     let res_long  = case (srvRes3, cliRes3) of
-                         (Left _, _) -> False
-                         (_, Left _) -> False
+                         (Left _, _)        -> False
+                         (_, Left _)        -> False
                          (Right a, Right b) -> a && b
 
     stopMux serverMux
@@ -954,8 +953,8 @@ prop_mux_starvation (Uneven response0 response1) =
         $ label ("length " ++ label_ (length ms')) $ alternates ms'
 
       where
-        alternates []     = True
-        alternates (_:[]) = True
+        alternates []           = True
+        alternates (_:[])       = True
         alternates (a : b : as) = a /= b && alternates (b : as)
 
     label_ :: Int -> String
@@ -1135,8 +1134,8 @@ prop_demux_sdu a = do
     sduViolation (Just Compat.MuxUnknownMiniProtocol) = "unknown miniprotocol"
     sduViolation (Just Compat.MuxDecodeError        ) = "decode error"
     sduViolation (Just Compat.MuxIngressQueueOverRun) = "ingress queue overrun"
-    sduViolation (Just _                     ) = "unknown violation"
-    sduViolation Nothing                       = "none"
+    sduViolation (Just _                     )        = "unknown violation"
+    sduViolation Nothing                              = "none"
 
 prop_demux_sdu_sim :: ArbitrarySDU
                      -> Property
@@ -1812,9 +1811,9 @@ close_experiment
                  , resps == expected
                  , Just (MuxError errType _) <- fromException (collapsE serverError)
                  , case errType of
-                     MuxShutdown _    -> True
-                     MuxBearerClosed  -> True
-                     _                -> False
+                     MuxShutdown _   -> True
+                     MuxBearerClosed -> True
+                     _               -> False
                 -> return $ property True
 
                  | expected <- expectedResps (List.length resps)
@@ -1834,12 +1833,12 @@ close_experiment
                               False
               (CloseOnRead, Right (Left resps), Left serverError)
                  | expected <- expectedResps (List.length resps)
-                 , resps == expected 
+                 , resps == expected
                  , Just (MuxError errType _) <- fromException (collapsE serverError)
                  , case errType of
-                     MuxShutdown _    -> True
-                     MuxBearerClosed  -> True
-                     _                -> False
+                     MuxShutdown _   -> True
+                     MuxBearerClosed -> True
+                     _               -> False
                 -> return $ property True
 
                  | expected <- expectedResps (List.length resps)
@@ -1857,7 +1856,7 @@ close_experiment
                 -> return $ counterexample
                               (show serverError)
                               False
-#ifdef mingw32_HOST_OS 
+#ifdef mingw32_HOST_OS
               -- this fails on Windows for ~1% of cases
               (_, Right _, Left (Right serverError))
                  | iotest
@@ -1930,7 +1929,7 @@ close_experiment
             _ ->
               return $ SendMsgDone (return $! Right
                                            $! reverse resps)
-        
+
     -- server which incrementally computes 'mapAccumL'
     server :: acc -> ReqRespServer req resp m ()
     server acc = ReqRespServer {

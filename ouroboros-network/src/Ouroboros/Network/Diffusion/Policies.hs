@@ -14,11 +14,12 @@ import           Data.Word (Word32)
 import           System.Random
 import qualified System.Random as Rnd
 
+import           Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
+                     Provenance (..), PrunePolicy)
+import           Ouroboros.Network.InboundGovernor
+                     (InboundGovernorObservableState (..))
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.PeerMetric
-import           Ouroboros.Network.InboundGovernor (InboundGovernorObservableState (..))
-import           Ouroboros.Network.ConnectionManager.Types (ConnectionType
-                   (..), Provenance (..), PrunePolicy)
 
 
 -- | Timeout for 'spsDeactivateTimeout'.

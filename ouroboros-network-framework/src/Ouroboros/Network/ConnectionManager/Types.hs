@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -85,7 +84,7 @@ module Ouroboros.Network.ConnectionManager.Types
     -- ** Connection Types
     AddressType (..)
   , Provenance (..)
-  , DataFlow  (..)
+  , DataFlow (..)
   , TimeoutExpired (..)
   , ConnectionType (..)
     -- ** Connection Handler
@@ -102,24 +101,24 @@ module Ouroboros.Network.ConnectionManager.Types
     -- * Connection Manager
     -- ** Connection Manager Arguments
   , ConnectionManager (..)
-  -- ** API
+    -- ** API
   , Connected (..)
   , OperationResult (..)
   , resultInState
   , DemotedToColdRemoteTr (..)
   , RequestOutboundConnection
   , IncludeInboundConnection
-  -- *** Outbound side
+    -- *** Outbound side
   , requestOutboundConnection
   , promotedToWarmRemote
   , demotedToColdRemote
   , unregisterOutboundConnection
-  -- *** Inbound side
+    -- *** Inbound side
   , includeInboundConnection
   , unregisterInboundConnection
   , numberOfConnections
-  -- ** Private API
-  -- Includes all constructors required to create a 'ConnectionManager'.
+    -- ** Private API
+    -- Includes all constructors required to create a 'ConnectionManager'.
   , OutboundConnectionManager (..)
   , InboundConnectionManager (..)
     -- * Exceptions
@@ -132,8 +131,8 @@ module Ouroboros.Network.ConnectionManager.Types
   , WithMuxMode (..)
   , withInitiatorMode
   , withResponderMode
-   -- * Promise
-   -- $promise
+    -- * Promise
+    -- $promise
   , newEmptyPromiseIO
   , PromiseReader (..)
   , readPromiseIO
@@ -151,27 +150,23 @@ module Ouroboros.Network.ConnectionManager.Types
   , TransitionTrace' (..)
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime (DiffTime)
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad (unless)
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
 import           Data.Functor (void)
 import           Data.List (sortOn)
-import           Data.Typeable (Typeable, cast)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Typeable (Typeable, cast)
 import           Data.Word (Word32)
 import           GHC.Stack (CallStack, prettyCallStack)
 
-import           Network.Mux.Types ( MuxBearer
-                                   , MuxMode (..)
-                                   , HasInitiator
-                                   , HasResponder
-                                   , MiniProtocolDir
-                                   )
+import           Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir,
+                     MuxBearer, MuxMode (..))
 
 import           Ouroboros.Network.ConnectionId (ConnectionId)
 import           Ouroboros.Network.MuxMode

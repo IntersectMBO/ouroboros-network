@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes          #-}
 
 
 -- | A view of the transaction submission protocol from the point of view of
@@ -15,21 +15,17 @@
 -- For execution, 'localTxSubmissionClientPeer' is provided for conversion
 -- into the typed protocol.
 --
-module Ouroboros.Network.Protocol.LocalTxSubmission.Client (
-    -- * Protocol type for the client
+module Ouroboros.Network.Protocol.LocalTxSubmission.Client
+  ( -- * Protocol type for the client
     -- | The protocol states from the point of view of the client.
-    LocalTxSubmissionClient(..)
+    LocalTxSubmissionClient (..)
   , LocalTxClientStIdle (..)
-
     -- * The result from a transaction submission.
   , SubmitResult (..)
-
     -- * Execution as a typed protocol
   , localTxSubmissionClientPeer
-
     -- * Null local tx submission client
   , localTxSubmissionClientNull
-
     -- * Utilities
   , mapLocalTxSubmissionClient
   ) where

@@ -1,53 +1,49 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeInType #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeInType            #-}
 -- @UndecidableInstances@ extensions is required for defining @Show@ instance
 -- of @'TraceSendRecv'@.
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
 --
-module Ouroboros.Network.Driver.Simple (
-
-  -- * Introduction
-  -- $intro
-
-  -- * Normal peers
-  runPeer,
-  TraceSendRecv(..),
-  DecoderFailure(..),
-
-  -- * Pipelined peers
-  runPipelinedPeer,
-
-  -- * Connected peers
-  -- TODO: move these to a test lib
-  runConnectedPeers,
-  runConnectedPeersAsymmetric,
-  runConnectedPeersPipelined,
+module Ouroboros.Network.Driver.Simple
+  ( -- * Introduction
+    -- $intro
+    -- * Normal peers
+    runPeer
+  , TraceSendRecv (..)
+  , DecoderFailure (..)
+    -- * Pipelined peers
+  , runPipelinedPeer
+    -- * Connected peers
+    -- TODO: move these to a test lib
+  , runConnectedPeers
+  , runConnectedPeersAsymmetric
+  , runConnectedPeersPipelined
   ) where
 
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Pipelined
-import Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Codec
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Driver
+import           Network.TypedProtocol.Pipelined
 
-import Ouroboros.Network.Util.ShowProxy
+import           Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.Channel
+import           Ouroboros.Network.Channel
 
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer (..), traceWith, contramap)
+import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadThrow
+import           Control.Tracer (Tracer (..), contramap, traceWith)
 
 
 -- $intro
@@ -214,8 +210,8 @@ runDecoderWithChannel :: Monad m
 
 runDecoderWithChannel Channel{recv} = go
   where
-    go _ (DecodeDone x trailing) = return (Right (x, trailing))
-    go _ (DecodeFail failure)    = return (Left failure)
+    go _ (DecodeDone x trailing)         = return (Right (x, trailing))
+    go _ (DecodeFail failure)            = return (Left failure)
     go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 

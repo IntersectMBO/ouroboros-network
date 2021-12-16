@@ -1,5 +1,3 @@
-{-# LANGUAGE UnicodeSyntax #-}
-{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -11,10 +9,11 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE UnicodeSyntax              #-}
 
 -- 'TestAddress' 'Arbitrary' instance.
 {-# OPTIONS_GHC -Wno-orphans                   #-}
@@ -34,8 +33,8 @@ import           Control.Exception (assert)
 import           Control.Monad (forever, unless, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -43,19 +42,19 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           GHC.Generics
-import           GHC.Stack (HasCallStack)
 import           GHC.IO.Exception
+import           GHC.Stack (HasCallStack)
 
+import           Data.Foldable (forM_, traverse_)
 import           Data.Functor (void, ($>))
-import           Data.Foldable (traverse_, forM_)
 import           Data.List (intercalate, sortOn)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Monoid (All (..))
 import qualified Data.Text.Lazy as Text
 import           Data.Void (Void)
-import           Text.Pretty.Simple (pShowOpt, defaultOutputOptionsNoColor)
 import           Quiet
+import           Text.Pretty.Simple (defaultOutputOptionsNoColor, pShowOpt)
 
 import           Network.Mux.Types
 
@@ -64,13 +63,13 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
-import           Ouroboros.Network.Snocket (Snocket (..), Accept (..), Accepted (..),
-                   AddressFamily(TestFamily), TestAddress (..))
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
+import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Server.RateLimiting
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
+import           Ouroboros.Network.Snocket (Accept (..), Accepted (..),
+                     AddressFamily (TestFamily), Snocket (..), TestAddress (..))
 
 
 
@@ -216,18 +215,18 @@ newtype Schedule extra = Schedule { getSchedule :: [ScheduleEntry extra] }
 --
 data State = State {
       -- | Time when last connection started.
-      time            :: !Time
+      time           :: !Time
 
-    , dataFlow        :: !(Maybe DataFlow)
+    , dataFlow       :: !(Maybe DataFlow)
 
-    , handshakeUntil  :: !(Maybe Time)
+    , handshakeUntil :: !(Maybe Time)
 
       -- | Time when outbound connection started, when it will terminate and
       -- a boolean value which indicates if it errors or not.
-    , outboundActive  :: !IsActive
+    , outboundActive :: !IsActive
 
       -- | Time when inbound connection started and when it will terminate.
-    , inboundActive   :: !IsActive
+    , inboundActive  :: !IsActive
     }
   deriving Show
 

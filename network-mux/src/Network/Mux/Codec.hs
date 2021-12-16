@@ -8,8 +8,8 @@ import           Data.Bits
 import qualified Data.ByteString.Lazy as BL
 import           Data.Word
 
-import           Network.Mux.Types
 import           Network.Mux.Trace
+import           Network.Mux.Types
 
 
 -- | Encode a 'MuxSDU' as a 'ByteString'.

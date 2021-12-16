@@ -1,59 +1,59 @@
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE BangPatterns     #-}
+{-# LANGUAGE DeriveFunctor    #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE RecordWildCards  #-}
 
-module Ouroboros.Network.BlockFetch.ClientState (
-    FetchClientContext(..),
-    FetchClientPolicy(..),
-    FetchClientStateVars(..),
-    newFetchClientStateVars,
-    readFetchClientState,
-    PeerFetchStatus(..),
-    IsIdle(..),
-    PeerFetchInFlight(..),
-    initialPeerFetchInFlight,
-    FetchRequest(..),
-    addNewFetchRequest,
-    acknowledgeFetchRequest,
-    startedFetchBatch,
-    completeBlockDownload,
-    completeFetchBatch,
-    rejectedFetchBatch,
-    TraceFetchClientState(..),
-    TraceLabelPeer(..),
-    ChainRange(..),
+module Ouroboros.Network.BlockFetch.ClientState
+  ( FetchClientContext (..)
+  , FetchClientPolicy (..)
+  , FetchClientStateVars (..)
+  , newFetchClientStateVars
+  , readFetchClientState
+  , PeerFetchStatus (..)
+  , IsIdle (..)
+  , PeerFetchInFlight (..)
+  , initialPeerFetchInFlight
+  , FetchRequest (..)
+  , addNewFetchRequest
+  , acknowledgeFetchRequest
+  , startedFetchBatch
+  , completeBlockDownload
+  , completeFetchBatch
+  , rejectedFetchBatch
+  , TraceFetchClientState (..)
+  , TraceLabelPeer (..)
+  , ChainRange (..)
     -- * Ancillary
-    FromConsensus(..),
+  , FromConsensus (..)
   ) where
 
 import           Data.List (foldl')
 import           Data.Maybe (mapMaybe)
-import qualified Data.Set as Set
+import           Data.Semigroup (Last (..))
 import           Data.Set (Set)
-import           Data.Semigroup (Last(..))
+import qualified Data.Set as Set
 
+import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
-import           Control.Exception (assert)
 import           Control.Tracer (Tracer, traceWith)
 
 import           Network.Mux.Trace (TraceLabelPeer (..))
 
-import           Ouroboros.Network.Mux (ControlMessageSTM, timeoutWithControlMessage)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-                   ( HasHeader, MaxSlotNo (..), Point, blockPoint )
-import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange(..))
+import           Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point,
+                     blockPoint)
 import           Ouroboros.Network.BlockFetch.DeltaQ
-                   ( PeerFetchInFlightLimits(..)
-                   , calculatePeerFetchInFlightLimits
-                   , SizeInBytes, PeerGSV )
+                     (PeerFetchInFlightLimits (..), PeerGSV, SizeInBytes,
+                     calculatePeerFetchInFlightLimits)
+import           Ouroboros.Network.Mux (ControlMessageSTM,
+                     timeoutWithControlMessage)
 import           Ouroboros.Network.Point (withOriginToMaybe)
+import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.
@@ -192,7 +192,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- We track this because there is a fixed maximum number of outstanding
        -- requests that the protocol allows.
        --
-       peerFetchReqsInFlight :: !Word,
+       peerFetchReqsInFlight   :: !Word,
 
        -- | The sum of the byte count of blocks expected from all in-flight
        -- fetch requests. This is a close approximation of the amount of data
@@ -201,7 +201,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- We track this because we pipeline fetch requests and we want to keep
        -- some but not too much data in flight at once.
        --
-       peerFetchBytesInFlight :: !SizeInBytes,
+       peerFetchBytesInFlight  :: !SizeInBytes,
 
        -- | The points for the set of blocks that are currently in-flight.
        -- Note that since requests are for ranges of blocks this does not
@@ -219,7 +219,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- We track this to more efficiently remove blocks that are already
        -- in-flight from the candidate fragments: blocks with a slot number
        -- higher than this one do not have to be filtered out.
-       peerFetchMaxSlotNo  :: !MaxSlotNo
+       peerFetchMaxSlotNo      :: !MaxSlotNo
      }
   deriving (Eq, Show)
 

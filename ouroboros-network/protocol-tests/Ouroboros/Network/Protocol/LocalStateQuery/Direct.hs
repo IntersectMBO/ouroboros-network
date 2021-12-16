@@ -1,8 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Ouroboros.Network.Protocol.LocalStateQuery.Direct (
-    direct
-  ) where
+module Ouroboros.Network.Protocol.LocalStateQuery.Direct (direct) where
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server

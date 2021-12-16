@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DataKinds #-}
 
 -- | The transaction submission protocol version 2.
 --
@@ -11,9 +11,9 @@ module Ouroboros.Network.Protocol.TxSubmission2.Type
   , module Util
   ) where
 
-import           Ouroboros.Network.Protocol.TxSubmission.Type as TxSubmission
 import           Ouroboros.Network.Protocol.Trans.Hello.Type (Hello)
 import           Ouroboros.Network.Protocol.Trans.Hello.Util as Util
+import           Ouroboros.Network.Protocol.TxSubmission.Type as TxSubmission
 
 -- | The new version of transaction submission protocol.
 --

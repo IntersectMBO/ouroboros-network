@@ -1,9 +1,7 @@
 {-# LANGUAGE MultiWayIf         #-}
 {-# LANGUAGE NumericUnderscores #-}
 
-module Test.MonadTimer
-  ( tests
-  ) where
+module Test.MonadTimer (tests) where
 
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Monad.Class.MonadTimer
@@ -68,7 +66,7 @@ instance Arbitrary DiffTimeDistr where
     shrink (DiffTimeDistr a) = (DiffTimeDistr . fromRational) `map` shrink (toRational a)
 
 prop_diffTimeToMicrosecondsAsIntRightInverse :: DiffTimeDistr -> Property
-prop_diffTimeToMicrosecondsAsIntRightInverse (DiffTimeDistr a) = 
+prop_diffTimeToMicrosecondsAsIntRightInverse (DiffTimeDistr a) =
     label (labelRational (toRational a)) $
       abs (toRational a - a') < (1 :% 1_000_000)
       .&&.

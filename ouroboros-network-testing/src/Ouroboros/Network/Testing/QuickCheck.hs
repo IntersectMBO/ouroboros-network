@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 
-module Ouroboros.Network.Testing.QuickCheck (
-    runSimGen
+module Ouroboros.Network.Testing.QuickCheck
+  ( runSimGen
   , monadicSim
   ) where
 

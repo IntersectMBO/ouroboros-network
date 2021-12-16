@@ -1,12 +1,12 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE BangPatterns        #-}
 
 module Network.TypedProtocol.PingPong.Examples where
 
-import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Client
+import           Network.TypedProtocol.PingPong.Server
 
 import           Network.TypedProtocol.Pipelined
 

@@ -1,5 +1,5 @@
-{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
 -- | 𝚫Q representation and primitives.
@@ -7,33 +7,30 @@
 -- See also <https://www.ofcom.org.uk/__data/assets/pdf_file/0024/71682/traffic-management-detection.pdf>
 -- appendix A.
 --
-module Ouroboros.Network.DeltaQ (
-    -- * DeltaQ
-    DeltaQ(..),
-    deltaqQ99thPercentile,
-    deltaqQ50thPercentile,
-    deltaqProbabilityMassBeforeDeadline,
-
+module Ouroboros.Network.DeltaQ
+  ( -- * DeltaQ
+    DeltaQ (..)
+  , deltaqQ99thPercentile
+  , deltaqQ50thPercentile
+  , deltaqProbabilityMassBeforeDeadline
     -- * GSV
-    GSV(..),
-    SizeInBytes,
-    ballisticGSV,
-    gsvLeadingEdgeArrive,
-    gsvTrailingEdgeDepart,
-    gsvTrailingEdgeArrive,
-
+  , GSV (..)
+  , SizeInBytes
+  , ballisticGSV
+  , gsvLeadingEdgeArrive
+  , gsvTrailingEdgeDepart
+  , gsvTrailingEdgeArrive
     -- * Distribution
     -- | Needed to construct a 'DeltaQ' or 'GSV'
-    Distribution,
-    degenerateDistribution,
-
+  , Distribution
+  , degenerateDistribution
     -- * Bi-directional GSV.
     -- | 'gsvRequestResponseDuration' is provided as an example of the 'GSV'
     -- and 'DeltaQ' primitives.
-    PeerGSV(..),
-    gsvRequestResponseDuration,
-    defaultGSV,
-    fromSample
+  , PeerGSV (..)
+  , gsvRequestResponseDuration
+  , defaultGSV
+  , fromSample
   ) where
 
 import           Control.Monad.Class.MonadTime (DiffTime, Time (..), diffTime)

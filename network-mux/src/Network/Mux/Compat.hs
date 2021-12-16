@@ -1,41 +1,36 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE GADTSyntax          #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTSyntax                #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeFamilies              #-}
 
-module Network.Mux.Compat (
-      muxStart
-
-      -- * Mux bearers
-    , MuxBearer
-
+module Network.Mux.Compat
+  ( muxStart
+    -- * Mux bearers
+  , MuxBearer
     -- * Defining 'MuxApplication's
-    , MuxMode (..)
-    , HasInitiator
-    , HasResponder
-    , MuxApplication (..)
-    , MuxMiniProtocol (..)
-    , RunMiniProtocol (..)
-    , MiniProtocolNum (..)
-    , MiniProtocolLimits (..)
-    , MiniProtocolDir (..)
-
-      -- * Errors
-    , MuxError (..)
-    , MuxErrorType (..)
-
-      -- * Tracing
-    , traceMuxBearerState
-    , MuxBearerState (..)
-    , MuxTrace (..)
-    , WithMuxBearer (..)
-    ) where
+  , MuxMode (..)
+  , HasInitiator
+  , HasResponder
+  , MuxApplication (..)
+  , MuxMiniProtocol (..)
+  , RunMiniProtocol (..)
+  , MiniProtocolNum (..)
+  , MiniProtocolLimits (..)
+  , MiniProtocolDir (..)
+    -- * Errors
+  , MuxError (..)
+  , MuxErrorType (..)
+    -- * Tracing
+  , traceMuxBearerState
+  , MuxBearerState (..)
+  , MuxTrace (..)
+  , WithMuxBearer (..)
+  ) where
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)
@@ -50,12 +45,12 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 
-import           Network.Mux.Types hiding (MiniProtocolInfo(..))
-import qualified Network.Mux.Types as Types
-import           Network.Mux.Trace
+import           Network.Mux (StartOnDemandOrEagerly (..), newMux,
+                     runMiniProtocol, runMux, stopMux, traceMuxBearerState)
 import           Network.Mux.Channel
-import           Network.Mux (newMux, runMux, runMiniProtocol, stopMux,
-                              StartOnDemandOrEagerly(..), traceMuxBearerState)
+import           Network.Mux.Trace
+import           Network.Mux.Types hiding (MiniProtocolInfo (..))
+import qualified Network.Mux.Types as Types
 
 
 newtype MuxApplication (mode :: MuxMode) m a b =
