@@ -102,7 +102,12 @@ beginning of the write buffer, which does not itself extend past the immutable
 tip.
 
 As our selected chain grows, the write buffer does as well. At opportune times
-(elaborated below), we will flush some prefix of the write buffer to disk.
+(elaborated below), we will flush some prefix of the write buffer to disk. For
+the first developmental increment, we will likely flush as soon and as often as
+possible. That's a simpler target to start with, but its performance will be
+insufficient, so a later increment will tune the flush batching method. We
+anticipate the change that tunes the batching will be local to the one function
+that does flushing.
 
 ## The flush lock
 
@@ -188,6 +193,23 @@ message that could convey expiry to the client. We prefer the complexity of the
 lock and the risk of a wallet bug as opposed to "unnecessarily" complicating the
 mini protocol itself (which would also require additional complexity in the
 wallet code).
+
+Similar concerns about accidental delays do exist for other threads besides
+LocalStateQuery. For example, the Mempool (see next section) will hold the lock
+while validating a new transaction. If a ledger bug cause a transaction's
+validation to take too long, then the Mempool could end up holding the lock for
+too long, causing the write buffer to bloat and unduly increase the node's
+memory footprint. Every idea we've had for defending against such a bug has
+costs. For the Mempool example, we would use a timeout to interrupt the
+validation and reject the offending transaction. That seems like a questionable
+action to take, since it might actually be fully valid in the absence of this
+hypothetical ledger bug, but it also seems preferable to risking the node itself
+running out of memory. This defensive measure would also require a new
+constructor in the transaction-rejection-reason data type, thereby embellishing
+any mini protocols that convey that data type, etc.
+
+This is disappointing additional complexity, and each component that holds the
+lock would need to have something similar. TODO can we do better here?
 
 ## Mempool
 
@@ -315,7 +337,8 @@ isomorphic to `SmallLedgerState blk`. We do also have `LargeLedgerState blk
 table`, but it instead has a containment relationship with `LedgerState` as
 witnessed by the type-varying lens `forall. Functor f => (LargeLedgerState blk
 table1 -> f (LargeLedgerState blk table2)) -> LedgerState blk table1 -> f
-(LedgerState blk table2)`.
+(LedgerState blk table2)`, ie a `get` and `set` that affect every occurnce of
+the new `table` parameter.
 
 This is ultimately isomorphic to the simpler option above, but this helpfully
 forces us to explicitly consider this new concern at each necessary point in the
@@ -465,6 +488,20 @@ once we've finished validating block B_{j-1}).
 See the Worked examples section below for an (abstract) worked example and some
 additional relatively low-level discussion, which we summarize here as: this
 concern is entirely internal to the ChainDB's chain selection logic.
+
+We will validate the need for pipelining before and after designing and
+implementing it. The key metric is how long it takes a fresh node to bulk sync
+Cardano `mainnet`. We anticipate it will obviously too slow without pipelining.
+Duncan and Douglas have some back-of-the-envelope calculations about how fast
+pipelining could be, but we'll certainly have to measure how fast our pipelining
+implementation is.
+
+The above claim about "relatively minor" additional latency for nodes that have
+finished bulk fetch should also be validated. The new `DoneAddingBlock` tracer
+likely reports the necessary metrics, which we could measure while running an
+purely in-memory back-end (on a 16GB machine) and again while running truly
+on-disk back-end (on that same machine) in order to access the affect of the
+additional disk access's latency.
 
 ## Other large parts of the ledger state
 
