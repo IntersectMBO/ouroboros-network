@@ -31,6 +31,7 @@ module Ouroboros.Network.Diffusion.P2P
   , runM
   , NodeToNodePeerConnectionHandle
   , AbstractTransitionTrace
+  , RemoteTransitionTrace
   ) where
 
 
@@ -84,7 +85,8 @@ import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
+                     RemoteTransitionTrace)
 import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
@@ -172,6 +174,9 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
     , dtInboundGovernorTracer
         :: Tracer m (InboundGovernorTrace ntnAddr)
 
+    , dtInboundGovernorTransitionTracer
+        :: Tracer m (RemoteTransitionTrace ntnAddr)
+
       --
       -- NodeToClient tracers
       --
@@ -210,6 +215,7 @@ nullTracers =
       , dtConnectionManagerTransitionTracer          = nullTracer
       , dtServerTracer                               = nullTracer
       , dtInboundGovernorTracer                      = nullTracer
+      , dtInboundGovernorTransitionTracer            = nullTracer
       , dtLocalConnectionManagerTracer               = nullTracer
       , dtLocalServerTracer                          = nullTracer
       , dtLocalInboundGovernorTracer                 = nullTracer
@@ -629,6 +635,7 @@ runM Interfaces
        , dtConnectionManagerTransitionTracer
        , dtServerTracer
        , dtInboundGovernorTracer
+       , dtInboundGovernorTransitionTracer
        , dtLocalConnectionManagerTracer
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
@@ -1064,7 +1071,7 @@ runM Interfaces
                                   serverSockets               = sockets,
                                   serverSnocket               = diNtnSnocket,
                                   serverTracer                = dtServerTracer,
-                                  serverTrTracer              = nullTracer, -- TODO: issue #3320
+                                  serverTrTracer              = dtInboundGovernorTransitionTracer,
                                   serverInboundGovernorTracer = dtInboundGovernorTracer,
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,
