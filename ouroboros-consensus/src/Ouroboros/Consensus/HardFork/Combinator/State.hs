@@ -175,7 +175,7 @@ epochInfoPrecomputedTransitionInfo shape transition st =
 extendToSlot :: forall xs. CanHardFork xs
              => HardForkLedgerConfig xs
              -> SlotNo
-             -> HardForkState (Flip LedgerState ValuesMK) xs -> HardForkState (Flip LedgerState ValuesMK) xs
+             -> HardForkState (Flip LedgerState EmptyMK) xs -> HardForkState (Flip LedgerState EmptyMK) xs
 extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
       HardForkState . unI
     . Telescope.extend
@@ -216,8 +216,8 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
 
     howExtend :: TranslateLedgerState blk blk'
               -> History.Bound
-              -> Current (Flip LedgerState ValuesMK) blk
-              -> (K Past blk, Current (Flip LedgerState ValuesMK) blk')
+              -> Current (Flip LedgerState EmptyMK) blk
+              -> (K Past blk, Current (Flip LedgerState EmptyMK) blk')
     howExtend f currentEnd cur = (
           K Past {
               pastStart    = currentStart cur

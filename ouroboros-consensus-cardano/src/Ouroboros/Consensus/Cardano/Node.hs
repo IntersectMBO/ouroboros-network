@@ -692,9 +692,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         initHeaderState :: HeaderState (CardanoBlock c)
         initLedgerState :: LedgerState (CardanoBlock c) EmptyMK
         ExtLedgerState initLedgerState initHeaderState =
-            forgetLedgerStateTables
-          $ injectInitialExtLedgerState cfg
-          $ (`withLedgerTables` ExtLedgerStateTables (Byron.NoByronLedgerTables SValuesMK))
+            injectInitialExtLedgerState cfg
           $ initExtLedgerStateByron
 
         register ::

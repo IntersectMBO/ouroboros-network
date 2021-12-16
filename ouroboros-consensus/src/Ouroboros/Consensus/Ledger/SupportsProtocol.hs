@@ -74,7 +74,7 @@ _lemma_ledgerViewForecastAt_applyChainTick
      , Show (Ticked (LedgerView (BlockProtocol blk)))
      )
   => LedgerConfig blk
-  -> LedgerState blk ValuesMK
+  -> LedgerState blk EmptyMK
   -> Forecast (LedgerView (BlockProtocol blk))
   -> SlotNo
   -> Either String ()

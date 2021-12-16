@@ -162,7 +162,7 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger cfg st
 
-      extended :: HardForkState (Flip LedgerState ValuesMK) xs
+      extended :: HardForkState (Flip LedgerState EmptyMK) xs
       extended = State.extendToSlot cfg slot st
 
 tickOne :: SingleEraBlock blk
@@ -170,9 +170,9 @@ tickOne :: SingleEraBlock blk
         -> SlotNo
         -> Index xs                                           blk
         -> WrapPartialLedgerConfig                            blk
-        -> Flip LedgerState ValuesMK                          blk
+        -> Flip LedgerState EmptyMK                           blk
         -> (    LedgerResult (LedgerState (HardForkBlock xs))
-            :.: FlipTickedLedgerState TrackingMK
+            :.: FlipTickedLedgerState EmptyMK
            )                                                  blk
 tickOne ei slot index pcfg (Flip st) = Comp $ fmap FlipTickedLedgerState $
       embedLedgerResult (injectLedgerEvent index)
