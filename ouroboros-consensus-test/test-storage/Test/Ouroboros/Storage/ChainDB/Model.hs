@@ -632,16 +632,6 @@ data ValidatedChain blk =
       (InvalidBlocks blk)   -- ^ Invalid blocks encountered while validating
                             -- the candidate chain.
 
--- TODO: AFIK the complete ledger state will be in memory. As a result we'll be
--- working with EmptyMK the whole time. This means that we'd be converting from
--- to and from this map kind. What is the best way to deal with this problem?
---
--- In our tests we have a bunch of instances of ledger states for which all the
--- data is in memory. I wonder if it'd make sense to have a class of ledger
--- states for which we can define a function:
---
--- convertMapKind :: LedgerState blk mk -> LedgerState blk mk'
-
 -- | Validate the given 'Chain'.
 --
 -- The 'InvalidBlocks' in the returned 'ValidatedChain' will be >= the

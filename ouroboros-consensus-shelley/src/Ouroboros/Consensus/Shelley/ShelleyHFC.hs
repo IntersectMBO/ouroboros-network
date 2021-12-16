@@ -298,7 +298,7 @@ instance ( ShelleyBasedEra era
          , SL.TranslateEra era ShelleyTip
          , SL.TranslateEra era SL.NewEpochState
          , SL.TranslationError era SL.NewEpochState ~ Void
-         ) => SL.TranslateEra era (Flip LedgerState ValuesMK :.: ShelleyBlock) where
+         ) => SL.TranslateEra era (Flip LedgerState EmptyMK :.: ShelleyBlock) where
   translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition tables))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state

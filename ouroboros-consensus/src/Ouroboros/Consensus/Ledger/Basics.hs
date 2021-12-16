@@ -50,6 +50,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , emptyAppliedMK
   , mapValuesAppliedMK
   , toSMapKind
+    -- * Special classes of ledger states
+  , InMemory (..)
     -- * Misc
   , ShowLedgerState (..)
   ) where
@@ -205,8 +207,9 @@ class ( -- Requirements on the ledger state itself
   applyChainTickLedgerResult ::
        LedgerCfg l
     -> SlotNo
-    -> l ValuesMK
-    -> LedgerResult l (Ticked1 l TrackingMK)
+    -- TODO while the only " large " the UTxO map, ticking involve any tables
+    -> l EmptyMK
+    -> LedgerResult l (Ticked1 l EmptyMK)
 
 
 -- This can't be in IsLedger because we have a compositional IsLedger instance
@@ -219,6 +222,9 @@ class ShowLedgerState (LedgerTables l) => TableStuff (l :: LedgerStateKind) wher
   forgetLedgerStateTracking :: l TrackingMK -> l ValuesMK
 
   forgetLedgerStateTables :: l any -> l EmptyMK
+
+  -- | Empty values for every table
+  emptyLedgerStateTables :: LedgerTables l mk
 
   projectLedgerTables :: l mk -> LedgerTables l mk
 
@@ -236,11 +242,10 @@ class ShowLedgerState (LedgerTables l) => TableStuff (l :: LedgerStateKind) wher
 class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
   forgetTickedLedgerStateTracking :: Ticked1 l TrackingMK -> Ticked1 l ValuesMK
 
-  -- TODO change first argument's mk to DiffMK
-  prependLedgerStateTracking :: Ticked1 l TrackingMK -> l TrackingMK -> l TrackingMK
+  withLedgerTablesTicked :: HasCallStack => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
-applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l ValuesMK -> Ticked1 l TrackingMK
+applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l EmptyMK -> Ticked1 l EmptyMK
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
@@ -348,3 +353,20 @@ type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk
 data family DiskLedgerView blk :: (Type -> Type) -> Type
 
 type TableKeySets l = LedgerTables l KeysMK
+
+{-------------------------------------------------------------------------------
+  Special classes of ledger states
+
+  TODO if having such class(es) make sense but only in the context of testing
+  code we should move this to the appropriate module.
+-------------------------------------------------------------------------------}
+
+class InMemory (l :: LedgerStateKind) where
+
+  -- | If the ledger state is always in memory, then l mk will be isomorphic to
+  -- l mk' for all mk, mk'. As a result, we can convert between ledgers states
+  -- indexed by different map kinds.
+  --
+  -- This function is useful to combine functions that operate on functions that
+  -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
+  convertMapKind :: l mk -> l mk'

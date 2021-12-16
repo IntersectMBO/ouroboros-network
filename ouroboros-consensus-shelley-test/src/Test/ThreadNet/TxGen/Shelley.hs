@@ -64,7 +64,10 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
 
       | otherwise               = do
       n <- choose (0, 20)
-      go [] n $ forgetTickedLedgerStateTracking $ applyChainTick lcfg curSlotNo lst
+      go [] n
+        $ (`withLedgerTablesTicked` projectLedgerTables lst)
+        $ applyChainTick lcfg curSlotNo
+        $ forgetLedgerStateTables lst
     where
       ShelleyTxGenExtra
         { stgeGenEnv
