@@ -152,6 +152,10 @@ set under the assumption that the results of their reads correspond to whichever
 in-memory ledger state the component recently acquired. Therefore, while this
 lock is held, the ChainDB will not flush the write buffer.
 
+To be clear: multiple readers and even the writer (which only ever extends the
+buffer) can hold the lock simultaneously, but while the flusher holds it no one
+else can.
+
 If the on-disk interface eventually supports ephemeral restore points in a
 sufficiently cheap and robust way, then we could use those instead of the lock
 to maintain the illusion of persistent coherence between an in-memory ledger
@@ -411,9 +415,12 @@ the ChainDB will handle the new UTxO HD elements.
 * The LgrDB will also carry the necessary handle for reading and writing the new
   on-disk content. In other words, it will now hold the on-disk backend.
 
-* The LgrDB interface is unaware of concurrency concerns and can remain that
-  way: the ChainDB that will own the flush lock, which it will use to mutex the
-  (internal) LgrDB methods that flush the write buffer.
+* Finally, the LgrDB will host the lock, since the LgrDB contains the write
+  buffer whose access must be syncrhonized. However, every reader access the
+  ledger state via the ChainDB interface, one ChainDB background thread is the
+  only writer, and another ChainDB background thread is the only flusher, so
+  it's the ChainDB interface and its internals that will ultimately be acquiring
+  and hosting the lock.
 
 * With our initial design decision to couple write buffer flushes and snapshots,
   the ChainDB thread that copies blocks from the VolDB into the ImmDB and
@@ -436,7 +443,8 @@ the ChainDB will handle the new UTxO HD elements.
   Recall that those differences won't be written to disk until the `LgrDB`
   flushes its `LedgerDB`'s write buffer. In the current design, that happens
   elsewhere, because of the coupling of snapshots and flushes. If that coupling
-  is later eliminated, it seems natural to flush at the end of chain selection.
+  is later eliminated, it seems natural to flush at the end of chain selection
+  (not necessarily every time).
 
 ## Pipelining disk access
 
@@ -466,7 +474,7 @@ important and urgent. Soon enough, though, other parts will also grow too large
 for in-memory data structures.
 
 ***Design Decision*** All parts of the Shelley larger proportional to the UTxO
-set and/or to the number of stake pools will be stores exclusively on-disk.
+set and/or to the number of stake pools will be stored exclusively on-disk.
 
 With three exceptions, all of these tables will be handled in the exact same way
 as the UTxO table. And most Consensus code won't even notice: it's only the
@@ -507,9 +515,9 @@ concrete ledger and on-disk interfaces.
 TODO Jared mentioned on Slack (~2nd Dec 2021) a question of where the
 incremental ledger computation logic should live if so much of that
 responsibility is relocated to the on-disk ledger data's maintanance. I haven't
-quite parsed it, but my initial thought is that that logic still belongs in
-`cardano-ledger-specs`, but maybe it can be appreciably isolated from the rest
-of the "normal" ledger rules
+quite parsed it, but my initial thought (Damian agrees) is that that logic still
+belongs in `cardano-ledger-specs`, but maybe it can be appreciably isolated from
+the rest of the "normal" ledger rules
 
 # Worked examples
 
@@ -519,9 +527,11 @@ action.
 
 ## Using the sequence of differences
 
-Suppose our node is at steady-state, our current immutable tip is H, the block
-C1 extends H, and our volatile tip is the block Ck. By definition, there are `k`
-blocks that extend H up to and including Ck.
+Suppose our node is at steady-state (no thread is about to change any state
+value, and all components have fully reacted to the last such state change), our
+current immutable tip is H, the block C1 extends H, and our volatile tip is the
+block Ck. By definition, there are `k` blocks that extend H up to and including
+Ck.
 
 ```
 H-C1-.-.- ... .-.-.-Ck
@@ -621,7 +631,7 @@ intentionally oversimplified.
   dynamics. In particular, some of their differences in the future will be
   _modifications_/_updates_, along the lines of "add 3 to the value in `x`".
   Thus, in general, rewinding a keyset through a difference that includes one of
-  the keys will not mean that the rewound keyset doen't involve that key (we'll
+  the keys will not mean that the rewound keyset doesn't involve that key (we'll
   need to fetch whatever the value of `x` was before it was increased by 3).
 
 * Once we pipeline chain selection, it can no longer rely on the flush lock --
@@ -629,7 +639,12 @@ intentionally oversimplified.
   component (eg LocalStateQuery) can still use the lock, but chain selection
   will not. Therefore, chain selection may need to forward a readset through a
   sequence of differences that is not merely an extension of the sequence of
-  differences through which the corresponding key set was rewound.
+  differences through which the corresponding key set was rewound. We will need
+  to carefully design pipelining so that those reads and flushes interleave
+  seamlessly during bulk fetch, never requiring a re-issued read. However, in a
+  node that is no longer bulk fetching, it may be that flushing invalidates an
+  in-flight read and it will need to be re-issued while holding the lock. That's
+  OK, since pipelining is only necessary for bulk fetch performance goals.
 
 ### Almost as simple even with pipelined chain selection
 
