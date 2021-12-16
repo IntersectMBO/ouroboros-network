@@ -75,7 +75,8 @@ import           Ouroboros.Consensus.Util.IOLike
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
-import qualified Cardano.Ledger.Shelley.LedgerState as SL (stakeDistr)
+import qualified Cardano.Ledger.Shelley.LedgerState as SL (stakeDistr,
+                     updateStakeDistribution)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 
@@ -131,8 +132,7 @@ shelleyBlockForging ::
   -> TPraosLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock era))
 shelleyBlockForging tpraosParams maxTxCapacityOverrides credentials =
-      fmap aux
-    $ shelleySharedBlockForging
+      aux <$> shelleySharedBlockForging
         (Proxy @'[era])
         tpraosParams
         credentials
@@ -567,9 +567,16 @@ registerInitialFunds initialFunds nes = nes {
           SL._reserves = reserves <-> coin (SL.balance initialFundsUtxo)
         }
 
-    ledgerState' = ledgerState {
+    -- Since we only add entries to our UTxO, rather than spending them, there
+    -- is nothing to delete in the incremental update.
+    utxoToDel     = SL.UTxO mempty
+    ledgerState'  = ledgerState {
           SL._utxoState = utxoState {
-              SL._utxo = utxo'
+              SL._utxo        = utxo',
+              -- Normally we would incrementally update here. But since we pass
+              -- the full UTxO as "toAdd" rather than a delta, we simply
+              -- reinitialise the full incremental stake.
+              SL._stakeDistro = SL.updateStakeDistribution mempty utxoToDel utxo'
             }
         }
 
