@@ -158,6 +158,10 @@ instance SerialiseNodeToClient DualByronBlock (GenTx DualByronBlock) where
   encodeNodeToClient _ _ = encodeDualGenTx encodeByronGenTx
   decodeNodeToClient _ _ = decodeDualGenTx decodeByronGenTx
 
+instance SerialiseNodeToClient DualByronBlock (GenTxId DualByronBlock) where
+  encodeNodeToClient _ _ = encodeDualGenTxId encodeByronGenTxId
+  decodeNodeToClient _ _ = decodeDualGenTxId decodeByronGenTxId
+
 -- | @'ApplyTxErr' 'DualByronBlock'@
 instance SerialiseNodeToClient DualByronBlock (DualGenTxErr ByronBlock ByronSpecBlock) where
   encodeNodeToClient _ _ = encodeDualGenTxErr encodeByronApplyTxError
@@ -166,6 +170,8 @@ instance SerialiseNodeToClient DualByronBlock (DualGenTxErr ByronBlock ByronSpec
 instance SerialiseNodeToClient DualByronBlock (SomeSecond BlockQuery DualByronBlock) where
   encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = error "DualByron: no query to decode"
+
+instance SerialiseNodeToClient DualByronBlock SlotNo
 
 instance SerialiseResult DualByronBlock (BlockQuery DualByronBlock) where
   encodeResult _ _ = \case {}

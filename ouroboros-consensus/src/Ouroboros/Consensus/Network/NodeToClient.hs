@@ -60,6 +60,9 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Codec
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
@@ -71,6 +74,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
+import           Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
@@ -99,6 +103,9 @@ data Handlers m peer blk = Handlers {
 
     , hStateQueryServer
         :: LocalStateQueryServer blk (Point blk) (Query blk) m ()
+
+    , hTxMonitorServer
+        :: LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
     }
 
 mkHandlers
@@ -128,6 +135,10 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
             (ChainDB.getTipPoint getChainDB)
             (ChainDB.getPastLedger getChainDB)
             (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
+
+      , hTxMonitorServer =
+          localTxMonitorServer
+            getMempool
       }
 
 {-------------------------------------------------------------------------------
@@ -135,18 +146,19 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
 -------------------------------------------------------------------------------}
 
 -- | Node-to-client protocol codecs needed to run 'Handlers'.
-data Codecs' blk serialisedBlk e m bCS bTX bSQ = Codecs {
-      cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Point blk) (Tip blk))  e m bCS
-    , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)) e m bTX
-    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Point blk) (Query blk))    e m bSQ
+data Codecs' blk serialisedBlk e m bCS bTX bSQ bTM = Codecs {
+      cChainSyncCodec    :: Codec (ChainSync serialisedBlk (Point blk) (Tip blk))   e m bCS
+    , cTxSubmissionCodec :: Codec (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))  e m bTX
+    , cStateQueryCodec   :: Codec (LocalStateQuery blk (Point blk) (Query blk))     e m bSQ
+    , cTxMonitorCodec    :: Codec (LocalTxMonitor (GenTxId blk) (GenTx blk) SlotNo) e m bTM
     }
 
-type Codecs blk e m bCS bTX bSQ =
-    Codecs' blk (Serialised blk) e m bCS bTX bSQ
+type Codecs blk e m bCS bTX bSQ bTM =
+    Codecs' blk (Serialised blk) e m bCS bTX bSQ bTM
 type DefaultCodecs blk m =
-    Codecs' blk (Serialised blk) DeserialiseFailure m ByteString ByteString ByteString
+    Codecs' blk (Serialised blk) DeserialiseFailure m ByteString ByteString ByteString ByteString
 type ClientCodecs blk  m =
-    Codecs' blk blk DeserialiseFailure m ByteString ByteString ByteString
+    Codecs' blk blk DeserialiseFailure m ByteString ByteString ByteString ByteString
 
 -- | Protocol codecs for the node-to-client protocols
 --
@@ -201,6 +213,12 @@ defaultCodecs ccfg version networkVersion = Codecs {
           ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
+
+    , cTxMonitorCodec =
+        codecLocalTxMonitor
+          enc dec
+          enc dec
+          enc dec
     }
   where
     queryVersion :: QueryVersion
@@ -255,6 +273,12 @@ clientCodecs ccfg version networkVersion = Codecs {
           ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
           (encodeResult ccfg version)
           (decodeResult ccfg version)
+
+    , cTxMonitorCodec =
+        codecLocalTxMonitor
+          enc dec
+          enc dec
+          enc dec
     }
   where
     queryVersion :: QueryVersion
@@ -275,10 +299,12 @@ identityCodecs :: (Monad m, QueryLedger blk)
                     (AnyMessage (ChainSync (Serialised blk) (Point blk) (Tip blk)))
                     (AnyMessage (LocalTxSubmission (GenTx blk) (ApplyTxErr blk)))
                     (AnyMessage (LocalStateQuery blk (Point blk) (Query blk)))
+                    (AnyMessage (LocalTxMonitor (GenTxId blk) (GenTx blk) SlotNo))
 identityCodecs = Codecs {
       cChainSyncCodec    = codecChainSyncId
     , cTxSubmissionCodec = codecLocalTxSubmissionId
     , cStateQueryCodec   = codecLocalStateQueryId sameDepIndex
+    , cTxMonitorCodec    = codecLocalTxMonitorId
     }
 
 {-------------------------------------------------------------------------------
@@ -293,6 +319,7 @@ data Tracers' peer blk e f = Tracers {
       tChainSyncTracer    :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (Serialised blk) (Point blk) (Tip blk))))
     , tTxSubmissionTracer :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxSubmission (GenTx blk) (ApplyTxErr blk))))
     , tStateQueryTracer   :: f (TraceLabelPeer peer (TraceSendRecv (LocalStateQuery blk (Point blk) (Query blk))))
+    , tTxMonitorTracer    :: f (TraceLabelPeer peer (TraceSendRecv (LocalTxMonitor (GenTxId blk) (GenTx blk) SlotNo)))
     }
 
 instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk e f) where
@@ -300,6 +327,7 @@ instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk e f) where
         tChainSyncTracer    = f tChainSyncTracer
       , tTxSubmissionTracer = f tTxSubmissionTracer
       , tStateQueryTracer   = f tStateQueryTracer
+      , tTxMonitorTracer    = f tTxMonitorTracer
       }
     where
       f :: forall a. Semigroup a
@@ -313,10 +341,12 @@ nullTracers = Tracers {
       tChainSyncTracer    = nullTracer
     , tTxSubmissionTracer = nullTracer
     , tStateQueryTracer   = nullTracer
+    , tTxMonitorTracer    = nullTracer
     }
 
 showTracers :: ( Show peer
                , Show (GenTx blk)
+               , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , ShowQuery (BlockQuery blk)
                , HasHeader blk
@@ -326,6 +356,7 @@ showTracers tr = Tracers {
       tChainSyncTracer    = showTracing tr
     , tTxSubmissionTracer = showTracing tr
     , tStateQueryTracer   = showTracing tr
+    , tTxMonitorTracer    = showTracing tr
     }
 
 {-------------------------------------------------------------------------------
@@ -338,7 +369,7 @@ type App m peer bytes a = peer -> Channel m bytes -> m (a, Maybe bytes)
 -- | Applications for the node-to-client (i.e., local) protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
-data Apps m peer bCS bTX bSQ a = Apps {
+data Apps m peer bCS bTX bSQ bTM a = Apps {
       -- | Start a local chain sync server.
       aChainSyncServer    :: App m peer bCS a
 
@@ -347,24 +378,28 @@ data Apps m peer bCS bTX bSQ a = Apps {
 
       -- | Start a local state query server.
     , aStateQueryServer   :: App m peer bSQ a
+
+      -- | Start a local transaction monitor server
+    , aTxMonitorServer    :: App m peer bTM a
     }
 
 -- | Construct the 'NetworkApplication' for the node-to-client protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bTX bSQ.
+  :: forall m remotePeer localPeer blk e bCS bTX bSQ bTM.
      ( IOLike m
      , Exception e
      , ShowProxy blk
      , ShowProxy (ApplyTxErr blk)
      , ShowProxy (BlockQuery blk)
      , ShowProxy (GenTx blk)
+     , ShowProxy (GenTxId blk)
      , ShowQuery (BlockQuery blk)
      )
   => NodeKernel m remotePeer localPeer blk
   -> Tracers m localPeer blk e
-  -> Codecs blk e m bCS bTX bSQ
+  -> Codecs blk e m bCS bTX bSQ bTM
   -> Handlers m localPeer blk
-  -> Apps m localPeer bCS bTX bSQ ()
+  -> Apps m localPeer bCS bTX bSQ bTM ()
 mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
     Apps {..}
   where
@@ -409,6 +444,18 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
         channel
         (localStateQueryServerPeer hStateQueryServer)
 
+    aTxMonitorServer
+      :: localPeer
+      -> Channel m bTM
+      -> m ((), Maybe bTM)
+    aTxMonitorServer them channel = do
+      labelThisThread "LocalTxMonitorServer"
+      runPeer
+        (contramap (TraceLabelPeer them) tTxMonitorTracer)
+        cTxMonitorCodec
+        channel
+        (localTxMonitorServerPeer hTxMonitorServer)
+
 {-------------------------------------------------------------------------------
   Projections from 'Apps'
 -------------------------------------------------------------------------------}
@@ -417,7 +464,7 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
 -- 'OuroborosApplication' for the node-to-client protocols.
 responder
   :: N.NodeToClientVersion
-  -> Apps m (ConnectionId peer) b b b a
+  -> Apps m (ConnectionId peer) b b b b a
   -> OuroborosApplication 'ResponderMode peer b m Void a
 responder version Apps {..} =
     nodeToClientProtocols
@@ -427,6 +474,8 @@ responder version Apps {..} =
           localTxSubmissionProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer peer))),
           localStateQueryProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aStateQueryServer peer)))
+            (ResponderProtocolOnly (MuxPeerRaw (aStateQueryServer peer))),
+          localTxMonitorProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (aTxMonitorServer peer)))
         })
       version

@@ -145,6 +145,10 @@ instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (GenTx 
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
+instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (GenTxId (ShelleyBlock era)) where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
+
 -- | @'ApplyTxErr' '(ShelleyBlock era)'@
 instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (SL.ApplyTxError era) where
   encodeNodeToClient _ _ = toCBOR
@@ -162,6 +166,10 @@ instance ShelleyBasedEra era
 instance ShelleyBasedEra era => SerialiseResult (ShelleyBlock era) (BlockQuery (ShelleyBlock era)) where
   encodeResult _ _ = encodeShelleyResult
   decodeResult _ _ = decodeShelleyResult
+
+instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) SlotNo where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
 
 {-------------------------------------------------------------------------------
   HFC support

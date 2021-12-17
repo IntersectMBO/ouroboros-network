@@ -168,6 +168,14 @@ instance SerialiseNodeToClient ByronBlock (GenTx ByronBlock) where
   encodeNodeToClient _ _ = encodeByronGenTx
   decodeNodeToClient _ _ = decodeByronGenTx
 
+instance SerialiseNodeToClient ByronBlock (GenTxId ByronBlock) where
+  encodeNodeToClient _ _ = encodeByronGenTxId
+  decodeNodeToClient _ _ = decodeByronGenTxId
+
+instance SerialiseNodeToClient ByronBlock SlotNo where
+  encodeNodeToClient _ _ = toCBOR
+  decodeNodeToClient _ _ = fromCBOR
+
 -- | @'ApplyTxErr' 'ByronBlock'@
 instance SerialiseNodeToClient ByronBlock CC.ApplyMempoolPayloadErr where
   encodeNodeToClient _ _ = encodeByronApplyTxError

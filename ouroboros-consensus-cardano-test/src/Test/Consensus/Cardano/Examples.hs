@@ -124,6 +124,7 @@ instance Inject Examples where
       , exampleLedgerState      = inj (Proxy @LedgerState)             exampleLedgerState
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)       exampleChainDepState
       , exampleExtLedgerState   = inj (Proxy @ExtLedgerState)          exampleExtLedgerState
+      , exampleSlotNo           =                                      exampleSlotNo
       }
     where
       inj ::

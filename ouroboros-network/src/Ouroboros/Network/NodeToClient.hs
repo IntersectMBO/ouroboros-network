@@ -33,6 +33,7 @@ module Ouroboros.Network.NodeToClient
   , chainSyncPeerNull
   , localStateQueryPeerNull
   , localTxSubmissionPeerNull
+  , localTxMonitorPeerNull
     -- * Re-exported network interface
   , IOManager (..)
   , AssociateWithIOCP
@@ -105,6 +106,8 @@ import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
 import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type as LocalStateQuery
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Client as LocalTxMonitor
+import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Type as LocalTxMonitor
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
 import           Ouroboros.Network.Snocket
@@ -135,7 +138,11 @@ data NodeToClientProtocols appType bytes m a b = NodeToClientProtocols {
 
     -- | local state-query mini-protocol
     --
-    localStateQueryProtocol   :: RunMiniProtocol appType bytes m a b
+    localStateQueryProtocol   :: RunMiniProtocol appType bytes m a b,
+
+    -- | local tx-monitor mini-protocol
+    --
+    localTxMonitorProtocol    :: RunMiniProtocol appType bytes m a b
   }
 
 
@@ -160,7 +167,8 @@ nodeToClientProtocols protocols version =
         NodeToClientProtocols {
             localChainSyncProtocol,
             localTxSubmissionProtocol,
-            localStateQueryProtocol
+            localStateQueryProtocol,
+            localTxMonitorProtocol
           } ->
           [ localChainSyncMiniProtocol localChainSyncProtocol
           , localTxSubmissionMiniProtocol localTxSubmissionProtocol
@@ -169,7 +177,11 @@ nodeToClientProtocols protocols version =
           | case version of
               NodeToClientV_1 -> False
               _               -> True
+          ] <>
+          [ localTxMonitorMiniProtocol localTxMonitorProtocol
+          | version >= NodeToClientV_12
           ]
+
   where
     localChainSyncMiniProtocol localChainSyncProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 5,
@@ -186,6 +198,11 @@ nodeToClientProtocols protocols version =
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localStateQueryProtocol
       }
+    localTxMonitorMiniProtocol localTxMonitorProtocol = MiniProtocol {
+        miniProtocolNum    = MiniProtocolNum 9,
+        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolRun    = localTxMonitorProtocol
+    }
 
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
@@ -443,6 +460,14 @@ localTxSubmissionPeerNull
 localTxSubmissionPeerNull =
     LocalTxSubmission.localTxSubmissionClientPeer
       (LocalTxSubmission.LocalTxSubmissionClient untilTheCowsComeHome)
+
+localTxMonitorPeerNull
+    :: forall (txid :: Type) (tx :: Type) (slot :: Type) m a. MonadTimer m
+    => Peer (LocalTxMonitor.LocalTxMonitor txid tx slot)
+            AsClient LocalTxMonitor.StIdle m a
+localTxMonitorPeerNull =
+    LocalTxMonitor.localTxMonitorClientPeer
+      (LocalTxMonitor.LocalTxMonitorClient untilTheCowsComeHome)
 
 -- ;)
 untilTheCowsComeHome :: MonadTimer m => m a

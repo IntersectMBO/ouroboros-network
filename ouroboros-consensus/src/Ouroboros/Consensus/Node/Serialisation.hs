@@ -150,6 +150,13 @@ instance SerialiseNodeToNode blk (GenTxId     blk)
   decodeNodeToNode cfg version =
       WrapGenTxId <$> decodeNodeToNode cfg version
 
+instance SerialiseNodeToClient blk (GenTxId     blk)
+      => SerialiseNodeToClient blk (WrapGenTxId blk) where
+  encodeNodeToClient cfg version (WrapGenTxId h) =
+      encodeNodeToClient cfg version h
+  decodeNodeToClient cfg version =
+      WrapGenTxId <$> decodeNodeToClient cfg version
+
 instance SerialiseNodeToClient blk (ApplyTxErr     blk)
       => SerialiseNodeToClient blk (WrapApplyTxErr blk) where
   encodeNodeToClient cfg version (WrapApplyTxErr h) =

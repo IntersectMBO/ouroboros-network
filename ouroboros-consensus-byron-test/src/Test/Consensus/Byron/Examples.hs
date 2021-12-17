@@ -112,6 +112,7 @@ examples = Golden.Examples {
     , exampleLedgerState      = unlabelled exampleLedgerState
     , exampleChainDepState    = unlabelled exampleChainDepState
     , exampleExtLedgerState   = unlabelled exampleExtLedgerState
+    , exampleSlotNo           = unlabelled exampleSlotNo
     }
   where
     regularAndEBB :: a -> a -> Labelled a
@@ -222,3 +223,6 @@ exampleApplyTxErr =
     $ CC.UTxOValidationTxValidationError
     $ CC.TxValidationLovelaceError "a"
     $ CC.LovelaceOverflow 0
+
+exampleSlotNo :: SlotNo
+exampleSlotNo = SlotNo 42

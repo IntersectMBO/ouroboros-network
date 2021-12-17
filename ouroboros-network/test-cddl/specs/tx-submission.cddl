@@ -24,6 +24,5 @@ txCount         = word16
 ; The codec only accepts infinite-length list encoding for tsIdList !
 tsIdList        = [ *txId ]
 txIdAndSize     = [txId, txSizeInBytes]
-txId            = int
 txSizeInBytes   = word32
 
