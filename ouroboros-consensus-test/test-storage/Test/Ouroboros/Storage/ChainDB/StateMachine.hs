@@ -212,7 +212,7 @@ deriving instance SOP.HasDatatypeInfo (Cmd blk it flr)
 data Success blk it flr
   = Unit                ()
   | Chain               (AnchoredFragment (Header blk))
-  | LedgerDB            (LedgerDB (ExtLedgerState EmptyMK blk))
+  | LedgerDB            (LedgerDB (ExtLedgerState blk))
   | MbBlock             (Maybe blk)
   | MbAllComponents     (Maybe (AllComponents blk))
   | MbGCedAllComponents (MaybeGCedBlock (AllComponents blk))
@@ -267,7 +267,7 @@ type TestConstraints blk =
   , LedgerSupportsProtocol            blk
   , InspectLedger                     blk
   , Eq (ChainDepState  (BlockProtocol blk))
-  , Eq (LedgerState                   blk)
+  , Eq (LedgerState                   blk EmptyMK)
   , Eq                                blk
   , Show                              blk
   , HasHeader                         blk
@@ -279,6 +279,8 @@ type TestConstraints blk =
   , ConvertRawHash                    blk
   , HasHardForkHistory                blk
   , SerialiseDiskConstraints          blk
+  , Show (LedgerState                 blk EmptyMK)
+  , InMemory (LedgerState             blk)
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   flr)
@@ -683,7 +685,7 @@ deriving instance (TestConstraints blk, Show1 r) => Show (Model blk m r)
 
 -- | Initial model
 initModel :: TopLevelConfig blk
-          -> ExtLedgerState EmptyMK blk
+          -> ExtLedgerState blk EmptyMK
           -> MaxClockSkew
           -> Model blk m r
 initModel cfg initLedger (MaxClockSkew maxClockSkew) = Model
@@ -1113,7 +1115,7 @@ sm :: TestConstraints blk
    => ChainDBEnv IO blk
    -> BlockGen                  blk IO
    -> TopLevelConfig            blk
-   -> ExtLedgerState EmptyMK     blk
+   -> ExtLedgerState            blk     EmptyMK
    -> MaxClockSkew
    -> StateMachine (Model       blk IO)
                    (At Cmd      blk IO)
@@ -1184,7 +1186,7 @@ deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
                   , ToExpr (ChainDepState (BlockProtocol blk))
                   , ToExpr (TipInfo blk)
-                  , ToExpr (LedgerState blk)
+                  , ToExpr (LedgerState blk EmptyMK) -- TODO why not mk?
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (DBModel blk)
@@ -1192,7 +1194,7 @@ deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash  blk)
                   , ToExpr (ChainDepState (BlockProtocol blk))
                   , ToExpr (TipInfo blk)
-                  , ToExpr (LedgerState blk)
+                  , ToExpr (LedgerState blk EmptyMK) -- TODO why not mk?
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (Model blk IO Concrete)
@@ -1210,7 +1212,7 @@ deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
 deriving instance ToExpr (TipInfoIsEBB Blk)
-deriving instance ToExpr (LedgerState Blk)
+deriving instance ToExpr (LedgerState Blk EmptyMK)
 deriving instance ToExpr (HeaderError Blk)
 deriving instance ToExpr TestBlockOtherHeaderEnvelopeError
 deriving instance ToExpr (HeaderEnvelopeError Blk)
@@ -1612,7 +1614,7 @@ mkArgs :: IOLike m
        => TopLevelConfig Blk
        -> MaxClockSkew
        -> ImmutableDB.ChunkInfo
-       -> ExtLedgerState EmptyMK Blk
+       -> ExtLedgerState Blk EmptyMK
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
        -> StrictTVar m SlotNo

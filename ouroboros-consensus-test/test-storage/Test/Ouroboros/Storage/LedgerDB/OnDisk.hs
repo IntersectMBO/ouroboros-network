@@ -94,21 +94,25 @@ tests = testGroup "OnDisk" [
 genBlocks ::
      ExtLedgerCfg TestBlock
   -> Word64
-  -> ExtLedgerState EmptyMK TestBlock
+  -> ExtLedgerState TestBlock EmptyMK
   -> [TestBlock]
 genBlocks _   0 _ = []
 genBlocks cfg n l = b:bs
   where
     b  = genBlock l
-    l' = tickThenReapply cfg b l
-    bs = genBlocks cfg (n - 1) l'
+    l' = tickThenReapply cfg b (convertMapKind l)
+    -- TODO I don't like this proliferation of 'convertMapKind': we easily lose
+    -- track of which map kinds we're working with at each stage. For an
+    -- in-memory we should not care since everything is, well, in-memory, but I
+    -- still get an uneasy feeling when I see this.
+    bs = genBlocks cfg (n - 1) (convertMapKind  l')
 
-genBlock :: ExtLedgerState EmptyMK TestBlock -> TestBlock
+genBlock :: ExtLedgerState TestBlock EmptyMK -> TestBlock
 genBlock l = case lastAppliedBlock (ledgerState l) of
                Nothing -> firstBlock 0
                Just b  -> successorBlock b
 
-extLedgerDbConfig :: SecurityParam -> LedgerDbCfg (ExtLedgerState EmptyMK TestBlock)
+extLedgerDbConfig :: SecurityParam -> LedgerDbCfg (ExtLedgerState TestBlock)
 extLedgerDbConfig secParam = LedgerDbCfg {
       ledgerDbCfgSecParam = secParam
     , ledgerDbCfg         = ExtLedgerCfg $ singleNodeTestConfigWithK secParam
@@ -168,9 +172,9 @@ data Cmd ss =
 data Success ss =
     Unit ()
   | MaybeErr (Either (ExtValidationError TestBlock) ())
-  | Ledger (ExtLedgerState EmptyMK TestBlock)
+  | Ledger (ExtLedgerState TestBlock EmptyMK)
   | Snapped (Maybe (ss, RealPoint TestBlock))
-  | Restored (MockInitLog ss, ExtLedgerState EmptyMK TestBlock)
+  | Restored (MockInitLog ss, ExtLedgerState TestBlock EmptyMK)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 -- | Currently we don't have any error responses
@@ -182,7 +186,7 @@ newtype Resp ss = Resp (Success ss)
 -------------------------------------------------------------------------------}
 
 -- | The mock ledger records the blocks and ledger values (new to old)
-type MockLedger = [(TestBlock, ExtLedgerState EmptyMK TestBlock)]
+type MockLedger = [(TestBlock, ExtLedgerState TestBlock EmptyMK)]
 
 -- | We use the slot number of the ledger state as the snapshot number
 --
@@ -230,7 +234,7 @@ data SnapState = SnapOk | SnapCorrupted
 mockInit :: SecurityParam -> Mock
 mockInit = Mock [] Map.empty GenesisPoint
 
-mockCurrent :: Mock -> ExtLedgerState EmptyMK TestBlock
+mockCurrent :: Mock -> ExtLedgerState TestBlock EmptyMK
 mockCurrent Mock{..} =
     case mockLedger of
       []       -> testInitExtLedger
@@ -339,7 +343,7 @@ runMock :: Cmd MockSnap -> Mock -> (Resp MockSnap, Mock)
 runMock cmd initMock =
     first Resp $ go cmd initMock
   where
-    cfg :: LedgerDbCfg (ExtLedgerState EmptyMK TestBlock)
+    cfg :: LedgerDbCfg (ExtLedgerState TestBlock)
     cfg = extLedgerDbConfig (mockSecParam initMock)
 
     go :: Cmd MockSnap -> Mock -> (Success MockSnap, Mock)
@@ -396,7 +400,7 @@ runMock cmd initMock =
             k = fromIntegral $ maxRollbacks $ mockSecParam mock
 
             -- The snapshots from new to old until 'mockRestore' (inclusive)
-            untilRestore :: [(TestBlock, ExtLedgerState EmptyMK TestBlock)]
+            untilRestore :: [(TestBlock, ExtLedgerState TestBlock EmptyMK)]
             untilRestore =
               takeWhile
                 ((/= (mockRestore mock)) . blockPoint . fst)
@@ -421,8 +425,8 @@ runMock cmd initMock =
     push :: TestBlock -> StateT MockLedger (Except (ExtValidationError TestBlock)) ()
     push b = do
         ls <- State.get
-        l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (cur ls)
-        State.put ((b, l'):ls)
+        l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (convertMapKind $ cur ls)
+        State.put ((b, convertMapKind l'):ls)
 
     switch :: Word64
            -> [TestBlock]
@@ -431,7 +435,7 @@ runMock cmd initMock =
         State.modify $ drop (fromIntegral n)
         mapM_ push bs
 
-    cur :: MockLedger -> ExtLedgerState EmptyMK TestBlock
+    cur :: MockLedger -> ExtLedgerState TestBlock EmptyMK
     cur []         = testInitExtLedger
     cur ((_, l):_) = l
 
@@ -472,7 +476,7 @@ data StandaloneDB m = DB {
     , dbResolve     :: ResolveBlock m TestBlock
 
       -- | LedgerDB config
-    , dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState EmptyMK TestBlock)
+    , dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState TestBlock)
     }
 
 initStandaloneDB :: forall m. IOLike m => DbEnv m -> m (StandaloneDB m)
@@ -483,7 +487,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
 
-        dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState EmptyMK TestBlock)
+        dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState TestBlock)
         dbLedgerDbCfg = extLedgerDbConfig dbSecParam
 
     return DB{..}
@@ -567,7 +571,7 @@ runDB standalone@DB{..} cmd =
     streamAPI = dbStreamAPI standalone
 
     annLedgerErr' ::
-         AnnLedgerError (ExtLedgerState EmptyMK TestBlock) TestBlock
+         AnnLedgerError (ExtLedgerState TestBlock) TestBlock
       -> ExtValidationError TestBlock
     annLedgerErr' = annLedgerErr
 
@@ -770,7 +774,7 @@ generator secParam (Model mock hs) = Just $ QC.oneof $ concat [
         else [(At . uncurry Corrupt) <$> QC.elements possibleCorruptions]
     ]
   where
-    cfg :: LedgerDbCfg (ExtLedgerState EmptyMK TestBlock)
+    cfg :: LedgerDbCfg (ExtLedgerState TestBlock)
     cfg = extLedgerDbConfig (mockSecParam mock)
 
     withoutRef :: [Gen (Cmd :@ Symbolic)]

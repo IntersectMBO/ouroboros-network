@@ -67,6 +67,13 @@ data ExtLedgerState blk (mk :: MapKind) = ExtLedgerState {
     }
   deriving (Generic)
 
+instance InMemory (LedgerState blk) => InMemory (ExtLedgerState blk) where
+  convertMapKind est =
+    ExtLedgerState {
+        ledgerState = convertMapKind $ ledgerState est
+      , headerState = headerState est
+      }
+
 data ExtValidationError blk =
     ExtValidationErrorLedger !(LedgerError blk)
   | ExtValidationErrorHeader !(HeaderError blk)
@@ -74,11 +81,16 @@ data ExtValidationError blk =
 
 instance LedgerSupportsProtocol blk => NoThunks (ExtValidationError blk)
 
+-- TODO this might be wrong but I'd like to understand why.
+deriving instance (Show (LedgerState blk mk), Show (HeaderState blk))
+  => Show (ExtLedgerState blk mk)
+
 deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError    blk)
 deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError    blk)
 
 instance LedgerSupportsProtocol blk => ShowLedgerState (ExtLedgerState blk) where
   showsLedgerState = error "showsLedgerState @ExtLedgerState"
+  -- TODO is the idea that we remove this error?
 
 -- | We override 'showTypeOf' to show the type of the block
 --
