@@ -2647,7 +2647,7 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
 
 -- | Check inbound governor counters in `multinodeExperiment`.
 --
--- Note: this test validates inbound governor counters.
+-- Note: this test validates warm and hot inbound governor counters only.
 --
 prop_inbound_governor_counters :: Int
                                -> ArbDataFlow
@@ -2683,7 +2683,9 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
                   ++ "\n But got: " ++ show igc)
-                  (property $ igc <= upperBound)
+                  (    warmPeersRemote igc <= warmPeersRemote upperBound
+                  .&&. hotPeersRemote  igc <= hotPeersRemote  upperBound
+                  )
           _                               ->
             mempty
        )
@@ -2694,7 +2696,7 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
     bundleToCounters (Bundle hot warm _) =
       let warmRemote = bool 1 0 (null warm)
           hotRemote  = bool 1 0 (null hot)
-       in InboundGovernorCounters warmRemote hotRemote
+       in InboundGovernorCounters 0 0 warmRemote hotRemote
 
     -- We check for starting of miniprotocols that can potentially lead to
     -- inbound governor states of remote warm or remote hot connections. An
