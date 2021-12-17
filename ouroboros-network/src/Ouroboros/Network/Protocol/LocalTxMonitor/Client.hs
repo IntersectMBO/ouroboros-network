@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 
 -- | A view of the transaction monitor protocol from the point of view of
@@ -14,13 +14,12 @@
 -- For execution, 'localTxMonitorClientPeer' is provided for conversion
 -- into the typed protocol.
 --
-module Ouroboros.Network.Protocol.LocalTxMonitor.Client (
-    -- * Protocol type for the client
+module Ouroboros.Network.Protocol.LocalTxMonitor.Client
+  ( -- * Protocol type for the client
     -- | The protocol states from the point of view of the client.
-    LocalTxMonitorClient(..)
+    LocalTxMonitorClient (..)
   , ClientStIdle (..)
   , ClientStAcquired (..)
-
     -- * Execution as a typed protocol
   , localTxMonitorClientPeer
   ) where

@@ -82,8 +82,7 @@ import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type as LocalStateQu
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Codec
                      (codecLocalTxMonitor)
 import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Test as LocalTxMonitor
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
-                     (LocalTxMonitor)
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Type (LocalTxMonitor)
 import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Type as LocalTxMonitor
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
                      (codecLocalTxSubmission)

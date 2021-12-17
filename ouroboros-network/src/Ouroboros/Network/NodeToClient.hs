@@ -34,7 +34,6 @@ module Ouroboros.Network.NodeToClient
   , localStateQueryPeerNull
   , localTxSubmissionPeerNull
   , localTxMonitorPeerNull
-
     -- * Re-exported network interface
   , IOManager (..)
   , AssociateWithIOCP
@@ -108,7 +107,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
 import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type as LocalStateQuery
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Client as LocalTxMonitor
-import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Type   as LocalTxMonitor
+import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Type as LocalTxMonitor
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
 import           Ouroboros.Network.Snocket

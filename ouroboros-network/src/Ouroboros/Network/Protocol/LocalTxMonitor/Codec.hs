@@ -7,8 +7,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-module Ouroboros.Network.Protocol.LocalTxMonitor.Codec (
-    codecLocalTxMonitor
+module Ouroboros.Network.Protocol.LocalTxMonitor.Codec
+  ( codecLocalTxMonitor
   , codecLocalTxMonitorId
   ) where
 
@@ -18,9 +18,9 @@ import           Network.TypedProtocol.Codec.CBOR
 
 import           Data.ByteString.Lazy (ByteString)
 
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read     as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
 import           Text.Printf
 
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type

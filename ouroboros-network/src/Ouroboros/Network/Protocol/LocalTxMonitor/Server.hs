@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,15 +14,14 @@
 -- For execution, 'localTxMonitorServerPeer' is provided for conversion
 -- into the typed protocol.
 --
-module Ouroboros.Network.Protocol.LocalTxMonitor.Server (
-    -- * Protocol type for the server
+module Ouroboros.Network.Protocol.LocalTxMonitor.Server
+  ( -- * Protocol type for the server
     -- | The protocol states from the point of view of the server.
-    LocalTxMonitorServer(..)
+    LocalTxMonitorServer (..)
   , ServerStIdle (..)
   , ServerStAcquiring (..)
-  , ServerStAcquired(..)
+  , ServerStAcquired (..)
   , ServerStBusy (..)
-
     -- * Execution as a typed protocol
   , localTxMonitorServerPeer
   ) where

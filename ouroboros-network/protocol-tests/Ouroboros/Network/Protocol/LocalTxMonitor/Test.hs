@@ -17,8 +17,8 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim
-import           Control.Tracer (nullTracer)
 import qualified Control.Monad.ST as ST
+import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Proofs

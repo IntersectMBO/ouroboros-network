@@ -1,20 +1,20 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.LocalTxMonitor.Examples (
-    localTxMonitorClient,
-    localTxMonitorServer,
+module Ouroboros.Network.Protocol.LocalTxMonitor.Examples
+  ( localTxMonitorClient
+  , localTxMonitorServer
   ) where
 
 import           Data.List (find)
 import           Data.Maybe (isJust)
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Client
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 -- | An example client which acquire a snapshot from the server and fetches all transactions
 -- from it, and check presence of each of these transactions.

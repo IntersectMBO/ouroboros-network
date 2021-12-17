@@ -5,9 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.LocalTxMonitor.Direct
-  ( direct
-  ) where
+module Ouroboros.Network.Protocol.LocalTxMonitor.Direct (direct) where
 
 import           Control.Monad (join)
 
