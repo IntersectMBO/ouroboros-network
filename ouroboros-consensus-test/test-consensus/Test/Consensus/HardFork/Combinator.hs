@@ -56,6 +56,7 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip(Flip))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
@@ -231,7 +232,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         , pInfoInitLedger = ExtLedgerState {
               ledgerState = HardForkLedgerState $
                               initHardForkState
-                                initLedgerState
+                                (Flip initLedgerState)
             , headerState = genesisHeaderState $
                               initHardForkState
                                 (WrapChainDepState initChainDepState)
@@ -244,7 +245,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
             ]
         }
 
-    initLedgerState :: LedgerState BlockA
+    initLedgerState :: LedgerState BlockA EmptyMK
     initLedgerState = LgrA {
           lgrA_tip        = GenesisPoint
         , lgrA_transition = Nothing
@@ -362,6 +363,29 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 instance TxGen TestBlock where
   testGenTxs _ _ _ _ _ _ = return []
 
+
+instance TableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
+
+  -- TODO methods
+
+instance TickedTableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB]))) where
+
+  -- TODO define this
+  showsLedgerState _sing = undefined
+
+instance TableStuff (Ticked1 (LedgerState (HardForkBlock '[BlockA, BlockB]))) where
+
+  -- TODO methods
+
+
+instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (HardForkBlock '[BlockA, BlockB])))) where
+
+    -- TODO methods
+
 {-------------------------------------------------------------------------------
   Hard fork
 -------------------------------------------------------------------------------}
@@ -411,10 +435,10 @@ instance SerialiseHFC '[BlockA, BlockB]
 ledgerState_AtoB ::
      RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       TranslateLedgerState
        BlockA
        BlockB
-ledgerState_AtoB = InPairs.ignoringBoth $ Translate $ \_ LgrA{..} -> LgrB {
+ledgerState_AtoB = InPairs.ignoringBoth $ TranslateLedgerState $ \_ LgrA{..} -> LgrB {
       lgrB_tip = castPoint lgrA_tip
     }
 

@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
     -- * 'UpdateLedger'
   , LedgerState (..)
   , Ticked (..)
+  , Ticked1 (..)
   , genesisSimpleLedgerState
   , updateSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
@@ -369,6 +370,9 @@ newtype instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
     }
   deriving stock   (Generic, Show, Eq)
   deriving newtype (Serialise, NoThunks)
+
+instance InMemory (LedgerState (SimpleBlock c ext)) where
+  convertMapKind SimpleLedgerState {..} = SimpleLedgerState {..}
 
 instance (SimpleCrypto c, Typeable ext) => ShowLedgerState (LedgerState (SimpleBlock c ext)) where
   showsLedgerState _sing = shows
