@@ -133,6 +133,7 @@ pureLedgerResult a = LedgerResult {
   Basic LedgerState classes
 -------------------------------------------------------------------------------}
 
+-- TODO where is this class needed?
 class ShowLedgerState (l :: LedgerStateKind) where
   showsLedgerState :: SMapKind mk -> l mk -> ShowS   -- TODO someway to show the mk values
 

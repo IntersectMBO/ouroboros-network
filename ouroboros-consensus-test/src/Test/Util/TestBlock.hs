@@ -339,7 +339,8 @@ instance ShowLedgerState (LedgerState TestBlock) where
 
 instance TableStuff (LedgerState TestBlock) where
   newtype LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables (SMapKind mk)
-    deriving (Generic, Eq, Show, NoThunks)
+    deriving stock   (Generic, Eq, Show)
+    deriving newtype (NoThunks)
 
   -- TODO methods
 
@@ -352,7 +353,8 @@ instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
 
 instance TableStuff (Ticked1 (LedgerState TestBlock)) where
   newtype LedgerTables (Ticked1 (LedgerState TestBlock)) mk = TickedNoTestLedgerTables (SMapKind mk)
-    deriving (Generic, Eq, Show, NoThunks)
+    deriving stock   (Generic, Eq, Show)
+    deriving newtype (NoThunks)
 
   -- TODO methods
 
@@ -378,6 +380,9 @@ newtype instance LedgerState TestBlock mk =
       }
   deriving stock   (Show, Eq, Generic)
   deriving newtype (Serialise, NoThunks, ToExpr)
+
+instance InMemory (LedgerState TestBlock) where
+  convertMapKind TestLedger {..} = TestLedger {..}
 
 -- Ticking has no effect
 newtype instance Ticked1 (LedgerState TestBlock) mk = TickedTestLedger {

@@ -199,13 +199,13 @@ newtype instance Ticked1 (LedgerState BlockA) mk = TickedLedgerStateA {
   deriving stock (Generic, Show, Eq)
   deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrA" (Ticked1 (LedgerState BlockA) mk)
 
-instance ShowLedgerState (LedgerTables (LedgerState BlockA)) where
-  showsLedgerState _sing = shows
-
 instance TableStuff (LedgerState BlockA) where
   data LedgerTables (LedgerState BlockA) mk = BlockATablesUnit
     deriving (Generic, NoThunks, Show)
   -- TODO methods
+
+instance (ShowLedgerState (LedgerTables (LedgerState BlockA))) where
+  showsLedgerState _sing = shows
 
 instance TickedTableStuff (LedgerState BlockA) where
   -- TODO methods
@@ -345,6 +345,16 @@ newtype instance Validated (GenTx BlockA) = ValidatedGenTxA { forgetValidatedGen
   deriving anyclass (NoThunks)
 
 type instance ApplyTxErr BlockA = Void
+
+
+instance (TableStuff (Ticked1 (LedgerState BlockA))) where
+  data LedgerTables (Ticked1 (LedgerState BlockA)) mk = TickedNoTables
+    deriving (Generic, Eq, Show, NoThunks)
+
+  -- TODO methods
+
+instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState BlockA))) where
+  showsLedgerState _sing = shows
 
 instance LedgerSupportsMempool BlockA where
   applyTx _ _wti sno tx@(TxA _ payload) (TickedLedgerStateA st) =

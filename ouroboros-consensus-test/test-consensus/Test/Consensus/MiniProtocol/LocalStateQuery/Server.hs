@@ -43,7 +43,6 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-                     (ledgerDbTip, ledgerDbWithAnchor)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
@@ -170,7 +169,7 @@ mkServer k chain = do
       localStateQueryServer
         cfg
         (castPoint . LgrDB.ledgerDbTip <$> LgrDB.getCurrent lgrDB)
-        (\pt -> LedgerDB.ledgerDbPrefix pt <$> LgrDB.getCurrent lgrDB)
+        (\pt -> LgrDB.ledgerDbPrefix pt <$> LgrDB.getCurrent lgrDB)
         getImmutablePoint
   where
     cfg = ExtLedgerCfg $ testCfg k

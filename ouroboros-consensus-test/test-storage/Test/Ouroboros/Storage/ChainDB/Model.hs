@@ -152,6 +152,10 @@ deriving instance
   , StandardHash                     blk
   , Show                             blk
   , Show (ExtLedgerState blk EmptyMK) -- TODO find out why this was not needed before
+  -- Answer: because this was removed
+  --
+  -- deriving instance LedgerSupportsProtocol blk => Show (ExtLedgerState     blk)
+
   ) => Show (Model blk)
 
 {-------------------------------------------------------------------------------
