@@ -80,12 +80,14 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleLedgerState      = unlabelled ledgerState
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
+    , exampleSlotNo           = unlabelled slotNo
     }
   where
     blk = mkShelleyBlock sleBlock
     hash = ShelleyHash sleHashHeader
     serialisedBlock = Serialised "<BLOCK>"
     tx = mkShelleyTx sleTx
+    slotNo = SlotNo 42
     serialisedHeader =
       SerialisedHeaderFromDepPair $ GenDepPair (NestedCtxt CtxtShelley) (Serialised "<HEADER>")
     queries = labelled [

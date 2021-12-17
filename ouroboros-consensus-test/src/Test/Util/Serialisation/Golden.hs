@@ -54,7 +54,7 @@ import           Cardano.Prelude (forceElemsToWHNF)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
-                     HeaderHash, SomeSecond)
+                     HeaderHash, SlotNo, SomeSecond)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
@@ -224,6 +224,7 @@ data Examples blk = Examples {
     , exampleLedgerState      :: Labelled (LedgerState blk)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
     , exampleExtLedgerState   :: Labelled (ExtLedgerState blk)
+    , exampleSlotNo           :: Labelled SlotNo
     }
 
 emptyExamples :: Examples blk
@@ -242,6 +243,7 @@ emptyExamples = Examples {
     , exampleLedgerState      = mempty
     , exampleChainDepState    = mempty
     , exampleExtLedgerState   = mempty
+    , exampleSlotNo           = mempty
     }
 
 combineExamples ::
@@ -265,6 +267,7 @@ combineExamples f e1 e2 = Examples {
     , exampleLedgerState      = combine exampleLedgerState
     , exampleChainDepState    = combine exampleChainDepState
     , exampleExtLedgerState   = combine exampleExtLedgerState
+    , exampleSlotNo           = combine exampleSlotNo
     }
   where
     combine :: (Examples blk -> Labelled a) -> Labelled a
@@ -444,8 +447,10 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
           test "Block"           exampleBlock           enc'
         , test "SerialisedBlock" exampleSerialisedBlock enc'
         , test "GenTx"           exampleGenTx           enc'
+        , test "GenTxId"         exampleGenTxId         enc'
         , test "ApplyTxErr"      exampleApplyTxErr      enc'
         , test "Query"           exampleQuery           enc'
+        , test "SlotNo"          exampleSlotNo          enc'
         , test "Result"          exampleResult          encRes
         ]
       where
