@@ -1,5 +1,4 @@
 status = [
-  "buildkite/ouroboros-network",
   "ci/hydra:Cardano:ouroboros-network:required",
 ]
 timeout_sec = 7200

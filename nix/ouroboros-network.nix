@@ -1,16 +1,10 @@
-############################################################################
+# ###########################################################################
 # Builds Haskell packages with Haskell.nix
 ############################################################################
-{ lib
-, stdenv
-, pkgs
-, haskell-nix
-, buildPackages
-, config ? { }
+{ lib, stdenv, pkgs, haskell-nix, buildPackages, config ? { }
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
-, libsodium-vrf ? pkgs.libsodium-vrf
-}:
+, libsodium-vrf ? pkgs.libsodium-vrf }:
 let
   compiler-nix-name = pkgs.localConfig.ghcVersion;
   src = haskell-nix.haskellLib.cleanGit {
@@ -19,9 +13,7 @@ let
   };
 
   projectPackages = lib.attrNames (haskell-nix.haskellLib.selectProjectPackages
-    (haskell-nix.cabalProject {
-      inherit compiler-nix-name src;
-    }));
+    (haskell-nix.cabalProject { inherit compiler-nix-name src; }));
 
   # This creates the Haskell package set.
   # https://input-output-hk.github.io/haskell.nix/user-guide/projects/
@@ -39,17 +31,20 @@ let
         enableLibraryProfiling = profiling;
 
         # Command-line options for test suites:
-        packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags = lib.mkForce [ "--no-create" ];
+        packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags =
+          lib.mkForce [ "--no-create" ];
 
-        packages.cardano-crypto-praos.components.library.pkgconfig = lib.mkForce [ [ libsodium-vrf ] ];
-        packages.cardano-crypto-class.components.library.pkgconfig = lib.mkForce [ [ libsodium-vrf ] ];
+        packages.cardano-crypto-praos.components.library.pkgconfig =
+          lib.mkForce [ [ libsodium-vrf ] ];
+        packages.cardano-crypto-class.components.library.pkgconfig =
+          lib.mkForce [ [ libsodium-vrf ] ];
       }
 
       # Options specific to the windows cross-compiled build:
-      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
-        # Allow reinstallation of Win32
-        nonReinstallablePkgs =
-          [
+      ({ pkgs, ... }:
+        lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
+          # Allow reinstallation of Win32
+          nonReinstallablePkgs = [
             "rts"
             "ghc-heap"
             "ghc-prim"
@@ -83,41 +78,54 @@ let
             "xhtml"
             # "stm" "terminfo"
           ];
-        # ruby/perl dependencies cannot be cross-built for cddl tests:
-        packages.ouroboros-network.flags.cddl = false;
+          # ruby/perl dependencies cannot be cross-built for cddl tests:
+          packages.ouroboros-network.flags.cddl = false;
 
-        # Make sure we use a buildPackages version of happy
-        packages.pretty-show.components.library.build-tools = [ buildPackages.haskell-nix.haskellPackages.happy ];
+          # Make sure we use a buildPackages version of happy
+          packages.pretty-show.components.library.build-tools =
+            [ buildPackages.haskell-nix.haskellPackages.happy ];
 
-        # Remove hsc2hs build-tool dependencies (suitable version will be available as part of the ghc derivation)
-        packages.Win32.components.library.build-tools = lib.mkForce [ ];
-        packages.terminal-size.components.library.build-tools = lib.mkForce [ ];
-        packages.network.components.library.build-tools = lib.mkForce [ ];
+          # Remove hsc2hs build-tool dependencies (suitable version will be available as part of the ghc derivation)
+          packages.Win32.components.library.build-tools = lib.mkForce [ ];
+          packages.terminal-size.components.library.build-tools =
+            lib.mkForce [ ];
+          packages.network.components.library.build-tools = lib.mkForce [ ];
 
-        # Make sure that libsodium DLLs are available for tests
-        packages.ouroboros-consensus-byron-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-mock-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-test.components.tests.test-consensus.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-test.components.tests.test-infra.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-        packages.ouroboros-consensus-test.components.tests.test-storage.postInstall = ''ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll'';
-      })
+          # Make sure that libsodium DLLs are available for tests
+          packages.ouroboros-consensus-byron-test.components.tests.test.postInstall =
+            "ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll";
+          packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall =
+            "ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll";
+          packages.ouroboros-consensus-mock-test.components.tests.test.postInstall =
+            "ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll";
+          packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall =
+            "ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll";
+          packages.ouroboros-consensus-test.components.tests.test-consensus.postInstall =
+            "ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll";
+          packages.ouroboros-consensus-test.components.tests.test-infra.postInstall =
+            "ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll";
+          packages.ouroboros-consensus-test.components.tests.test-storage.postInstall =
+            "ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll";
+        })
       # Options for when not compiling to windows:
-      ({ pkgs, ... }: lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
-        packages.ouroboros-network.flags.cddl = true;
-        packages.ouroboros-network.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
-        packages.ouroboros-network.components.tests.cddl.preCheck = "export HOME=`pwd`";
-      })
+      ({ pkgs, ... }:
+        lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
+          packages.ouroboros-network.flags.cddl = true;
+          packages.ouroboros-network.components.tests.cddl.build-tools =
+            [ pkgs.cddl pkgs.cbor-diag ];
+          packages.ouroboros-network.components.tests.cddl.preCheck =
+            "export HOME=`pwd`";
+        })
       # Fix for Plutus compilation with profiling
-      ({ pkgs, ... }: lib.mkIf (!pkgs.stdenv.hostPlatform.isDarwin) {
-        # Needed for profiled builds to fix an issue loading recursion-schemes part of makeBaseFunctor
-        # that is missing from the `_p` output.  See https://gitlab.haskell.org/ghc/ghc/-/issues/18320
-        # This work around currently breaks regular builds on macOS with:
-        # <no location info>: error: ghc: ghc-iserv terminated (-11)
-        packages.plutus-core.components.library.ghcOptions = [ "-fexternal-interpreter" ];
-      })
+      ({ pkgs, ... }:
+        lib.mkIf (!pkgs.stdenv.hostPlatform.isDarwin) {
+          # Needed for profiled builds to fix an issue loading recursion-schemes part of makeBaseFunctor
+          # that is missing from the `_p` output.  See https://gitlab.haskell.org/ghc/ghc/-/issues/18320
+          # This work around currently breaks regular builds on macOS with:
+          # <no location info>: error: ghc: ghc-iserv terminated (-11)
+          packages.plutus-core.components.library.ghcOptions =
+            [ "-fexternal-interpreter" ];
+        })
     ];
   };
-in
-pkgSet
+in pkgSet

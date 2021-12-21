@@ -1,12 +1,7 @@
 # This file is used by nix-shell.
 # It just takes the shell attribute from default.nix.
-{ config ? { }
-, sourcesOverride ? { }
-, withHoogle ? false
-, pkgs ? import ./nix {
-    inherit config sourcesOverride;
-  }
-}:
+{ config ? { }, sourcesOverride ? { }, withHoogle ? false
+, pkgs ? import ./nix { inherit config sourcesOverride; } }:
 with pkgs;
 let
   # Haskell-language-server is pulled in with niv directly from its repositories
@@ -29,15 +24,20 @@ let
   shell = ouroborosNetworkHaskellPackages.shellFor {
     name = "cabal-dev-shell";
 
-    packages = ps: lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps);
+    packages = ps:
+      lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps);
 
     # These programs will be available inside the nix-shell.
-    buildInputs = [
+    nativeBuildInputs = [
       cabalWrapped
+      # we also add cabal (even if cabalWrapped will be used by default) for shell completion:
+      cabal
       entr
+      fd
       niv
       pkgconfig
-      nixpkgs-fmt
+      nixfmt
+      stylish-haskell
       hls.hls
       hls.hls-wrapper
       hls.implicit-hie
@@ -45,7 +45,6 @@ let
 
     tools = {
       # IDE tools
-      stylish-haskell = "0.13.0.0";
       ghcid = "0.8.7";
       hasktags = "0.71.2";
       # Draw graph of module dependencies
@@ -61,9 +60,7 @@ let
 
   devops = pkgs.stdenv.mkDerivation {
     name = "devops-shell";
-    buildInputs = [
-      niv
-    ];
+    buildInputs = [ niv ];
     shellHook = ''
       echo "DevOps Tools" \
       | ${figlet}/bin/figlet -f banner -c \
@@ -77,5 +74,4 @@ let
     '';
   };
 
-in
-shell // { inherit devops; }
+in shell // { inherit devops; }

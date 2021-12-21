@@ -1,14 +1,9 @@
 { haskell-nix }:
 
-with haskell-nix.haskellLib;
-{
+with haskell-nix.haskellLib; {
 
-  inherit
-    selectProjectPackages
-    collectChecks'
-    collectComponents';
+  inherit selectProjectPackages collectChecks' collectComponents';
 
-  inherit (extra)
-    recRecurseIntoAttrs;
+  inherit (extra) recRecurseIntoAttrs;
 
 }
