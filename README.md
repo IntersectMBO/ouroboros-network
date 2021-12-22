@@ -107,3 +107,4 @@ the right version of `stylish-haskell`.
 ```bash
 nix-shell --run ./scripts/ci/check-stylish.sh
 ```
+
