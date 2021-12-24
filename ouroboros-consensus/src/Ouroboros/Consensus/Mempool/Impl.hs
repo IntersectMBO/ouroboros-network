@@ -104,14 +104,7 @@ mkMempool mpEnv = Mempool
           let p = pureRemoveTxs cfg co txs is ls
           runRemoveTxs istate p
         whenJust mTrace (traceWith trcr)
-    , syncWithLedger = do
-        (mTrace, mp) <- atomically $ do
-          is <- readTVar istate
-          ls <- getCurrentLedgerState ldgr
-          let p = pureSyncWithLedger is ls cfg co
-          runSyncWithLedger istate p
-        whenJust mTrace (traceWith trcr)
-        return mp
+    , syncWithLedger = implSyncWithLedger mpEnv
     , getSnapshot    = implSnapshotFromIS <$> readTVar istate
     , getSnapshotFor = \fls -> pureGetSnapshotFor cfg fls co <$> readTVar istate
     , getCapacity    = isCapacity <$> readTVar istate
@@ -201,25 +194,37 @@ forkSyncStateOnTipPointChange registry menv =
         , wReader      = getCurrentTip
         }
   where
-    MempoolEnv { mpEnvStateVar = istate
-               , mpEnvLedger = ldgr
-               , mpEnvTracer = trcr
-               , mpEnvLedgerCfg = cfg
-               , mpEnvCapacityOverride = co
-               } = menv
 
     action :: Point blk -> m ()
-    action _tipPoint =
-      void $ do
-        (mTrace, _) <- atomically $ do
-          is <- readTVar istate
-          ls <- getCurrentLedgerState ldgr
-          let p = pureSyncWithLedger is ls cfg co
-          runSyncWithLedger istate p
-        whenJust mTrace (traceWith trcr)
+    action _tipPoint = void $ implSyncWithLedger menv
 
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip :: STM m (Point blk)
     getCurrentTip =
           ledgerTipPoint (Proxy @blk)
       <$> getCurrentLedgerState (mpEnvLedger menv)
+
+implSyncWithLedger ::
+     forall m blk. (
+       IOLike m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     , ValidateEnvelope blk
+     )
+  => MempoolEnv m blk
+  -> m (MempoolSnapshot blk TicketNo)
+implSyncWithLedger menv = do
+  (mTrace, mp) <- atomically $ do
+    is <- readTVar istate
+    ls <- getCurrentLedgerState ldgrInterface
+    let p = pureSyncWithLedger is ls cfg co
+    runSyncWithLedger istate p
+  whenJust mTrace (traceWith trcr)
+  return mp
+  where
+    MempoolEnv { mpEnvStateVar = istate
+               , mpEnvLedger = ldgrInterface
+               , mpEnvTracer = trcr
+               , mpEnvLedgerCfg = cfg
+               , mpEnvCapacityOverride = co
+               } = menv
