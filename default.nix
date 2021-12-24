@@ -46,6 +46,7 @@ let
       styles = recurseIntoAttrs {
         check-nixfmt = callPackage ./nix/check-nixfmt.nix { };
         check-stylish = callPackage ./nix/check-stylish.nix { };
+        check-stylish-network = callPackage ./nix/check-stylish-network.nix { };
       };
     };
 
