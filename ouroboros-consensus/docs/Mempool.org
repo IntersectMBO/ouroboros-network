@@ -115,12 +115,25 @@
 
 *** initMempoolEnv
 
-   ~initMempoolEnv~ creates ~MempoolEnv m blk~ whose values will be later used to
-    create the ~Mempool m blk~. ~initMempoolEnv~ uses ~LedgerInterface~ which is
-    just an ~STM~ to the current ~LedgerState~ held by ~ChainDB~ (corresponding to
-    the current tip).
+   ~initMempoolEnv~ creates ~MempoolEnv m blk~ whose values will be later used
+    to create the ~Mempool m blk~.  The ~MempoolEnv m blk~ looks following:
+
+     #+BEGIN_SRC haskell
+       data MempoolEnv m blk = MempoolEnv {
+	     mpEnvLedger           :: LedgerInterface m blk
+	     -- ^ Helper interface, just an STM really
+	   , mpEnvLedgerCfg        :: LedgerConfig blk
+	   , mpEnvStateVar         :: StrictTVar m (InternalState blk)
+	     -- ^ This is the most important bit IMHO
+	   , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
+	   , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
+	   , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
+	   }
+     #+END_SRC
 
 **** the LedgerInterface
+    ~initMempoolEnv~ uses ~LedgerInterface~ which is just an ~STM~ to the
+    current ~LedgerState~ held by ~ChainDB~ (corresponding to the current tip).
 
      #+BEGIN_SRC haskell
    data LedgerInterface m blk = LedgerInterface
@@ -133,21 +146,6 @@
    chainDBLedgerInterface chainDB = LedgerInterface
        { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
        }
-     #+END_SRC
-
-
-    The ~MempoolEnv m blk~ looks following
-
-     #+BEGIN_SRC haskell
-       data MempoolEnv m blk = MempoolEnv {
-	     mpEnvLedger           :: LedgerInterface m blk
-	   , mpEnvLedgerCfg        :: LedgerConfig blk
-	   , mpEnvStateVar         :: StrictTVar m (InternalState blk)
-	     -- ^ This is the most important bit IMHO
-	   , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
-	   , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
-	   , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
-	   }
      #+END_SRC
 
 **** the InternalState
@@ -212,17 +210,17 @@
       ~LedgerState~ and tick it.
 
 ***** tick the ledger state
-      We need to tick it because there might have
-      happen things in the system that will change the ledger. Since we are not
-      forging block at this time, we choose ~ForgeInUnknownSlot~. Name is
-      confusing IMHO but it merely means that we need to tick the ledger state,
-      we don't know in which slot the transactions will eventually be. Thus we
-      mark the ledger with ~ForgeInUnknownSlot~. This will assume next slot after
-      the tip of the ledger. See [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/API.hs::data ForgeLedgerState blk =][ForgeLedgerState]] for details.
+      We need to tick it because there might have happen things in the system
+      that will change the ledger. Since we are not forging block at this time,
+      we choose ~ForgeInUnknownSlot~. Name is confusing a bit IMHO but it merely
+      means that we need to tick the ledger state, we don't know in which slot
+      the transactions will eventually be. Thus we mark the ledger with
+      ~ForgeInUnknownSlot~. This will assume next slot after the tip of the
+      ledger. See [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/API.hs::data ForgeLedgerState blk =][ForgeLedgerState]] for details.
 
 ***** initialize internal state
-      That ticked ledger state will be used as an argument to initialize
-      the ~InternalState~ with [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs::initInternalState capacityOverride lastTicketNo slot st = IS {][initInternalState]] that looks like this.
+      That ticked ledger state will be used as an argument to initialize an
+      empty ~InternalState~ with [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs::initInternalState capacityOverride lastTicketNo slot st = IS {][initInternalState]] that looks like this:
 
     #+BEGIN_SRC haskell
     initInternalState capacityOverride lastTicketNo slot st = IS {
@@ -290,12 +288,13 @@ implSyncWithLedger menv = do
       in NewSyncedState istate' snapshot mTrace
 #+END_SRC
 
-     The hear of [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Pure.hs::pureSyncWithLedger istate lstate lcfg capacityOverride =][pureSyncWithLedger]] is really [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs::validateIS istate lstate lconfig capacityOverride =][validateIS]] that calls
+     The heart of [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Pure.hs::pureSyncWithLedger istate lstate lcfg capacityOverride =][pureSyncWithLedger]] is really [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs::validateIS istate lstate lconfig capacityOverride =][validateIS]] that calls
      [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs::validateStateFor][validateStateFor]]  that will
      + either just return a ~ValidationResult~ immediately (using
        ~validationResultFromIS~) if ~InternalState~'s tip and slot matches the
        current ledger's tip and slot
      + or it will revalidate all transactions if the ledger has changed using [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs::revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =][revalidateTxsFor]]
+     Lastly we create the ~InternalState~ back from the ~ValidationResult~
 
 #+BEGIN_SRC haskell
 revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
@@ -337,8 +336,9 @@ extendVRPrevApplied cfg txTicket vr =
 
 *** mkMempool
 
-    This finally creates the [[*The Mempool datatype][The Mempool datatype]] based on the ~MempoolEnv~ that
-    was created in the [[*initMempoolEnv][initMempoolEnv]]. The important bits are
+    The [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs::openMempool registry ledger cfg capacityOverride tracer txSize = do][~openMempool~]] finally creates the [[*The Mempool datatype][The Mempool datatype]] based on the
+    ~MempoolEnv~ that was created in the [[*initMempoolEnv][initMempoolEnv]] by calling [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs::mkMempool mpEnv = Mempool][mkMempool]].
+    The important bits are
 
     #+BEGIN_SRC haskell
       mkMempool :: (...) => MempoolEnv m blk -> Mempool m blk TicketNo
@@ -383,7 +383,7 @@ pureTryAddTxs cfg txSize wti tx is
 
      We create ~ValidationResult~ from current ~InternalState~ and extended once
      using [[file:~/projects/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs::extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $][extendVRNew]] which is similar to ~extendVRPrevApplied~ but it applies
-     a new transaction (instead of reapplying).
+     a new transaction (instead of reapplying) using ~applyTx~ from ~LedgerSupportsMempool~.
 
 **** pureRemoveTxs
 
@@ -392,17 +392,4 @@ pureTryAddTxs cfg txSize wti tx is
     we saw in [[*pureSyncWithLedger][pureSyncWithLedger]]
 
 **** implSyncWithLedger
-
      Already discussed in [[*pureSyncWithLedger][pureSyncWithLedger]] section.
-
-
-* TODO Changes that we need to do in order to support modifications to the ~LedgerState~
-
-  From the study of the [[*The Mempool datatype][The Mempool datatype]] we know that there are three
-  operations that can potentially revalidate transactions:
-
-  1. adding transactions to the mempool (see[[*implTryAddTxs][ implTryAddTxs]])
-  2. removing transactions to the mempool (see [[*pureRemoveTxs][pureRemoveTxs]])
-  3. syncing mempool with a new ledger state (see [[*implSyncWithLedger][implSyncWithLedger]])
-
-  To be continued...
