@@ -168,7 +168,7 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolParamsAlonzo {
-          alonzoProtVer                 = ProtVer 5 0
+          alonzoProtVer                 = ProtVer 6 0
         , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
       ProtocolTransitionParamsShelleyBased {
