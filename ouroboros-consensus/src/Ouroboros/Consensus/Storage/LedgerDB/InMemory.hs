@@ -79,7 +79,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
                      PushStart (..), Pushing (..),
                      UpdateLedgerDbTraceEvent (..))
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
@@ -454,7 +453,7 @@ ledgerDbPush cfg ap db =
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany ::
-     forall m c l blk . (ApplyBlock l blk, , TickedTableStuff l, Monad m, c)
+     forall m c l blk . (ApplyBlock l blk, TickedTableStuff l, Monad m, c)
   => (Pushing blk -> m ())
   -> LedgerDbCfg l
   -> [Ap m l blk c] -> LedgerDB l -> m (LedgerDB l)
