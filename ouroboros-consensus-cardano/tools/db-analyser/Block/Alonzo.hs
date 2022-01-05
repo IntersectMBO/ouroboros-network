@@ -5,6 +5,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -16,6 +17,7 @@ module Block.Alonzo (
 import           Control.Applicative
 import qualified Data.Map.Strict as Map
 import           Data.Text (Text)
+import           Data.Word (Word64)
 import           Options.Applicative
 import           Prelude
 
@@ -54,6 +56,11 @@ instance HasProtocolInfo (ShelleyBlock StandardAlonzo) where
 
 type AlonzoBlockArgs = Args (ShelleyBlock StandardAlonzo)
 
+
+{-------------------------------------------------------------------------------
+  FromJSON instances copied from cardano-node.Cardano.Api.Orphans
+-------------------------------------------------------------------------------}
+
 instance FromJSON Alonzo.AlonzoGenesis where
   parseJSON = Aeson.withObject "Alonzo Genesis" $ \o -> do
     coinsPerUTxOWord     <- o .:  "lovelacePerUTxOWord"
@@ -91,7 +98,19 @@ instance FromJSON Alonzo.AlonzoGenesis where
 
 deriving instance FromJSON a => FromJSON (Alonzo.ExUnits' a)
 
-deriving newtype instance FromJSON Alonzo.ExUnits
+instance FromJSON Alonzo.ExUnits where
+  parseJSON = Aeson.withObject "exUnits" $ \o -> do
+    mem <- o .: "exUnitsMem"
+    steps <- o .: "exUnitsSteps"
+    bmem <- checkWord64Bounds mem
+    bsteps <- checkWord64Bounds steps
+    return $ Alonzo.ExUnits bmem bsteps
+    where
+      checkWord64Bounds n =
+        if n >= fromIntegral (minBound @Word64)
+            && n <= fromIntegral (maxBound @Word64)
+        then pure n
+        else fail ("Unit out of bounds for Word64: " <> show n)
 
 instance FromJSON Alonzo.Language where
   parseJSON = Aeson.withText "Language" languageFromText
