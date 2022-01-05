@@ -22,7 +22,6 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client (
 
       -- * Utilities
     , mapLocalStateQueryClient
-    , Some (..)
     ) where
 
 import           Control.Monad (forever)
@@ -31,7 +30,6 @@ import           Data.Kind (Type)
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
