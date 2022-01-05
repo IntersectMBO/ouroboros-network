@@ -76,3 +76,6 @@ haddocks/
 /docs/**/*.synctex.gz
 /docs/**/*.toc
 .auctex-auto
+
+# Ignore directory used by .github/bin/check-dependencies
+/tmp
