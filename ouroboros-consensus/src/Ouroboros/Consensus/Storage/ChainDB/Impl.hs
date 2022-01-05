@@ -158,8 +158,8 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
                           (Args.cdbCheckInFuture args)
       traceWith initChainSelTracer InitalChainSelected
 
-      let chain  =                  VF.validatedFragment chainAndLedger
-          ledger = forgetAsLedger $ VF.validatedLedger   chainAndLedger
+      let chain  = VF.validatedFragment chainAndLedger
+          ledger = VF.validatedLedger   chainAndLedger
           cfg    = Args.cdbTopLevelConfig args
 
       atomically $ LgrDB.setCurrent lgrDB ledger
