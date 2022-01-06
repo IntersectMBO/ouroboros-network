@@ -211,10 +211,8 @@ class ( -- Requirements on the ledger state itself
   applyChainTickLedgerResult ::
        LedgerCfg l
     -> SlotNo
-    -- TODO while the only " large " the UTxO map, ticking involve any tables
-    -> l EmptyMK
-    -> LedgerResult l (Ticked1 l EmptyMK)
-
+    -> l mk
+    -> LedgerResult l (Ticked1 l mk)
 
   -- | Given a block, get the key-sets that we need to apply it to a ledger
   -- state.
@@ -273,7 +271,7 @@ class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
   trackingTablesToDiffs :: l TrackingMK -> l DiffMK
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
-applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l EmptyMK -> Ticked1 l EmptyMK
+applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l mk -> Ticked1 l mk
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------

@@ -172,10 +172,10 @@ epochInfoPrecomputedTransitionInfo shape transition st =
 -------------------------------------------------------------------------------}
 
 -- | Extend the telescope until the specified slot is within the era at the tip
-extendToSlot :: forall xs. CanHardFork xs
+extendToSlot :: forall xs mk . CanHardFork xs
              => HardForkLedgerConfig xs
              -> SlotNo
-             -> HardForkState (Flip LedgerState EmptyMK) xs -> HardForkState (Flip LedgerState EmptyMK) xs
+             -> HardForkState (Flip LedgerState mk) xs -> HardForkState (Flip LedgerState mk) xs
 extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
       HardForkState . unI
     . Telescope.extend
@@ -216,8 +216,8 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
 
     howExtend :: TranslateLedgerState blk blk'
               -> History.Bound
-              -> Current (Flip LedgerState EmptyMK) blk
-              -> (K Past blk, Current (Flip LedgerState EmptyMK) blk')
+              -> Current (Flip LedgerState mk) blk
+              -> (K Past blk, Current (Flip LedgerState mk) blk')
     howExtend f currentEnd cur = (
           K Past {
               pastStart    = currentStart cur
