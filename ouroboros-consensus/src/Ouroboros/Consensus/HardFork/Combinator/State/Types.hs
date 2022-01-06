@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -101,10 +102,10 @@ newtype TranslateForecast f g x y = TranslateForecast {
     }
 
 newtype TranslateLedgerState x y = TranslateLedgerState {
-      translateLedgerStateWith ::
+      translateLedgerStateWith :: forall mk .
            EpochNo
-        -> LedgerState x EmptyMK
-        -> LedgerState y EmptyMK
+        -> LedgerState x mk
+        -> LedgerState y mk
     }
 
 -- | Knowledge in a particular era of the transition to the next era
