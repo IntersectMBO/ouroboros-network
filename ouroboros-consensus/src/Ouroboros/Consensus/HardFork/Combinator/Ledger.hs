@@ -16,6 +16,9 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+
+{-# LANGUAGE InstanceSigs       #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Ledger (
@@ -130,6 +133,12 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
 
   type AuxLedgerEvent (LedgerState (HardForkBlock xs)) = OneEraLedgerEvent xs
 
+  applyChainTickLedgerResult :: forall mk . LedgerCfg (LedgerState (HardForkBlock xs))
+                                    -> SlotNo
+                                    -> LedgerState (HardForkBlock xs) mk
+                                    -> LedgerResult
+                                         (LedgerState (HardForkBlock xs))
+                                         (Ticked1 (LedgerState (HardForkBlock xs)) mk)
   applyChainTickLedgerResult cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
       sequenceHardForkState
         (hcizipWith proxySingle (tickOne ei slot) cfgs extended) <&> \l' ->
@@ -162,7 +171,7 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger cfg st
 
-      extended :: HardForkState (Flip LedgerState EmptyMK) xs
+      extended :: HardForkState (Flip LedgerState mk) xs
       extended = State.extendToSlot cfg slot st
 
 tickOne :: SingleEraBlock blk
@@ -170,9 +179,9 @@ tickOne :: SingleEraBlock blk
         -> SlotNo
         -> Index xs                                           blk
         -> WrapPartialLedgerConfig                            blk
-        -> Flip LedgerState EmptyMK                           blk
+        -> Flip LedgerState mk                                blk
         -> (    LedgerResult (LedgerState (HardForkBlock xs))
-            :.: FlipTickedLedgerState EmptyMK
+            :.: FlipTickedLedgerState mk
            )                                                  blk
 tickOne ei slot index pcfg (Flip st) = Comp $ fmap FlipTickedLedgerState $
       embedLedgerResult (injectLedgerEvent index)
