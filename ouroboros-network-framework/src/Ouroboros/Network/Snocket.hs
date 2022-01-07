@@ -13,7 +13,7 @@ module Ouroboros.Network.Snocket
   , Accepted (..)
   , AddressFamily (..)
   , Snocket (..)
-    -- ** Socket based Snocktes
+    -- ** Socket based Snockets
   , SocketSnocket
   , socketSnocket
     -- ** Local Snockets
