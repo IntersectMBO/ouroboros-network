@@ -72,8 +72,7 @@ import           Cardano.Ledger.Crypto (StandardCrypto, VRF)
 import qualified Cardano.Ledger.Keys as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.API as SL
-import qualified Cardano.Protocol.TPraos.BHeader as SL (BHeader, mkSeed,
-                     seedEta, seedL)
+import qualified Cardano.Protocol.TPraos.BHeader as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import qualified Cardano.Protocol.TPraos.Rules.Overlay as SL
