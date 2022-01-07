@@ -613,6 +613,8 @@ data TracePeerSelection peeraddr =
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+     | TracePeerNess           Int (Double, Double, Double, Double, Double)
+                               Int (Double, Double, Double, Double, Double)
   deriving Show
 
 data DebugPeerSelection peeraddr peerconn =

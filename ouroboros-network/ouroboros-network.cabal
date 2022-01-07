@@ -179,7 +179,9 @@ library
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2 && <0.3,
                        random,
+                       statistics,
                        strict-containers,
+                       vector,
 
                        cardano-binary,
                        cardano-prelude,

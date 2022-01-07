@@ -39,8 +39,10 @@ module Ouroboros.Network.PeerSelection.Governor (
 ) where
 
 import           Data.Cache
-import           Data.Void (Void)
+import qualified Data.Map as Map
 import           Data.Semigroup (Min(..))
+import qualified Data.Vector as V
+import           Data.Void (Void)
 
 import           Control.Applicative (Alternative((<|>)))
 import qualified Control.Concurrent.JobPool as JobPool
@@ -51,6 +53,8 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer(..), traceWith)
+import           Statistics.Sample
+import           Statistics.Quantile
 import           System.Random
 
 import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
@@ -590,6 +594,7 @@ peerChurnGovernor :: forall m peeraddr.
                      ( MonadSTM m
                      , MonadMonotonicTime m
                      , MonadDelay m
+                     , Ord peeraddr
                      )
                   => Tracer m (TracePeerSelection peeraddr)
                   -> PeerMetrics m peeraddr
@@ -646,6 +651,14 @@ peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelec
                        min 1 (targetNumberOfActivePeers base - 1)
         })
 
+    nessStats :: V.Vector Double -> (Double, Double, Double, Double, Double)
+    nessStats v = (stdDev v, midspread medianUnbiased 4 v, V.minimum v, V.maximum v,
+                   median medianUnbiased v)
+
+    -- Ensure that we have at least n samples.
+    -- fetchyness/upstreamyness doesn't count peers that are never first.
+    padStats :: Int -> [Int] -> [Int]
+    padStats n ss = ss ++ replicate (n - length ss) 0
 
     go :: StdGen -> m Void
     go !rng = do
@@ -653,6 +666,19 @@ peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelec
 
       churnMode <- atomically updateChurnMode
       traceWith tracer $ TraceChurnMode churnMode
+
+      (ap, hs, bs) <- atomically $ do
+          ap <- targetNumberOfActivePeers <$> readTVar peerSelectionVar
+          hs <- getHeaderMetrics _metrics
+          bs <- getFetchedMetrics _metrics
+          return (ap, hs, bs)
+
+      let hup = V.fromList $ map fromIntegral $ (padStats ap) $ Map.elems $ upstreamyness hs
+          bup = V.fromList $ map fromIntegral $ (padStats ap) $ Map.elems $ fetchynessBlocks bs
+
+      traceWith tracer $ TracePeerNess
+        (V.length hup) (nessStats hup)
+        (V.length bup) (nessStats bup)
 
       -- Purge the worst active peer(s).
       atomically $ decreaseActivePeers churnMode
