@@ -43,6 +43,8 @@ import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe.Strict (StrictMaybe (..))
 import           GHC.Stack (HasCallStack)
+import           System.Environment (lookupEnv)
+import           System.IO.Unsafe (unsafePerformIO)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
@@ -139,12 +141,18 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
               immutableDbTipPoint
               (contramap TraceLedgerReplayEvent tracer)
       traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
+      -- We are planning on introducing a flag that decides whether or not we
+      -- should run both implementations or just the new one. In order to avoid
+      -- adding another flag parser to the node and taking until down here, we
+      -- were planning on just consulting an Env var here. This flag unused for
+      -- now.
+      let runDual = maybe False (== "1") $ unsafePerformIO (lookupEnv "DUAL_LEDGER")
       -- At this point the LgrDB.changelogLock is not created, so the ledger DB
       -- initialization from disk can flush freely.
       (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immutableDB
-                            (Query.getAnyKnownBlock immutableDB volatileDB)
+                            (Query.getAnyKnownBlock immutableDB volatileDB) runDual
       -- At this point have an initialized LgrDB.changelogLock that is ready to be
       -- acquired.
       traceWith tracer $ TraceOpenEvent OpenedLgrDB

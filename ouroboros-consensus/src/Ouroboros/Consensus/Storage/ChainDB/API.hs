@@ -346,7 +346,7 @@ getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 
 -- | Get current ledger
 getCurrentLedger ::
-     (Monad (STM m), IsLedger (LedgerState blk))
+     Monad (STM m)
   => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
 getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
 
@@ -379,6 +379,7 @@ getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
     toHeaderStateHistory =
           HeaderStateHistory
         . LedgerDB.ledgerDbBimap headerState headerState
+        . undefined -- TODO: LedgerDB.ledgerDbCheckpoints
 
 {-------------------------------------------------------------------------------
   Adding a block
