@@ -11,6 +11,7 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE FlexibleInstances     #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -237,7 +238,7 @@ class ( -- Requirements on the ledger state itself
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
-class ShowLedgerState (LedgerTables l) => TableStuff (l :: LedgerStateKind) where
+class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: LedgerStateKind) where
 
   data family LedgerTables l :: LedgerStateKind
 
@@ -260,6 +261,13 @@ class ShowLedgerState (LedgerTables l) => TableStuff (l :: LedgerStateKind) wher
   --
   -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
   withLedgerTables :: HasCallStack => l any -> LedgerTables l mk -> l mk
+
+  -- | Apply the differences in a tracking map to a values map. This is intended
+  -- to be used to check that a ledger state computed by the old implementation
+  -- and a ledger state computed by the new implementation both agree.
+  --
+  -- Old + ResultNew == ResultOld
+  applyTracking :: l ValuesMK -> l TrackingMK -> l ValuesMK
 
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.

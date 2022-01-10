@@ -74,6 +74,8 @@ data family Validated x :: Type
   Apply block to ledger state
 -------------------------------------------------------------------------------}
 
+-- | @ApplyBlock@ is parametrized by both @l@ and @blk@ because for each @blk@
+-- we have at least @LedgerState blk@ and @ExtLedgerState blk@.
 class ( IsLedger l
       , HeaderHash l ~ HeaderHash blk
       , HasHeader blk

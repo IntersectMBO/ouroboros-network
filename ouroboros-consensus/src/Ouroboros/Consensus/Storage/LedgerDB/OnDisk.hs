@@ -216,7 +216,7 @@ initLedgerDB replayTracer
              decLedger
              decHash
              cfg
-             getGenesisLedger
+             _getGenesisLedger
              streamAPI = do
     snapshots <- listSnapshots hasFS
     -- Here we'd get the dbhandle
@@ -230,7 +230,7 @@ initLedgerDB replayTracer
     tryNewestFirst acc [] = do
         -- We're out of snapshots. Start at genesis
         traceWith replayTracer ReplayFromGenesis
-        initDb <- ledgerDbWithAnchor <$> getGenesisLedger
+        initDb <- ledgerDbWithAnchor <$> undefined --getGenesisLedger TODO: Commented to unlock further work. Implementing initialization will fix this.
         let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
         ml     <- runExceptT
                   -- TODO: here initStartingWith could and should probably flush!
@@ -310,23 +310,23 @@ initFromSnapshot ::
   -> StreamAPI m blk
   -> DiskSnapshot
   -> ExceptT (InitFailure blk) m (RealPoint blk, LedgerDB' blk, Word64)
-initFromSnapshot tracer hasFS decLedger decHash cfg readLedgerDb streamAPI ss = do
-    initSS <- withExceptT InitFailureRead $
-                readSnapshot hasFS decLedger decHash ss
-    let initialPoint = withOrigin (Point Origin) annTipPoint $ headerStateTip $ headerState $ initSS
-    case pointToWithOriginRealPoint (castPoint (getTip initSS)) of
-      Origin        -> throwError InitFailureGenesis
-      NotOrigin tip -> do
-        lift $ traceWith tracer $ ReplayFromSnapshot ss tip (ReplayStart initialPoint)
-        let tracer' = decorateReplayTracerWithStart initialPoint tracer
-        (initDB, replayed) <-
-          initStartingWith
-            tracer'
-            cfg
-            readLedgerDb
-            streamAPI
-            (ledgerDbWithAnchor initSS)
-        return (tip, initDB, replayed)
+initFromSnapshot tracer hasFS decLedger decHash cfg readLedgerDb streamAPI ss = undefined -- TODO: Commented to unlock further work. Implementing initialization will fix this.
+    -- initSS <- withExceptT InitFailureRead $
+    --             readSnapshot hasFS decLedger decHash ss
+    -- let initialPoint = withOrigin (Point Origin) annTipPoint $ headerStateTip $ headerState $ initSS
+    -- case pointToWithOriginRealPoint (castPoint (getTip initSS)) of
+    --   Origin        -> throwError InitFailureGenesis
+    --   NotOrigin tip -> do
+    --     lift $ traceWith tracer $ ReplayFromSnapshot ss tip (ReplayStart initialPoint)
+    --     let tracer' = decorateReplayTracerWithStart initialPoint tracer
+    --     (initDB, replayed) <-
+    --       initStartingWith
+    --         tracer'
+    --         cfg
+    --         readLedgerDb
+    --         streamAPI
+    --         (ledgerDbWithAnchor initSS)
+    --     return (tip, initDB, replayed)
 
 
 mkOnDiskLedgerStDb :: SomeHasFS m -> m (OnDiskLedgerStDb m l)
@@ -366,7 +366,7 @@ data OnDiskLedgerStDb m l =
     -- by Douglas). We need to take the current SeqNo for the on disk state from
     -- the DbChangelog.
 
-    {- * other restore point ops ... -}
+    {- -* other restore point ops ... -}
   , closeDb :: m ()
     -- ^ This closes the captured handle.
   }

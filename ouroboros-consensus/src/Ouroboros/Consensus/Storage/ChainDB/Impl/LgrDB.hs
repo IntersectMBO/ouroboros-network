@@ -218,8 +218,9 @@ openDB :: forall m blk.
        -- DB does not know where the boundary is at any given point.
        --
        -- TODO: should we replace this type with @ResolveBlock blk m@?
+       -> Bool
        -> m (LgrDB m blk, Word64)
-openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock = do
+openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock _runDual = do
     createDirectoryIfMissing hasFS True (mkFsPath [])
     (db, replayed, onDiskLedgerStDb) <- initFromDisk args replayTracer immutableDB
     -- When initializing the ledger DB from disk we:
@@ -329,11 +330,9 @@ getCurrent LgrDB{..} = readTVar varDB
 setCurrent :: IOLike m => LgrDB m blk -> LedgerDB' blk -> STM m ()
 setCurrent LgrDB{..} = writeTVar $! varDB
 
-currentPoint :: forall blk. UpdateLedger blk => LedgerDB' blk -> Point blk
+currentPoint :: LedgerSupportsProtocol blk => LedgerDB' blk -> Point blk
 currentPoint = castPoint
-             . ledgerTipPoint (Proxy @blk)
-             . ledgerState
-             . LedgerDB.ledgerDbCurrent
+             . LedgerDB.ledgerDbTip
 
 takeSnapshot ::
      forall m blk.
