@@ -380,7 +380,7 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                        slot
                        dualLedgerStateMain
 
-instance TableStuff (LedgerState (DualBlock m a)) where
+instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
 
   data LedgerTables (LedgerState (DualBlock m a)) mk =
       DualBlockLedgerTables
@@ -390,14 +390,14 @@ instance TableStuff (LedgerState (DualBlock m a)) where
 
   -- TODO methods
 
-instance TickedTableStuff (LedgerState (DualBlock m a)) where
+instance Bridge m a => TickedTableStuff (LedgerState (DualBlock m a)) where
 
   -- TODO methods
 
 instance ShowLedgerState (LedgerTables (LedgerState (DualBlock m a))) where
   showsLedgerState = error "showsLedgerState @LedgerTables DualBlock"
 
-instance TableStuff (Ticked1 (LedgerState (DualBlock m a))) where
+instance (Eq (Ticked1 (LedgerState (DualBlock m a)) ValuesMK), Bridge m a) => TableStuff (Ticked1 (LedgerState (DualBlock m a))) where
 
   data LedgerTables (Ticked1 (LedgerState (DualBlock m a))) mk =
       TickedDualBlockLedgerTables
@@ -592,7 +592,7 @@ instance (Typeable m, Typeable a)
 
 type instance ApplyTxErr (DualBlock m a) = DualGenTxErr m a
 
-instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
+instance (Eq (Ticked1 (LedgerState (DualBlock m a)) ValuesMK), Bridge m a) => LedgerSupportsMempool (DualBlock m a) where
   applyTx DualLedgerConfig{..}
           wti
           slot

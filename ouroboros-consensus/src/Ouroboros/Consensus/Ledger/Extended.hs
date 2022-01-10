@@ -167,7 +167,7 @@ instance ( IsLedger (LedgerState  blk)
 
       ledgerResult = applyChainTickLedgerResult lcfg slot ledger
 
-instance TableStuff (LedgerState blk) => TableStuff (ExtLedgerState blk) where
+instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuff (ExtLedgerState blk) where
 
   newtype LedgerTables (ExtLedgerState blk) mk = ExtLedgerStateTables (LedgerTables (LedgerState blk) mk)
     deriving (Generic)
@@ -187,7 +187,7 @@ deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedger
 
 instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) mk)
 
-instance TickedTableStuff (LedgerState blk) => TickedTableStuff (ExtLedgerState blk) where
+instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk)) => TickedTableStuff (ExtLedgerState blk) where
   forgetTickedLedgerStateTracking (TickedExtLedgerState lstate lview hstate) =
       TickedExtLedgerState (forgetTickedLedgerStateTracking lstate) lview hstate
 
