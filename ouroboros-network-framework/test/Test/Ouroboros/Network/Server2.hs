@@ -3379,7 +3379,7 @@ multiNodeSim serverAcc dataFlow defaultBearerInfo
                           $ attenuationMap
 
       mb <- timeout 7200
-                    ( withSnocket nullTracer
+                    ( withSnocket (Tracer (say . show))
                                   (toBearerInfo defaultBearerInfo)
                                   attenuationMap'
               $ \snocket _ ->
