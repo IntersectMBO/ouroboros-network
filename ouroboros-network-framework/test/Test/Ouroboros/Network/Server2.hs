@@ -24,7 +24,8 @@
 
 module Test.Ouroboros.Network.Server2 (tests) where
 
-import           Control.Exception (AssertionFailed, SomeAsyncException (..))
+import           Control.Exception (AssertionFailed, SomeAsyncException (..),
+                     throw)
 import           Control.Monad (replicateM, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -45,6 +46,7 @@ import           Data.Bitraversable
 import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Dynamic (fromDynamic)
 import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
 import           Data.List (delete, dropWhileEnd, find, foldl', intercalate,
@@ -53,7 +55,7 @@ import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust, fromMaybe, isJust)
+import           Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, isNothing)
 import           Data.Monoid (Sum (..))
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import qualified Data.Set as Set
@@ -103,7 +105,9 @@ import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec, noTimeLimitsHandshake,
                      timeLimitsHandshake)
-import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
+import           Ouroboros.Network.Protocol.Handshake.Type
+                     (ClientHasAgency (TokPropose), Handshake,
+                     ServerHasAgency (TokConfirm))
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
@@ -161,6 +165,8 @@ tests =
                  prop_connection_manager_counters
   , testProperty "inbound_governor_counters"
                  prop_inbound_governor_counters
+  , testProperty "timeouts_enforced"
+                 prop_timeouts_enforced
   , testGroup    "unit_server_accept_error"
     [ testProperty "throw ConnectionAborted"
                   (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
@@ -2090,10 +2096,10 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
       abstractTransitionEvents = traceWithNameTraceEvents trace
 
       connectionManagerEvents :: [ConnectionManagerTrace
-                  SimAddr
-                  (ConnectionHandlerTrace
-                    UnversionedProtocol
-                    DataFlowProtocolData)]
+                                    SimAddr
+                                    (ConnectionHandlerTrace
+                                      UnversionedProtocol
+                                      DataFlowProtocolData)]
       connectionManagerEvents = withNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -2133,7 +2139,7 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
              tpTransitions         = trs
           }
        )
-    . splitConns
+    . traceSplitConns
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -2226,7 +2232,7 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
            _             -> AllProperty (property False)
        )
        verifyAbstractTransitionOrder
-    . splitConns
+    . traceSplitConns
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -2449,6 +2455,268 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
       case mb of
         Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
         Just a  -> return a
+
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test verifies for for all \tau state we do not stay longer than
+-- the designated timeout.
+--
+-- This test tests simultaneously the ConnectionManager and InboundGovernor's
+-- timeouts.
+--
+prop_timeouts_enforced :: Int
+                       -> ArbDataFlow
+                       -> MultiNodeScript Int TestAddr
+                       -> Property
+prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
+                       (MultiNodeScript events attenuationMap) =
+  let trace = runSimTrace sim
+
+      transitionSignal :: [[(Time, AbstractTransitionTrace SimAddr)]]
+      transitionSignal = splitConns
+                       . getTraceEvents
+                       $ trace
+
+  in verifyAllTimeouts transitionSignal
+  where
+    verifyAllTimeouts :: [[(Time , AbstractTransitionTrace SimAddr)]]
+                      -> Property
+    verifyAllTimeouts [] = property True
+    verifyAllTimeouts (t:tts) =
+      counterexample ("\nConnection transition trace:\n"
+                     ++ intercalate "\n" (map show t)
+                     )
+      $ verifyTimeouts Nothing t
+      .&&. verifyAllTimeouts tts
+
+    -- verifyTimeouts checks that in all \tau transition states the timeout is
+    -- respected. It does so by checking the stream of abstract transitions
+    -- paired with the time they happened, for a given connection; and checking
+    -- that transitions from \tau states to any other happens withing the correct
+    -- timeout bounds. One note is that for the example
+    -- InboundIdleState^\tau -> OutboundState^\tau -> OutboundState sequence
+    -- The first transition would be fine, but for the second we need the time
+    -- when we transitioned into InboundIdleState and not OutboundState.
+    --
+    verifyTimeouts :: Maybe (AbstractState, Time)
+                   -- ^ Map of first occurence of a given \tau state
+                   -> [(Time , AbstractTransitionTrace SimAddr)]
+                   -- ^ Stream of abstract transitions for a given connection
+                   -- paired with the time it ocurred
+                   -> Property
+    verifyTimeouts state [] =
+      counterexample
+        ("This state didn't timeout:\n"
+        ++ show state
+        )
+      $ isNothing state
+    -- If we already seen a \tau transition state
+    verifyTimeouts st@(Just (state, t')) ((t, TransitionTrace _ tt@(Transition _ to)):xs) =
+        let newState  = Just (to, t)
+            idleTimeout  =
+                tProtocolIdleTimeout simTimeouts
+              + (0.1 * tProtocolIdleTimeout simTimeouts)
+            outboundTimeout =
+                tOutboundIdleTimeout simTimeouts
+              + (0.1 * tOutboundIdleTimeout simTimeouts)
+            timeWaitTimeout =
+                tTimeWaitTimeout simTimeouts
+              + (0.1 * tTimeWaitTimeout simTimeouts)
+            handshakeTimeout = case timeLimitsHandshake of
+              (ProtocolTimeLimits stLimit) ->
+                -- Should be the same but we bias to the shorter one
+                let time = min (fromMaybe 0 (stLimit (ClientAgency TokPropose)))
+                               (fromMaybe 0 (stLimit (ServerAgency TokConfirm)))
+                 in time + (0.1 * time)
+
+         in case state of
+           UnnegotiatedSt _ -> case to of
+             -- Timeout terminating states
+             OutboundUniSt ->
+               counterexample (errorMsg tt t' t handshakeTimeout)
+               $ diffTime t t' <= handshakeTimeout
+               .&&. verifyTimeouts Nothing xs
+             InboundIdleSt Unidirectional ->
+               counterexample (errorMsg tt t' t handshakeTimeout)
+               $ diffTime t t' <= handshakeTimeout
+               .&&. verifyTimeouts Nothing xs
+             TerminatedSt ->
+               counterexample (errorMsg tt t' t handshakeTimeout)
+               $ diffTime t t' <= handshakeTimeout
+               .&&. verifyTimeouts Nothing xs
+
+             -- These states terminate the current timeout
+             -- and starts a new one
+             OutboundDupSt Ticking ->
+               counterexample (errorMsg tt t' t handshakeTimeout)
+               $ diffTime t t' <= handshakeTimeout
+               .&&. verifyTimeouts newState xs
+             InboundIdleSt Duplex ->
+               counterexample (errorMsg tt t' t handshakeTimeout)
+               $ diffTime t t' <= handshakeTimeout
+               .&&. verifyTimeouts newState xs
+
+             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
+
+           InboundIdleSt Duplex         -> case to of
+             -- Should preserve the timeout
+             OutboundDupSt Ticking -> verifyTimeouts st xs
+             InboundIdleSt Duplex -> verifyTimeouts st xs
+
+             -- Timeout terminating states
+             OutboundDupSt Expired ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts Nothing xs
+             InboundSt Duplex ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts Nothing xs
+             DuplexSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts Nothing xs
+             TerminatedSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts Nothing xs
+
+             -- This state terminates the current timeout
+             -- and starts a new one
+             TerminatingSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts newState xs
+
+             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
+
+           InboundIdleSt Unidirectional -> case to of
+             -- Timeout terminating states
+             InboundSt Unidirectional ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts Nothing xs
+             TerminatedSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts Nothing xs
+
+             -- This state terminates the current timeout
+             -- and starts a new one
+             TerminatingSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= idleTimeout
+               .&&. verifyTimeouts newState xs
+
+             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
+
+           OutboundDupSt Ticking        -> case to of
+             -- Should preserve the timeout
+             InboundIdleSt Duplex -> verifyTimeouts st xs
+             OutboundDupSt Ticking -> verifyTimeouts st xs
+
+             -- Timeout terminating states
+             OutboundDupSt Expired ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts Nothing xs
+             DuplexSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts Nothing xs
+             InboundSt Duplex ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts Nothing xs
+             TerminatedSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts Nothing xs
+
+             -- This state terminates the current timeout
+             -- and starts a new one
+             TerminatingSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts newState xs
+
+             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
+
+           OutboundIdleSt _             -> case to of
+             -- Timeout terminating states
+             InboundSt Duplex ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts Nothing xs
+             TerminatedSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts Nothing xs
+
+             -- This state terminates the current timeout
+             -- and starts a new one
+             TerminatingSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= outboundTimeout
+               .&&. verifyTimeouts newState xs
+
+             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
+
+           TerminatingSt                -> case to of
+             -- Timeout terminating states
+             UnnegotiatedSt Inbound ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= timeWaitTimeout
+               .&&. verifyTimeouts Nothing xs
+
+             TerminatedSt ->
+               counterexample (errorMsg tt t' t idleTimeout)
+               $ diffTime t t' <= timeWaitTimeout
+               .&&. verifyTimeouts Nothing xs
+
+             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
+
+           _ -> error ("Should be a \tau state: " ++ show st)
+      where
+        errorMsg trans time' time maxDiffTime =
+          "\nAt transition: " ++ show trans ++ "\n"
+          ++ "First happened at: " ++ show time' ++ "\n"
+          ++ "Second happened at: " ++ show time ++ "\n"
+          ++ "Should only take: "
+          ++ show maxDiffTime
+          ++ ", but took:" ++ show (diffTime time time')
+    -- If we haven't seen a \tau transition state
+    verifyTimeouts Nothing ((t, TransitionTrace _ (Transition _ to)):xs) =
+        let newState = Just (to, t)
+         in case to of
+           InboundIdleSt _       -> verifyTimeouts newState xs
+           OutboundDupSt Ticking -> verifyTimeouts newState xs
+           OutboundIdleSt _      -> verifyTimeouts newState xs
+           TerminatingSt         -> verifyTimeouts newState xs
+           _                     -> verifyTimeouts Nothing xs
+
+    getTraceEvents :: forall a b. Typeable b
+                      => SimTrace a
+                      -> [(Time, b)]
+    getTraceEvents = go
+      where
+        go (SimTrace t _ _ (EventLog e) trace)
+         | Just (WithName MainServer x)
+              <- fromDynamic
+                  @(WithName (Name SimAddr) b)
+                  e = (t,x) : go trace
+        go (SimTrace _ _ _ _ trace)   = go trace
+        go (TraceMainException _ e _) = throw e
+        go (TraceDeadlock      _   _) = [] -- expected result in many cases
+        go (TraceMainReturn    _ _ _) = []
+
+    sim :: IOSim s ()
+    sim = multiNodeSim serverAcc dataFlow
+                       absNoAttenuation
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2767,10 +3035,10 @@ prop_connection_manager_pruning serverAcc
       abstractTransitionEvents = traceWithNameTraceEvents trace
 
       connectionManagerEvents :: [ConnectionManagerTrace
-                  SimAddr
-                  (ConnectionHandlerTrace
-                    UnversionedProtocol
-                    DataFlowProtocolData)]
+                                    SimAddr
+                                    (ConnectionHandlerTrace
+                                      UnversionedProtocol
+                                      DataFlowProtocolData)]
       connectionManagerEvents = withNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -2810,7 +3078,7 @@ prop_connection_manager_pruning serverAcc
              tpTransitions         = trs
           }
        )
-    . splitConns
+    . traceSplitConns
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -2938,11 +3206,11 @@ prop_never_above_hardlimit serverAcc
   let trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
-                        (ConnectionManagerTrace
-                          SimAddr
-                          (ConnectionHandlerTrace
-                            UnversionedProtocol
-                            DataFlowProtocolData))
+                                       (ConnectionManagerTrace
+                                         SimAddr
+                                         (ConnectionHandlerTrace
+                                           UnversionedProtocol
+                                           DataFlowProtocolData))
       connectionManagerEvents = traceWithNameTraceEvents trace
 
       abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
@@ -3182,9 +3450,9 @@ unit_connection_terminated_when_negotiating =
 -- the property that every connection is terminated with 'UnknownConnectionSt'.
 -- This property is verified by 'verifyAbstractTransitionOrder'.
 --
-splitConns :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-           -> Trace (SimResult ()) [AbstractTransition]
-splitConns =
+traceSplitConns :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+                -> Trace (SimResult ()) [AbstractTransition]
+traceSplitConns =
     bimap id fromJust
   . Trace.filter isJust
   -- there might be some connections in the state, push them onto the 'Trace'
@@ -3204,6 +3472,32 @@ splitConns =
             _ ->            ( Map.alter ( \ case
                                               Nothing -> Just [ttTransition]
                                               Just as -> Just (ttTransition : as)
+                                        ) ttPeerAddr s
+                            , Nothing
+                            )
+      )
+      Map.empty
+
+splitConns :: [(Time, AbstractTransitionTrace SimAddr)]
+           -> [[(Time, AbstractTransitionTrace SimAddr)]]
+splitConns =
+    catMaybes
+  -- there might be some connections in the state, push them onto the 'Trace'
+  . (\(s, o) -> foldr (\a as -> Just a : as) o (Map.elems s))
+  . mapAccumL
+      ( \ s (t, tt@TransitionTrace { ttPeerAddr, ttTransition }) ->
+          case ttTransition of
+            Transition _ UnknownConnectionSt ->
+              case ttPeerAddr `Map.lookup` s of
+                Nothing  -> ( Map.insert ttPeerAddr [(t, tt)] s
+                            , Nothing
+                            )
+                Just trs -> ( Map.delete ttPeerAddr s
+                            , Just (reverse $ (t, tt) : trs)
+                            )
+            _ ->            ( Map.alter ( \ case
+                                              Nothing -> Just [(t, tt)]
+                                              Just as -> Just ((t, tt) : as)
                                         ) ttPeerAddr s
                             , Nothing
                             )

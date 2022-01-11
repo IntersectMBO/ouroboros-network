@@ -205,7 +205,7 @@ data DataFlow
 -- | Boolean like type which indicates if the timeout on 'OutboundStateDuplex'
 -- has expired.
 data TimeoutExpired = Expired | Ticking
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 
 
@@ -650,7 +650,7 @@ data AbstractState
     | WaitRemoteIdleSt
     | TerminatingSt
     | TerminatedSt
-    deriving (Eq, Show, Typeable)
+    deriving (Eq, Ord, Show, Typeable)
 
 
 -- | Counters for tracing and analysis purposes
