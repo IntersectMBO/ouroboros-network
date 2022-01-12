@@ -1680,7 +1680,7 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
                           timeLimitsHandshake
                           acceptedConnLimit
                           ( \ connectionManager _ serverAsync -> do
-                            link serverAsync
+                            linkOnly (const True) serverAsync
                             connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
                             return Nothing
                           )
@@ -2478,7 +2478,8 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
                        . getTraceEvents
                        $ trace
 
-  in verifyAllTimeouts transitionSignal
+  in counterexample (ppTrace trace)
+   $ verifyAllTimeouts transitionSignal
   where
     verifyAllTimeouts :: [[(Time , AbstractTransitionTrace SimAddr)]]
                       -> Property
