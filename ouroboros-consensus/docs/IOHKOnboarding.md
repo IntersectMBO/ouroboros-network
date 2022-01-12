@@ -17,6 +17,7 @@ Currently the team consists of:
 * [Edsko de Vries](https://github.com/edsko) (8 hours a week)
 * [Javier Sagredo](https://github.com/Jasagredo)
 * [Damian Nadales](https://github.com/dnadales)
+* [Alexander Esgen](https://github.com/amesgen)
 
 ### Join our slack channels
 
