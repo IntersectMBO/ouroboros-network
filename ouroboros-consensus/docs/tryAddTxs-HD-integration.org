@@ -1,0 +1,187 @@
+#+TITLE: tryAddTxs integration with HD API
+
+* When should reads be issued?
+
+Function =tryAddTxs= gets indirectly called in:
+- [[file:~/development/input-output-hk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/MiniProtocol/LocalTxSubmission/Server.hs::localTxSubmissionServer tracer mempool =][localTxSubmissionServer]]
+- [[file:~/development/input-output-hk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/NodeKernel.hs::getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter][getMempoolWriter]]
+  - [[file:~/development/input-output-hk/ouroboros-network/ouroboros-consensus/src/Ouroboros/Consensus/Network/NodeToNode.hs::, hTxSubmissionServer = \version peer ->][tTxSubmissionServer]]
+
+So I don't think we have much leeway to issue reads earlier than at =tryAddTxs=.
+Otherwise we'd have to modify the mini-protocols.
+
+* Modifications required to have tryAddTxs use the HD backend
+
+Assume we want to try to add a list =txs= of transactions to the mempool.
+
+#+begin_src haskell
+txs = [tx0, tx1, ..., txn]
+#+end_src
+
+We want to read from disk the values of the keys required to validate all
+transactions in =txs=, this means that we'll need a function with type:
+
+#+begin_src haskell
+getTxsKeySets :: [GenTx blk] -> TableKeySets (LedgerState blk)
+#+end_src
+
+Then we can use it as follows:
+#+begin_src haskell
+kss = getTxsKeySets txs :: TableKeySets (LedgerState blk)
+#+end_src
+
+Now the problem is that in =kss= we *lost the correspondence* between keysets
+and transactions! We have no way of knowing which keyset corresponds to which
+transaction. We could circumvent this problem if it is possible to define a
+function:
+
+#+begin_src haskell
+restrictToTableKeySets
+  :: TableKeySets blk
+  -- ^ Keysets for which we want to obtain the unforwarded readsets.
+  -> UnforwardedReadSets (LedgerState blk)
+  -- ^ Unforwarded readsets. Tipically the domain of these readsets would be
+  -- considerably larger than the domain of the keysets given as first
+  -- parameter.
+  --
+  -- If not all the keys have values in the readset this function returns
+  -- 'Nothing'.  
+  -> Maybe (UnforwardedReadSets (LedgerState blk))
+#+end_src
+
+If such function exists, we could call =rewindTableKeySets= followed by a
+=readDb= and use the resulting readset when we're validating the individual
+transactions in =txs=. Furthermore, we should be able to expand the unforwarded
+readsets, since that will enable us to maintain a cache. For instance, we could
+add a variable:
+
+#+begin_src haskell
+isUnforwardedReadsets :: UnforwardedReadSets (LedgerState blk)
+#+end_src
+
+and update the cache with, say, a monoidal operation =<>=.
+
+Calling =rewindTableKeySets= requires having a changelog. This changelog should
+contain all the changes that resulted from applying the transactions in the
+mempool. So the internal state could have a variable of the form:
+
+#+begin_src haskell
+isChangelog :: DbChangelog' LedgerState
+#+end_src
+
+This =DbChangelog'= could be a structure that supports only the rewind, forward,
+and extension operations (so for instance we won't be able to do any flushing in
+the mempool).
+
+Using =isChangelog= we could obtain the rewound keysets:
+
+#+begin_src haskell
+rkss = rewindTableKeySets isChangelog kss :: RewoundTableKeySets (LedgerState blk)
+#+end_src
+
+... and readily get the unforwarded read sets, which will expand our cache.
+
+#+begin_src haskell
+urss = readDb rkss :: UnforwardedReadSets (LedgerState blk)
+
+-- ...
+
+  -- This is the internal state we could use for validating individual transactions
+  isUnforwardedReadsets = isUnforwardedReadsets <> urss
+#+end_src
+
+*** Validating individual transactions
+
+Unlike blocks, transactions are validated one-by-one.
+
+Assume we want to validate transaction =txi=. To apply this transaction we need
+to make use of the cache and for that we need to get the keysets that this
+transaction requires:
+
+#+begin_src haskell
+ks = getTxKeySets txi :: TableKeySets (LedgerState blk)
+#+end_src
+
+Note that this is not the =getTxsKeySets= function (we get the key sets for a
+single transaction). However the return type is the same as the one of
+=getTxsKeySets=!
+
+Then we get the keysets using the cache:
+
+#+begin_src haskell
+case restrictToTableKeySets ks isUnforwardedReadsets of
+  Nothing -> -- TODO: see next case clause below, when forwardTableReadSets
+             -- fails. This might have to be handled in the same way, or treated
+             -- as a cache miss in which we'll have to issue a rewind;read for
+             -- txi.
+  Just urs -> ... -- then we proceed as explained below.
+#+end_src
+
+And we can forward the readsets and apply the transaction of the operation
+succeeds:
+
+#+begin_src haskell
+case forwardTableReadSets isDbChangelog urs of
+  Nothing -> error "We need to decide what to do here."
+    -- TODO if the forward operation failed we need to re-issue the
+    -- rewind;read;forward. However, this might have happened because the ledger
+    -- state changed, which means we'll need to re-validate all the
+    -- transactions. So is aborting tryAddTxs seems the way to go here.
+    --
+    -- If we want to "abort" this function we don't have a direct way of
+    -- failing. The only way we can stop the validation and make sure that we
+    -- will retry the validation of txs is if we report that the mempool is
+    -- full. (TODO double check)
+  Just rs ->
+    -- Here is where we would enrich the intermediate state with the key-values
+    -- needed for applying txi, and apply this transaction.
+    undefined $ applyTx txi $ withLedgerTables (changelogCurrentState isDbChangelog) rs
+    -- TODO we need to make sure that we update 'isDbChangelog' with the result
+    -- of applying this tx if it was successful    
+#+end_src
+
+* Required changes
+
+*** Add a temporary intermediate changelog like structure to the internal state
+
+We'll need this to issue forward and rewinds. This structure should not support
+flushes.
+
+*** Add cached unforwarded readsets to the internal state
+
+* Questions
+
+*** Why do we need to lock the changelog?
+Locking seems to be needed while rewinding and reading:
+- Rewinding takes place against a given disk anchor.
+- If the disk anchor changes (due to flushing), then the read will be invalid,
+  forcing us to re-issue the read.
+
+Is it a problem to retry when the changelog was flushed between a rewind and a
+read? Flushes won't occur frequently.
+
+As far as I can see locking help us with the state queries, where we don't want
+to change the protocol to account for failures resulting from a stale changelog.
+But for the mempool I think we have more wiggle room.
+
+*** In =TableStuff= =LedgerTables= is a type family. No idea which operations it can support
+In Snapshots.hs we have
+#+begin_src haskell
+data TableKeySet (t :: TableType) k v where
+       TableKeySet :: Set.Set k
+                   {- range queries go here -}
+                   -> TableKeySet t k v
+  deriving Show
+
+
+-- | A table with an annotation: some extra data carried with it.
+--
+data AnnTable table a (t :: TableType) k v =
+       AnnTable !(table t k v) !a
+#+end_src
+So this could gives us some hope that we can implement the TableKeySets to
+TableReadsets mapping we need.
+
+*** What to do if the forward operation fails?
+
+*** What to do if we have a cache miss?
