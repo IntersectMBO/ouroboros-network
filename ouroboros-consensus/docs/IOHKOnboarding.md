@@ -14,7 +14,6 @@ Currently the team consists of:
 
 * [Nicolas Frisby](https://github.com/nfrisby)
 * [Pawel Szulc](https://github.com/EncodePanda)
-* [Edsko de Vries](https://github.com/edsko) (8 hours a week)
 * [Javier Sagredo](https://github.com/Jasagredo)
 * [Damian Nadales](https://github.com/dnadales)
 
