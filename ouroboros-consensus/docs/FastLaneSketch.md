@@ -115,8 +115,7 @@ That's the big picture. Some more details follow.
     * The `MsgFast` timeout is comparable to the ChainSync timeout after
       receiving `MsgAwaitReply`.
     * Every `MsgFast` should be strictly preferable to the previous `MsgFast`
-      that peer sent (and from that peer's latest ChainSync, but I haven't
-      convinced myself that's worth checking).
+      that peer sent.
 * Like ChainSync, FastLane is pull-based, so we can't get overwhelmed.
 * Like ChainSync, FastLane is also pipelined, so that we can hide some latency.
 * If a peer offered a (valid) header for an invalid block via ChainSync we
@@ -132,3 +131,22 @@ That's the big picture. Some more details follow.
 * Am I overlooking some fundamental difference when I consider FastLane as just
   a variant of ChainSync? IE is it more than just something that makes headers
   available to the BlockFetch decision logic?
+
+* Should FastLane also require that each header is strictly preferable to the
+  best header the same peer has has ever sent via ChainSync? The whole ChainSync
+  mini protocol ensures that the peer is on a recent enough chain (eg
+  `ForksTooDeep`). So if we require FastLane is ahead of the same peer's
+  ChainSync, then it can only be used for what we intended it for and
+  specifically not abused to send historical headers, which could waste our CPU
+  validating the header they sent. (TODO I'm not totally convinced this is
+  necessary: a FastLane client could simply immediately ignore such historical
+  headers even without validating since they don't extend our chain, them. But
+  perhaps the wasted bandwidth is sufficient reason to introduce this
+  cross-mini-protocol invariant.)
+
+* I don't think we can rate-limit a peer for sending too many invalid blocks via
+  FastLane. First, we can't tell if they're just forwarding the or if they're
+  minting them. Second, because the header must fit on our chain in order for us
+  to fetch it and it must also be better than any header they've previously
+  sent, this can't happen very often, can it? (TODO maybe OpCert ratcheting
+  would let them firehose the net this way each time they lead?)
