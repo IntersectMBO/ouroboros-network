@@ -684,7 +684,8 @@ stdChainSyncTimeout = do
     -- The timeout is randomly picked per bearer to avoid all bearers
     -- going down at the same time in case of a long streak of empty
     -- slots. TODO: workaround until peer selection governor.
-    mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
+    --mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
+    mustReplyTimeout <- Just <$> randomElem [50]
     return NTN.ChainSyncTimeout
       { canAwaitTimeout  = shortWait
       , intersectTimeout = shortWait

@@ -28,6 +28,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
                    ( MonadThread(ThreadId, myThreadId), MonadFork(throwTo) )
+import           Control.Monad.Class.MonadTimer
 import           Control.Exception (assert)
 import           Control.Tracer (Tracer)
 
@@ -69,7 +70,7 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
 -- It also manages synchronisation with the corresponding chain sync client.
 --
 bracketFetchClient :: forall m a peer header block.
-                      (MonadThrow m, MonadSTM m, MonadFork m, Ord peer)
+                      (MonadThrow m, MonadSTM m, MonadFork m, Ord peer, MonadDelay m)
                    => FetchClientRegistry peer header block m
                    -> peer
                    -> (FetchClientContext header block m -> m a)
@@ -123,6 +124,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
         writeTVar (fetchClientStatusVar stateVars) PeerFetchStatusShutdown
       -- Kill the sync client if it is still running
       throwTo tid AsyncCancelled
+      threadDelay 305
       -- Wait for the sync client to terminate and finally unregister ourselves
       atomically $ do
         -- Signal to keepAlive that we're going away
