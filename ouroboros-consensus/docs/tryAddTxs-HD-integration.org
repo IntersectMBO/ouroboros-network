@@ -36,6 +36,7 @@ transaction. We could circumvent this problem if it is possible to define a
 function:
 
 #+begin_src haskell
+-- FIXME: we don't need to do this because it's ok to give the ledger state a bigger key-value set than the one it needs
 restrictToTableKeySets
   :: TableKeySets blk
   -- ^ Keysets for which we want to obtain the unforwarded readsets.
@@ -88,6 +89,8 @@ urss = readDb rkss :: UnforwardedReadSets (LedgerState blk)
 
   -- This is the internal state we could use for validating individual transactions
   isUnforwardedReadsets = isUnforwardedReadsets <> urss
+
+  -- FIXME: this would work if we could use the cache to avoid the readsets.
 #+end_src
 
 *** Validating individual transactions
@@ -109,6 +112,7 @@ single transaction). However the return type is the same as the one of
 Then we get the keysets using the cache:
 
 #+begin_src haskell
+-- FIXME: this is irrelevant now.
 case restrictToTableKeySets ks isUnforwardedReadsets of
   Nothing -> -- TODO: see next case clause below, when forwardTableReadSets
              -- fails. This might have to be handled in the same way, or treated
@@ -121,8 +125,10 @@ And we can forward the readsets and apply the transaction of the operation
 succeeds:
 
 #+begin_src haskell
+-- FIXME: we should issue this only once for the whole txs
 case forwardTableReadSets isDbChangelog urs of
   Nothing -> error "We need to decide what to do here."
+  -- FIXME: with the lock this would become an impossible case.
     -- TODO if the forward operation failed we need to re-issue the
     -- rewind;read;forward. However, this might have happened because the ledger
     -- state changed, which means we'll need to re-validate all the
@@ -152,6 +158,8 @@ flushes.
 * Questions
 
 *** Why do we need to lock the changelog?
+FIXME: we might not need the lock, but it help us to avoid complicated cases.
+
 Locking seems to be needed while rewinding and reading:
 - Rewinding takes place against a given disk anchor.
 - If the disk anchor changes (due to flushing), then the read will be invalid,
@@ -165,6 +173,8 @@ to change the protocol to account for failures resulting from a stale changelog.
 But for the mempool I think we have more wiggle room.
 
 *** In =TableStuff= =LedgerTables= is a type family. No idea which operations it can support
+FIXME: this is irrelevant if we pass the readsets for the whole txs
+
 In Snapshots.hs we have
 #+begin_src haskell
 data TableKeySet (t :: TableType) k v where
