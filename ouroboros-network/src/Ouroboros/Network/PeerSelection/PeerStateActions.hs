@@ -877,7 +877,8 @@ withPeerStateActions PeerStateActionsArguments {
         PeerConnectionHandle {
             pchConnectionId,
             pchPeerState,
-            pchAppHandles
+            pchAppHandles,
+            pchMux
           } = do
       atomically $ do
         currentState <- getCurrentState <$> readTVar pchPeerState
@@ -903,6 +904,7 @@ withPeerStateActions PeerStateActionsArguments {
       case res of
         Nothing -> do
           -- timeout fired
+          Mux.stopMux pchMux
           _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure
