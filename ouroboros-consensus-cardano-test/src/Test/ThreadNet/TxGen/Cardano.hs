@@ -48,7 +48,8 @@ import           Cardano.Ledger.Val ((<->))
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
                      mkShelleyTx)
-import           Ouroboros.Consensus.Shelley.Ledger.Ledger (tickedShelleyLedgerState)
+import           Ouroboros.Consensus.Shelley.Ledger.Ledger
+                     (tickedShelleyLedgerState)
 
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block (CardanoEras, GenTx (..),

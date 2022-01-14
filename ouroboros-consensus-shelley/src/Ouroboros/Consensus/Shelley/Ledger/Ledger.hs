@@ -19,8 +19,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Consensus.Shelley.Ledger.Ledger (
-    LedgerTables (..)
-  , LedgerState (..)
+    LedgerState (..)
+  , LedgerTables (..)
   , ShelleyBasedEra
   , ShelleyLedgerError (..)
   , ShelleyTip (..)
