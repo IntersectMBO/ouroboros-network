@@ -49,7 +49,8 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock,
                      Telescope (..), proxySingle)
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..))
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))

@@ -15,8 +15,8 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
 {-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableSuperClasses    #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -40,7 +40,8 @@ import           Control.Monad.Except (runExcept)
 import           Data.Kind (Type)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (Proxy))
-import           Data.SOP.Strict (NP (..), NS (..), unComp, (:.:) (..), type (-.->))
+import           Data.SOP.Strict (NP (..), NS (..), type (-.->), unComp,
+                     (:.:) (..))
 import qualified Data.SOP.Strict as SOP
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
@@ -59,7 +60,8 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import qualified Ouroboros.Consensus.HardFork.Combinator.State.Types as HFC
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
@@ -394,7 +396,7 @@ instance IsShelleyTele xs => IsShelleyTele (x ': xs) where
 
 instance ShelleyBasedHardForkConstraints era1 era2
       => TableStuff (Ticked1 (LedgerState (ShelleyBasedHardForkBlock era1 era2))) where
-  newtype LedgerTables (Ticked1 (LedgerState (ShelleyBasedHardForkBlock era1 era2))) mk = 
+  newtype LedgerTables (Ticked1 (LedgerState (ShelleyBasedHardForkBlock era1 era2))) mk =
     TickedShelleyBasedHardForkLedgerTables (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk)
 
   -- TODO methods

@@ -11,7 +11,8 @@ module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) wh
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto)
