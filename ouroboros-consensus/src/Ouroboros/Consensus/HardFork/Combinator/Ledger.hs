@@ -187,13 +187,13 @@ tickOne ei slot index pcfg (Flip st) = Comp $ fmap FlipTickedLedgerState $
       embedLedgerResult (injectLedgerEvent index)
     $ applyChainTickLedgerResult (completeLedgerConfig' ei pcfg) slot st
 
-instance TableStuff (LedgerState x) => TableStuff (LedgerState (HardForkBlock '[x])) where
+instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerState (HardForkBlock '[x])) where
   newtype LedgerTables (LedgerState (HardForkBlock '[x])) mk = LedgerTablesOne (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
     deriving (Generic)
 
   -- TODO methods
 
-instance TickedTableStuff (LedgerState x) => TickedTableStuff (LedgerState (HardForkBlock '[x])) where
+instance (SingleEraBlock x, TickedTableStuff (LedgerState x)) => TickedTableStuff (LedgerState (HardForkBlock '[x])) where
 
   -- TODO methods
 
