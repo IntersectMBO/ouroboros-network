@@ -53,7 +53,8 @@ import           Data.Kind (Type)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict (NP (..), NS (..), unComp, (:.:) (..), type (-.->))
+import           Data.SOP.Strict (NP (..), NS (..), type (-.->), unComp,
+                     (:.:) (..))
 import qualified Data.SOP.Strict as SOP
 import           Data.Word
 import           GHC.Generics (Generic)
@@ -80,7 +81,8 @@ import qualified Ouroboros.Consensus.Util.SOP as SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
@@ -576,7 +578,7 @@ instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoB
 
 instance CardanoHardForkConstraints c
       => TableStuff (Ticked1 (LedgerState (CardanoBlock c))) where
-  newtype LedgerTables (Ticked1 (LedgerState (CardanoBlock c))) mk = 
+  newtype LedgerTables (Ticked1 (LedgerState (CardanoBlock c))) mk =
     TickedCardanoLedgerTables (LedgerTables (LedgerState (CardanoBlock c)) mk)
 
   -- TODO methods
