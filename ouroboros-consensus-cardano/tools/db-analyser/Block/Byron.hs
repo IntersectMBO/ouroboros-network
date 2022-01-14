@@ -14,10 +14,12 @@ module Block.Byron (
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Foldable (asum)
+import           Data.Foldable (asum, toList)
+import           Data.Maybe (mapMaybe)
 import           Options.Applicative
 
 import           Cardano.Binary (Raw, unAnnotated)
+
 import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto as Crypto
 
@@ -38,6 +40,7 @@ import           HasAnalysis
 
 instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
+    extractTxOutputIdDelta = aBlockOrBoundary (const (0, [], [])) extractTxOutputIdDeltaByron
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
     emitTraces _ = []
@@ -106,6 +109,35 @@ countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
 
     countTx :: Chain.Tx -> Int
     countTx = length . Chain.txOutputs
+
+extractTxOutputIdDeltaByron :: Chain.ABlock ByteString -> (Int, [TxIn], [TxOutputIds])
+extractTxOutputIdDeltaByron Chain.ABlock{..} =
+    ( length txs
+    , foldMap  inputs  txs
+    , mapMaybe outputs txs
+    )
+  where
+    Chain.ABody { bodyTxPayload } = blockBody
+
+    txs :: [Chain.ATxAux ByteString]
+    txs = Chain.aUnTxPayload bodyTxPayload
+
+    cnv :: Chain.TxIn -> TxIn
+    cnv (Chain.TxInUtxo txid nat) = TxIn (Crypto.abstractHashToShort txid) (fromInteger $ toInteger nat)
+
+    inputs :: Chain.ATxAux ByteString -> [TxIn]
+    inputs atx =
+        map cnv $ toList $ Chain.txInputs tx
+      where
+        tx = unAnnotated $ Chain.aTaTx atx
+
+    outputs :: Chain.ATxAux ByteString -> Maybe TxOutputIds
+    outputs atx =
+        mkTxOutputIds (Crypto.abstractHashToShort txid) n
+      where
+        tx   = unAnnotated $ Chain.aTaTx atx
+        txid = Crypto.hashRaw $ BL.fromStrict $ Chain.aTaAnnotation atx
+        n    = length $ Chain.txOutputs tx
 
 blockTxSizesByron :: Chain.ABlock ByteString -> [SizeInBytes]
 blockTxSizesByron block =

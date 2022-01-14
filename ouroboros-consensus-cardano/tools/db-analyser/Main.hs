@@ -133,6 +133,10 @@ parseAnalysis = asum [
           long "count-tx-outputs"
         , help "Show number of transaction outputs per block"
         ]
+    , flag' ExtractTxOutputIdDeltas $ mconcat [
+          long "extract-tx-output-id-deltas"
+        , help "Show consumption and creation of all tx-output-ids"
+        ]
     , flag' ShowBlockHeaderSize $ mconcat [
           long "show-block-header-size"
         , help "Show the header sizes of all blocks"

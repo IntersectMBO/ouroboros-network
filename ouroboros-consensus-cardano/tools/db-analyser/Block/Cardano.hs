@@ -117,9 +117,10 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
     return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley genesisAlonzo initialNonce
 
 instance HasAnalysis (CardanoBlock StandardCrypto) where
-  countTxOutputs = analyseBlock countTxOutputs
-  blockTxSizes   = analyseBlock blockTxSizes
-  knownEBBs _    =
+  countTxOutputs         = analyseBlock countTxOutputs
+  extractTxOutputIdDelta = analyseBlock extractTxOutputIdDelta
+  blockTxSizes           = analyseBlock blockTxSizes
+  knownEBBs _            =
       Map.mapKeys castHeaderHash . Map.map castChainHash $
         knownEBBs (Proxy @ByronBlock)
 

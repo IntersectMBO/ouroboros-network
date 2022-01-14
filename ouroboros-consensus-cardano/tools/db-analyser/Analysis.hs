@@ -59,6 +59,7 @@ import qualified HasAnalysis
 data AnalysisName =
     ShowSlotBlockNo
   | CountTxOutputs
+  | ExtractTxOutputIdDeltas
   | ShowBlockHeaderSize
   | ShowBlockTxsSize
   | ShowEBBs
@@ -83,6 +84,7 @@ runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
   where
     go ShowSlotBlockNo             = showSlotBlockNo env
     go CountTxOutputs              = countTxOutputs env
+    go ExtractTxOutputIdDeltas     = extractTxOutputIdDeltas env
     go ShowBlockHeaderSize         = showHeaderSize env
     go ShowBlockTxsSize            = showBlockTxsSize env
     go ShowEBBs                    = showEBBs env
@@ -119,6 +121,18 @@ data TraceEvent blk =
     --   * slot number when the block was forged
     --   * cumulative tx output
     --   * count tx output
+  | ExtractTxOutputIdDeltasEvent
+      BlockNo
+      SlotNo
+      Int
+      [HasAnalysis.TxIn]
+      [HasAnalysis.TxOutputIds]
+    -- ^ triggered when listing the TxId delta for a block:
+    --   * block's number
+    --   * slot number when the block was forged
+    --   * how many transactions it contains
+    --   * txids consumed
+    --   * txids created
   | EbbEvent (HeaderHash blk) (ChainHash blk) Bool
     -- ^ triggered when EBB block has been found, it holds:
     --   * its hash,
@@ -167,6 +181,13 @@ instance HasAnalysis blk => Show (TraceEvent blk) where
     , "Known: " <> show known
     ]
   show (CountedBlocksEvent counted)       = "Counted " <> show counted <> " blocks."
+  show (ExtractTxOutputIdDeltasEvent bn sn count consumed created) = intercalate "\t" $
+      show (unBlockNo bn)
+    : show (unSlotNo  sn)
+    : show count
+    : show (length consumed)
+    : show (sum $ map HasAnalysis.txOutputIdsCount created)
+    : (map show consumed <> map show created)
   show (HeaderSizeEvent bn sn headerSize) = intercalate "\t" $ [
       show bn
     , show sn
@@ -216,6 +237,26 @@ countTxOutputs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
         return cumulative'
       where
         count = HasAnalysis.countTxOutputs blk
+
+
+{-------------------------------------------------------------------------------
+  Analysis: show all txin and txout txids
+-------------------------------------------------------------------------------}
+
+extractTxOutputIdDeltas :: forall blk. HasAnalysis blk => Analysis blk
+extractTxOutputIdDeltas AnalysisEnv { db, registry, initLedger, limit, tracer } = do
+    void $ processAll db registry GetBlock initLedger limit () process
+  where
+    process :: () -> blk -> IO ()
+    process () blk =
+        traceWith tracer $ ExtractTxOutputIdDeltasEvent
+          (blockNo blk)
+          (blockSlot blk)
+          count
+          consumed
+          created
+      where
+        (count, consumed, created) = HasAnalysis.extractTxOutputIdDelta blk
 
 {-------------------------------------------------------------------------------
   Analysis: show the header size in bytes for all blocks

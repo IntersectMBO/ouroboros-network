@@ -74,6 +74,7 @@ executable db-analyser
   main-is:             Main.hs
   build-depends:       aeson
                      , base
+                     , base64
                      , bytestring
                      , cardano-binary
                      , cardano-crypto-wrapper
@@ -90,6 +91,7 @@ executable db-analyser
                      , serialise
                      , strict-containers
                      , text
+                     , text-short
 
                      , ouroboros-consensus
                      , ouroboros-consensus-byron

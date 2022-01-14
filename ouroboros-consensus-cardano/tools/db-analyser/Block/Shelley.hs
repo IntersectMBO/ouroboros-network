@@ -15,15 +15,20 @@ module Block.Shelley (
   ) where
 
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Short as Short
 import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (catMaybes)
+import           Data.Maybe (catMaybes, mapMaybe)
 import           Data.Maybe.Strict
 import           Data.Sequence.Strict (StrictSeq)
+import qualified Data.Set as Set
 import           GHC.Records (HasField, getField)
 import           Options.Applicative
 
+import           Cardano.Binary (ToCBOR (..), serialize')
+
 import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.TxIn as Core
 import qualified Cardano.Ledger.Era as CL
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
@@ -45,6 +50,7 @@ import           HasAnalysis
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyBasedEra era
+         , HasField "inputs"  (Core.TxBody era) (Set.Set (SL.TxIn (CL.Crypto era)))
          , HasField "outputs" (Core.TxBody era) (StrictSeq (Core.TxOut era))
          ) => HasAnalysis (ShelleyBlock era) where
 
@@ -53,6 +59,33 @@ instance ( ShelleyBasedEra era
     where
       countOutputs :: Core.Tx era -> Int
       countOutputs = length . getField @"outputs" . getField @"body"
+
+  extractTxOutputIdDelta blk =
+      ( length txs
+      , foldMap  inputs          txs
+      , mapMaybe outputs (toList txs)
+      )
+    where
+      SL.Block _ body = Shelley.shelleyBlockRaw blk
+
+      txs = CL.fromTxSeq @era body
+
+      asShort :: ToCBOR a => a -> Short.ShortByteString
+      asShort = Short.toShort . serialize'
+
+      cnv :: SL.TxIn (CL.Crypto era) -> TxIn
+      cnv (Core.TxIn txid nat) = TxIn (asShort txid) (fromInteger $ toInteger nat)
+
+      inputs :: Core.Tx era -> [TxIn]
+      inputs = map cnv . Set.toList . getField @"inputs" . getField @"body"
+
+      outputs :: Core.Tx era -> Maybe TxOutputIds
+      outputs tx =
+          mkTxOutputIds (asShort txid) n
+        where
+          txbody = getField @"body" tx
+          txid   = Core.txid txbody
+          n      = length $ getField @"outputs" txbody
 
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body ->
@@ -77,7 +110,6 @@ instance ( ShelleyBasedEra era
         (SJust _, SNothing) -> Just "RWDPULSER_RESET"
         (_, _) -> Nothing
     ]
-
 
 -- | Shelley-era specific
 instance HasProtocolInfo (ShelleyBlock StandardShelley) where
