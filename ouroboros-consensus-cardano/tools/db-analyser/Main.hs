@@ -135,7 +135,7 @@ parseAnalysis = asum [
         ]
     , flag' ExtractTxOutputIdDeltas $ mconcat [
           long "extract-tx-output-id-deltas"
-        , help "Show consumption and creation of all tx-output-ids"
+        , help "Show consumption and creation of all non-genesis tx-output-ids"
         ]
     , flag' ShowBlockHeaderSize $ mconcat [
           long "show-block-header-size"

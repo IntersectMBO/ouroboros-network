@@ -135,9 +135,8 @@ extractTxOutputIdDeltaByron Chain.ABlock{..} =
     outputs atx =
         mkTxOutputIds (Crypto.abstractHashToShort txid) n
       where
-        tx   = unAnnotated $ Chain.aTaTx atx
-        txid = Crypto.hashRaw $ BL.fromStrict $ Chain.aTaAnnotation atx
-        n    = length $ Chain.txOutputs tx
+        txid = Crypto.hashDecoded $ Chain.aTaTx $ atx
+        n    = length $ Chain.txOutputs $ unAnnotated $ Chain.aTaTx atx
 
 blockTxSizesByron :: Chain.ABlock ByteString -> [SizeInBytes]
 blockTxSizesByron block =
