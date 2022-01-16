@@ -3,23 +3,28 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE TypeFamilies       #-}
 
-{-# OPTIONS_GHC -funbox-strict-fields #-}
-
 module Main (main) where
 
 import qualified Control.Monad as M
+import           Data.Bits (shiftL)
 import           Data.ByteString.Base64 (decodeBase64)
 import           Data.ByteString.Short.Base16 (encodeBase16')
 import           Data.ByteString.Short.Base64 (encodeBase64)
 import qualified Data.ByteString.Lazy.Char8 as Char8
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
+import           Data.IntMap (IntMap)
+import qualified Data.IntMap.Strict as IntMap
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
+import qualified Data.Map.Merge.Strict as MM
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text.Short as TextShort
 import           Data.Word (Word32, Word64)
 import qualified Data.Vector as V
 import           GHC.Clock (getMonotonicTimeNSec)
+import qualified Options.Applicative as O
 
 import           Types
 import           GenesisUTxO
@@ -38,7 +43,47 @@ main = do
 -- TODO parse the command line options to choose different analysis (eg
 -- measuring different on-disk back-ends)
 chooseAnalysis :: IO ([Row] -> IO ())
-chooseAnalysis = pure inMemSim
+chooseAnalysis = do
+    commandLine <- O.execParser opts
+    case whichAnalysis commandLine of
+      InMemSim   -> pure inMemSim
+      MeasureAge -> pure measureAge
+  where
+    opts = O.info (commandLineParser O.<**> O.helper) $
+         O.fullDesc
+      <> O.progDesc "Analyse a txin delta timeline file"
+      <> O.header "txin-delta-timeline-analyser - a tool for empirical UTxO HD design"
+
+data AnalysisName =
+    InMemSim
+  | MeasureAge
+  deriving (Bounded, Enum, Show)
+
+data CommandLine = CommandLine {
+    whichAnalysis :: AnalysisName
+  }
+
+commandLineParser :: O.Parser CommandLine
+commandLineParser =
+        CommandLine
+    <$> O.argument
+          readerAnalysisName
+          (   O.metavar "ANALYSIS_NAME"
+           <> O.help ("one of: " <> unwords (map fst analysisMap))
+          )
+
+readerAnalysisName :: O.ReadM AnalysisName
+readerAnalysisName = O.eitherReader $ \s ->
+  case lookup s analysisMap of
+    Nothing -> Left $ "no such analysis: " <> s
+    Just nm -> Right nm
+  where
+
+analysisMap :: [(String, AnalysisName)]
+analysisMap =
+  [ (show analysisName, analysisName)
+  | analysisName <- [minBound..maxBound]
+  ]
 
 {- DEBUGGING tip
 
@@ -144,11 +189,11 @@ Parsing a row from the timeline file
 -------------------------------------------------------------------------------}
 
 data Row = Row {
-    rBlockNumber :: !Word64
-  , rSlotNumber  :: !Word64
-  , rNumTx       :: !Int
-  , rConsumed    :: !(V.Vector TxIn)
-  , rCreated     :: !(V.Vector TxOutputIds)
+    rBlockNumber :: {-# UNPACK #-} !Word64
+  , rSlotNumber  :: {-# UNPACK #-} !Word64
+  , rNumTx       :: {-# UNPACK #-} !Int
+  , rConsumed    :: {-# UNPACK #-} !(V.Vector TxIn)
+  , rCreated     :: {-# UNPACK #-} !(V.Vector TxOutputIds)
   }
 
 -- | Parse either a @\@@ item or a @#@ item, from the variable length portion
@@ -200,7 +245,7 @@ parseRow bs0 = run $ flattenToP0 $ do
 In-memory simulation
 -------------------------------------------------------------------------------}
 
-data InMem = InMem !(Set TxIn)
+newtype InMem = InMem (Set TxIn)
 
 inMemSim :: [Row] -> IO ()
 inMemSim =
@@ -242,6 +287,123 @@ inMemSim =
         <> "\t" <> show (Set.size utxo')
 
       pure $ InMem utxo'
+
+{-------------------------------------------------------------------------------
+Measuring age
+-------------------------------------------------------------------------------}
+
+data AgeEntry = AgeEntry {
+    _birthBlock :: {-# UNPACK #-} !Word64
+  , _survivors  :: {-# UNPACK #-} !Word32
+  }
+
+data HASH = HASH
+    {-# UNPACK #-} !Word64
+    {-# UNPACK #-} !Word64
+    {-# UNPACK #-} !Word64
+    {-# UNPACK #-} !Word64
+  deriving (Eq, Ord, Show)
+
+txidHASH :: ShortByteString -> HASH
+txidHASH h =
+    if 32 /= Short.length h then error "bad hash length" else
+    HASH (f 0) (f 1) (f 2) (f 3)
+  where
+    {-# INLINE f #-}
+    f wordIndex =
+          g base 0 + g base 1 + g base 2 + g base 3
+        + g base 4 + g base 5 + g base 6 + g base 7
+      where
+        base = wordIndex * bytesPerWord64
+
+    bytesPerWord64 = 8
+    bitsPerByte    = 8
+
+    g :: Int -> Int -> Word64
+    {-# INLINE g #-}
+    g byteBase byteOffset =
+        (`shiftL` (bitsPerByte * (bytesPerWord64 - byteOffset - 1)))
+      $ toEnum . fromEnum
+      $ Short.index h (byteBase + byteOffset)
+
+txid :: TxIn -> HASH
+txid (TxIn h _) = txidHASH h
+
+data AgeMeasures = AgeMeasures
+  !(Map HASH AgeEntry)
+  !(IntMap Word64)   -- staleness histogram: key is log of age of reference
+
+measureAge :: [Row] -> IO ()
+measureAge =
+    \rows -> do
+      t0 <- getMonotonicTimeNSec
+      AgeMeasures _utxo histo <- M.foldM (snoc t0) (AgeMeasures (prep genesisUTxO) IntMap.empty) rows
+      flip mapM_ (IntMap.toList histo) $ \(logAge, count) -> putStrLn $ show logAge <> "\t" <> show count
+      pure ()
+  where
+    prep utxo0 =
+        (\f -> Map.fromAscList $ map f $ Set.toAscList utxo0)
+      $ \txin -> (txid txin, AgeEntry 0 1)   -- the 0 is off-by-one, but that's ignorable here
+
+    snoc :: Word64 -> AgeMeasures -> Row -> IO AgeMeasures
+    snoc t0 (AgeMeasures utxo histo) row = do
+      t <- getMonotonicTimeNSec
+      let reltime_milliseconds = (t - t0) `div` 1_000_000
+      let consumed = Set.fromList $                         V.toList $ rConsumed row
+          created  = Set.fromList $ concatMap outputTxIns $ V.toList $ rCreated  row
+          blkCreated  :: Set TxIn
+          blkCreated  = Set.difference created consumed
+          blkConsumed :: Set TxIn
+          blkConsumed = Set.difference consumed created
+
+      let updCreated :: Map HASH AgeEntry
+          updCreated =   -- how many outputs this block creates for its own txs
+              fmap (\c -> AgeEntry (rBlockNumber row) c)
+            $ (\f -> Map.fromAscListWith (+) $ map f $ Set.toAscList blkCreated)
+            $ \txin -> (txid txin, 1)
+      let updConsumed :: Map HASH Word32
+          updConsumed =  -- how many outputs this block consumes from each old tx
+              (\f -> Map.fromAscListWith (+) $ map f $ Set.toAscList blkConsumed)
+            $ \txin -> (txid txin, 1)
+
+      let consumptionAgeHisto :: IntMap Word64
+          consumptionAgeHisto =
+              IntMap.fromListWith (+)
+            $ Map.elems
+            $ Map.intersectionWith
+                (\_c2 (AgeEntry birth _c1) -> (fromEnum (rBlockNumber row - birth), 1))
+                updConsumed
+                utxo
+
+      let utxo' = MM.merge
+            -- only in L
+            MM.preserveMissing
+            -- only in R
+            (MM.mapMaybeMissing (\h _ -> error $ "impossible! " <> show (rBlockNumber row) <> " " <> show h))
+            -- both
+            ( MM.zipWithMaybeMatched $ \_h (AgeEntry b c1) c2 ->
+                let c' = c1 - c2 in
+                if 0 == c' then Nothing else Just $   -- remove totally consumed txs
+                AgeEntry b c'
+            )
+            (Map.union utxo updCreated)
+            updConsumed
+
+      let histo' =
+              IntMap.unionWith (+) histo
+            $ IntMap.fromListWith (+)
+            $ map (\(age, count) -> (ceiling $ logBase (2 :: Double) $ fromIntegral age, count))
+            $ IntMap.toAscList consumptionAgeHisto
+
+      putStrLn $   show (rBlockNumber row)
+        <> "\t" <> show (rSlotNumber  row)
+        <> "\t" <> show reltime_milliseconds
+        <> ( if IntMap.null consumptionAgeHisto then "" else
+                "\t" <> show (fst (IntMap.findMin consumptionAgeHisto))
+             <> "\t" <> show (fst (IntMap.findMax consumptionAgeHisto))
+           )
+
+      pure $ AgeMeasures utxo' histo'
 
 {-------------------------------------------------------------------------------
 TODO more simulations/statistics etc
