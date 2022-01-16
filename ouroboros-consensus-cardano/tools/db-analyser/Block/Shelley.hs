@@ -25,11 +25,10 @@ import qualified Data.Set as Set
 import           GHC.Records (HasField, getField)
 import           Options.Applicative
 
-import           Cardano.Binary (ToCBOR (..), serialize')
-
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.TxIn as Core
 import qualified Cardano.Ledger.Era as CL
+import           Cardano.Ledger.SafeHash (extractHash, originalBytes)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 
@@ -70,8 +69,7 @@ instance ( ShelleyBasedEra era
 
       txs = CL.fromTxSeq @era body
 
-      asShort :: ToCBOR a => a -> Short.ShortByteString
-      asShort = Short.toShort . serialize'
+      asShort = Short.toShort . originalBytes . extractHash . Core._unTxId
 
       cnv :: SL.TxIn (CL.Crypto era) -> TxIn
       cnv (Core.TxIn txid nat) = TxIn (asShort txid) (fromInteger $ toInteger nat)
