@@ -200,38 +200,48 @@ parseRow bs0 = run $ flattenToP0 $ do
 In-memory simulation
 -------------------------------------------------------------------------------}
 
-data InMem = InMem !Word64 !(Set TxIn)
+data InMem = InMem !(Set TxIn)
 
 inMemSim :: [Row] -> IO ()
 inMemSim =
     \rows -> do
       t0 <- getMonotonicTimeNSec
-      InMem n utxo <- M.foldM (snoc t0) (InMem 0 genesisUTxO) rows
-      putStrLn $ "Processed " <> show n <> " blocks. Final UTxO set contains " <> show (Set.size utxo) <> " unspent outputs."
+      InMem _utxo <- M.foldM (snoc t0) (InMem genesisUTxO) rows
+      pure ()
   where
     snoc :: Word64 -> InMem -> Row -> IO InMem
-    snoc t0 (InMem n utxo) row = do
-      M.when (0 == mod n 10000) $ do
-        t <- getMonotonicTimeNSec
-        putStrLn $ show n <> "\t" <> show ((t - t0) `div` 1_000_000) <> "\t" <> show (Set.size utxo)
+    snoc t0 (InMem utxo) row = do
+      t <- getMonotonicTimeNSec
+      let reltime_milliseconds = (t - t0) `div` 1_000_000
+--      M.when (0 == mod n 10000) $ do
+--        putStrLn $ show n <> "\t" <> show reltime_milliseconds <> "\t" <> show (Set.size utxo)
       let consumed = Set.fromList $                         V.toList $ rConsumed row
           created  = Set.fromList $ concatMap outputTxIns $ V.toList $ rCreated  row
           blkCreated  = Set.difference created consumed
           blkConsumed = Set.difference consumed created
 
+      -- fail if a txin this block consumes is not in the utxo
       do
         let missing = blkConsumed `Set.difference` utxo
             sho1 (TxIn h i) = TextShort.toString (encodeBase64 h) <> "@" <> show i
             -- encodeBase16 is bugged, so I need to convert through hoops to use encodeBase16'
             sho2 (TxIn h i) = Char8.unpack (Char8.fromStrict (Short.fromShort (encodeBase16' h))) <> "@" <> show i
-        M.unless (Set.null missing) $ do
-          let prefix = [show n, "MISSING", show (Set.size blkConsumed), show (Set.size missing)]
-          putStrLn $ unwords $ (prefix <>) $ map sho1 $ Set.toList missing
-          putStrLn $ unwords $ (prefix <>) $ map sho2 $ Set.toList missing
+        M.unless (Set.null missing) $ error $ unlines [
+            unwords ["ERROR: missing TxIn", show (rBlockNumber row), show (Set.size blkConsumed), show (Set.size missing)]
+          , unwords $ map sho1 $ Set.toList missing
+          , unwords $ map sho2 $ Set.toList missing
+          ]
 
-      pure $ InMem (n+1)
-        $ Set.union blkCreated
-        $ utxo `Set.difference` blkConsumed
+      let utxo' = Set.union blkCreated $ utxo `Set.difference` blkConsumed
+
+      putStrLn $   show (rBlockNumber row)
+        <> "\t" <> show (rSlotNumber  row)
+        <> "\t" <> show reltime_milliseconds
+        <> "\t" <> show (Set.size blkConsumed)
+        <> "\t" <> show (Set.size blkCreated)
+        <> "\t" <> show (Set.size utxo')
+
+      pure $ InMem utxo'
 
 {-------------------------------------------------------------------------------
 TODO more simulations/statistics etc
