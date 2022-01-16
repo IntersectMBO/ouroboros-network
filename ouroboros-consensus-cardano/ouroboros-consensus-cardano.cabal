@@ -133,7 +133,9 @@ executable txin-delta-timeline-analyser
                      , optparse-applicative
                      , text-short
                      , vector
---  other-modules:
+  other-modules:
+                       GenesisUTxO
+                     , Types
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
