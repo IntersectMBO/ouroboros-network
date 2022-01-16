@@ -32,6 +32,12 @@ import           Cardano.Ledger.SafeHash (extractHash, originalBytes)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 
+import           Cardano.Ledger.Allegra (AllegraEra)
+import           Cardano.Ledger.Alonzo (AlonzoEra)
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
+import           Cardano.Ledger.Shelley (ShelleyEra)
+import           Cardano.Ledger.Mary (MaryEra)
+
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
@@ -47,8 +53,59 @@ import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
 
 import           HasAnalysis
 
+{-------------------------------------------------------------------------------
+  ActualTxOutputIdDelta
+-------------------------------------------------------------------------------}
+
+-- | As of Alonzo, a transaction's effect on the UTxO depends on more than just
+-- the @"inputs"@ and @"outputs"@ field
+class ActualTxOutputIdDelta era where
+  -- | Which UTxO this transaction consumed
+  consumedTxIn       :: Core.Tx era -> Set.Set (SL.TxIn (CL.Crypto era))
+  -- | How many UTxO this transaction created
+  createdTxOutputIds :: Core.Tx era -> Int
+
+preAlonzo_consumedTxIn ::
+  ( ShelleyBasedEra era
+  , HasField "inputs" (Core.TxBody era) (Set.Set (SL.TxIn (CL.Crypto era)))
+  ) => Core.Tx era -> Set.Set (SL.TxIn (CL.Crypto era))
+preAlonzo_consumedTxIn = getField @"inputs" . getField @"body"
+
+preAlonzo_createdTxOutputIds ::
+     ShelleyBasedEra era
+  => Core.Tx era -> Int
+preAlonzo_createdTxOutputIds = length . getField @"outputs" . getField @"body"
+
+instance SL.PraosCrypto c => ActualTxOutputIdDelta (ShelleyEra c) where
+  consumedTxIn       = preAlonzo_consumedTxIn
+  createdTxOutputIds = preAlonzo_createdTxOutputIds
+
+instance SL.PraosCrypto c => ActualTxOutputIdDelta (AllegraEra c) where
+  consumedTxIn       = preAlonzo_consumedTxIn
+  createdTxOutputIds = preAlonzo_createdTxOutputIds
+
+instance SL.PraosCrypto c => ActualTxOutputIdDelta (MaryEra c) where
+  consumedTxIn       = preAlonzo_consumedTxIn
+  createdTxOutputIds = preAlonzo_createdTxOutputIds
+
+isValidTx :: Core.Tx (AlonzoEra c) -> Bool
+isValidTx vtx = Alonzo.IsValid True == getField @"isValid" vtx
+
+instance SL.PraosCrypto c => ActualTxOutputIdDelta (AlonzoEra c) where
+  consumedTxIn vtx =
+    if isValidTx vtx
+    then preAlonzo_consumedTxIn vtx
+    else getField @"collateral" (getField @"body" vtx)
+  createdTxOutputIds vtx =
+    if not (isValidTx vtx) then 0 else preAlonzo_createdTxOutputIds vtx
+
+{-------------------------------------------------------------------------------
+  HasAnalysis instance
+-------------------------------------------------------------------------------}
+
 -- | Usable for each Shelley-based era
 instance ( ShelleyBasedEra era
+         , ActualTxOutputIdDelta era
          , HasField "inputs"  (Core.TxBody era) (Set.Set (SL.TxIn (CL.Crypto era)))
          , HasField "outputs" (Core.TxBody era) (StrictSeq (Core.TxOut era))
          ) => HasAnalysis (ShelleyBlock era) where
@@ -75,15 +132,14 @@ instance ( ShelleyBasedEra era
       cnv (Core.TxIn txid nat) = TxIn (asShort txid) (fromInteger $ toInteger nat)
 
       inputs :: Core.Tx era -> [TxIn]
-      inputs = map cnv . Set.toList . getField @"inputs" . getField @"body"
+      inputs = map cnv . Set.toList . consumedTxIn
 
       outputs :: Core.Tx era -> Maybe TxOutputIds
       outputs tx =
           mkTxOutputIds (asShort txid) n
         where
-          txbody = getField @"body" tx
-          txid   = Core.txid txbody
-          n      = length $ getField @"outputs" txbody
+          txid   = Core.txid $ getField @"body" tx
+          n      = createdTxOutputIds tx
 
   -- TODO this is dead-code for a Cardano chain, but inaccurate for a pure
   -- Shelley chain
@@ -112,6 +168,10 @@ instance ( ShelleyBasedEra era
         (SJust _, SNothing) -> Just "RWDPULSER_RESET"
         (_, _) -> Nothing
     ]
+
+{-------------------------------------------------------------------------------
+  HasProtocolInfo instance
+-------------------------------------------------------------------------------}
 
 -- | Shelley-era specific
 instance HasProtocolInfo (ShelleyBlock StandardShelley) where

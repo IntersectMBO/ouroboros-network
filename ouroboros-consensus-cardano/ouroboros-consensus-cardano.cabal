@@ -82,6 +82,7 @@ executable db-analyser
                      , cardano-ledger-byron
                      , cardano-ledger-core
                      , cardano-ledger-shelley
+                     , cardano-ledger-shelley-ma
                      , cborg
                      , containers
                      , contra-tracer
