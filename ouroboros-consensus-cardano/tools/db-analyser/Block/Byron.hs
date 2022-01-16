@@ -15,6 +15,7 @@ import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (asum, toList)
+import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
 import           Options.Applicative
 
@@ -41,6 +42,21 @@ import           HasAnalysis
 instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
     extractTxOutputIdDelta = aBlockOrBoundary (const (0, [], [])) extractTxOutputIdDeltaByron
+    genesisTxOutputIds st =
+        (Map.size maxes, txOutputIds)
+      where
+        utxo :: Chain.UTxO
+        utxo = Chain.cvsUtxo $ Byron.byronLedgerState st
+
+        txins :: [TxIn]
+        txins =
+          map (cnvTxIn . Chain.fromCompactTxIn) $ Map.keys $ Chain.unUTxO utxo
+
+        -- the count is one greater than the maximum index
+        maxes = Map.fromListWith max $ map (\(TxIn h i) -> (h, i + 1)) txins
+
+        txOutputIds :: [TxOutputIds]
+        txOutputIds = map (uncurry TxOutputIds) $ Map.toList maxes
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
     emitTraces _ = []
@@ -122,12 +138,9 @@ extractTxOutputIdDeltaByron Chain.ABlock{..} =
     txs :: [Chain.ATxAux ByteString]
     txs = Chain.aUnTxPayload bodyTxPayload
 
-    cnv :: Chain.TxIn -> TxIn
-    cnv (Chain.TxInUtxo txid nat) = TxIn (Crypto.abstractHashToShort txid) (fromInteger $ toInteger nat)
-
     inputs :: Chain.ATxAux ByteString -> [TxIn]
     inputs atx =
-        map cnv $ toList $ Chain.txInputs tx
+        map cnvTxIn $ toList $ Chain.txInputs tx
       where
         tx = unAnnotated $ Chain.aTaTx atx
 
@@ -137,6 +150,10 @@ extractTxOutputIdDeltaByron Chain.ABlock{..} =
       where
         txid = Crypto.hashDecoded $ Chain.aTaTx $ atx
         n    = length $ Chain.txOutputs $ unAnnotated $ Chain.aTaTx atx
+
+cnvTxIn :: Chain.TxIn -> TxIn
+cnvTxIn (Chain.TxInUtxo txid nat) =
+    TxIn (Crypto.abstractHashToShort txid) (fromInteger $ toInteger nat)
 
 blockTxSizesByron :: Chain.ABlock ByteString -> [SizeInBytes]
 blockTxSizesByron block =

@@ -60,6 +60,7 @@ data AnalysisName =
     ShowSlotBlockNo
   | CountTxOutputs
   | ExtractTxOutputIdDeltas
+  | ExtractGenesisTxOutputIds
   | ShowBlockHeaderSize
   | ShowBlockTxsSize
   | ShowEBBs
@@ -85,6 +86,7 @@ runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
     go ShowSlotBlockNo             = showSlotBlockNo env
     go CountTxOutputs              = countTxOutputs env
     go ExtractTxOutputIdDeltas     = extractTxOutputIdDeltas env
+    go ExtractGenesisTxOutputIds   = extractGenesisTxOutputIds env
     go ShowBlockHeaderSize         = showHeaderSize env
     go ShowBlockTxsSize            = showBlockTxsSize env
     go ShowEBBs                    = showEBBs env
@@ -133,6 +135,9 @@ data TraceEvent blk =
     --   * how many transactions it contains
     --   * txids consumed
     --   * txids created
+  | ExtractGenesisTxOutputIdsEvent
+      Int
+      [HasAnalysis.TxOutputIds]
   | EbbEvent (HeaderHash blk) (ChainHash blk) Bool
     -- ^ triggered when EBB block has been found, it holds:
     --   * its hash,
@@ -188,6 +193,10 @@ instance HasAnalysis blk => Show (TraceEvent blk) where
     : show (length consumed)
     : show (sum $ map HasAnalysis.txOutputIdsCount created)
     : (map show consumed <> map show created)
+  show (ExtractGenesisTxOutputIdsEvent count created) = intercalate "\t" $
+      show count
+    : show (sum $ map HasAnalysis.txOutputIdsCount created)
+    : map show created
   show (HeaderSizeEvent bn sn headerSize) = intercalate "\t" $ [
       show bn
     , show sn
@@ -257,6 +266,12 @@ extractTxOutputIdDeltas AnalysisEnv { db, registry, initLedger, limit, tracer } 
           created
       where
         (count, consumed, created) = HasAnalysis.extractTxOutputIdDelta blk
+
+extractGenesisTxOutputIds :: forall blk. HasAnalysis blk => Analysis blk
+extractGenesisTxOutputIds AnalysisEnv { initLedger, tracer } = do
+    traceWith tracer $ ExtractGenesisTxOutputIdsEvent count created
+  where
+    (count, created) = HasAnalysis.genesisTxOutputIds (ledgerState initLedger)
 
 {-------------------------------------------------------------------------------
   Analysis: show the header size in bytes for all blocks

@@ -85,6 +85,10 @@ instance ( ShelleyBasedEra era
           txid   = Core.txid txbody
           n      = length $ getField @"outputs" txbody
 
+  -- TODO this is dead-code for a Cardano chain, but inaccurate for a pure
+  -- Shelley chain
+  genesisTxOutputIds _ = (0, [])
+
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body ->
           toList

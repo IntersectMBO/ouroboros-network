@@ -119,6 +119,11 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
 instance HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs         = analyseBlock countTxOutputs
   extractTxOutputIdDelta = analyseBlock extractTxOutputIdDelta
+  genesisTxOutputIds st  = case tele of
+      Telescope.TZ current -> genesisTxOutputIds (currentState current)
+      _                    -> error "initial Cardano ledger must be in Byron era"
+    where
+      tele = getHardForkState $ hardForkLedgerStatePerEra st
   blockTxSizes           = analyseBlock blockTxSizes
   knownEBBs _            =
       Map.mapKeys castHeaderHash . Map.map castChainHash $
