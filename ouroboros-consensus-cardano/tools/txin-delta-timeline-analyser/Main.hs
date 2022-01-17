@@ -194,6 +194,18 @@ data Row = Row {
   , rNumTx       :: {-# UNPACK #-} !Int
   , rConsumed    :: {-# UNPACK #-} !(V.Vector TxIn)
   , rCreated     :: {-# UNPACK #-} !(V.Vector TxOutputIds)
+  , rCache       :: RowCache
+  }
+
+data RowCache = RowCache {
+    -- | The `TxIn` this row consumes, including those it created
+    rcConsumed      :: Set TxIn
+    -- | The `TxIn` this row created, including those it consumed
+  , rcCreated       :: Set TxIn
+    -- | The `TxIn` this row consumes excluding those it created
+  , rcConsumedOther :: Set TxIn
+    -- | The `TxIn` this row created, excluding those it consumed
+  , rcCreatedOther  :: Set TxIn
   }
 
 -- | Parse either a @\@@ item or a @#@ item, from the variable length portion
@@ -220,12 +232,22 @@ parseRow bs0 = run $ flattenToP0 $ do
           (sequenceP0 (p0Item '#' TxOutputIds))
       $ \created -> do
         M.guard $ toEnum numCreated == sum [ n | TxOutputIds _ n <- created ]
+        let setco      = Set.fromList $                         consumed
+            setcr      = Set.fromList $ concatMap outputTxIns $ created
+            setcoOther = Set.difference setco setcr
+            setcrOther = Set.difference setcr setco
         pure Row {
             rBlockNumber = toEnum bn
           , rSlotNumber  = toEnum sn
           , rNumTx       = numTx
           , rConsumed    = toVec numConsumed      consumed
           , rCreated     = toVec (length created) created
+          , rCache       = RowCache {
+              rcConsumed      = setco
+            , rcCreated       = setcr
+            , rcConsumedOther = setcoOther
+            , rcCreatedOther  = setcrOther
+            }
           }
   where
     run :: P0 [Char8.ByteString] Row -> Row
@@ -260,10 +282,9 @@ inMemSim =
       let reltime_milliseconds = (t - t0) `div` 1_000_000
 --      M.when (0 == mod n 10000) $ do
 --        putStrLn $ show n <> "\t" <> show reltime_milliseconds <> "\t" <> show (Set.size utxo)
-      let consumed = Set.fromList $                         V.toList $ rConsumed row
-          created  = Set.fromList $ concatMap outputTxIns $ V.toList $ rCreated  row
-          blkCreated  = Set.difference created consumed
-          blkConsumed = Set.difference consumed created
+
+      let blkConsumed = rcConsumedOther (rCache row)
+          blkCreated  = rcCreatedOther  (rCache row)
 
       -- fail if a txin this block consumes is not in the utxo
       do
@@ -349,12 +370,9 @@ measureAge =
     snoc t0 (AgeMeasures utxo histo) row = do
       t <- getMonotonicTimeNSec
       let reltime_milliseconds = (t - t0) `div` 1_000_000
-      let consumed = Set.fromList $                         V.toList $ rConsumed row
-          created  = Set.fromList $ concatMap outputTxIns $ V.toList $ rCreated  row
-          blkCreated  :: Set TxIn
-          blkCreated  = Set.difference created consumed
-          blkConsumed :: Set TxIn
-          blkConsumed = Set.difference consumed created
+
+      let blkConsumed = rcConsumedOther (rCache row)
+          blkCreated  = rcCreatedOther  (rCache row)
 
       let updCreated :: Map HASH AgeEntry
           updCreated =   -- how many outputs this block creates for its own txs
