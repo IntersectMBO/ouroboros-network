@@ -29,6 +29,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.UTxO as Chain
 import qualified Cardano.Chain.Update as Update
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
@@ -41,7 +42,7 @@ import           HasAnalysis
 
 instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
-    extractTxOutputIdDelta = aBlockOrBoundary (const (0, [], [])) extractTxOutputIdDeltaByron
+    extractTxOutputIdDelta = aBlockOrBoundary (const (IsEBB, 0, [], [])) extractTxOutputIdDeltaByron
     genesisTxOutputIds st =
         (Map.size maxes, txOutputIds)
       where
@@ -126,9 +127,10 @@ countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
     countTx :: Chain.Tx -> Int
     countTx = length . Chain.txOutputs
 
-extractTxOutputIdDeltaByron :: Chain.ABlock ByteString -> (Int, [TxIn], [TxOutputIds])
+extractTxOutputIdDeltaByron :: Chain.ABlock ByteString -> (IsEBB, Int, [TxIn], [TxOutputIds])
 extractTxOutputIdDeltaByron Chain.ABlock{..} =
-    ( length txs
+    ( IsNotEBB
+    , length txs
     , foldMap  inputs  txs
     , mapMaybe outputs txs
     )

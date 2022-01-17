@@ -38,6 +38,7 @@ import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import           Cardano.Ledger.Mary (MaryEra)
 
+import           Ouroboros.Consensus.Block (IsEBB (..))
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
@@ -117,7 +118,8 @@ instance ( ShelleyBasedEra era
       countOutputs = length . getField @"outputs" . getField @"body"
 
   extractTxOutputIdDelta blk =
-      ( length txs
+      ( IsNotEBB
+      , length txs
       , foldMap  inputs          txs
       , mapMaybe outputs (toList txs)
       )

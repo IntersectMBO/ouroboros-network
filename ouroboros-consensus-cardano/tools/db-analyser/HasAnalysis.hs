@@ -72,8 +72,8 @@ instance Show TxOutputIds where
 class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where
 
   countTxOutputs         :: blk -> Int
-  -- | How many transactions, the txins consumed, and the txouts created
-  extractTxOutputIdDelta :: blk -> (Int, [TxIn], [TxOutputIds])
+  -- | Is it an EBB, how many transactions, which txins consumed, which txouts created
+  extractTxOutputIdDelta :: blk -> (IsEBB, Int, [TxIn], [TxOutputIds])
   genesisTxOutputIds     :: LedgerState blk -> (Int, [TxOutputIds])
   blockTxSizes           :: blk -> [SizeInBytes]
   knownEBBs              :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)
