@@ -13,11 +13,14 @@ import           Data.ByteString.Short.Base64 (encodeBase64)
 import qualified Data.ByteString.Lazy.Char8 as Char8
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
+import           Data.Foldable(for_)
 import           Data.IntMap (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as MM
+import           Data.Maybe
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text.Short as TextShort
@@ -25,9 +28,15 @@ import           Data.Word (Word32, Word64)
 import qualified Data.Vector as V
 import           GHC.Clock (getMonotonicTimeNSec)
 import qualified Options.Applicative as O
+import qualified Control.Monad.State.Strict as Strict
+import           Control.Monad.IO.Class (liftIO)
 
 import           TxIn.Types
 import           TxIn.GenesisUTxO
+import qualified TxIn.UTxODb as UTxODb
+import qualified UTxODb.InMemory as UTxODb
+import qualified UTxODb.Snapshots as UTxODb
+import qualified UTxODb.Haskey.Db as UTxODb
 
 main :: IO ()
 main = do
@@ -48,6 +57,8 @@ chooseAnalysis = do
     case whichAnalysis commandLine of
       InMemSim   -> pure inMemSim
       MeasureAge -> pure measureAge
+      DbInMemSim -> pure utxodbInMemSim
+      DbHaskeySim -> pure $ utxodbHaskeySim (haskeyBackend commandLine)
   where
     opts = O.info (commandLineParser O.<**> O.helper) $
          O.fullDesc
@@ -57,10 +68,14 @@ chooseAnalysis = do
 data AnalysisName =
     InMemSim
   | MeasureAge
+  | DbInMemSim
+  | DbHaskeySim
+
   deriving (Bounded, Enum, Show)
 
 data CommandLine = CommandLine {
-    whichAnalysis :: AnalysisName
+    whichAnalysis :: !AnalysisName,
+    haskeyBackend :: !(Maybe (IO UTxODb.HaskeyBackend))
   }
 
 commandLineParser :: O.Parser CommandLine
@@ -71,6 +86,7 @@ commandLineParser =
           (   O.metavar "ANALYSIS_NAME"
            <> O.help ("one of: " <> unwords (map fst analysisMap))
           )
+    <*> O.optional UTxODb.haskeyBackendParser
 
 readerAnalysisName :: O.ReadM AnalysisName
 readerAnalysisName = O.eitherReader $ \s ->
@@ -84,6 +100,8 @@ analysisMap =
   [ (show analysisName, analysisName)
   | analysisName <- [minBound..maxBound]
   ]
+
+
 
 {- DEBUGGING tip
 
@@ -187,14 +205,6 @@ contextT msg (T f) = T $ \i -> case f i of
 {-------------------------------------------------------------------------------
 Parsing a row from the timeline file
 -------------------------------------------------------------------------------}
-
-data Row = Row {
-    rBlockNumber :: {-# UNPACK #-} !Word64
-  , rSlotNumber  :: {-# UNPACK #-} !Word64
-  , rNumTx       :: {-# UNPACK #-} !Int
-  , rConsumed    :: {-# UNPACK #-} !(V.Vector TxIn)
-  , rCreated     :: {-# UNPACK #-} !(V.Vector TxOutputIds)
-  }
 
 -- | Parse either a @\@@ item or a @#@ item, from the variable length portion
 -- of each line
@@ -404,6 +414,35 @@ measureAge =
            )
 
       pure $ AgeMeasures utxo' histo'
+
+{- UTxODb interface
+
+-}
+
+utxodbInMemSim :: [Row] -> IO ()
+utxodbInMemSim rows = do
+  let init_seq_no = UTxODb.SeqNo (-1)
+  db <- UTxODb.initTVarDb init_seq_no
+
+  init_ls <- UTxODb.addTxIns db genesisUTxO $ UTxODb.initLedgerState init_seq_no
+  flip Strict.execStateT init_ls $ for_ (filterRowsForEBBs rows) $ \r -> do
+    ls0 <- Strict.get
+    ls <- liftIO (UTxODb.addRow db r (UTxODb.injectTables UTxODb.emptyTables ls0))
+    Strict.put ls
+  pure ()
+
+utxodbHaskeySim :: Maybe (IO UTxODb.HaskeyBackend) -> [Row] -> IO ()
+utxodbHaskeySim mb_hb rows = do
+  hb <- fromMaybe (error "No Haskey Backend") mb_hb
+
+  let init_seq_no = UTxODb.SeqNo (-1)
+  db <- UTxODb.openHaskeyDb init_seq_no hb
+  init_ls <- UTxODb.addTxIns db genesisUTxO $ UTxODb.initLedgerState init_seq_no
+  flip Strict.execStateT init_ls $ for_ (filterRowsForEBBs rows) $ \r -> do
+    ls0 <- Strict.get
+    ls <- liftIO (UTxODb.addRow db r (UTxODb.injectTables UTxODb.emptyTables ls0))
+    Strict.put ls
+  pure ()
 
 {-------------------------------------------------------------------------------
 TODO more simulations/statistics etc

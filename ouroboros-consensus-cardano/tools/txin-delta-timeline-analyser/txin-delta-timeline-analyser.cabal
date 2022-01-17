@@ -1,4 +1,4 @@
-cabal-version: >= 1.8
+cabal-version: >= 1.10
 name:                txin-delta-timeline-analyser
 version:             0.2.0.0
 synopsis:            X
@@ -16,6 +16,12 @@ library
   exposed-modules:     TxIn.Main
                        TxIn.Types
                        TxIn.GenesisUTxO
+                       TxIn.UTxODb
+                       UTxODb.Snapshots
+                       UTxODb.InMemory
+                       UTxODb.Haskey.Db
+                       UTxODb.Haskey.Tree
+
   build-depends:       base,
                        bytestring,
                        containers,
@@ -24,9 +30,18 @@ library
                        text,
                        text-short,
                        base64,
-                       base16
+                       base16,
+                       fingertree,
+                       stm,
+                       binary,
+                       exceptions,
+                       mtl,
+                       haskey-btree,
+                       haskey
+
 
 executable txin
   hs-source-dirs:      app
-  main-is:          txin.hs
+  main-is:             txin.hs
   build-depends:       txin-delta-timeline-analyser
+  default-language:    Haskell2010
