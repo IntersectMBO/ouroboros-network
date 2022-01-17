@@ -25,6 +25,8 @@
 module Test.Ouroboros.Network.ConnectionManager
   ( tests
   , verifyAbstractTransition
+  , validTransitionMap
+  , allValidTransitionsNames
   ) where
 
 import           Prelude hiding (read)
@@ -734,7 +736,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       -- OutboundIdleSt
       --
 
-      (OutboundIdleSt dataFlow, InboundSt dataFlow') -> dataFlow == dataFlow'
+      (OutboundIdleSt Duplex, InboundSt Duplex) -> True
       (OutboundIdleSt _dataFlow, TerminatingSt) -> True
 
       --
@@ -758,6 +760,103 @@ verifyAbstractTransition Transition { fromState, toState } =
 
       _ -> False
 
+-- | Maps each valid transition into one number. Collapses all invalid transition into a
+-- single number.
+--
+-- NOTE: Should be in sync with 'verifyAbstractTransition'
+--
+validTransitionMap :: AbstractTransition
+                   -> (Int, String)
+validTransitionMap t@Transition { fromState, toState } =
+    case (fromState, toState) of
+      (TerminatedSt            , ReservedOutboundSt)                -> (01, show t)
+      (UnknownConnectionSt     , ReservedOutboundSt)                -> (02, show t)
+      (ReservedOutboundSt      , UnnegotiatedSt Outbound)           -> (03, show t)
+      (UnnegotiatedSt Outbound , OutboundUniSt)                     -> (04, show t)
+      (UnnegotiatedSt Outbound , OutboundDupSt Ticking)             -> (05, show t)
+      (OutboundUniSt           , OutboundIdleSt Unidirectional)     -> (06, show t)
+      (OutboundDupSt Ticking   , OutboundDupSt Expired)             -> (07, show t)
+      (OutboundDupSt Expired   , OutboundIdleSt Duplex)             -> (08, show t)
+      (OutboundIdleSt dataFlow , OutboundIdleSt dataFlow')
+        | dataFlow == dataFlow'                                     -> (09, show t)
+      (OutboundDupSt Ticking   , InboundIdleSt Duplex)              -> (10, show t)
+      (InboundIdleSt Duplex    , OutboundDupSt Ticking)             -> (11, show t)
+      (OutboundDupSt Ticking   , DuplexSt)                          -> (12, show t)
+      (OutboundDupSt Expired   , DuplexSt)                          -> (13, show t)
+      (OutboundDupSt expired   , OutboundDupSt expired')
+        | expired == expired'                                       -> (14, show t)
+      (InboundSt Duplex             , DuplexSt)                     -> (15, show t)
+      (DuplexSt                     , OutboundDupSt Ticking)        -> (16, show t)
+      (DuplexSt                     , InboundSt Duplex)             -> (17, show t)
+      (TerminatedSt                 , UnnegotiatedSt Inbound)       -> (18, show t)
+      (UnknownConnectionSt          , UnnegotiatedSt Inbound)       -> (19, show t)
+      (ReservedOutboundSt           , UnnegotiatedSt Inbound)       -> (20, show t)
+      (UnnegotiatedSt Inbound       , InboundIdleSt Duplex)         -> (21, show t)
+      (UnnegotiatedSt Inbound       , InboundIdleSt Unidirectional) -> (22, show t)
+      (InboundIdleSt Duplex         , InboundIdleSt Duplex)         -> (23, show t)
+      (InboundIdleSt Duplex         , InboundSt Duplex)             -> (24, show t)
+      (InboundIdleSt Duplex         , TerminatingSt)                -> (25, show t)
+      (InboundSt Duplex             , InboundIdleSt Duplex)         -> (26, show t)
+      (InboundIdleSt Unidirectional , InboundSt Unidirectional)     -> (27, show t)
+      (InboundIdleSt Unidirectional , TerminatingSt)                -> (28, show t)
+      (InboundSt Unidirectional     , InboundIdleSt Unidirectional) -> (29, show t)
+      (OutboundIdleSt Duplex        , InboundSt Duplex)             -> (30, show t)
+      (OutboundIdleSt _dataFlow , TerminatingSt)                    -> (31, show t)
+      (TerminatingSt            , TerminatedSt)                     -> (32, show t)
+      (_                        , TerminatedSt)                     -> (33, show t)
+      (_                        , UnknownConnectionSt)              -> (34, show t)
+      (TerminatingSt            , UnnegotiatedSt Inbound)           -> (35, show t)
+      _                                                             -> (99, show t)
+
+-- | List of all valid transition's names.
+--
+-- NOTE: Should be in sync with 'verifyAbstractTransition', but due to #3516
+-- abrupt terminating transitions and identity transitions are trimmed for now,
+-- until we tweak the generators to include more connection errors.
+--
+allValidTransitionsNames :: [String]
+allValidTransitionsNames =
+  map show
+  [ Transition UnknownConnectionSt             ReservedOutboundSt
+  -- , Transition TerminatedSt                    ReservedOutboundSt
+  , Transition ReservedOutboundSt              (UnnegotiatedSt Outbound)
+  , Transition (UnnegotiatedSt Outbound)       OutboundUniSt
+  , Transition (UnnegotiatedSt Outbound)       (OutboundDupSt Ticking)
+  , Transition OutboundUniSt                   (OutboundIdleSt Unidirectional)
+  , Transition (OutboundDupSt Ticking)         (OutboundDupSt Expired)
+  -- , Transition (OutboundDupSt Expired)         (OutboundIdleSt Duplex)
+  -- , Transition (OutboundIdleSt Unidirectional) (OutboundIdleSt Unidirectional)
+  -- , Transition (OutboundIdleSt Duplex)         (OutboundIdleSt Duplex)
+  , Transition (OutboundDupSt Ticking)         (InboundIdleSt Duplex)
+  , Transition (InboundIdleSt Duplex)          (OutboundDupSt Ticking)
+  , Transition (OutboundDupSt Ticking)         DuplexSt
+  -- , Transition (OutboundDupSt Expired)         DuplexSt
+  -- , Transition (OutboundDupSt Ticking)         (OutboundDupSt Ticking)
+  -- , Transition (OutboundDupSt Expired)         (OutboundDupSt Expired)
+  , Transition (InboundSt Duplex)              DuplexSt
+  , Transition DuplexSt                        (OutboundDupSt Ticking)
+  , Transition DuplexSt                        (InboundSt Duplex)
+  -- , Transition TerminatedSt                    (UnnegotiatedSt Inbound)
+  , Transition UnknownConnectionSt             (UnnegotiatedSt Inbound)
+  , Transition ReservedOutboundSt              (UnnegotiatedSt Inbound)
+  , Transition (UnnegotiatedSt Inbound)        (InboundIdleSt Duplex)
+  , Transition (UnnegotiatedSt Inbound)        (InboundIdleSt Unidirectional)
+  -- , Transition (InboundIdleSt Duplex)          (InboundIdleSt Duplex)
+  , Transition (InboundIdleSt Duplex)          (InboundSt Duplex)
+  -- , Transition (InboundIdleSt Duplex)          TerminatingSt
+  -- , Transition (InboundSt Duplex)              (InboundIdleSt Duplex)
+  -- , Transition (InboundIdleSt Unidirectional)  (InboundSt Unidirectional)
+  -- , Transition (InboundIdleSt Unidirectional)  TerminatingSt
+  -- , Transition (InboundSt Unidirectional)      (InboundIdleSt Unidirectional)
+  -- , Transition (OutboundIdleSt Duplex)         (InboundSt Duplex)
+  -- , Transition (OutboundIdleSt Unidirectional) TerminatingSt
+  -- , Transition (OutboundIdleSt Duplex)         TerminatingSt
+  , Transition TerminatingSt                   TerminatedSt
+  -- , Transition TerminatedSt                    UnknownConnectionSt
+  -- , Transition TerminatingSt                   (UnnegotiatedSt Inbound)
+  -- , Transition (_)                             (TerminatedSt)
+  -- , Transition (_)                             (UnknownConnectionSt)
+  ]
 
 newtype SkewedBool = SkewedBool Bool
   deriving Show
