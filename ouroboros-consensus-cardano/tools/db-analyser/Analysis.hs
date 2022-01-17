@@ -11,6 +11,7 @@ module Analysis (
     AnalysisEnv (..)
   , AnalysisName (..)
   , Limit (..)
+  , isEssentialEvent
   , runAnalysis
   ) where
 
@@ -166,6 +167,24 @@ data TraceEvent blk =
     --   * slot number when the block was forged
     --   * number of transactions in the block
     --   * total size of transactions in the block
+
+-- | Is this event necessary to answer the query specified on the user's
+-- command line?
+isEssentialEvent :: TraceEvent blk -> Bool
+isEssentialEvent = \case
+    BlockSlotEvent{}                 -> True
+    BlockTxSizeEvent{}               -> True
+    CountTxOutputsEvent{}            -> True
+    CountedBlocksEvent{}             -> True
+    DoneEvent{}                      -> False
+    EbbEvent{}                       -> True
+    ExtractGenesisTxOutputIdsEvent{} -> True
+    ExtractTxOutputIdDeltasEvent{}   -> True
+    HeaderSizeEvent{}                -> True
+    MaxHeaderSizeEvent{}             -> True
+    SnapshotStoredEvent{}            -> True
+    SnapshotWarningEvent{}           -> True
+    StartedEvent{}                   -> False
 
 instance HasAnalysis blk => Show (TraceEvent blk) where
   show (StartedEvent analysisName)        = "Started " <> (show analysisName)
