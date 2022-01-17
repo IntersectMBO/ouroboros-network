@@ -110,7 +110,7 @@ let
       ])) ++ (testsPaths [ "ouroboros-network" "cddl" ])
   ++ (checksPaths [ "ouroboros-network" "cddl" ])
   ++ (exesPaths [ "network-mux" "cardano-ping" ])
-  ++ (stylePaths [ "check-nixfmt" "check-stylish" ])
+  ++ (stylePaths [ "check-nixfmt" "check-stylish" "check-stylish-network" ])
   ++ onlyBuildOnDefaultSystem;
 
   # Remove build jobs for which cross compiling does not make sense.
