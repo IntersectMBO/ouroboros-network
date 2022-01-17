@@ -547,8 +547,8 @@ _unit_bracketSyncWithFetchClient step = do
     checkResult _                 = assertFailure "unexpected result"
 
     testSkeleton :: forall m a b.
-                    (MonadAsync m, MonadFork m, MonadSTM m, MonadTimer m,
-                     MonadThrow m, MonadThrow (STM m))
+                    (MonadAsync m, MonadFork m, MonadMask m, MonadSTM m,
+                     MonadTimer m, MonadThrow m, MonadThrow (STM m))
                  => ((forall c. m c -> m c) -> m a)
                  -> ((forall c. m c -> m c) -> m b)
                  -> m (Either (Either SomeException a)
