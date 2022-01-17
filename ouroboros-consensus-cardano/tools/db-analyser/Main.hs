@@ -14,7 +14,7 @@ import qualified Debug.Trace as Debug
 import           Options.Applicative
 import           System.IO
 
-import           Control.Tracer (Tracer (..), nullTracer)
+import           Control.Tracer (Tracer (..), condTracing, nullTracer, showTracing, traceWith)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -63,6 +63,7 @@ data CmdLine = CmdLine {
   , blockType  :: BlockType
   , analysis   :: AnalysisName
   , limit      :: Limit
+  , quietly    :: Bool
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation
@@ -85,13 +86,17 @@ parseCmdLine = CmdLine
           ])
     <*> switch (mconcat [
             long "verbose"
-          , help "Enable verbose logging"
+          , help "Enable verbose ChainDB logging"
           ])
     <*> parseSelectDB
     <*> parseValidationPolicy
     <*> blockTypeParser
     <*> parseAnalysis
     <*> parseLimit
+    <*> switch (mconcat [
+            long "quiet-analysis"
+          , help "Filter out non-essential trace events, which is useful for piping"
+          ])
 
 parseSelectDB :: Parser SelectDB
 parseSelectDB = asum [
@@ -238,8 +243,20 @@ analyse ::
 analyse CmdLine {..} args =
     withRegistry $ \registry -> do
 
-      chainDBTracer  <- mkTracer verbose
-      analysisTracer <- mkTracer True
+      tracer <- do
+        startTime <- getMonotonicTime
+        return $ Tracer $ \s -> do
+          traceTime <- getMonotonicTime
+          let diff = diffTime traceTime startTime
+          hPutStrLn stderr $ concat ["[", show diff, "] ", s]
+          hFlush stderr
+
+
+      let chainDBTracer  = if not verbose then nullTracer else showTracing tracer
+          analysisTracer =
+              condTracing (\ev -> isEssentialEvent ev || not quietly)
+            $ showTracing tracer
+          tipTracer      = if quietly then nullTracer else tracer
       ProtocolInfo { pInfoInitLedger = genesisLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
@@ -279,7 +296,7 @@ analyse CmdLine {..} args =
               , tracer = analysisTracer
               }
             tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
-            putStrLn $ "ImmutableDB tip: " ++ show tipPoint
+            traceWith tipTracer $ "ImmutableDB tip: " ++ show tipPoint
         SelectChainDB ->
           ChainDB.withDB chainDbArgs $ \chainDB -> do
             runAnalysis analysis $ AnalysisEnv {
@@ -292,17 +309,8 @@ analyse CmdLine {..} args =
               , tracer = analysisTracer
               }
             tipPoint <- atomically $ ChainDB.getTipPoint chainDB
-            putStrLn $ "ChainDB tip: " ++ show tipPoint
+            traceWith tipTracer $ "ChainDB tip: " ++ show tipPoint
   where
-    mkTracer False = return nullTracer
-    mkTracer True  = do
-      startTime <- getMonotonicTime
-      return $ Tracer $ \ev -> do
-        traceTime <- getMonotonicTime
-        let diff = diffTime traceTime startTime
-        hPutStrLn stderr $ concat ["[", show diff, "] ", show ev]
-        hFlush stderr
-
     immValidationPolicy = case (analysis, validation) of
       (_, Just ValidateAllBlocks)      -> ImmutableDB.ValidateAllChunks
       (_, Just MinimumBlockValidation) -> ImmutableDB.ValidateMostRecentChunk
