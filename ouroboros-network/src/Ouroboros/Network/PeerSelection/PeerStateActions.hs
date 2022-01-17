@@ -833,7 +833,6 @@ withPeerStateActions PeerStateActionsArguments {
       case res of
         Nothing -> do
           Mux.stopMux pchMux
-          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure
                                 (HotToWarm pchConnectionId)
@@ -905,7 +904,6 @@ withPeerStateActions PeerStateActionsArguments {
         Nothing -> do
           -- timeout fired
           Mux.stopMux pchMux
-          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure
                                 (WarmToCold pchConnectionId)
