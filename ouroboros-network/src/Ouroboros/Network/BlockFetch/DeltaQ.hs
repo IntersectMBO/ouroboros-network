@@ -51,7 +51,7 @@ comparePeerGSV activePeers salt (a, a_p) (b, b_p) =
                                else gs a
         gs_b = if isActive b_p then activeAdvantage * gs b
                                else gs b in
-    if abs (gs_a - gs_b) < 0.05*gs_a
+    if abs (gs_a - gs_b) < 0.05 * max gs_a gs_b
        then compare (hashWithSalt salt a_p) (hashWithSalt salt b_p)
        else compare gs_a gs_b
   where
