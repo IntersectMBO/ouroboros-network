@@ -3,7 +3,7 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE TypeFamilies       #-}
 
-module Main (main) where
+module TxIn.Main (main) where
 
 import qualified Control.Monad as M
 import           Data.Bits (shiftL)
@@ -26,8 +26,8 @@ import qualified Data.Vector as V
 import           GHC.Clock (getMonotonicTimeNSec)
 import qualified Options.Applicative as O
 
-import           Types
-import           GenesisUTxO
+import           TxIn.Types
+import           TxIn.GenesisUTxO
 
 main :: IO ()
 main = do

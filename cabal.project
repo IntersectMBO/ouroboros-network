@@ -26,7 +26,7 @@ packages: ./typed-protocols
           ./strict-stm
           ./ntp-client
           ./cardano-client
-
+          ./ouroboros-consensus-cardano/tools/txin-delta-timeline-analyser
 constraints:
     ip < 1.5
   , hedgehog >= 1.0

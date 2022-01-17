@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings  #-}
 
-module GenesisUTxO (genesisUTxO) where
+module TxIn.GenesisUTxO (genesisUTxO) where
 
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -9,7 +9,7 @@ import qualified Data.ByteString.Short as Short
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Types (TxIn (..))
+import           TxIn.Types (TxIn (..))
 
 {-------------------------------------------------------------------------------
 Genesis UTxO

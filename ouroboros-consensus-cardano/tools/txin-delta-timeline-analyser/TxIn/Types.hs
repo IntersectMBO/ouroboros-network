@@ -1,4 +1,4 @@
-module Types (
+module TxIn.Types (
     TxIn (..)
   , TxOutputIds (..)
   , outputTxIns
