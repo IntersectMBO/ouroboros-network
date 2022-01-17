@@ -258,14 +258,17 @@ extractTxOutputIdDeltas AnalysisEnv { db, registry, initLedger, limit, tracer } 
   where
     process :: () -> blk -> IO ()
     process () blk =
-        traceWith tracer $ ExtractTxOutputIdDeltasEvent
-          (blockNo blk)
-          (blockSlot blk)
-          count
-          consumed
-          created
+        case isEBB of
+          IsEBB    -> pure ()
+          IsNotEBB -> do
+            traceWith tracer $ ExtractTxOutputIdDeltasEvent
+              (blockNo blk)
+              (blockSlot blk)
+              count
+              consumed
+              created
       where
-        (count, consumed, created) = HasAnalysis.extractTxOutputIdDelta blk
+        (isEBB, count, consumed, created) = HasAnalysis.extractTxOutputIdDelta blk
 
 extractGenesisTxOutputIds :: forall blk. HasAnalysis blk => Analysis blk
 extractGenesisTxOutputIds AnalysisEnv { initLedger, tracer } = do
