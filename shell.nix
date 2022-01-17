@@ -41,6 +41,7 @@ let
       hls.hls
       hls.hls-wrapper
       hls.implicit-hie
+      lmdb
     ];
 
     tools = {

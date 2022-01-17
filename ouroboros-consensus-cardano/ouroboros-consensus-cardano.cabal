@@ -130,6 +130,7 @@ executable txin-delta-timeline-analyser
                      , containers
                      , contra-tracer
                      , foldl
+                     , lmdb-simple
                      , optparse-applicative
                      , text-short
                      , vector
