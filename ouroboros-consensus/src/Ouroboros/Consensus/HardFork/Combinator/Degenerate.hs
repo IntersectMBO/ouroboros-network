@@ -53,7 +53,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode ()
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 {-------------------------------------------------------------------------------
   Simple patterns

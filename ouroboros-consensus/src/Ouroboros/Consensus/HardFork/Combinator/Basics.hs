@@ -23,8 +23,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , BlockConfig (..)
   , CodecConfig (..)
   , ConsensusConfig (..)
-  , HardForkLedgerConfig (..)
   , DiskLedgerView (..)
+  , HardForkLedgerConfig (..)
   , StorageConfig (..)
     -- ** Functions on config
   , completeConsensusConfig'
@@ -61,7 +61,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 {-------------------------------------------------------------------------------
   Hard fork protocol, block, and ledger state

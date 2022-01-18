@@ -71,7 +71,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..), Situated (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..), mustMatchNS)
 
