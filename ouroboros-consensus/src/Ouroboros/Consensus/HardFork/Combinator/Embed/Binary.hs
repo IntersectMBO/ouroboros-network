@@ -12,7 +12,8 @@ import           Data.These (These (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.Extended

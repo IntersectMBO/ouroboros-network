@@ -17,7 +17,7 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 
-{-# LANGUAGE InstanceSigs       #-}
+{-# LANGUAGE InstanceSigs               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -27,8 +27,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger (
   , HardForkLedgerUpdate (..)
   , HardForkLedgerWarning (..)
     -- * Type family instances
-  , Ticked1 (..)
   , FlipTickedLedgerState (..)
+  , Ticked1 (..)
     -- * Low-level API (exported for the benefit of testing)
   , AnnForecast (..)
   , mkHardForkForecast
@@ -73,7 +73,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs

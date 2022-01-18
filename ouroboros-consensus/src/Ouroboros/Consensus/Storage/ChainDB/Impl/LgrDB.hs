@@ -24,12 +24,12 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Ledger HD operations
   , flush
     -- ** Read/Write lock operations
+  , unsafeAcquireReadLock
+  , unsafeAcquireWriteLock
+  , unsafeReleaseReadLock
+  , unsafeReleaseWriteLock
   , withReadLock
   , withWriteLock
-  , unsafeAcquireReadLock
-  , unsafeReleaseReadLock
-  , unsafeAcquireWriteLock
-  , unsafeReleaseWriteLock
     -- * 'TraceReplayEvent' decorator
   , LedgerDB.decorateReplayTracerWithGoal
     -- * Wrappers
@@ -60,6 +60,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode))
+import           Control.Monad.Trans.Class (lift)
 import           Control.Tracer
 import           Data.Foldable (foldl')
 import           Data.Set (Set)
@@ -67,7 +68,6 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-import           Control.Monad.Trans.Class (lift)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -94,9 +94,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
                      ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
-                     DiskSnapshot, LedgerDB', NextBlock (..), ReplayGoal,
-                     StreamAPI (..), TraceEvent (..), TraceReplayEvent (..),
-                     OnDiskLedgerStDb (..))
+                     DiskSnapshot, LedgerDB', NextBlock (..),
+                     OnDiskLedgerStDb (..), ReplayGoal, StreamAPI (..),
+                     TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
@@ -109,10 +109,10 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
-      varDB          :: !(StrictTVar m (LedgerDB' blk))
+      varDB               :: !(StrictTVar m (LedgerDB' blk))
       -- ^ INVARIANT: the tip of the 'LedgerDB' is always in sync with the tip
       -- of the current chain of the ChainDB.
-    , varPrevApplied :: !(StrictTVar m (Set (RealPoint blk)))
+    , varPrevApplied      :: !(StrictTVar m (Set (RealPoint blk)))
       -- ^ INVARIANT: this set contains only points that are in the
       -- VolatileDB.
       --
@@ -128,13 +128,13 @@ data LgrDB m blk = LgrDB {
       -- ^
       --
       -- TODO: align the other fields.
-    , lgrDbFlushLock :: !FlushLock
-    , resolveBlock   :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
+    , lgrDbFlushLock      :: !FlushLock
+    , resolveBlock        :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
       -- ^ Read a block from disk
-    , cfg            :: !(TopLevelConfig blk)
-    , diskPolicy     :: !DiskPolicy
-    , hasFS          :: !(SomeHasFS m)
-    , tracer         :: !(Tracer m (TraceEvent blk))
+    , cfg                 :: !(TopLevelConfig blk)
+    , diskPolicy          :: !DiskPolicy
+    , hasFS               :: !(SomeHasFS m)
+    , tracer              :: !(Tracer m (TraceEvent blk))
 
 -- TODO    , backendHandle :: BackendHandle m
 

@@ -14,7 +14,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger (CanHardFork')
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 instance CanHardFork' xs => CommonProtocolParams (HardForkBlock xs) where
   maxHeaderSize = askCurrentLedger maxHeaderSize
