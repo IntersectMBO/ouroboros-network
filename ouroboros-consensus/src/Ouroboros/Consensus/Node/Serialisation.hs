@@ -41,11 +41,12 @@ import           Data.SOP.BasicFunctors
 import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL, SomeQuery (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL,
+                     SomeQuery (..))
 
 {-------------------------------------------------------------------------------
   NodeToNode

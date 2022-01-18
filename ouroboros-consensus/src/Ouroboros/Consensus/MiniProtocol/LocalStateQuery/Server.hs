@@ -11,8 +11,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
 import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Ledger.Query (Query, QueryLedger)
+import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
 import           Ouroboros.Consensus.Util.IOLike
 

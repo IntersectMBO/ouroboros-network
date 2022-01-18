@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
