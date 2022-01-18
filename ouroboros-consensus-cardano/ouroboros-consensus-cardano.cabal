@@ -129,10 +129,13 @@ executable txin-delta-timeline-analyser
                      , bytestring
                      , containers
                      , contra-tracer
+                     , directory
                      , foldl
                      , lmdb-simple
                      , optparse-applicative
+                     , serialise
                      , text-short
+                     , time
                      , vector
   other-modules:
                        GenesisUTxO

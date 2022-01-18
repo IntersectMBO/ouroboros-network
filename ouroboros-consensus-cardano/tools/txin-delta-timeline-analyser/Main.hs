@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE TypeFamilies       #-}
@@ -6,6 +7,7 @@
 module Main (main) where
 
 import qualified Control.Monad as M
+import           Control.Exception (Exception, throw)
 import           Data.Bits (shiftL)
 import           Data.ByteString.Base64 (decodeBase64)
 import qualified Data.ByteString.Lazy.Char8 as Char8
@@ -22,6 +24,11 @@ import           Data.Word (Word32, Word64)
 import qualified Data.Vector as V
 import           GHC.Clock (getMonotonicTimeNSec)
 import qualified Options.Applicative as O
+
+import qualified Codec.Serialise as LMDB
+import qualified Data.Time.Clock as Time
+import qualified Database.LMDB.Simple as LMDB
+import           System.Directory (createDirectoryIfMissing)
 
 import           Types
 import           GenesisUTxO
@@ -45,6 +52,7 @@ chooseAnalysis = do
     case whichAnalysis commandLine of
       InMemSim   -> pure inMemSim
       MeasureAge -> pure measureAge
+      LmdbSim    -> pure lmdbSim
   where
     opts = O.info (commandLineParser O.<**> O.helper) $
          O.fullDesc
@@ -53,6 +61,7 @@ chooseAnalysis = do
 
 data AnalysisName =
     InMemSim
+  | LmdbSim
   | MeasureAge
   deriving (Bounded, Enum, Show)
 
@@ -418,11 +427,147 @@ measureAge =
       pure $ AgeMeasures utxo' histo'
 
 {-------------------------------------------------------------------------------
-TODO more simulations/statistics etc
+Simulating via LMDB
 -------------------------------------------------------------------------------}
 
--- eg histogram of how long between creation and consumption of each spent tx
--- output
+data LmdbSimEnv = LmdbSimEnv
+  !(LMDB.Environment LMDB.ReadWrite)
+  !(LMDB.Database () Word64)
+  -- ^ we version by storing the successor of the slot number of the last block
+  -- that was written
+  !(LMDB.Database (LmdbBox TxIn) ())
+
+-- | A newtype for being explicit and avoiding orphans
+newtype LmdbBox a = LmdbBox a
+
+instance LMDB.Serialise (LmdbBox TxIn) where
+  encode (LmdbBox (TxIn h i)) =                         LMDB.encode h <>  LMDB.encode i
+  decode                      = fmap LmdbBox $ TxIn <$> LMDB.decode   <*> LMDB.decode
+
+data LmdbAppExn =
+    LmdbMissingSeqNo   Word64
+  | LmdbMissingTxIn    Word64 Word64 TxIn
+  | LmdbNotEmptyAtInit Word64
+  deriving (Show)
+
+instance Exception LmdbAppExn
+
+lmdbDirName :: String
+lmdbDirName = "utxo-lmdb"
+
+lmdbSim :: [Row] -> IO ()
+lmdbSim =
+    \rows -> do
+      mono0 <- getMonotonicTimeNSec
+      t0    <- Time.getCurrentTime
+      createDirectoryIfMissing False lmdbDirName
+      env <- LMDB.openEnvironment
+               lmdbDirName
+               LMDB.defaultLimits {
+                   LMDB.mapSize      = 4 * 1024 * 1024 * 1024 -- 4 gigabytes, for now
+                 , LMDB.maxDatabases = 2
+                 }
+      dbSeqNo <- LMDB.readWriteTransaction env $ LMDB.getDatabase (Just "SeqNo")
+      dbUTxO  <- LMDB.readWriteTransaction env $ LMDB.getDatabase (Just "UTxO")
+      LMDB.readWriteTransaction env $ LMDB.get dbSeqNo () >>= \case
+        Just seqNo -> throw $ LmdbNotEmptyAtInit seqNo
+        Nothing    -> do
+          LMDB.put dbSeqNo () (Just 0)
+          flip mapM_ genesisUTxO $ \txin -> LMDB.put dbUTxO (LmdbBox txin) (Just ())
+      _n <- mapM_ (each (LmdbSimEnv env dbSeqNo dbUTxO) mono0 t0) rows
+      pure ()
+  where
+    each :: LmdbSimEnv -> Word64 -> Time.UTCTime -> Row -> IO ()
+    each (LmdbSimEnv env dbSeqNo dbUTxO) mono0 t0 row = do
+      mono <- getMonotonicTimeNSec
+      t    <- Time.getCurrentTime
+      let diffmono_microseconds a b =
+            (a - b) `div` 1_000 --- nano to micro
+          difftime_microseconds a b =
+            fromEnum (Time.nominalDiffTimeToSeconds (Time.diffUTCTime a b))
+               `div` 1_000_000   -- pico to micro
+
+      let blkConsumed = rcConsumedOther (rCache row)
+          blkCreated  = rcCreatedOther  (rCache row)
+
+      M.unless (Set.null blkConsumed) $ LMDB.readOnlyTransaction env $ do
+        seqNo <- LMDB.get dbSeqNo () >>= \case
+          Nothing    -> throw $ LmdbMissingSeqNo (rBlockNumber row)
+          Just seqNo -> pure seqNo
+
+        flip mapM_ blkConsumed $ \txin -> do
+          LMDB.get dbUTxO (LmdbBox txin) >>= \case
+            Nothing -> throw $ LmdbMissingTxIn (rBlockNumber row) seqNo txin
+            Just () -> pure ()
+
+      monoRead <- getMonotonicTimeNSec
+      tRead    <- Time.getCurrentTime
+
+      -- separate write transaction, to simulate actual patterns (TODO
+      -- pipeline)
+      LMDB.readWriteTransaction env $ do
+        LMDB.put dbSeqNo () $ Just $ 1 + rSlotNumber row
+
+        flip mapM_ blkConsumed $ \txin -> do
+          LMDB.put dbUTxO (LmdbBox txin) Nothing
+        flip mapM_ blkCreated $ \txin -> do
+          LMDB.put dbUTxO (LmdbBox txin) (Just ())
+
+      monoWrite <- getMonotonicTimeNSec
+      tWrite    <- Time.getCurrentTime
+
+      putStrLn $   show (rBlockNumber row)
+        <> "\t" <> show (rSlotNumber  row)
+        <> "\t" <> show (diffmono_microseconds mono mono0)
+        <> "\t" <> show (difftime_microseconds t    t0)
+        <> "\t" <> show (Set.size blkConsumed)
+        <> "\t" <> show (Set.size blkCreated)
+        <> "\t" <> show (diffmono_microseconds monoRead  mono)
+        <> "\t" <> show (difftime_microseconds tRead     t)
+        <> "\t" <> show (diffmono_microseconds monoWrite monoRead)
+        <> "\t" <> show (difftime_microseconds tWrite    tRead)
+
+-- TODO get monotonic hides system time?
+
+{-
+
+I made a ramfs and will be `xzcat`ing the input file from there.
+
+I started `iostat -y 5`.
+
+I invoked the program at 10:19:15.
+
+Circa 350000
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+           0.43    0.00   19.96    4.98    0.00   74.64
+
+Device             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn
+sda           19590.80         0.00     79423.20          0     397116
+
+Circa 6460000
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+           0.65    0.00   26.08    0.70    0.00   72.56
+
+Device             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn
+sda           24710.00         0.00     99226.40          0     496132
+
+Crica 6710000
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+           0.33    0.00   26.57    0.44    0.00   72.67
+
+Device             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn
+sda           25240.80         0.00    101375.20          0     506876
+
+I wasn't watching, but the logged timestamps suggest it took around 2.5 hours.
+
+-}
+
+{-------------------------------------------------------------------------------
+TODO more simulations/statistics etc
+-------------------------------------------------------------------------------}
 
 -- eg timings for various on-disk back-ends (at least when each block was read
 -- and when each block was written, possibly also delays of the operations
