@@ -46,14 +46,13 @@ import qualified UTxODb.Haskey.Tree as HaskeyDb
 data LedgerState table = LedgerState
   { utxo :: !(table Db.TableTypeRW TxIn Bool)
   , seq_no :: !Int64
-  , seq_no_offset :: !Int64
   }
 
 instance Db.HasSeqNo LedgerState where
-  stateSeqNo LedgerState{seq_no, seq_no_offset} = coerce (seq_no + seq_no_offset)
+  stateSeqNo LedgerState{seq_no} = coerce seq_no
 
 initLedgerState :: Db.SeqNo LedgerState -> LedgerState Db.EmptyTable
-initLedgerState sn = LedgerState { seq_no = coerce sn, seq_no_offset = 0, utxo = Db.EmptyTable }
+initLedgerState sn = LedgerState { seq_no = coerce sn, utxo = Db.EmptyTable }
 
 instance Db.HasTables LedgerState where
   type StateTableKeyConstraint LedgerState = All
@@ -125,16 +124,13 @@ ledgerRules r ls@LedgerState{utxo = utxo0, seq_no = old_seq_no} = do
     in throwM $ LedgerRulesException message
   let
     new_seq_no = fromIntegral $ rSlotNumber r
-    new_ls
-      | new_seq_no == old_seq_no = ls { utxo = utxo2, seq_no_offset = seq_no_offset ls + 1}
-      | otherwise  = ls { utxo = utxo2, seq_no = new_seq_no}
-  -- unless (old_seq_no < new_seq_no) $ throwM $ LedgerRulesException $ unwords ["nonmonotonic slot no:", show old_seq_no, ">", show new_seq_no]
+    new_ls = ls { utxo = utxo2, seq_no = new_seq_no}
+  unless (old_seq_no < new_seq_no) $ throwM $ LedgerRulesException $ unwords ["nonmonotonic slot no:", show old_seq_no, ">", show new_seq_no]
   pure new_ls
 
 
-addTxIns :: Db.DiskDb dbhandle LedgerState => dbhandle -> Set TxIn -> LedgerState Db.EmptyTable -> IO (LedgerState Db.EmptyTable)
-addTxIns handle txins ls0 = do
-  putStrLn $ "addTxIns: " <> show (length txins)
+addTxIns :: Db.DiskDb dbhandle LedgerState => dbhandle -> Set TxIn -> Db.SeqNo state -> LedgerState Db.EmptyTable -> IO (LedgerState Db.EmptyTable)
+addTxIns handle txins new_seq_no ls0 = do
   let keyset = OnDiskLedgerState { od_utxo = Db.AnnTable (Db.TableKeySet txins) ()}
   tracking_tables <-
     Db.annotatedReadsetToTrackingTables <$> Db.readDb handle keyset
@@ -144,8 +140,7 @@ addTxIns handle txins ls0 = do
     go !ls txin = case Db.lookup txin (utxo ls ) of
       Nothing -> pure $ ls { utxo = Db.insert txin True (utxo ls) }
       Just _ -> throwM $ LedgerRulesException $ "addTxIns: duplicate txin:" <> show txin
-    wrangle ls = ls { seq_no_offset = seq_no_offset ls + 1 }
-    in wrangle <$> foldM go init_ls txins
+    in (\x -> x { seq_no = coerce new_seq_no }) <$> foldM go init_ls txins
   let table_diffs = Db.projectTables . Db.trackingTablesToTableDiffs $ ls1
   Db.writeDb handle [Left table_diffs] (Db.stateSeqNo ls0) (Db.stateSeqNo ls1)
   putStrLn $ "addTxIns: " <> show (length txins)
@@ -170,3 +165,12 @@ addRow handle r ls0 = do
     <> "\t" <> show (Set.size created)
 
   pure $ Db.injectTables Db.emptyTables ls1
+
+
+rowOp :: Row -> LedgerState Db.TrackingTable -> LedgerState Db.TableDiff
+rowOp r ls0 = let
+  ls1 = case ledgerRules r ls0 of
+    Nothing -> error "ledgerRules"
+    Just x -> x
+  table_diffs = Db.trackingTablesToTableDiffs ls1
+  in table_diffs

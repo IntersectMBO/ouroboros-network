@@ -37,6 +37,7 @@ import Data.Foldable
 import Data.Traversable
 import Data.Maybe
 import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Map.Strict (Map)
 import Data.Coerce
 import qualified Data.BTree.Alloc.Class as Haskey
@@ -51,6 +52,7 @@ import UTxODb.Snapshots
 import UTxODb.Haskey.Tree
 import Control.Concurrent.MVar
 import Data.Functor
+import Data.Monoid
 
 data HaskeySideTable state = HaskeySideTable
   { seqId :: !(SeqNo state)
@@ -107,18 +109,24 @@ readTransaction keysets HaskeyRoot{..} = do
     go_lookup tag (AnnTable TableQuery {tqKeySet} x) t =
       go_lookup tag (AnnTable (TableKeySet tqKeySet) x) t
     go_lookup tag (AnnTable (TableKeySet ks) x) (RO_ODT t) = do
-      result <- readTree ks t
+      result <- if Set.null ks
+        then pure Map.empty
+        else readTree ks t
       let
         trs = emptyTableReadSetRO  { troPTMap = PMapRO (PMapRep result ks)}
       pure $ AnnTable trs (x, seqId)
     go_lookup tag (AnnTable (TableKeySet ks) x) (RW_ODT t) = do
-      result <- readTree ks t
+      result <- if Set.null ks
+        then pure Map.empty
+        else readTree ks t
       let
         trs = TableReadSetRW (PMapRW (PMapRep result ks))
       pure $ AnnTable trs (x, seqId)
 
     go_lookup tag (AnnTable (TableKeySet ks) x) (RWU_ODT t) = do
-      result <- readTree ks t
+      result <- if Set.null ks
+        then pure Map.empty
+        else readTree ks t
       let
         trs = TableReadSetRWU (PMapRWU (PMapRep result ks))
       pure $ AnnTable trs (x, seqId)
@@ -180,10 +188,22 @@ writeTransaction changes old_seq new_seq hr@HaskeyRoot{..} = do
       st <- Haskey.insert () hst { seqId = new_seq } sideTree
       Haskey.commit Nothing hr { sideTree = st, innerTables = x }
 
+keysetSize :: HasTables (Tables state) => AnnTableKeySets state a -> Int
+keysetSize = getSum . foldMapTables go where
+  go _ (AnnTable (TableKeySet ks) _) = Sum $ length ks
+  go _ (AnnTable TableQuery{tqKeySet} _) = Sum $ length tqKeySet
 
+
+-- isEmptyChanges :: [Either (TableDiffs state) (TableSnapshots state)] -> Bool
+-- isEmptyChanges [] = True
+-- isEmptyChanges (Left diffs : xs )= empty_diffs && isEmptyChanges xs where
+--   empty_diffs = getSum . foldMapTables go where
+--     go TableDiffRO = True
+--     go (TableDiffRW (DiffMapRW m)) = Map.null m
+--     go (TableDiffRWU (DiffMapRWU m)) = Map.null m
+-- isEmptyChanges _ = False
 instance HasHaskeyOnDiskTables state => DiskDb (HaskeyDb state) state where
-  readDb HaskeyDb {hdbBackend, hdbRoot} keysets =
-    runHaskeyBackend hdbBackend $ Haskey.transactReadOnly (readTransaction keysets) hdbRoot
+  readDb HaskeyDb {hdbBackend, hdbRoot} keysets = runHaskeyBackend hdbBackend $ Haskey.transactReadOnly (readTransaction keysets) hdbRoot
   writeDb HaskeyDb {..} changes old_seq new_seq = do
     mb_e <- runHaskeyBackend hdbBackend $ Haskey.transact (writeTransaction changes old_seq new_seq) hdbRoot
     for_ mb_e throwM

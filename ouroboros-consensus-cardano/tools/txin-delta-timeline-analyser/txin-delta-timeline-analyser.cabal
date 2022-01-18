@@ -19,6 +19,7 @@ library
                        TxIn.UTxODb
                        UTxODb.Snapshots
                        UTxODb.InMemory
+                       UTxODb.Pipeline
                        UTxODb.Haskey.Db
                        UTxODb.Haskey.Tree
 
@@ -37,8 +38,8 @@ library
                        exceptions,
                        mtl,
                        haskey-btree,
-                       haskey
-
+                       haskey,
+                       async
 
 executable txin
   hs-source-dirs:      app

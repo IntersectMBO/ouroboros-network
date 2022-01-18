@@ -13,6 +13,7 @@ import           Data.ByteString.Short.Base64 (encodeBase64)
 import qualified Data.ByteString.Lazy.Char8 as Char8
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
+import           Data.Coerce
 import           Data.Foldable(for_)
 import           Data.IntMap (IntMap)
 import qualified Data.IntMap.Strict as IntMap
@@ -35,6 +36,7 @@ import           TxIn.Types
 import           TxIn.GenesisUTxO
 import qualified TxIn.UTxODb as UTxODb
 import qualified UTxODb.InMemory as UTxODb
+import qualified UTxODb.Pipeline as UTxODb
 import qualified UTxODb.Snapshots as UTxODb
 import qualified UTxODb.Haskey.Db as UTxODb
 
@@ -421,10 +423,10 @@ measureAge =
 
 utxodbInMemSim :: [Row] -> IO ()
 utxodbInMemSim rows = do
-  let init_seq_no = UTxODb.SeqNo (-1)
+  let init_seq_no = UTxODb.SeqNo (-2)
   db <- UTxODb.initTVarDb init_seq_no
 
-  init_ls <- UTxODb.addTxIns db genesisUTxO $ UTxODb.initLedgerState init_seq_no
+  init_ls <- UTxODb.addTxIns db genesisUTxO  (UTxODb.SeqNo (-1)) $ UTxODb.initLedgerState init_seq_no
   flip Strict.execStateT init_ls $ for_ (filterRowsForEBBs rows) $ \r -> do
     ls0 <- Strict.get
     ls <- liftIO (UTxODb.addRow db r (UTxODb.injectTables UTxODb.emptyTables ls0))
@@ -435,13 +437,18 @@ utxodbHaskeySim :: Maybe (IO UTxODb.HaskeyBackend) -> [Row] -> IO ()
 utxodbHaskeySim mb_hb rows = do
   hb <- fromMaybe (error "No Haskey Backend") mb_hb
 
-  let init_seq_no = UTxODb.SeqNo (-1)
+  let init_seq_no = UTxODb.SeqNo (-2)
   db <- UTxODb.openHaskeyDb init_seq_no hb
-  init_ls <- UTxODb.addTxIns db genesisUTxO $ UTxODb.initLedgerState init_seq_no
-  flip Strict.execStateT init_ls $ for_ (filterRowsForEBBs rows) $ \r -> do
-    ls0 <- Strict.get
-    ls <- liftIO (UTxODb.addRow db r (UTxODb.injectTables UTxODb.emptyTables ls0))
-    Strict.put ls
+  init_ls <- UTxODb.addTxIns db genesisUTxO (UTxODb.SeqNo (-1)) $ UTxODb.initLedgerState init_seq_no
+  let
+    get_keys r = let
+      keyset = UTxODb.consumed . UTxODb.keysForRow $ r
+      in UTxODb.OnDiskLedgerState { UTxODb.od_utxo = UTxODb.TableKeySet keyset }
+  UTxODb.runPipeline db init_ls 10 (filterRowsForEBBs rows) get_keys UTxODb.rowOp
+  -- flip Strict.execStateT init_ls $ for_ (filterRowsForEBBs rows) $ \r -> do
+  --   ls0 <- Strict.get
+  --   ls <- liftIO (UTxODb.addRow db r (UTxODb.injectTables UTxODb.emptyTables ls0))
+  --   Strict.put ls
   pure ()
 
 {-------------------------------------------------------------------------------

@@ -488,7 +488,13 @@ trackingTablesToTableDiffs = mapTables (const getTableDiff)
 annotatedReadsetToTrackingTables :: forall a state. HasTables state => state (AnnTable TableReadSet a) -> state TrackingTable
 annotatedReadsetToTrackingTables = mapTables go where
   go :: forall t k v. TableTag t v -> AnnTable TableReadSet a t k v -> TrackingTable t k v
-  go tag (AnnTable t _) = mkTrackingTable t
+  go _g (AnnTable t _) = mkTrackingTable t
+
+readsetToTrackingTables :: forall state. HasTables state => state TableReadSet  -> state TrackingTable
+readsetToTrackingTables = mapTables go where
+  go :: forall t k v. TableTag t v -> TableReadSet t k v -> TrackingTable t k v
+  go _ t = mkTrackingTable t
+
 
 type TableKind = TableType -> * -> * -> *
 type StateKind = TableKind -> *
