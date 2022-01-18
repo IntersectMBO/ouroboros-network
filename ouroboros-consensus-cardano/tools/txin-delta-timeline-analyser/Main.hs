@@ -8,8 +8,6 @@ module Main (main) where
 import qualified Control.Monad as M
 import           Data.Bits (shiftL)
 import           Data.ByteString.Base64 (decodeBase64)
-import           Data.ByteString.Short.Base16 (encodeBase16')
-import           Data.ByteString.Short.Base64 (encodeBase64)
 import qualified Data.ByteString.Lazy.Char8 as Char8
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
@@ -20,7 +18,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as MM
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Data.Text.Short as TextShort
 import           Data.Word (Word32, Word64)
 import qualified Data.Vector as V
 import           GHC.Clock (getMonotonicTimeNSec)
@@ -289,13 +286,10 @@ inMemSim =
       -- fail if a txin this block consumes is not in the utxo
       do
         let missing = blkConsumed `Set.difference` utxo
-            sho1 (TxIn h i) = TextShort.toString (encodeBase64 h) <> "@" <> show i
-            -- encodeBase16 is bugged, so I need to convert through hoops to use encodeBase16'
-            sho2 (TxIn h i) = Char8.unpack (Char8.fromStrict (Short.fromShort (encodeBase16' h))) <> "@" <> show i
         M.unless (Set.null missing) $ error $ unlines [
             unwords ["ERROR: missing TxIn", show (rBlockNumber row), show (Set.size blkConsumed), show (Set.size missing)]
-          , unwords $ map sho1 $ Set.toList missing
-          , unwords $ map sho2 $ Set.toList missing
+          , unwords $ map showTxIn64 $ Set.toList missing
+          , unwords $ map showTxIn16 $ Set.toList missing
           ]
 
       let utxo' = Set.union blkCreated $ utxo `Set.difference` blkConsumed
