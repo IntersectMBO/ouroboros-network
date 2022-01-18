@@ -210,11 +210,11 @@ instance HasAnalysis blk => Show (TraceEvent blk) where
     : show (unSlotNo  sn)
     : show count
     : show (length consumed)
-    : show (sum $ map HasAnalysis.txOutputIdsCount created)
+    : show (sum $ map (length . HasAnalysis.txOutputIdsSizes) created)
     : (map show consumed <> map show created)
   show (ExtractGenesisTxOutputIdsEvent count created) = intercalate "\t" $
       show count
-    : show (sum $ map HasAnalysis.txOutputIdsCount created)
+    : show (sum $ map (length . HasAnalysis.txOutputIdsSizes) created)
     : map show created
   show (HeaderSizeEvent bn sn headerSize) = intercalate "\t" $ [
       show bn

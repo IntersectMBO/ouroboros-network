@@ -13,7 +13,7 @@ import           Data.ByteString.Short (ShortByteString)
 import           Data.ByteString.Short.Base64 (encodeBase64)
 import           Data.Map.Strict (Map)
 import qualified Data.Text.Short as TextShort
-import           Data.Word (Word32)
+import           Data.Word (Word32, Word64)
 import           Options.Applicative
 
 import           Ouroboros.Consensus.Block
@@ -56,24 +56,27 @@ instance Show TxIn where
 data TxOutputIds = TxOutputIds {
     txOutputIdsTxId  :: !TxIdBytes
     -- ^ the transaction id that created some outputs
-  , txOutputIdsCount :: !Word32
-    -- ^ how many outputs it created
+  , txOutputIdsSizes :: [Word64]
+    -- ^ the serialization size of each tx output it created
     --
     -- INVARIANT: >0
   }
 
-mkTxOutputIds :: TxIdBytes -> Int -> Maybe TxOutputIds
-mkTxOutputIds txid n =
-    if 0 >= n then Nothing else Just $ TxOutputIds txid (toEnum n)
+mkTxOutputIds :: TxIdBytes -> [Int] -> Maybe TxOutputIds
+mkTxOutputIds txid sizes =
+    if null sizes then Nothing else Just $ TxOutputIds txid (map toEnum sizes)
 
 instance Show TxOutputIds where
-  show (TxOutputIds bs i) = showTxIdBytes bs <> "#" <> show i
+  show (TxOutputIds bs sizes) =
+       showTxIdBytes bs <> "#" <> show (length sizes)
+    <> concatMap ((',':) . show) sizes
 
 class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where
 
   countTxOutputs         :: blk -> Int
   -- | Is it an EBB, how many transactions, which txins consumed, which txouts created
   extractTxOutputIdDelta :: blk -> (IsEBB, Int, [TxIn], [TxOutputIds])
+  -- | How many transactions, which txouts created
   genesisTxOutputIds     :: LedgerState blk -> (Int, [TxOutputIds])
   blockTxSizes           :: blk -> [SizeInBytes]
   knownEBBs              :: proxy blk -> Map (HeaderHash blk) (ChainHash blk)

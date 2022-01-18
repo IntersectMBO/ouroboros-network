@@ -13,13 +13,14 @@ module Block.Byron (
 
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (asum, toList)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
 import           Options.Applicative
 
-import           Cardano.Binary (Raw, unAnnotated)
+import           Cardano.Binary (Raw, serialize', unAnnotated)
 
 import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto as Crypto
@@ -44,20 +45,22 @@ instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
     extractTxOutputIdDelta = aBlockOrBoundary (const (IsEBB, 0, [], [])) extractTxOutputIdDeltaByron
     genesisTxOutputIds st =
-        (Map.size maxes, txOutputIds)
+        (Map.size txs, txOutputIds)
       where
         utxo :: Chain.UTxO
         utxo = Chain.cvsUtxo $ Byron.byronLedgerState st
 
-        txins :: [TxIn]
-        txins =
-          map (cnvTxIn . Chain.fromCompactTxIn) $ Map.keys $ Chain.unUTxO utxo
-
-        -- the count is one greater than the maximum index
-        maxes = Map.fromListWith max $ map (\(TxIn h i) -> (h, i + 1)) txins
+        txs =
+          Map.fromListWith (Map.unionWith (error "collision!"))
+          $ [ (h, Map.singleton i $ toEnum $ BS.length $ serialize' txout)
+            | (txin, txout) <- Map.toList $ Chain.unUTxO utxo
+            , let TxIn h i = cnvTxIn $ Chain.fromCompactTxIn txin
+            ]
 
         txOutputIds :: [TxOutputIds]
-        txOutputIds = map (uncurry TxOutputIds) $ Map.toList maxes
+        txOutputIds =
+            map (\(h, m) -> TxOutputIds h (Map.elems m))
+          $ Map.toList txs
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
     emitTraces _ = []
@@ -148,10 +151,13 @@ extractTxOutputIdDeltaByron Chain.ABlock{..} =
 
     outputs :: Chain.ATxAux ByteString -> Maybe TxOutputIds
     outputs atx =
-        mkTxOutputIds (Crypto.abstractHashToShort txid) n
+        mkTxOutputIds (Crypto.abstractHashToShort txid) lens
       where
         txid = Crypto.hashDecoded $ Chain.aTaTx $ atx
-        n    = length $ Chain.txOutputs $ unAnnotated $ Chain.aTaTx atx
+        lens =
+            map (toEnum . BS.length . serialize')
+          $ toList
+          $ Chain.txOutputs $ unAnnotated $ Chain.aTaTx atx
 
 cnvTxIn :: Chain.TxIn -> TxIn
 cnvTxIn (Chain.TxInUtxo txid nat) =

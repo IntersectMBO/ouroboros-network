@@ -15,6 +15,7 @@ module Block.Shelley (
   ) where
 
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Short as Short
 import           Data.Foldable (asum, toList)
 import qualified Data.Map.Strict as Map
@@ -24,6 +25,8 @@ import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Set as Set
 import           GHC.Records (HasField, getField)
 import           Options.Applicative
+
+import           Cardano.Binary (serialize')
 
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.TxIn as Core
@@ -64,7 +67,7 @@ class ActualTxOutputIdDelta era where
   -- | Which UTxO this transaction consumed
   consumedTxIn       :: Core.Tx era -> Set.Set (SL.TxIn (CL.Crypto era))
   -- | How many UTxO this transaction created
-  createdTxOutputIds :: Core.Tx era -> Int
+  createdTxOutputIds :: Core.Tx era -> [Int]
 
 preAlonzo_consumedTxIn ::
   ( ShelleyBasedEra era
@@ -74,8 +77,11 @@ preAlonzo_consumedTxIn = getField @"inputs" . getField @"body"
 
 preAlonzo_createdTxOutputIds ::
      ShelleyBasedEra era
-  => Core.Tx era -> Int
-preAlonzo_createdTxOutputIds = length . getField @"outputs" . getField @"body"
+  => Core.Tx era -> [Int]
+preAlonzo_createdTxOutputIds =
+    map getSize . toList . getField @"outputs" . getField @"body"
+  where
+    getSize = BS.length . serialize'
 
 instance SL.PraosCrypto c => ActualTxOutputIdDelta (ShelleyEra c) where
   consumedTxIn       = preAlonzo_consumedTxIn
@@ -98,7 +104,7 @@ instance SL.PraosCrypto c => ActualTxOutputIdDelta (AlonzoEra c) where
     then preAlonzo_consumedTxIn vtx
     else getField @"collateral" (getField @"body" vtx)
   createdTxOutputIds vtx =
-    if not (isValidTx vtx) then 0 else preAlonzo_createdTxOutputIds vtx
+    if not (isValidTx vtx) then [] else preAlonzo_createdTxOutputIds vtx
 
 {-------------------------------------------------------------------------------
   HasAnalysis instance
@@ -138,10 +144,9 @@ instance ( ShelleyBasedEra era
 
       outputs :: Core.Tx era -> Maybe TxOutputIds
       outputs tx =
-          mkTxOutputIds (asShort txid) n
+          mkTxOutputIds (asShort txid) (createdTxOutputIds tx)
         where
-          txid   = Core.txid $ getField @"body" tx
-          n      = createdTxOutputIds tx
+          txid = Core.txid $ getField @"body" tx
 
   -- TODO this is dead-code for a Cardano chain, but inaccurate for a pure
   -- Shelley chain
