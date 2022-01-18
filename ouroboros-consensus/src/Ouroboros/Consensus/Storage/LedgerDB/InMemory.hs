@@ -1,26 +1,25 @@
-{-# LANGUAGE ConstraintKinds        #-}
-{-# LANGUAGE DataKinds              #-}
-{-# LANGUAGE DeriveAnyClass         #-}
-{-# LANGUAGE DeriveGeneric          #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE NamedFieldPuns         #-}
-{-# LANGUAGE QuantifiedConstraints  #-}
-{-# LANGUAGE RankNTypes             #-}
-{-# LANGUAGE RecordWildCards        #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE StandaloneDeriving     #-}
-{-# LANGUAGE TypeApplications       #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE UndecidableInstances   #-}
-{-# LANGUAGE EmptyDataDeriving      #-}
-{-# LANGUAGE LambdaCase             #-}
-{-# LANGUAGE DeriveFunctor      #-}
-{-# LANGUAGE DerivingStrategies      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving  #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
@@ -30,10 +29,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- ** opaque
   , LedgerDB
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
-  , ReadsKeySets (..)
-  , ReadKeySets
-  , DbReader (..)
   , DbChangelog
+  , DbReader (..)
+  , ReadKeySets
+  , ReadsKeySets (..)
   , RewoundTableKeySets (..)
   , UnforwardedReadSets (..)
   , defaultReadKeySets
@@ -88,6 +87,8 @@ import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
 
+import           Cardano.Slotting.Slot (WithOrigin (At))
+import           Control.Exception
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -97,8 +98,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
-import Cardano.Slotting.Slot (WithOrigin(At))
-import Control.Exception
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -611,7 +610,7 @@ ledgerDbPrune (SecurityParam k) db = db {
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
 {-# INLINE ledgerDbPrune #-}
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingStrategies         #-}
 
 {-------------------------------------------------------------------------------
   Internal updates

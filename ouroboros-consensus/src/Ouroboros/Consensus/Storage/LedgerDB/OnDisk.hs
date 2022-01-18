@@ -12,7 +12,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
-{-# LANGUAGE DerivingVia    #-}
+{-# LANGUAGE DerivingVia         #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
@@ -61,8 +61,8 @@ import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
-import           Text.Read (readMaybe)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
+import           Text.Read (readMaybe)
 
 import           Ouroboros.Network.Block (Point (Point))
 
@@ -346,28 +346,28 @@ mkOnDiskLedgerStDb = undefined
 --
 data OnDiskLedgerStDb m l =
   OnDiskLedgerStDb
-  { rewindTableKeySets   :: () -- TODO: move the corresponding function from
+  { rewindTableKeySets  :: () -- TODO: move the corresponding function from
                                -- InMemory here.
-  , forwardTableKeySets  :: () -- TODO: ditto.
+  , forwardTableKeySets :: () -- TODO: ditto.
 
-  , readKeySets :: RewoundTableKeySets l -> m (UnforwardedReadSets l)
+  , readKeySets         :: RewoundTableKeySets l -> m (UnforwardedReadSets l)
    -- ^ Captures the handle. Implemented by Snapshots.readDb
    --
    -- TODO: consider unifying this with defaultReadKeySets. Why? Because we are always using
    -- 'defaultReadKeySets' with readKeySets.
-  , flushDb     :: DbChangelog l -> m (DbChangelog l )
+  , flushDb             :: DbChangelog l -> m (DbChangelog l )
     -- ^ Flush the ledger DB when appropriate. We assume the implementation of
     -- this function will determine when to flush.
     --
     -- NOTE: Captures the handle and the flushing policy. Implemented by
     -- Snapshots.writeDb.
-  , createRestorePoint :: DbChangelog l -> m ()
+  , createRestorePoint  :: DbChangelog l -> m ()
     -- ^ Captures the DbHandle. Implemented using createRestorePoint (proposed
     -- by Douglas). We need to take the current SeqNo for the on disk state from
     -- the DbChangelog.
 
     {- -* other restore point ops ... -}
-  , closeDb :: m ()
+  , closeDb             :: m ()
     -- ^ This closes the captured handle.
   }
   deriving NoThunks via OnlyCheckWhnfNamed "OnDiskLedgerStDb" (OnDiskLedgerStDb m l)

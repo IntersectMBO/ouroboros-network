@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE EmptyCase             #-}
@@ -22,22 +21,22 @@ module Ouroboros.Consensus.Ledger.Query (
   , QueryLedger (..)
   , QuerySat
   , QueryVersion (..)
+  , SmallQuery (..)
   , answerQuery
   , handleLargeQuery
   , handleQuery
-  , prepareQuery
   , nodeToClientVersionToQueryVersion
+  , prepareQuery
+  , proveNotLargeQuery
   , queryDecodeNodeToClient
   , queryEncodeNodeToClient
-  , SmallQuery (..)
-  , proveNotLargeQuery
   , withSmallQueryProof
     -- * Re-exports
+  , EqQuery (..)
   , FootprintL (..)
+  , IsQuery (..)
   , QueryWithSomeFootprintL (..)
   , QueryWithSomeResult (..)
-  , EqQuery (..)
-  , IsQuery (..)
   , ShowQuery (..)
   , SomeQuery (..)
   ) where
@@ -65,7 +64,8 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      headerStateBlockNo, headerStatePoint)
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView, LedgerState, TableKeySets)
+import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView, LedgerState,
+                     TableKeySets)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion

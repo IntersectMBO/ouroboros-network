@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -11,7 +12,6 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE FlexibleInstances     #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -39,6 +39,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerStateKind
   , TickedLedgerState
     -- * UTxO HD
+  , AnnTableKeySets
+  , AnnTableReadSets
   , ApplyMapKind (..)
   , DiskLedgerView
   , FootprintL (..)
@@ -46,9 +48,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , SMapKind
   , Sing (..)
   , TableKeySets
-  , AnnTableKeySets
   , TableReadSets
-  , AnnTableReadSets
   , TableStuff (..)
   , TickedTableStuff (..)
   , emptyAppliedMK
@@ -69,7 +69,8 @@ import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL (..))
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+                     (FootprintL (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
