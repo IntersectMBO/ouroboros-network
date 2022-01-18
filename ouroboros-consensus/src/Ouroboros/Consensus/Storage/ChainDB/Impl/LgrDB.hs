@@ -124,7 +124,7 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
-    , lgrOnDiskLedgerStDb :: !(LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk))
+    , lgrOnDiskLedgerStDb :: !(LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk) blk)
       -- ^
       --
       -- TODO: align the other fields.
@@ -149,6 +149,8 @@ type LgrDbSerialiseConstraints blk =
   ( Serialise      (HeaderHash  blk)
   , EncodeDisk blk (LedgerState blk EmptyMK)
   , DecodeDisk blk (LedgerState blk EmptyMK)
+  , EncodeDisk blk (LedgerState blk ValuesMK)
+  , DecodeDisk blk (LedgerState blk ValuesMK)
   , EncodeDisk blk (AnnTip      blk)
   , DecodeDisk blk (AnnTip      blk)
   , EncodeDisk blk (ChainDepState (BlockProtocol blk))
@@ -161,7 +163,7 @@ type LgrDbSerialiseConstraints blk =
 
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk EmptyMK))
+    , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
     , lgrHasFS          :: SomeHasFS m
     , lgrHasFSLedgerSt  :: SomeHasFS m
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
@@ -273,7 +275,7 @@ initFromDisk
   => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> ImmutableDB m blk
-  -> m (LedgerDB' blk, Word64, OnDiskLedgerStDb m (ExtLedgerState blk))
+  -> m (LedgerDB' blk, Word64, OnDiskLedgerStDb m (ExtLedgerState blk) blk)
 initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
     onDiskLedgerStDb <- LedgerDB.mkOnDiskLedgerStDb lgrHasFSLedgerSt
     -- TODO: is it correct that we pick a instance of the 'OnDiskLedgerStDb' here?
@@ -282,28 +284,32 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
         replayTracer
         lgrTracer
         hasFS
+        decodeExtLedgerState'
+        lgrHasFSLedgerSt
         onDiskLedgerStDb
         decodeExtLedgerState'
         decode
         (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
+        True
     return (db, replayed, onDiskLedgerStDb)
   where
     LgrDbArgs { lgrHasFS = hasFS, .. } = args
 
     ccfg = configCodec lgrTopLevelConfig
 
-    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk EmptyMK)
+    decodeExtLedgerState' :: forall s mk. DecodeDisk blk (LedgerState blk mk) => Decoder s (ExtLedgerState blk mk)
     decodeExtLedgerState' = decodeExtLedgerState
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
 
+
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB' blk)
         -> StrictTVar m (Set (RealPoint blk))
-        -> LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk)
+        -> LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk) blk
         -> FlushLock
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs Identity m blk
@@ -458,7 +464,7 @@ streamAPI ::
      forall m blk.
      (IOLike m, HasHeader blk)
   => ImmutableDB m blk -> StreamAPI m blk
-streamAPI immutableDB = StreamAPI streamAfter
+streamAPI immutableDB = StreamAPI streamAfter streamAfterBefore
   where
     streamAfter :: HasCallStack
                 => Point blk
@@ -480,6 +486,22 @@ streamAPI immutableDB = StreamAPI streamAfter
     streamUsing itr = ImmutableDB.iteratorNext itr >>= \case
       ImmutableDB.IteratorExhausted  -> return $ NoMoreBlocks
       ImmutableDB.IteratorResult blk -> return $ NextBlock blk
+
+    streamAfterBefore :: HasCallStack
+                => Point blk
+                -> Point blk
+                -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+                -> m a
+    streamAfterBefore from to k = withRegistry $ \registry -> do
+      eItr <- ImmutableDB.streamWithBounds
+                immutableDB
+                registry
+                GetBlock
+                from
+                to
+      case eItr of
+        Left err  -> k $ Left $ ImmutableDB.missingBlockPoint err
+        Right itr -> k $ Right $ streamUsing itr
 
 {-------------------------------------------------------------------------------
   Previously applied blocks

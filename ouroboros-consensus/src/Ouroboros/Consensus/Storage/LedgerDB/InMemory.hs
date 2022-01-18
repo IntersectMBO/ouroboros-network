@@ -1,8 +1,10 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -21,13 +23,14 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
     LedgerDbCfg (..)
   , ledgerDbWithAnchor
     -- ** opaque
-  , LedgerDB
+  , LedgerDB (..)
+  , NewLedgerDB
+  , OldLedgerDB
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
   , DbChangelog
   , DbReader (..)
@@ -70,6 +73,14 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPush'
   , ledgerDbPushMany'
   , ledgerDbSwitch'
+    -- ** Javier
+  , Checkpoint (..)
+  , HasSeqNo (..)
+  , dbChangelogStates
+  , extendDbChangelog
+  , initialDbChangelog
+  , seqLast
+  , withBlockReadSets
   ) where
 
 import           Codec.Serialise.Decoding (Decoder)
@@ -154,6 +165,9 @@ data LedgerDB (l :: LedgerStateKind) = LedgerDB {
     , runDual             :: Bool
     }
   deriving (Generic)
+
+type OldLedgerDB l = AnchoredSeq (WithOrigin SlotNo) (Checkpoint (l ValuesMK)) (Checkpoint (l ValuesMK))
+type NewLedgerDB l = DbChangelog l
 
 deriving instance (Eq       (l EmptyMK), Eq       (l ValuesMK)) => Eq       (LedgerDB l)
 deriving instance (NoThunks (l EmptyMK), NoThunks (l ValuesMK)) => NoThunks (LedgerDB l)
@@ -350,10 +364,10 @@ applyBlock cfg ap db = case ap of
 
     newApplyBlock :: Ap m l blk c -> m (l TrackingMK)
     newApplyBlock = \case
-      ReapplyVal b -> withBlockReadSets b $ \lh ->
+      ReapplyVal b -> withBlockReadSets b (ledgerDbChangelog db) $ \lh ->
           return $ tickThenReapply cfg b lh
 
-      ApplyVal b -> withBlockReadSets b $ \lh ->
+      ApplyVal b -> withBlockReadSets b (ledgerDbChangelog db) $ \lh ->
                ( either (throwLedgerError db (blockRealPoint b)) return
                $ runExcept
                $ tickThenApply cfg b lh)
@@ -361,50 +375,54 @@ applyBlock cfg ap db = case ap of
       ReapplyRef r  -> do
         b <- resolveBlock r -- TODO: ask: would it make sense to recursively call applyBlock using ReapplyVal?
 
-        withBlockReadSets b $ \lh ->
+        withBlockReadSets b (ledgerDbChangelog db) $ \lh ->
           return $ tickThenReapply cfg b lh
 
       ApplyRef r -> do
         b <- resolveBlock r
 
-        withBlockReadSets b $ \lh ->
+        withBlockReadSets b (ledgerDbChangelog db) $ \lh ->
           either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
              tickThenApply cfg b lh
 
       -- A value of @Weaken@ will not make it to this point, as @applyBlock@ will recurse until it fully unwraps.
       Weaken _ -> error "unreachable"
 
-    withBlockReadSets
-      :: ReadsKeySets m l
-      => blk
-      -> (l ValuesMK -> m (l TrackingMK))
-      -> m (l TrackingMK)
-    withBlockReadSets b f = do
-      let ks = getBlockKeySets b :: TableKeySets l
-      let aks = rewindTableKeySets (ledgerDbChangelog db) ks :: RewoundTableKeySets l
-      urs <- readDb aks
-      case withHydratedLedgerState urs f of
-        Nothing ->
-          -- We performed the rewind;read;forward sequence in this function. So
-          -- the forward operation should not fail. If this is the case we're in
-          -- the presence of a problem that we cannot deal with at this level,
-          -- so we throw an error.
-          --
-          -- When we introduce pipelining, if the forward operation fails it
-          -- could be because the DB handle was modified by a DB flush that took
-          -- place when __after__ we read the unforwarded keys-set from disk.
-          -- However, performing rewind;read;forward with the same __locked__
-          -- changelog should always succeed.
-          error "Changelog rewind;read;forward sequence failed."
-        Just res -> res
+withBlockReadSets
+  :: forall m blk l. (ApplyBlock l blk, Monad m, TableStuff l, ReadsKeySets m l)
+  => blk
+  -> DbChangelog l
+  -> (l ValuesMK -> m (l TrackingMK))
+  -> m (l TrackingMK)
+withBlockReadSets b db f  = do
+  let ks = getBlockKeySets b :: TableKeySets l
+  let aks = rewindTableKeySets db ks :: RewoundTableKeySets l
+  urs <- readDb aks
+  case withHydratedLedgerState urs db f   of
+    Nothing ->
+      -- We performed the rewind;read;forward sequence in this function. So
+      -- the forward operation should not fail. If this is the case we're in
+      -- the presence of a problem that we cannot deal with at this level,
+      -- so we throw an error.
+      --
+      -- When we introduce pipelining, if the forward operation fails it
+      -- could be because the DB handle was modified by a DB flush that took
+      -- place when __after__ we read the unforwarded keys-set from disk.
+      -- However, performing rewind;read;forward with the same __locked__
+      -- changelog should always succeed.
+      error "Changelog rewind;read;forward sequence failed."
+    Just res -> res
 
-    withHydratedLedgerState
-      :: UnforwardedReadSets l
-      -> (l ValuesMK -> a)
-      -> Maybe a
-    withHydratedLedgerState urs f = do
-      rs <- forwardTableKeySets (ledgerDbChangelog db) urs
-      return $ f $ withLedgerTables (ledgerDbCurrent db)  rs
+withHydratedLedgerState
+  :: forall l a. (TableStuff l)
+  => UnforwardedReadSets l
+  -> DbChangelog l
+  -> (l ValuesMK -> a)
+  -> Maybe a
+withHydratedLedgerState urs db f = do
+  rs <- forwardTableKeySets db urs
+  return $ f $ withLedgerTables (seqLast . dbChangelogStates $ db)  rs
+
 
 {-------------------------------------------------------------------------------
   HD Interface that I need (Could be moved to  Ouroboros.Consensus.Ledger.Basics )
@@ -610,7 +628,6 @@ ledgerDbPrune (SecurityParam k) db = db {
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
 {-# INLINE ledgerDbPrune #-}
-{-# LANGUAGE DerivingStrategies         #-}
 
 {-------------------------------------------------------------------------------
   Internal updates

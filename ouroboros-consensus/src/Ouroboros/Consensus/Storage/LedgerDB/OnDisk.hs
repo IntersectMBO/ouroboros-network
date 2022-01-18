@@ -67,8 +67,6 @@ import           Text.Read (readMaybe)
 import           Ouroboros.Network.Block (Point (Point))
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation
-                     (HeaderState (headerStateTip), annTipPoint)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
@@ -82,6 +80,12 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import           Ouroboros.Network.AnchoredSeq (AnchoredSeq (Empty))
+import           Ouroboros.Network.Point (WithOrigin (At))
+
+import           Control.Exception
+import           Ouroboros.Consensus.Config.SecurityParam
+import qualified Ouroboros.Network.AnchoredSeq as AS
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -121,6 +125,12 @@ data StreamAPI m blk = StreamAPI {
         -- 'RealPoint', not a 'Point', since it must always be possible to
         -- stream after genesis.
         -> m a
+
+      , streamAfterBefore :: forall a. HasCallStack
+        => Point blk
+        -> Point blk
+        -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+        -> m a
     }
 
 -- | Stream all blocks
@@ -134,6 +144,28 @@ streamAll ::
   -> ExceptT e m a
 streamAll StreamAPI{..} tip notFound e f = ExceptT $
     streamAfter tip $ \case
+      Left tip' -> return $ Left (notFound tip')
+
+      Right getNext -> do
+        let go :: a -> m a
+            go a = do mNext <- getNext
+                      case mNext of
+                        NoMoreBlocks -> return a
+                        NextBlock b  -> go =<< f b a
+        Right <$> go e
+
+-- | Stream all blocks
+streamUpTo ::
+     forall m blk e a. (Monad m, HasCallStack)
+  => StreamAPI m blk
+  -> Point blk             -- ^ Starting point for streaming
+  -> Point blk             -- ^ Ending point for streaming
+  -> (RealPoint blk -> e)  -- ^ Error when tip not found
+  -> a                     -- ^ Starting point when tip /is/ found
+  -> (blk -> a -> m a)     -- ^ Update function for each block
+  -> ExceptT e m a
+streamUpTo StreamAPI{..} tip goal notFound e f = ExceptT $
+    streamAfterBefore tip goal $ \case
       Left tip' -> return $ Left (notFound tip')
 
       Right getNext -> do
@@ -202,74 +234,277 @@ initLedgerDB ::
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> OnDiskLedgerStDb m (ExtLedgerState blk)
+  -> (forall s. Decoder s (ExtLedgerState blk ValuesMK))
+  -> SomeHasFS m
+  -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
-  -> m (ExtLedgerState blk EmptyMK) -- ^ Genesis ledger state
+  -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk
-  -> m (InitLog blk, LedgerDB' blk, Word64)
+  -> Bool
+  -> m ((InitLog blk, InitLog blk), LedgerDB' blk, Word64)
 initLedgerDB replayTracer
              tracer
              hasFS
-             onDiskLedgerDbSt
              decLedger
+             newHasFS
+             onDiskLedgerDbSt
+             decNewLedger
              decHash
              cfg
-             _getGenesisLedger
-             streamAPI = do
-    snapshots <- listSnapshots hasFS
-    -- Here we'd get the dbhandle
-    --
-    -- We can use this dbhandle to fetch the restore points.
-    tryNewestFirst id snapshots
+             getGenesisLedger
+             streamAPI
+             runDual = do
+    (initLog, ledgerDb, tipPoint)                    <- oldInitLedgerDB
+                                                          getGenesisLedger
+                                                          hasFS
+                                                          decLedger
+                                                          decHash
+    (initLog', ledgerDb', tipPoint', replayTracer') <- newInitLedgerDB
+                                                          replayTracer
+                                                          tracer
+                                                          getGenesisLedger
+                                                          newHasFS
+                                                          decNewLedger
+                                                          decHash
+                                                          onDiskLedgerDbSt
+
+    (lgrDB, w) <- case compare tipPoint tipPoint' of
+        LT -> bringUpOldLedgerDB runDual               cfg streamAPI                  ledgerDb ledgerDb' tipPoint tipPoint'
+        GT -> bringUpNewLedgerDB runDual replayTracer' cfg streamAPI onDiskLedgerDbSt ledgerDb ledgerDb' tipPoint tipPoint'
+        EQ -> combineLedgerDBs   runDual ledgerDb ledgerDb'
+
+    ml <- runExceptT $ initStartingWith replayTracer' cfg onDiskLedgerDbSt streamAPI lgrDB
+    case ml of
+      Left err -> error $  "invariant violation: invalid current chain:" <> show err
+      Right (ledgerDB, w64) -> return ((initLog, initLog'), ledgerDB, w + w64)
+
+{-------------------------------------------------------------------------------
+ Load snapshots from the disk
+-------------------------------------------------------------------------------}
+
+-- | Load a snapshot from the disk. Depending on the decoder, the snapshot is
+-- expected to be of the @mk@ that the decoder knows how to decode.
+loadSnapshot :: ( IOLike m
+                , LedgerSupportsProtocol blk
+                )
+             => Maybe (Tracer m (ReplayGoal blk -> TraceReplayEvent blk)) -- ^ The replay tracer to be annotated with starting point.
+             -> SomeHasFS m                                       -- ^ The filesystem with the snapshots
+             -> (forall s. Decoder s (ExtLedgerState blk mk))     -- ^ A decoder for the snapshots
+             -> (forall s. Decoder s (HeaderHash blk))            -- ^ A decoder for header hashes
+             -> DiskSnapshot                                      -- ^ Which snapshot to load on the filesystem
+             -> ExceptT (InitFailure blk) m ( ExtLedgerState blk mk                                                -- The resulting ledger state
+                                            , RealPoint blk                                                        -- The real point corresponding to the ledger state
+                                            , Maybe (Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)) -- The annotated tracer
+                                            )
+loadSnapshot tracer fs dec decHash ss  = do
+      initSS <- withExceptT InitFailureRead $ readSnapshot fs dec decHash ss
+      let initialPoint = castPoint (getTip initSS)
+      case pointToWithOriginRealPoint initialPoint of
+        Origin -> throwError InitFailureGenesis
+        NotOrigin tip -> do
+          maybe (return ()) (\t -> lift $ traceWith t $ ReplayFromSnapshot ss tip (ReplayStart initialPoint)) tracer
+          return (initSS, tip, decorateReplayTracerWithStart initialPoint <$> tracer)
+
+
+{-------------------------------------------------------------------------------
+ Old initialization of LedgerDB
+-------------------------------------------------------------------------------}
+
+-- | Initialize the ledger DB in the old way from the most recent snapshot on disk
+--
+-- If no such snapshot can be found, use the genesis ledger DB. Returns the
+-- initialized old DB as well as the block reference corresponding to the snapshot
+-- we found on disk (the latter primarily for testing/monitoring purposes).
+--
+-- We only discard snapshots if we cannot deserialise them.
+--
+-- It is possible that the Ledger DB will not be able to roll back @k@ blocks
+-- after initialization if the chain has been truncated (data corruption).
+--
+-- We do /not/ attempt to use multiple ledger states from disk to construct the
+-- ledger DB. Instead we load only a /single/ ledger state from disk, and
+-- /compute/ all subsequent ones. This is important, because the ledger states
+-- obtained in this way will (hopefully) share much of their memory footprint
+-- with their predecessors.
+oldInitLedgerDB :: ( IOLike m
+                   , LedgerSupportsProtocol blk
+                   , HasCallStack
+                   )
+                => m (ExtLedgerState blk ValuesMK)                     -- ^ Action that gives the Genesis ledger state
+                -> SomeHasFS m                                         -- ^ Filesystem containing the old ledger snapshots
+                -> (forall s. Decoder s (ExtLedgerState blk ValuesMK)) -- ^ A decoder for the old ledger snapshots
+                -> (forall s. Decoder s (HeaderHash blk))              -- ^ A decoder for header hashes
+                -> m ( InitLog blk                                                          -- The initialization log
+                     , OldLedgerDB (ExtLedgerState blk)                                     -- The resulting old ledgerDB
+                     , Point blk                                                            -- The point corresponding to the adopted ledger state
+                     )
+oldInitLedgerDB getGenesisLedger hasFS decLedger decHash = do
+    listSnapshots hasFS >>= tryNewestFirst id
   where
-    tryNewestFirst :: (InitLog blk -> InitLog blk)
-                   -> [DiskSnapshot]
-                   -> m (InitLog blk, LedgerDB' blk, Word64)
     tryNewestFirst acc [] = do
-        -- We're out of snapshots. Start at genesis
-        traceWith replayTracer ReplayFromGenesis
-        initDb <- ledgerDbWithAnchor <$> undefined --getGenesisLedger TODO: Commented to unlock further work. Implementing initialization will fix this.
-        let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-        ml     <- runExceptT
-                  -- TODO: here initStartingWith could and should probably flush!
-                  --
-                  -- If we're replaying from genesis (or simply replaying a very
-                  -- large number of blocks) we will need to flush from time to
-                  -- time inside this function.
-                  --
-                  -- Note that at the moment no LedgerDB snapshots are taken by
-                  -- this function.
-                  --
-                  -- Note that whatever restore point we take here, it will
-                  -- belong to the immutable part of the chain. So the restore
-                  -- point will not lie ahead of the immutable DB tip.
-                  $ initStartingWith replayTracer' cfg onDiskLedgerDbSt streamAPI initDb
-        case ml of
-          Left _  -> error "invariant violation: invalid current chain"
-          Right (l, replayed) -> return (acc InitFromGenesis, l, replayed)
+      -- We're out of snapshots. Start at genesis
+
+      initSS <- getGenesisLedger
+      return ( acc InitFromGenesis
+             , Empty (Checkpoint initSS)
+             , Point Origin
+             )
     tryNewestFirst acc (s:ss) = do
-        -- If we fail to use this snapshot, delete it and try an older one
-        ml <- runExceptT $ initFromSnapshot
-                             replayTracer
-                             hasFS
-                             decLedger
-                             decHash
-                             cfg
-                             onDiskLedgerDbSt
-                             streamAPI
-                             s
+      ml <- runExceptT $ loadSnapshot Nothing hasFS decLedger decHash s
+      case ml of
+        Left err -> do
+          when (diskSnapshotIsTemporary s) $
+            -- We don't delete permanent snapshots, even if we couldn't parse
+            -- them
+            deleteSnapshot hasFS s
+          tryNewestFirst (acc . InitFailure s err) ss
+        Right (ls, pt, _) -> do
+          return ( acc (InitFromSnapshot s pt)
+                 , Empty (Checkpoint ls)
+                 , Point (At $ undefined pt)
+                 )
+
+{-------------------------------------------------------------------------------
+ New initialization of LedgerDB
+-------------------------------------------------------------------------------}
+
+-- | Initialize a DbChangelog from the snapshot in the disk.
+--
+-- If there are multiple snapshots we can only be sure that the latest one
+-- corresponds to what was flushed to the disk and therefore we can only try to
+-- deserialize that one. If the point on said snapshot and the point on the disk
+-- data is not the same one, this will throw an assertion failure.
+--
+-- If we fail to deserialize the last snapshot, we cannot try previous ones
+-- because they will be misaligned with the on disk data, so we can just revert
+-- to Genesis.
+newInitLedgerDB :: forall m blk.
+                   ( IOLike m
+                   , LedgerSupportsProtocol blk
+                   , HasCallStack
+                   )
+                => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)  -- ^ A tracer for the replay events
+                -> Tracer m (TraceEvent blk)                          -- ^ A tracer for general events
+                -> m (ExtLedgerState blk ValuesMK)                    -- ^ An action to get the Genesis ledger state
+                -> SomeHasFS m                                        -- ^ The filesystem with the new snapshots
+                -> (forall s. Decoder s (ExtLedgerState blk EmptyMK)) -- ^ A decoder for new snapshots
+                -> (forall s. Decoder s (HeaderHash blk))             -- ^ A decoder for header hashes
+                -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
+                -> m ( InitLog blk                                                          -- The initialization log
+                     , NewLedgerDB (ExtLedgerState blk)                                     -- The new ledger database
+                     , Point blk                                                            -- The point corresponding to the adopted ledger state
+                     , Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk) -- An annotated tracer for replay events
+                     )
+newInitLedgerDB replayTracer tracer getGenesisLedger hasFS decLedger decHash onDiskLedgerDbSt = do
+    snapshots <- listSnapshots hasFS
+    case snapshots of
+      []  -> initUsingGenesis
+      s:_ -> do
+        ml <- runExceptT $ loadSnapshot (Just replayTracer) hasFS decLedger decHash s
         case ml of
           Left err -> do
-            when (diskSnapshotIsTemporary s) $
-              -- We don't delete permanent snapshots, even if we couldn't parse
-              -- them
-              deleteSnapshot hasFS s
+            deleteSnapshot hasFS s
             traceWith tracer $ InvalidSnapshot s err
-            tryNewestFirst (acc . InitFailure s err) ss
-          Right (r, l, replayed) ->
-            return (acc (InitFromSnapshot s r), l, replayed)
+            (l, db, pt, tr) <- initUsingGenesis
+            return (InitFailure s err l, db, pt, tr)
+          Right (initSS, pt', replayTracer') -> do
+            pt'' <- odlsGetPt onDiskLedgerDbSt
+
+            assert (realPointToPoint pt' == pt'') $ return ( InitFromSnapshot s pt'
+                                          , initialDbChangelogWithEmptyState (getTipSlot initSS) initSS
+                                          , Point (At $ undefined pt')
+                                          , maybe (error "unreachable as we provided a Just to loadSnapshot") id replayTracer'
+                                          )
+  where initUsingGenesis = do
+          initSS <- getGenesisLedger
+          writeGenesisUTxO onDiskLedgerDbSt initSS
+          let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
+          return ( InitFromGenesis
+                 , initialDbChangelog (getTipSlot initSS) initSS
+                 , Point Origin
+                 , replayTracer'
+                 )
+
+initialDbChangelogWithEmptyState :: WithOrigin SlotNo -> (ExtLedgerState blk EmptyMK) -> NewLedgerDB (ExtLedgerState blk)
+initialDbChangelogWithEmptyState = undefined
+
+{-------------------------------------------------------------------------------
+  Sync both ledger databases
+-------------------------------------------------------------------------------}
+
+-- | The old ledger DB is behind the new ledger DB.
+--
+-- Pushes blocks in the ImmutableDB up to the tip of the new ledger DB so that
+-- they end up being in sync.
+bringUpOldLedgerDB :: forall m blk. (Monad m, LedgerSupportsProtocol blk)
+                   => Bool
+                   -> LedgerDbCfg (ExtLedgerState blk)
+                   -> StreamAPI m blk
+                   -> OldLedgerDB (ExtLedgerState blk)
+                   -> NewLedgerDB (ExtLedgerState blk)
+                   -> Point blk
+                   -> Point blk
+                   -> m (LedgerDB' blk, Word64)
+bringUpOldLedgerDB runDual cfg streamAPI old ledgerDbChangelog from to = do
+    either (error . ("invariant violation: invalid current chain:" <>) . show) (\(ledgerDbCheckpoints, w) -> return (LedgerDB{..}, w)) =<<
+      runExceptT (streamUpTo streamAPI from to InitFailureTooRecent (old, 0) push)
+  where
+    push :: blk -> (OldLedgerDB (ExtLedgerState blk), Word64) -> m (OldLedgerDB (ExtLedgerState blk), Word64)
+    push blk !(!db, !replayed) = do
+      let !db' = let ls =   forgetLedgerStateTracking
+                          $ tickThenReapply (ledgerDbCfg cfg) blk
+                          $ either unCheckpoint unCheckpoint . AS.head
+                          $ db
+                 in AS.anchorNewest (maxRollbacks $ ledgerDbCfgSecParam cfg) (db AS.:> Checkpoint ls)
+
+          !replayed' = replayed + 1
+
+      return (db', replayed')
+
+-- | The new ledger DB is behind the old ledger DB.
+--
+-- Pushes blocks in the ImmutableDB up to the tip of the old ledger DB so that
+-- they end up being in sync.
+bringUpNewLedgerDB :: forall m blk. (Monad m, LedgerSupportsProtocol blk, InspectLedger blk)
+                   => Bool
+                   -> Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
+                   -> LedgerDbCfg (ExtLedgerState blk)
+                   -> StreamAPI m blk
+                   -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
+                   -> OldLedgerDB (ExtLedgerState blk)
+                   -> NewLedgerDB (ExtLedgerState blk)
+                   -> Point blk
+                   -> Point blk
+                   -> m (LedgerDB' blk, Word64)
+bringUpNewLedgerDB runDual tracer cfg streamAPI onDiskLedgerDbSt ledgerDbCheckpoints new to from =
+    either (error . ("invariant violation: invalid current chain:" <>) . show) (\(ledgerDbChangelog, w) -> return (LedgerDB{..}, w)) =<<
+      runExceptT (streamUpTo streamAPI from to InitFailureTooRecent (new, 0) push)
+  where
+    push :: blk -> (NewLedgerDB (ExtLedgerState blk), Word64) -> m (NewLedgerDB (ExtLedgerState blk), Word64)
+    push blk !(db, replayed) = do
+      ls <- defaultReadKeySets (readKeySets onDiskLedgerDbSt) (withBlockReadSets blk db $ \lh -> return $ tickThenReapply (ledgerDbCfg cfg) blk lh)
+      db'' <- flushDb onDiskLedgerDbSt $ extendDbChangelog (stateSeqNo ls) (trackingTablesToDiffs ls) db
+      let replayed' :: Word64
+          !replayed' = replayed + 1
+
+          events :: [LedgerEvent blk]
+          events = inspectLedger
+                       (getExtLedgerCfg (ledgerDbCfg cfg))
+                       (ledgerState (seqLast . dbChangelogStates $ db))
+                       (ledgerState (seqLast . dbChangelogStates $ db''))
+
+      traceWith tracer (ReplayedBlock (blockRealPoint blk) events)
+      return (db'', replayed')
+
+-- | Both databases are already in sync, just combine them in the @LedgerDB@ datatype.
+combineLedgerDBs :: Monad m
+                 => Bool
+                 -> OldLedgerDB (ExtLedgerState blk)
+                 -> NewLedgerDB (ExtLedgerState blk)
+                 -> m (LedgerDB' blk, Word64)
+combineLedgerDBs runDual ledgerDbCheckpoints ledgerDbChangelog = return (LedgerDB {..}, 0)
 
 {-------------------------------------------------------------------------------
   Internal: initialize using the given snapshot
@@ -289,47 +524,7 @@ data InitFailure blk =
   | InitFailureGenesis
   deriving (Show, Eq, Generic)
 
--- | Attempt to initialize the ledger DB from the given snapshot
---
--- If the chain DB or ledger layer reports an error, the whole thing is aborted
--- and an error is returned. This should not throw any errors itself (ignoring
--- unexpected exceptions such as asynchronous exceptions, of course).
-initFromSnapshot ::
-     forall m blk . (
-         IOLike m
-       , LedgerSupportsProtocol blk
-       , InspectLedger blk
-       , HasCallStack
-       )
-  => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
-  -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
-  -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState blk)
-  -> OnDiskLedgerStDb m (ExtLedgerState blk)
-  -> StreamAPI m blk
-  -> DiskSnapshot
-  -> ExceptT (InitFailure blk) m (RealPoint blk, LedgerDB' blk, Word64)
-initFromSnapshot tracer hasFS decLedger decHash cfg readLedgerDb streamAPI ss = undefined -- TODO: Commented to unlock further work. Implementing initialization will fix this.
-    -- initSS <- withExceptT InitFailureRead $
-    --             readSnapshot hasFS decLedger decHash ss
-    -- let initialPoint = withOrigin (Point Origin) annTipPoint $ headerStateTip $ headerState $ initSS
-    -- case pointToWithOriginRealPoint (castPoint (getTip initSS)) of
-    --   Origin        -> throwError InitFailureGenesis
-    --   NotOrigin tip -> do
-    --     lift $ traceWith tracer $ ReplayFromSnapshot ss tip (ReplayStart initialPoint)
-    --     let tracer' = decorateReplayTracerWithStart initialPoint tracer
-    --     (initDB, replayed) <-
-    --       initStartingWith
-    --         tracer'
-    --         cfg
-    --         readLedgerDb
-    --         streamAPI
-    --         (ledgerDbWithAnchor initSS)
-    --     return (tip, initDB, replayed)
-
-
-mkOnDiskLedgerStDb :: SomeHasFS m -> m (OnDiskLedgerStDb m l)
+mkOnDiskLedgerStDb :: SomeHasFS m -> m (OnDiskLedgerStDb m l blk)
 mkOnDiskLedgerStDb = undefined
   -- \(SomeHasFS fs) -> do
   --   dbhandle <- hOpen fs "ledgerStateDb"
@@ -344,7 +539,7 @@ mkOnDiskLedgerStDb = undefined
 -- | On disk ledger state API.
 --
 --
-data OnDiskLedgerStDb m l =
+data OnDiskLedgerStDb m l blk =
   OnDiskLedgerStDb
   { rewindTableKeySets  :: () -- TODO: move the corresponding function from
                                -- InMemory here.
@@ -369,9 +564,12 @@ data OnDiskLedgerStDb m l =
     {- -* other restore point ops ... -}
   , closeDb             :: m ()
     -- ^ This closes the captured handle.
+  , odlsGetPt           :: m (Point blk)
+    -- ^ Get the point representing the latest ledger state flushed to the disk
+  , writeGenesisUTxO    :: l ValuesMK -> m ()
+    -- ^ Write the initial Genesis UTxO to the disk
   }
-  deriving NoThunks via OnlyCheckWhnfNamed "OnDiskLedgerStDb" (OnDiskLedgerStDb m l)
-
+  deriving NoThunks via OnlyCheckWhnfNamed "OnDiskLedgerStDb" (OnDiskLedgerStDb m l blk)
 
 -- | Attempt to initialize the ledger DB starting from the given ledger DB
 initStartingWith ::
@@ -383,7 +581,7 @@ initStartingWith ::
        )
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
-  -> OnDiskLedgerStDb m (ExtLedgerState blk)
+  -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
   -> StreamAPI m blk
   -> LedgerDB' blk
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
@@ -397,20 +595,8 @@ initStartingWith tracer cfg onDiskLedgerDbSt streamAPI initDb = do
     push blk !(!db, !replayed) = do
         !db' <- defaultReadKeySets (readKeySets onDiskLedgerDbSt) $
                   ledgerDbPush cfg (ReapplyVal blk) db
-        -- TODO: here it is important that we don't have a lock acquired.
-
-        -- Alternatively, we could chose not to check for a lock when we're
-        -- flushing here since we know the `LgrDB` does not exist at this point
-        -- yet.
         db'' <- ledgerDbFlush (flushDb onDiskLedgerDbSt) db'
-        -- TODO: it seems we'd want:
-        --
-        --     - flush
-        --
-        --     - make a restore-point
-        --
-        -- We can't make the flush in the levels above push since this function
-        -- consumes the whole stream of immutable DB blocks.
+
         let replayed' :: Word64
             !replayed' = replayed + 1
 
@@ -527,18 +713,18 @@ diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
 
 -- | Read snapshot from disk
 readSnapshot ::
-     forall m blk. IOLike m
+     forall m blk mk. IOLike m
   => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
+  -> (forall s. Decoder s (ExtLedgerState blk mk))
   -> (forall s. Decoder s (HeaderHash blk))
   -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk mk)
 readSnapshot hasFS decLedger decHash =
       ExceptT
     . readIncremental hasFS decoder
     . snapshotToPath
   where
-    decoder :: Decoder s (ExtLedgerState blk EmptyMK)
+    decoder :: Decoder s (ExtLedgerState blk mk)
     decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
 
 -- | Write snapshot to disk
