@@ -68,7 +68,8 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
 -- It also manages synchronisation with the corresponding chain sync client.
 --
 bracketFetchClient :: forall m a peer header block.
-                      (MonadThrow m, MonadSTM m, MonadFork m, Ord peer)
+                      (MonadThrow m, MonadSTM m, MonadFork m, MonadMask m,
+                       Ord peer)
                    => FetchClientRegistry peer header block m
                    -> peer
                    -> (FetchClientContext header block m -> m a)
@@ -116,7 +117,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
                -> (ThreadId m, StrictTMVar m ())
                -> m ()
     unregister ksVar FetchClientContext { fetchClientCtxStateVars = stateVars }
-               (tid, doneVar)  = do
+               (tid, doneVar)  = uninterruptibleMask_ $ do
       -- Signal we are shutting down
       atomically $
         writeTVar (fetchClientStatusVar stateVars) PeerFetchStatusShutdown
@@ -181,7 +182,8 @@ bracketSyncWithFetchClient (FetchClientRegistry _ctxVar
           Map.delete peer m
 
 bracketKeepAliveClient :: forall m a peer header block.
-                              (MonadThrow m, MonadSTM m, MonadFork m, Ord peer)
+                              (MonadThrow m, MonadSTM m, MonadFork m,
+                               MonadMask m, Ord peer)
                        => FetchClientRegistry peer header block m
                        -> peer
                        -> ((StrictTVar  m (Map peer PeerGSV)) -> m a)
@@ -201,7 +203,7 @@ bracketKeepAliveClient(FetchClientRegistry _ctxVar
     -- It is possible for the keepAlive client to keep running even without a fetch client, but
     -- a fetch client shouldn't run without a keepAlive client.
     unregister :: m ()
-    unregister = do
+    unregister = uninterruptibleMask_ $ do
       fetchclient_m <- atomically $ do
         fetchclients <- readTVar keepRegistry
         case Map.lookup peer fetchclients of
