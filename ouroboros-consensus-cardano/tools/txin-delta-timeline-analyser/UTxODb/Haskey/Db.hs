@@ -53,6 +53,7 @@ import UTxODb.Haskey.Tree
 import Control.Concurrent.MVar
 import Data.Functor
 import Data.Monoid
+import Database.Haskey.Store.InMemory (newEmptyMemoryStore)
 
 data HaskeySideTable state = HaskeySideTable
   { seqId :: !(SeqNo state)
@@ -283,7 +284,7 @@ haskeyBackendParser = haskeyParamsParser <&> \HaskeyParams{..} -> do
       , filename = haskeyFile
       }
   else do
-    memFiles <- newEmptyMVar
+    memFiles <- newEmptyMemoryStore
     pure HBMemory
       { memConfig = Haskey.MemoryStoreConfig
         { Haskey.memoryStoreConfigPageSize = maybe (Haskey.memoryStoreConfigPageSize Haskey.defMemoryStoreConfig) fromIntegral haskeyPageSize

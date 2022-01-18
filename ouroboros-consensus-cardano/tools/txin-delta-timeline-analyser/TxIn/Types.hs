@@ -14,19 +14,10 @@ import           GHC.Generics (Generic())
 import           Data.Binary (Binary())
 import           Data.Foldable(toList)
 
-import qualified Data.BTree.Primitives.Value as Haskey(Value(..))
-import qualified Data.BTree.Primitives.Key as Haskey(Key(..))
-
 data TxIn        = TxIn        !ShortByteString !Word32   -- index
   deriving (Eq, Ord, Show, Generic)
 
 instance Binary TxIn
-
-instance Haskey.Value TxIn where
-  fixedSize _ = Nothing -- TODO is it fixed size? we can be more efficient if it is
-
-instance Haskey.Key TxIn
-
 
 
 data TxOutputIds = TxOutputIds !ShortByteString !Word32   -- count

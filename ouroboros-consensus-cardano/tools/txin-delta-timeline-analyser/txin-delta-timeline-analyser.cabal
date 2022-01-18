@@ -39,7 +39,8 @@ library
                        mtl,
                        haskey-btree,
                        haskey,
-                       async
+                       async,
+                       contra-tracer
 
 executable txin
   hs-source-dirs:      app

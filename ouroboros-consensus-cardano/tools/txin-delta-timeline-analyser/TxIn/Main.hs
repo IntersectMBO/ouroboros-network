@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE TypeFamilies       #-}
@@ -31,14 +32,11 @@ import           GHC.Clock (getMonotonicTimeNSec)
 import qualified Options.Applicative as O
 import qualified Control.Monad.State.Strict as Strict
 import           Control.Monad.IO.Class (liftIO)
+import Control.Tracer
 
 import           TxIn.Types
 import           TxIn.GenesisUTxO
 import qualified TxIn.UTxODb as UTxODb
-import qualified UTxODb.InMemory as UTxODb
-import qualified UTxODb.Pipeline as UTxODb
-import qualified UTxODb.Snapshots as UTxODb
-import qualified UTxODb.Haskey.Db as UTxODb
 
 main :: IO ()
 main = do
@@ -59,19 +57,32 @@ chooseAnalysis = do
     case whichAnalysis commandLine of
       InMemSim   -> pure inMemSim
       MeasureAge -> pure measureAge
-      DbInMemSim -> pure utxodbInMemSim
-      DbHaskeySim -> pure $ utxodbHaskeySim (haskeyBackend commandLine)
+      DbInMemSim -> pure $ UTxODb.utxodbInMemSim tracer
+      DbHaskeySim -> do
+        hb <- case haskeyBackend commandLine of
+          Nothing -> error "No haskey backend"
+          Just x -> x
+        pure $ UTxODb.utxodbHaskeySim hb tracer
   where
     opts = O.info (commandLineParser O.<**> O.helper) $
          O.fullDesc
       <> O.progDesc "Analyse a txin delta timeline file"
       <> O.header "txin-delta-timeline-analyser - a tool for empirical UTxO HD design"
+    tracer :: Tracer IO UTxODb.TraceUTxODb
+    tracer = go `contramap` stdoutTracer where
+      go UTxODb.TBlock{..} =show (rBlockNumber tbRow)
+        <> "\t" <> show (rSlotNumber  tbRow)
+        <> "\t" <> show tbTime_ms
+        <> "\t" <> show tbCreated
+        <> "\t" <> show tbConsumed
+        <> "\t" <> show tbSize
+      go x = show x
 
 data AnalysisName =
     InMemSim
   | MeasureAge
-  | DbInMemSim
-  | DbHaskeySim
+  | DbInMemSim -- Use DiskDb interface, implemented with a TVar
+  | DbHaskeySim -- Use Haskey implementation of DiskDb interface
 
   deriving (Bounded, Enum, Show)
 
@@ -417,39 +428,6 @@ measureAge =
 
       pure $ AgeMeasures utxo' histo'
 
-{- UTxODb interface
-
--}
-
-utxodbInMemSim :: [Row] -> IO ()
-utxodbInMemSim rows = do
-  let init_seq_no = UTxODb.SeqNo (-2)
-  db <- UTxODb.initTVarDb init_seq_no
-
-  init_ls <- UTxODb.addTxIns db genesisUTxO  (UTxODb.SeqNo (-1)) $ UTxODb.initLedgerState init_seq_no
-  flip Strict.execStateT init_ls $ for_ (filterRowsForEBBs rows) $ \r -> do
-    ls0 <- Strict.get
-    ls <- liftIO (UTxODb.addRow db r (UTxODb.injectTables UTxODb.emptyTables ls0))
-    Strict.put ls
-  pure ()
-
-utxodbHaskeySim :: Maybe (IO UTxODb.HaskeyBackend) -> [Row] -> IO ()
-utxodbHaskeySim mb_hb rows = do
-  hb <- fromMaybe (error "No Haskey Backend") mb_hb
-
-  let init_seq_no = UTxODb.SeqNo (-2)
-  db <- UTxODb.openHaskeyDb init_seq_no hb
-  init_ls <- UTxODb.addTxIns db genesisUTxO (UTxODb.SeqNo (-1)) $ UTxODb.initLedgerState init_seq_no
-  let
-    get_keys r = let
-      keyset = UTxODb.consumed . UTxODb.keysForRow $ r
-      in UTxODb.OnDiskLedgerState { UTxODb.od_utxo = UTxODb.TableKeySet keyset }
-  UTxODb.runPipeline db init_ls 10 (filterRowsForEBBs rows) get_keys UTxODb.rowOp
-  -- flip Strict.execStateT init_ls $ for_ (filterRowsForEBBs rows) $ \r -> do
-  --   ls0 <- Strict.get
-  --   ls <- liftIO (UTxODb.addRow db r (UTxODb.injectTables UTxODb.emptyTables ls0))
-  --   Strict.put ls
-  pure ()
 
 {-------------------------------------------------------------------------------
 TODO more simulations/statistics etc
