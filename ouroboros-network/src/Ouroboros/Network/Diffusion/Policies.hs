@@ -80,14 +80,15 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
     hotDemotionPolicy :: PickPolicy peerAddr m
     hotDemotionPolicy _ _ _ available pickNum = do
         mode <- getChurnMode
-        scores <- case mode of
+        {- scores <- case mode of
                        ChurnModeNormal -> do
                            hup <- upstreamyness <$> getHeaderMetrics metrics
                            bup <- fetchynessBlocks <$> getFetchedMetrics metrics
                            return $ Map.unionWith (+) hup bup
 
                        ChurnModeBulkSync ->
-                           fetchynessBytes <$> getFetchedMetrics metrics
+                           fetchynessBytes <$> getFetchedMetrics metrics -}
+        let scores = Map.empty :: Map.Map peerAddr Int
         available' <- addRand available (,)
         return $ Set.fromList
              . map fst
