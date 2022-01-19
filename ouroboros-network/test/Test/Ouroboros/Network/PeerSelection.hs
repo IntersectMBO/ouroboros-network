@@ -417,10 +417,11 @@ envEventCredits (TraceEnvAddPeers peerGraph) = 80 * 5 + length adjacency * 5
                    where
                      PeerGraph adjacency = peerGraph
 
-envEventCredits (TraceEnvSetLocalRoots  peers) = LocalRootPeers.size peers
-envEventCredits (TraceEnvSetPublicRoots peers) = Set.size peers
-envEventCredits  TraceEnvPublicRootTTL         = 60
-envEventCredits (TraceEnvGossipTTL _)          = 30
+envEventCredits (TraceEnvSetLocalRoots  peers)  = LocalRootPeers.size peers
+envEventCredits (TraceEnvSetPublicRoots peers)  = Set.size peers
+envEventCredits  TraceEnvRequestPublicRootPeers = 0
+envEventCredits  TraceEnvPublicRootTTL          = 60
+envEventCredits (TraceEnvGossipTTL _)           = 30
 
 envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                    targetNumberOfRootPeers = _,
@@ -432,16 +433,16 @@ envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                           + targetNumberOfEstablishedPeers
                           + targetNumberOfActivePeers)
 
-envEventCredits (TraceEnvPeersDemote Noop   _) = 10
-envEventCredits (TraceEnvPeersDemote ToWarm _) = 30
-envEventCredits (TraceEnvPeersDemote ToCold _) = 30
+envEventCredits (TraceEnvPeersDemote Noop   _)  = 10
+envEventCredits (TraceEnvPeersDemote ToWarm _)  = 30
+envEventCredits (TraceEnvPeersDemote ToCold _)  = 30
 
-envEventCredits  TraceEnvPeersStatus{}         = 0
+envEventCredits  TraceEnvPeersStatus{}          = 0
 -- These events are visible in the environment but are the result of actions
 -- initiated by the governor, hence the get no credit.
-envEventCredits  TraceEnvRootsResult{}         = 0
-envEventCredits  TraceEnvGossipRequest{}       = 0
-envEventCredits  TraceEnvGossipResult{}        = 0
+envEventCredits  TraceEnvRootsResult{}          = 0
+envEventCredits  TraceEnvGossipRequest{}        = 0
+envEventCredits  TraceEnvGossipResult{}         = 0
 
 
 

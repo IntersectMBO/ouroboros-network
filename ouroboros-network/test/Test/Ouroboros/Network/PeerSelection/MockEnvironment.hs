@@ -178,6 +178,7 @@ runGovernorInMockEnvironment mockEnv =
 
 data TraceMockEnv = TraceEnvAddPeers       PeerGraph
                   | TraceEnvSetLocalRoots  (LocalRootPeers PeerAddr)
+                  | TraceEnvRequestPublicRootPeers
                   | TraceEnvSetPublicRoots (Set PeerAddr)
                   | TraceEnvPublicRootTTL
                   | TraceEnvGossipTTL      PeerAddr
@@ -272,6 +273,7 @@ mockPeerSelectionActions' tracer
   where
     -- TODO: make this dynamic
     requestPublicRootPeers _n = do
+      traceWith tracer TraceEnvRequestPublicRootPeers
       let ttl :: Num n => n
           ttl = 60
       _ <- async $ do
