@@ -23,26 +23,31 @@ module Control.Monad.IOSim
     -- * Simulation trace
   , type SimTrace
   , Trace (Cons, Nil, Trace, SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock)
-  , ppTrace
-  , ppTrace_
-  , ppEvents
-  , ppSimEvent
   , SimResult (..)
   , SimEvent (..)
   , SimEventType (..)
   , ThreadLabel
   , Labelled (..)
+    -- ** Pretty printers
+  , ppTrace
+  , ppTrace_
+  , ppEvents
+  , ppSimEvent
+    -- ** Selectors
   , traceEvents
   , traceResult
+    -- *** list selectors
   , selectTraceEvents
   , selectTraceEvents'
   , selectTraceEventsDynamic
   , selectTraceEventsDynamic'
   , selectTraceEventsSay
   , selectTraceEventsSay'
+    -- *** trace selectors
   , traceSelectTraceEvents
   , traceSelectTraceEventsDynamic
   , traceSelectTraceEventsSay
+    -- ** IO printer
   , printTraceEventsSay
     -- * Eventlog
   , EventlogEvent (..)
