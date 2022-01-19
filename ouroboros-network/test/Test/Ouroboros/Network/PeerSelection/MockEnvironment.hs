@@ -36,6 +36,7 @@ import           System.Random (mkStdGen)
 import           Control.Exception (throw)
 import           Control.Monad (forM_)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -482,7 +483,7 @@ tracerMockEnv :: Tracer (IOSim s) TraceMockEnv
 tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 
 tracerTestTraceEvent :: Tracer (IOSim s) TestTraceEvent
-tracerTestTraceEvent = dynamicTracer
+tracerTestTraceEvent = dynamicTracer <> Tracer (say . show)
 
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM

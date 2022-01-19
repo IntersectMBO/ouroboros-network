@@ -21,7 +21,7 @@ module Test.Ouroboros.Network.PeerSelection
 import qualified Data.ByteString.Char8 as BS
 import           Data.Function (on)
 import qualified Data.IP as IP
-import           Data.List (foldl', groupBy)
+import           Data.List (foldl', groupBy, intercalate)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isNothing, listToMaybe)
@@ -30,11 +30,13 @@ import qualified Data.Set as Set
 import           Data.Void (Void)
 
 import qualified Data.OrdPSQ as PSQ
+import qualified Data.List.Trace as Trace
 import           System.Random (mkStdGen)
 
 import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
+import           Control.Monad.IOSim
 
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
@@ -47,7 +49,7 @@ import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 
-import           Ouroboros.Network.Testing.Data.Script (scriptHead)
+import           Ouroboros.Network.Testing.Data.Script
 import           Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal,
                      TS (TS), signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
@@ -548,14 +550,19 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
                                publicRootPeers,
                                targets
                              } =
-    let trace      = selectPeerSelectionTraceEvents $
-                       runGovernorInMockEnvironment env {
+    let ioSimTrace = runGovernorInMockEnvironment env {
                          targets = singletonScript (targets', NoDelay)
                        }
+        trace      = selectPeerSelectionTraceEvents ioSimTrace
         Just found = knownPeersAfter1Hour trace
         reachable  = firstGossipReachablePeers peerGraph
                        (LocalRootPeers.keysSet localRootPeers <> publicRootPeers)
-     in subsetProperty    found reachable
+     in counterexample ( intercalate "\n"
+                       . map (ppSimEvent 20)
+                       . takeWhile (\e -> seTime e <= Time (60*60))
+                       . Trace.toList
+                       $ ioSimTrace) $
+        subsetProperty    found reachable
    .&&. bigEnoughProperty found reachable
   where
     -- This test is only about testing gossiping,
