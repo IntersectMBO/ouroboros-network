@@ -52,6 +52,9 @@ doc/*.synctex.gz
 
 haddocks/
 
+# macOS
+.DS_Store
+
 # Visual Studio Code
 /.vscode
 
