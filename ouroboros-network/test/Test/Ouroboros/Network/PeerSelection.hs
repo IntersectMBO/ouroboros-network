@@ -604,7 +604,8 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
         -- incomplete, so we cannot expect to reach the usual target.
         --
         -- But we can at least expect to hit the target for root peers.
-      | Set.size publicRootPeers >  targetNumberOfRootPeers targets'
+      | Set.size (publicRootPeers `Set.union` localRootPeersSet)
+      > targetNumberOfRootPeers targets'
       = property (Set.size found >= targetNumberOfRootPeers targets')
 
       | otherwise
@@ -614,8 +615,8 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
                         "expected #: " ++ show expected) $
         property (Set.size found == expected)
       where
+        localRootPeersSet = LocalRootPeers.keysSet localRootPeers
         expected = Set.size reachable `min` targetNumberOfKnownPeers targets'
-
 
 -- | Check the governor's view of connection status does not lag behind reality
 -- by too much.

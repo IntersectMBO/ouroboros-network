@@ -402,7 +402,7 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.isSubsetOf inProgressPromoteCold coldPeersSet)
   . assert (Set.isSubsetOf inProgressPromoteWarm warmPeersSet)
   . assert (Set.isSubsetOf inProgressDemoteWarm  warmPeersSet)
-  -- . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet) TODO: XXX fix assert for failing hot demotion
+  . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet)
   . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
   where
     knownPeersSet       = KnownPeers.toSet knownPeers
@@ -412,7 +412,7 @@ assertPeerSelectionState PeerSelectionState{..} =
     activePeersSet      = activePeers
     coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet        = establishedPeersSet Set.\\ activePeersSet
-    -- hotPeersSet         = activePeersSet
+    hotPeersSet         = activePeersSet
 
 
 -- | A view of the status of each established peer, for testing and debugging.
