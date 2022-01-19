@@ -119,7 +119,7 @@ tests =
     -- these tests fail now:
     , testProperty "3494" $ expectFailure prop_issue_3494
     , testProperty "3515" $ expectFailure prop_issue_3515
-    , testProperty "3550" $ expectFailure prop_issue_3550
+    , testProperty "3550"   prop_issue_3550
     ]
   ]
   --TODO: We should add separate properties to check that we do not overshoot
@@ -506,6 +506,7 @@ traceNum TraceDemoteAsynchronous{}    = 23
 traceNum TraceGovernorWakeup{}        = 24
 traceNum TraceChurnWait{}             = 25
 traceNum TraceChurnMode{}             = 26
+traceNum TracePromoteWarmAborted{}    = 27
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -536,6 +537,7 @@ allTraceNames =
    , (23, "TraceDemoteAsynchronous")
    , (24, "TraceGovernorWakeup")
    , (25, "TraceChurnWait")
+   , (26, "TracePromoteWarmAborted")
    ]
 
 

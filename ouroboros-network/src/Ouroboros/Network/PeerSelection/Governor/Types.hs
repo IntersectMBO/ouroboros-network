@@ -592,6 +592,11 @@ data TracePeerSelection peeraddr =
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TracePromoteWarmDone    Int Int peeraddr
+     -- | aborted promotion of a warm peer; likely it was asynchronously
+     -- demoted in the meantime.
+     --
+     -- target active, actual active, peer
+     | TracePromoteWarmAborted Int Int peeraddr
      -- | target established, actual established, selected peers
      | TraceDemoteWarmPeers    Int Int (Set peeraddr)
      -- | target established, actual established, peer, reason

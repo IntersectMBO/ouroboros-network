@@ -282,20 +282,30 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                                          }
                              }
                            _now ->
-        assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
+
         assert (peeraddr `KnownPeers.member` knownPeers st) $
-        let activePeers' = Set.insert peeraddr activePeers in
-        Decision {
-          decisionTrace = TracePromoteWarmDone targetNumberOfActivePeers
-                                               (Set.size activePeers')
-                                               peeraddr,
-          decisionState = st {
-                            activePeers           = activePeers',
-                            inProgressPromoteWarm = Set.delete peeraddr
-                                                      (inProgressPromoteWarm st)
-                          },
-          decisionJobs  = []
-        }
+        if peeraddr `EstablishedPeers.member` establishedPeers st
+          then
+            let activePeers' = Set.insert peeraddr activePeers in
+            Decision {
+              decisionTrace = TracePromoteWarmDone targetNumberOfActivePeers
+                                                   (Set.size activePeers')
+                                                   peeraddr,
+              decisionState = st {
+                                activePeers           = activePeers',
+                                inProgressPromoteWarm = Set.delete peeraddr
+                                                          (inProgressPromoteWarm st)
+                              },
+              decisionJobs  = []
+            }
+          else
+            Decision {
+              decisionTrace = TracePromoteWarmAborted targetNumberOfActivePeers
+                                                      (Set.size activePeers)
+                                                      peeraddr,
+              decisionState = st,
+              decisionJobs  = []
+            }
 
 
 ----------------------------
@@ -489,13 +499,13 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
             activePeers'          = Set.delete peeraddr activePeers
             inProgressDemoteHot'  = Set.delete peeraddr inProgressDemoteHot
             knownPeers'           = KnownPeers.setConnectTime
-                                     peerSet
-                                     ((realToFrac rFuzz + reconnectDelay)
-                                      `addTime` now)
-                                   . Set.foldr'
-                                     ((snd .) . KnownPeers.incrementFailCount)
-                                     knownPeers
-                                   $ peerSet
+                                      peerSet
+                                      ((realToFrac rFuzz + reconnectDelay)
+                                       `addTime` now)
+                                  . Set.foldr'
+                                      ((snd .) . KnownPeers.incrementFailCount)
+                                      knownPeers
+                                  $ peerSet
             establishedPeers'     = EstablishedPeers.deletePeers
                                      peerSet
                                      establishedPeers in
