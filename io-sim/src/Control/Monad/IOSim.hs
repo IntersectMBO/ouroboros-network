@@ -26,6 +26,7 @@ module Control.Monad.IOSim
   , ppTrace
   , ppTrace_
   , ppEvents
+  , ppSimEvent
   , SimResult (..)
   , SimEvent (..)
   , SimEventType (..)
