@@ -109,28 +109,41 @@ data NextBlock blk = NoMoreBlocks | NextBlock blk
 --
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
 data StreamAPI m blk = StreamAPI {
-      -- | Start streaming after the specified block
-      streamAfter :: forall a. HasCallStack
-        => Point blk
-        -- Reference to the block corresponding to the snapshot we found
-        -- (or 'GenesisPoint' if we didn't find any)
+      -- | Start streaming after the specified block up to the end of the
+      -- immutable database.
+        streamAfter :: forall a. HasCallStack
+          => Point blk
+          -- Reference to the block corresponding to the snapshot we found
+          -- (or 'Point Origin' if we didn't find any)
 
-        -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
-        -- Get the next block (by value)
-        --
-        -- Should be @Left pt@ if the snapshot we found is more recent than the
-        -- tip of the immutable DB. Since we only store snapshots to disk for
-        -- blocks in the immutable DB, this can only happen if the immutable DB
-        -- got truncated due to disk corruption. The returned @pt@ is a
-        -- 'RealPoint', not a 'Point', since it must always be possible to
-        -- stream after genesis.
-        -> m a
+          -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+          -- Get the next block (by value)
+          --
+          -- Should be @Left pt@ if the snapshot we found is more recent than the
+          -- tip of the immutable DB. Since we only store snapshots to disk for
+          -- blocks in the immutable DB, this can only happen if the immutable DB
+          -- got truncated due to disk corruption. The returned @pt@ is a
+          -- 'RealPoint', not a 'Point', since it must always be possible to
+          -- stream after genesis.
+          -> m a
 
-      , streamAfterBefore :: forall a. HasCallStack
-        => Point blk
-        -> Point blk
-        -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
-        -> m a
+      , -- | Start streaming after the given block up to the second given block.
+        streamAfterUpTo :: forall a. HasCallStack
+          => Point blk
+          -- Reference to the block corresponding to the snapshot we found (or
+          -- 'Point Origin' if we didn't find any)
+          -> Point blk
+          -- Reference to the block we want to reach.
+          -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+          -- Get the next block (by value)
+          --
+          -- Should be @Left pt@ if the snapshot we found is more recent than the
+          -- tip of the immutable DB. Since we only store snapshots to disk for
+          -- blocks in the immutable DB, this can only happen if the immutable DB
+          -- got truncated due to disk corruption. The returned @pt@ is a
+          -- 'RealPoint', not a 'Point', since it must always be possible to
+          -- stream after genesis.
+          -> m a
     }
 
 -- | Stream all blocks
@@ -154,7 +167,7 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
                         NextBlock b  -> go =<< f b a
         Right <$> go e
 
--- | Stream all blocks
+-- | Stream all blocks up to the specified block
 streamUpTo ::
      forall m blk e a. (Monad m, HasCallStack)
   => StreamAPI m blk
@@ -165,7 +178,7 @@ streamUpTo ::
   -> (blk -> a -> m a)     -- ^ Update function for each block
   -> ExceptT e m a
 streamUpTo StreamAPI{..} tip goal notFound e f = ExceptT $
-    streamAfterBefore tip goal $ \case
+    streamAfterUpTo tip goal $ \case
       Left tip' -> return $ Left (notFound tip')
 
       Right getNext -> do
@@ -203,27 +216,12 @@ data InitLog blk =
   | InitFailure DiskSnapshot (InitFailure blk) (InitLog blk)
   deriving (Show, Eq, Generic)
 
--- | Initialize the ledger DB from the most recent snapshot on disk
+-- | Initialize the ledger DB
 --
--- If no such snapshot can be found, use the genesis ledger DB. Returns the
--- initialized DB as well as the block reference corresponding to the snapshot
--- we found on disk (the latter primarily for testing/monitoring purposes).
---
--- We do /not/ catch any exceptions thrown during streaming; should any be
--- thrown, it is the responsibility of the 'ChainDB' to catch these
--- and trigger (further) validation. We only discard snapshots if
---
--- * We cannot deserialise them, or
--- * they are /ahead/ of the chain
---
--- It is possible that the Ledger DB will not be able to roll back @k@ blocks
--- after initialization if the chain has been truncated (data corruption).
---
--- We do /not/ attempt to use multiple ledger states from disk to construct the
--- ledger DB. Instead we load only a /single/ ledger state from disk, and
--- /compute/ all subsequent ones. This is important, because the ledger states
--- obtained in this way will (hopefully) share much of their memory footprint
--- with their predecessors.
+-- This will:
+-- 1. deserialize the most recent found snapshot for each of the internal databases
+-- 2. bring up the database that is behind until they are at the same tip
+-- 3. replay the remaining blocks on the immutable database on both databases
 initLedgerDB ::
      forall m blk. (
          IOLike m
@@ -231,18 +229,18 @@ initLedgerDB ::
        , InspectLedger blk
        , HasCallStack
        )
-  => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
-  -> Tracer m (TraceEvent blk)
-  -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk ValuesMK))
-  -> SomeHasFS m
-  -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
-  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
-  -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState blk)
-  -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
-  -> StreamAPI m blk
-  -> Bool
+  => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)   -- ^ A replay tracer
+  -> Tracer m (TraceEvent blk)                           -- ^ A general tracer
+  -> SomeHasFS m                                         -- ^ The filesystem with the old-style snapshots
+  -> (forall s. Decoder s (ExtLedgerState blk ValuesMK)) -- ^ A decoder for the old-style snapshots
+  -> SomeHasFS m                                         -- ^ The filesystem with the new-style snapshots
+  -> OnDiskLedgerStDb m (ExtLedgerState blk) blk         -- ^ The backend handle
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))  -- ^ A decoder for the new-style snapshots
+  -> (forall s. Decoder s (HeaderHash blk))              -- ^ A decoder for header hashes
+  -> LedgerDbCfg (ExtLedgerState blk)                    -- ^ The ledger database configuration
+  -> m (ExtLedgerState blk ValuesMK)                     -- ^ Genesis ledger state
+  -> StreamAPI m blk                                     -- ^ An streaming API for the immutable database
+  -> Bool                                                -- ^ Whether to run both databases TODO: This is not yet implemented
   -> m ((InitLog blk, InitLog blk), LedgerDB' blk, Word64)
 initLedgerDB replayTracer
              tracer
@@ -286,18 +284,24 @@ initLedgerDB replayTracer
 
 -- | Load a snapshot from the disk. Depending on the decoder, the snapshot is
 -- expected to be of the @mk@ that the decoder knows how to decode.
+--
+-- This will throw an exception @InitFailureRead@ if it can't deserialize a
+-- snapshot, and an @InitFailureGenesis@ if we are trying to load a snapshot
+-- that corresponds to Genesis.
 loadSnapshot :: ( IOLike m
                 , LedgerSupportsProtocol blk
                 )
              => Maybe (Tracer m (ReplayGoal blk -> TraceReplayEvent blk)) -- ^ The replay tracer to be annotated with starting point.
-             -> SomeHasFS m                                       -- ^ The filesystem with the snapshots
-             -> (forall s. Decoder s (ExtLedgerState blk mk))     -- ^ A decoder for the snapshots
-             -> (forall s. Decoder s (HeaderHash blk))            -- ^ A decoder for header hashes
-             -> DiskSnapshot                                      -- ^ Which snapshot to load on the filesystem
-             -> ExceptT (InitFailure blk) m ( ExtLedgerState blk mk                                                -- The resulting ledger state
-                                            , RealPoint blk                                                        -- The real point corresponding to the ledger state
-                                            , Maybe (Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)) -- The annotated tracer
-                                            )
+             -> SomeHasFS m                                               -- ^ The filesystem with the snapshots
+             -> (forall s. Decoder s (ExtLedgerState blk mk))             -- ^ A decoder for the snapshots
+             -> (forall s. Decoder s (HeaderHash blk))                    -- ^ A decoder for header hashes
+             -> DiskSnapshot                                              -- ^ Which snapshot to load on the filesystem
+             -> ExceptT (InitFailure blk)
+                        m
+                        ( ExtLedgerState blk mk                                                        -- The resulting ledger state
+                        , RealPoint blk                                                                -- The real point corresponding to the ledger state
+                        , Maybe (Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)) -- The annotated tracer
+                        )
 loadSnapshot tracer fs dec decHash ss  = do
       initSS <- withExceptT InitFailureRead $ readSnapshot fs dec decHash ss
       let initialPoint = castPoint (getTip initSS)
@@ -336,16 +340,15 @@ oldInitLedgerDB :: ( IOLike m
                 -> SomeHasFS m                                         -- ^ Filesystem containing the old ledger snapshots
                 -> (forall s. Decoder s (ExtLedgerState blk ValuesMK)) -- ^ A decoder for the old ledger snapshots
                 -> (forall s. Decoder s (HeaderHash blk))              -- ^ A decoder for header hashes
-                -> m ( InitLog blk                                                          -- The initialization log
-                     , OldLedgerDB (ExtLedgerState blk)                                     -- The resulting old ledgerDB
-                     , Point blk                                                            -- The point corresponding to the adopted ledger state
+                -> m ( InitLog blk                      -- The initialization log
+                     , OldLedgerDB (ExtLedgerState blk) -- The resulting old ledgerDB
+                     , Point blk                        -- The point corresponding to the adopted ledger state
                      )
 oldInitLedgerDB getGenesisLedger hasFS decLedger decHash = do
     listSnapshots hasFS >>= tryNewestFirst id
   where
     tryNewestFirst acc [] = do
       -- We're out of snapshots. Start at genesis
-
       initSS <- getGenesisLedger
       return ( acc InitFromGenesis
              , Empty (Checkpoint initSS)
@@ -363,7 +366,7 @@ oldInitLedgerDB getGenesisLedger hasFS decLedger decHash = do
         Right (ls, pt, _) -> do
           return ( acc (InitFromSnapshot s pt)
                  , Empty (Checkpoint ls)
-                 , Point (At $ undefined pt)
+                 , realPointToPoint pt
                  )
 
 {-------------------------------------------------------------------------------
@@ -411,12 +414,12 @@ newInitLedgerDB replayTracer tracer getGenesisLedger hasFS decLedger decHash onD
             return (InitFailure s err l, db, pt, tr)
           Right (initSS, pt', replayTracer') -> do
             pt'' <- odlsGetPt onDiskLedgerDbSt
-
-            assert (realPointToPoint pt' == pt'') $ return ( InitFromSnapshot s pt'
-                                          , initialDbChangelogWithEmptyState (getTipSlot initSS) initSS
-                                          , Point (At $ undefined pt')
-                                          , maybe (error "unreachable as we provided a Just to loadSnapshot") id replayTracer'
-                                          )
+            assert (realPointToPoint pt' == pt'')
+              $ return ( InitFromSnapshot s pt'
+                       , initialDbChangelogWithEmptyState (getTipSlot initSS) initSS
+                       , realPointToPoint pt'
+                       , maybe (error "unreachable as we provided a Just to loadSnapshot") id replayTracer'
+                       )
   where initUsingGenesis = do
           initSS <- getGenesisLedger
           writeGenesisUTxO onDiskLedgerDbSt initSS
@@ -439,25 +442,31 @@ initialDbChangelogWithEmptyState = undefined
 -- Pushes blocks in the ImmutableDB up to the tip of the new ledger DB so that
 -- they end up being in sync.
 bringUpOldLedgerDB :: forall m blk. (Monad m, LedgerSupportsProtocol blk)
-                   => Bool
-                   -> LedgerDbCfg (ExtLedgerState blk)
-                   -> StreamAPI m blk
-                   -> OldLedgerDB (ExtLedgerState blk)
-                   -> NewLedgerDB (ExtLedgerState blk)
-                   -> Point blk
-                   -> Point blk
+                   => Bool                             -- ^ Whether to run both databases TODO: Still not implemented
+                   -> LedgerDbCfg (ExtLedgerState blk) -- ^ The LedgerDB configuration
+                   -> StreamAPI m blk                  -- ^ An API to stream blocks from the Immutable DB
+                   -> OldLedgerDB (ExtLedgerState blk) -- ^ The old-style database that we want to bring up
+                   -> NewLedgerDB (ExtLedgerState blk) -- ^ The new-style database
+                   -> Point blk                        -- ^ At which point the old-style database is
+                   -> Point blk                        -- ^ At which point the new-style database is
                    -> m (LedgerDB' blk, Word64)
 bringUpOldLedgerDB runDual cfg streamAPI old ledgerDbChangelog from to = do
-    either (error . ("invariant violation: invalid current chain:" <>) . show) (\(ledgerDbCheckpoints, w) -> return (LedgerDB{..}, w)) =<<
+    either
+      (error . ("invariant violation: invalid current chain:" <>) . show)
+      (\(ledgerDbCheckpoints, w) -> return (LedgerDB{..}, w))
+    =<<
       runExceptT (streamUpTo streamAPI from to InitFailureTooRecent (old, 0) push)
   where
-    push :: blk -> (OldLedgerDB (ExtLedgerState blk), Word64) -> m (OldLedgerDB (ExtLedgerState blk), Word64)
+    push :: blk
+         ->   (OldLedgerDB (ExtLedgerState blk), Word64)
+         -> m (OldLedgerDB (ExtLedgerState blk), Word64)
     push blk !(!db, !replayed) = do
-      let !db' = let ls =   forgetLedgerStateTracking
-                          $ tickThenReapply (ledgerDbCfg cfg) blk
-                          $ either unCheckpoint unCheckpoint . AS.head
-                          $ db
-                 in AS.anchorNewest (maxRollbacks $ ledgerDbCfgSecParam cfg) (db AS.:> Checkpoint ls)
+      let ls =   forgetLedgerStateTracking
+               $ tickThenReapply (ledgerDbCfg cfg) blk
+               $ either unCheckpoint unCheckpoint . AS.head
+               $ db
+
+          !db' = AS.anchorNewest (maxRollbacks $ ledgerDbCfgSecParam cfg) (db AS.:> Checkpoint ls)
 
           !replayed' = replayed + 1
 
@@ -468,24 +477,41 @@ bringUpOldLedgerDB runDual cfg streamAPI old ledgerDbChangelog from to = do
 -- Pushes blocks in the ImmutableDB up to the tip of the old ledger DB so that
 -- they end up being in sync.
 bringUpNewLedgerDB :: forall m blk. (Monad m, LedgerSupportsProtocol blk, InspectLedger blk)
-                   => Bool
-                   -> Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
-                   -> LedgerDbCfg (ExtLedgerState blk)
-                   -> StreamAPI m blk
-                   -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
-                   -> OldLedgerDB (ExtLedgerState blk)
-                   -> NewLedgerDB (ExtLedgerState blk)
-                   -> Point blk
-                   -> Point blk
+                   => Bool                                                                 -- ^ Whether to run both databases TODO: Still not implemented
+                   -> Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk) -- ^ The replay tracer to emit events when replaying blocks
+                   -> LedgerDbCfg (ExtLedgerState blk)                                     -- ^ The LedgerDB configuration
+                   -> StreamAPI m blk                                                      -- ^ An API to stream blocks from the Immutable DB
+                   -> OnDiskLedgerStDb m (ExtLedgerState blk) blk                          -- ^ The backend handle
+                   -> OldLedgerDB (ExtLedgerState blk)                                     -- ^ The old-style database
+                   -> NewLedgerDB (ExtLedgerState blk)                                     -- ^ The new-style database that we want to bring up
+                   -> Point blk                                                            -- ^ At which point the old-style database is
+                   -> Point blk                                                            -- ^ At which point the new-style database is
                    -> m (LedgerDB' blk, Word64)
 bringUpNewLedgerDB runDual tracer cfg streamAPI onDiskLedgerDbSt ledgerDbCheckpoints new to from =
-    either (error . ("invariant violation: invalid current chain:" <>) . show) (\(ledgerDbChangelog, w) -> return (LedgerDB{..}, w)) =<<
+    either
+      (error . ("invariant violation: invalid current chain:" <>) . show)
+      (\(ledgerDbChangelog, w) -> return (LedgerDB{..}, w))
+    =<<
       runExceptT (streamUpTo streamAPI from to InitFailureTooRecent (new, 0) push)
   where
-    push :: blk -> (NewLedgerDB (ExtLedgerState blk), Word64) -> m (NewLedgerDB (ExtLedgerState blk), Word64)
+    push :: blk
+         ->   (NewLedgerDB (ExtLedgerState blk), Word64)
+         -> m (NewLedgerDB (ExtLedgerState blk), Word64)
     push blk !(db, replayed) = do
       ls <- defaultReadKeySets (readKeySets onDiskLedgerDbSt) (withBlockReadSets blk db $ \lh -> return $ tickThenReapply (ledgerDbCfg cfg) blk lh)
       db'' <- flushDb onDiskLedgerDbSt $ extendDbChangelog (stateSeqNo ls) (trackingTablesToDiffs ls) db
+        -- TODO: here initStartingWith could and should probably flush!
+        --
+        -- If we're replaying from genesis (or simply replaying a very
+        -- large number of blocks) we will need to flush from time to
+        -- time inside this function.
+        --
+        -- Note that at the moment no LedgerDB snapshots are taken by
+        -- this function.
+        --
+        -- Note that whatever restore point we take here, it will
+        -- belong to the immutable part of the chain. So the restore
+        -- point will not lie ahead of the immutable DB tip.
       let replayed' :: Word64
           !replayed' = replayed + 1
 
@@ -500,9 +526,9 @@ bringUpNewLedgerDB runDual tracer cfg streamAPI onDiskLedgerDbSt ledgerDbCheckpo
 
 -- | Both databases are already in sync, just combine them in the @LedgerDB@ datatype.
 combineLedgerDBs :: Monad m
-                 => Bool
-                 -> OldLedgerDB (ExtLedgerState blk)
-                 -> NewLedgerDB (ExtLedgerState blk)
+                 => Bool                             -- ^ Whether to run both databases TODO: Still not implemented
+                 -> OldLedgerDB (ExtLedgerState blk) -- ^ The old-style database
+                 -> NewLedgerDB (ExtLedgerState blk) -- ^ The new-style database
                  -> m (LedgerDB' blk, Word64)
 combineLedgerDBs runDual ledgerDbCheckpoints ledgerDbChangelog = return (LedgerDB {..}, 0)
 
@@ -571,7 +597,9 @@ data OnDiskLedgerStDb m l blk =
   }
   deriving NoThunks via OnlyCheckWhnfNamed "OnDiskLedgerStDb" (OnDiskLedgerStDb m l blk)
 
--- | Attempt to initialize the ledger DB starting from the given ledger DB
+-- | Attempt to initialize the ledger DB starting from the given ledger DB by
+-- streaming blocks from the immutable database up to the immutable database
+-- tip.
 initStartingWith ::
      forall m blk. (
          Monad m
@@ -579,11 +607,11 @@ initStartingWith ::
        , InspectLedger blk
        , HasCallStack
        )
-  => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
-  -> LedgerDbCfg (ExtLedgerState blk)
-  -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
-  -> StreamAPI m blk
-  -> LedgerDB' blk
+  => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk) -- ^ A replay tracer
+  -> LedgerDbCfg (ExtLedgerState blk)                                     -- ^ The LedgerDB configuration
+  -> OnDiskLedgerStDb m (ExtLedgerState blk) blk                          -- ^ The backend handle
+  -> StreamAPI m blk                                                      -- ^ An API to stream blocks from the Immutable DB
+  -> LedgerDB' blk                                                        -- ^ The LedgerDB we want to push blocks into
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
 initStartingWith tracer cfg onDiskLedgerDbSt streamAPI initDb = do
     streamAll streamAPI (castPoint (ledgerDbTip initDb))
@@ -595,8 +623,20 @@ initStartingWith tracer cfg onDiskLedgerDbSt streamAPI initDb = do
     push blk !(!db, !replayed) = do
         !db' <- defaultReadKeySets (readKeySets onDiskLedgerDbSt) $
                   ledgerDbPush cfg (ReapplyVal blk) db
-        db'' <- ledgerDbFlush (flushDb onDiskLedgerDbSt) db'
+        -- TODO: here it is important that we don't have a lock acquired.
 
+        -- Alternatively, we could chose not to check for a lock when we're
+        -- flushing here since we know the `LgrDB` does not exist at this point
+        -- yet.
+        db'' <- ledgerDbFlush (flushDb onDiskLedgerDbSt) db'
+        -- TODO: it seems we'd want:
+        --
+        --     - flush
+        --
+        --     - make a restore-point
+        --
+        -- We can't make the flush in the levels above push since this function
+        -- consumes the whole stream of immutable DB blocks.
         let replayed' :: Word64
             !replayed' = replayed + 1
 

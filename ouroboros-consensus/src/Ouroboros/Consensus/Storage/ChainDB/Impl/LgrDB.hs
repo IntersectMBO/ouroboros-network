@@ -464,7 +464,7 @@ streamAPI ::
      forall m blk.
      (IOLike m, HasHeader blk)
   => ImmutableDB m blk -> StreamAPI m blk
-streamAPI immutableDB = StreamAPI streamAfter streamAfterBefore
+streamAPI immutableDB = StreamAPI streamAfter streamAfterUpTo
   where
     streamAfter :: HasCallStack
                 => Point blk
@@ -487,12 +487,12 @@ streamAPI immutableDB = StreamAPI streamAfter streamAfterBefore
       ImmutableDB.IteratorExhausted  -> return $ NoMoreBlocks
       ImmutableDB.IteratorResult blk -> return $ NextBlock blk
 
-    streamAfterBefore :: HasCallStack
+    streamAfterUpTo :: HasCallStack
                 => Point blk
                 -> Point blk
                 -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
                 -> m a
-    streamAfterBefore from to k = withRegistry $ \registry -> do
+    streamAfterUpTo from to k = withRegistry $ \registry -> do
       eItr <- ImmutableDB.streamWithBounds
                 immutableDB
                 registry

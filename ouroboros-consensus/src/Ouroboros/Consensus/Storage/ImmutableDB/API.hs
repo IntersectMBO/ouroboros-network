@@ -495,6 +495,10 @@ streamAfterPoint db registry blockComponent fromPt = do
     tipPt <- atomically $ getTipPoint db
     streamWithBounds db registry blockComponent fromPt tipPt
 
+-- | Open at iterator with the given point as lower exclusive bound and the
+-- second given point as the inclusive upper bound.
+--
+-- Returns a 'MissingBlock' when the point is not in the ImmutableDB.
 streamWithBounds :: (MonadSTM m, HasHeader blk, HasCallStack)
   => ImmutableDB m blk
   -> ResourceRegistry m

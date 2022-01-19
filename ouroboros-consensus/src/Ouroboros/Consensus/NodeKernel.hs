@@ -233,7 +233,6 @@ initBlockFetchConsensusInterface
        , BlockSupportsProtocol blk
        , SupportsNode.ConfigSupportsNode blk
        , History.HasHardForkHistory blk
-       , IsLedger (LedgerState blk)
        )
     => TopLevelConfig blk
     -> ChainDB m blk
