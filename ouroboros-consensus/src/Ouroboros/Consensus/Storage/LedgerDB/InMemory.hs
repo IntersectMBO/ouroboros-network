@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
@@ -27,31 +28,22 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
     LedgerDbCfg (..)
   , ledgerDbWithAnchor
+  , oldLedgerDbWithAnchor
     -- ** opaque
-  , LedgerDB (..)
+  , LedgerDB
   , NewLedgerDB
   , OldLedgerDB
-    -- * Ledger DB types (TODO: we might want to place this somewhere else)
-  , DbChangelog
-  , DbReader (..)
-  , ReadKeySets
-  , ReadsKeySets (..)
-  , RewoundTableKeySets (..)
-  , UnforwardedReadSets (..)
-  , defaultReadKeySets
-  , ledgerDbFlush
-    -- ** Serialisation
-  , decodeSnapshotBackwardsCompatible
-  , encodeSnapshot
     -- ** Queries
   , ledgerDbAnchor
   , ledgerDbBimap
   , ledgerDbCurrent
+  , ledgerDbFlush
   , ledgerDbPast
   , ledgerDbPrefix
   , ledgerDbPrune
   , ledgerDbSnapshots
   , ledgerDbTip
+  , oldLedgerDbAnchor
     -- ** Running updates
   , AnnLedgerError (..)
   , Ap (..)
@@ -65,6 +57,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ExceededRollback (..)
   , ledgerDbPush
   , ledgerDbSwitch
+    -- * Sync both databases
+  , bringUpNewLedgerDB
+  , bringUpOldLedgerDB
+  , combineLedgerDBs
     -- * Exports for the benefit of tests
     -- ** Additional queries
   , ledgerDbIsSaturated
@@ -73,19 +69,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPush'
   , ledgerDbPushMany'
   , ledgerDbSwitch'
-    -- ** Javier
-  , Checkpoint (..)
-  , HasSeqNo (..)
-  , dbChangelogStates
-  , extendDbChangelog
-  , initialDbChangelog
-  , seqLast
-  , withBlockReadSets
   ) where
 
-import           Codec.Serialise.Decoding (Decoder)
-import qualified Codec.Serialise.Decoding as Dec
-import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Functor.Identity
@@ -98,17 +83,16 @@ import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
 
-import           Cardano.Slotting.Slot (WithOrigin (At))
 import           Control.Exception
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
                      PushStart (..), Pushing (..),
                      UpdateLedgerDbTraceEvent (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.UTxOHD
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
-import           Ouroboros.Consensus.Util.Versioned
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -175,6 +159,11 @@ deriving instance (NoThunks (l EmptyMK), NoThunks (l ValuesMK)) => NoThunks (Led
 instance ShowLedgerState l => Show (LedgerDB l) where
   showsPrec = error "showsPrec @LedgerDB"
 
+type instance HeaderHash (LedgerDB l) = HeaderHash l
+
+instance IsLedger l => GetTip (LedgerDB l) where
+  getTip = castPoint . getTip . ledgerDbCurrent
+
 -- | Internal newtype wrapper around a ledger state @l@ so that we can define a
 -- non-blanket 'Anchorable' instance.
 newtype Checkpoint l = Checkpoint {
@@ -193,16 +182,26 @@ instance GetTip (l ValuesMK) => Anchorable (WithOrigin SlotNo) (Checkpoint (l Va
   getAnchorMeasure _ = getTipSlot . unCheckpoint
 
 {-------------------------------------------------------------------------------
-  LedgerDB proper
+  Construct LedgerDB
 -------------------------------------------------------------------------------}
 
--- | Ledger DB starting at the specified ledger state
+-- | Empty LedgerDB starting at the specified ledger state
 ledgerDbWithAnchor :: GetTip (l ValuesMK) => l ValuesMK -> LedgerDB l
 ledgerDbWithAnchor anchor = LedgerDB {
       ledgerDbCheckpoints = Empty (Checkpoint anchor)
     , ledgerDbChangelog   = initialDbChangelog (getTipSlot anchor) anchor
     , runDual = True -- TODO: This is not yet implemented.
     }
+
+oldLedgerDbWithAnchor :: GetTip (l ValuesMK) => l ValuesMK -> OldLedgerDB l
+oldLedgerDbWithAnchor anchor = Empty (Checkpoint anchor)
+
+-- | Both databases are already in sync, just combine them in the @LedgerDB@ datatype.
+combineLedgerDBs :: Bool          -- ^ Whether to run both databases TODO: Still not implemented
+                 -> OldLedgerDB l -- ^ The old-style database
+                 -> NewLedgerDB l -- ^ The new-style database
+                 -> (LedgerDB l, (Word64, Word64))
+combineLedgerDBs runDual ledgerDbCheckpoints ledgerDbChangelog = (LedgerDB {..}, (0,0))
 
 {-------------------------------------------------------------------------------
   Compute signature
@@ -396,7 +395,7 @@ withBlockReadSets
   -> m (l TrackingMK)
 withBlockReadSets b db f  = do
   let ks = getBlockKeySets b :: TableKeySets l
-  let aks = rewindTableKeySets db ks :: RewoundTableKeySets l
+  let aks = rewindTableKeySets' db ks :: RewoundTableKeySets l
   urs <- readDb aks
   case withHydratedLedgerState urs db f   of
     Nothing ->
@@ -420,115 +419,27 @@ withHydratedLedgerState
   -> (l ValuesMK -> a)
   -> Maybe a
 withHydratedLedgerState urs db f = do
-  rs <- forwardTableKeySets db urs
+  rs <- forwardTableKeySets' db urs
   return $ f $ withLedgerTables (seqLast . dbChangelogStates $ db)  rs
-
-
-{-------------------------------------------------------------------------------
-  HD Interface that I need (Could be moved to  Ouroboros.Consensus.Ledger.Basics )
--------------------------------------------------------------------------------}
-
-data Seq (a :: LedgerStateKind) s
-
-seqLast :: Seq state (state EmptyMK) -> state EmptyMK
-seqLast = undefined
-
-seqAt :: SeqNo state -> Seq state (state EmptyMK) -> state EmptyMK
-seqAt = undefined
-
-seqAnchorAt :: SeqNo state -> Seq state (state EmptyMK) -> Seq state (state EmptyMK)
-seqAnchorAt = undefined
-
-seqLength :: Seq state (state EmptyMK) -> Int
-seqLength = undefined
-
-data DbChangelog (l :: LedgerStateKind)
-  deriving (Eq, Generic, NoThunks)
-
-newtype RewoundTableKeySets l = RewoundTableKeySets (AnnTableKeySets l ()) -- KeySetSanityInfo l
-
-initialDbChangelog
-  :: WithOrigin SlotNo -> l ValuesMK -> DbChangelog l
-initialDbChangelog = undefined
-
-rewindTableKeySets
-  :: DbChangelog l -> TableKeySets l -> RewoundTableKeySets l
-rewindTableKeySets = undefined
-
-newtype UnforwardedReadSets l = UnforwardedReadSets (AnnTableReadSets l ())
-
-forwardTableKeySets
-  :: DbChangelog l -> UnforwardedReadSets l -> Maybe (TableReadSets l)
-forwardTableKeySets = undefined
-
-extendDbChangelog
-  :: SeqNo l
-  -> l DiffMK
-  -- -> Maybe (l SnapshotsMK) TOOD: We won't use this parameter in the first iteration.
-  -> DbChangelog l
-  -> DbChangelog l
-extendDbChangelog = undefined
-
-dbChangelogStateAnchor :: DbChangelog state -> SeqNo state
-dbChangelogStateAnchor = undefined
-
-dbChangelogStates :: DbChangelog state -> Seq state (state EmptyMK)
-dbChangelogStates = undefined
-
-dbChangelogRollBack :: Point blk -> DbChangelog state -> DbChangelog state
-dbChangelogRollBack = undefined
-
-newtype SeqNo (state :: LedgerStateKind) = SeqNo { unSeqNo :: Word64 }
-  deriving (Eq, Ord, Show)
-
-class HasSeqNo (state :: LedgerStateKind) where
-  stateSeqNo :: state table -> SeqNo state
-
--- TODO: flushing the changelog will invalidate other copies of 'LedgerDB'. At
--- the moment the flush-locking concern is outside the scope of this module.
--- Clients need to ensure they flush in a safe manner.
---
-ledgerDbFlush
-  :: Monad m => (DbChangelog l -> m (DbChangelog l)) -> LedgerDB l -> m (LedgerDB l)
-ledgerDbFlush changelogFlush db = do
-  ledgerDbChangelog' <- changelogFlush (ledgerDbChangelog db)
-  return $! db { ledgerDbChangelog = ledgerDbChangelog' }
-
-class ReadsKeySets m l where
-
-  readDb :: ReadKeySets m l
-
-type ReadKeySets m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
-
-newtype DbReader m l a = DbReader { runDbReader :: ReaderT (ReadKeySets m l) m a}
-  deriving newtype (Functor, Applicative, Monad)
-
-instance ReadsKeySets (DbReader m l) l where
-  readDb rks = DbReader $ ReaderT $ \f -> f rks
-
--- TODO: this is leaking details on how we want to compose monads at the higher levels.
-instance (Monad m, ReadsKeySets m l) => ReadsKeySets (ReaderT r m) l where
-  readDb = lift . readDb
-
-instance (Monad m, ReadsKeySets m l) => ReadsKeySets (ExceptT e m) l where
-  readDb = lift . readDb
-
-defaultReadKeySets :: ReadKeySets m l -> DbReader m l a -> m a
-defaultReadKeySets f dbReader = runReaderT (runDbReader dbReader) f
 
 {-------------------------------------------------------------------------------
   Queries
+
+  Note that queries will return always the new-style results. We insist on the
+  old-style database to be just a backup that ensures results are consistent, but
+  it should be invisible to outer modules.
 -------------------------------------------------------------------------------}
 
 -- | The ledger state at the tip of the chain
 ledgerDbCurrent :: LedgerDB l -> l EmptyMK
 ledgerDbCurrent = seqLast . dbChangelogStates . ledgerDbChangelog
 
-
 -- | Information about the state of the ledger at the anchor
 ledgerDbAnchor :: LedgerDB l -> l EmptyMK
 ledgerDbAnchor LedgerDB{..} = seqAt (dbChangelogStateAnchor ledgerDbChangelog) (dbChangelogStates ledgerDbChangelog)
 
+oldLedgerDbAnchor :: LedgerDB l -> l ValuesMK
+oldLedgerDbAnchor LedgerDB{..} = unCheckpoint . AS.anchor $ ledgerDbCheckpoints
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --
@@ -582,12 +493,10 @@ ledgerDbPrefix ::
   -> Maybe (LedgerDB l)
 ledgerDbPrefix pt db
     | pt == (castPoint $ getTip (ledgerDbAnchor db))
-    = Just $ ledgerDbWithAnchor undefined -- (ledgerDbAnchor db) TODO: had to comment this because
-                                          -- now ledgerDbAnchor returns only a
-                                          -- @l EmptyMK@. It is unclear if we
-                                          -- will have to initialize with
-                                          -- @EmptyMK@ or @ValuesMK@. This will
-                                          -- be resolved soon.
+    = let old = Empty . AS.anchor . ledgerDbCheckpoints $ db
+          new = initialDbChangelogWithEmptyState undefined undefined
+      in
+        Just . fst $ combineLedgerDBs (runDual db) old new
     | otherwise
     =  do
         checkpoints' <- AS.rollback
@@ -597,7 +506,7 @@ ledgerDbPrefix pt db
 
         return $ LedgerDB
                   { ledgerDbCheckpoints = checkpoints'
-                  , ledgerDbChangelog   = dbChangelogRollBack pt $ ledgerDbChangelog db
+                  , ledgerDbChangelog   = dbChangelogRollBack (pointSlot pt) $ ledgerDbChangelog db
                   , runDual = runDual db
                   }
 
@@ -629,11 +538,18 @@ ledgerDbPrune (SecurityParam k) db = db {
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
 {-# INLINE ledgerDbPrune #-}
 
+-- | Flush the @DbChangelog@ using the functions provided by the
+-- @OnDiskLedgerStDb@ interface.
+ledgerDbFlush :: Monad m => OnDiskLedgerStDb m l blk -> RealPoint blk -> LedgerDB l -> m (LedgerDB l)
+ledgerDbFlush OnDiskLedgerStDb{..} pointToFlush db@LedgerDB{..} = do
+  ledgerDbChangelog' <- flushDb pointToFlush ledgerDbChangelog
+  return db { ledgerDbChangelog = ledgerDbChangelog' }
+
 {-------------------------------------------------------------------------------
   Internal updates
 -------------------------------------------------------------------------------}
 
--- | Push an updated ledger state
+-- | Push an updated ledger state to both databases
 pushLedgerState ::
      (IsLedger l, TickedTableStuff l)
   => SecurityParam
@@ -647,11 +563,108 @@ pushLedgerState secParam (currentOld', currentNew') db@LedgerDB{..}  =
                                                 ledgerDbChangelog
       }
 
-instance IsLedger l => HasSeqNo l where
-  stateSeqNo l =
-    case getTipSlot l of
-      Origin        -> SeqNo 0
-      At (SlotNo n) -> SeqNo (n + 1)
+-- | The old ledger DB is behind the new ledger DB.
+--
+-- Pushes blocks in the ImmutableDB up to the tip of the new ledger DB so that
+-- they end up being in sync.
+bringUpOldLedgerDB :: forall m blk l e.
+  ( Monad m
+  , ApplyBlock l blk
+  , Show e
+  , TickedTableStuff l
+  )
+  => Bool          -- ^ Whether to run both databases TODO: Still not implemented
+  -> LedgerDbCfg l -- ^ The LedgerDB configuration
+  -> NewLedgerDB l -- ^ The new-style database
+  -> ((blk -> (OldLedgerDB l, Word64) -> m (OldLedgerDB l, Word64))
+     -> ExceptT e m (OldLedgerDB l, Word64)) -- ^ The continuation. In particular this should be used
+                                             -- with @streamUpTo@ from
+                                             -- @Ouroboros.Consensus.Storage.LedgerDB.OnDisk.StreamAPI@
+  -> m (LedgerDB l, (Word64, Word64))
+bringUpOldLedgerDB runDual cfg ledgerDbChangelog cont = do
+    either
+      (error . ("invariant violation: invalid current chain:" <>) . show)
+      (\(ledgerDbCheckpoints, w) -> return (LedgerDB{..}, (w, 0)))
+    =<<
+      runExceptT (cont push)
+  where
+    push :: blk
+         ->   (OldLedgerDB l, Word64)
+         -> m (OldLedgerDB l, Word64)
+    push blk !(!db, !replayed) = do
+      let ls =   forgetLedgerStateTracking
+               $ tickThenReapply (ledgerDbCfg cfg) blk
+               $ either unCheckpoint unCheckpoint . AS.head
+               $ db
+
+          !db' = AS.anchorNewest (maxRollbacks $ ledgerDbCfgSecParam cfg) (db AS.:> Checkpoint ls)
+
+          !replayed' = replayed + 1
+
+      return (db', replayed')
+
+-- | The new ledger DB is behind the old ledger DB.
+--
+-- Pushes blocks in the ImmutableDB up to the tip of the old ledger DB so that
+-- they end up being in sync.
+bringUpNewLedgerDB :: forall m blk l e.
+  ( Show e
+  , Monad m
+  , InspectLedger blk
+  , TickedTableStuff l
+  , ApplyBlock l blk
+  )
+  => Bool                                         -- ^ Whether to run both databases TODO: Still not implemented
+  -> (RealPoint blk -> [LedgerEvent blk] -> m ()) -- ^ An action that logs replay events. Should be used with a @replayTracer@.
+  -> LedgerDbCfg l                                -- ^ The LedgerDB configuration
+  -> (LedgerCfg l -> TopLevelConfig blk)          -- ^ Get the top level configuration from the ledger configuration.
+  -> (l EmptyMK -> LedgerState blk EmptyMK)       -- ^ Get the underlying @LedgerState@ from @l@
+  -> OnDiskLedgerStDb m l blk                     -- ^ The backend handle
+  -> OldLedgerDB l                                -- ^ The old-style database
+  -> ((blk -> (NewLedgerDB l, Word64) -> m (NewLedgerDB l, Word64))
+     -> ExceptT e m (NewLedgerDB l, Word64))      -- ^ The continuation. In particular this should be used with
+                                                  -- @streamUpTo@ from
+                                                  -- @Ouroboros.Consensus.Storage.LedgerDB.OnDisk.StreamAPI@
+  -> m (LedgerDB l, (Word64, Word64))
+bringUpNewLedgerDB runDual tracer cfg getTopLevelConfig getLedgerState onDiskLedgerDbSt ledgerDbCheckpoints cont =
+    either
+      (error . ("invariant violation: invalid current chain:" <>) . show)
+      (\(ledgerDbChangelog, w) -> return (LedgerDB{..}, (0, w)))
+    =<<
+      runExceptT (cont push)
+  where
+    push :: blk
+         ->   (NewLedgerDB l, Word64)
+         -> m (NewLedgerDB l, Word64)
+    push blk !(db, replayed) = do
+      ls <- defaultReadKeySets (readKeySets onDiskLedgerDbSt) (withBlockReadSets blk db $ \lh -> return $ tickThenReapply (ledgerDbCfg cfg) blk lh)
+      db'' <- ( if replayed `mod` 2160 == 0
+                then flushDb onDiskLedgerDbSt undefined
+                else return)
+              $ extendDbChangelog (stateSeqNo ls) (trackingTablesToDiffs ls) db
+        -- TODO: here initStartingWith could and should probably flush!
+        --
+        -- If we're replaying from genesis (or simply replaying a very
+        -- large number of blocks) we will need to flush from time to
+        -- time inside this function.
+        --
+        -- Note that at the moment no LedgerDB snapshots are taken by
+        -- this function.
+        --
+        -- Note that whatever restore point we take here, it will
+        -- belong to the immutable part of the chain. So the restore
+        -- point will not lie ahead of the immutable DB tip.
+      let replayed' :: Word64
+          !replayed' = replayed + 1
+
+          events :: [LedgerEvent blk]
+          events = inspectLedger
+                       (getTopLevelConfig (ledgerDbCfg cfg))
+                       (getLedgerState (seqLast . dbChangelogStates $ db))
+                       (getLedgerState (seqLast . dbChangelogStates $ db''))
+
+      tracer (blockRealPoint blk) events
+      return (db'', replayed')
 
 {-------------------------------------------------------------------------------
   Internal: rolling back
@@ -665,7 +678,7 @@ rollback n db@LedgerDB{..}
     | n <= ledgerDbMaxRollback db
     = Just db {
           ledgerDbCheckpoints = AS.dropNewest (fromIntegral n) ledgerDbCheckpoints,
-          ledgerDbChangelog = undefined
+          ledgerDbChangelog = dbChangelogRollBack (undefined n :: WithOrigin SlotNo) ledgerDbChangelog
         }
     | otherwise
     = Nothing
@@ -741,21 +754,10 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
 data LedgerDbCfg l = LedgerDbCfg {
       ledgerDbCfgSecParam :: !SecurityParam
     , ledgerDbCfg         :: !(LedgerCfg l)
-    -- ledgerDbFlushingPolicy :: FP
-    --
-    -- or
-    --
-    --
-    -- ledgerDbTryFlush  :: dbhandle -> DbChangelog l -> m ()
     }
   deriving (Generic)
 
 deriving instance NoThunks (LedgerCfg l) => NoThunks (LedgerDbCfg l)
-
-type instance HeaderHash (LedgerDB l) = HeaderHash l
-
-instance IsLedger l => GetTip (LedgerDB l) where
-  getTip = castPoint . getTip . ledgerDbCurrent
 
 {-------------------------------------------------------------------------------
   Support for testing
@@ -781,54 +783,3 @@ ledgerDbSwitch' cfg n bs db =
     case runIdentity $ ledgerDbSwitch cfg n (const $ pure ()) (map pureBlock bs) db of
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
-
-{-------------------------------------------------------------------------------
-  Serialisation
--------------------------------------------------------------------------------}
-
--- | Version 1: uses versioning ('Ouroboros.Consensus.Util.Versioned') and only
--- encodes the ledger state @l@.
-snapshotEncodingVersion1 :: VersionNumber
-snapshotEncodingVersion1 = 1
-
--- | Encoder to be used in combination with 'decodeSnapshotBackwardsCompatible'.
-encodeSnapshot :: (l -> Encoding) -> l -> Encoding
-encodeSnapshot encodeLedger l =
-    encodeVersion snapshotEncodingVersion1 (encodeLedger l)
-
--- | To remain backwards compatible with existing snapshots stored on disk, we
--- must accept the old format as well as the new format.
---
--- The old format:
--- * The tip: @WithOrigin (RealPoint blk)@
--- * The chain length: @Word64@
--- * The ledger state: @l@
---
--- The new format is described by 'snapshotEncodingVersion1'.
---
--- This decoder will accept and ignore them. The encoder ('encodeSnapshot') will
--- no longer encode them.
-decodeSnapshotBackwardsCompatible ::
-     forall l blk.
-     Proxy blk
-  -> (forall s. Decoder s l)
-  -> (forall s. Decoder s (HeaderHash blk))
-  -> forall s. Decoder s l
-decodeSnapshotBackwardsCompatible _ decodeLedger decodeHash =
-    decodeVersionWithHook
-      decodeOldFormat
-      [(snapshotEncodingVersion1, Decode decodeVersion1)]
-  where
-    decodeVersion1 :: forall s. Decoder s l
-    decodeVersion1 = decodeLedger
-
-    decodeOldFormat :: Maybe Int -> forall s. Decoder s l
-    decodeOldFormat (Just 3) = do
-        _ <- withOriginRealPointToPoint <$>
-               decodeWithOrigin (decodeRealPoint @blk decodeHash)
-        _ <- Dec.decodeWord64
-        decodeLedger
-    decodeOldFormat mbListLen =
-        fail $
-          "decodeSnapshotBackwardsCompatible: invalid start " <>
-          show mbListLen

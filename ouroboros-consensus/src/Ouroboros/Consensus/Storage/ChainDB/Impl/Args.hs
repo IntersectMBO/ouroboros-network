@@ -35,6 +35,9 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (NewLedgerFS (..),
+                     OldLedgerFS (..))
+
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -184,8 +187,8 @@ fromChainDbArgs ChainDbArgs{..} = (
         }
     , LgrDB.LgrDbArgs {
           lgrTopLevelConfig   = cdbTopLevelConfig
-        , lgrHasFS            = cdbHasFSLgrDB
-        , lgrHasFSLedgerSt    = cbdHasFSLedgerState
+        , lgrOldHasFS         = OldLedgerFS cdbHasFSLgrDB
+        , lgrNewHasFS         = NewLedgerFS cbdHasFSLedgerState
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
@@ -213,13 +216,13 @@ toChainDbArgs ::
   -> ChainDbArgs                 f m blk
 toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
               VolatileDB.VolatileDbArgs {..}
-              LgrDB.LgrDbArgs {..}
+              LgrDB.LgrDbArgs {lgrOldHasFS = OldLedgerFS oldFS, lgrNewHasFS = NewLedgerFS newFS, ..}
               ChainDbSpecificArgs {..} = ChainDbArgs{
       -- HasFS instances
       cdbHasFSImmutableDB       = immHasFS
     , cdbHasFSVolatileDB        = volHasFS
-    , cdbHasFSLgrDB             = lgrHasFS
-    , cbdHasFSLedgerState       = lgrHasFSLedgerSt
+    , cdbHasFSLgrDB             = oldFS
+    , cbdHasFSLedgerState       = newFS
       -- Policy
     , cdbImmutableDbValidation  = immValidationPolicy
     , cdbVolatileDbValidation   = volValidationPolicy

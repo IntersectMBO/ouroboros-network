@@ -58,6 +58,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , mkLgrDB
   ) where
 
+import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (decode))
 import           Control.Monad.Trans.Class (lift)
@@ -68,8 +69,6 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import qualified Ouroboros.Network.AnchoredSeq as AS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -100,6 +99,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      OnDiskLedgerStDb (..), ReplayGoal, StreamAPI (..),
                      TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.UTxOHD as LedgerDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
@@ -127,20 +127,21 @@ data LgrDB m blk = LgrDB {
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
     , lgrOnDiskLedgerStDb :: !(LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk) blk)
-      -- ^
-      --
-      -- TODO: align the other fields.
+      -- ^ The UTxO DB backend handle.
     , lgrDbFlushLock      :: !FlushLock
+      -- ^ The flush lock that prevents concurrent read and write actions on the
+      -- UTxO DB backend handle.
     , resolveBlock        :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
       -- ^ Read a block from disk
     , cfg                 :: !(TopLevelConfig blk)
     , diskPolicy          :: !DiskPolicy
-    , hasFS               :: !(SomeHasFS m)
-    , newHasFS            :: !(SomeHasFS m)
+      -- ^ The disk policy dictating when to take snapshots of the in-memory data
+    , oldHasFS            :: !(LedgerDB.OldLedgerFS m)
+      -- ^ The filesystem containing old-style snapshots
+    , newHasFS            :: !(LedgerDB.NewLedgerFS m)
+      -- ^ The filesystem containing new-style snapshots
     , tracer              :: !(Tracer m (TraceEvent blk))
-
--- TODO    , backendHandle :: BackendHandle m
-
+      -- ^ A general tracer for the LedgerDB events
     } deriving (Generic)
 
 deriving instance (IOLike m, LedgerSupportsProtocol blk)
@@ -167,8 +168,8 @@ type LgrDbSerialiseConstraints blk =
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: DiskPolicy
     , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
-    , lgrHasFS          :: SomeHasFS m
-    , lgrHasFSLedgerSt  :: SomeHasFS m
+    , lgrOldHasFS       :: LedgerDB.OldLedgerFS m
+    , lgrNewHasFS       :: LedgerDB.NewLedgerFS m
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (TraceEvent blk)
@@ -183,11 +184,11 @@ defaultArgs ::
   -- we use in this function.
   -> DiskPolicy
   -> LgrDbArgs Defaults m blk
-defaultArgs lgrHasFS lgrHasFSLedgerSt diskPolicy = LgrDbArgs {
+defaultArgs oldHasFS newHasFS diskPolicy = LgrDbArgs {
       lgrDiskPolicy     = diskPolicy
     , lgrGenesis        = NoDefault
-    , lgrHasFS
-    , lgrHasFSLedgerSt
+    , lgrOldHasFS       = LedgerDB.OldLedgerFS oldHasFS
+    , lgrNewHasFS       = LedgerDB.NewLedgerFS newHasFS
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
@@ -225,8 +226,15 @@ openDB :: forall m blk.
        -- TODO: should we replace this type with @ResolveBlock blk m@?
        -> Bool
        -> m (LgrDB m blk, (Word64, Word64))
-openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock _runDual = do
-    createDirectoryIfMissing hasFS True (mkFsPath [])
+openDB args@LgrDbArgs { lgrOldHasFS = (LedgerDB.OldLedgerFS (SomeHasFS oldHasFS))
+                      , lgrNewHasFS = (LedgerDB.NewLedgerFS (SomeHasFS newHasFS))
+                      , .. }
+       replayTracer
+       immutableDB
+       getBlock
+       _runDual = do
+    createDirectoryIfMissing oldHasFS True (mkFsPath [])
+    createDirectoryIfMissing newHasFS True (mkFsPath [])
     (db, replayed, onDiskLedgerStDb) <- initFromDisk args replayTracer immutableDB
     -- When initializing the ledger DB from disk we:
     --
@@ -254,16 +262,16 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
                          -- not be a problem (eg using MVars or TVars).
     return (
         LgrDB {
-            varDB          = varDB
-          , varPrevApplied = varPrevApplied
-          , lgrOnDiskLedgerStDb = onDiskLedgerStDb -- TODO: align the other fields.
-          , lgrDbFlushLock = flock
-          , resolveBlock   = getBlock
-          , cfg            = lgrTopLevelConfig
-          , diskPolicy     = lgrDiskPolicy
-          , hasFS          = lgrHasFS
-          , newHasFS       = lgrHasFSLedgerSt
-          , tracer         = lgrTracer
+            varDB               = varDB
+          , varPrevApplied      = varPrevApplied
+          , lgrOnDiskLedgerStDb = onDiskLedgerStDb
+          , lgrDbFlushLock      = flock
+          , resolveBlock        = getBlock
+          , cfg                 = lgrTopLevelConfig
+          , diskPolicy          = lgrDiskPolicy
+          , oldHasFS            = lgrOldHasFS args
+          , newHasFS            = lgrNewHasFS args
+          , tracer              = lgrTracer
           }
       , replayed
       )
@@ -280,26 +288,29 @@ initFromDisk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> ImmutableDB m blk
   -> m (LedgerDB' blk, (Word64, Word64), OnDiskLedgerStDb m (ExtLedgerState blk) blk)
-initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
-    onDiskLedgerStDb <- LedgerDB.mkOnDiskLedgerStDb lgrHasFSLedgerSt
-    -- TODO: is it correct that we pick a instance of the 'OnDiskLedgerStDb' here?
-    (_initLog, db, replayed) <-
-      LedgerDB.initLedgerDB
-        replayTracer
-        lgrTracer
-        hasFS
-        decodeExtLedgerState'
-        lgrHasFSLedgerSt
-        onDiskLedgerStDb
-        decodeExtLedgerState'
-        decode
-        (configLedgerDb lgrTopLevelConfig)
-        lgrGenesis
-        (streamAPI immutableDB)
-        True
-    return (db, replayed, onDiskLedgerStDb)
+initFromDisk LgrDbArgs{ lgrNewHasFS = lgrNewHasFS@(LedgerDB.NewLedgerFS lgrNewFS)
+                      , ..}
+             replayTracer
+             immutableDB =
+    wrapFailure (Proxy @blk) $ do
+      onDiskLedgerStDb <- LedgerDB.mkOnDiskLedgerStDb lgrNewFS
+      -- TODO: is it correct that we pick a instance of the 'OnDiskLedgerStDb' here?
+      (_initLog, db, replayed) <-
+        LedgerDB.initLedgerDB
+          replayTracer
+          lgrTracer
+          lgrOldHasFS
+          decodeExtLedgerState'
+          lgrNewHasFS
+          onDiskLedgerStDb
+          decodeExtLedgerState'
+          decode
+          (configLedgerDb lgrTopLevelConfig)
+          lgrGenesis
+          (streamAPI immutableDB)
+          True
+      return (db, replayed, onDiskLedgerStDb)
   where
-    LgrDbArgs { lgrHasFS = hasFS, .. } = args
 
     ccfg = configCodec lgrTopLevelConfig
 
@@ -308,7 +319,6 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
-
 
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB' blk)
@@ -323,8 +333,8 @@ mkLgrDB varDB varPrevApplied lgrOnDiskLedgerStDb lgrDbFlushLock resolveBlock arg
     LgrDbArgs {
         lgrTopLevelConfig = cfg
       , lgrDiskPolicy     = diskPolicy
-      , lgrHasFS          = hasFS
-      , lgrHasFSLedgerSt  = newHasFS
+      , lgrOldHasFS       = oldHasFS
+      , lgrNewHasFS       = newHasFS
       , lgrTracer         = tracer
       } = args
 
@@ -355,49 +365,49 @@ takeSnapshot ::
   => LgrDB m blk
   -> Bool
   -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } isNew = wrapFailure (Proxy @blk) $ do
-    if isNew
-      then
-      atomically (getCurrent lgrDB) >>=
-        LedgerDB.takeSnapshot
-          tracer
-          hasFS
-          (encodeExtLedgerState
-                              (encodeDisk ccfg)
-                              (encodeDisk ccfg)
-                              (encodeDisk ccfg))
-        . LedgerDB.ledgerDbAnchor
-      else
-      atomically (getCurrent lgrDB) >>=
-        LedgerDB.takeSnapshot
-          tracer
-          hasFS
-          (encodeExtLedgerState
-                              (encodeDisk ccfg)
-                              (encodeDisk ccfg)
-                              (encodeDisk ccfg))
-        . LedgerDB.unCheckpoint
-        . AS.anchor
-        . LedgerDB.ledgerDbCheckpoints
+takeSnapshot lgrDB@LgrDB{ cfg
+                        , tracer
+                        , oldHasFS = LedgerDB.OldLedgerFS oldHasFS
+                        , newHasFS = LedgerDB.NewLedgerFS newHasFS }
+             isNew =
+    wrapFailure (Proxy @blk) $ do
+     cur <- atomically (getCurrent lgrDB)
+     LedgerDB.takeSnapshot
+        tracer
+        (if isNew then newHasFS else oldHasFS)
+        encodeExtLedgerState'
+        encodeExtLedgerState'
+        cur
+        isNew
   where
     ccfg = configCodec cfg
+
+    encodeExtLedgerState' :: forall mk. EncodeDisk blk (LedgerState blk mk) => ExtLedgerState blk mk -> Encoding
+    encodeExtLedgerState' = encodeExtLedgerState
+                              (encodeDisk ccfg)
+                              (encodeDisk ccfg)
+                              (encodeDisk ccfg)
 
 trimSnapshots ::
      forall m blk. (MonadCatch m, HasHeader blk)
   => LgrDB m blk
   -> m [DiskSnapshot]
-trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
-    LedgerDB.trimSnapshots tracer hasFS diskPolicy
+trimSnapshots LgrDB { diskPolicy, tracer, oldHasFS } = wrapFailure (Proxy @blk) $
+    LedgerDB.trimOldSnapshots tracer oldHasFS diskPolicy
 
-trimNewSnapshots :: MonadCatch m => LgrDB m blk -> DiskSnapshot -> m ()
-trimNewSnapshots LgrDB {tracer , newHasFS } s = do
-    LedgerDB.trimNewSnapshots s tracer newHasFS
+trimNewSnapshots
+  :: forall m blk. (MonadCatch m, HasHeader blk)
+  => LgrDB m blk
+  -> DiskSnapshot
+  -> m [DiskSnapshot]
+trimNewSnapshots LgrDB {tracer , newHasFS } s = wrapFailure (Proxy @blk) $
+    LedgerDB.trimNewSnapshots tracer newHasFS s
 
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy = diskPolicy
 
-flush :: IOLike m => LgrDB m blk -> m ()
-flush lgrDB@LgrDB { varDB, lgrOnDiskLedgerStDb } =
+flush :: IOLike m => LgrDB m blk -> RealPoint blk -> m ()
+flush lgrDB@LgrDB { varDB, lgrOnDiskLedgerStDb } pointToFlush =
   -- TODO: why putting the lock inside LgrDB and not in the CDB? I rather couple
   -- the ledger DB with the flush lock that guards it. I don't feel comfortable
   -- with the possiblility of having a lock as a parameter here that could come
@@ -405,7 +415,7 @@ flush lgrDB@LgrDB { varDB, lgrOnDiskLedgerStDb } =
   -- extra argument.
   withWriteLock lgrDB $ do
     db  <- readTVarIO varDB
-    db' <- LedgerDB.ledgerDbFlush (flushDb lgrOnDiskLedgerStDb) db
+    db' <- LedgerDB.ledgerDbFlush lgrOnDiskLedgerStDb pointToFlush db
     atomically $ writeTVar varDB db'
 
 {-------------------------------------------------------------------------------

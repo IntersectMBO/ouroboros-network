@@ -326,8 +326,9 @@ updateLedgerNewSnapshots CDB{..} = do
   mSnapshot <- LgrDB.takeSnapshot cdbLgrDB True
   case mSnapshot of
     Nothing -> return ()
-    Just (s, _) -> do
-      LgrDB.trimNewSnapshots cdbLgrDB s
+    Just (s, p) -> do
+      LgrDB.flush cdbLgrDB p
+      void $ LgrDB.trimNewSnapshots cdbLgrDB s
 
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
