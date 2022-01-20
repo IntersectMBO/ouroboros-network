@@ -24,6 +24,11 @@ Flag ipv6
   -- Default to False since travis lacks IPv6 support
   Default: False
 
+Flag tracetcpinfo
+  Description: Enable costly Linux only tracing of the kernel's tcpinfo
+  Manual: True
+  Default: False
+
 common demo-deps
   default-language:    Haskell2010
   ghc-options:         -threaded
@@ -67,6 +72,9 @@ library
                        -Wno-unticked-promoted-constructors
   if flag(asserts)
      ghc-options:      -fno-ignore-asserts
+
+  if flag(tracetcpinfo)
+    cpp-options:       -DMUX_TRACE_TCPINFO
   hs-source-dirs:      src
   exposed-modules:     Network.Mux
                        Network.Mux.Channel
@@ -87,6 +95,10 @@ library
                        Network.Mux.DeltaQ.TraceTransformer
                        Network.Mux.DeltaQ.TraceTypes
                        Control.Concurrent.JobPool
+
+  if os(linux)
+    other-modules:     Network.Mux.TCPInfo
+
   if os(windows)
     exposed-modules:
                        Network.Mux.Bearer.NamedPipe
