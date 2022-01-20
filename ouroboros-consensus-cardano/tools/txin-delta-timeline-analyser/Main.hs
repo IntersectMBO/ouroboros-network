@@ -614,8 +614,8 @@ rocksDbDirName = "utxo-rocksdb"
 
 rocksDbConfig :: RocksDB.Config
 rocksDbConfig = RocksDB.Config {
-    RocksDB.createIfMissing = True
-  , RocksDB.errorIfExists   = True
+    RocksDB.createIfMissing = False
+  , RocksDB.errorIfExists   = False
   , RocksDB.paranoidChecks  = False   -- TODO ?
   , RocksDB.maxFiles        = Nothing
   , RocksDB.prefixLength    = Nothing
@@ -627,10 +627,15 @@ rocksDbSim =
     \rows -> do
       mono0 <- getMonotonicTimeNSec
       RocksDB.withDB rocksDbDirName rocksDbConfig $ \db -> do
-        RocksDB.put db seqNoKey (ser (0 :: Word64))
-        flip mapM_ genesisUTxO $ \txin ->
-          RocksDB.put db (ser (LmdbBox txin)) (ser (LmdbBox (TxOut 86)))
-        _n <- mapM_ (each (RocksDbSimEnv db) mono0) rows
+        seqNo <- RocksDB.get db seqNoKey >>= \case
+          Nothing -> throw $ RocksDbMissingSeqNo maxBound
+          Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
+            Right seqNo -> pure seqNo
+            Left err    -> throw $ RocksDbDeserialiseSeqNoFailed maxBound err
+        _n <-
+            mapM_ (each (RocksDbSimEnv db) mono0)
+          $ dropWhile (\row -> rSlotNumber row < seqNo)
+          $ rows
         pure ()
   where
     ser :: S.Serialise a => a -> BS.ByteString
@@ -647,15 +652,15 @@ rocksDbSim =
       let blkConsumed = rcConsumedOther (rCache row)
           blkCreated  = rcCreatedOther  (rCache row)
 
-      sizeRead <- if Set.null blkConsumed then pure 0 else RocksDB.withSnapshot db $ \snap -> do
-        seqNo <- RocksDB.get snap seqNoKey >>= \case
+      sizeRead <- if Set.null blkConsumed then pure 0 else do
+        seqNo <- RocksDB.get db seqNoKey >>= \case
           Nothing -> throw $ RocksDbMissingSeqNo (rBlockNumber row)
           Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
             Right seqNo -> pure seqNo
             Left err    -> throw $ RocksDbDeserialiseSeqNoFailed (rBlockNumber row) err
 
         fmap sum $ flip mapM (Set.toList blkConsumed) $ \txin -> do
-          RocksDB.get snap (ser (LmdbBox txin)) >>= \case
+          RocksDB.get db (ser (LmdbBox txin)) >>= \case
             Nothing -> throw $ RocksDbMissingTxIn (rBlockNumber row) seqNo txin
             Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
               Right (LmdbBox (TxOut size)) -> pure size
