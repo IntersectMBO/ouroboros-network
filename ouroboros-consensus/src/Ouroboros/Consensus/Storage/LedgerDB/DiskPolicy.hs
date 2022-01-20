@@ -13,12 +13,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
   , defaultDiskPolicy
   ) where
 
+import           Control.Monad.Class.MonadTime
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Word
 import           GHC.Generics
 import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
-
-import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Consensus.Config.SecurityParam
 
@@ -39,7 +38,7 @@ data SnapshotInterval =
 -- snapshots that are guaranteed valid). The on-disk policy determines how often
 -- we write to disk and how many checkpoints we keep.
 data DiskPolicy = DiskPolicy {
-      -- | How many snapshots do we want to keep on disk?
+      -- | How many old-style snapshots do we want to keep on disk?
       --
       -- A higher number of on-disk snapshots is primarily a safe-guard against
       -- disk corruption: it trades disk space for reliability.
@@ -57,9 +56,9 @@ data DiskPolicy = DiskPolicy {
       --        the next snapshot, we delete the oldest one, leaving the middle
       --        one available in case of truncation of the write. This is
       --        probably a sane value in most circumstances.
-      onDiskNumSnapshots       :: Word
+      onDiskNumOldSnapshots       :: Word
 
-      -- | Should we write a snapshot of the ledger state to disk?
+      -- | Should we write an old-style snapshot of the ledger state to disk?
       --
       -- This function is passed two bits of information:
       --
@@ -77,7 +76,31 @@ data DiskPolicy = DiskPolicy {
       --   blocks had to be replayed.
       --
       -- See also 'defaultDiskPolicy'
-    , onDiskShouldTakeSnapshot :: TimeSinceLast DiffTime -> Word64 -> Bool
+    , onDiskShouldTakeOldSnapshot :: TimeSinceLast DiffTime -> Word64 -> Bool
+
+      -- | Should we write a new-style snapshot of the ledger state to disk?
+      --
+      -- This function is passed two bits of information:
+      --
+      -- * The time since the last snapshot, or 'NoSnapshotTakenYet' if none was
+      --   taken yet. Note that 'NoSnapshotTakenYet' merely means no snapshot
+      --   had been taking yet since the node was started; it does not
+      --   necessarily mean that none exist on disk.
+      --
+      -- * The distance in terms of blocks applied to the /oldest/ ledger
+      --   snapshot in memory. During normal operation, this is the number of
+      --   blocks written to the ImmutableDB since the last snapshot. On
+      --   startup, it is computed by counting how many immutable blocks we had
+      --   to reapply to get to the chain tip. This is useful, as it allows the
+      --   policy to decide to take a snapshot /on node startup/ if a lot of
+      --   blocks had to be replayed.
+      --
+      -- Note that in the new-style LedgerDB, there will only be one snapshot
+      -- taken as it has to be in sync with the UTxO backend, so there is no
+      -- concept of "how many snapshots should we keep on disk".
+      --
+      -- See also 'defaultDiskPolicy'
+    , onDiskShouldTakeNewSnapshot :: TimeSinceLast DiffTime -> Word64 -> Bool
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
@@ -89,14 +112,14 @@ data TimeSinceLast time = NoSnapshotTakenYet | TimeSinceLast time
 defaultDiskPolicy :: SecurityParam -> SnapshotInterval -> DiskPolicy
 defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
   where
-    onDiskNumSnapshots :: Word
-    onDiskNumSnapshots = 2
+    onDiskNumOldSnapshots :: Word
+    onDiskNumOldSnapshots = 2
 
-    onDiskShouldTakeSnapshot ::
+    onDiskShouldTakeOldSnapshot ::
          TimeSinceLast DiffTime
       -> Word64
       -> Bool
-    onDiskShouldTakeSnapshot NoSnapshotTakenYet blocksSinceLast =
+    onDiskShouldTakeOldSnapshot NoSnapshotTakenYet blocksSinceLast =
       -- If users never leave their wallet running for long, this would mean
       -- that under some circumstances we would never take a snapshot
       -- So, on startup (when the 'time since the last snapshot' is `Nothing`),
@@ -107,7 +130,7 @@ defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
       -- that is not a big deal.
       blocksSinceLast >= k
 
-    onDiskShouldTakeSnapshot (TimeSinceLast timeSinceLast) blocksSinceLast =
+    onDiskShouldTakeOldSnapshot (TimeSinceLast timeSinceLast) blocksSinceLast =
          timeSinceLast >= snapshotInterval
       || substantialAmountOfBlocksWereProcessed blocksSinceLast timeSinceLast
 
@@ -129,4 +152,12 @@ defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
     -- defaults to 72 minutes.
     snapshotInterval = case requestedInterval of
       RequestedSnapshotInterval value -> value
-      DefaultSnapshotInterval           -> secondsToDiffTime $ fromIntegral $ k * 2
+      DefaultSnapshotInterval         -> secondsToDiffTime $ fromIntegral $ k * 2
+
+    onDiskShouldTakeNewSnapshot timeSinceLast blocksSinceLast =
+      let minTimeSinceLast = 3 * secondsToDiffTime 60
+          minBlocksBeforeSnapshot = 2160 * 2
+      in minBlocksBeforeSnapshot < blocksSinceLast ||
+         case timeSinceLast of
+           NoSnapshotTakenYet -> True
+           TimeSinceLast t    -> minTimeSinceLast < t

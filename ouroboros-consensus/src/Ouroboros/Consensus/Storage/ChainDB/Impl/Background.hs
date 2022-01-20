@@ -20,7 +20,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Background (
     -- * Copying blocks from the VolatileDB to the ImmutableDB
   , copyAndSnapshotRunner
   , copyToImmutableDB
-  , updateLedgerSnapshots
+  , updateLedgerOldSnapshots
     -- * Executing garbage collection
   , garbageCollect
     -- * Scheduling garbage collections
@@ -91,7 +91,7 @@ launchBgTasks
      , LgrDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
-  -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
+  -> (Word64, Word64) -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
 launchBgTasks cdb@CDB{..} replayed = do
     !addBlockThread <- launch "ChainDB.addBlockRunner" $
@@ -244,21 +244,27 @@ copyAndSnapshotRunner
      )
   => ChainDbEnv m blk
   -> GcSchedule m
-  -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
+  -> (Word64, Word64) -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m Void
-copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
-    if onDiskShouldTakeSnapshot NoSnapshotTakenYet replayed then do
-      updateLedgerSnapshots cdb
+copyAndSnapshotRunner cdb@CDB{..} gcSchedule (replayedOld, replayedNew) =
+    if onDiskShouldTakeOldSnapshot NoSnapshotTakenYet replayedOld
+    then do
+      -- When we start the old-style snapshot logic, we will take an snapshot at
+      -- the current anchor of the LedgerDB if enough blocks have been
+      -- processed. As we can assume that the initialization logic will take
+      -- care of the new snapshotting mechanism, we can forget about that one
+      -- for now.
+      updateLedgerOldSnapshots cdb
       now <- getMonotonicTime
-      loop (TimeSinceLast now) 0
+      loop (TimeSinceLast now) (0, replayedNew)
     else
-      loop NoSnapshotTakenYet replayed
+      loop NoSnapshotTakenYet (replayedOld, replayedNew)
   where
     SecurityParam k      = configSecurityParam cdbTopLevelConfig
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
 
-    loop :: TimeSinceLast Time -> Word64 -> m Void
-    loop mPrevSnapshot distance = do
+    loop :: TimeSinceLast Time -> (Word64, Word64) -> m Void
+    loop mPrevSnapshot (distanceOld, distanceNew) = do
       -- Wait for the chain to grow larger than @k@
       numToWrite <- atomically $ do
         curChain <- readTVar cdbChain
@@ -275,14 +281,26 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 --      TODO: giveTheLedgerDbAnOpportunityToFlushNow (cfg?) cdbLgrDB immSlotno
 
       now <- getMonotonicTime
-      let distance' = distance + numToWrite
+      let distanceOld' = distanceOld + numToWrite
+          distanceNew' = distanceNew + numToWrite
           elapsed   = (\prev -> now `diffTime` prev) <$> mPrevSnapshot
 
-      if onDiskShouldTakeSnapshot elapsed distance' then do
-        updateLedgerSnapshots cdb
-        loop (TimeSinceLast now) 0
-      else
-        loop mPrevSnapshot distance'
+      (prevSnapshot, distanceOld'', distanceNew'') <- do
+        (p,o) <- if (onDiskShouldTakeOldSnapshot elapsed distanceOld')
+                 then do
+                   updateLedgerOldSnapshots cdb
+                   return (TimeSinceLast now, 0)
+                 else
+                   return (mPrevSnapshot, distanceOld')
+        n <- if onDiskShouldTakeNewSnapshot elapsed distanceNew'
+             then do
+               updateLedgerNewSnapshots cdb
+               return 0
+             else
+               return distanceNew'
+        return (p,o,n)
+
+      loop prevSnapshot (distanceOld'', distanceNew'')
 
     scheduleGC' :: WithOrigin SlotNo -> m ()
     scheduleGC' Origin             = return ()
@@ -296,24 +314,32 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
             }
           gcSchedule
 
+-- | As the new LedgerDB can only have one snapshot at a time,
+updateLedgerNewSnapshots ::
+     ( IOLike m
+     , LgrDbSerialiseConstraints blk
+     , HasHeader blk
+     , IsLedger (LedgerState blk)
+     )
+  => ChainDbEnv m blk -> m ()
+updateLedgerNewSnapshots CDB{..} = do
+  mSnapshot <- LgrDB.takeSnapshot cdbLgrDB True
+  case mSnapshot of
+    Nothing -> return ()
+    Just (s, _) -> do
+      LgrDB.trimNewSnapshots cdbLgrDB s
+
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
-updateLedgerSnapshots ::
+updateLedgerOldSnapshots ::
     ( IOLike m
      , LgrDbSerialiseConstraints blk
      , HasHeader blk
      , IsLedger (LedgerState blk)
      )
   => ChainDbEnv m blk -> m ()
-updateLedgerSnapshots CDB{..} = do
-    -- TODO: if we couple snapshotting and flushing we need to make sure these
-    -- calls are not interleaved.
-    LgrDB.flush cdbLgrDB
-    -- TODO: Here we should create a restore point.
-    --
-    -- We must make sure that the SeqNo passed to 'createRestorePoint' is
-    -- the 'SeqNo' of the last flushed state.
-    void $ LgrDB.takeSnapshot  cdbLgrDB
+updateLedgerOldSnapshots CDB{..} = do
+    void $ LgrDB.takeSnapshot  cdbLgrDB False
     void $ LgrDB.trimSnapshots cdbLgrDB
 
 {-------------------------------------------------------------------------------

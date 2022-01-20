@@ -33,6 +33,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Write to disk
   , takeSnapshot
   , trimSnapshots
+  , trimNewSnapshots
   , writeSnapshot
     -- * Low-level API (primarily exposed for testing)
   , deleteSnapshot
@@ -51,8 +52,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
+import           Control.Exception
 import           Control.Monad.Except
 import           Control.Tracer
+import           Data.Bifunctor (bimap)
 import qualified Data.List as List
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Ord (Down (..))
@@ -64,9 +67,11 @@ import           GHC.Stack
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 import           Text.Read (readMaybe)
 
+import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Point (Point))
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
@@ -81,11 +86,6 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Network.AnchoredSeq (AnchoredSeq (Empty))
-import           Ouroboros.Network.Point (WithOrigin (At))
-
-import           Control.Exception
-import           Ouroboros.Consensus.Config.SecurityParam
-import qualified Ouroboros.Network.AnchoredSeq as AS
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -109,42 +109,43 @@ data NextBlock blk = NoMoreBlocks | NextBlock blk
 --
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
 data StreamAPI m blk = StreamAPI {
-      -- | Start streaming after the specified block up to the end of the
-      -- immutable database.
-        streamAfter :: forall a. HasCallStack
-          => Point blk
-          -- Reference to the block corresponding to the snapshot we found
-          -- (or 'Point Origin' if we didn't find any)
+  -- | Start streaming after the specified block up to the end of the
+  -- immutable database.
+  streamAfter :: forall a. HasCallStack
+              => Point blk
+              -- Reference to the block corresponding to the snapshot we found
+              -- (or 'Point Origin' if we didn't find any)
 
-          -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
-          -- Get the next block (by value)
-          --
-          -- Should be @Left pt@ if the snapshot we found is more recent than the
-          -- tip of the immutable DB. Since we only store snapshots to disk for
-          -- blocks in the immutable DB, this can only happen if the immutable DB
-          -- got truncated due to disk corruption. The returned @pt@ is a
-          -- 'RealPoint', not a 'Point', since it must always be possible to
-          -- stream after genesis.
-          -> m a
+              -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+              -- Get the next block (by value)
+              --
+              -- Should be @Left pt@ if the snapshot we found is more recent
+              -- than the tip of the immutable DB. Since we only store snapshots
+              -- to disk for blocks in the immutable DB, this can only happen if
+              -- the immutable DB got truncated due to disk corruption. The
+              -- returned @pt@ is a 'RealPoint', not a 'Point', since it must
+              -- always be possible to stream after genesis.
+              -> m a
 
-      , -- | Start streaming after the given block up to the second given block.
-        streamAfterUpTo :: forall a. HasCallStack
-          => Point blk
-          -- Reference to the block corresponding to the snapshot we found (or
-          -- 'Point Origin' if we didn't find any)
-          -> Point blk
-          -- Reference to the block we want to reach.
-          -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
-          -- Get the next block (by value)
-          --
-          -- Should be @Left pt@ if the snapshot we found is more recent than the
-          -- tip of the immutable DB. Since we only store snapshots to disk for
-          -- blocks in the immutable DB, this can only happen if the immutable DB
-          -- got truncated due to disk corruption. The returned @pt@ is a
-          -- 'RealPoint', not a 'Point', since it must always be possible to
-          -- stream after genesis.
-          -> m a
-    }
+  , -- | Start streaming after the given block up to the second given block.
+    streamAfterUpTo :: forall a. HasCallStack
+                    => Point blk
+                    -- Reference to the block corresponding to the snapshot we found (or
+                    -- 'Point Origin' if we didn't find any)
+                    -> Point blk
+                    -- Reference to the block we want to reach.
+                    -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+                    -- Get the next block (by value)
+                    --
+                    -- Should be @Left pt@ if the snapshot we found is more
+                    -- recent than the tip of the immutable DB. Since we only
+                    -- store snapshots to disk for blocks in the immutable DB,
+                    -- this can only happen if the immutable DB got truncated
+                    -- due to disk corruption. The returned @pt@ is a
+                    -- 'RealPoint', not a 'Point', since it must always be
+                    -- possible to stream after genesis.
+                    -> m a
+  }
 
 -- | Stream all blocks
 streamAll ::
@@ -241,7 +242,7 @@ initLedgerDB ::
   -> m (ExtLedgerState blk ValuesMK)                     -- ^ Genesis ledger state
   -> StreamAPI m blk                                     -- ^ An streaming API for the immutable database
   -> Bool                                                -- ^ Whether to run both databases TODO: This is not yet implemented
-  -> m ((InitLog blk, InitLog blk), LedgerDB' blk, Word64)
+  -> m ((InitLog blk, InitLog blk), LedgerDB' blk, (Word64, Word64))
 initLedgerDB replayTracer
              tracer
              hasFS
@@ -276,7 +277,7 @@ initLedgerDB replayTracer
     ml <- runExceptT $ initStartingWith replayTracer' cfg onDiskLedgerDbSt streamAPI lgrDB
     case ml of
       Left err -> error $  "invariant violation: invalid current chain:" <> show err
-      Right (ledgerDB, w64) -> return ((initLog, initLog'), ledgerDB, w + w64)
+      Right (ledgerDB, w64) -> return ((initLog, initLog'), ledgerDB, bimap (+ w64) (+ w64) w)
 
 {-------------------------------------------------------------------------------
  Load snapshots from the disk
@@ -449,11 +450,11 @@ bringUpOldLedgerDB :: forall m blk. (Monad m, LedgerSupportsProtocol blk)
                    -> NewLedgerDB (ExtLedgerState blk) -- ^ The new-style database
                    -> Point blk                        -- ^ At which point the old-style database is
                    -> Point blk                        -- ^ At which point the new-style database is
-                   -> m (LedgerDB' blk, Word64)
+                   -> m (LedgerDB' blk, (Word64, Word64))
 bringUpOldLedgerDB runDual cfg streamAPI old ledgerDbChangelog from to = do
     either
       (error . ("invariant violation: invalid current chain:" <>) . show)
-      (\(ledgerDbCheckpoints, w) -> return (LedgerDB{..}, w))
+      (\(ledgerDbCheckpoints, w) -> return (LedgerDB{..}, (w, 0)))
     =<<
       runExceptT (streamUpTo streamAPI from to InitFailureTooRecent (old, 0) push)
   where
@@ -486,11 +487,11 @@ bringUpNewLedgerDB :: forall m blk. (Monad m, LedgerSupportsProtocol blk, Inspec
                    -> NewLedgerDB (ExtLedgerState blk)                                     -- ^ The new-style database that we want to bring up
                    -> Point blk                                                            -- ^ At which point the old-style database is
                    -> Point blk                                                            -- ^ At which point the new-style database is
-                   -> m (LedgerDB' blk, Word64)
+                   -> m (LedgerDB' blk, (Word64, Word64))
 bringUpNewLedgerDB runDual tracer cfg streamAPI onDiskLedgerDbSt ledgerDbCheckpoints new to from =
     either
       (error . ("invariant violation: invalid current chain:" <>) . show)
-      (\(ledgerDbChangelog, w) -> return (LedgerDB{..}, w))
+      (\(ledgerDbChangelog, w) -> return (LedgerDB{..}, (0, w)))
     =<<
       runExceptT (streamUpTo streamAPI from to InitFailureTooRecent (new, 0) push)
   where
@@ -529,8 +530,8 @@ combineLedgerDBs :: Monad m
                  => Bool                             -- ^ Whether to run both databases TODO: Still not implemented
                  -> OldLedgerDB (ExtLedgerState blk) -- ^ The old-style database
                  -> NewLedgerDB (ExtLedgerState blk) -- ^ The new-style database
-                 -> m (LedgerDB' blk, Word64)
-combineLedgerDBs runDual ledgerDbCheckpoints ledgerDbChangelog = return (LedgerDB {..}, 0)
+                 -> m (LedgerDB' blk, (Word64, Word64))
+combineLedgerDBs runDual ledgerDbCheckpoints ledgerDbChangelog = return (LedgerDB {..}, (0,0))
 
 {-------------------------------------------------------------------------------
   Internal: initialize using the given snapshot
@@ -673,12 +674,13 @@ initStartingWith tracer cfg onDiskLedgerDbSt streamAPI initDb = do
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot ::
-     forall m blk. (MonadThrow m, IsLedger (LedgerState blk))
+     forall m blk mk. (MonadThrow m, IsLedger (LedgerState blk))
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
-  -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot tracer hasFS encLedger db =
+  -> (ExtLedgerState blk mk -> Encoding)
+  -> ExtLedgerState blk mk
+  -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot tracer hasFS encLedger oldest =
     case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
       Origin ->
         return Nothing
@@ -692,9 +694,6 @@ takeSnapshot tracer hasFS encLedger db =
           writeSnapshot hasFS encLedger snapshot oldest
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
-  where
-    oldest :: ExtLedgerState blk EmptyMK
-    oldest = ledgerDbAnchor db
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
 -- snapshots are stored on disk. The oldest snapshots are deleted.
@@ -711,10 +710,17 @@ trimSnapshots tracer hasFS DiskPolicy{..} = do
     snapshots <- filter diskSnapshotIsTemporary <$> listSnapshots hasFS
     -- The snapshot are most recent first, so we can simply drop from the
     -- front to get the snapshots that are "too" old.
-    forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
+    forM (drop (fromIntegral onDiskNumOldSnapshots) snapshots) $ \snapshot -> do
       deleteSnapshot hasFS snapshot
       traceWith tracer $ DeletedSnapshot snapshot
       return snapshot
+
+trimNewSnapshots :: Monad m => Tracer m (TraceEvent r) -> SomeHasFS m -> DiskSnapshot -> m ()
+trimNewSnapshots tracer newHasFS s = do
+  snapshots <- filter (not . (== s)) <$> listSnapshots newHasFS
+  forM_ snapshots (\snapshot -> do deleteSnapshot newHasFS snapshot
+                                   traceWith tracer $ DeletedSnapshot snapshot)
+
 
 {-------------------------------------------------------------------------------
   Internal: reading from disk
@@ -769,16 +775,16 @@ readSnapshot hasFS decLedger decHash =
 
 -- | Write snapshot to disk
 writeSnapshot ::
-     forall m blk. MonadThrow m
+     forall m blk mk. MonadThrow m
   => SomeHasFS m
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
+  -> (ExtLedgerState blk mk -> Encoding)
   -> DiskSnapshot
-  -> ExtLedgerState blk EmptyMK -> m ()
+  -> ExtLedgerState blk mk -> m ()
 writeSnapshot (SomeHasFS hasFS) encLedger ss cs = do
     withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
   where
-    encode :: ExtLedgerState blk EmptyMK -> Encoding
+    encode :: ExtLedgerState blk mk -> Encoding
     encode = encodeSnapshot encLedger
 
 -- | Delete snapshot from disk
