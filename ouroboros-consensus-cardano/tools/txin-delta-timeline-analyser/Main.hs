@@ -33,6 +33,7 @@ import qualified Database.LMDB.Simple as LMDB
 import           System.Directory (createDirectoryIfMissing)
 
 import qualified Database.RocksDB as RocksDB
+import qualified System.Random.Stateful as R
 
 import           Types
 import           GenesisUTxO
@@ -598,7 +599,9 @@ I wasn't watching, but the logged timestamps suggest it took around 2.5 hours.
 Simulating via RocksDB
 -------------------------------------------------------------------------------}
 
-newtype RocksDbSimEnv = RocksDbSimEnv RocksDB.DB
+data RocksDbSimEnv = RocksDbSimEnv
+  !RocksDB.DB
+  !(R.IOGenM R.StdGen)
 
 data RocksDbAppExn =
     RocksDbMissingSeqNo           Word64
@@ -626,11 +629,13 @@ rocksDbSim :: [Row] -> IO ()
 rocksDbSim =
     \rows -> do
       mono0 <- getMonotonicTimeNSec
+      prng <- R.newIOGenM (R.mkStdGen 20220119)
       RocksDB.withDB rocksDbDirName rocksDbConfig $ \db -> do
         RocksDB.put db seqNoKey (ser (0 :: Word64))
-        flip mapM_ genesisUTxO $ \txin ->
-          RocksDB.put db (ser (LmdbBox txin)) (ser (LmdbBox (TxOut 86)))
-        _n <- mapM_ (each (RocksDbSimEnv db) mono0) rows
+        flip mapM_ genesisUTxO $ \txin -> do
+          bs <- R.uniformByteStringM 86 prng
+          RocksDB.put db (ser (LmdbBox txin)) bs
+        _n <- mapM_ (each (RocksDbSimEnv db prng) mono0) rows
         pure ()
   where
     ser :: S.Serialise a => a -> BS.ByteString
@@ -639,7 +644,7 @@ rocksDbSim =
     seqNoKey = BS.empty
 
     each :: RocksDbSimEnv -> Word64 -> Row -> IO ()
-    each (RocksDbSimEnv db) mono0 row = do
+    each (RocksDbSimEnv db prng) mono0 row = do
       mono <- getMonotonicTimeNSec
       let diffmono_microseconds a b =
             (a - b) `div` 1_000 --- nano to micro
@@ -647,31 +652,44 @@ rocksDbSim =
       let blkConsumed = rcConsumedOther (rCache row)
           blkCreated  = rcCreatedOther  (rCache row)
 
-      sizeRead <- if Set.null blkConsumed then pure 0 else RocksDB.withSnapshot db $ \snap -> do
-        seqNo <- RocksDB.get snap seqNoKey >>= \case
+      sizeRead <- if Set.null blkConsumed then pure 0 else do
+        seqNo <- RocksDB.get db seqNoKey >>= \case
           Nothing -> throw $ RocksDbMissingSeqNo (rBlockNumber row)
           Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
             Right seqNo -> pure seqNo
             Left err    -> throw $ RocksDbDeserialiseSeqNoFailed (rBlockNumber row) err
 
         fmap sum $ flip mapM (Set.toList blkConsumed) $ \txin -> do
-          RocksDB.get snap (ser (LmdbBox txin)) >>= \case
+          RocksDB.get db (ser (LmdbBox txin)) >>= \case
             Nothing -> throw $ RocksDbMissingTxIn (rBlockNumber row) seqNo txin
-            Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
-              Right (LmdbBox (TxOut size)) -> pure size
-              Left err                     -> throw $ RocksDbDeserialiseFailed (rBlockNumber row) seqNo txin err
+            Just bs -> pure (toEnum $ BS.length bs :: Word64)
 
       monoRead <- getMonotonicTimeNSec
 
       -- separate write transaction, to simulate actual patterns (TODO
       -- pipeline)
-      RocksDB.write db $ concat
-        [ [RocksDB.Put seqNoKey $ ser $ 1 + rSlotNumber row]
-        , flip map (Set.toList blkConsumed) $ \txin ->
-            RocksDB.Del (ser (LmdbBox txin))
-        , flip map (Map.toList blkCreated) $ \(txin, sz) ->
-            RocksDB.Put (ser (LmdbBox txin)) (ser (LmdbBox (TxOut sz)))
-        ]
+      do
+        putsCreated <- flip mapM (Map.toList blkCreated) $ \(txin, sz) -> do
+          -- use a random bytestring to defeat the RocksDB compression, so that
+          -- it's comparable to the LMDB test
+          --
+          -- NOTE: this is pessimistic; the actual node use will likely benefit
+          -- at least a little from RockDB's compression (maybe not enough to
+          -- make it worthwhile, though; we have a lot of hashes!)
+          --
+          -- With replicated 0s instead of random payloads, the whole thing was
+          -- 209M on disk at the end, in 15min (no mem constraint)
+          --
+          -- With random payloads, the whole thing was 707M on disk at the end,
+          -- in ~15min (no mem constraint)
+          bs <- R.uniformByteStringM (fromEnum sz) prng
+          pure $ RocksDB.Put (ser (LmdbBox txin)) bs
+        RocksDB.write db $ concat
+          [ [RocksDB.Put seqNoKey $ ser $ 1 + rSlotNumber row]
+          , flip map (Set.toList blkConsumed) $ \txin ->
+              RocksDB.Del (ser (LmdbBox txin))
+          , putsCreated
+          ]
 
       monoWrite <- getMonotonicTimeNSec
 

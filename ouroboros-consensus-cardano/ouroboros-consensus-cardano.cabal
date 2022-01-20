@@ -133,6 +133,7 @@ executable txin-delta-timeline-analyser
                      , foldl
                      , lmdb-simple
                      , optparse-applicative
+                     , random
                      , rocksdb-haskell-jprupp
                      , serialise
                      , text-short
