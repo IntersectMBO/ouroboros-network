@@ -117,11 +117,10 @@ tests =
                    prop_governor_target_active_local_above
     ]
   , testGroup "issues"
-    [ testProperty "3233"   prop_issue_3233
-    -- these tests fail now:
-    , testProperty "3494" $ expectFailure prop_issue_3494
-    , testProperty "3515" $ expectFailure prop_issue_3515
-    , testProperty "3550"   prop_issue_3550
+    [ testProperty "3233" prop_issue_3233
+    , testProperty "3494" prop_issue_3494
+    , testProperty "3515" prop_issue_3515
+    , testProperty "3550" prop_issue_3550
     ]
   ]
   --TODO: We should add separate properties to check that we do not overshoot
