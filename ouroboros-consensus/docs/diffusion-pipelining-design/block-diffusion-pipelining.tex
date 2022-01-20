@@ -337,11 +337,11 @@ Before we analyse the risks it is important to be precise about which validation
 will still be executed as normal, and which would be deferred. The following are
 validations which should still be done:
 
-\begin{itemize} 
+\begin{enumerate} 
   \item The hash validation to ensure that the block body content matches the header;
   \item Nodes relaying blocks would only relay a single block in advance of validating the block body; and
   \item Block producers would still validate the block body before creating a new block.
-\end{itemize}
+\end{enumerate}
 
 \emph{Thus, the only validation which is deferred is that on the block body content.}
 
