@@ -12,17 +12,19 @@ import qualified Data.ByteString.Short as Short
 import           Data.ByteString.Short.Base16 (encodeBase16')
 import           Data.ByteString.Short.Base64 (encodeBase64)
 import qualified Data.Text.Short as TextShort
-import           Data.Word (Word32)
+import qualified Data.Vector as V
+import           Data.Word (Word32, Word64)
 
 
 data TxIn        = TxIn        !ShortByteString !Word32   -- index
   deriving (Eq, Ord)
 
-data TxOutputIds = TxOutputIds !ShortByteString !Word32   -- count
+data TxOutputIds = TxOutputIds !ShortByteString !(V.Vector Word64)   -- sizes
   deriving (Eq, Ord)
 
-outputTxIns :: TxOutputIds -> [TxIn]
-outputTxIns (TxOutputIds h n) = [ TxIn h (i - 1) | i <- [1 .. n] ]
+outputTxIns :: TxOutputIds -> V.Vector (TxIn, Word64)
+outputTxIns (TxOutputIds h sizes) =
+    V.imap (\i size -> (TxIn h (toEnum i), size)) sizes
 
 showTxIn64 :: TxIn -> String
 showTxIn64 (TxIn h i) =

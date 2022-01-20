@@ -9,7 +9,9 @@ module Main (main) where
 import qualified Control.Monad as M
 import           Control.Exception (Exception, throw)
 import           Data.Bits (shiftL)
+import qualified Data.ByteString as BS
 import           Data.ByteString.Base64 (decodeBase64)
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as Char8
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
@@ -25,10 +27,12 @@ import qualified Data.Vector as V
 import           GHC.Clock (getMonotonicTimeNSec)
 import qualified Options.Applicative as O
 
-import qualified Codec.Serialise as LMDB
+import qualified Codec.Serialise as S
 import qualified Data.Time.Clock as Time
 import qualified Database.LMDB.Simple as LMDB
 import           System.Directory (createDirectoryIfMissing)
+
+import qualified Database.RocksDB as RocksDB
 
 import           Types
 import           GenesisUTxO
@@ -50,9 +54,11 @@ chooseAnalysis :: IO ([Row] -> IO ())
 chooseAnalysis = do
     commandLine <- O.execParser opts
     case whichAnalysis commandLine of
-      InMemSim   -> pure inMemSim
-      MeasureAge -> pure measureAge
-      LmdbSim    -> pure lmdbSim
+      InMemSim       -> pure inMemSim
+      MeasureAge     -> pure measureAge
+      LmdbSim        -> pure lmdbSim
+      RocksDbSim     -> pure rocksDbSim
+      RocksDbInspect -> pure rocksDbInspect
   where
     opts = O.info (commandLineParser O.<**> O.helper) $
          O.fullDesc
@@ -63,6 +69,8 @@ data AnalysisName =
     InMemSim
   | LmdbSim
   | MeasureAge
+  | RocksDbSim
+  | RocksDbInspect
   deriving (Bounded, Enum, Show)
 
 data CommandLine = CommandLine {
@@ -207,21 +215,27 @@ data RowCache = RowCache {
     -- | The `TxIn` this row consumes, including those it created
     rcConsumed      :: Set TxIn
     -- | The `TxIn` this row created, including those it consumed
-  , rcCreated       :: Set TxIn
+  , rcCreated       :: Map TxIn Word64
     -- | The `TxIn` this row consumes excluding those it created
   , rcConsumedOther :: Set TxIn
     -- | The `TxIn` this row created, excluding those it consumed
-  , rcCreatedOther  :: Set TxIn
+  , rcCreatedOther  :: Map TxIn Word64
   }
 
--- | Parse either a @\@@ item or a @#@ item, from the variable length portion
--- of each line
+-- | Parse either a @\@@ item or the first part of a @#@ item, from the
+-- variable length portion of each line
 p0Item :: Char -> (ShortByteString -> Word32 -> ans) -> P0 Char8.ByteString ans
 p0Item sep f = mapP0 (Char8.split sep) $ contextT ("p0Item " <> [sep]) $ nullToP0 $ do
   h <- popP
   h' <- either (failT . show) pure $ decodeBase64 (Char8.toStrict h)
   i' <- intP
   pure $ f (Short.toShort h') (toEnum i')
+
+p0Output :: P0 Char8.ByteString TxOutputIds
+p0Output = mapP0 (Char8.split ',') $ contextT "p0Output" $ nullToP0 $ do
+  (h, n) <- popP >>= \item -> embedToP item $ p0Item '#' (,)
+  sizes <- M.replicateM (fromEnum n) (toEnum <$> intP)
+  pure $ TxOutputIds h $ toVec (fromEnum n) sizes
 
 -- | Parse a line from the timeline file
 parseRow :: Char8.ByteString -> Row
@@ -235,13 +249,13 @@ parseRow bs0 = run $ flattenToP0 $ do
     -- the rest of the line is parsed by the resulting P0
     pure
       $ flip (mapMaybeP0 "mismatch in number of created txins")
-          (sequenceP0 (p0Item '#' TxOutputIds))
+          (sequenceP0 p0Output)
       $ \created -> do
-        M.guard $ toEnum numCreated == sum [ n | TxOutputIds _ n <- created ]
-        let setco      = Set.fromList $                         consumed
-            setcr      = Set.fromList $ concatMap outputTxIns $ created
-            setcoOther = Set.difference setco setcr
-            setcrOther = Set.difference setcr setco
+        M.guard $ toEnum numCreated == sum [ V.length sizes | TxOutputIds _ sizes <- created ]
+        let setco      = Set.fromList $                                    consumed
+            setcr      = Map.fromList $ concatMap (V.toList . outputTxIns) created
+            setcoOther = Set.difference  setco (Map.keysSet setcr)
+            setcrOther = Map.withoutKeys setcr setco
         pure Row {
             rBlockNumber = toEnum bn
           , rSlotNumber  = toEnum sn
@@ -262,12 +276,12 @@ parseRow bs0 = run $ flattenToP0 $ do
       . flip runP0 (Char8.words bs0) 
       . contextT (Char8.unpack bs0)
 
-    -- make a vector with exact size
-    toVec :: Int -> [a] -> V.Vector a
-    toVec n =
-      V.unfoldrExactN n $ \case
-        x:xs -> (x, xs)
-        []   -> error "impossible! parseRow toVec"
+-- make a vector with exact size
+toVec :: Int -> [a] -> V.Vector a
+toVec n =
+  V.unfoldrExactN n $ \case
+    x:xs -> (x, xs)
+    []   -> error "impossible! parseRow toVec"
 
 {-------------------------------------------------------------------------------
 In-memory simulation
@@ -301,13 +315,13 @@ inMemSim =
           , unwords $ map showTxIn16 $ Set.toList missing
           ]
 
-      let utxo' = Set.union blkCreated $ utxo `Set.difference` blkConsumed
+      let utxo' = Set.union (Map.keysSet blkCreated) $ utxo `Set.difference` blkConsumed
 
       putStrLn $   show (rBlockNumber row)
         <> "\t" <> show (rSlotNumber  row)
         <> "\t" <> show reltime_milliseconds
         <> "\t" <> show (Set.size blkConsumed)
-        <> "\t" <> show (Set.size blkCreated)
+        <> "\t" <> show (Map.size blkCreated)
         <> "\t" <> show (Set.size utxo')
 
       pure $ InMem utxo'
@@ -380,7 +394,7 @@ measureAge =
       let updCreated :: Map HASH AgeEntry
           updCreated =   -- how many outputs this block creates for its own txs
               fmap (\c -> AgeEntry (rBlockNumber row) c)
-            $ (\f -> Map.fromAscListWith (+) $ map f $ Set.toAscList blkCreated)
+            $ (\f -> Map.fromAscListWith (+) $ map (f . fst) $ Map.toAscList blkCreated)
             $ \txin -> (txid txin, 1)
       let updConsumed :: Map HASH Word32
           updConsumed =  -- how many outputs this block consumes from each old tx
@@ -435,14 +449,24 @@ data LmdbSimEnv = LmdbSimEnv
   !(LMDB.Database () Word64)
   -- ^ we version by storing the successor of the slot number of the last block
   -- that was written
-  !(LMDB.Database (LmdbBox TxIn) ())
+  !(LMDB.Database (LmdbBox TxIn) (LmdbBox TxOut))
 
 -- | A newtype for being explicit and avoiding orphans
 newtype LmdbBox a = LmdbBox a
 
-instance LMDB.Serialise (LmdbBox TxIn) where
-  encode (LmdbBox (TxIn h i)) =                         LMDB.encode h <>  LMDB.encode i
-  decode                      = fmap LmdbBox $ TxIn <$> LMDB.decode   <*> LMDB.decode
+-- TODO I think this has at least 2 bytes of CBOR overhead :(
+instance S.Serialise (LmdbBox TxIn) where
+  encode (LmdbBox (TxIn h i)) =                         S.encode h <>  S.encode i
+  decode                      = fmap LmdbBox $ TxIn <$> S.decode   <*> S.decode
+
+newtype TxOut = TxOut Word64   -- size
+
+-- TODO I think this has at least 2 bytes of CBOR overhead :(
+instance S.Serialise (LmdbBox TxOut) where
+  encode (LmdbBox (TxOut size)) = S.encode $ BS.replicate (fromEnum size) 0
+  decode                        = do
+    bs <- S.decode
+    pure $ LmdbBox $ TxOut $ toEnum $ BS.length bs
 
 data LmdbAppExn =
     LmdbMissingSeqNo   Word64
@@ -464,7 +488,7 @@ lmdbSim =
       env <- LMDB.openEnvironment
                lmdbDirName
                LMDB.defaultLimits {
-                   LMDB.mapSize      = 4 * 1024 * 1024 * 1024 -- 4 gigabytes, for now
+                   LMDB.mapSize      = 6 * 1024 * 1024 * 1024 -- 6 gigabytes, for now
                  , LMDB.maxDatabases = 2
                  }
       dbSeqNo <- LMDB.readWriteTransaction env $ LMDB.getDatabase (Just "SeqNo")
@@ -473,35 +497,37 @@ lmdbSim =
         Just seqNo -> throw $ LmdbNotEmptyAtInit seqNo
         Nothing    -> do
           LMDB.put dbSeqNo () (Just 0)
-          flip mapM_ genesisUTxO $ \txin -> LMDB.put dbUTxO (LmdbBox txin) (Just ())
+          flip mapM_ genesisUTxO $ \txin -> LMDB.put dbUTxO (LmdbBox txin) (Just (LmdbBox (TxOut 86)))
       _n <- mapM_ (each (LmdbSimEnv env dbSeqNo dbUTxO) mono0 t0) rows
       pure ()
   where
     each :: LmdbSimEnv -> Word64 -> Time.UTCTime -> Row -> IO ()
-    each (LmdbSimEnv env dbSeqNo dbUTxO) mono0 t0 row = do
+    each (LmdbSimEnv env dbSeqNo dbUTxO) mono0 _t0 row = do
       mono <- getMonotonicTimeNSec
-      t    <- Time.getCurrentTime
+--      t    <- Time.getCurrentTime
       let diffmono_microseconds a b =
             (a - b) `div` 1_000 --- nano to micro
+{-
           difftime_microseconds a b =
             fromEnum (Time.nominalDiffTimeToSeconds (Time.diffUTCTime a b))
                `div` 1_000_000   -- pico to micro
+-}
 
       let blkConsumed = rcConsumedOther (rCache row)
           blkCreated  = rcCreatedOther  (rCache row)
 
-      M.unless (Set.null blkConsumed) $ LMDB.readOnlyTransaction env $ do
+      sizeRead <- if Set.null blkConsumed then pure 0 else LMDB.readOnlyTransaction env $ do
         seqNo <- LMDB.get dbSeqNo () >>= \case
           Nothing    -> throw $ LmdbMissingSeqNo (rBlockNumber row)
           Just seqNo -> pure seqNo
 
-        flip mapM_ blkConsumed $ \txin -> do
+        fmap sum $ flip mapM (Set.toList blkConsumed) $ \txin -> do
           LMDB.get dbUTxO (LmdbBox txin) >>= \case
-            Nothing -> throw $ LmdbMissingTxIn (rBlockNumber row) seqNo txin
-            Just () -> pure ()
+            Nothing                     -> throw $ LmdbMissingTxIn (rBlockNumber row) seqNo txin
+            Just (LmdbBox (TxOut size)) -> pure size
 
       monoRead <- getMonotonicTimeNSec
-      tRead    <- Time.getCurrentTime
+--      tRead    <- Time.getCurrentTime
 
       -- separate write transaction, to simulate actual patterns (TODO
       -- pipeline)
@@ -510,24 +536,27 @@ lmdbSim =
 
         flip mapM_ blkConsumed $ \txin -> do
           LMDB.put dbUTxO (LmdbBox txin) Nothing
-        flip mapM_ blkCreated $ \txin -> do
-          LMDB.put dbUTxO (LmdbBox txin) (Just ())
+        flip mapM_ (Map.toList blkCreated) $ \(txin, sz) -> do
+          LMDB.put dbUTxO (LmdbBox txin) $ Just (LmdbBox (TxOut sz))
 
       monoWrite <- getMonotonicTimeNSec
-      tWrite    <- Time.getCurrentTime
+--      tWrite    <- Time.getCurrentTime
 
       putStrLn $   show (rBlockNumber row)
         <> "\t" <> show (rSlotNumber  row)
         <> "\t" <> show (diffmono_microseconds mono mono0)
-        <> "\t" <> show (difftime_microseconds t    t0)
+--        <> "\t" <> show (difftime_microseconds t    t0)
         <> "\t" <> show (Set.size blkConsumed)
-        <> "\t" <> show (Set.size blkCreated)
+        <> "\t" <> show (Map.size blkCreated)
+        <> "\t" <> show sizeRead
+        <> "\t" <> show (sum blkCreated)
         <> "\t" <> show (diffmono_microseconds monoRead  mono)
-        <> "\t" <> show (difftime_microseconds tRead     t)
+--        <> "\t" <> show (difftime_microseconds tRead     t)
         <> "\t" <> show (diffmono_microseconds monoWrite monoRead)
-        <> "\t" <> show (difftime_microseconds tWrite    tRead)
+--        <> "\t" <> show (difftime_microseconds tWrite    tRead)
 
--- TODO get monotonic hides system time?
+-- TODO confirm that: monotonic does not hide system time (it agreed with
+-- getCurrenTime whenever I used both, but I wasn't sleeping the process, eg)
 
 {-
 
@@ -553,7 +582,7 @@ avg-cpu:  %user   %nice %system %iowait  %steal   %idle
 Device             tps    kB_read/s    kB_wrtn/s    kB_read    kB_wrtn
 sda           24710.00         0.00     99226.40          0     496132
 
-Crica 6710000
+Circa 6710000
 
 avg-cpu:  %user   %nice %system %iowait  %steal   %idle
            0.33    0.00   26.57    0.44    0.00   72.67
@@ -564,6 +593,126 @@ sda           25240.80         0.00    101375.20          0     506876
 I wasn't watching, but the logged timestamps suggest it took around 2.5 hours.
 
 -}
+
+{-------------------------------------------------------------------------------
+Simulating via RocksDB
+-------------------------------------------------------------------------------}
+
+newtype RocksDbSimEnv = RocksDbSimEnv RocksDB.DB
+
+data RocksDbAppExn =
+    RocksDbMissingSeqNo           Word64
+  | RocksDbMissingTxIn            Word64 Word64 TxIn
+  | RocksDbDeserialiseFailed      Word64 Word64 TxIn S.DeserialiseFailure
+  | RocksDbDeserialiseSeqNoFailed Word64 S.DeserialiseFailure
+  deriving (Show)
+
+instance Exception RocksDbAppExn
+
+rocksDbDirName :: String
+rocksDbDirName = "utxo-rocksdb"
+
+rocksDbConfig :: RocksDB.Config
+rocksDbConfig = RocksDB.Config {
+    RocksDB.createIfMissing = True
+  , RocksDB.errorIfExists   = True
+  , RocksDB.paranoidChecks  = False   -- TODO ?
+  , RocksDB.maxFiles        = Nothing
+  , RocksDB.prefixLength    = Nothing
+  , RocksDB.bloomFilter     = False
+  }
+
+rocksDbSim :: [Row] -> IO ()
+rocksDbSim =
+    \rows -> do
+      mono0 <- getMonotonicTimeNSec
+      RocksDB.withDB rocksDbDirName rocksDbConfig $ \db -> do
+        RocksDB.put db seqNoKey (ser (0 :: Word64))
+        flip mapM_ genesisUTxO $ \txin ->
+          RocksDB.put db (ser (LmdbBox txin)) (ser (LmdbBox (TxOut 86)))
+        _n <- mapM_ (each (RocksDbSimEnv db) mono0) rows
+        pure ()
+  where
+    ser :: S.Serialise a => a -> BS.ByteString
+    ser = LBS.toStrict . S.serialise
+
+    seqNoKey = BS.empty
+
+    each :: RocksDbSimEnv -> Word64 -> Row -> IO ()
+    each (RocksDbSimEnv db) mono0 row = do
+      mono <- getMonotonicTimeNSec
+      let diffmono_microseconds a b =
+            (a - b) `div` 1_000 --- nano to micro
+
+      let blkConsumed = rcConsumedOther (rCache row)
+          blkCreated  = rcCreatedOther  (rCache row)
+
+      sizeRead <- if Set.null blkConsumed then pure 0 else RocksDB.withSnapshot db $ \snap -> do
+        seqNo <- RocksDB.get snap seqNoKey >>= \case
+          Nothing -> throw $ RocksDbMissingSeqNo (rBlockNumber row)
+          Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
+            Right seqNo -> pure seqNo
+            Left err    -> throw $ RocksDbDeserialiseSeqNoFailed (rBlockNumber row) err
+
+        fmap sum $ flip mapM (Set.toList blkConsumed) $ \txin -> do
+          RocksDB.get snap (ser (LmdbBox txin)) >>= \case
+            Nothing -> throw $ RocksDbMissingTxIn (rBlockNumber row) seqNo txin
+            Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
+              Right (LmdbBox (TxOut size)) -> pure size
+              Left err                     -> throw $ RocksDbDeserialiseFailed (rBlockNumber row) seqNo txin err
+
+      monoRead <- getMonotonicTimeNSec
+
+      -- separate write transaction, to simulate actual patterns (TODO
+      -- pipeline)
+      RocksDB.write db $ concat
+        [ [RocksDB.Put seqNoKey $ ser $ 1 + rSlotNumber row]
+        , flip map (Set.toList blkConsumed) $ \txin ->
+            RocksDB.Del (ser (LmdbBox txin))
+        , flip map (Map.toList blkCreated) $ \(txin, sz) ->
+            RocksDB.Put (ser (LmdbBox txin)) (ser (LmdbBox (TxOut sz)))
+        ]
+
+      monoWrite <- getMonotonicTimeNSec
+
+      putStrLn $   show (rBlockNumber row)
+        <> "\t" <> show (rSlotNumber  row)
+        <> "\t" <> show (diffmono_microseconds mono mono0)
+        <> "\t" <> show (Set.size blkConsumed)
+        <> "\t" <> show (Map.size blkCreated)
+        <> "\t" <> show sizeRead
+        <> "\t" <> show (sum blkCreated)
+        <> "\t" <> show (diffmono_microseconds monoRead  mono)
+        <> "\t" <> show (diffmono_microseconds monoWrite monoRead)
+
+rocksDbInspect :: [Row] -> IO ()
+rocksDbInspect [row] = do
+    RocksDB.withDB
+      rocksDbDirName
+      rocksDbConfig {
+          RocksDB.createIfMissing = False
+        , RocksDB.errorIfExists = False
+        } $ \db -> do
+      seqNo <- RocksDB.get db seqNoKey >>= \case
+        Nothing -> throw $ RocksDbMissingSeqNo maxBound
+        Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
+          Right seqNo -> pure seqNo
+          Left err    -> throw $ RocksDbDeserialiseSeqNoFailed maxBound err
+      print (seqNo :: Word64)
+      let txin = V.head (rConsumed row)
+      sz <- RocksDB.get db (ser (LmdbBox txin)) >>= \case
+        Nothing -> throw $ RocksDbMissingTxIn (rBlockNumber row) seqNo txin
+        Just bs -> case S.deserialiseOrFail (LBS.fromStrict bs) of
+          Right (LmdbBox (TxOut size)) -> pure size
+          Left err                     -> throw $ RocksDbDeserialiseFailed (rBlockNumber row) seqNo txin err
+      print sz
+      pure ()
+  where
+    ser :: S.Serialise a => a -> BS.ByteString
+    ser = LBS.toStrict . S.serialise
+
+    seqNoKey = BS.empty
+rocksDbInspect _ = fail "only expecting one faked-up input row!"
 
 {-------------------------------------------------------------------------------
 TODO more simulations/statistics etc
