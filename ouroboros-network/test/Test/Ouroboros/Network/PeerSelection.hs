@@ -19,6 +19,7 @@ module Test.Ouroboros.Network.PeerSelection
   ) where
 
 import qualified Data.ByteString.Char8 as BS
+import           Data.Bifoldable (bitraverse_)
 import           Data.Function (on)
 import qualified Data.IP as IP
 import           Data.List (foldl', groupBy, intercalate)
@@ -37,6 +38,7 @@ import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..))
 import           Control.Monad.IOSim
+import           Control.Exception (AssertionFailed (..), catch, evaluate)
 
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
@@ -227,15 +229,30 @@ isEmptyEnv GovernorMockEnvironment {
 -- governor for a maximum number of trace events rather than for a fixed
 -- simulated time.
 --
-prop_governor_nofail :: GovernorMockEnvironment -> Bool
+prop_governor_nofail :: GovernorMockEnvironment -> Property
 prop_governor_nofail env =
-    let trace = take 5000 .
+    let ioSimTrace = runGovernorInMockEnvironment env
+        trace = take 5000 . 
                 selectPeerSelectionTraceEvents $
-                  runGovernorInMockEnvironment env
+                ioSimTrace
 
-     in foldl' (flip seq) True
-          [ assertPeerSelectionState st ()
-          | (_, GovernorDebug (TraceGovernorState _ _ st)) <- trace ]
+    -- run in `IO` so we can catch the pure 'AssertionFailed' exception
+    in ioProperty $ do
+      r <-
+        evaluate ( foldl' (flip seq) True
+               $ [ assertPeerSelectionState st ()
+                 | (_, GovernorDebug (TraceGovernorState _ _ st)) <- trace ]
+               )
+        `catch` \(AssertionFailed _) -> return False
+      case r of
+        True  -> return $ property True
+        False -> do 
+          bitraverse_ (putStrLn . show)
+                      (putStrLn . ppSimEvent 20)
+                      ioSimTrace
+          -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
+          error "impossible!"
+
 
 
 -- | It is relatively easy to write bugs where the governor is stuck in a tight
@@ -1997,8 +2014,7 @@ prop_issue_3515 = prop_governor_nolivelock $
 --   assert, called at src/Ouroboros/Network/PeerSelection/Governor/Types.hs:396:5 in ouroboros-network-0.1.0.0-inplace:Ouroboros.Network.PeerSelection.Governor.Types
 -- ```
 prop_issue_3494 :: Property
-prop_issue_3494 = property
-                . prop_governor_nofail $
+prop_issue_3494 = prop_governor_nofail $
   GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 64,[],GovernorScripts {gossipScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1,Map.fromList [(PeerAddr 64,DoAdvertisePeer)])], publicRootPeers = Set.fromList [], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay)]), pickKnownPeersForGossip = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| [])}
 
 -- | issue #3233
