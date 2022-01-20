@@ -28,9 +28,11 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
+import           Ouroboros.Network.DeltaQ
 --TODO: could re-export some of the trace types from more convenient places:
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
@@ -38,6 +40,7 @@ import           Ouroboros.Network.Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.ClientRegistry
 import           Ouroboros.Network.BlockFetch.ClientState
+import           Ouroboros.Network.BlockFetch.DeltaQ
 import           Ouroboros.Network.BlockFetch.Examples
 import           Ouroboros.Network.Driver (TraceSendRecv)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -68,6 +71,8 @@ tests = testGroup "BlockFetch"
   -- requests (testing the high/low watermark mechanism).
   , testProperty "termination"
                  prop_terminate
+  , testProperty "compare comparePeerGSV" prop_comparePeerGSV
+  , testProperty "eq comparePeerGSV" prop_comparePeerGSVEq
   ]
 
 
@@ -663,6 +668,42 @@ prop_terminate (TestChainFork _commonChain forkChain _forkChain) (Positive (Smal
 
     fork'  = chainToAnchoredFragment forkChain
 
+newtype PeerGSVT = PeerGSVT {
+      unPeerGSVT :: PeerGSV
+    } deriving Show
+
+instance Arbitrary PeerGSVT where
+    arbitrary = do
+        Delay gIn <- resize 1000 arbitrary
+        Delay gOut <- resize 1000 arbitrary
+        let gsvIn  = ballisticGSV gIn  2e-6 (degenerateDistribution 0)
+            gsvOut = ballisticGSV gOut 2e-6 (degenerateDistribution 0)
+        return $ PeerGSVT $ PeerGSV (Time 0) gsvOut gsvIn
+
+    shrink (PeerGSVT (PeerGSV ts (GSV gOut sOut vOut) (GSV gIn sIn vIn))) =
+        [PeerGSVT (PeerGSV ts  (GSV gOut' sOut vOut) (GSV gIn' sIn vIn))
+         | (Delay gIn', Delay gOut') <- shrink (Delay gIn, Delay gOut)]
+
+
+-- | Check that comparePeerGSV satisfies Ord axioms
+prop_comparePeerGSV :: Int -> Int -> Int -> PeerGSVT -> PeerGSVT -> Bool -> Bool -> Property
+prop_comparePeerGSV salt pa pb (PeerGSVT a) (PeerGSVT b) aActive bActive =
+    let peerSet = case (aActive, bActive) of
+                       (False, False) -> Set.empty
+                       (True, False)  -> Set.singleton pa
+                       (False, True)  -> Set.singleton pb
+                       (True, True)   -> Set.fromList [pa, pb] in
+    case comparePeerGSV peerSet salt (a, pa) (b, pb) of
+         LT -> comparePeerGSV peerSet salt (b, pb) (a, pa) === GT
+         GT -> comparePeerGSV peerSet salt (b, pb) (a, pa) === LT
+         EQ -> comparePeerGSV peerSet salt (b, pb) (a, pa) === EQ
+
+-- | Check that identical peers are equal
+prop_comparePeerGSVEq :: Int -> Int -> PeerGSVT -> Bool -> Property
+prop_comparePeerGSVEq salt p (PeerGSVT a) aActive =
+    let peerSet = if aActive then Set.singleton p
+                             else Set.empty in
+    comparePeerGSV peerSet salt (a, p) (a, p) === EQ
 
 
 --

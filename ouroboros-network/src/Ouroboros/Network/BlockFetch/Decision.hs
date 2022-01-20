@@ -46,6 +46,7 @@ import           Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
 import           Ouroboros.Network.BlockFetch.DeltaQ
                      (PeerFetchInFlightLimits (..), PeerGSV (..), SizeInBytes,
                      calculatePeerFetchInFlightLimits, comparePeerGSV,
+                     comparePeerGSV',
                      estimateExpectedResponseDuration,
                      estimateResponseDeadlineProbability)
 
@@ -161,7 +162,8 @@ fetchDecisions
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  plausibleCandidateChain,
                  compareCandidateChains,
-                 blockFetchSize
+                 blockFetchSize,
+                 peerSalt
                }
                fetchMode
                currentChain
@@ -182,6 +184,7 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
     -- Reorder chains based on consensus policy and network timing data.
   . prioritisePeerChains
       fetchMode
+      peerSalt
       compareCandidateChains
       blockFetchSize
   . map swizzleIG
@@ -206,7 +209,7 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
   where
     -- Data swizzling functions to get the right info into each stage.
     swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
-    swizzleIG  (c, p@(_,     inflight,gsvs,_,   _)) = (c,         inflight, gsvs, p)
+    swizzleIG  (c, p@(_,     inflight,gsvs,peer,_)) = (c,         inflight, gsvs, peer, p)
     swizzleSI  (c, p@(status,inflight,_,_,      _)) = (c, status, inflight,       p)
     swizzleSIG (c, p@(status,inflight,gsvs,peer,_)) = (c, status, inflight, gsvs, peer, p)
 
@@ -604,19 +607,21 @@ filterWithMaxSlotNo p maxSlotNo =
     AF.filterWithStop p ((> maxSlotNo) . MaxSlotNo . blockSlot)
 
 prioritisePeerChains
-  :: forall header peer. HasHeader header
+  :: forall extra header peer.
+   ( HasHeader header
+   , Hashable peer
+   , Ord peer
+   )
   => FetchMode
+  -> Int
   -> (AnchoredFragment header -> AnchoredFragment header -> Ordering)
   -> (header -> SizeInBytes)
   -> [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,
                                                   PeerGSV,
-                                                  peer)]
-  -> [(FetchDecision [AnchoredFragment header],   peer)]
-prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
-    --TODO: last tie-breaker is still original order (which is probably
-    -- peerid order). We should use a random tie breaker so that adversaries
-    -- cannot get any advantage.
-
+                                                  peer,
+                                                  extra )]
+  -> [(FetchDecision [AnchoredFragment header],   extra)]
+prioritisePeerChains FetchModeDeadline salt compareCandidateChains blockFetchSize =
     map (\(decision, peer) ->
             (fmap (\(_,_,fragment) -> fragment) decision, peer))
   . concatMap ( concat
@@ -646,9 +651,11 @@ prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
                    `on`
                       (\(band, chain, _fragments) -> (band, chain))))))
   . map annotateProbabilityBand
+  . sortBy (\(_,_,a,ap,_) (_,_,b,bp,_) ->
+      comparePeerGSV' salt (a,ap) (b,bp))
   where
-    annotateProbabilityBand (Left decline, _, _, peer) = (Left decline, peer)
-    annotateProbabilityBand (Right (chain,fragments), inflight, gsvs, peer) =
+    annotateProbabilityBand (Left decline, _, _, _, peer) = (Left decline, peer)
+    annotateProbabilityBand (Right (chain,fragments), inflight, gsvs, _, peer) =
         (Right (band, chain, fragments), peer)
       where
         band = probabilityBand $
@@ -666,7 +673,7 @@ prioritisePeerChains FetchModeDeadline compareCandidateChains blockFetchSize =
 
     chainHeadPoint (_,ChainSuffix c,_) = AF.headPoint c
 
-prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
+prioritisePeerChains FetchModeBulkSync salt compareCandidateChains blockFetchSize =
     map (\(decision, peer) ->
             (fmap (\(_, _, fragment) -> fragment) decision, peer))
   . sortBy (comparingFst
@@ -678,9 +685,11 @@ prioritisePeerChains FetchModeBulkSync compareCandidateChains blockFetchSize =
                 `on`
                   (\(duration, chain, _fragments) -> (chain, duration)))))
   . map annotateDuration
+  . sortBy (\(_,_,a,ap,_) (_,_,b,bp,_) ->
+      comparePeerGSV' salt (a,ap) (b,bp))
   where
-    annotateDuration (Left decline, _, _, peer) = (Left decline, peer)
-    annotateDuration (Right (chain,fragments), inflight, gsvs, peer) =
+    annotateDuration (Left decline, _, _, _, peer) = (Left decline, peer)
+    annotateDuration (Right (chain,fragments), inflight, gsvs, _, peer) =
         (Right (duration, chain, fragments), peer)
       where
         -- TODO: consider if we should put this into bands rather than just
