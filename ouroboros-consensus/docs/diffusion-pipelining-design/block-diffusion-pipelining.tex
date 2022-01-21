@@ -497,7 +497,7 @@ block \emph{concurrently}. To begin, let us remind ourselves how Cardano current
   \item With Praos, a node will adopt the chain which is most dense and whose intersection with the previous "best" known chain is less than $k$ blocks, where $k$ is currently set to 2160.
   \item Cognisant of the above, the process continues as follows:
   \begin{enumerate}
-    \item A node will notify interested peers that a new block is available by posting the new header to \lstinline{chainSync}. 
+    \item A node will notify interested peers that a new block is available by posting the new header to \lstinline{chainSync}, after block validation. 
     \item After the header is validated the downstream peer will request/pull the corresponding block body.
     \item The block is validated, and if it satisfies checks resulting in a new longer/better chain, it will be appended as the head of our "new" chain.
     \item This process repeats for each downstream peer.
