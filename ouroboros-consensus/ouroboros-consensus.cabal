@@ -194,6 +194,7 @@ library
                        -- Storing things on disk
                        Ouroboros.Consensus.Storage.ChainDB
                        Ouroboros.Consensus.Storage.ChainDB.API
+                       Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
                        Ouroboros.Consensus.Storage.ChainDB.Impl
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Args
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Background

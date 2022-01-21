@@ -30,7 +30,6 @@ import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import           Control.Monad.Class.MonadSTM
 
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (Empty, (:>)))
 
@@ -41,6 +40,9 @@ import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
+                     (InvalidBlockPunishment)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Util.Time
 
 data CheckInFuture m blk = CheckInFuture {
@@ -48,13 +50,13 @@ data CheckInFuture m blk = CheckInFuture {
        -- > checkInFuture vf >>= \(af, fut) ->
        -- >   validatedFragment vf == af <=> null fut
        checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)
-                     -> m (AnchoredFragment (Header blk), [InFuture blk])
+                     -> m (AnchoredFragment (Header blk), [InFuture m blk])
     }
   deriving NoThunks
        via OnlyCheckWhnfNamed "CheckInFuture" (CheckInFuture m blk)
 
 -- | Header of block that we found to be in the future
-data InFuture blk = InFuture {
+data InFuture m blk = InFuture {
       -- | The header itself
       inFutureHeader           :: Header blk
 
@@ -62,6 +64,9 @@ data InFuture blk = InFuture {
       --
       -- Headers that do exceed the clock skew should be considered invalid.
     , inFutureExceedsClockSkew :: Bool
+
+      -- | 'Ouroboros.Consensus.Storage.ChainDB.Impl.Types.blockPunish'
+    , inFuturePunish           :: InvalidBlockPunishment m
     }
 
 {-------------------------------------------------------------------------------
@@ -123,13 +128,13 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
     checkFragment :: HF.Summary (HardForkIndices blk)
                   -> RelativeTime
                   -> AnchoredFragment (Header blk)
-                  -> (AnchoredFragment (Header blk), [InFuture blk])
+                  -> (AnchoredFragment (Header blk), [InFuture m blk])
     checkFragment summary now = go
       where
         -- We work from newest to oldest, because as soon as we reach any block
         -- that is not ahead of @no@, the older blocks certainly aren't either.
         go :: AnchoredFragment (Header blk)
-           -> (AnchoredFragment (Header blk), [InFuture blk])
+           -> (AnchoredFragment (Header blk), [InFuture m blk])
         go (Empty a) = (Empty a, [])
         go (hs :> h) =
             case HF.runQuery
@@ -143,11 +148,12 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
                 else
                   (hs :> h, [])
 
-        inFuture :: Header blk -> RelativeTime -> InFuture blk
+        inFuture :: Header blk -> RelativeTime -> InFuture m blk
         inFuture hdr hdrTime = InFuture {
               inFutureHeader           = hdr
             , inFutureExceedsClockSkew = (hdrTime `diffRelTime` now)
                                        > clockSkew
+            , inFuturePunish           = InvalidBlockPunishment.noPunishment
             }
 
 {-------------------------------------------------------------------------------
@@ -179,11 +185,11 @@ miracle oracle clockSkew = CheckInFuture {
   where
     checkFragment :: SlotNo
                   -> AnchoredFragment (Header blk)
-                  -> (AnchoredFragment (Header blk), [InFuture blk])
+                  -> (AnchoredFragment (Header blk), [InFuture m blk])
     checkFragment now = go
       where
         go :: AnchoredFragment (Header blk)
-           -> (AnchoredFragment (Header blk), [InFuture blk])
+           -> (AnchoredFragment (Header blk), [InFuture m blk])
         go (Empty a) = (Empty a, [])
         go (hs :> h) =
             if blockSlot h > now then
@@ -191,9 +197,10 @@ miracle oracle clockSkew = CheckInFuture {
             else
               (hs :> h, [])
 
-        inFuture :: Header blk -> InFuture blk
+        inFuture :: Header blk -> InFuture m blk
         inFuture hdr = InFuture {
               inFutureHeader           = hdr
             , inFutureExceedsClockSkew = HF.countSlots (blockSlot hdr) now
                                        > clockSkew
+            , inFuturePunish           = InvalidBlockPunishment.noPunishment
             }

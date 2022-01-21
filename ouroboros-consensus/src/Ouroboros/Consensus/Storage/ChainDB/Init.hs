@@ -15,6 +15,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Restricted interface to the 'ChainDB' used on node initialization
@@ -30,7 +31,8 @@ fromFull ::
      (IsLedger (LedgerState blk), IOLike m)
   => ChainDB m blk -> InitChainDB m blk
 fromFull db = InitChainDB {
-      addBlock         = ChainDB.addBlock_ db
+      addBlock         =
+        ChainDB.addBlock_ db InvalidBlockPunishment.noPunishment
     , getCurrentLedger =
         atomically $ ledgerState <$> ChainDB.getCurrentLedger db
     }

@@ -104,6 +104,7 @@ import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
@@ -885,7 +886,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- ChainDB will reject it as invalid, and
                   -- 'Test.ThreadNet.General.prop_general' will eventually fail
                   -- because of a block rejection.
-                  void $ ChainDB.addBlock chainDB ebb
+                  void $ ChainDB.addBlock chainDB InvalidBlockPunishment.noPunishment ebb
                   pure blk
 
       origBlockForging <- pInfoBlockForging
