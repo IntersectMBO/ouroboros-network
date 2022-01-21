@@ -498,7 +498,7 @@ block \emph{concurrently}. To begin, let us remind ourselves how Cardano current
   \item Cognisant of the above, the process continues as follows:
   \begin{enumerate}
     \item A node will notify interested peers that a new block is available by posting the new header to \lstinline{chainSync}, after block validation. 
-    \item After the header is validated the downstream peer will request/pull the corresponding block body.
+    \item After validation of the header locally, the downstream peer will request/pull the corresponding block body.
     \item The block is validated, and if it satisfies checks resulting in a new longer/better chain, it will be appended as the head of our "new" chain.
     \item This process repeats for each downstream peer.
   \end{enumerate}
@@ -513,11 +513,11 @@ can expedite a block's propagation prior to its validation whilst not invalidati
 \begin{itemize}
   \item The aim is to expedite data propagation where appropriate, and to do so without destructive change.
   \begin{enumerate}
-    \item Extend the current API to pre-notify subscribed threads when a new desirable block is seen.
+    \item Extend the current API to pre-notify subscribed threads when a new desirable block is seen, prior to block body validation.
     \item Implement a new mini-protocol which can function as an "expedited" version of \lstinline{chainSync}.
     \item The new protocol should provide two new mechanisms:
     \begin{itemize}
-      \item The ability to send a fresh block header to a downstream peer as soon as a given node witnesses a new desirable block, prior to actually validating it. This enables the downstream peer to pre-emptively fetch this new block.
+      \item The ability to send a fresh block header to a downstream peer as soon as a given node witnesses a new desirable block, prior to actually validating its body. This enables the downstream peer to pre-emptively fetch this new block.
       \item The ability for a downstream peer to register interest in receiving another expedited block. 
     \end{itemize}
     \item Regular sanity checks still apply:
