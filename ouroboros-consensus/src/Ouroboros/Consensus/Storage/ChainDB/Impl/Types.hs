@@ -88,6 +88,8 @@ import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      ChainDbError (..), InvalidBlockReason, StreamFrom,
                      StreamTo, UnknownRange)
+import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
+                     (InvalidBlockPunishment)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB',
@@ -243,7 +245,7 @@ data ChainDbEnv m blk = CDB
   , cdbCheckInFuture   :: !(CheckInFuture m blk)
   , cdbBlocksToAdd     :: !(BlocksToAdd m blk)
     -- ^ Queue of blocks that still have to be added.
-  , cdbFutureBlocks    :: !(StrictTVar m (FutureBlocks blk))
+  , cdbFutureBlocks    :: !(StrictTVar m (FutureBlocks m blk))
     -- ^ Blocks from the future
     --
     -- Blocks that were added to the ChainDB but that were from the future
@@ -417,7 +419,7 @@ data InvalidBlockInfo blk = InvalidBlockInfo
 -- selection.
 --
 -- See 'cdbFutureBlocks' for more info.
-type FutureBlocks blk = Map (HeaderHash blk) (Header blk)
+type FutureBlocks m blk = Map (HeaderHash blk) (Header blk, InvalidBlockPunishment m)
 
 {-------------------------------------------------------------------------------
   Blocks to add
@@ -432,7 +434,10 @@ newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
 -- | Entry in the 'BlocksToAdd' queue: a block together with the 'TMVar's used
 -- to implement 'AddBlockPromise'.
 data BlockToAdd m blk = BlockToAdd
-  { blockToAdd            :: !blk
+  { blockPunish           :: !(InvalidBlockPunishment m)
+    -- ^ Executed immediately upon determining this block or one from its prefix
+    -- is invalid.
+  , blockToAdd            :: !blk
   , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
   , varBlockProcessed     :: !(StrictTMVar m (Point blk))
@@ -449,13 +454,15 @@ addBlockToAdd
   :: (IOLike m, HasHeader blk)
   => Tracer m (TraceAddBlockEvent blk)
   -> BlocksToAdd m blk
+  -> InvalidBlockPunishment m
   -> blk
   -> m (AddBlockPromise m blk)
-addBlockToAdd tracer (BlocksToAdd queue) blk = do
+addBlockToAdd tracer (BlocksToAdd queue) punish blk = do
     varBlockWrittenToDisk <- newEmptyTMVarIO
     varBlockProcessed     <- newEmptyTMVarIO
     let !toAdd = BlockToAdd
-          { blockToAdd = blk
+          { blockPunish           = punish
+          , blockToAdd            = blk
           , varBlockWrittenToDisk
           , varBlockProcessed
           }
