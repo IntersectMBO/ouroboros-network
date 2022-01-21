@@ -30,6 +30,9 @@ module Ouroboros.Network.InboundGovernor
   , RemoteTransition
   , RemoteTransitionTrace
   , AcceptConnectionsPolicyTrace (..)
+    -- * Re-exports
+  , Transition' (..)
+  , TransitionTrace' (..)
   ) where
 
 import           Control.Exception (SomeAsyncException (..), assert)
