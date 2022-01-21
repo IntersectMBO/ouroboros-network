@@ -85,6 +85,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 import           Ouroboros.Consensus.Storage.ChainDB hiding
                      (TraceFollowerEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB
                      (ValidationPolicy (ValidateAllChunks))
@@ -379,7 +380,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
     advanceAndAdd :: ChainDBState m blk -> SlotNo -> blk -> m (Point blk)
     advanceAndAdd ChainDBState { chainDB } newCurSlot blk = do
       atomically $ modifyTVar varCurSlot (max newCurSlot)
-      addBlock chainDB blk
+      addBlock chainDB InvalidBlockPunishment.noPunishment blk
 
     wipeVolatileDB :: ChainDBState m blk -> m (Point blk)
     wipeVolatileDB st = do

@@ -81,6 +81,7 @@ import           Ouroboros.Consensus.Util.STM
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 
@@ -333,7 +334,12 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     -- Waits until the block has been written to disk, but not until chain
     -- selection has processed the block.
     addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt = void . ChainDB.addBlockWaitWrittenToDisk chainDB
+    addFetchedBlock _pt blk = void $ do
+       disconnect <- InvalidBlockPunishment.mkPunishThisThread
+       ChainDB.addBlockWaitWrittenToDisk
+         chainDB
+         disconnect
+         blk
 
     readFetchedMaxSlotNo :: STM m MaxSlotNo
     readFetchedMaxSlotNo = ChainDB.getMaxSlotNo chainDB
@@ -547,7 +553,8 @@ forkBlockForging IS{..} blockForging =
                   (snapshotMempoolSize mempoolSnapshot)
 
         -- Add the block to the chain DB
-        result <- lift $ ChainDB.addBlockAsync chainDB newBlock
+        let noPunish = InvalidBlockPunishment.noPunishment   -- no way to punish yourself
+        result <- lift $ ChainDB.addBlockAsync chainDB noPunish newBlock
         -- Block until we have processed the block
         curTip <- lift $ atomically $ ChainDB.blockProcessed result
 

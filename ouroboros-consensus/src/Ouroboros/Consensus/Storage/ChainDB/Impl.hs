@@ -197,7 +197,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
                     }
       h <- fmap CDBHandle $ newTVarIO $ ChainDbOpen env
       let chainDB = API.ChainDB
-            { addBlockAsync         = getEnv1    h ChainSel.addBlockAsync
+            { addBlockAsync         = getEnv2    h ChainSel.addBlockAsync
             , getCurrentChain       = getEnvSTM  h Query.getCurrentChain
             , getLedgerDB           = getEnvSTM  h Query.getLedgerDB
             , getTipBlock           = getEnv     h Query.getTipBlock
