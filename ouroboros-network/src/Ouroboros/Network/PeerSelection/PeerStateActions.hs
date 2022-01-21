@@ -597,18 +597,19 @@ withPeerStateActions PeerStateActionsArguments {
           -- On error, the multiplexer closes the bearer, we take advantage of
           -- it here.
           --
+          -- we don't need to update connection manager; the connection handler
+          -- thread terminated abruptly and the connection state will be
+          -- updated by the finally handler of a connection handler.
+          --
           WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
             traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
-            _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
             atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           WithSomeProtocolTemperature (WithWarm MiniProtocolError{}) -> do
             traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
-            _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
             atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           WithSomeProtocolTemperature (WithEstablished MiniProtocolError{}) -> do
             -- update 'pchPeerState' and log (as the two other transition to
             -- cold state.
-            _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
             state <- atomically $ do
               peerState <- readTVar pchPeerState
               writeTVar pchPeerState (PeerStatus PeerCold)
@@ -840,7 +841,9 @@ withPeerStateActions PeerStateActionsArguments {
           throwIO (DeactivationTimeout pchConnectionId)
 
         Just (SomeErrored errs) -> do
-          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
+          -- we don't need to notify the connection manager, we can instead
+          -- relay on mux property: if any of the mini-protocols errors, mux
+          -- throws an exception as well.
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure
                                 (HotToCold pchConnectionId)
@@ -848,6 +851,8 @@ withPeerStateActions PeerStateActionsArguments {
           throwIO (MiniProtocolExceptions errs)
 
         Just AllSucceeded -> do
+          -- we don't notify the connection manager as this connection is still
+          -- useful to the outbound governor (warm peer).
           wasWarm' <- atomically $ do
             -- Only set the status to PeerWarm if the peer isn't PeerCold
             -- (can happen asynchronously).
@@ -911,7 +916,10 @@ withPeerStateActions PeerStateActionsArguments {
 
         Just (SomeErrored errs) -> do
           -- some mini-protocol errored
-          _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
+          --
+          -- we don't need to notify the connection manager, we can instead
+          -- relay on mux property: if any of the mini-protocols errors, mux
+          -- throws an exception as well.
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure
                                 (WarmToCold pchConnectionId)

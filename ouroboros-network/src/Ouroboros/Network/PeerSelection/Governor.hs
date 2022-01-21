@@ -536,20 +536,20 @@ peerSelectionGovernorLoop tracer
                      -> PeerSelectionState peeraddr peerconn
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
     guardedDecisions blockedAt st =
+      -- All the alternative potentially-blocking decisions.
+         Monitor.connections          actions st
+      <> Monitor.jobs                 jobPool st
+      <> Monitor.targetPeers          actions st
+      <> Monitor.localRoots           actions st
+
       -- All the alternative non-blocking internal decisions.
-         RootPeers.belowTarget        actions blockedAt  st
+      <> RootPeers.belowTarget        actions blockedAt  st
       <> KnownPeers.belowTarget       actions     policy st
       <> KnownPeers.aboveTarget                   policy st
       <> EstablishedPeers.belowTarget actions     policy st
       <> EstablishedPeers.aboveTarget actions     policy st
       <> ActivePeers.belowTarget      actions     policy st
       <> ActivePeers.aboveTarget      actions     policy st
-
-      -- All the alternative potentially-blocking decisions.
-      <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions st
-      <> Monitor.jobs                 jobPool st
-      <> Monitor.connections          actions st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 

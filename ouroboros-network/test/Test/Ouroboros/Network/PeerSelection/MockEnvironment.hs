@@ -36,6 +36,7 @@ import           System.Random (mkStdGen)
 import           Control.Exception (throw)
 import           Control.Monad (forM_)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -178,6 +179,7 @@ runGovernorInMockEnvironment mockEnv =
 
 data TraceMockEnv = TraceEnvAddPeers       PeerGraph
                   | TraceEnvSetLocalRoots  (LocalRootPeers PeerAddr)
+                  | TraceEnvRequestPublicRootPeers
                   | TraceEnvSetPublicRoots (Set PeerAddr)
                   | TraceEnvPublicRootTTL
                   | TraceEnvGossipTTL      PeerAddr
@@ -272,6 +274,7 @@ mockPeerSelectionActions' tracer
   where
     -- TODO: make this dynamic
     requestPublicRootPeers _n = do
+      traceWith tracer TraceEnvRequestPublicRootPeers
       let ttl :: Num n => n
           ttl = 60
       _ <- async $ do
@@ -480,7 +483,7 @@ tracerMockEnv :: Tracer (IOSim s) TraceMockEnv
 tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 
 tracerTestTraceEvent :: Tracer (IOSim s) TestTraceEvent
-tracerTestTraceEvent = dynamicTracer
+tracerTestTraceEvent = dynamicTracer <> Tracer (say . show)
 
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM

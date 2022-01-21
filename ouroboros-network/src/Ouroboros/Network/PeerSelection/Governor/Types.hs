@@ -402,7 +402,7 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.isSubsetOf inProgressPromoteCold coldPeersSet)
   . assert (Set.isSubsetOf inProgressPromoteWarm warmPeersSet)
   . assert (Set.isSubsetOf inProgressDemoteWarm  warmPeersSet)
-  -- . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet) TODO: XXX fix assert for failing hot demotion
+  . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet)
   . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
   where
     knownPeersSet       = KnownPeers.toSet knownPeers
@@ -412,7 +412,7 @@ assertPeerSelectionState PeerSelectionState{..} =
     activePeersSet      = activePeers
     coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet        = establishedPeersSet Set.\\ activePeersSet
-    -- hotPeersSet         = activePeersSet
+    hotPeersSet         = activePeersSet
 
 
 -- | A view of the status of each established peer, for testing and debugging.
@@ -592,6 +592,11 @@ data TracePeerSelection peeraddr =
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TracePromoteWarmDone    Int Int peeraddr
+     -- | aborted promotion of a warm peer; likely it was asynchronously
+     -- demoted in the meantime.
+     --
+     -- target active, actual active, peer
+     | TracePromoteWarmAborted Int Int peeraddr
      -- | target established, actual established, selected peers
      | TraceDemoteWarmPeers    Int Int (Set peeraddr)
      -- | target established, actual established, peer, reason
