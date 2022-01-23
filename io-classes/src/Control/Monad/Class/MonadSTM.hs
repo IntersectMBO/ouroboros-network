@@ -1,8 +1,16 @@
-{-# LANGUAGE DefaultSignatures      #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeFamilyDependencies     #-}
+-- undecidable instances needed for 'WrappedSTM' instances of 'MonadThrow' and
+-- 'MonadCatch' type classes.
+{-# LANGUAGE UndecidableInstances       #-}
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadLabelledSTM (..)
@@ -55,6 +63,8 @@ module Control.Monad.Class.MonadSTM
   , newTMVarMDefault
   , newEmptyTMVarM
   , newEmptyTMVarMDefault
+    -- 
+  , WrappedSTM (..)
   ) where
 
 import           Prelude hiding (read)
@@ -66,10 +76,19 @@ import qualified Control.Concurrent.STM.TVar as STM
 import           Control.Monad (MonadPlus (..))
 import qualified Control.Monad.STM as STM
 
+import           Control.Monad.Trans (lift)
+import           Control.Monad.Cont   (ContT (..))
+import           Control.Monad.Except (ExceptT (..))
+import           Control.Monad.RWS    (RWST (..))
+import           Control.Monad.Reader (ReaderT (..))
+import           Control.Monad.State  (StateT (..))
+import           Control.Monad.Writer (WriterT (..))
+
 import qualified Control.Monad.Class.MonadThrow as MonadThrow
 
 import           Control.Applicative (Alternative (..))
 import           Control.Exception
+import           Data.Function (on)
 import           Data.Kind (Type)
 import           GHC.Stack
 import           Numeric.Natural (Natural)
@@ -600,3 +619,358 @@ throwSTM = MonadThrow.throwIO
 catchSTM :: (MonadSTM m, MonadThrow.MonadCatch (STM m), Exception e)
          => STM m a -> (e -> STM m a) -> STM m a
 catchSTM = MonadThrow.catch
+
+--
+-- Monad Transformers
+--
+
+data Trans where
+    Cont   :: Trans
+    Reader :: Trans
+    Writer :: Trans
+    State  :: Trans
+    Except :: Trans
+    RWS    :: Trans
+
+
+-- | A newtype wrapper for an 'STM' monad for monad transformers.
+--
+newtype WrappedSTM (t :: Trans) r (m :: Type -> Type) a = WrappedSTM { runWrappedSTM :: STM m a }
+
+deriving instance MonadSTM m => Functor     (WrappedSTM t r m)
+deriving instance MonadSTM m => Applicative (WrappedSTM t r m)
+deriving instance MonadSTM m => Monad       (WrappedSTM t r m)
+deriving instance MonadSTM m => Alternative (WrappedSTM t r m)
+deriving instance MonadSTM m => MonadPlus   (WrappedSTM t r m)
+
+-- note: this (and the following) instance requires 'UndecidableInstances'
+-- extension because it violates 3rd Paterson condition, however `STM m` will
+-- resolve to a concrete type of kind (Type -> Type), and thus no larger than
+-- `m` itself, e.g. for `m ~ ReaderT r f`, `STM m ~ WrappedSTM Reader r f`.
+-- Instance resolution will termniate as soon as the monad transformer stack
+-- depth is exhousted.
+instance ( MonadSTM m
+         , MonadThrow.MonadThrow (STM m)
+         , MonadThrow.MonadCatch (STM m)
+         ) => MonadThrow.MonadThrow (WrappedSTM t r m) where
+  throwIO = WrappedSTM . MonadThrow.throwIO
+
+instance ( MonadSTM m
+         , MonadThrow.MonadThrow (STM m)
+         , MonadThrow.MonadCatch (STM m)
+         ) => MonadThrow.MonadCatch (WrappedSTM t r m) where
+  catch action handler = WrappedSTM
+                       $ MonadThrow.catch (runWrappedSTM action) (runWrappedSTM . handler)
+  generalBracket acquire release use = WrappedSTM $
+    MonadThrow.generalBracket (runWrappedSTM    acquire)
+                              (runWrappedSTM .: release)
+                              (runWrappedSTM .  use)
+
+instance MonadSTM m => MonadSTM (ContT r m) where
+    type STM (ContT r m) = WrappedSTM Cont r m
+    atomically = lift . atomically . runWrappedSTM
+
+    type TVar (ContT r m) = TVar m
+    newTVar        = WrappedSTM .  newTVar
+    readTVar       =            readTVar
+    writeTVar      = WrappedSTM .: writeTVar
+    retry          = WrappedSTM    retry
+    orElse         = WrappedSTM .: on orElse runWrappedSTM
+                               
+    modifyTVar     = WrappedSTM .: modifyTVar
+    modifyTVar'    = WrappedSTM .: modifyTVar'
+    stateTVar      = WrappedSTM .: stateTVar
+    swapTVar       = WrappedSTM .: swapTVar
+    check          = WrappedSTM .  check
+
+    type TMVar (ContT r m) = TMVar m
+    newTMVar       = WrappedSTM .  newTMVar
+    newEmptyTMVar  = WrappedSTM    newEmptyTMVar
+    takeTMVar      = WrappedSTM .  takeTMVar
+    tryTakeTMVar   = WrappedSTM .  tryTakeTMVar
+    putTMVar       = WrappedSTM .: putTMVar
+    tryPutTMVar    = WrappedSTM .: tryPutTMVar
+    readTMVar      = WrappedSTM .  readTMVar
+    tryReadTMVar   = WrappedSTM .  tryReadTMVar
+    swapTMVar      = WrappedSTM .: swapTMVar
+    isEmptyTMVar   = WrappedSTM .  isEmptyTMVar
+
+    type TQueue (ContT r m) = TQueue m
+    newTQueue      = WrappedSTM newTQueue
+    readTQueue     = WrappedSTM . readTQueue
+    tryReadTQueue  = WrappedSTM . tryReadTQueue
+    peekTQueue     = WrappedSTM . peekTQueue
+    tryPeekTQueue  = WrappedSTM . tryPeekTQueue
+    writeTQueue v  = WrappedSTM . writeTQueue v
+    isEmptyTQueue  = WrappedSTM . isEmptyTQueue
+
+    type TBQueue (ContT r m) = TBQueue m
+    newTBQueue     = WrappedSTM .  newTBQueue
+    readTBQueue    = WrappedSTM .  readTBQueue
+    tryReadTBQueue = WrappedSTM .  tryReadTBQueue
+    peekTBQueue    = WrappedSTM .  peekTBQueue
+    tryPeekTBQueue = WrappedSTM .  tryPeekTBQueue
+    flushTBQueue   = WrappedSTM .  flushTBQueue
+    writeTBQueue   = WrappedSTM .: writeTBQueue
+    lengthTBQueue  = WrappedSTM .  lengthTBQueue
+    isEmptyTBQueue = WrappedSTM .  isEmptyTBQueue
+    isFullTBQueue  = WrappedSTM .  isFullTBQueue
+
+
+instance MonadSTM m => MonadSTM (ReaderT r m) where
+    type STM (ReaderT r m) = WrappedSTM Reader r m
+    atomically = lift . atomically . runWrappedSTM
+
+    type TVar (ReaderT r m) = TVar m
+    newTVar        = WrappedSTM .  newTVar
+    readTVar       =            readTVar
+    writeTVar      = WrappedSTM .: writeTVar
+    retry          = WrappedSTM    retry
+    orElse         = WrappedSTM .: on orElse runWrappedSTM
+                               
+    modifyTVar     = WrappedSTM .: modifyTVar
+    modifyTVar'    = WrappedSTM .: modifyTVar'
+    stateTVar      = WrappedSTM .: stateTVar
+    swapTVar       = WrappedSTM .: swapTVar
+    check          = WrappedSTM  . check
+
+    type TMVar (ReaderT r m) = TMVar m
+    newTMVar       = WrappedSTM .  newTMVar
+    newEmptyTMVar  = WrappedSTM    newEmptyTMVar
+    takeTMVar      = WrappedSTM .  takeTMVar
+    tryTakeTMVar   = WrappedSTM .  tryTakeTMVar
+    putTMVar       = WrappedSTM .: putTMVar
+    tryPutTMVar    = WrappedSTM .: tryPutTMVar
+    readTMVar      = WrappedSTM .  readTMVar
+    tryReadTMVar   = WrappedSTM .  tryReadTMVar
+    swapTMVar      = WrappedSTM .: swapTMVar
+    isEmptyTMVar   = WrappedSTM .  isEmptyTMVar
+
+    type TQueue (ReaderT r m) = TQueue m
+    newTQueue      = WrappedSTM newTQueue
+    readTQueue     = WrappedSTM . readTQueue
+    tryReadTQueue  = WrappedSTM . tryReadTQueue
+    peekTQueue     = WrappedSTM . peekTQueue
+    tryPeekTQueue  = WrappedSTM . tryPeekTQueue
+    writeTQueue v  = WrappedSTM . writeTQueue v
+    isEmptyTQueue  = WrappedSTM . isEmptyTQueue
+
+    type TBQueue (ReaderT r m) = TBQueue m
+    newTBQueue     = WrappedSTM .  newTBQueue
+    readTBQueue    = WrappedSTM .  readTBQueue
+    tryReadTBQueue = WrappedSTM .  tryReadTBQueue
+    peekTBQueue    = WrappedSTM .  peekTBQueue
+    tryPeekTBQueue = WrappedSTM .  tryPeekTBQueue
+    flushTBQueue   = WrappedSTM .  flushTBQueue
+    writeTBQueue   = WrappedSTM .: writeTBQueue
+    lengthTBQueue  = WrappedSTM .  lengthTBQueue
+    isEmptyTBQueue = WrappedSTM .  isEmptyTBQueue
+    isFullTBQueue  = WrappedSTM .  isFullTBQueue
+
+
+instance (Monoid w, MonadSTM m) => MonadSTM (WriterT w m) where
+    type STM (WriterT w m) = WrappedSTM Writer w m
+    atomically = lift . atomically . runWrappedSTM
+
+    type TVar (WriterT w m) = TVar m
+    newTVar        = WrappedSTM .  newTVar
+    readTVar       =            readTVar
+    writeTVar      = WrappedSTM .: writeTVar
+    retry          = WrappedSTM    retry
+    orElse         = WrappedSTM .: on orElse runWrappedSTM
+                               
+    modifyTVar     = WrappedSTM .: modifyTVar
+    modifyTVar'    = WrappedSTM .: modifyTVar'
+    stateTVar      = WrappedSTM .: stateTVar
+    swapTVar       = WrappedSTM .: swapTVar
+    check          = WrappedSTM .  check
+
+    type TMVar (WriterT w m) = TMVar m
+    newTMVar       = WrappedSTM .  newTMVar
+    newEmptyTMVar  = WrappedSTM    newEmptyTMVar
+    takeTMVar      = WrappedSTM .  takeTMVar
+    tryTakeTMVar   = WrappedSTM .  tryTakeTMVar
+    putTMVar       = WrappedSTM .: putTMVar
+    tryPutTMVar    = WrappedSTM .: tryPutTMVar
+    readTMVar      = WrappedSTM .  readTMVar
+    tryReadTMVar   = WrappedSTM .  tryReadTMVar
+    swapTMVar      = WrappedSTM .: swapTMVar
+    isEmptyTMVar   = WrappedSTM .  isEmptyTMVar
+
+    type TQueue (WriterT w m) = TQueue m
+    newTQueue      = WrappedSTM newTQueue
+    readTQueue     = WrappedSTM . readTQueue
+    tryReadTQueue  = WrappedSTM . tryReadTQueue
+    peekTQueue     = WrappedSTM . peekTQueue
+    tryPeekTQueue  = WrappedSTM . tryPeekTQueue
+    writeTQueue v  = WrappedSTM . writeTQueue v
+    isEmptyTQueue  = WrappedSTM . isEmptyTQueue
+
+    type TBQueue (WriterT w m) = TBQueue m
+    newTBQueue     = WrappedSTM .  newTBQueue
+    readTBQueue    = WrappedSTM .  readTBQueue
+    tryReadTBQueue = WrappedSTM .  tryReadTBQueue
+    peekTBQueue    = WrappedSTM .  peekTBQueue
+    tryPeekTBQueue = WrappedSTM .  tryPeekTBQueue
+    flushTBQueue   = WrappedSTM .  flushTBQueue
+    writeTBQueue   = WrappedSTM .: writeTBQueue
+    lengthTBQueue  = WrappedSTM .  lengthTBQueue
+    isEmptyTBQueue = WrappedSTM .  isEmptyTBQueue
+    isFullTBQueue  = WrappedSTM .  isFullTBQueue
+
+
+instance MonadSTM m => MonadSTM (StateT s m) where
+    type STM (StateT s m) = WrappedSTM State s m
+    atomically = lift . atomically . runWrappedSTM
+
+    type TVar (StateT s m) = TVar m
+    newTVar        = WrappedSTM .  newTVar
+    readTVar       =            readTVar
+    writeTVar      = WrappedSTM .: writeTVar
+    retry          = WrappedSTM    retry
+    orElse         = WrappedSTM .: on orElse runWrappedSTM
+                               
+    modifyTVar     = WrappedSTM .: modifyTVar
+    modifyTVar'    = WrappedSTM .: modifyTVar'
+    stateTVar      = WrappedSTM .: stateTVar
+    swapTVar       = WrappedSTM .: swapTVar
+    check          = WrappedSTM .  check
+
+    type TMVar (StateT s m) = TMVar m
+    newTMVar       = WrappedSTM .  newTMVar
+    newEmptyTMVar  = WrappedSTM    newEmptyTMVar
+    takeTMVar      = WrappedSTM .  takeTMVar
+    tryTakeTMVar   = WrappedSTM .  tryTakeTMVar
+    putTMVar       = WrappedSTM .: putTMVar
+    tryPutTMVar    = WrappedSTM .: tryPutTMVar
+    readTMVar      = WrappedSTM .  readTMVar
+    tryReadTMVar   = WrappedSTM .  tryReadTMVar
+    swapTMVar      = WrappedSTM .: swapTMVar
+    isEmptyTMVar   = WrappedSTM .  isEmptyTMVar
+
+    type TQueue (StateT s m) = TQueue m
+    newTQueue      = WrappedSTM newTQueue
+    readTQueue     = WrappedSTM . readTQueue
+    tryReadTQueue  = WrappedSTM . tryReadTQueue
+    peekTQueue     = WrappedSTM . peekTQueue
+    tryPeekTQueue  = WrappedSTM . tryPeekTQueue
+    writeTQueue v  = WrappedSTM . writeTQueue v
+    isEmptyTQueue  = WrappedSTM . isEmptyTQueue
+
+    type TBQueue (StateT s m) = TBQueue m
+    newTBQueue     = WrappedSTM .  newTBQueue
+    readTBQueue    = WrappedSTM .  readTBQueue
+    tryReadTBQueue = WrappedSTM .  tryReadTBQueue
+    peekTBQueue    = WrappedSTM .  peekTBQueue
+    tryPeekTBQueue = WrappedSTM .  tryPeekTBQueue
+    flushTBQueue   = WrappedSTM .  flushTBQueue
+    writeTBQueue   = WrappedSTM .: writeTBQueue
+    lengthTBQueue  = WrappedSTM .  lengthTBQueue
+    isEmptyTBQueue = WrappedSTM .  isEmptyTBQueue
+    isFullTBQueue  = WrappedSTM .  isFullTBQueue
+
+
+instance MonadSTM m => MonadSTM (ExceptT e m) where
+    type STM (ExceptT e m) = WrappedSTM Except e m
+    atomically = lift . atomically . runWrappedSTM
+
+    type TVar (ExceptT e m) = TVar m
+    newTVar        = WrappedSTM .  newTVar
+    readTVar       =            readTVar
+    writeTVar      = WrappedSTM .: writeTVar
+    retry          = WrappedSTM    retry
+    orElse         = WrappedSTM .: on orElse runWrappedSTM
+                               
+    modifyTVar     = WrappedSTM .: modifyTVar
+    modifyTVar'    = WrappedSTM .: modifyTVar'
+    stateTVar      = WrappedSTM .: stateTVar
+    swapTVar       = WrappedSTM .: swapTVar
+    check          = WrappedSTM .  check
+
+    type TMVar (ExceptT e m) = TMVar m
+    newTMVar       = WrappedSTM .  newTMVar
+    newEmptyTMVar  = WrappedSTM    newEmptyTMVar
+    takeTMVar      = WrappedSTM .  takeTMVar
+    tryTakeTMVar   = WrappedSTM .  tryTakeTMVar
+    putTMVar       = WrappedSTM .: putTMVar
+    tryPutTMVar    = WrappedSTM .: tryPutTMVar
+    readTMVar      = WrappedSTM .  readTMVar
+    tryReadTMVar   = WrappedSTM .  tryReadTMVar
+    swapTMVar      = WrappedSTM .: swapTMVar
+    isEmptyTMVar   = WrappedSTM .  isEmptyTMVar
+
+    type TQueue (ExceptT e m) = TQueue m
+    newTQueue      = WrappedSTM newTQueue
+    readTQueue     = WrappedSTM . readTQueue
+    tryReadTQueue  = WrappedSTM . tryReadTQueue
+    peekTQueue     = WrappedSTM . peekTQueue
+    tryPeekTQueue  = WrappedSTM . tryPeekTQueue
+    writeTQueue v  = WrappedSTM . writeTQueue v
+    isEmptyTQueue  = WrappedSTM . isEmptyTQueue
+
+    type TBQueue (ExceptT e m) = TBQueue m
+    newTBQueue     = WrappedSTM .  newTBQueue
+    readTBQueue    = WrappedSTM .  readTBQueue
+    tryReadTBQueue = WrappedSTM .  tryReadTBQueue
+    peekTBQueue    = WrappedSTM .  peekTBQueue
+    tryPeekTBQueue = WrappedSTM .  tryPeekTBQueue
+    flushTBQueue   = WrappedSTM .  flushTBQueue
+    writeTBQueue   = WrappedSTM .: writeTBQueue
+    lengthTBQueue  = WrappedSTM .  lengthTBQueue
+    isEmptyTBQueue = WrappedSTM .  isEmptyTBQueue
+    isFullTBQueue  = WrappedSTM .  isFullTBQueue
+
+
+instance (Monoid w, MonadSTM m) => MonadSTM (RWST r w s m) where
+    type STM (RWST r w s m) = WrappedSTM RWS (r, w, s) m
+    atomically = lift . atomically . runWrappedSTM
+
+    type TVar (RWST r w s m) = TVar m
+    newTVar        = WrappedSTM .  newTVar
+    readTVar       =            readTVar
+    writeTVar      = WrappedSTM .: writeTVar
+    retry          = WrappedSTM    retry
+    orElse         = WrappedSTM .: on orElse runWrappedSTM
+
+    modifyTVar     = WrappedSTM .: modifyTVar
+    modifyTVar'    = WrappedSTM .: modifyTVar'
+    stateTVar      = WrappedSTM .: stateTVar
+    swapTVar       = WrappedSTM .: swapTVar
+    check          = WrappedSTM .  check
+
+    type TMVar (RWST r w s m) = TMVar m
+    newTMVar       = WrappedSTM .  newTMVar
+    newEmptyTMVar  = WrappedSTM    newEmptyTMVar
+    takeTMVar      = WrappedSTM .  takeTMVar
+    tryTakeTMVar   = WrappedSTM .  tryTakeTMVar
+    putTMVar       = WrappedSTM .: putTMVar
+    tryPutTMVar    = WrappedSTM .: tryPutTMVar
+    readTMVar      = WrappedSTM .  readTMVar
+    tryReadTMVar   = WrappedSTM .  tryReadTMVar
+    swapTMVar      = WrappedSTM .: swapTMVar
+    isEmptyTMVar   = WrappedSTM .  isEmptyTMVar
+
+    type TQueue (RWST r w s m) = TQueue m
+    newTQueue      = WrappedSTM newTQueue
+    readTQueue     = WrappedSTM . readTQueue
+    tryReadTQueue  = WrappedSTM . tryReadTQueue
+    peekTQueue     = WrappedSTM . peekTQueue
+    tryPeekTQueue  = WrappedSTM . tryPeekTQueue
+    writeTQueue v  = WrappedSTM . writeTQueue v
+    isEmptyTQueue  = WrappedSTM . isEmptyTQueue
+
+    type TBQueue (RWST r w s m) = TBQueue m
+    newTBQueue     = WrappedSTM . newTBQueue
+    readTBQueue    = WrappedSTM . readTBQueue
+    tryReadTBQueue = WrappedSTM . tryReadTBQueue
+    peekTBQueue    = WrappedSTM . peekTBQueue
+    tryPeekTBQueue = WrappedSTM . tryPeekTBQueue
+    flushTBQueue   = WrappedSTM . flushTBQueue
+    writeTBQueue   = WrappedSTM .: writeTBQueue
+    lengthTBQueue  = WrappedSTM . lengthTBQueue
+    isEmptyTBQueue = WrappedSTM . isEmptyTBQueue
+    isFullTBQueue  = WrappedSTM . isFullTBQueue
+
+
+(.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)
+(f .: g) x y = f (g x y)
