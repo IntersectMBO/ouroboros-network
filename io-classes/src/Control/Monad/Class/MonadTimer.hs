@@ -17,8 +17,20 @@ module Control.Monad.Class.MonadTimer
 import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
 import           Control.Exception (assert)
-import           Control.Monad.Reader
+#if defined(mingw32_HOST_OS)
+import           Control.Monad (when)
+#endif
 import qualified Control.Monad.STM as STM
+
+import           Control.Monad.Trans  (lift)
+import           Control.Monad.Cont   (ContT (..))
+import           Control.Monad.Except (ExceptT (..))
+import           Control.Monad.RWS    (RWST (..))
+import           Control.Monad.Reader (ReaderT (..))
+import           Control.Monad.State  (StateT (..))
+import           Control.Monad.Writer (WriterT (..))
+
+import           Data.Functor (void)
 import           Data.Kind (Type)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
 
@@ -228,8 +240,18 @@ microsecondsAsIntToDiffTime :: Int -> DiffTime
 microsecondsAsIntToDiffTime = (/ 1_000_000) . fromIntegral
 
 --
--- Lift to ReaderT
+-- Transfomer's instances
 --
 
+instance MonadDelay m => MonadDelay (ContT r m) where
+  threadDelay = lift . threadDelay
 instance MonadDelay m => MonadDelay (ReaderT r m) where
+  threadDelay = lift . threadDelay
+instance (Monoid w, MonadDelay m) => MonadDelay (WriterT w m) where
+  threadDelay = lift . threadDelay
+instance MonadDelay m => MonadDelay (StateT s m) where
+  threadDelay = lift . threadDelay
+instance MonadDelay m => MonadDelay (ExceptT e m) where
+  threadDelay = lift . threadDelay
+instance (Monoid w, MonadDelay m) => MonadDelay (RWST r w s m) where
   threadDelay = lift . threadDelay
