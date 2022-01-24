@@ -210,7 +210,8 @@ connections PeerSelectionActions{
 
     -- a hot -> cold transition has occurred if it is now cold, and it was hot
     asyncDemotion peeraddr PeerCold
-      | peeraddr `Set.member`    activePeers          = Just PeerCold
+      | peeraddr `Set.member`    activePeers
+      , peeraddr `Set.notMember` inProgressDemoteHot  = Just PeerCold
 
     asyncDemotion _        _                          = Nothing
 
