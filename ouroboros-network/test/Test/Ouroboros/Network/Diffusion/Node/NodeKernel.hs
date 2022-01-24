@@ -129,8 +129,8 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
                             let block = ConcreteBlock.fixupBlock anchor
                                       . ConcreteBlock.mkPartialBlock slot
                                       -- TODO:
-                                      -- * use ByteString, not String;
-                                      -- * cycle through some bodies
+                                      --  * use ByteString, not String;
+                                      --  * cycle through some bodies
                                       --
                                       $ ConcreteBlock.BlockBody (BSC.pack "")
                             in case randomR (0, 100) seed of
