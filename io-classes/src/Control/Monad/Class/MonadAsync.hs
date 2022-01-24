@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds              #-}
 {-# LANGUAGE DefaultSignatures      #-}
 {-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE GADTs                  #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE QuantifiedConstraints  #-}
 {-# LANGUAGE RankNTypes             #-}
@@ -7,7 +9,8 @@
 {-# LANGUAGE TypeApplications       #-}
 {-# LANGUAGE TypeFamilies           #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
-
+-- MonadAsync's ReaderT instance is undecidable.
+{-# LANGUAGE UndecidableInstances   #-}
 module Control.Monad.Class.MonadAsync
   ( MonadAsync (..)
   , AsyncCancelled (..)
@@ -34,10 +37,14 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
+import           Control.Monad.Trans (lift)
+import           Control.Monad.Reader (ReaderT (..))
+
 import           Control.Concurrent.Async (AsyncCancelled (..))
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Exception as E
 
+import           Data.Bifunctor (first)
 import           Data.Foldable (fold)
 import           Data.Functor (void)
 import           Data.Kind (Type)
@@ -390,3 +397,77 @@ forkRepeat label action =
 
 tryAll :: MonadCatch m => m a -> m (Either SomeException a)
 tryAll = try
+
+
+--
+-- ReaderT instance
+--
+
+newtype WrappedAsync r (m :: Type -> Type) a =
+    WrappedAsync { unWrapAsync :: Async m a }
+
+instance ( MonadAsync m
+         , MonadCatch (STM m)
+         ) => MonadAsync (ReaderT r m) where
+    type Async (ReaderT r m) = WrappedAsync r m
+    asyncThreadId (WrappedAsync a) = asyncThreadId a
+
+    async      (ReaderT ma)  = ReaderT $ \r -> WrappedAsync <$> async (ma r)
+    withAsync (ReaderT ma) f = ReaderT $ \r -> withAsync (ma r)
+                                       $ \a -> runReaderT (f (WrappedAsync a)) r
+    asyncWithUnmask f        = ReaderT $ \r -> fmap WrappedAsync
+                                             $ asyncWithUnmask
+                                             $ \unmask -> runReaderT (f (liftF unmask)) r
+      where
+        liftF :: (m a -> m a) -> ReaderT r m a -> ReaderT r m a
+        liftF g (ReaderT r) = ReaderT (g . r)
+
+    waitCatchSTM = WrappedSTM . waitCatchSTM . unWrapAsync
+    pollSTM      = WrappedSTM . pollSTM      . unWrapAsync
+
+    race         (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> race  (ma r) (mb r)
+    race_        (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> race_ (ma r) (mb r)
+    concurrently (ReaderT ma) (ReaderT mb) = ReaderT $ \r -> concurrently (ma r) (mb r)
+
+    wait                  = lift .  wait         . unWrapAsync
+    poll                  = lift .  poll         . unWrapAsync
+    waitCatch             = lift .  waitCatch    . unWrapAsync
+    cancel                = lift .  cancel       . unWrapAsync
+    uninterruptibleCancel = lift .  uninterruptibleCancel
+                                                 . unWrapAsync
+    cancelWith            = (lift .: cancelWith)
+                          . unWrapAsync
+    waitAny               = fmap (first WrappedAsync)
+                          . lift . waitAny
+                          . map unWrapAsync
+    waitAnyCatch          = fmap (first WrappedAsync)
+                          . lift . waitAnyCatch
+                          . map unWrapAsync
+    waitAnyCancel         = fmap (first WrappedAsync)
+                          . lift . waitAnyCancel
+                          . map unWrapAsync
+    waitAnyCatchCancel    = fmap (first WrappedAsync)
+                          . lift . waitAnyCatchCancel
+                          . map unWrapAsync
+    waitEither            = on (lift .: waitEither)            unWrapAsync
+    waitEitherCatch       = on (lift .: waitEitherCatch)       unWrapAsync
+    waitEitherCancel      = on (lift .: waitEitherCancel)      unWrapAsync
+    waitEitherCatchCancel = on (lift .: waitEitherCatchCancel) unWrapAsync
+    waitEither_           = on (lift .: waitEither_)           unWrapAsync
+    waitBoth              = on (lift .: waitBoth)              unWrapAsync
+
+
+--
+-- Utilities
+--
+
+(.:) :: (c -> d) -> (a -> b -> c) -> (a -> b -> d)
+(f .: g) x y = f (g x y)
+
+
+-- | A higher order version of 'Data.Function.on'
+--
+on :: (f a -> f b -> c)
+   -> (forall x. g x -> f x)
+   -> (g a -> g b -> c)
+on f g = \a b -> f (g a) (g b)
