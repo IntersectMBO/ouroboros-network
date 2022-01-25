@@ -255,3 +255,53 @@ instance MonadDelay m => MonadDelay (ExceptT e m) where
   threadDelay = lift . threadDelay
 instance (Monoid w, MonadDelay m) => MonadDelay (RWST r w s m) where
   threadDelay = lift . threadDelay
+
+instance MonadTimer m => MonadTimer (ReaderT r m) where
+  newtype Timeout (ReaderT r m) = TimeoutR { unTimeoutR :: Timeout m }
+  newTimeout    = lift . fmap TimeoutR . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutR
+  updateTimeout (TimeoutR t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutR
+  registerDelay = lift . registerDelay
+  timeout d f   = ReaderT $ \r -> timeout d (runReaderT f r)
+
+instance (Monoid w, MonadTimer m) => MonadTimer (WriterT w m) where
+  newtype Timeout (WriterT w m) = TimeoutW { unTimeoutW :: Timeout m }
+  newTimeout    = lift . fmap TimeoutW . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutW
+  updateTimeout (TimeoutW t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutW
+  registerDelay = lift . registerDelay
+  timeout d f   = WriterT $ do
+    r <- timeout d (runWriterT f)
+    return $ case r of
+      Nothing     -> (Nothing, mempty)
+      Just (a, w) -> (Just a, w)
+
+instance MonadTimer m => MonadTimer (StateT s m) where
+  newtype Timeout (StateT s m) = TimeoutS { unTimeoutS :: Timeout m }
+  newTimeout    = lift . fmap TimeoutS . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutS
+  updateTimeout (TimeoutS t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutS
+  registerDelay = lift . registerDelay
+  timeout d f = StateT $ \s -> do
+    r <- timeout d (runStateT f s)
+    return $ case r of
+      Nothing      -> (Nothing, s)
+      Just (a, s') -> (Just a, s')
+
+instance (Monoid w, MonadTimer m) => MonadTimer (RWST r w s m) where
+  newtype Timeout (RWST r w s m) = TimeoutRWS { unTimeoutRWS :: Timeout m }
+  newTimeout    = lift . fmap TimeoutRWS . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutRWS
+  updateTimeout (TimeoutRWS t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutRWS
+  registerDelay = lift . registerDelay
+  timeout d (RWST f) = RWST $ \r s -> do
+    res <- timeout d (f r s)
+    return $ case res of
+      Nothing         -> (Nothing, s, mempty)
+      Just (a, s', w) -> (Just a, s', w)
+
+
