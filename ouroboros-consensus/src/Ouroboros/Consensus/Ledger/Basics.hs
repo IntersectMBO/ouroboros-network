@@ -56,26 +56,30 @@ module Ouroboros.Consensus.Ledger.Basics (
   , toSMapKind
     -- * Special classes of ledger states
   , InMemory (..)
+    -- * Changelog
+  , DbChangelog (..)
+  , DbChangelogState (..)
     -- * Misc
   , ShowLedgerState (..)
   ) where
 
 import           Data.Kind (Type)
-import           Data.Map (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
+import qualified NoThunks.Class as NoThunks
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (FootprintL (..))
+import           Ouroboros.Network.AnchoredSeq (AnchoredSeq)
+import qualified Ouroboros.Network.AnchoredSeq as AnchoredSeq
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
+
+import           Ouroboros.Consensus.Storage.LedgerDB.HD
 
 {-------------------------------------------------------------------------------
   Tip
@@ -284,98 +288,120 @@ applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l mk -> Ticked1 l mk
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
-  Link block to its ledger
+  Concrete ledger tables
 -------------------------------------------------------------------------------}
 
 type LedgerStateKind = MapKind -> Type
 
-data MapKind = EmptyMK
-             | KeysMK
-             | ValuesMK
-             | TrackingMK
+data MapKind = AnnMK Type MapKind   -- TODO this one really complicates a few things below :(
+
              | DiffMK
-             -- | SnapshotsMK
-             --  TODO: we won't use snapshots in the first iteration.
-             | AnnMK Type MapKind
+             | EmptyMK
+             | KeysMK
+             | SeqDiffMK
+             | TrackingMK
+             | ValuesMK
 
 data ApplyMapKind :: MapKind -> Type -> Type -> Type where
-  ApplyEmptyMK    ::                                 ApplyMapKind EmptyMK      k v
-  ApplyKeysMK     :: Set k                        -> ApplyMapKind KeysMK       k v
-  ApplyValuesMK   :: Map k v                      -> ApplyMapKind ValuesMK     k v
-  ApplyTrackingMK :: {- TODO -}                      ApplyMapKind TrackingMK   k v
-  ApplyDiffMK     :: {- TODO -}                      ApplyMapKind DiffMK       k v
---  ApplyAnnMK      :: !a -> !(ApplyMapKind mk k v) -> ApplyMapKind (AnnMK a mk) k v
+  ApplyAnnMK      :: Typeable a => !a -> !(ApplyMapKind mk k v) -> ApplyMapKind (AnnMK a mk) k v
 
-emptyAppliedMK :: SMapKind mk -> ApplyMapKind mk k v
-emptyAppliedMK = \case
-  SEmptyMK    -> ApplyEmptyMK
-  SKeysMK     -> ApplyKeysMK Set.empty
-  SValuesMK   -> ApplyValuesMK Map.empty
-  STrackingMK -> ApplyTrackingMK
-  SDiffMK     -> ApplyDiffMK
+  ApplyDiffMK     :: !(UtxoDiff    k v)                    -> ApplyMapKind DiffMK       k v
+  ApplyEmptyMK    ::                                          ApplyMapKind EmptyMK      k v
+  ApplyKeysMK     :: !(UtxoKeys    k v)                    -> ApplyMapKind KeysMK       k v
+  ApplySeqDiffMK  :: !(SeqUtxoDiff k v)                    -> ApplyMapKind SeqDiffMK    k v
+  ApplyTrackingMK :: !(UtxoValues  k v) -> !(UtxoDiff k v) -> ApplyMapKind TrackingMK   k v
+  ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind ValuesMK     k v
 
-toSMapKind :: ApplyMapKind mk k v -> SMapKind mk
-toSMapKind = \case
-  ApplyEmptyMK    -> SEmptyMK
-  ApplyKeysMK   _ -> SKeysMK
-  ApplyValuesMK _ -> SValuesMK
-  ApplyTrackingMK -> STrackingMK
-  ApplyDiffMK     -> SDiffMK
+class HasEmptyMK mk where
+  emptyAppliedMK_ :: Ord k => ApplyMapKind mk k v
 
-mapValuesAppliedMK :: (v -> v') -> ApplyMapKind mk k v ->  ApplyMapKind mk k v'
+emptyAppliedMK :: (HasEmptyMK mk, Ord k) => proxy mk -> ApplyMapKind mk k v
+emptyAppliedMK _ = emptyAppliedMK_
+
+-- no instance for AnnMK
+instance HasEmptyMK EmptyMK    where emptyAppliedMK_ = ApplyEmptyMK
+instance HasEmptyMK KeysMK     where emptyAppliedMK_ = ApplyKeysMK     emptyUtxoKeys
+instance HasEmptyMK ValuesMK   where emptyAppliedMK_ = ApplyValuesMK   emptyUtxoValues
+instance HasEmptyMK TrackingMK where emptyAppliedMK_ = ApplyTrackingMK emptyUtxoValues emptyUtxoDiff
+instance HasEmptyMK DiffMK     where emptyAppliedMK_ = ApplyDiffMK     emptyUtxoDiff
+instance HasEmptyMK SeqDiffMK  where emptyAppliedMK_ = ApplySeqDiffMK  emptySeqUtxoDiff
+
+mapValuesAppliedMK :: Ord k => (v -> v') -> ApplyMapKind mk k v ->  ApplyMapKind mk k v'
 mapValuesAppliedMK f = \case
-  ApplyEmptyMK     -> ApplyEmptyMK
-  ApplyKeysMK ks   -> ApplyKeysMK ks
-  ApplyValuesMK vs -> ApplyValuesMK (f <$> vs)
-  ApplyTrackingMK  -> ApplyTrackingMK
-  ApplyDiffMK      -> ApplyDiffMK
+  ApplyAnnMK a amk        -> ApplyAnnMK    a (mapValuesAppliedMK f amk)
 
+  ApplyEmptyMK            -> ApplyEmptyMK
+  ApplyKeysMK ks          -> ApplyKeysMK     (castUtxoKeys ks)
+  ApplyValuesMK vs        -> ApplyValuesMK   (mapUtxoValues f vs)
+  ApplyTrackingMK vs diff -> ApplyTrackingMK (mapUtxoValues f vs)     (mapUtxoDiff f diff)
+  ApplyDiffMK diff        -> ApplyDiffMK     (mapUtxoDiff f diff)
+  ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
 
+{-
 instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
   ApplyEmptyMK    == _               = True
   ApplyKeysMK   l == ApplyKeysMK   r = l == r
   ApplyValuesMK l == ApplyValuesMK r = l == r
   ApplyTrackingMK == _               = True
   ApplyDiffMK     == _               = True
+-}
 
 instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
-  wNoThunks    = error "wNoThunks @ApplyMapKind"
+  wNoThunks ctxt   = NoThunks.allNoThunks . \case
+    ApplyAnnMK a amk        -> [noThunks ctxt (NoThunks.InspectHeap a), noThunks ctxt amk]
+    ApplyEmptyMK            -> []
+    ApplyKeysMK ks          -> [noThunks ctxt ks]
+    ApplyValuesMK vs        -> [noThunks ctxt vs]
+    ApplyTrackingMK vs diff -> [noThunks ctxt vs, noThunks ctxt diff]
+    ApplyDiffMK diff        -> [noThunks ctxt diff]
+    ApplySeqDiffMK diffs    -> [noThunks ctxt diffs]
+
   showTypeOf _ = "ApplyMapKind"
 
-  -- TODO methods
-
 data instance Sing (mk :: MapKind) :: Type where
+  SAnnMK      :: Typeable a => Sing mk -> Sing (AnnMK a mk)
+
   SEmptyMK    :: Sing EmptyMK
   SKeysMK     :: Sing KeysMK
   SValuesMK   :: Sing ValuesMK
   STrackingMK :: Sing TrackingMK
   SDiffMK     :: Sing DiffMK
+  SSeqDiffMK  :: Sing SeqDiffMK
 
 type SMapKind = Sing :: MapKind -> Type
+
+instance (Typeable a, SingI mk) => SingI (AnnMK a mk) where sing = SAnnMK sing
 
 instance SingI EmptyMK    where sing = SEmptyMK
 instance SingI KeysMK     where sing = SKeysMK
 instance SingI ValuesMK   where sing = SValuesMK
 instance SingI TrackingMK where sing = STrackingMK
 instance SingI DiffMK     where sing = SDiffMK
+instance SingI SeqDiffMK  where sing = SSeqDiffMK
+
+toSMapKind :: SingI mk => proxy mk k v -> SMapKind mk
+toSMapKind _ = sing
+
 
 instance Eq (Sing (mk :: MapKind)) where
-  l == _ = case l of
-    SEmptyMK    -> True
-    SKeysMK     -> True
-    SValuesMK   -> True
-    STrackingMK -> True
-    SDiffMK     -> True
+  _ == _ = True
 
 instance Show (Sing (mk :: MapKind)) where
   show = \case
+    SAnnMK amk  -> "(SAnnMK " <> show amk <> ")"   -- TODO show the Typeable?
+
     SEmptyMK    -> "SEmptyMK"
     SKeysMK     -> "SKeysMK"
     SValuesMK   -> "SValuesMK"
     STrackingMK -> "STrackingMK"
     SDiffMK     -> "SDiffMK"
+    SSeqDiffMK  -> "SSeqDiffMK"
 
 deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
+
+{-------------------------------------------------------------------------------
+  Link block to its ledger
+-------------------------------------------------------------------------------}
 
 -- | Ledger state associated with a block
 data family LedgerState blk :: LedgerStateKind
@@ -419,3 +445,22 @@ type AnnTableKeySets l a = LedgerTables l (AnnMK a KeysMK)
 type TableReadSets l = LedgerTables l ValuesMK
 
 type AnnTableReadSets l a = LedgerTables l (AnnMK a ValuesMK)
+
+{-------------------------------------------------------------------------------
+  Changelog
+-------------------------------------------------------------------------------}
+
+data DbChangelog l = DbChangelog {
+    changelogDiffAnchor :: !(WithOrigin SlotNo)
+  , changelogDiffs      :: !(LedgerTables l SeqDiffMK)
+  , changelogStates     ::
+      !(AnchoredSeq
+          (WithOrigin SlotNo)
+          (DbChangelogState l)
+          (DbChangelogState l)
+       )
+  }
+
+newtype DbChangelogState l = DbChangelogState (l ValuesMK)
+
+-- TODO
