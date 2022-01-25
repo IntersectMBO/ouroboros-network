@@ -341,13 +341,13 @@ getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 
 -- | Get current ledger
 getCurrentLedger ::
-     Monad (STM m)
+     (Monad (STM m), IsLedger (LedgerState blk))
   => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
 getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
 
 -- | Get the immutable ledger, i.e., typically @k@ blocks back.
 getImmutableLedger ::
-     Monad (STM m)
+     (Monad (STM m), IsLedger (LedgerState blk))
   => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
 getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 

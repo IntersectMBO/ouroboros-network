@@ -156,8 +156,8 @@ data LedgerDB (l :: LedgerStateKind) = LedgerDB {
     }
   deriving (Generic)
 
-deriving instance (Eq       (l EmptyMK), Eq       (l ValuesMK)) => Eq       (LedgerDB l)
-deriving instance (NoThunks (l EmptyMK), NoThunks (l ValuesMK)) => NoThunks (LedgerDB l)
+deriving instance (Eq       (l EmptyMK), Eq       (l ValuesMK), Eq       (LedgerTables l SeqDiffMK)) => Eq       (LedgerDB l)
+deriving instance (NoThunks (l EmptyMK), NoThunks (l ValuesMK), NoThunks (LedgerTables l SeqDiffMK)) => NoThunks (LedgerDB l)
 
 instance ShowLedgerState l => Show (LedgerDB l) where
   showsPrec = error "showsPrec @LedgerDB"
@@ -176,6 +176,10 @@ instance ShowLedgerState l => Show (Checkpoint (l ValuesMK)) where
   showsPrec = error "showsPrec @CheckPoint"
 
 instance GetTip (l ValuesMK) => Anchorable (WithOrigin SlotNo) (Checkpoint (l ValuesMK)) (Checkpoint (l ValuesMK)) where
+  asAnchor = id
+  getAnchorMeasure _ = getTipSlot . unCheckpoint
+
+instance GetTip (l EmptyMK) => Anchorable (WithOrigin SlotNo) (Checkpoint (l EmptyMK)) (Checkpoint (l EmptyMK)) where
   asAnchor = id
   getAnchorMeasure _ = getTipSlot . unCheckpoint
 
@@ -411,23 +415,6 @@ applyBlock cfg ap db = case ap of
   HD Interface that I need (Could be moved to  Ouroboros.Consensus.Ledger.Basics )
 -------------------------------------------------------------------------------}
 
-data Seq (a :: LedgerStateKind) s
-
-seqLast :: Seq state (state EmptyMK) -> state EmptyMK
-seqLast = undefined
-
-seqAt :: SeqNo state -> Seq state (state EmptyMK) -> state EmptyMK
-seqAt = undefined
-
-seqAnchorAt :: SeqNo state -> Seq state (state EmptyMK) -> Seq state (state EmptyMK)
-seqAnchorAt = undefined
-
-seqLength :: Seq state (state EmptyMK) -> Int
-seqLength = undefined
-
-data DbChangelog (l :: LedgerStateKind)
-  deriving (Eq, Generic, NoThunks)
-
 newtype RewoundTableKeySets l = RewoundTableKeySets (AnnTableKeySets l ()) -- KeySetSanityInfo l
 
 initialDbChangelog
@@ -452,11 +439,13 @@ extendDbChangelog
   -> DbChangelog l
 extendDbChangelog = undefined
 
-dbChangelogStateAnchor :: DbChangelog state -> SeqNo state
-dbChangelogStateAnchor = undefined
-
-dbChangelogStates :: DbChangelog state -> Seq state (state EmptyMK)
-dbChangelogStates = undefined
+dbChangelogVolatileCheckpoints ::
+     DbChangelog l
+  -> AnchoredSeq
+       (WithOrigin SlotNo)
+       (Checkpoint (l EmptyMK))
+       (Checkpoint (l EmptyMK))
+dbChangelogVolatileCheckpoints = undefined
 
 dbChangelogRollBack :: Point blk -> DbChangelog state -> DbChangelog state
 dbChangelogRollBack = undefined
@@ -504,14 +493,20 @@ defaultReadKeySets f dbReader = runReaderT (runDbReader dbReader) f
 -------------------------------------------------------------------------------}
 
 -- | The ledger state at the tip of the chain
-ledgerDbCurrent :: LedgerDB l -> l EmptyMK
-ledgerDbCurrent = seqLast . dbChangelogStates . ledgerDbChangelog
-
+ledgerDbCurrent :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
+ledgerDbCurrent =
+    either unCheckpoint unCheckpoint
+  . AS.head
+  . dbChangelogVolatileCheckpoints
+  . ledgerDbChangelog
 
 -- | Information about the state of the ledger at the anchor
-ledgerDbAnchor :: LedgerDB l -> l EmptyMK
-ledgerDbAnchor LedgerDB{..} = seqAt (dbChangelogStateAnchor ledgerDbChangelog) (dbChangelogStates ledgerDbChangelog)
-
+ledgerDbAnchor :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
+ledgerDbAnchor =
+    either unCheckpoint unCheckpoint
+  . AS.last
+  . dbChangelogVolatileCheckpoints
+  . ledgerDbChangelog
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --
@@ -521,13 +516,11 @@ ledgerDbSnapshots :: LedgerDB l -> [(Word64, l EmptyMK)]
 ledgerDbSnapshots LedgerDB{} = undefined
 
 -- | How many blocks can we currently roll back?
-ledgerDbMaxRollback :: GetTip (l ValuesMK) => LedgerDB l -> Word64
+ledgerDbMaxRollback :: (GetTip (l ValuesMK), GetTip (l EmptyMK)) => LedgerDB l -> Word64
 ledgerDbMaxRollback LedgerDB{..} =
   let
     old = fromIntegral (AS.length ledgerDbCheckpoints)
-    new = fromIntegral
-        $ seqLength
-        $ seqAnchorAt (dbChangelogStateAnchor ledgerDbChangelog) (dbChangelogStates ledgerDbChangelog)
+    new = fromIntegral $ AS.length $ dbChangelogVolatileCheckpoints ledgerDbChangelog
   in
     assert (old == new) new
 
@@ -644,7 +637,7 @@ instance IsLedger l => HasSeqNo l where
 -- | Rollback
 --
 -- Returns 'Nothing' if maximum rollback is exceeded.
-rollback :: forall l. GetTip (l ValuesMK) => Word64 -> LedgerDB l -> Maybe (LedgerDB l)
+rollback :: forall l. (GetTip (l ValuesMK), GetTip (l EmptyMK)) => Word64 -> LedgerDB l -> Maybe (LedgerDB l)
 rollback n db@LedgerDB{..}
     | n <= ledgerDbMaxRollback db
     = Just db {
