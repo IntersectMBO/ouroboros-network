@@ -129,7 +129,10 @@ deriving anyclass instance
      (CanHardFork xs, Typeable mk)
   => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) mk)
 
-instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
+instance ( CanHardFork xs
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         )
+  => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
 
   type AuxLedgerEvent (LedgerState (HardForkBlock xs)) = OneEraLedgerEvent xs
@@ -209,7 +212,9 @@ instance (TableStuff (LedgerState x), Typeable mk) => NoThunks (LedgerTables (Le
   ApplyBlock
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs
+instance ( CanHardFork xs
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
 
   applyBlockLedgerResult cfg
@@ -285,6 +290,7 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st))
 
 instance ( CanHardFork xs
          , TickedTableStuff (LedgerState (HardForkBlock xs))
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
          ) => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
@@ -358,6 +364,7 @@ type CanHardFork' xs =
   ( CanHardFork xs
   , TickedTableStuff (LedgerState (HardForkBlock xs))
   , TableStuff (Ticked1 (LedgerState (HardForkBlock xs)))
+  , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
   )
 
 instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
