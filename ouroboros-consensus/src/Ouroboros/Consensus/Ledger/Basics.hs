@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -65,6 +67,7 @@ module Ouroboros.Consensus.Ledger.Basics (
 
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
@@ -173,6 +176,7 @@ class ( -- Requirements on the ledger state itself
       , HeaderHash (l ValuesMK) ~ HeaderHash l
       , HeaderHash (l DiffMK) ~ HeaderHash l
       , HeaderHash (l TrackingMK) ~ HeaderHash l
+      , NoThunks (LedgerTables l SeqDiffMK)
       ) => IsLedger (l :: LedgerStateKind) where
   -- | Errors that can arise when updating the ledger
   --
@@ -450,17 +454,35 @@ type AnnTableReadSets l a = LedgerTables l (AnnMK a ValuesMK)
   Changelog
 -------------------------------------------------------------------------------}
 
+-- |
+--
+-- INVARIANT: the head of 'changelogImmutableStates' is the anchor of
+-- 'changelogVolatileStates'.
 data DbChangelog l = DbChangelog {
-    changelogDiffAnchor :: !(WithOrigin SlotNo)
-  , changelogDiffs      :: !(LedgerTables l SeqDiffMK)
-  , changelogStates     ::
+    changelogDiffAnchor      :: !(WithOrigin SlotNo)
+  , changelogDiffs           :: !(LedgerTables l SeqDiffMK)
+  , changelogImmutableStates ::
+      !(AnchoredSeq
+          (WithOrigin SlotNo)
+          (DbChangelogState l)
+          (DbChangelogState l)
+       )
+  , changelogVolatileStates  ::
       !(AnchoredSeq
           (WithOrigin SlotNo)
           (DbChangelogState l)
           (DbChangelogState l)
        )
   }
+  deriving (Generic)
 
-newtype DbChangelogState l = DbChangelogState (l ValuesMK)
+deriving instance (Eq       (LedgerTables l SeqDiffMK), Eq       (l EmptyMK)) => Eq       (DbChangelog l)
+deriving instance (NoThunks (LedgerTables l SeqDiffMK), NoThunks (l EmptyMK)) => NoThunks (DbChangelog l)
+
+newtype DbChangelogState l = DbChangelogState (l EmptyMK)
+  deriving (Generic)
+
+deriving instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
+deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
 
 -- TODO
