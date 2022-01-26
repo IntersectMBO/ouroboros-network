@@ -39,6 +39,7 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (unEpochSlots)
 import qualified Cardano.Chain.Update as CC.Update
+import qualified Cardano.Protocol.TPraos.OCert as SL
 
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import           Ouroboros.Consensus.Byron.Ledger.Conversions

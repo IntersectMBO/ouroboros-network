@@ -49,11 +49,13 @@ library
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
+                     , cardano-data
                      , cardano-ledger-core
                      , cardano-protocol-tpraos
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
+                     , compact-map
                      , containers        >=0.5   && <0.7
                      , data-default-class
                      , deepseq

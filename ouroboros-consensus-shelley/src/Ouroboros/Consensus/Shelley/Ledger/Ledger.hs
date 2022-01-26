@@ -87,9 +87,11 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL (makeHeaderView)
 import qualified Control.State.Transition.Extended as STS
 
+import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
-import           Ouroboros.Consensus.Protocol.TPraos (MaxMajorProtVer (..),
-                     Ticked (TickedPraosLedgerView))
+import           Ouroboros.Consensus.Protocol.TPraos
+                     (ConsensusConfig (tpraosParams), MaxMajorProtVer (..),
+                     Ticked (TickedPraosLedgerView), tpraosMaxMajorPV)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
@@ -374,7 +376,7 @@ applyHelper ::
      (ShelleyBasedEra era, Monad m)
   => (   SL.Globals
       -> SL.NewEpochState era
-      -> SL.Block SL.BHeaderView era
+      -> SL.Block (SL.BHeaderView (EraCrypto era)) era
       -> m (LedgerResult
               (LedgerState (ShelleyBlock era))
               (SL.NewEpochState era)
@@ -493,16 +495,16 @@ instance ShelleyBasedEra era => BasicEnvelopeValidation (ShelleyBlock era) where
   -- defaults all OK
 
 instance ShelleyBasedEra era => ValidateEnvelope (ShelleyBlock era) where
-  type OtherHeaderEnvelopeError (ShelleyBlock era) =
-    Chain.ChainPredicateFailure era
+  type OtherHeaderEnvelopeError (ShelleyBlock era) = Chain.ChainPredicateFailure
 
   additionalEnvelopeChecks cfg (TickedPraosLedgerView ledgerView) hdr =
       SL.chainChecks
-        globals
+        maxPV
         (SL.lvChainChecks ledgerView)
         (SL.makeHeaderView (shelleyHeaderRaw hdr))
+
     where
-      globals = shelleyLedgerGlobals (configLedger cfg)
+      MaxMajorProtVer maxPV = tpraosMaxMajorPV . tpraosParams $ configConsensus cfg
 
 {-------------------------------------------------------------------------------
   Auxiliary

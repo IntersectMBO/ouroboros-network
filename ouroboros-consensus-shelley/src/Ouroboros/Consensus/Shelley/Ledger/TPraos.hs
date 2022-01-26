@@ -1,10 +1,12 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 
--- TODO where to put this?
 module Ouroboros.Consensus.Shelley.Ledger.TPraos () where
 
 import           Data.Map.Strict (Map)
@@ -16,7 +18,10 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Signed
 
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import qualified Cardano.Protocol.TPraos.OCert as SL
 
+import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -28,7 +33,8 @@ import           Ouroboros.Consensus.Shelley.Ledger.Config
 
 type instance BlockProtocol (ShelleyBlock era) = TPraos (EraCrypto era)
 
-instance ShelleyBasedEra era => BlockSupportsProtocol (ShelleyBlock era) where
+instance (SL.PraosCrypto (EraCrypto era), ShelleyBasedEra era)
+  => BlockSupportsProtocol (ShelleyBlock era) where
   validateView _cfg (ShelleyHeader hdr _) = hdr
 
   selectView cfg hdr@(ShelleyHeader shdr _) = TPraosChainSelectView {

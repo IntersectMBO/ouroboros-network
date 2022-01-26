@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL
 
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras

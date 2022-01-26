@@ -68,6 +68,9 @@ import qualified Cardano.Ledger.Shelley.Rules.Utxow as SL
 import           Cardano.Ledger.ShelleyMA ()
 import           Control.State.Transition (State)
 
+import           Cardano.Ledger.Hashes (EraIndependentTxBody)
+import           Cardano.Ledger.Keys (DSignable, Hash)
+import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
 
@@ -120,6 +123,11 @@ type EraCrypto era = Crypto era
 -- replaced with an appropriate API - see
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
 class ( SL.ShelleyBasedEra era
+
+        -- Constraints that relate to the protocol. These should be dropped once
+        -- the protocol is independent of the ledger.
+      , SL.PraosCrypto (EraCrypto era)
+      , SL.GetLedgerView era
 
       , State (Core.EraRule "PPUP" era) ~ SL.PPUPState era
       , Default (State (Core.EraRule "PPUP" era))
@@ -190,22 +198,26 @@ defaultApplyShelleyBasedTx globals ledgerEnv mempoolState _wti tx =
       mempoolState
       tx
 
-instance SL.PraosCrypto c => ShelleyBasedEra (ShelleyEra c) where
+instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+  => ShelleyBasedEra (ShelleyEra c) where
   shelleyBasedEraName _ = "Shelley"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
+instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+  => ShelleyBasedEra (AllegraEra c) where
   shelleyBasedEraName _ = "Allegra"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
+instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+  => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
+instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+  => ShelleyBasedEra (AlonzoEra c) where
   shelleyBasedEraName _ = "Alonzo"
 
   applyShelleyBasedTx globals ledgerEnv mempoolState wti tx = do

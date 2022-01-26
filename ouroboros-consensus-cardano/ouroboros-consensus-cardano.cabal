@@ -49,6 +49,7 @@ library
                      , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma
                      , cardano-prelude
+                     , cardano-protocol-tpraos
                      , cardano-slotting
 
                      , ouroboros-network

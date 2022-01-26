@@ -49,6 +49,7 @@ library
                      , cardano-ledger-shelley-ma
                      , cardano-ledger-shelley-ma-test
                      , cardano-ledger-shelley-test
+                     , cardano-protocol-tpraos
                      , small-steps
 
                      , ouroboros-network
@@ -94,6 +95,7 @@ test-suite test
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-core
                      , cardano-ledger-shelley
+                     , cardano-protocol-tpraos
 
                      , ouroboros-network
                      , ouroboros-consensus
