@@ -9,8 +9,11 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE Rank2Types            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -61,10 +64,16 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- * Changelog
   , DbChangelog (..)
   , DbChangelogState (..)
+  , extendDbChangelog
+  , prefixBackToAnchorDbChangelog
+  , prefixDbChangelog
+  , pruneDbChangelog
+  , rollbackDbChangelog
     -- * Misc
   , ShowLedgerState (..)
   ) where
 
+import qualified Control.Exception as Exn
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
@@ -72,12 +81,15 @@ import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
 
+import           Cardano.Slotting.Slot (WithOrigin (..))
+
+import           Ouroboros.Network.AnchoredSeq (AnchoredSeq)
+import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (FootprintL (..))
-import           Ouroboros.Network.AnchoredSeq (AnchoredSeq)
-import qualified Ouroboros.Network.AnchoredSeq as AnchoredSeq
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
@@ -277,6 +289,26 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
   --
   -- Old + ResultNew == ResultOld
   applyTracking :: l ValuesMK -> l TrackingMK -> l ValuesMK
+
+  zipLedgerTables ::
+       (forall k v.
+            Ord k
+         => ApplyMapKind mk1 k v
+         -> ApplyMapKind mk2 k v
+         -> ApplyMapKind mk3 k v
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> LedgerTables l mk3
+
+  mapLedgerTables ::
+       (forall k v.
+            Ord k
+         => ApplyMapKind mk1 k v
+         -> ApplyMapKind mk2 k v
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
 
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
@@ -479,10 +511,118 @@ data DbChangelog l = DbChangelog {
 deriving instance (Eq       (LedgerTables l SeqDiffMK), Eq       (l EmptyMK)) => Eq       (DbChangelog l)
 deriving instance (NoThunks (LedgerTables l SeqDiffMK), NoThunks (l EmptyMK)) => NoThunks (DbChangelog l)
 
-newtype DbChangelogState l = DbChangelogState (l EmptyMK)
+newtype DbChangelogState l = DbChangelogState {unDbChangelogState :: l EmptyMK}
   deriving (Generic)
 
 deriving instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
 deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
 
--- TODO
+instance GetTip (l EmptyMK) => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
+  asAnchor = id
+  getAnchorMeasure _ = getTipSlot . unDbChangelogState
+
+extendDbChangelog ::
+     (TableStuff l, GetTip (l EmptyMK))
+  => DbChangelog l -> l DiffMK -> DbChangelog l
+extendDbChangelog dblog newState =
+    DbChangelog {
+        changelogDiffAnchor      = changelogDiffAnchor dblog
+      , changelogDiffs           =
+          zipLedgerTables ext (changelogDiffs dblog) tablesDiff
+      , changelogImmutableStates = changelogImmutableStates dblog
+      , changelogVolatileStates  =
+          changelogVolatileStates dblog AS.:> DbChangelogState l'
+      }
+  where
+    l'         = forgetLedgerStateTables newState
+    tablesDiff = projectLedgerTables     newState
+
+    slot = case getTipSlot l' of
+      Origin -> error "impossible! extendDbChangelog"
+      At s   -> s
+
+    ext ::
+         Ord k
+      => ApplyMapKind SeqDiffMK k v
+      -> ApplyMapKind DiffMK    k v
+      -> ApplyMapKind SeqDiffMK k v
+    ext (ApplySeqDiffMK sq) (ApplyDiffMK diff) =
+      ApplySeqDiffMK $ extendSeqUtxoDiff sq slot diff
+
+pruneDbChangelog ::
+     GetTip (l EmptyMK)
+  => SecurityParam -> DbChangelog l -> DbChangelog l
+pruneDbChangelog (SecurityParam k) dblog =
+    DbChangelog {
+        changelogDiffAnchor      = changelogDiffAnchor dblog
+      , changelogDiffs           = changelogDiffs      dblog
+      , changelogImmutableStates = imm'
+      , changelogVolatileStates  = vol'
+      }
+  where
+    imm = changelogImmutableStates dblog
+    vol = changelogVolatileStates  dblog
+
+    nvol = AS.length vol
+
+    (imm', vol') =
+      if toEnum nvol <= k then (imm, vol) else
+      let (l, r) = AS.splitAt (nvol - fromEnum k) vol
+      in (AS.unsafeJoin imm l, r)   -- TODO check fit?
+
+prefixDbChangelog ::
+     ( HasHeader blk
+     , HeaderHash blk ~ HeaderHash (l EmptyMK)
+     , GetTip (l EmptyMK)
+     , TableStuff l
+     )
+  => Point blk -> DbChangelog l -> Maybe (DbChangelog l)
+prefixDbChangelog pt dblog = do
+    let vol = changelogVolatileStates dblog
+    vol' <-
+      AS.rollback
+        (pointSlot pt)
+        ((== pt) . castPoint . getTip . unDbChangelogState . either id id)
+        vol
+    let ndropped                  = AS.length vol - AS.length vol'
+        diffs'                    =
+          mapLedgerTables (trunc ndropped) (changelogDiffs dblog)
+    Exn.assert (ndropped >= 0) $ pure DbChangelog {
+          changelogDiffAnchor      = changelogDiffAnchor      dblog
+        , changelogDiffs           = diffs'
+        , changelogImmutableStates = changelogImmutableStates dblog
+        , changelogVolatileStates  = vol'
+        }
+
+prefixBackToAnchorDbChangelog ::
+     (GetTip (l EmptyMK), TableStuff l)
+  => DbChangelog l -> DbChangelog l
+prefixBackToAnchorDbChangelog dblog =
+    DbChangelog {
+        changelogDiffAnchor      = changelogDiffAnchor      dblog
+      , changelogDiffs           = diffs'
+      , changelogImmutableStates = changelogImmutableStates dblog
+      , changelogVolatileStates  = AS.Empty (AS.anchor vol)
+      }
+  where
+    vol                       = changelogVolatileStates dblog
+    ndropped                  = AS.length vol
+    diffs'                    =
+      mapLedgerTables (trunc ndropped) (changelogDiffs dblog)
+
+trunc ::
+     Ord k
+  => Int -> ApplyMapKind SeqDiffMK k v -> ApplyMapKind SeqDiffMK k v
+trunc n (ApplySeqDiffMK sq) =
+  ApplySeqDiffMK $ fst $ splitAtFromEndSeqUtxoDiff n sq
+
+rollbackDbChangelog ::
+     (GetTip (l EmptyMK), TableStuff l)
+  => Int -> DbChangelog l -> DbChangelog l
+rollbackDbChangelog n dblog =
+    DbChangelog {
+        changelogDiffAnchor      = changelogDiffAnchor      dblog
+      , changelogDiffs           = mapLedgerTables (trunc n) (changelogDiffs dblog)
+      , changelogImmutableStates = changelogImmutableStates dblog
+      , changelogVolatileStates  = AS.dropNewest n (changelogImmutableStates dblog)
+      }
