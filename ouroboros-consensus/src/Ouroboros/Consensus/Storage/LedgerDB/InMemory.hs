@@ -32,9 +32,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
   , DbChangelog
   , DbReader (..)
-  , ReadKeySets
   , ReadsKeySets (..)
   , RewoundTableKeySets (..)
+  , TypeOf_readDB
   , UnforwardedReadSets (..)
   , defaultReadKeySets
   , ledgerDbFlush
@@ -494,11 +494,11 @@ ledgerDbFlush changelogFlush db = do
 
 class ReadsKeySets m l where
 
-  readDb :: ReadKeySets m l
+  readDb :: TypeOf_readDB m l
 
-type ReadKeySets m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
+type TypeOf_readDB m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
 
-newtype DbReader m l a = DbReader { runDbReader :: ReaderT (ReadKeySets m l) m a}
+newtype DbReader m l a = DbReader { runDbReader :: ReaderT (TypeOf_readDB m l) m a}
   deriving newtype (Functor, Applicative, Monad)
 
 instance ReadsKeySets (DbReader m l) l where
@@ -511,7 +511,7 @@ instance (Monad m, ReadsKeySets m l) => ReadsKeySets (ReaderT r m) l where
 instance (Monad m, ReadsKeySets m l) => ReadsKeySets (ExceptT e m) l where
   readDb = lift . readDb
 
-defaultReadKeySets :: ReadKeySets m l -> DbReader m l a -> m a
+defaultReadKeySets :: TypeOf_readDB m l -> DbReader m l a -> m a
 defaultReadKeySets f dbReader = runReaderT (runDbReader dbReader) f
 
 {-------------------------------------------------------------------------------
