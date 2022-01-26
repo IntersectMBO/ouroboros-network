@@ -437,15 +437,19 @@ rewindTableKeySets dblog = \keys ->
     rewind (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
       ApplyRewoundMK $ rewindKeys keys (cumulativeDiffSeqUtxoDiff diffs)
 
-newtype UnforwardedReadSets l = UnforwardedReadSets (LedgerTables l ValuesMK)
+data UnforwardedReadSets l = UnforwardedReadSets {
+    ursSeqNo  :: !(WithOrigin SlotNo)
+  , ursValues :: !(LedgerTables l ValuesMK)
+  }
 
 forwardTableKeySets ::
      TableStuff l
   => DbChangelog l -> UnforwardedReadSets l -> Maybe (TableReadSets l)
-forwardTableKeySets dblog = \(UnforwardedReadSets values) ->
-      Just   -- TODO sanity check
-    $ zipLedgerTables forward values
-    $ changelogDiffs dblog
+forwardTableKeySets dblog = \(UnforwardedReadSets seqNo values) -> do
+    guard $ seqNo == changelogDiffAnchor (dblog)
+    pure
+      $ zipLedgerTables forward values
+      $ changelogDiffs dblog
   where
     forward ::
          Ord k
