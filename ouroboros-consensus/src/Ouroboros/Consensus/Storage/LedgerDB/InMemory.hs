@@ -88,7 +88,6 @@ import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
 
-import           Cardano.Slotting.Slot (WithOrigin (At))
 import           Control.Exception
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -191,7 +190,10 @@ instance GetTip (l EmptyMK) => Anchorable (WithOrigin SlotNo) (Checkpoint (l Emp
 ledgerDbWithAnchor :: GetTip (l ValuesMK) => l ValuesMK -> LedgerDB l
 ledgerDbWithAnchor anchor = LedgerDB {
       ledgerDbCheckpoints = Empty (Checkpoint anchor)
-    , ledgerDbChangelog   = initialDbChangelog (getTipSlot anchor) anchor
+    , ledgerDbChangelog   =
+        -- TODO function is called from some unpatched initilization code and
+        -- from tests
+        undefined
     , runDual = True -- TODO: This is not yet implemented.
     }
 
@@ -417,10 +419,6 @@ applyBlock cfg ap db = case ap of
 
 newtype RewoundTableKeySets l = RewoundTableKeySets (AnnTableKeySets l ()) -- KeySetSanityInfo l
 
-initialDbChangelog
-  :: WithOrigin SlotNo -> l ValuesMK -> DbChangelog l
-initialDbChangelog = undefined
-
 rewindTableKeySets
   :: DbChangelog l -> TableKeySets l -> RewoundTableKeySets l
 rewindTableKeySets = undefined
@@ -431,30 +429,28 @@ forwardTableKeySets
   :: DbChangelog l -> UnforwardedReadSets l -> Maybe (TableReadSets l)
 forwardTableKeySets = undefined
 
-extendDbChangelog
-  :: SeqNo l
-  -> l DiffMK
-  -- -> Maybe (l SnapshotsMK) TOOD: We won't use this parameter in the first iteration.
-  -> DbChangelog l
-  -> DbChangelog l
-extendDbChangelog = undefined
-
 dbChangelogVolatileCheckpoints ::
      DbChangelog l
   -> AnchoredSeq
        (WithOrigin SlotNo)
        (Checkpoint (l EmptyMK))
        (Checkpoint (l EmptyMK))
-dbChangelogVolatileCheckpoints = undefined
+dbChangelogVolatileCheckpoints =
+    AS.bimapPreservingMeasure
+      (\(DbChangelogState l) -> Checkpoint l)
+      (\(DbChangelogState l) -> Checkpoint l)
+  . changelogVolatileStates
 
-dbChangelogRollBack :: Point blk -> DbChangelog state -> DbChangelog state
-dbChangelogRollBack = undefined
+dbChangelogPrefix ::
+     ( HasHeader blk, HeaderHash blk ~ HeaderHash (l EmptyMK)
+     , GetTip (l EmptyMK)
+     , TableStuff l
+     )
+  => Point blk -> DbChangelog l -> Maybe (DbChangelog l)
+dbChangelogPrefix = prefixDbChangelog
 
 newtype SeqNo (state :: LedgerStateKind) = SeqNo { unSeqNo :: Word64 }
   deriving (Eq, Ord, Show)
-
-class HasSeqNo (state :: LedgerStateKind) where
-  stateSeqNo :: state table -> SeqNo state
 
 -- TODO: flushing the changelog will invalidate other copies of 'LedgerDB'. At
 -- the moment the flush-locking concern is outside the scope of this module.
@@ -512,8 +508,11 @@ ledgerDbAnchor =
 --
 -- This also includes the snapshot at the anchor. For each snapshot we also
 -- return the distance from the tip.
-ledgerDbSnapshots :: LedgerDB l -> [(Word64, l EmptyMK)]
-ledgerDbSnapshots LedgerDB{} = undefined
+ledgerDbSnapshots :: TableStuff l => LedgerDB l -> [(Word64, l EmptyMK)]
+ledgerDbSnapshots LedgerDB{..} =
+    zip [0..]
+  $ map (forgetLedgerStateTables . unCheckpoint)
+  $ AS.toNewestFirst ledgerDbCheckpoints <> [AS.anchor ledgerDbCheckpoints]
 
 -- | How many blocks can we currently roll back?
 ledgerDbMaxRollback :: (GetTip (l ValuesMK), GetTip (l EmptyMK)) => LedgerDB l -> Word64
@@ -539,7 +538,10 @@ ledgerDbIsSaturated (SecurityParam k) db =
 --
 -- When no ledger state (or anchor) has the given 'Point', 'Nothing' is
 -- returned.
-ledgerDbPast :: (HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
+ledgerDbPast ::
+     ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
+     , TableStuff l
+     )
   => Point blk
   -> LedgerDB l
   -> Maybe (l EmptyMK)
@@ -552,28 +554,29 @@ ledgerDbPast pt db = ledgerDbCurrent <$> ledgerDbPrefix pt db
 -- When no ledger state (or anchor) has the given 'Point', 'Nothing' is
 -- returned.
 ledgerDbPrefix ::
-     (HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
+     ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
+     , TableStuff l
+     )
   => Point blk
   -> LedgerDB l
   -> Maybe (LedgerDB l)
 ledgerDbPrefix pt db
     | pt == (castPoint $ getTip (ledgerDbAnchor db))
-    = Just $ ledgerDbWithAnchor undefined -- (ledgerDbAnchor db) TODO: had to comment this because
-                                          -- now ledgerDbAnchor returns only a
-                                          -- @l EmptyMK@. It is unclear if we
-                                          -- will have to initialize with
-                                          -- @EmptyMK@ or @ValuesMK@. This will
-                                          -- be resolved soon.
+    = Just $ LedgerDB {
+          ledgerDbCheckpoints = (AS.Empty . AS.anchor)        (ledgerDbCheckpoints db)
+        , ledgerDbChangelog   = prefixBackToAnchorDbChangelog (ledgerDbChangelog db)
+        , runDual             = runDual db
+        }
     | otherwise
     =  do
         checkpoints' <- AS.rollback
                           (pointSlot pt)
                           ((== pt) . castPoint . getTip . unCheckpoint . either id id)
                           (ledgerDbCheckpoints db)
-
+        dblog' <- dbChangelogPrefix pt $ ledgerDbChangelog db
         return $ LedgerDB
                   { ledgerDbCheckpoints = checkpoints'
-                  , ledgerDbChangelog   = dbChangelogRollBack pt $ ledgerDbChangelog db
+                  , ledgerDbChangelog   = dblog'
                   , runDual = runDual db
                   }
 
@@ -595,9 +598,13 @@ ledgerDbBimap f g =
 
 -- | Prune snapshots until at we have at most @k@ snapshots in the LedgerDB,
 -- excluding the snapshots stored at the anchor.
-ledgerDbPrune :: GetTip (l ValuesMK) => SecurityParam -> LedgerDB l -> LedgerDB l
-ledgerDbPrune (SecurityParam k) db = db {
-      ledgerDbCheckpoints = AS.anchorNewest k (ledgerDbCheckpoints db)
+ledgerDbPrune ::
+     (GetTip (l EmptyMK), GetTip (l ValuesMK))
+  => SecurityParam -> LedgerDB l -> LedgerDB l
+ledgerDbPrune k db = db {
+      ledgerDbCheckpoints =
+        AS.anchorNewest (maxRollbacks k) (ledgerDbCheckpoints db)
+    , ledgerDbChangelog   = pruneDbChangelog k (ledgerDbChangelog db)
     }
 
  -- NOTE: we must inline 'ledgerDbPrune' otherwise we get unexplained thunks in
@@ -619,16 +626,11 @@ pushLedgerState ::
 pushLedgerState secParam (currentOld', currentNew') db@LedgerDB{..}  =
     ledgerDbPrune secParam $ db {
         ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint currentOld'
-      , ledgerDbChangelog   = extendDbChangelog (stateSeqNo currentNew')
-                                                (trackingTablesToDiffs currentNew')
-                                                ledgerDbChangelog
+      , ledgerDbChangelog   =
+          extendDbChangelog
+            ledgerDbChangelog
+            (trackingTablesToDiffs currentNew')
       }
-
-instance IsLedger l => HasSeqNo l where
-  stateSeqNo l =
-    case getTipSlot l of
-      Origin        -> SeqNo 0
-      At (SlotNo n) -> SeqNo (n + 1)
 
 {-------------------------------------------------------------------------------
   Internal: rolling back
@@ -637,12 +639,14 @@ instance IsLedger l => HasSeqNo l where
 -- | Rollback
 --
 -- Returns 'Nothing' if maximum rollback is exceeded.
-rollback :: forall l. (GetTip (l ValuesMK), GetTip (l EmptyMK)) => Word64 -> LedgerDB l -> Maybe (LedgerDB l)
+rollback :: forall l.
+     (GetTip (l ValuesMK), GetTip (l EmptyMK), TableStuff l)
+  => Word64 -> LedgerDB l -> Maybe (LedgerDB l)
 rollback n db@LedgerDB{..}
     | n <= ledgerDbMaxRollback db
     = Just db {
-          ledgerDbCheckpoints = AS.dropNewest (fromIntegral n) ledgerDbCheckpoints,
-          ledgerDbChangelog = undefined
+          ledgerDbCheckpoints = AS.dropNewest       (fromIntegral n) ledgerDbCheckpoints
+        , ledgerDbChangelog   = rollbackDbChangelog (fromIntegral n) ledgerDbChangelog
         }
     | otherwise
     = Nothing
