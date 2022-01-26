@@ -92,6 +92,7 @@ import           Control.Exception
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
                      PushStart (..), Pushing (..),
                      UpdateLedgerDbTraceEvent (..))
@@ -191,7 +192,7 @@ ledgerDbWithAnchor :: GetTip (l ValuesMK) => l ValuesMK -> LedgerDB l
 ledgerDbWithAnchor anchor = LedgerDB {
       ledgerDbCheckpoints = Empty (Checkpoint anchor)
     , ledgerDbChangelog   =
-        -- TODO function is called from some unpatched initilization code and
+        -- TODO function is called from some unpatched initialization code and
         -- from tests
         undefined
     , runDual = True -- TODO: This is not yet implemented.
@@ -417,17 +418,42 @@ applyBlock cfg ap db = case ap of
   HD Interface that I need (Could be moved to  Ouroboros.Consensus.Ledger.Basics )
 -------------------------------------------------------------------------------}
 
-newtype RewoundTableKeySets l = RewoundTableKeySets (AnnTableKeySets l ()) -- KeySetSanityInfo l
+newtype RewoundTableKeySets l =
+  RewoundTableKeySets (LedgerTables l RewoundMK) -- TODO KeySetSanityInfo l
 
-rewindTableKeySets
-  :: DbChangelog l -> TableKeySets l -> RewoundTableKeySets l
-rewindTableKeySets = undefined
+rewindTableKeySets ::
+     TableStuff l
+  => DbChangelog l -> TableKeySets l -> RewoundTableKeySets l
+rewindTableKeySets dblog = \keys ->
+      RewoundTableKeySets
+    $ zipLedgerTables rewind keys
+    $ changelogDiffs dblog
+  where
+    rewind ::
+         Ord k
+      => ApplyMapKind KeysMK    k v
+      -> ApplyMapKind SeqDiffMK k v
+      -> ApplyMapKind RewoundMK k v
+    rewind (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
+      ApplyRewoundMK $ rewindKeys keys (cumulativeDiffSeqUtxoDiff diffs)
 
-newtype UnforwardedReadSets l = UnforwardedReadSets (AnnTableReadSets l ())
+newtype UnforwardedReadSets l = UnforwardedReadSets (LedgerTables l ValuesMK)
 
-forwardTableKeySets
-  :: DbChangelog l -> UnforwardedReadSets l -> Maybe (TableReadSets l)
-forwardTableKeySets = undefined
+forwardTableKeySets ::
+     TableStuff l
+  => DbChangelog l -> UnforwardedReadSets l -> Maybe (TableReadSets l)
+forwardTableKeySets dblog = \(UnforwardedReadSets values) ->
+      Just   -- TODO sanity check
+    $ zipLedgerTables forward values
+    $ changelogDiffs dblog
+  where
+    forward ::
+         Ord k
+      => ApplyMapKind ValuesMK  k v
+      -> ApplyMapKind SeqDiffMK k v
+      -> ApplyMapKind ValuesMK  k v
+    forward (ApplyValuesMK values) (ApplySeqDiffMK diffs) =
+      ApplyValuesMK $ forwardValues values (cumulativeDiffSeqUtxoDiff diffs)
 
 dbChangelogVolatileCheckpoints ::
      DbChangelog l
