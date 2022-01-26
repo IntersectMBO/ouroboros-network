@@ -44,8 +44,6 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerStateKind
   , TickedLedgerState
     -- * UTxO HD
-  , AnnTableKeySets
-  , AnnTableReadSets
   , ApplyMapKind (..)
   , DiskLedgerView
   , FootprintL (..)
@@ -329,9 +327,7 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 type LedgerStateKind = MapKind -> Type
 
-data MapKind = AnnMK Type MapKind   -- TODO this one really complicates a few things below :(
-
-             | DiffMK
+data MapKind = DiffMK
              | EmptyMK
              | KeysMK
              | RewoundMK
@@ -340,8 +336,6 @@ data MapKind = AnnMK Type MapKind   -- TODO this one really complicates a few th
              | ValuesMK
 
 data ApplyMapKind :: MapKind -> Type -> Type -> Type where
-  ApplyAnnMK      :: Typeable a => !a -> !(ApplyMapKind mk k v) -> ApplyMapKind (AnnMK a mk) k v
-
   ApplyDiffMK     :: !(UtxoDiff    k v)                    -> ApplyMapKind DiffMK       k v
   ApplyEmptyMK    ::                                          ApplyMapKind EmptyMK      k v
   ApplyKeysMK     :: !(UtxoKeys    k v)                    -> ApplyMapKind KeysMK       k v
@@ -356,18 +350,16 @@ class HasEmptyMK mk where
 emptyAppliedMK :: (HasEmptyMK mk, Ord k) => proxy mk -> ApplyMapKind mk k v
 emptyAppliedMK _ = emptyAppliedMK_
 
--- no instance for AnnMK
 instance HasEmptyMK EmptyMK    where emptyAppliedMK_ = ApplyEmptyMK
 instance HasEmptyMK KeysMK     where emptyAppliedMK_ = ApplyKeysMK     emptyUtxoKeys
 instance HasEmptyMK ValuesMK   where emptyAppliedMK_ = ApplyValuesMK   emptyUtxoValues
 instance HasEmptyMK TrackingMK where emptyAppliedMK_ = ApplyTrackingMK emptyUtxoValues emptyUtxoDiff
 instance HasEmptyMK DiffMK     where emptyAppliedMK_ = ApplyDiffMK     emptyUtxoDiff
-instance HasEmptyMK SeqDiffMK  where emptyAppliedMK_ = ApplySeqDiffMK  emptySeqUtxoDiff
+-- intentionally no instance for SeqDiffMK
+-- intentionally no instance for RewoundMK
 
 mapValuesAppliedMK :: Ord k => (v -> v') -> ApplyMapKind mk k v ->  ApplyMapKind mk k v'
 mapValuesAppliedMK f = \case
-  ApplyAnnMK a amk        -> ApplyAnnMK    a (mapValuesAppliedMK f amk)
-
   ApplyEmptyMK            -> ApplyEmptyMK
   ApplyKeysMK ks          -> ApplyKeysMK     (castUtxoKeys ks)
   ApplyValuesMK vs        -> ApplyValuesMK   (mapUtxoValues f vs)
@@ -387,7 +379,6 @@ instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
 
 instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
   wNoThunks ctxt   = NoThunks.allNoThunks . \case
-    ApplyAnnMK a amk        -> [noThunks ctxt (NoThunks.InspectHeap a), noThunks ctxt amk]
     ApplyEmptyMK            -> []
     ApplyKeysMK ks          -> [noThunks ctxt ks]
     ApplyValuesMK vs        -> [noThunks ctxt vs]
@@ -399,8 +390,6 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
   showTypeOf _ = "ApplyMapKind"
 
 data instance Sing (mk :: MapKind) :: Type where
-  SAnnMK      :: Typeable a => Sing mk -> Sing (AnnMK a mk)
-
   SEmptyMK    :: Sing EmptyMK
   SKeysMK     :: Sing KeysMK
   SValuesMK   :: Sing ValuesMK
@@ -410,8 +399,6 @@ data instance Sing (mk :: MapKind) :: Type where
   SRewoundMK  :: Sing RewoundMK
 
 type SMapKind = Sing :: MapKind -> Type
-
-instance (Typeable a, SingI mk) => SingI (AnnMK a mk) where sing = SAnnMK sing
 
 instance SingI EmptyMK    where sing = SEmptyMK
 instance SingI KeysMK     where sing = SKeysMK
@@ -430,8 +417,6 @@ instance Eq (Sing (mk :: MapKind)) where
 
 instance Show (Sing (mk :: MapKind)) where
   show = \case
-    SAnnMK amk  -> "(SAnnMK " <> show amk <> ")"   -- TODO show the Typeable?
-
     SEmptyMK    -> "SEmptyMK"
     SKeysMK     -> "SKeysMK"
     SValuesMK   -> "SValuesMK"
@@ -483,11 +468,7 @@ class InMemory (l :: LedgerStateKind) where
   -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
   convertMapKind :: l mk -> l mk'
 
-type AnnTableKeySets l a = LedgerTables l (AnnMK a KeysMK)
-
 type TableReadSets l = LedgerTables l ValuesMK
-
-type AnnTableReadSets l a = LedgerTables l (AnnMK a ValuesMK)
 
 {-------------------------------------------------------------------------------
   Changelog
