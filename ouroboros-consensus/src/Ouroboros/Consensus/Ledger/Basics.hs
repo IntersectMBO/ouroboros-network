@@ -334,6 +334,7 @@ data MapKind = AnnMK Type MapKind   -- TODO this one really complicates a few th
              | DiffMK
              | EmptyMK
              | KeysMK
+             | RewoundMK
              | SeqDiffMK
              | TrackingMK
              | ValuesMK
@@ -347,6 +348,7 @@ data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplySeqDiffMK  :: !(SeqUtxoDiff k v)                    -> ApplyMapKind SeqDiffMK    k v
   ApplyTrackingMK :: !(UtxoValues  k v) -> !(UtxoDiff k v) -> ApplyMapKind TrackingMK   k v
   ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind ValuesMK     k v
+  ApplyRewoundMK  :: !(RewoundKeys k v)                    -> ApplyMapKind RewoundMK    k v
 
 class HasEmptyMK mk where
   emptyAppliedMK_ :: Ord k => ApplyMapKind mk k v
@@ -372,6 +374,7 @@ mapValuesAppliedMK f = \case
   ApplyTrackingMK vs diff -> ApplyTrackingMK (mapUtxoValues f vs)     (mapUtxoDiff f diff)
   ApplyDiffMK diff        -> ApplyDiffMK     (mapUtxoDiff f diff)
   ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
+  ApplyRewoundMK rew      -> ApplyRewoundMK  (mapRewoundKeys f rew)
 
 {-
 instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
@@ -391,6 +394,7 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
     ApplyTrackingMK vs diff -> [noThunks ctxt vs, noThunks ctxt diff]
     ApplyDiffMK diff        -> [noThunks ctxt diff]
     ApplySeqDiffMK diffs    -> [noThunks ctxt diffs]
+    ApplyRewoundMK rew      -> [noThunks ctxt rew]
 
   showTypeOf _ = "ApplyMapKind"
 
@@ -403,6 +407,7 @@ data instance Sing (mk :: MapKind) :: Type where
   STrackingMK :: Sing TrackingMK
   SDiffMK     :: Sing DiffMK
   SSeqDiffMK  :: Sing SeqDiffMK
+  SRewoundMK  :: Sing RewoundMK
 
 type SMapKind = Sing :: MapKind -> Type
 
@@ -414,6 +419,7 @@ instance SingI ValuesMK   where sing = SValuesMK
 instance SingI TrackingMK where sing = STrackingMK
 instance SingI DiffMK     where sing = SDiffMK
 instance SingI SeqDiffMK  where sing = SSeqDiffMK
+instance SingI RewoundMK  where sing = SRewoundMK
 
 toSMapKind :: SingI mk => proxy mk k v -> SMapKind mk
 toSMapKind _ = sing
@@ -432,6 +438,7 @@ instance Show (Sing (mk :: MapKind)) where
     STrackingMK -> "STrackingMK"
     SDiffMK     -> "SDiffMK"
     SSeqDiffMK  -> "SSeqDiffMK"
+    SRewoundMK  -> "SRewoundMK"
 
 deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
 
