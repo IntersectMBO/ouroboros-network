@@ -22,7 +22,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , UtxoEntryDiffState (..)
   , UtxoEntryDiff (..)
     -- * Combinators
+  , RewoundKeys (..)
   , forwardValues
+  , mapRewoundKeys
   , rewindKeys
     -- * Backing store interface
   , BackingStore (..)
@@ -194,6 +196,15 @@ data RewoundKeys k v = RewoundKeys {
     -- determined by the diff
   , rkUnknown :: UtxoKeys k v
   }
+  deriving (Generic, NoThunks)
+
+mapRewoundKeys :: (v -> v') -> RewoundKeys k v -> RewoundKeys k v'
+mapRewoundKeys f rew =
+    RewoundKeys {
+        rkAbsent  = castUtxoKeys    (rkAbsent  rew)
+      , rkPresent = mapUtxoValues f (rkPresent rew)
+      , rkUnknown = castUtxoKeys    (rkUnknown rew)
+      }
 
 -- | Transport a set of keys backwards through a difference
 --
