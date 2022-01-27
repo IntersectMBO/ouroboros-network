@@ -342,15 +342,18 @@ takeSnapshot ::
      , IsLedger (LedgerState blk)
      )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
+takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     LedgerDB.takeSnapshot
       tracer
       hasFS
+      (let backingStore = undefined lgrOnDiskLedgerStDb in backingStore)
       encodeExtLedgerState'
       ledgerDB
   where
     ccfg = configCodec cfg
+
+    LgrDB{ cfg, tracer, hasFS, lgrOnDiskLedgerStDb } = lgrDB
 
     encodeExtLedgerState' :: ExtLedgerState blk EmptyMK -> Encoding
     encodeExtLedgerState' = encodeExtLedgerState
@@ -368,7 +371,7 @@ trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy = diskPolicy
 
-flush :: IOLike m => LgrDB m blk -> m ()
+flush :: (IOLike m, LedgerSupportsProtocol blk) => LgrDB m blk -> m ()
 flush lgrDB@LgrDB { varDB, lgrOnDiskLedgerStDb } =
   -- TODO: why putting the lock inside LgrDB and not in the CDB? I rather couple
   -- the ledger DB with the flush lock that guards it. I don't feel comfortable
@@ -377,7 +380,8 @@ flush lgrDB@LgrDB { varDB, lgrOnDiskLedgerStDb } =
   -- extra argument.
   withWriteLock lgrDB $ do
     db  <- readTVarIO varDB
-    db' <- LedgerDB.ledgerDbFlush (flushDb lgrOnDiskLedgerStDb) db
+    let (toFlush, db') = LedgerDB.ledgerDbFlush DbChangelogFlushAllImmutable db
+    flushDb lgrOnDiskLedgerStDb toFlush
     atomically $ writeTVar varDB db'
 
 {-------------------------------------------------------------------------------

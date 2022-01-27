@@ -37,7 +37,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , TypeOf_readDB
   , UnforwardedReadSets (..)
   , defaultReadKeySets
-  , ledgerDbFlush
     -- ** Serialisation
   , decodeSnapshotBackwardsCompatible
   , encodeSnapshot
@@ -45,6 +44,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbAnchor
   , ledgerDbBimap
   , ledgerDbCurrent
+  , ledgerDbFlush
   , ledgerDbPast
   , ledgerDbPrefix
   , ledgerDbPrune
@@ -486,11 +486,16 @@ newtype SeqNo (state :: LedgerStateKind) = SeqNo { unSeqNo :: Word64 }
 -- the moment the flush-locking concern is outside the scope of this module.
 -- Clients need to ensure they flush in a safe manner.
 --
-ledgerDbFlush
-  :: Monad m => (DbChangelog l -> m (DbChangelog l)) -> LedgerDB l -> m (LedgerDB l)
-ledgerDbFlush changelogFlush db = do
-  ledgerDbChangelog' <- changelogFlush (ledgerDbChangelog db)
-  return $! db { ledgerDbChangelog = ledgerDbChangelog' }
+-- | Isolates the prefix of the changelog that should be flushed
+--
+-- TODO take some argument to bound the size of the resulting prefix?
+ledgerDbFlush ::
+     (GetTip (l EmptyMK), TableStuff l)
+  => DbChangelogFlushPolicy -> LedgerDB l -> (DbChangelog l, LedgerDB l)
+ledgerDbFlush policy db = do
+    (l, db { ledgerDbChangelog = r })
+  where
+    (l, r) = flushDbChangelog policy (ledgerDbChangelog db)
 
 class ReadsKeySets m l where
 
