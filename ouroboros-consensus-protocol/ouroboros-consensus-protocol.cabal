@@ -28,9 +28,11 @@ library
     Ouroboros.Consensus.Protocol.Praos
     Ouroboros.Consensus.Protocol.Praos.Common
     Ouroboros.Consensus.Protocol.Praos.Header
+    Ouroboros.Consensus.Protocol.Praos.Translate
     Ouroboros.Consensus.Protocol.Praos.Views
     Ouroboros.Consensus.Protocol.Praos.VRF
     Ouroboros.Consensus.Protocol.TPraos
+    Ouroboros.Consensus.Protocol.Translate
   build-depends:
     base,
     bytestring,
