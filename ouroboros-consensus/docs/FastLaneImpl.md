@@ -14,4 +14,5 @@ The new FastLane mini protocol is modeled by this simple state machine, where `S
 
 ## Next priority
 
-The next focus lies on implementing the submission of the FastLane headers to the BlockFetch machinery and ensuring that the ChainDB can differentiate between normal and FastLane blocks.
+ - When receiving a header via FastLane, we have to check that it extends our current chain, but we also need some check that the peer can't overwhelm with lots of valid but useless (e.g. old) headers. One approach would be to reuse the existing invariants ensured by ChainSync. The goal is to assess how difficult it is to reuse this knowledge in FastLane, or whether it would be easier to merge FastLane into ChainSync.
+ - Implementing the submission of the FastLane headers to the BlockFetch machinery and ensuring that the ChainDB can differentiate between normal and FastLane blocks.
