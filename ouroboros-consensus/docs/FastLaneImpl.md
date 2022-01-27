@@ -4,9 +4,9 @@
 
 ## Changes to ouroboros-network
 
-The new FastLane mini protocol is modeled by this simple state machine:
+The new FastLane mini protocol is modeled by this simple state machine, where `StIdle` is the initial state, and green and red indicate client and server agency, respectively:
 
-![FastLane state machine](./fastlane-miniprotocol.svg)
+![FastLane state machine](./fastlane-miniprotocol.png)
 
 > TODO: Add the CBOR codec as well as the low-level client and server implementation. The client should be pipelined at a low depth to hide latency and to allow a peer to quickly communicate its new best block header without having to wait for a new FastLane request (new FastLane headers are always preferable).
 >
