@@ -34,14 +34,14 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
     -- * Backing store interface
   , BackingStore (..)
   , BackingStorePath (..)
-  , BackingStoreSnapshot (..)
+  , BackingStoreValueHandle (..)
   , bsRead
-  , withBsSnapshot
+  , withBsValueHandle
     -- ** An in-memory backing store
   , newTVarBackingStore
   , TVarBackingStoreClosedExn (..)
   , TVarBackingStoreDeserialiseExn (..)
-  , TVarBackingStoreSnapshotClosedExn (..)
+  , TVarBackingStoreValueHandleClosedExn (..)
     -- * Sequence of differences
   , SeqUtxoDiff (..)
   , cumulativeDiffSeqUtxoDiff
@@ -300,54 +300,57 @@ data BackingStore m k v = BackingStore {
     -- | Close the backing store
     --
     -- Other methods throw exceptions if called on a closed store.
-    bsClose    :: m ()
+    bsClose       :: m ()
     -- | Create a persistent copy
     --
     -- Each backing store implementation will offer a way to initialize itself
     -- from such a path.
-  , bsCopy     :: BackingStorePath -> m ()
-  , bsSnapshot :: m (WithOrigin SlotNo, BackingStoreSnapshot m k v)
+  , bsCopy        :: BackingStorePath -> m ()
+    -- | Open a 'BackingStoreValueHandle' capturing the current value of the
+    -- entire database
+  , bsValueHandle :: m (WithOrigin SlotNo, BackingStoreValueHandle m k v)
     -- | Apply a valid diff to the contents of the backing store
-  , bsWrite    :: SlotNo -> UtxoDiff k v -> m ()
+  , bsWrite       :: SlotNo -> UtxoDiff k v -> m ()
   }
 
 newtype BackingStorePath = BackingStorePath FS.FsPath
 
--- | An ephemeral but immutable snapshot
+-- | An ephemeral handle to an immutable value of the entire database
 --
--- The performance cost is usually minimal unless the snapshot is long-lived.
-data BackingStoreSnapshot m k v = BackingStoreSnapshot {
-    -- | Close the snapshot
+-- The performance cost is usually minimal unless this handle is held open too
+-- long.
+data BackingStoreValueHandle m k v = BackingStoreValueHandle {
+    -- | Close the handle
     --
-    -- Other methods throw exceptions if called on a closed snapshot.
-    bssClose :: m ()
-    -- | Read the given keys from the snapshot
+    -- Other methods throw exceptions if called on a closed handle.
+    bsvhClose :: m ()
+    -- | Read the given keys from the handle
     --
     -- Absent keys will merely not be present in the result instead of causing a
     -- failure or an exception.
-  , bssRead  :: UtxoKeys k v -> m (UtxoValues k v)
+  , bsvhRead  :: UtxoKeys k v -> m (UtxoValues k v)
   }
 
--- | A combination of 'bsSnapshot' and 'bssRead'
+-- | A combination of 'bsValueHandle' and 'bsvhRead'
 bsRead ::
      IOLike m
   => BackingStore m k v
   -> UtxoKeys k v
   -> m (WithOrigin SlotNo, UtxoValues k v)
-bsRead store keys = withBsSnapshot store $ \slot snapshot -> do
-    values <- bssRead snapshot keys
+bsRead store keys = withBsValueHandle store $ \slot vh -> do
+    values <- bsvhRead vh keys
     pure (slot, values)
 
--- | A 'IOLike.bracket'ed 'bsSnapshot'
-withBsSnapshot ::
+-- | A 'IOLike.bracket'ed 'bsValueHandle'
+withBsValueHandle ::
      IOLike m
   => BackingStore m k v
-  -> (WithOrigin SlotNo -> BackingStoreSnapshot m k v -> m a)
+  -> (WithOrigin SlotNo -> BackingStoreValueHandle m k v -> m a)
   -> m a
-withBsSnapshot store kont =
+withBsValueHandle store kont =
     IOLike.bracket
-      (bsSnapshot store)
-      (bssClose . snd)
+      (bsValueHandle store)
+      (bsvhClose . snd)
       (uncurry kont)
 
 {-------------------------------------------------------------------------------
@@ -364,7 +367,7 @@ data TVarBackingStoreContents m k v =
 data TVarBackingStoreClosedExn = TVarBackingStoreClosedExn
   deriving (Exn.Exception, Show)
 
-data TVarBackingStoreSnapshotClosedExn = TVarBackingStoreSnapshotClosedExn
+data TVarBackingStoreValueHandleClosedExn = TVarBackingStoreValueHandleClosedExn
   deriving (Exn.Exception, Show)
 
 newtype TVarBackingStoreDeserialiseExn = TVarBackingStoreDeserialiseExn DeserialiseFailure
@@ -399,20 +402,20 @@ newTVarBackingStore (FS.SomeHasFS fs) initialization = do
             TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
               FS.withFile fs path (FS.WriteMode FS.MustBeNew) $ \h -> do
                 void $ FS.hPutAll fs h $ serialise (slot, vs)
-      , bsSnapshot = join $ IOLike.atomically $ do
+      , bsValueHandle = join $ IOLike.atomically $ do
           IOLike.readTVar ref >>= \case
             TVarBackingStoreContentsClosed                ->
               pure $ Exn.throw TVarBackingStoreClosedExn
             TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
-              refSnapClosed <- IOLike.newTVarIO False
-              pure $ (,) slot $ BackingStoreSnapshot {
-                  bssClose = IOLike.atomically $ do
-                    IOLike.writeTVar refSnapClosed True
-                , bssRead  = \(UtxoKeys ks) -> join $ IOLike.atomically $ do
-                    isClosed <- IOLike.readTVar refSnapClosed
+              refHandleClosed <- IOLike.newTVarIO False
+              pure $ (,) slot $ BackingStoreValueHandle {
+                  bsvhClose = IOLike.atomically $ do
+                    IOLike.writeTVar refHandleClosed True
+                , bsvhRead  = \(UtxoKeys ks) -> join $ IOLike.atomically $ do
+                    isClosed <- IOLike.readTVar refHandleClosed
                     pure $
                       if isClosed
-                      then Exn.throw TVarBackingStoreSnapshotClosedExn
+                      then Exn.throw TVarBackingStoreValueHandleClosedExn
                       else pure $ UtxoValues $ Map.restrictKeys vs ks
                 }
       , bsWrite    = \slot2 diff -> join $ IOLike.atomically $ do
