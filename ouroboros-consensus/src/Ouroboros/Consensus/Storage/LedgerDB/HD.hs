@@ -292,11 +292,11 @@ forwardValues (UtxoValues values) (UtxoDiff diffs) =
   Backing store interface
 -------------------------------------------------------------------------------}
 
--- | A backing store containing a 'UtxoValues'
+-- | A backing store for a map
 --
 -- TODO Do we also need a backup and restore mechanism? Or does any disk
 -- corruption mean the node will always need to sync entirely from scratch?
-data BackingStore m k v = BackingStore {
+data BackingStore m keys values diff = BackingStore {
     -- | Close the backing store
     --
     -- Other methods throw exceptions if called on a closed store.
@@ -308,9 +308,9 @@ data BackingStore m k v = BackingStore {
   , bsCopy        :: FS.SomeHasFS m -> BackingStorePath -> m ()
     -- | Open a 'BackingStoreValueHandle' capturing the current value of the
     -- entire database
-  , bsValueHandle :: m (WithOrigin SlotNo, BackingStoreValueHandle m k v)
+  , bsValueHandle :: m (WithOrigin SlotNo, BackingStoreValueHandle m keys values)
     -- | Apply a valid diff to the contents of the backing store
-  , bsWrite       :: SlotNo -> UtxoDiff k v -> m ()
+  , bsWrite       :: SlotNo -> diff -> m ()
   }
 
 newtype BackingStorePath = BackingStorePath FS.FsPath
@@ -319,7 +319,7 @@ newtype BackingStorePath = BackingStorePath FS.FsPath
 --
 -- The performance cost is usually minimal unless this handle is held open too
 -- long.
-data BackingStoreValueHandle m k v = BackingStoreValueHandle {
+data BackingStoreValueHandle m keys values = BackingStoreValueHandle {
     -- | Close the handle
     --
     -- Other methods throw exceptions if called on a closed handle.
@@ -328,15 +328,15 @@ data BackingStoreValueHandle m k v = BackingStoreValueHandle {
     --
     -- Absent keys will merely not be present in the result instead of causing a
     -- failure or an exception.
-  , bsvhRead  :: UtxoKeys k v -> m (UtxoValues k v)
+  , bsvhRead  :: keys -> m values
   }
 
 -- | A combination of 'bsValueHandle' and 'bsvhRead'
 bsRead ::
      IOLike m
-  => BackingStore m k v
-  -> UtxoKeys k v
-  -> m (WithOrigin SlotNo, UtxoValues k v)
+  => BackingStore m keys values diff
+  -> keys
+  -> m (WithOrigin SlotNo, values)
 bsRead store keys = withBsValueHandle store $ \slot vh -> do
     values <- bsvhRead vh keys
     pure (slot, values)
@@ -344,8 +344,8 @@ bsRead store keys = withBsValueHandle store $ \slot vh -> do
 -- | A 'IOLike.bracket'ed 'bsValueHandle'
 withBsValueHandle ::
      IOLike m
-  => BackingStore m k v
-  -> (WithOrigin SlotNo -> BackingStoreValueHandle m k v -> m a)
+  => BackingStore m keys values diff
+  -> (WithOrigin SlotNo -> BackingStoreValueHandle m keys values -> m a)
   -> m a
 withBsValueHandle store kont =
     IOLike.bracket
@@ -379,7 +379,11 @@ newTVarBackingStore :: forall m k v.
   => Either
        (FS.SomeHasFS m, BackingStorePath)
        (WithOrigin SlotNo, UtxoValues k v)   -- ^ initial seqno and contents
-  -> m (BackingStore m k v)
+  -> m (BackingStore m
+          (UtxoKeys k v)
+          (UtxoValues k v)
+          (UtxoDiff k v)
+       )
 newTVarBackingStore initialization = do
     ref <- do
       (slot, vs) <- case initialization of
