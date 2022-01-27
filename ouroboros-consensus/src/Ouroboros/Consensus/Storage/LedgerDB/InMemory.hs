@@ -479,13 +479,6 @@ dbChangelogPrefix ::
   => Point blk -> DbChangelog l -> Maybe (DbChangelog l)
 dbChangelogPrefix = prefixDbChangelog
 
-newtype SeqNo (state :: LedgerStateKind) = SeqNo { unSeqNo :: Word64 }
-  deriving (Eq, Ord, Show)
-
--- TODO: flushing the changelog will invalidate other copies of 'LedgerDB'. At
--- the moment the flush-locking concern is outside the scope of this module.
--- Clients need to ensure they flush in a safe manner.
---
 -- | Isolates the prefix of the changelog that should be flushed
 --
 -- TODO take some argument to bound the size of the resulting prefix?
