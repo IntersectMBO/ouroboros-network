@@ -33,12 +33,14 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , rewindKeys
     -- * Backing store interface
   , BackingStore (..)
+  , BackingStorePath (..)
   , BackingStoreSnapshot (..)
   , bsRead
   , withBsSnapshot
     -- ** An in-memory backing store
   , newTVarBackingStore
   , TVarBackingStoreClosedExn (..)
+  , TVarBackingStoreDeserialiseExn (..)
   , TVarBackingStoreSnapshotClosedExn (..)
     -- * Sequence of differences
   , SeqUtxoDiff (..)
@@ -56,8 +58,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , SudMeasure (..)
   ) where
 
+import           Codec.Serialise (DeserialiseFailure, Serialise,
+                   deserialiseOrFail, serialise)
 import qualified Control.Exception as Exn
-import           Control.Monad (join)
+import           Control.Monad (join, void)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as MapMerge
@@ -72,6 +76,8 @@ import           Data.FingerTree.Strict (StrictFingerTree)
 import qualified Data.FingerTree.Strict as FT
 
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
+import qualified Ouroboros.Consensus.Storage.FS.API as FS
+import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 
@@ -295,10 +301,17 @@ data BackingStore m k v = BackingStore {
     --
     -- Other methods throw exceptions if called on a closed store.
     bsClose    :: m ()
+    -- | Create a persistent copy
+    --
+    -- Each backing store implementation will offer a way to initialize itself
+    -- from such a path.
+  , bsCopy     :: BackingStorePath -> m ()
   , bsSnapshot :: m (WithOrigin SlotNo, BackingStoreSnapshot m k v)
     -- | Apply a valid diff to the contents of the backing store
   , bsWrite    :: SlotNo -> UtxoDiff k v -> m ()
   }
+
+newtype BackingStorePath = BackingStorePath FS.FsPath
 
 -- | An ephemeral but immutable snapshot
 --
@@ -354,17 +367,38 @@ data TVarBackingStoreClosedExn = TVarBackingStoreClosedExn
 data TVarBackingStoreSnapshotClosedExn = TVarBackingStoreSnapshotClosedExn
   deriving (Exn.Exception, Show)
 
+newtype TVarBackingStoreDeserialiseExn = TVarBackingStoreDeserialiseExn DeserialiseFailure
+  deriving (Exn.Exception, Show)
+
 -- | Use a 'TVar' as a trivial backing store
-newTVarBackingStore ::
-     (IOLike m, NoThunks k, NoThunks v, Ord k)
-  => WithOrigin SlotNo   -- ^ initial seqno
-  -> UtxoValues k v   -- ^ initial contents
+newTVarBackingStore :: forall m k v.
+     (IOLike m, NoThunks k, NoThunks v, Ord k, Serialise k, Serialise v)
+  => FS.SomeHasFS m
+  -> Either
+       BackingStorePath
+       (WithOrigin SlotNo, UtxoValues k v)   -- ^ initial seqno and contents
   -> m (BackingStore m k v)
-newTVarBackingStore initialSlot initialUtxo = do
-    ref <- IOLike.newTVarIO $ TVarBackingStoreContents initialSlot initialUtxo
+newTVarBackingStore (FS.SomeHasFS fs) initialization = do
+    ref <- do
+      (slot, vs) <- case initialization of
+        Left (BackingStorePath path) -> do
+          FS.withFile fs path FS.ReadMode $ \h -> do
+            bs <- FS.hGetAll fs h
+            case deserialiseOrFail bs of
+              Left  err        -> Exn.throw $ TVarBackingStoreDeserialiseExn err
+              Right (slot, vs) -> pure (slot, UtxoValues vs :: UtxoValues k v)
+        Right x -> pure x
+      IOLike.newTVarIO $ TVarBackingStoreContents slot vs
     pure BackingStore {
         bsClose    = IOLike.atomically $ do
           IOLike.writeTVar ref TVarBackingStoreContentsClosed
+      , bsCopy = \(BackingStorePath path) -> join $ IOLike.atomically $ do
+          IOLike.readTVar ref >>= \case
+            TVarBackingStoreContentsClosed                ->
+              pure $ Exn.throw TVarBackingStoreClosedExn
+            TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
+              FS.withFile fs path (FS.WriteMode FS.MustBeNew) $ \h -> do
+                void $ FS.hPutAll fs h $ serialise (slot, vs)
       , bsSnapshot = join $ IOLike.atomically $ do
           IOLike.readTVar ref >>= \case
             TVarBackingStoreContentsClosed                ->
