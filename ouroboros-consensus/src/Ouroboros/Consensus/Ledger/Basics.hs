@@ -61,8 +61,10 @@ module Ouroboros.Consensus.Ledger.Basics (
   , InMemory (..)
     -- * Changelog
   , DbChangelog (..)
+  , DbChangelogFlushPolicy (..)
   , DbChangelogState (..)
   , extendDbChangelog
+  , flushDbChangelog
   , prefixBackToAnchorDbChangelog
   , prefixDbChangelog
   , pruneDbChangelog
@@ -72,6 +74,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   ) where
 
 import qualified Control.Exception as Exn
+import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
@@ -557,6 +560,51 @@ pruneDbChangelog (SecurityParam k) dblog =
       if toEnum nvol <= k then (imm, vol) else
       let (l, r) = AS.splitAt (nvol - fromEnum k) vol
       in (AS.unsafeJoin imm l, r)   -- TODO check fit?
+
+-- | The flush policy
+data DbChangelogFlushPolicy =
+    -- | Always flush everything older than the immutable tip
+    DbChangelogFlushAllImmutable
+
+flushDbChangelog ::
+     (GetTip (l EmptyMK), TableStuff l)
+  => DbChangelogFlushPolicy
+  -> DbChangelog l
+  -> (DbChangelog l, DbChangelog l)
+flushDbChangelog DbChangelogFlushAllImmutable dblog =
+    (ldblog, rdblog)
+  where
+    imm = changelogImmutableStates dblog
+    vol = changelogVolatileStates  dblog
+
+    immTip = AS.anchor vol
+
+    -- TODO #2 by point, not by count, so sequences can be ragged
+    split ::
+         Ord k
+      => ApplyMapKind SeqDiffMK k v
+      -> (ApplyMapKind SeqDiffMK k v, ApplyMapKind SeqDiffMK k v)
+    split (ApplySeqDiffMK sq) =
+        bimap ApplySeqDiffMK ApplySeqDiffMK
+      $ splitAtSeqUtxoDiff (AS.length imm) sq
+
+    -- TODO #1 one pass
+    l = mapLedgerTables (fst . split) (changelogDiffs dblog)
+    r = mapLedgerTables (snd . split) (changelogDiffs dblog)
+
+    ldblog = DbChangelog {
+        changelogDiffAnchor      = changelogDiffAnchor dblog
+      , changelogDiffs           = l
+      , changelogImmutableStates = imm
+      , changelogVolatileStates  = AS.Empty immTip
+      }
+
+    rdblog = DbChangelog {
+        changelogDiffAnchor      = getTipSlot (unDbChangelogState immTip)
+      , changelogDiffs           = r
+      , changelogImmutableStates = AS.Empty immTip
+      , changelogVolatileStates  = vol
+      }
 
 prefixDbChangelog ::
      ( HasHeader blk

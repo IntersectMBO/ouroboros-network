@@ -240,6 +240,7 @@ copyAndSnapshotRunner
      , HasHeader blk
      , GetHeader blk
      , IsLedger (LedgerState blk)
+     , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
@@ -299,10 +300,11 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 -- | Write a snapshot of the LedgerDB to disk and remove old snapshots
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
 updateLedgerSnapshots ::
-    ( IOLike m
+     ( IOLike m
      , LgrDbSerialiseConstraints blk
      , HasHeader blk
      , IsLedger (LedgerState blk)
+     , LedgerSupportsProtocol blk
      )
   => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do
