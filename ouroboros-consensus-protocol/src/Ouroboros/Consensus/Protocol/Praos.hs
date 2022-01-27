@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Protocol.Praos (
   , Ticked (..)
   , forgePraosFields
   , praosCheckCanForge
+  , Ticked (..)
   ) where
 
 import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
