@@ -59,7 +59,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   ) where
 
 import           Codec.Serialise (DeserialiseFailure, Serialise,
-                   deserialiseOrFail, serialise)
+                     deserialiseOrFail, serialise)
 import qualified Control.Exception as Exn
 import           Control.Monad (join, void)
 import           Data.Map (Map)
@@ -305,7 +305,7 @@ data BackingStore m k v = BackingStore {
     --
     -- Each backing store implementation will offer a way to initialize itself
     -- from such a path.
-  , bsCopy        :: BackingStorePath -> m ()
+  , bsCopy        :: FS.SomeHasFS m -> BackingStorePath -> m ()
     -- | Open a 'BackingStoreValueHandle' capturing the current value of the
     -- entire database
   , bsValueHandle :: m (WithOrigin SlotNo, BackingStoreValueHandle m k v)
@@ -376,15 +376,14 @@ newtype TVarBackingStoreDeserialiseExn = TVarBackingStoreDeserialiseExn Deserial
 -- | Use a 'TVar' as a trivial backing store
 newTVarBackingStore :: forall m k v.
      (IOLike m, NoThunks k, NoThunks v, Ord k, Serialise k, Serialise v)
-  => FS.SomeHasFS m
-  -> Either
-       BackingStorePath
+  => Either
+       (FS.SomeHasFS m, BackingStorePath)
        (WithOrigin SlotNo, UtxoValues k v)   -- ^ initial seqno and contents
   -> m (BackingStore m k v)
-newTVarBackingStore (FS.SomeHasFS fs) initialization = do
+newTVarBackingStore initialization = do
     ref <- do
       (slot, vs) <- case initialization of
-        Left (BackingStorePath path) -> do
+        Left (FS.SomeHasFS fs, BackingStorePath path) -> do
           FS.withFile fs path FS.ReadMode $ \h -> do
             bs <- FS.hGetAll fs h
             case deserialiseOrFail bs of
@@ -395,13 +394,14 @@ newTVarBackingStore (FS.SomeHasFS fs) initialization = do
     pure BackingStore {
         bsClose    = IOLike.atomically $ do
           IOLike.writeTVar ref TVarBackingStoreContentsClosed
-      , bsCopy = \(BackingStorePath path) -> join $ IOLike.atomically $ do
-          IOLike.readTVar ref >>= \case
-            TVarBackingStoreContentsClosed                ->
-              pure $ Exn.throw TVarBackingStoreClosedExn
-            TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
-              FS.withFile fs path (FS.WriteMode FS.MustBeNew) $ \h -> do
-                void $ FS.hPutAll fs h $ serialise (slot, vs)
+      , bsCopy = \(FS.SomeHasFS fs) (BackingStorePath path) ->
+          join $ IOLike.atomically $ do
+            IOLike.readTVar ref >>= \case
+              TVarBackingStoreContentsClosed                ->
+                pure $ Exn.throw TVarBackingStoreClosedExn
+              TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
+                FS.withFile fs path (FS.WriteMode FS.MustBeNew) $ \h -> do
+                  void $ FS.hPutAll fs h $ serialise (slot, vs)
       , bsValueHandle = join $ IOLike.atomically $ do
           IOLike.readTVar ref >>= \case
             TVarBackingStoreContentsClosed                ->
