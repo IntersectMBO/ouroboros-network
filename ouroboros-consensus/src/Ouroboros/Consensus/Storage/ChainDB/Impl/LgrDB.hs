@@ -99,6 +99,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
+import           Control.Monad.Trans.Except
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
@@ -124,7 +125,7 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
-    , lgrOnDiskLedgerStDb :: !(LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk))
+    , lgrOnDiskLedgerStDb :: !(LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk) blk)
       -- ^
       --
       -- TODO: align the other fields.
@@ -149,6 +150,8 @@ type LgrDbSerialiseConstraints blk =
   ( Serialise      (HeaderHash  blk)
   , EncodeDisk blk (LedgerState blk EmptyMK)
   , DecodeDisk blk (LedgerState blk EmptyMK)
+  , EncodeDisk blk (LedgerState blk ValuesMK)
+  , DecodeDisk blk (LedgerState blk ValuesMK)
   , EncodeDisk blk (AnnTip      blk)
   , DecodeDisk blk (AnnTip      blk)
   , EncodeDisk blk (ChainDepState (BlockProtocol blk))
@@ -161,7 +164,7 @@ type LgrDbSerialiseConstraints blk =
 
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk EmptyMK))
+    , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
     , lgrHasFS          :: SomeHasFS m
     , lgrHasFSLedgerSt  :: SomeHasFS m
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
@@ -273,37 +276,41 @@ initFromDisk
   => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> ImmutableDB m blk
-  -> m (LedgerDB' blk, Word64, OnDiskLedgerStDb m (ExtLedgerState blk))
+  -> m (LedgerDB' blk, Word64, OnDiskLedgerStDb m (ExtLedgerState blk) blk)
 initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
     onDiskLedgerStDb <- LedgerDB.mkOnDiskLedgerStDb lgrHasFSLedgerSt
-    -- TODO: is it correct that we pick a instance of the 'OnDiskLedgerStDb' here?
+
+    let oldLedgerInitParams = LedgerDB.OldLedgerInitParams hasFS decodeExtLedgerState'
+        newLedgerInitParams = LedgerDB.NewLedgerInitParams lgrHasFSLedgerSt decodeExtLedgerState' onDiskLedgerStDb
+
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
         lgrTracer
-        hasFS
-        onDiskLedgerStDb
-        decodeExtLedgerState'
+        oldLedgerInitParams
+        newLedgerInitParams
         decode
         (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
+        True
     return (db, replayed, onDiskLedgerStDb)
   where
     LgrDbArgs { lgrHasFS = hasFS, .. } = args
 
     ccfg = configCodec lgrTopLevelConfig
 
-    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk EmptyMK)
+    decodeExtLedgerState' :: forall s mk. DecodeDisk blk (LedgerState blk mk) => Decoder s (ExtLedgerState blk mk)
     decodeExtLedgerState' = decodeExtLedgerState
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
 
+
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB' blk)
         -> StrictTVar m (Set (RealPoint blk))
-        -> LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk)
+        -> LedgerDB.OnDiskLedgerStDb m (ExtLedgerState blk) blk
         -> FlushLock
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs Identity m blk
@@ -424,7 +431,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
           => [Header blk]
           -> Set (RealPoint blk)
           -> [Ap n l blk ( LedgerDB.ResolvesBlocks    n   blk
-                         , LedgerDB.ReadsKeySets         n l
+                         , LedgerDB.ReadsKeySets      n l
                          , LedgerDB.ThrowsLedgerError n l blk
                          )]
     mkAps hdrs prevApplied =
@@ -455,16 +462,16 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
 -------------------------------------------------------------------------------}
 
 streamAPI ::
-     forall m blk.
+     forall m blk e.
      (IOLike m, HasHeader blk)
-  => ImmutableDB m blk -> StreamAPI m blk
+  => ImmutableDB m blk -> StreamAPI m e blk
 streamAPI immutableDB = StreamAPI streamAfter
   where
     streamAfter :: HasCallStack
                 => Point blk
-                -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
-                -> m a
-    streamAfter tip k = withRegistry $ \registry -> do
+                -> (Either (RealPoint blk) (m (NextBlock blk)) -> ExceptT e m a)
+                -> ExceptT e m a
+    streamAfter tip k = ExceptT $ withRegistry $ \registry -> do
         eItr <-
           ImmutableDB.streamAfterPoint
             immutableDB
@@ -473,8 +480,8 @@ streamAPI immutableDB = StreamAPI streamAfter
             tip
         case eItr of
           -- Snapshot is too recent
-          Left  err -> k $ Left  $ ImmutableDB.missingBlockPoint err
-          Right itr -> k $ Right $ streamUsing itr
+          Left  err -> runExceptT $ k $ Left  $ ImmutableDB.missingBlockPoint err
+          Right itr -> runExceptT $ k $ Right $ streamUsing itr
 
     streamUsing :: ImmutableDB.Iterator m blk blk -> m (NextBlock blk)
     streamUsing itr = ImmutableDB.iteratorNext itr >>= \case

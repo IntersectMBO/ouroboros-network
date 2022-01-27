@@ -79,3 +79,5 @@ haddocks/
 
 # Ignore directory used by .github/bin/check-dependencies
 /tmp
+
+.dir-locals.el

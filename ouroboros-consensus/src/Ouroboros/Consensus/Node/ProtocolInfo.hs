@@ -38,7 +38,7 @@ enumCoreNodes (NumCoreNodes numNodes) =
 -- | Data required to run the specified protocol.
 data ProtocolInfo m b = ProtocolInfo {
         pInfoConfig       :: TopLevelConfig b
-      , pInfoInitLedger   :: ExtLedgerState b EmptyMK -- ^ At genesis    TODO no UTxO? no stake addresses/credentials?
+      , pInfoInitLedger   :: ExtLedgerState b ValuesMK -- ^ The Genesis Ledger State contains an initial UTxO, so it has to use @ValuesMK@.
       , pInfoBlockForging :: m [BlockForging m b]
       }
 

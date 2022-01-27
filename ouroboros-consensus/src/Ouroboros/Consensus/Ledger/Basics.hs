@@ -263,12 +263,12 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
   -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
   withLedgerTables :: HasCallStack => l any -> LedgerTables l mk -> l mk
 
-  -- | Apply the differences in a tracking map to a values map. This is intended
+  -- | Apply the differences in a diff map to a values map. This is intended
   -- to be used to check that a ledger state computed by the old implementation
   -- and a ledger state computed by the new implementation both agree.
   --
   -- Old + ResultNew == ResultOld
-  applyTracking :: l ValuesMK -> l TrackingMK -> l ValuesMK
+  applyDiffs :: l ValuesMK -> l DiffMK -> l ValuesMK
 
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
