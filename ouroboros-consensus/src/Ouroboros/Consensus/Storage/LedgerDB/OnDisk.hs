@@ -82,6 +82,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -355,12 +356,13 @@ data OnDiskLedgerStDb m l =
    --
    -- TODO: consider unifying this with defaultReadKeySets. Why? Because we are always using
    -- 'defaultReadKeySets' with readKeySets.
-  , flushDb             :: DbChangelog l -> m (DbChangelog l )
-    -- ^ Flush the ledger DB when appropriate. We assume the implementation of
-    -- this function will determine when to flush.
+  , flushDb             :: DbChangelog l -> m ()
+    -- ^ Flush the given changelog to disk.
     --
-    -- NOTE: Captures the handle and the flushing policy. Implemented by
-    -- Snapshots.writeDb.
+    -- Flushing the changelog will break the consistency between the on-disk
+    -- store and all prior 'DbChangelog' and 'LedgerDB's. Thus clients need to
+    -- ensure they flush in a safe manner (eg using a mutex shared with
+    -- readers).
   , createRestorePoint  :: DbChangelog l -> m ()
     -- ^ Captures the DbHandle. Implemented using createRestorePoint (proposed
     -- by Douglas). We need to take the current SeqNo for the on disk state from
@@ -402,7 +404,12 @@ initStartingWith tracer cfg onDiskLedgerDbSt streamAPI initDb = do
         -- Alternatively, we could chose not to check for a lock when we're
         -- flushing here since we know the `LgrDB` does not exist at this point
         -- yet.
-        db'' <- ledgerDbFlush (flushDb onDiskLedgerDbSt) db'
+        db'' <- do
+          let (toFlush, toKeep) =
+                ledgerDbFlush DbChangelogFlushAllImmutable db'
+          flushDb onDiskLedgerDbSt toFlush
+          pure toKeep
+
         -- TODO: it seems we'd want:
         --
         --     - flush
@@ -450,9 +457,13 @@ takeSnapshot ::
      forall m blk. (MonadThrow m, IsLedger (LedgerState blk))
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
+  -> HD.BackingStore m
+       (LedgerTables (ExtLedgerState blk) KeysMK)
+       (LedgerTables (ExtLedgerState blk) ValuesMK)
+       (LedgerTables (ExtLedgerState blk) DiffMK)
   -> (ExtLedgerState blk EmptyMK -> Encoding)
   -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot tracer hasFS encLedger db =
+takeSnapshot tracer hasFS backingStore encLedger db =
     case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
       Origin ->
         return Nothing
@@ -464,6 +475,12 @@ takeSnapshot tracer hasFS encLedger db =
           return Nothing
         else do
           writeSnapshot hasFS encLedger snapshot oldest
+          HD.bsCopy
+            backingStore
+            hasFS
+            (HD.BackingStorePath
+              (mkFsPath [snapshotToFileName snapshot, "tables"])
+            )
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where

@@ -52,7 +52,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , slotSeqUtxoDiff
   , splitAfterSlotSeqUtxoDiff
   , splitAtFromEndSeqUtxoDiff
-  , splitImmutableAtSeqUtxoDiff
+  , splitAtSeqUtxoDiff
     -- ** Internals
   , SudElement (..)
   , SudMeasure (..)
@@ -75,7 +75,6 @@ import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
 import           Data.FingerTree.Strict (StrictFingerTree)
 import qualified Data.FingerTree.Strict as FT
 
-import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
@@ -543,22 +542,6 @@ splitAtFromEndSeqUtxoDiff n sq =
     $ splitAtSeqUtxoDiff (len - n) sq
   where
     len = lengthSeqUtxoDiff sq
-
--- | Isolate up to @n@ of the oldest immutable diffs
---
--- TODO is block count really what we want to us? Or maybe instead something
--- like the size of the cumulative diff?
-splitImmutableAtSeqUtxoDiff ::
-     Ord k
-  => SecurityParam
-  -> Int
-  -> SeqUtxoDiff k v
-  -> (SeqUtxoDiff k v, SeqUtxoDiff k v)
-splitImmutableAtSeqUtxoDiff k n sq =
-    splitAtSeqUtxoDiff (min n numImmutable) sq
-  where
-    k'           = fromEnum $ maxRollbacks k
-    numImmutable = max k' (lengthSeqUtxoDiff sq) - k'
 
 -- | Isolate the diffs that are labeled @<= slot@
 --
