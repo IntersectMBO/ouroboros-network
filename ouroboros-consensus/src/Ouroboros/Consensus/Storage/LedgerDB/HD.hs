@@ -4,6 +4,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
+-- | How to mediate access to an on-disk UTxO table
+--
+-- Except for the backing store, this interface would also be required for any
+-- other kind of table. Some definitions would change depending on that table's
+-- specifics.
 module Ouroboros.Consensus.Storage.LedgerDB.HD (
     -- * Values
     UtxoValues (..)
@@ -77,8 +82,9 @@ import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 -- | An mapping of tx inputs (ie a transaction id and an output index)
 -- to tx outputs (eg an address and an amount)
 --
--- The map must be injective. Moreover, any specific key must only be inserted
--- at most once.
+-- The map must be a /functional/ (if a key is present, its value is uniquely
+-- determined by context). Moreover, any specific key must only be inserted at
+-- most once.
 newtype UtxoValues k v = UtxoValues (Map k v)
   deriving (Generic, NoThunks)
 
@@ -95,7 +101,7 @@ instance Ord k => Semigroup (UtxoValues k v) where
 emptyUtxoValues :: UtxoValues k v
 emptyUtxoValues = UtxoValues Map.empty
 
--- | The function must be injective
+-- | The function should be determined by the @v@ and @v'@ types
 mapUtxoValues :: (v -> v') -> UtxoValues k v -> UtxoValues k v'
 mapUtxoValues f (UtxoValues vs) = UtxoValues $ fmap f vs
 
@@ -115,7 +121,7 @@ data UtxoEntryDiff v = UtxoEntryDiff !v !UtxoEntryDiffState
 data UtxoEntryDiffState = UedsDel | UedsIns | UedsInsAndDel
   deriving (Generic, NoThunks, Show)
 
--- | Assumes the colliding value is equivalent, since UTxO map is injective
+-- | Assumes the colliding value is equivalent, since UTxO map is functional
 --
 -- Note that this fails via 'error' if a UTxO is inserted twice, deleted twice,
 -- or inserted after being deleted.
@@ -130,13 +136,13 @@ instance Ord k => Monoid (UtxoDiff k v) where
   mempty = UtxoDiff Map.empty
 
 instance Ord k => Semigroup (UtxoDiff k v) where
-  UtxoDiff m1 <> UtxoDiff m2 =
-      UtxoDiff $ Map.unionWith (<>) m1 m2
+  UtxoDiff m1 <> UtxoDiff m2 = UtxoDiff $ Map.unionWith (<>) m1 m2
 
 emptyUtxoDiff :: UtxoDiff k v
 emptyUtxoDiff = UtxoDiff Map.empty
 
--- | The function must be injective
+-- | The function must preserve the /functionality/ (if a key is present, its
+-- value is uniquely determined by context).
 mapUtxoDiff :: (v -> v') -> UtxoDiff k v -> UtxoDiff k v'
 mapUtxoDiff f (UtxoDiff m) =
     UtxoDiff $ fmap g m
@@ -248,7 +254,7 @@ rewindKeys (UtxoKeys query) (UtxoDiff diffs) =
       UedsDel       -> False
       UedsInsAndDel -> True
 
--- | Transport a set of values (eg @'rewindPresent' unioned with the fetch of
+-- | Transport a set of values (eg 'rewindPresent' unioned with the fetch of
 -- 'rewoundUnknown' from backing store) by applying a valid difference
 --
 -- Note that this fails via 'error' if the diff is invalid, eg it deletes a key
@@ -460,7 +466,8 @@ lengthSeqUtxoDiff (SeqUtxoDiff ft) = sizeSudMeasure $ FT.measure ft
 slotSeqUtxoDiff :: Ord k => SeqUtxoDiff k v -> Maybe SlotNo
 slotSeqUtxoDiff (SeqUtxoDiff ft) = slotSudMeasure $ FT.measure ft
 
--- | The function must be injective
+-- | The function must preserve the /functionality/ (if a key is present, its
+-- value is uniquely determined by context).
 mapSeqUtxoDiff :: Ord k => (v -> v') -> SeqUtxoDiff k v -> SeqUtxoDiff k v'
 mapSeqUtxoDiff f (SeqUtxoDiff ft) =
     SeqUtxoDiff $ FT.fmap' g ft
