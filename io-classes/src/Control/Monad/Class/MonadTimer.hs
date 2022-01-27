@@ -17,8 +17,20 @@ module Control.Monad.Class.MonadTimer
 import qualified Control.Concurrent as IO
 import qualified Control.Concurrent.STM.TVar as STM
 import           Control.Exception (assert)
-import           Control.Monad.Reader
+#if defined(mingw32_HOST_OS)
+import           Control.Monad (when)
+#endif
 import qualified Control.Monad.STM as STM
+
+import           Control.Monad.Trans  (lift)
+import           Control.Monad.Cont   (ContT (..))
+import           Control.Monad.Except (ExceptT (..))
+import           Control.Monad.RWS    (RWST (..))
+import           Control.Monad.Reader (ReaderT (..))
+import           Control.Monad.State  (StateT (..))
+import           Control.Monad.Writer (WriterT (..))
+
+import           Data.Functor (void)
 import           Data.Kind (Type)
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds)
 
@@ -228,8 +240,68 @@ microsecondsAsIntToDiffTime :: Int -> DiffTime
 microsecondsAsIntToDiffTime = (/ 1_000_000) . fromIntegral
 
 --
--- Lift to ReaderT
+-- Transfomer's instances
 --
 
+instance MonadDelay m => MonadDelay (ContT r m) where
+  threadDelay = lift . threadDelay
 instance MonadDelay m => MonadDelay (ReaderT r m) where
   threadDelay = lift . threadDelay
+instance (Monoid w, MonadDelay m) => MonadDelay (WriterT w m) where
+  threadDelay = lift . threadDelay
+instance MonadDelay m => MonadDelay (StateT s m) where
+  threadDelay = lift . threadDelay
+instance MonadDelay m => MonadDelay (ExceptT e m) where
+  threadDelay = lift . threadDelay
+instance (Monoid w, MonadDelay m) => MonadDelay (RWST r w s m) where
+  threadDelay = lift . threadDelay
+
+instance MonadTimer m => MonadTimer (ReaderT r m) where
+  newtype Timeout (ReaderT r m) = TimeoutR { unTimeoutR :: Timeout m }
+  newTimeout    = lift . fmap TimeoutR . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutR
+  updateTimeout (TimeoutR t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutR
+  registerDelay = lift . registerDelay
+  timeout d f   = ReaderT $ \r -> timeout d (runReaderT f r)
+
+instance (Monoid w, MonadTimer m) => MonadTimer (WriterT w m) where
+  newtype Timeout (WriterT w m) = TimeoutW { unTimeoutW :: Timeout m }
+  newTimeout    = lift . fmap TimeoutW . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutW
+  updateTimeout (TimeoutW t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutW
+  registerDelay = lift . registerDelay
+  timeout d f   = WriterT $ do
+    r <- timeout d (runWriterT f)
+    return $ case r of
+      Nothing     -> (Nothing, mempty)
+      Just (a, w) -> (Just a, w)
+
+instance MonadTimer m => MonadTimer (StateT s m) where
+  newtype Timeout (StateT s m) = TimeoutS { unTimeoutS :: Timeout m }
+  newTimeout    = lift . fmap TimeoutS . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutS
+  updateTimeout (TimeoutS t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutS
+  registerDelay = lift . registerDelay
+  timeout d f = StateT $ \s -> do
+    r <- timeout d (runStateT f s)
+    return $ case r of
+      Nothing      -> (Nothing, s)
+      Just (a, s') -> (Just a, s')
+
+instance (Monoid w, MonadTimer m) => MonadTimer (RWST r w s m) where
+  newtype Timeout (RWST r w s m) = TimeoutRWS { unTimeoutRWS :: Timeout m }
+  newTimeout    = lift . fmap TimeoutRWS . newTimeout
+  readTimeout   = WrappedSTM . readTimeout . unTimeoutRWS
+  updateTimeout (TimeoutRWS t) d = lift $ updateTimeout t d
+  cancelTimeout = lift . cancelTimeout . unTimeoutRWS
+  registerDelay = lift . registerDelay
+  timeout d (RWST f) = RWST $ \r s -> do
+    res <- timeout d (f r s)
+    return $ case res of
+      Nothing         -> (Nothing, s, mempty)
+      Just (a, s', w) -> (Just a, s', w)
+
+

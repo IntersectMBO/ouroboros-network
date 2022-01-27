@@ -14,7 +14,7 @@ module Control.Monad.Class.MonadFork
 
 import qualified Control.Concurrent as IO
 import           Control.Exception (AsyncException (ThreadKilled), Exception)
-import           Control.Monad.Reader
+import           Control.Monad.Reader (ReaderT (..), lift)
 import           Data.Kind (Type)
 import qualified GHC.Conc.Sync as IO (labelThread)
 
@@ -58,8 +58,8 @@ instance MonadFork IO where
   throwTo          = IO.throwTo
   killThread       = IO.killThread
 
-instance MonadThread m => MonadThread (ReaderT e m) where
-  type ThreadId (ReaderT e m) = ThreadId m
+instance MonadThread m => MonadThread (ReaderT r m) where
+  type ThreadId (ReaderT r m) = ThreadId m
   myThreadId  = lift myThreadId
   labelThread t l = lift (labelThread t l)
 
