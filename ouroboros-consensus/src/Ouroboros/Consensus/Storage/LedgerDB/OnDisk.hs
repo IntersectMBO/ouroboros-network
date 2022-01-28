@@ -538,7 +538,11 @@ initStartingWith tracer cfg backingStore streamAPI initDb = do
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot ::
-     forall m blk. (MonadThrow m, IsLedger (LedgerState blk))
+     forall m blk.
+     ( MonadThrow m
+     , IsLedger (LedgerState blk)
+     , StandardHash blk
+     )
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
   -> LedgerBackingStore m (ExtLedgerState blk)
