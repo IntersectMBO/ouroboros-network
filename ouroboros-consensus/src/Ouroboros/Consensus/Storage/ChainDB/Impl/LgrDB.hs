@@ -328,10 +328,15 @@ takeSnapshot ::
      ( IOLike m
      , LgrDbSerialiseConstraints blk
      , HasHeader blk
-     , IsLedger (LedgerState blk)
+     , LedgerSupportsProtocol blk
      )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
+    -- TODO need to hold lock, I think
+
+    -- TODO this flush is currently required if runDual = True
+    flush lgrDB
+
     ledgerDB <- atomically $ getCurrent lgrDB
     LedgerDB.takeSnapshot
       tracer

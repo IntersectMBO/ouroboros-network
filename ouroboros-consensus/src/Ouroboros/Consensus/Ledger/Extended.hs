@@ -136,6 +136,9 @@ type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk
 type instance HeaderHash (ExtLedgerState blk)    = HeaderHash (LedgerState blk)
 type instance HeaderHash (ExtLedgerState blk mk) = HeaderHash (LedgerState blk)
 
+instance StandardHash (LedgerState blk) => StandardHash (ExtLedgerState blk)
+instance StandardHash (LedgerState blk) => StandardHash (ExtLedgerState blk mk)
+
 instance IsLedger (LedgerState blk) => GetTip (ExtLedgerState blk mk) where
   getTip = castPoint . getTip . ledgerState
 

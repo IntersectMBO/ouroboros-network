@@ -78,6 +78,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
 import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
+import qualified Control.Exception as Exn
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Functor.Identity
@@ -545,13 +546,37 @@ ledgerDbAnchor =
   . dbChangelogVolatileCheckpoints
   . ledgerDbChangelog
 
--- | Information about the state of the youngest flushed ledger
-ledgerDbOldest :: LedgerDB l -> l EmptyMK
-ledgerDbOldest =
-    unDbChangelogState
-  . AS.anchor
-  . changelogImmutableStates
-  . ledgerDbChangelog
+-- | Information about the state of the most recently flushed ledger
+--
+-- This is what will be serialized when snapshotting.
+ledgerDbOldest :: forall l.
+     (StandardHash (l EmptyMK), GetTip (l EmptyMK))
+  => LedgerDB l -> l EmptyMK
+ledgerDbOldest db =
+    if runDual db
+    then Exn.assert isFlushed stuffedLegacyAnchor
+    else immAnchor
+  where
+    immAnchor :: l EmptyMK
+    immAnchor =
+        unDbChangelogState
+      $ AS.anchor
+      $ changelogImmutableStates
+      $ ledgerDbChangelog db
+
+    isFlushed = castPoint (getTip stuffedLegacyAnchor) == getTip immAnchor
+
+    stuffedLegacyAnchor :: l EmptyMK
+    stuffedLegacyAnchor = trick legacyAnchor
+
+    legacyAnchor :: l ValuesMK
+    legacyAnchor =
+        unCheckpoint
+      $ AS.anchor
+      $ ledgerDbCheckpoints db
+
+    trick :: l ValuesMK -> l EmptyMK
+    trick = error "do our UTxO HD trick, for the MVP"
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --
