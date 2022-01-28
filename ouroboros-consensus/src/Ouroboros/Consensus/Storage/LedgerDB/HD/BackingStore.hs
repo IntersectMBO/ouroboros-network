@@ -35,6 +35,9 @@ data BackingStore m keys values diff = BackingStore {
     --
     -- Each backing store implementation will offer a way to initialize itself
     -- from such a path.
+    --
+    -- The destination path must not already exist. After this operation, it
+    -- will be a directory.
   , bsCopy        :: !(FS.SomeHasFS m -> BackingStorePath -> m ())
     -- | Open a 'BackingStoreValueHandle' capturing the current value of the
     -- entire database
