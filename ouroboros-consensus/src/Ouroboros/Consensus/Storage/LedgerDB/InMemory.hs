@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , OldLedgerDB
     -- ** Queries
   , ledgerDbAnchor
+  , ledgerDbAnchorOld
   , ledgerDbBimap
   , ledgerDbCurrent
   , ledgerDbCurrentOld
@@ -686,6 +687,9 @@ oldLedgerDbCurrent = either unCheckpoint unCheckpoint . AS.head
 -- | Information about the state of the ledger at the anchor
 ledgerDbAnchor :: LedgerDB l -> l EmptyMK
 ledgerDbAnchor LedgerDB{..} = seqAt (dbChangelogStateAnchor ledgerDbChangelog) (dbChangelogStates ledgerDbChangelog)
+
+ledgerDbAnchorOld :: LedgerDB l -> Maybe (l ValuesMK)
+ledgerDbAnchorOld = fmap (unCheckpoint . AS.anchor) . ledgerDbCheckpoints
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --

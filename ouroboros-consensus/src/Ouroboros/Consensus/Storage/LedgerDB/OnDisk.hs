@@ -1,19 +1,23 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
+    -- * Filesystem newtype wrappers
+    NewLedgerFS (..)
+  , OldLedgerFS (..)
     -- * Opening the database
-    InitFailure (..)
+  , InitFailure (..)
   , InitLog (..)
   , NewLedgerInitParams (..)
   , OldLedgerInitParams (..)
@@ -31,7 +35,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , readSnapshot
     -- * Write to disk
   , takeSnapshot
-  , trimSnapshots
+  , trimNewSnapshots
+  , trimOldSnapshots
   , writeSnapshot
     -- * Low-level API (primarily exposed for testing)
   , deleteSnapshot
@@ -86,6 +91,27 @@ import           Ouroboros.Consensus.Util.Versioned
 
 type LedgerDB'       blk = LedgerDB       (ExtLedgerState blk)
 type AnnLedgerError' blk = AnnLedgerError (ExtLedgerState blk) blk
+
+{-------------------------------------------------------------------------------
+  Newtype wrappers for not mixing up old and new filesystems
+-------------------------------------------------------------------------------}
+
+-- | The directory containing old-style snapshots. These are snapshots taken
+-- from @ExtLedgerState blk ValuesMK@ in the same style as before the UTxO-HD
+-- integration
+newtype OldLedgerFS m = OldLedgerFS (SomeHasFS m)
+  deriving newtype (NoThunks)
+
+-- | The directory containing both the new-style snapshots and the UTxO-HD
+-- backend.
+--
+-- The new-style snapshots are serializations of @ExtLedgerState blk EmptyMK@ as
+-- carried in the @DbChangelog@.
+--
+-- INVARIANT: Only one of said snapshots should exist at any time TODO: this
+-- will change with restore points.
+newtype NewLedgerFS m = NewLedgerFS (SomeHasFS m)
+  deriving newtype (NoThunks)
 
 {-------------------------------------------------------------------------------
   Abstraction over the streaming API provided by the Chain DB
@@ -174,13 +200,13 @@ data InitLog blk =
 
 -- | Grouped parameters specific only for the old-style LedgerDB
 data OldLedgerInitParams m blk = OldLedgerInitParams {
-    oldFS      :: SomeHasFS m
+    oldFS      :: OldLedgerFS m
   , oldDecoder :: forall s. Decoder s (ExtLedgerState blk ValuesMK)
   }
 
 -- | Grouped parameters specific only for the new-style LedgerDB
 data NewLedgerInitParams m blk = NewLedgerInitParams {
-    newFS      :: SomeHasFS m
+    newFS      :: NewLedgerFS m
   , newDecoder :: forall s. Decoder s (ExtLedgerState blk EmptyMK)
   , backend    :: OnDiskLedgerStDb m (ExtLedgerState blk) blk
   }
@@ -222,7 +248,7 @@ initLedgerDB ::
   -> m (ExtLedgerState blk ValuesMK)                     -- ^ Genesis ledger state
   -> StreamAPI' m blk
   -> Bool
-  -> m ((Maybe (InitLog blk), InitLog blk), LedgerDB' blk, Word64)
+  -> m ((Maybe (InitLog blk), InitLog blk), LedgerDB' blk, (Word64, Word64))
 initLedgerDB replayTracer tracer OldLedgerInitParams{..} NewLedgerInitParams{..} decHash cfg getGenesisLedger streamAPI runAlsoOld = do
 
     mOldLedgerDB <- if runAlsoOld then Just <$> oldInitLedgerDB
@@ -248,29 +274,29 @@ initLedgerDB replayTracer tracer OldLedgerInitParams{..} NewLedgerInitParams{..}
           let
             ledgerDb = combine Nothing newStyleDB
           in
-            (Nothing,) <$> initStartingWith replayTracer' cfg backend streamAPI ledgerDb
+            (\(l, r) -> (Nothing, (l, (r,r)))) <$> initStartingWith replayTracer' cfg backend streamAPI ledgerDb
         Just (initLog, oldStyleDB) -> do
           let oldTip = pointSlot . getTip $ oldLedgerDbCurrent oldStyleDB
               newTip = pointSlot . getTip $ newLedgerDbCurrent newStyleDB
           -- We are going to use both databases
-          (inSyncDB, replayedOnNew) <-
+          (inSyncDB, (replayedOld, replayedNew)) <-
             case compare oldTip newTip of
               -- The new-style database is behind the old-style one
               GT -> do
                 (newStyleDB', replayed) <- initializeNewDB replayTracer' newStyleDB oldTip
-                return (combine (Just oldStyleDB) newStyleDB', replayed)
+                return (combine (Just oldStyleDB) newStyleDB', (0, replayed))
 
               -- The old-style database is behind the new-style one
               LT -> do
-                (oldStyleDB', _) <- initializeOldDB replayTracer' oldStyleDB newTip
-                return (combine (Just oldStyleDB') newStyleDB, 0)
+                (oldStyleDB', replayed) <- initializeOldDB replayTracer' oldStyleDB newTip
+                return (combine (Just oldStyleDB') newStyleDB, (replayed, 0))
 
               -- The databases are in sync
-              EQ -> return (combine (Just oldStyleDB) newStyleDB, 0)
+              EQ -> return (combine (Just oldStyleDB) newStyleDB, (0, 0))
 
           -- from this point on, apply blocks on both databases
           (initializedDb, replayedOnBoth) <- initStartingWith replayTracer' cfg backend streamAPI inSyncDB
-          return (Just initLog, (initializedDb, replayedOnBoth + replayedOnNew))
+          return (Just initLog, (initializedDb, (replayedOnBoth + replayedOld, replayedOnBoth + replayedNew)))
     case ml of
       Left InitFailureNotInSyncWithUTxO -> error "invariant violation: UTxO-HD backend is not in sync with snapshots"
       Left err -> error $ "invariant violation: invalid current chain:" <> show err
@@ -398,13 +424,13 @@ oldInitLedgerDB :: forall m blk. ( IOLike m
                    , HasCallStack
                    )
                 => m (ExtLedgerState blk ValuesMK)                     -- ^ Action that gives the Genesis ledger state
-                -> SomeHasFS m                                         -- ^ Filesystem containing the old ledger snapshots
+                -> OldLedgerFS m                                       -- ^ Filesystem containing the old ledger snapshots
                 -> (forall s. Decoder s (ExtLedgerState blk ValuesMK)) -- ^ A decoder for the old ledger snapshots
                 -> (forall s. Decoder s (HeaderHash blk))
                 -> m ( InitLog blk
                      , OldLedgerDB (ExtLedgerState blk)
                      )
-oldInitLedgerDB getGenesisLedger hasFS decLedger decHash = do
+oldInitLedgerDB getGenesisLedger (OldLedgerFS hasFS) decLedger decHash = do
     listSnapshots hasFS >>= tryNewestFirst id
   where
     tryNewestFirst :: (InitLog blk -> InitLog blk)
@@ -452,7 +478,7 @@ newInitLedgerDB :: forall m blk.
                 => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
                 -> Tracer m (TraceSnapshotsEvent blk)
                 -> m (ExtLedgerState blk ValuesMK)                    -- ^ An action to get the Genesis ledger state
-                -> SomeHasFS m                                        -- ^ The filesystem with the new snapshots
+                -> NewLedgerFS m                                      -- ^ The filesystem with the new snapshots
                 -> (forall s. Decoder s (ExtLedgerState blk EmptyMK)) -- ^ A decoder for new snapshots
                 -> (forall s. Decoder s (HeaderHash blk))
                 -> OnDiskLedgerStDb m (ExtLedgerState blk) blk
@@ -460,7 +486,7 @@ newInitLedgerDB :: forall m blk.
                      , NewLedgerDB (ExtLedgerState blk)
                      , Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
                      )
-newInitLedgerDB replayTracer tracer getGenesisLedger hasFS decLedger decHash onDiskLedgerDbSt = do
+newInitLedgerDB replayTracer tracer getGenesisLedger (NewLedgerFS hasFS) decLedger decHash onDiskLedgerDbSt = do
     snapshots <- findNewSnapshot hasFS
     case snapshots of
       Nothing -> initUsingGenesis
@@ -510,7 +536,7 @@ newInitLedgerDB replayTracer tracer getGenesisLedger hasFS decLedger decHash onD
 -------------------------------------------------------------------------------}
 
 -- TODO: to be moved somewhere else
-mkOnDiskLedgerStDb :: SomeHasFS m -> m (OnDiskLedgerStDb m l blk)
+mkOnDiskLedgerStDb :: NewLedgerFS m -> m (OnDiskLedgerStDb m l blk)
 mkOnDiskLedgerStDb = undefined
   -- \(SomeHasFS fs) -> do
   --   dbhandle <- hOpen fs "ledgerStateDb"
@@ -621,7 +647,7 @@ initStartingWith tracer cfg onDiskLedgerDbSt streamAPI initDb = do
         return $ Just (db'', replayed')
 
 {-------------------------------------------------------------------------------
-  Snapshots
+  Snapshots utilities
 -------------------------------------------------------------------------------}
 
 -- | Named snapshot are permanent, they will never be deleted when trimming.
@@ -660,12 +686,10 @@ snapshotFromPath fileName = do
   Snapshots: Writing to Disk
 -------------------------------------------------------------------------------}
 
--- | Take a snapshot of the /oldest ledger state/ in the ledger DB
+-- | Take a snapshot of the provided ledger state
 --
--- We write the /oldest/ ledger state to disk because the intention is to only
--- write ledger states to disk that we know to be immutable. Primarily for
--- testing purposes, 'takeSnapshot' returns the block reference corresponding
--- to the snapshot that we wrote.
+-- Primarily for testing purposes, 'takeSnapshot' returns the block reference
+-- corresponding to the snapshot that we wrote.
 --
 -- If a snapshot with the same number already exists on disk or if the tip is at
 -- genesis, no snapshot is taken.
@@ -680,12 +704,13 @@ snapshotFromPath fileName = do
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot ::
-     forall m blk. (MonadThrow m, IsLedger (LedgerState blk))
+     forall m blk mk. (MonadThrow m, IsLedger (LedgerState blk))
   => Tracer m (TraceSnapshotsEvent blk)
   -> SomeHasFS m
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
-  -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot tracer hasFS encLedger db =
+  -> (ExtLedgerState blk mk -> Encoding)
+  -> ExtLedgerState blk mk
+  -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot tracer hasFS encLedger oldest =
     case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
       Origin ->
         return Nothing
@@ -699,22 +724,22 @@ takeSnapshot tracer hasFS encLedger db =
           writeSnapshot hasFS encLedger snapshot oldest
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
-  where
-    oldest :: ExtLedgerState blk EmptyMK
-    oldest = ledgerDbAnchor db
 
 -- | Write snapshot to disk
+--
+-- Our intention is to only write ledger states to disk that we know to be
+-- immutable.
 writeSnapshot ::
-     forall m blk. MonadThrow m
+     forall m blk mk. MonadThrow m
   => SomeHasFS m
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
+  -> (ExtLedgerState blk mk -> Encoding)
   -> DiskSnapshot
-  -> ExtLedgerState blk EmptyMK -> m ()
+  -> ExtLedgerState blk mk -> m ()
 writeSnapshot (SomeHasFS hasFS) encLedger ss cs = do
     withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
   where
-    encode :: ExtLedgerState blk EmptyMK -> Encoding
+    encode :: ExtLedgerState blk mk -> Encoding
     encode = encodeSnapshot encLedger
 
 -- | Version 1: uses versioning ('Ouroboros.Consensus.Util.Versioned') and only
@@ -792,19 +817,37 @@ decodeSnapshotBackwardsCompatible _ decodeLedger decodeHash =
 -- snapshots are stored on disk. The oldest snapshots are deleted.
 --
 -- The deleted snapshots are returned.
-trimSnapshots ::
+trimOldSnapshots ::
      Monad m
   => Tracer m (TraceSnapshotsEvent r)
-  -> SomeHasFS m
+  -> OldLedgerFS m
   -> DiskPolicy
   -> m [DiskSnapshot]
-trimSnapshots tracer hasFS DiskPolicy{..} = do
+trimOldSnapshots tracer (OldLedgerFS hasFS) DiskPolicy{..} = do
     -- We only trim temporary snapshots
     snapshots <- filter diskSnapshotIsTemporary <$> listSnapshots hasFS
     -- The snapshot are most recent first, so we can simply drop from the
     -- front to get the snapshots that are "too" old.
-    forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
+    forM (drop (fromIntegral onDiskNumOldSnapshots) snapshots) $ \snapshot -> do
       deleteSnapshot hasFS snapshot
+      traceWith tracer $ DeletedSnapshot snapshot
+      return snapshot
+
+-- | Remove any snapshot in the disk that is not the one we just wrote as in the
+-- new-style LedgerDB there can only be one snapshot which must be in sync with
+-- the UTxO HD backend. TODO: @js this will change with restore-points
+--
+-- The deleted snapshots are returned.
+trimNewSnapshots ::
+     Monad m
+  => Tracer m (TraceSnapshotsEvent r)
+  -> NewLedgerFS m
+  -> DiskSnapshot -- ^ Snapshot to keep
+  -> m [DiskSnapshot]
+trimNewSnapshots tracer (NewLedgerFS newHasFS) s = do
+    snapshots <- filter (not . (== s)) <$> listSnapshots newHasFS
+    forM snapshots $ \snapshot -> do
+      deleteSnapshot newHasFS snapshot
       traceWith tracer $ DeletedSnapshot snapshot
       return snapshot
 
@@ -823,6 +866,8 @@ listSnapshots (SomeHasFS HasFS{..}) =
 -- | Only one new-style snapshot should exist on the system. This functions
 -- returns it or returns Nothing. If multiple snapshots are found, it will
 -- return the one with the highest number (as it is expected to be the newest).
+--
+-- TODO: @js this will change with restore-points
 findNewSnapshot :: Monad m => SomeHasFS m -> m (Maybe DiskSnapshot)
 findNewSnapshot (SomeHasFS HasFS{..}) = do
     ls <- listDirectory (mkFsPath [])

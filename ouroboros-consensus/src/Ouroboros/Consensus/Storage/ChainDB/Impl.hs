@@ -228,7 +228,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
           testing = Internal
             { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB
             , intGarbageCollect          = getEnv1 h Background.garbageCollect
-            , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerSnapshots
+            , intUpdateLedgerSnapshots   = getEnv  h Background.updateLedgerOldSnapshots
             , intAddBlockRunner          = getEnv  h Background.addBlockRunner
             , intKillBgThreads           = varKillBgThreads
             }

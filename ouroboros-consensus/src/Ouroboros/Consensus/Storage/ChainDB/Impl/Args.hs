@@ -35,6 +35,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (NewLedgerFS,
+                     OldLedgerFS)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -46,10 +48,8 @@ data ChainDbArgs f m blk = ChainDbArgs {
       -- HasFS instances
       cdbHasFSImmutableDB       :: SomeHasFS m
     , cdbHasFSVolatileDB        :: SomeHasFS m
-    , cdbHasFSLgrDB             :: SomeHasFS m
-    , cbdHasFSLedgerState       :: SomeHasFS m
-      -- ^ TODO: should the handle of the database live here, and if so what
-      -- would be an appropriate name for it?
+    , cdbOldHasFSLgrDB          :: OldLedgerFS m
+    , cdbNewHasFSLgrDB          :: NewLedgerFS m
 
       -- Policy
     , cdbImmutableDbValidation  :: ImmutableDB.ValidationPolicy
@@ -184,8 +184,8 @@ fromChainDbArgs ChainDbArgs{..} = (
         }
     , LgrDB.LgrDbArgs {
           lgrTopLevelConfig   = cdbTopLevelConfig
-        , lgrHasFS            = cdbHasFSLgrDB
-        , lgrHasFSLedgerSt    = cbdHasFSLedgerState
+        , lgrOldFS            = cdbOldHasFSLgrDB
+        , lgrNewFS            = cdbNewHasFSLgrDB
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrSnapshotsTracer  = contramap TraceLedgerSnapshotsEvent cdbTracer
@@ -218,8 +218,8 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
       -- HasFS instances
       cdbHasFSImmutableDB       = immHasFS
     , cdbHasFSVolatileDB        = volHasFS
-    , cdbHasFSLgrDB             = lgrHasFS
-    , cbdHasFSLedgerState       = lgrHasFSLedgerSt
+    , cdbOldHasFSLgrDB          = lgrOldFS
+    , cdbNewHasFSLgrDB          = lgrNewFS
       -- Policy
     , cdbImmutableDbValidation  = immValidationPolicy
     , cdbVolatileDbValidation   = volValidationPolicy

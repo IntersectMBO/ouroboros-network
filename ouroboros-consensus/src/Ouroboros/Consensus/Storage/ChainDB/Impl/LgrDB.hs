@@ -21,9 +21,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , LgrDbArgs (..)
   , defaultArgs
   , openDB
-    -- * Ledger HD operations
-  , flush
-    -- ** Read/Write lock operations
+    -- * Ledger HD read/Write lock operations
   , unsafeAcquireReadLock
   , unsafeAcquireWriteLock
   , unsafeReleaseReadLock
@@ -37,8 +35,11 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , getCurrent
   , getDiskPolicy
   , setCurrent
-  , takeSnapshot
-  , trimSnapshots
+    -- * Snapshots and flushing
+  , flush
+  , takeNewSnapshot
+  , takeOldSnapshot
+  , trimOldSnapshots
     -- * Validation
   , ValidateResult (..)
   , validate
@@ -93,8 +94,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
                      ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
-                     LedgerDB', NextBlock (..), OnDiskLedgerStDb (..),
-                     StreamAPI (..))
+                     LedgerDB', NewLedgerFS (..), NextBlock (..),
+                     OldLedgerFS (..), OnDiskLedgerStDb (..), StreamAPI (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.Types
 
@@ -127,12 +128,13 @@ data LgrDB m blk = LgrDB {
       -- ^
       --
       -- TODO: align the other fields.
-    , lgrDbFlushLock      :: !FlushLock
+    , lgrDbFlushLock      :: !FlushLock -- TODO: @js move to OnDiskLedgerStDb?
     , resolveBlock        :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
       -- ^ Read a block from disk
     , cfg                 :: !(TopLevelConfig blk)
     , diskPolicy          :: !DiskPolicy
-    , hasFS               :: !(SomeHasFS m)
+    , oldFS               :: !(LedgerDB.OldLedgerFS m)
+    , newFS               :: !(LedgerDB.NewLedgerFS m)
     , snapshotsTracer     :: !(Tracer m (TraceSnapshotsEvent blk))
 
 -- TODO    , backendHandle :: BackendHandle m
@@ -163,8 +165,8 @@ type LgrDbSerialiseConstraints blk =
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy      :: DiskPolicy
     , lgrGenesis         :: HKD f (m (ExtLedgerState blk ValuesMK))
-    , lgrHasFS           :: SomeHasFS m
-    , lgrHasFSLedgerSt   :: SomeHasFS m
+    , lgrOldFS           :: LedgerDB.OldLedgerFS m
+    , lgrNewFS           :: LedgerDB.NewLedgerFS m
     , lgrTopLevelConfig  :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger     :: Tracer m (LedgerDB' blk)
     , lgrSnapshotsTracer :: Tracer m (TraceSnapshotsEvent blk)
@@ -179,11 +181,11 @@ defaultArgs ::
   -- we use in this function.
   -> DiskPolicy
   -> LgrDbArgs Defaults m blk
-defaultArgs lgrHasFS lgrHasFSLedgerSt diskPolicy = LgrDbArgs {
+defaultArgs lgrOldFS lgrNewFS diskPolicy = LgrDbArgs {
       lgrDiskPolicy      = diskPolicy
     , lgrGenesis         = NoDefault
-    , lgrHasFS
-    , lgrHasFSLedgerSt
+    , lgrOldFS           = OldLedgerFS lgrOldFS
+    , lgrNewFS           = NewLedgerFS lgrNewFS
     , lgrTopLevelConfig  = NoDefault
     , lgrTraceLedger     = nullTracer
     , lgrSnapshotsTracer = nullTracer
@@ -220,9 +222,10 @@ openDB :: forall m blk.
        --
        -- TODO: should we replace this type with @ResolveBlock blk m@?
        -> Bool
-       -> m (LgrDB m blk, Word64)
-openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock _runDual = do
-    createDirectoryIfMissing hasFS True (mkFsPath [])
+       -> m (LgrDB m blk, (Word64, Word64))
+openDB args@LgrDbArgs { lgrOldFS = lgrOldFS@(OldLedgerFS (SomeHasFS hasOldFS)), lgrNewFS = lgrNewFS@(NewLedgerFS (SomeHasFS hasNewFS)), .. } replayTracer immutableDB getBlock _runDual = do
+    createDirectoryIfMissing hasOldFS True (mkFsPath [])
+    createDirectoryIfMissing hasNewFS True (mkFsPath [])
     (db, replayed, onDiskLedgerStDb) <- initFromDisk args replayTracer immutableDB
     -- When initializing the ledger DB from disk we:
     --
@@ -257,7 +260,8 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
           , resolveBlock   = getBlock
           , cfg            = lgrTopLevelConfig
           , diskPolicy     = lgrDiskPolicy
-          , hasFS          = lgrHasFS
+          , oldFS          = lgrOldFS
+          , newFS          = lgrNewFS
           , snapshotsTracer         = lgrSnapshotsTracer
           }
       , replayed
@@ -274,12 +278,12 @@ initFromDisk
   => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> ImmutableDB m blk
-  -> m (LedgerDB' blk, Word64, OnDiskLedgerStDb m (ExtLedgerState blk) blk)
-initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
-    onDiskLedgerStDb <- LedgerDB.mkOnDiskLedgerStDb lgrHasFSLedgerSt
+  -> m (LedgerDB' blk, (Word64, Word64), OnDiskLedgerStDb m (ExtLedgerState blk) blk)
+initFromDisk LgrDbArgs{..} replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
+    onDiskLedgerStDb <- LedgerDB.mkOnDiskLedgerStDb lgrNewFS
 
-    let oldLedgerInitParams = LedgerDB.OldLedgerInitParams hasFS decodeExtLedgerState'
-        newLedgerInitParams = LedgerDB.NewLedgerInitParams lgrHasFSLedgerSt decodeExtLedgerState' onDiskLedgerStDb
+    let oldLedgerInitParams = LedgerDB.OldLedgerInitParams lgrOldFS decodeExtLedgerState'
+        newLedgerInitParams = LedgerDB.NewLedgerInitParams lgrNewFS decodeExtLedgerState' onDiskLedgerStDb
 
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
@@ -294,8 +298,6 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
         True
     return (db, replayed, onDiskLedgerStDb)
   where
-    LgrDbArgs { lgrHasFS = hasFS, .. } = args
-
     ccfg = configCodec lgrTopLevelConfig
 
     decodeExtLedgerState' :: forall s mk. DecodeDisk blk (LedgerState blk mk) => Decoder s (ExtLedgerState blk mk)
@@ -318,7 +320,8 @@ mkLgrDB varDB varPrevApplied lgrOnDiskLedgerStDb lgrDbFlushLock resolveBlock arg
     LgrDbArgs {
         lgrTopLevelConfig  = cfg
       , lgrDiskPolicy      = diskPolicy
-      , lgrHasFS           = hasFS
+      , lgrOldFS           = oldFS
+      , lgrNewFS           = newFS
       , lgrSnapshotsTracer = snapshotsTracer
       } = args
 
@@ -339,7 +342,15 @@ currentPoint :: LedgerSupportsProtocol blk => LedgerDB' blk -> Point blk
 currentPoint = castPoint
              . LedgerDB.ledgerDbTip
 
-takeSnapshot ::
+{-------------------------------------------------------------------------------
+  Snapshots and flushing
+-------------------------------------------------------------------------------}
+
+getDiskPolicy :: LgrDB m blk -> DiskPolicy
+getDiskPolicy = diskPolicy
+
+-- | Take an old-style snapshot.
+takeOldSnapshot ::
      forall m blk.
      ( IOLike m
      , LgrDbSerialiseConstraints blk
@@ -347,13 +358,39 @@ takeSnapshot ::
      , IsLedger (LedgerState blk)
      )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot lgrDB@LgrDB{ cfg, snapshotsTracer, hasFS } = wrapFailure (Proxy @blk) $ do
+takeOldSnapshot lgrDB@LgrDB{ cfg, snapshotsTracer, oldFS = OldLedgerFS fs } = wrapFailure (Proxy @blk) $ do
+    ledgerDB <- atomically $ getCurrent lgrDB
+    case LedgerDB.ledgerDbAnchorOld ledgerDB of
+      Nothing     -> return Nothing
+      Just oldest -> LedgerDB.takeSnapshot
+                       snapshotsTracer
+                       fs
+                       encodeExtLedgerState'
+                       oldest
+  where
+    ccfg = configCodec cfg
+
+    encodeExtLedgerState' :: ExtLedgerState blk ValuesMK -> Encoding
+    encodeExtLedgerState' = encodeExtLedgerState
+                              (encodeDisk ccfg)
+                              (encodeDisk ccfg)
+                              (encodeDisk ccfg)
+
+takeNewSnapshot ::
+     forall m blk.
+     ( IOLike m
+     , LgrDbSerialiseConstraints blk
+     , HasHeader blk
+     , IsLedger (LedgerState blk)
+     )
+  => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeNewSnapshot lgrDB@LgrDB{ cfg, snapshotsTracer, oldFS = OldLedgerFS fs } = wrapFailure (Proxy @blk) $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     LedgerDB.takeSnapshot
       snapshotsTracer
-      hasFS
+      fs
       encodeExtLedgerState'
-      ledgerDB
+      (LedgerDB.ledgerDbAnchor ledgerDB)
   where
     ccfg = configCodec cfg
 
@@ -363,15 +400,12 @@ takeSnapshot lgrDB@LgrDB{ cfg, snapshotsTracer, hasFS } = wrapFailure (Proxy @bl
                               (encodeDisk ccfg)
                               (encodeDisk ccfg)
 
-trimSnapshots ::
+trimOldSnapshots ::
      forall m blk. (MonadCatch m, HasHeader blk)
   => LgrDB m blk
   -> m [DiskSnapshot]
-trimSnapshots LgrDB { diskPolicy, snapshotsTracer, hasFS } = wrapFailure (Proxy @blk) $
-    LedgerDB.trimSnapshots snapshotsTracer hasFS diskPolicy
-
-getDiskPolicy :: LgrDB m blk -> DiskPolicy
-getDiskPolicy = diskPolicy
+trimOldSnapshots LgrDB { diskPolicy, snapshotsTracer, oldFS } = wrapFailure (Proxy @blk) $
+    LedgerDB.trimOldSnapshots snapshotsTracer oldFS diskPolicy
 
 flush :: IOLike m => LgrDB m blk -> m ()
 flush lgrDB@LgrDB { varDB, lgrOnDiskLedgerStDb } =
