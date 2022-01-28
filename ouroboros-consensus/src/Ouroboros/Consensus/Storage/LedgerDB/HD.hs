@@ -72,6 +72,9 @@ import qualified Data.FingerTree.Strict as FT
 -- The map must be a /functional/ (if a key is present, its value is uniquely
 -- determined by context). Moreover, any specific key must only be inserted at
 -- most once.
+--
+-- TODO should we use the bespoke @compact-map@ that the ledger team recently
+-- developed? We don't need to, if this type is only every use for tests.
 newtype UtxoValues k v = UtxoValues (Map k v)
   deriving (Generic, NoThunks)
 
