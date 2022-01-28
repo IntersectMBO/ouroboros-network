@@ -26,6 +26,7 @@ module Test.Util.FS.Sim.FsTree (
   , createDirIfMissing
   , createDirWithParents
   , openFile
+  , removeDirRecursive
   , removeFile
   , renameFile
   , replace
@@ -132,14 +133,25 @@ alterDir :: forall f a. Functor f
          -> (Folder a -> f (Folder a))    -- ^ If directory exists
          -> (FsTree a -> f (FsTree a))
 alterDir p onErr onNotExists onExists =
-    alterF p (fmap Just . onErr') (fmap Just . f)
+    alterDirMaybe p
+      (fmap Just . onErr)
+      (fmap Just onNotExists)
+      (fmap Just . onExists)
+
+alterDirMaybe :: forall f a. Functor f
+              => FsPath
+              -> (FsTreeError -> f (Maybe (FsTree a))) -- ^ Action on error
+              -> f (Maybe (Folder a))                  -- ^ If directory does not exist
+              -> (Folder a -> f (Maybe (Folder a)))    -- ^ If directory exists
+              -> (FsTree a -> f (FsTree a))
+alterDirMaybe p onErr onNotExists onExists = alterF p onErr' f
   where
-    onErr' :: FsTreeError -> f (FsTree a)
-    onErr' (FsMissing _ (_ :| [])) = Folder <$> onNotExists
+    onErr' :: FsTreeError -> f (Maybe (FsTree a))
+    onErr' (FsMissing _ (_ :| [])) = fmap Folder <$> onNotExists
     onErr' err                     = onErr err
 
-    f :: FsTree a -> f (FsTree a)
-    f (Folder m) = Folder <$> onExists m
+    f :: FsTree a -> f (Maybe (FsTree a))
+    f (Folder m) = fmap Folder <$> onExists m
     f (File   _) = onErr $ FsExpectedDir p (pathLast p :| [])
 
 alterFileMaybe :: forall f a. Functor f
@@ -243,6 +255,13 @@ createDirWithParents fp =
       -- Report full path in the error, not the prefix at the point of failure
       either (Left . setFsTreeErrorPath fp) Right
     . repeatedlyM createDirIfMissing (pathInits fp)
+
+-- | Remove a directory (which must exist) and its contents
+removeDirRecursive :: FsPath -> FsTree a -> Either FsTreeError (FsTree a)
+removeDirRecursive fp =
+    alterDirMaybe fp Left errNotExist (const (Right Nothing))
+  where
+    errNotExist = Left (FsMissing fp (pathLast fp :| []))
 
 -- | Remove a file (which must exist)
 removeFile :: FsPath -> FsTree a -> Either FsTreeError (FsTree a)
