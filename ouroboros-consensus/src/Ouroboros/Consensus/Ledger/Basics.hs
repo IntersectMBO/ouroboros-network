@@ -74,6 +74,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , ShowLedgerState (..)
   ) where
 
+import qualified Codec.Serialise as InMemHD
 import qualified Control.Exception as Exn
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
@@ -191,6 +192,8 @@ class ( -- Requirements on the ledger state itself
       , HeaderHash (l DiffMK) ~ HeaderHash l
       , HeaderHash (l TrackingMK) ~ HeaderHash l
       , NoThunks (LedgerTables l SeqDiffMK)
+      , NoThunks          (LedgerTables l ValuesMK)   -- for in-memory store
+      , InMemHD.Serialise (LedgerTables l ValuesMK)   -- for in-memory store
       ) => IsLedger (l :: LedgerStateKind) where
   -- | Errors that can arise when updating the ledger
   --
