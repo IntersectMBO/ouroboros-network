@@ -352,7 +352,7 @@ getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
 
 -- | Get the immutable ledger, i.e., typically @k@ blocks back.
 getImmutableLedger ::
-     (Monad (STM m), IsLedger (LedgerState blk))
+     Monad (STM m)
   => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
 getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 
@@ -368,7 +368,7 @@ getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
 
 -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
 -- last @k@ blocks of the current chain.
-getHeaderStateHistory ::
+getHeaderStateHistory :: forall m blk.
      Monad (STM m)
   => ChainDB m blk -> STM m (HeaderStateHistory blk)
 getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
@@ -379,7 +379,7 @@ getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
     toHeaderStateHistory =
           HeaderStateHistory
         . LedgerDB.ledgerDbBimap headerState headerState
-        . undefined -- TODO: LedgerDB.ledgerDbCheckpoints
+        . LedgerDB.ledgerDbVolatileCheckpoints
 
 {-------------------------------------------------------------------------------
   Adding a block

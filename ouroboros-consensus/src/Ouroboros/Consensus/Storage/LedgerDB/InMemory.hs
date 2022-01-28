@@ -51,6 +51,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPrune
   , ledgerDbSnapshots
   , ledgerDbTip
+  , ledgerDbVolatileCheckpoints
     -- ** Running updates
   , AnnLedgerError (..)
   , Ap (..)
@@ -189,15 +190,17 @@ instance GetTip (l EmptyMK) => Anchorable (WithOrigin SlotNo) (Checkpoint (l Emp
 -------------------------------------------------------------------------------}
 
 -- | Ledger DB starting at the specified ledger state
-ledgerDbWithAnchor :: GetTip (l ValuesMK) => l ValuesMK -> LedgerDB l
+ledgerDbWithAnchor ::
+     (TableStuff l, GetTip (l EmptyMK), GetTip (l ValuesMK))
+  => l EmptyMK -> LedgerDB l
 ledgerDbWithAnchor anchor = LedgerDB {
-      ledgerDbCheckpoints = Empty (Checkpoint anchor)
-    , ledgerDbChangelog   =
-        -- TODO function is called from some unpatched initialization code and
-        -- from tests
-        undefined
+      ledgerDbCheckpoints = Empty (Checkpoint (trick anchor))
+    , ledgerDbChangelog   = emptyDbChangeLog anchor
     , runDual = True -- TODO: This is not yet implemented.
     }
+  where
+    trick :: l EmptyMK -> l ValuesMK
+    trick = error "do our UTxO HD trick, for the MVP"
 
 {-------------------------------------------------------------------------------
   Compute signature
@@ -460,6 +463,15 @@ forwardTableKeySets dblog = \(UnforwardedReadSets seqNo values) -> do
     forward (ApplyValuesMK values) (ApplySeqDiffMK diffs) =
       ApplyValuesMK $ forwardValues values (cumulativeDiffSeqUtxoDiff diffs)
 
+ledgerDbVolatileCheckpoints ::
+     LedgerDB l
+  -> AnchoredSeq
+       (WithOrigin SlotNo)
+       (Checkpoint (l EmptyMK))
+       (Checkpoint (l EmptyMK))
+ledgerDbVolatileCheckpoints =
+    dbChangelogVolatileCheckpoints . ledgerDbChangelog
+
 dbChangelogVolatileCheckpoints ::
      DbChangelog l
   -> AnchoredSeq
@@ -526,7 +538,7 @@ ledgerDbCurrent =
   . ledgerDbChangelog
 
 -- | Information about the state of the ledger at the anchor
-ledgerDbAnchor :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
+ledgerDbAnchor :: LedgerDB l -> l EmptyMK
 ledgerDbAnchor =
     unCheckpoint
   . AS.anchor
@@ -534,7 +546,7 @@ ledgerDbAnchor =
   . ledgerDbChangelog
 
 -- | Information about the state of the youngest flushed ledger
-ledgerDbOldest :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
+ledgerDbOldest :: LedgerDB l -> l EmptyMK
 ledgerDbOldest =
     unDbChangelogState
   . AS.anchor
@@ -621,11 +633,11 @@ ledgerDbPrefix pt db
 -- | Transform the underlying 'AnchoredSeq' using the given functions.
 ledgerDbBimap ::
      Anchorable (WithOrigin SlotNo) a b
-  => (l ValuesMK -> a)
-  -> (l ValuesMK -> b)
+  => (l (mk :: MapKind) -> a)
+  -> (l mk -> b)
   -> AnchoredSeq (WithOrigin SlotNo)
-                 (Checkpoint (l ValuesMK))
-                 (Checkpoint (l ValuesMK))
+                 (Checkpoint (l mk))
+                 (Checkpoint (l mk))
   -> AnchoredSeq (WithOrigin SlotNo) a b
 ledgerDbBimap f g =
     -- Instead of exposing 'ledgerDbCheckpoints' directly, this function hides
