@@ -31,7 +31,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , withReadLock
   , withWriteLock
     -- * 'TraceReplayEvent' decorator
-  , LedgerDB.decorateReplayTracerWithGoal
+  , decorateReplayTracerWithGoal
     -- * Wrappers
   , currentPoint
   , getCurrent
@@ -51,8 +51,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , ExceededRollback (..)
   , LedgerDB.AnnLedgerError (..)
   , LedgerDB.ledgerDbCurrent
-  , TraceEvent (..)
   , TraceReplayEvent (..)
+  , TraceSnapshotsEvent (..)
     -- * Exported for testing purposes
   , mkLgrDB
   ) where
@@ -61,6 +61,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode))
 import           Control.Monad.Trans.Class (lift)
+import           Control.Monad.Trans.Except
 import           Control.Tracer
 import           Data.Foldable (foldl')
 import           Data.Set (Set)
@@ -72,7 +73,7 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -85,8 +86,6 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
                      createDirectoryIfMissing)
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
-import           Ouroboros.Consensus.Storage.LedgerDB.Types
-                     (UpdateLedgerDbTraceEvent (..))
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
@@ -94,12 +93,11 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
                      ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
-                     DiskSnapshot, LedgerDB', NextBlock (..),
-                     OnDiskLedgerStDb (..), ReplayGoal, StreamAPI (..),
-                     TraceEvent (..), TraceReplayEvent (..))
+                     LedgerDB', NextBlock (..), OnDiskLedgerStDb (..),
+                     StreamAPI (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB.Types
 
-import           Control.Monad.Trans.Except
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
@@ -135,7 +133,7 @@ data LgrDB m blk = LgrDB {
     , cfg                 :: !(TopLevelConfig blk)
     , diskPolicy          :: !DiskPolicy
     , hasFS               :: !(SomeHasFS m)
-    , tracer              :: !(Tracer m (TraceEvent blk))
+    , snapshotsTracer     :: !(Tracer m (TraceSnapshotsEvent blk))
 
 -- TODO    , backendHandle :: BackendHandle m
 
@@ -163,13 +161,13 @@ type LgrDbSerialiseConstraints blk =
 -------------------------------------------------------------------------------}
 
 data LgrDbArgs f m blk = LgrDbArgs {
-      lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
-    , lgrHasFS          :: SomeHasFS m
-    , lgrHasFSLedgerSt  :: SomeHasFS m
-    , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
-    , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
-    , lgrTracer         :: Tracer m (TraceEvent blk)
+      lgrDiskPolicy      :: DiskPolicy
+    , lgrGenesis         :: HKD f (m (ExtLedgerState blk ValuesMK))
+    , lgrHasFS           :: SomeHasFS m
+    , lgrHasFSLedgerSt   :: SomeHasFS m
+    , lgrTopLevelConfig  :: HKD f (TopLevelConfig blk)
+    , lgrTraceLedger     :: Tracer m (LedgerDB' blk)
+    , lgrSnapshotsTracer :: Tracer m (TraceSnapshotsEvent blk)
     }
 
 -- | Default arguments
@@ -182,13 +180,13 @@ defaultArgs ::
   -> DiskPolicy
   -> LgrDbArgs Defaults m blk
 defaultArgs lgrHasFS lgrHasFSLedgerSt diskPolicy = LgrDbArgs {
-      lgrDiskPolicy     = diskPolicy
-    , lgrGenesis        = NoDefault
+      lgrDiskPolicy      = diskPolicy
+    , lgrGenesis         = NoDefault
     , lgrHasFS
     , lgrHasFSLedgerSt
-    , lgrTopLevelConfig = NoDefault
-    , lgrTraceLedger    = nullTracer
-    , lgrTracer         = nullTracer
+    , lgrTopLevelConfig  = NoDefault
+    , lgrTraceLedger     = nullTracer
+    , lgrSnapshotsTracer = nullTracer
     }
 
 -- | Open the ledger DB
@@ -260,7 +258,7 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
           , cfg            = lgrTopLevelConfig
           , diskPolicy     = lgrDiskPolicy
           , hasFS          = lgrHasFS
-          , tracer         = lgrTracer
+          , snapshotsTracer         = lgrSnapshotsTracer
           }
       , replayed
       )
@@ -286,7 +284,7 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
     (_initLog, db, replayed) <-
       LedgerDB.initLedgerDB
         replayTracer
-        lgrTracer
+        lgrSnapshotsTracer
         oldLedgerInitParams
         newLedgerInitParams
         decode
@@ -318,10 +316,10 @@ mkLgrDB :: StrictTVar m (LedgerDB' blk)
 mkLgrDB varDB varPrevApplied lgrOnDiskLedgerStDb lgrDbFlushLock resolveBlock args = LgrDB {..}
   where
     LgrDbArgs {
-        lgrTopLevelConfig = cfg
-      , lgrDiskPolicy     = diskPolicy
-      , lgrHasFS          = hasFS
-      , lgrTracer         = tracer
+        lgrTopLevelConfig  = cfg
+      , lgrDiskPolicy      = diskPolicy
+      , lgrHasFS           = hasFS
+      , lgrSnapshotsTracer = snapshotsTracer
       } = args
 
 {-------------------------------------------------------------------------------
@@ -349,10 +347,10 @@ takeSnapshot ::
      , IsLedger (LedgerState blk)
      )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
+takeSnapshot lgrDB@LgrDB{ cfg, snapshotsTracer, hasFS } = wrapFailure (Proxy @blk) $ do
     ledgerDB <- atomically $ getCurrent lgrDB
     LedgerDB.takeSnapshot
-      tracer
+      snapshotsTracer
       hasFS
       encodeExtLedgerState'
       ledgerDB
@@ -369,8 +367,8 @@ trimSnapshots ::
      forall m blk. (MonadCatch m, HasHeader blk)
   => LgrDB m blk
   -> m [DiskSnapshot]
-trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
-    LedgerDB.trimSnapshots tracer hasFS diskPolicy
+trimSnapshots LgrDB { diskPolicy, snapshotsTracer, hasFS } = wrapFailure (Proxy @blk) $
+    LedgerDB.trimSnapshots snapshotsTracer hasFS diskPolicy
 
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy = diskPolicy

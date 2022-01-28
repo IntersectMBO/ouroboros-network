@@ -487,7 +487,7 @@ data TraceEvent blk
   | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
   | TraceOpenEvent              (TraceOpenEvent               blk)
   | TraceIteratorEvent          (TraceIteratorEvent           blk)
-  | TraceLedgerEvent            (LgrDB.TraceEvent             blk)
+  | TraceLedgerSnapshotsEvent   (LgrDB.TraceSnapshotsEvent    blk)
   | TraceLedgerReplayEvent      (LgrDB.TraceReplayEvent       blk)
   | TraceImmutableDBEvent       (ImmutableDB.TraceEvent       blk)
   | TraceVolatileDBEvent        (VolatileDB.TraceEvent        blk)

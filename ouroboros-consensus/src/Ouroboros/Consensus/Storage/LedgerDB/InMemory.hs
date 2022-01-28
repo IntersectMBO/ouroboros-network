@@ -2,7 +2,6 @@
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
@@ -11,11 +10,7 @@
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
-{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -35,18 +30,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , LedgerDB
   , NewLedgerDB
   , OldLedgerDB
-    -- * Ledger DB UTxO-HD types (TODO: we might want to place this somewhere else)
-  , DbChangelog
-  , DbReader (..)
-  , ReadKeySets
-  , ReadsKeySets (..)
-  , RewoundTableKeySets (..)
-  , UnforwardedReadSets (..)
-  , defaultReadKeySets
-  , ledgerDbFlush
-    -- ** Serialisation
-  , decodeSnapshotBackwardsCompatible
-  , encodeSnapshot
     -- ** Queries
   , ledgerDbAnchor
   , ledgerDbBimap
@@ -85,11 +68,17 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPush'
   , ledgerDbPushMany'
   , ledgerDbSwitch'
+    -- * Ledger DB UTxO-HD types (TODO: we might want to place this somewhere else)
+  , DbChangelog
+  , DbReader (..)
+  , ReadKeySets
+  , ReadsKeySets (..)
+  , RewoundTableKeySets (..)
+  , UnforwardedReadSets (..)
+  , defaultReadKeySets
+  , ledgerDbFlush
   ) where
 
-import           Codec.Serialise.Decoding (Decoder)
-import qualified Codec.Serialise.Decoding as Dec
-import           Codec.Serialise.Encoding (Encoding)
 import           Control.Exception (assert)
 import           Control.Monad.Reader hiding (ap)
 import           Control.Monad.Trans.Except
@@ -112,8 +101,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
                      PushStart (..), Pushing (..),
                      UpdateLedgerDbTraceEvent (..))
 import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
-import           Ouroboros.Consensus.Util.Versioned
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -956,54 +943,3 @@ ledgerDbSwitch' cfg n bs db =
     case runIdentity $ ledgerDbSwitch cfg n (const $ pure ()) (map pureBlock bs) db of
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
-
-{-------------------------------------------------------------------------------
-  Serialisation
--------------------------------------------------------------------------------}
-
--- | Version 1: uses versioning ('Ouroboros.Consensus.Util.Versioned') and only
--- encodes the ledger state @l@.
-snapshotEncodingVersion1 :: VersionNumber
-snapshotEncodingVersion1 = 1
-
--- | Encoder to be used in combination with 'decodeSnapshotBackwardsCompatible'.
-encodeSnapshot :: (l -> Encoding) -> l -> Encoding
-encodeSnapshot encodeLedger l =
-    encodeVersion snapshotEncodingVersion1 (encodeLedger l)
-
--- | To remain backwards compatible with existing snapshots stored on disk, we
--- must accept the old format as well as the new format.
---
--- The old format:
--- * The tip: @WithOrigin (RealPoint blk)@
--- * The chain length: @Word64@
--- * The ledger state: @l@
---
--- The new format is described by 'snapshotEncodingVersion1'.
---
--- This decoder will accept and ignore them. The encoder ('encodeSnapshot') will
--- no longer encode them.
-decodeSnapshotBackwardsCompatible ::
-     forall l blk.
-     Proxy blk
-  -> (forall s. Decoder s l)
-  -> (forall s. Decoder s (HeaderHash blk))
-  -> forall s. Decoder s l
-decodeSnapshotBackwardsCompatible _ decodeLedger decodeHash =
-    decodeVersionWithHook
-      decodeOldFormat
-      [(snapshotEncodingVersion1, Decode decodeVersion1)]
-  where
-    decodeVersion1 :: forall s. Decoder s l
-    decodeVersion1 = decodeLedger
-
-    decodeOldFormat :: Maybe Int -> forall s. Decoder s l
-    decodeOldFormat (Just 3) = do
-        _ <- withOriginRealPointToPoint <$>
-               decodeWithOrigin (decodeRealPoint @blk decodeHash)
-        _ <- Dec.decodeWord64
-        decodeLedger
-    decodeOldFormat mbListLen =
-        fail $
-          "decodeSnapshotBackwardsCompatible: invalid start " <>
-          show mbListLen

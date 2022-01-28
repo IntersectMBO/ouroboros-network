@@ -188,7 +188,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrHasFSLedgerSt    = cbdHasFSLedgerState
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
-        , lgrTracer           = contramap TraceLedgerEvent cdbTracer
+        , lgrSnapshotsTracer  = contramap TraceLedgerSnapshotsEvent cdbTracer
         , lgrTraceLedger      = cdbTraceLedger
         }
     , ChainDbSpecificArgs {
