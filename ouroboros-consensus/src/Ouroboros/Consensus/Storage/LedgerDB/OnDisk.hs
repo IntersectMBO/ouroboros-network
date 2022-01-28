@@ -223,9 +223,6 @@ initLedgerDB replayTracer
              getGenesisLedger
              streamAPI = do
     snapshots <- listSnapshots hasFS
-    -- Here we'd get the dbhandle
-    --
-    -- We can use this dbhandle to fetch the restore points.
     tryNewestFirst id snapshots
   where
     tryNewestFirst :: (InitLog blk -> InitLog blk)
