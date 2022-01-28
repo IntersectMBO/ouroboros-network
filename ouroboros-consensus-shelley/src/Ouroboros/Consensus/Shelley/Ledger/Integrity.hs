@@ -13,13 +13,18 @@ import           Data.Word (Word64)
 import           Ouroboros.Consensus.Block
 
 import qualified Cardano.Ledger.Keys as SL (verifySignedKES)
-import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.TPraos.API as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import qualified Cardano.Protocol.TPraos.OCert as SL
 
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 
 -- | Verify whether a header is not corrupted
 verifyHeaderIntegrity ::
-     ShelleyBasedEra era
+    ( SL.PraosCrypto (EraCrypto era),
+      ShelleyBasedEra era
+    )
   => Word64  -- ^ 'tpraosSlotsPerKESPeriod'
   -> Header (ShelleyBlock era)
   -> Bool

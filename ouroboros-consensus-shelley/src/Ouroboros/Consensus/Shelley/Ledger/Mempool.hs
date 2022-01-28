@@ -61,12 +61,13 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.Alonzo.PParams
-import           Cardano.Ledger.Alonzo.Tx (ValidatedTx (..), totExUnits)
+import           Cardano.Ledger.Alonzo.Tx (totExUnits)
 import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (Crypto, TxSeq, fromTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.TxIn as SL (txid)
 
+import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
@@ -283,22 +284,22 @@ theLedgerLens f x =
   Tx Limits
 -------------------------------------------------------------------------------}
 
-instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (ShelleyEra c)) where
+instance (ShelleyBasedEra (ShelleyEra c)) => TxLimits (ShelleyBlock (ShelleyEra c)) where
   type TxMeasure (ShelleyBlock (ShelleyEra c)) = ByteSize
   txMeasure        = ByteSize . txInBlockSize . txForgetValidated
   txsBlockCapacity = ByteSize . txsMaxBytes
 
-instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (AllegraEra c)) where
+instance (ShelleyBasedEra (AllegraEra c)) => TxLimits (ShelleyBlock (AllegraEra c)) where
   type TxMeasure (ShelleyBlock (AllegraEra c)) = ByteSize
   txMeasure        = ByteSize . txInBlockSize . txForgetValidated
   txsBlockCapacity = ByteSize . txsMaxBytes
 
-instance (SL.PraosCrypto c) => TxLimits (ShelleyBlock (MaryEra c)) where
+instance (ShelleyBasedEra (MaryEra c)) => TxLimits (ShelleyBlock (MaryEra c)) where
   type TxMeasure (ShelleyBlock (MaryEra c)) = ByteSize
   txMeasure        = ByteSize . txInBlockSize . txForgetValidated
   txsBlockCapacity = ByteSize . txsMaxBytes
 
-instance ( SL.PraosCrypto c
+instance ( ShelleyBasedEra (AlonzoEra c)
          ) => TxLimits (ShelleyBlock (AlonzoEra c)) where
 
   type TxMeasure (ShelleyBlock (AlonzoEra c)) = AlonzoMeasure

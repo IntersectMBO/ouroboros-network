@@ -12,6 +12,8 @@ import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.HardFork.Combinator
 
+import           Cardano.Ledger.Hashes (EraIndependentTxBody)
+import           Cardano.Ledger.Keys (DSignable, Hash)
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
@@ -20,7 +22,8 @@ import           Ouroboros.Consensus.Shelley.ShelleyBased
 -- | When the given ledger state corresponds to a Shelley-based era, apply the
 -- given function to it.
 overShelleyBasedLedgerState ::
-     forall c. PraosCrypto c
+     forall c.
+     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => (   forall era. (EraCrypto era ~ c, ShelleyBasedEra era)
       => LedgerState (ShelleyBlock era)
       -> LedgerState (ShelleyBlock era)

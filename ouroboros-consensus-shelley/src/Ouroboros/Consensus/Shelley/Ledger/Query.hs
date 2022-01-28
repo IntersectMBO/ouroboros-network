@@ -32,10 +32,10 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
+import           Data.UMap (domRestrictedView)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
@@ -54,6 +54,8 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.LedgerState as SL (RewardAccounts)
 import qualified Cardano.Ledger.Shelley.RewardProvenance as SL
                      (RewardProvenance)
+import           Cardano.Ledger.UnifiedMap (View (Delegations, Rewards))
+import qualified Cardano.Protocol.TPraos.API as SL
 
 import           Ouroboros.Consensus.Protocol.TPraos (TPraosState (..))
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
@@ -443,9 +445,10 @@ getFilteredDelegationsAndRewardAccounts ::
 getFilteredDelegationsAndRewardAccounts ss creds =
     (filteredDelegations, filteredRwdAcnts)
   where
-    SL.DState { _rewards = rewards, _delegations = delegations } = getDState ss
-    filteredDelegations = Map.restrictKeys delegations creds
-    filteredRwdAcnts = Map.restrictKeys rewards creds
+    u = SL._unified $ getDState ss
+
+    filteredDelegations = domRestrictedView creds $ Delegations u
+    filteredRwdAcnts = domRestrictedView creds $ Rewards u
 
 {-------------------------------------------------------------------------------
   Serialisation

@@ -86,7 +86,10 @@ import qualified Cardano.Ledger.Shelley.Tx as SL (WitnessSetHKD (..))
 import qualified Cardano.Ledger.Shelley.UTxO as SL (makeWitnessesVKey)
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Cardano.Ledger.Val as SL
-import qualified Cardano.Protocol.TPraos.OCert as SL (OCertSignable (..))
+import           Cardano.Protocol.TPraos.OCert
+                     (OCert (ocertKESPeriod, ocertN, ocertSigma, ocertVkHot))
+import qualified Cardano.Protocol.TPraos.OCert as SL (KESPeriod, OCert (OCert),
+                     OCertSignable (..))
 
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)

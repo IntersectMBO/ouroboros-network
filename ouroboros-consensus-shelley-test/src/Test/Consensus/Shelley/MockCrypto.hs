@@ -22,6 +22,7 @@ import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Tx as SL (ValidateScript)
+import qualified Cardano.Protocol.TPraos.API as SL
 import           Control.State.Transition.Extended (PredicateFailure)
 
 import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)

@@ -75,11 +75,15 @@ import           Ouroboros.Consensus.Util.IOLike
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
-import qualified Cardano.Ledger.Shelley.LedgerState as SL (stakeDistr,
-                     updateStakeDistribution)
+import qualified Cardano.Ledger.Shelley.LedgerState as SL
+                     (incrementalStakeDistr, updateStakeDistribution)
 import           Cardano.Ledger.Val (coin, inject, (<->))
+import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
+import qualified Cardano.Protocol.TPraos.OCert as SL
 
+import qualified Data.Compact.SplitMap as SplitMap
+import qualified Data.UMap as UM
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.TPraos
@@ -487,12 +491,13 @@ registerGenesisStaking staking nes = nes {
     -- See STS DELEG for details
     dState' :: SL.DState (EraCrypto era)
     dState' = (SL._dstate dpState) {
-          SL._rewards = Map.map (const $ SL.Coin 0)
+          SL._unified = UM.unify
+            ( Map.map (const $ SL.Coin 0)
                       . Map.mapKeys SL.KeyHashObj
-                      $ sgsStake
-        , SL._delegations = Map.mapKeys SL.KeyHashObj sgsStake
+                      $ sgsStake)
+            ( Map.mapKeys SL.KeyHashObj sgsStake )
+            mempty
         }
-
     -- We consider pools as having been registered in slot 0
     -- See STS POOL for details
     pState' :: SL.PState (EraCrypto era)
@@ -505,9 +510,16 @@ registerGenesisStaking staking nes = nes {
     -- establish an initial stake distribution.
     initSnapShot :: SL.SnapShot (EraCrypto era)
     initSnapShot =
-        SL.stakeDistr
-          @era
-          (SL._utxo (SL._utxoState ledgerState))
+        -- Since we build a stake from nothing, we first initialise an
+        -- 'IncrementalStake' as empty, and then:
+        --
+        -- 1. Add the initial UTxO, whilst deleting nothing.
+        -- 2. Update the stake map given the initial delegation.
+        SL.incrementalStakeDistr
+          -- Note that 'updateStakeDistribution' takes first the set of UTxO to
+          -- delete, and then the set to add. In our case, there is nothing to
+          -- delete, since this is an initial UTxO set.
+          (SL.updateStakeDistribution mempty mempty (SL._utxo (SL._utxoState ledgerState)))
           dState'
           pState'
 
@@ -553,7 +565,7 @@ registerInitialFunds initialFunds nes = nes {
     reserves     = SL._reserves      accountState
 
     initialFundsUtxo :: SL.UTxO era
-    initialFundsUtxo = SL.UTxO $ Map.fromList [
+    initialFundsUtxo = SL.UTxO $ SplitMap.fromList [
           (txIn, txOut)
         | (addr, amount) <- Map.toList initialFunds
         ,  let txIn  = SL.initialFundsPseudoTxIn addr
@@ -585,7 +597,7 @@ registerInitialFunds initialFunds nes = nes {
          HasCallStack
       => SL.UTxO era -> SL.UTxO era -> SL.UTxO era
     mergeUtxoNoOverlap (SL.UTxO m1) (SL.UTxO m2) = SL.UTxO $
-        Map.unionWithKey
+        SplitMap.unionWithKey
           (\k _ _ -> error $ "initial fund part of UTxO: " <> show k)
           m1
           m2

@@ -28,6 +28,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Cardano.Crypto.Hash (ShortHash)
+import qualified Cardano.Protocol.TPraos.OCert as SL
 import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 
 import           Ouroboros.Consensus.BlockchainTime
