@@ -83,6 +83,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
