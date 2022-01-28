@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -386,9 +387,17 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
       DualBlockLedgerTables
         (LedgerTables (LedgerState m) mk)
         (LedgerTables (LedgerState a) mk)
+    deriving (Generic)
     deriving NoThunks via AllowThunk (LedgerTables (LedgerState (DualBlock m a)) mk)
 
   -- TODO methods
+
+-- TODO only for InMemHD
+deriving instance
+     ( Serialise (LedgerTables (LedgerState m) mk)
+     , Serialise (LedgerTables (LedgerState a) mk)
+     )
+  => Serialise (LedgerTables (LedgerState (DualBlock m a)) mk)
 
 instance Bridge m a => TickedTableStuff (LedgerState (DualBlock m a)) where
 

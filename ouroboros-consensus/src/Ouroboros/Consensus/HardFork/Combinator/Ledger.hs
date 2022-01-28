@@ -37,6 +37,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger (
   ) where
 
 import           Control.Monad.Except
+import qualified Codec.Serialise as InMemHD
 import           Data.Functor ((<&>))
 import           Data.Functor.Product
 import           Data.Proxy
@@ -131,6 +132,8 @@ deriving anyclass instance
 
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          )
   => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
@@ -214,6 +217,8 @@ instance (TableStuff (LedgerState x), Typeable mk) => NoThunks (LedgerTables (Le
 
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
 
@@ -291,6 +296,8 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st))
 instance ( CanHardFork xs
          , TickedTableStuff (LedgerState (HardForkBlock xs))
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+         , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          ) => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
@@ -365,6 +372,8 @@ type CanHardFork' xs =
   , TickedTableStuff (LedgerState (HardForkBlock xs))
   , TableStuff (Ticked1 (LedgerState (HardForkBlock xs)))
   , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
+  , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+  , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   )
 
 instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
