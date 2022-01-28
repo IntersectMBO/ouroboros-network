@@ -329,21 +329,22 @@ initFromSnapshot ::
       , Word64
       , LedgerBackingStore m (ExtLedgerState blk)
       )
-initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI ss = do
-    initSS <- withExceptT InitFailureRead $
-                readSnapshot hasFS decLedger decHash ss
+initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI snapshot = do
+    extLedgerSt <-
+        withExceptT InitFailureRead
+      $ readSnapshot hasFS decLedger decHash snapshot
     let initialPoint =
             withOrigin (Point Origin) annTipPoint
           $ headerStateTip
           $ headerState
-          $ initSS
-    case pointToWithOriginRealPoint (castPoint (getTip initSS)) of
+          $ extLedgerSt
+    case pointToWithOriginRealPoint (castPoint (getTip extLedgerSt)) of
       Origin        -> throwError InitFailureGenesis
       NotOrigin tip -> do
         -- TODO this needs to go in the resource registry
-        backingStore <- restoreBackingStore hasFS ss
+        backingStore <- restoreBackingStore hasFS snapshot
         lift $ traceWith tracer $
-          ReplayFromSnapshot ss tip (ReplayStart initialPoint)
+          ReplayFromSnapshot snapshot tip (ReplayStart initialPoint)
         let tracer' = decorateReplayTracerWithStart initialPoint tracer
         (initDB, replayed) <-
           initStartingWith
@@ -351,7 +352,7 @@ initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI ss = do
             cfg
             backingStore
             streamAPI
-            (ledgerDbWithAnchor initSS)
+            (ledgerDbWithAnchor extLedgerSt)
         return (tip, initDB, replayed, backingStore)
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
