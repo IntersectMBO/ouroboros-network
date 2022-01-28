@@ -31,11 +31,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , forwardValues
   , mapRewoundKeys
   , rewindKeys
-    -- ** An in-memory backing store
-  , newTVarBackingStore
-  , TVarBackingStoreClosedExn (..)
-  , TVarBackingStoreDeserialiseExn (..)
-  , TVarBackingStoreValueHandleClosedExn (..)
     -- * Sequence of differences
   , SeqUtxoDiff (..)
   , cumulativeDiffSeqUtxoDiff
@@ -52,30 +47,19 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , SudMeasure (..)
   ) where
 
-import           Codec.Serialise (DeserialiseFailure, Serialise,
-                     deserialiseOrFail, serialise)
 import qualified Control.Exception as Exn
-import           Control.Monad (join, void)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as MapMerge
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.String (fromString)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
+import           Cardano.Slotting.Slot (SlotNo)
 
 import           Data.FingerTree.Strict (StrictFingerTree)
 import qualified Data.FingerTree.Strict as FT
-
-import qualified Ouroboros.Consensus.Storage.FS.API as FS
-import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
-import           Ouroboros.Consensus.Util.IOLike (IOLike)
-import qualified Ouroboros.Consensus.Util.IOLike as IOLike
-
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
 
 {-------------------------------------------------------------------------------
   Map of values
@@ -283,92 +267,6 @@ forwardValues (UtxoValues values) (UtxoDiff diffs) =
       UedsDel       -> Nothing
       UedsIns       -> error "impossible! duplicate insert of key"
       UedsInsAndDel -> error "impossible! duplicate insert of key"
-
-{-------------------------------------------------------------------------------
-  An in-memory backing store
--------------------------------------------------------------------------------}
-
-data TVarBackingStoreContents m k v =
-    TVarBackingStoreContentsClosed
-  | TVarBackingStoreContents
-      !(WithOrigin SlotNo)
-      !(UtxoValues k v)
-  deriving (Generic, NoThunks)
-
-data TVarBackingStoreClosedExn = TVarBackingStoreClosedExn
-  deriving (Exn.Exception, Show)
-
-data TVarBackingStoreValueHandleClosedExn = TVarBackingStoreValueHandleClosedExn
-  deriving (Exn.Exception, Show)
-
-newtype TVarBackingStoreDeserialiseExn = TVarBackingStoreDeserialiseExn DeserialiseFailure
-  deriving (Exn.Exception, Show)
-
--- | Use a 'TVar' as a trivial backing store
-newTVarBackingStore :: forall m k v.
-     (IOLike m, NoThunks k, NoThunks v, Ord k, Serialise k, Serialise v)
-  => Either
-       (FS.SomeHasFS m, BackingStorePath)
-       (WithOrigin SlotNo, UtxoValues k v)   -- ^ initial seqno and contents
-  -> m (BackingStore m
-          (UtxoKeys k v)
-          (UtxoValues k v)
-          (UtxoDiff k v)
-       )
-newTVarBackingStore initialization = do
-    ref <- do
-      (slot, vs) <- case initialization of
-        Left (FS.SomeHasFS fs, BackingStorePath path) -> do
-          FS.withFile fs (extendPath path) FS.ReadMode $ \h -> do
-            bs <- FS.hGetAll fs h
-            case deserialiseOrFail bs of
-              Left  err        -> Exn.throw $ TVarBackingStoreDeserialiseExn err
-              Right (slot, vs) -> pure (slot, UtxoValues vs :: UtxoValues k v)
-        Right x -> pure x
-      IOLike.newTVarIO $ TVarBackingStoreContents slot vs
-    pure BackingStore {
-        bsClose    = IOLike.atomically $ do
-          IOLike.writeTVar ref TVarBackingStoreContentsClosed
-      , bsCopy = \(FS.SomeHasFS fs) (BackingStorePath path) ->
-          join $ IOLike.atomically $ do
-            IOLike.readTVar ref >>= \case
-              TVarBackingStoreContentsClosed                ->
-                pure $ Exn.throw TVarBackingStoreClosedExn
-              TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
-                FS.createDirectory fs path
-                FS.withFile fs (extendPath path) (FS.WriteMode FS.MustBeNew) $ \h -> do
-                  void $ FS.hPutAll fs h $ serialise (slot, vs)
-      , bsValueHandle = join $ IOLike.atomically $ do
-          IOLike.readTVar ref >>= \case
-            TVarBackingStoreContentsClosed                ->
-              pure $ Exn.throw TVarBackingStoreClosedExn
-            TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
-              refHandleClosed <- IOLike.newTVarIO False
-              pure $ (,) slot $ BackingStoreValueHandle {
-                  bsvhClose = IOLike.atomically $ do
-                    IOLike.writeTVar refHandleClosed True
-                , bsvhRead  = \(UtxoKeys ks) -> join $ IOLike.atomically $ do
-                    isClosed <- IOLike.readTVar refHandleClosed
-                    pure $
-                      if isClosed
-                      then Exn.throw TVarBackingStoreValueHandleClosedExn
-                      else pure $ UtxoValues $ Map.restrictKeys vs ks
-                }
-      , bsWrite    = \slot2 diff -> join $ IOLike.atomically $ do
-          IOLike.readTVar ref >>= \case
-            TVarBackingStoreContentsClosed        ->
-              pure $ Exn.throw TVarBackingStoreClosedExn
-            TVarBackingStoreContents slot1 values ->
-              Exn.assert (slot1 <= At slot2) $ do
-                IOLike.writeTVar ref $
-                  TVarBackingStoreContents
-                    (At slot2)
-                    (forwardValues values diff)
-                pure $ pure ()
-      }
-  where
-    extendPath path =
-      FS.fsPathFromList $ FS.fsPathToList path <> [fromString "tvar"]
 
 {-------------------------------------------------------------------------------
   Sequence of diffs
