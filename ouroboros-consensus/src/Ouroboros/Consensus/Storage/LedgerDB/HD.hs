@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , RewoundKeys (..)
   , forwardValues
   , mapRewoundKeys
+  , restrictValues
   , rewindKeys
     -- * Sequence of differences
   , SeqUtxoDiff (..)
@@ -171,6 +172,10 @@ castUtxoKeys (UtxoKeys ks) = UtxoKeys ks
 {-------------------------------------------------------------------------------
   Combinators
 -------------------------------------------------------------------------------}
+
+restrictValues :: Ord k => UtxoValues k v -> UtxoKeys k v -> UtxoValues k v
+restrictValues (UtxoValues m) (UtxoKeys s) =
+    UtxoValues (Map.restrictKeys m s)
 
 -- | The result of rewinding keys through a valid 'UtxoDiff'
 data RewoundKeys k v = RewoundKeys {

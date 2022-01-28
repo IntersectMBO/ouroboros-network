@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -35,6 +36,7 @@ module Ouroboros.Consensus.Ledger.Extended (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.Serialise as InMemHD
 import           Control.Monad.Except
 import           Data.Coerce
 import           Data.Functor ((<&>))
@@ -186,6 +188,8 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
 deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedgerState (LedgerTables (ExtLedgerState blk))
 
 instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) mk)
+
+deriving instance InMemHD.Serialise (LedgerTables (LedgerState blk) mk) => InMemHD.Serialise (LedgerTables (ExtLedgerState blk) mk)
 
 instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk)) => TickedTableStuff (ExtLedgerState blk) where
   forgetTickedLedgerStateTracking (TickedExtLedgerState lstate lview hstate) =
