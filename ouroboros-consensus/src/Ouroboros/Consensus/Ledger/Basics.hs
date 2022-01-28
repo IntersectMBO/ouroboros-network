@@ -63,6 +63,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
   , DbChangelogState (..)
+  , emptyDbChangeLog
   , extendDbChangelog
   , flushDbChangelog
   , prefixBackToAnchorDbChangelog
@@ -291,6 +292,21 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
   -- Old + ResultNew == ResultOld
   applyTracking :: l ValuesMK -> l TrackingMK -> l ValuesMK
 
+  pureLedgerTables ::
+       (forall k v.
+            Ord k
+         => ApplyMapKind mk k v
+       )
+    -> LedgerTables l mk
+
+  mapLedgerTables ::
+       (forall k v.
+            Ord k
+         => ApplyMapKind mk1 k v
+         -> ApplyMapKind mk2 k v
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
   zipLedgerTables ::
        (forall k v.
             Ord k
@@ -301,15 +317,6 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
     -> LedgerTables l mk1
     -> LedgerTables l mk2
     -> LedgerTables l mk3
-
-  mapLedgerTables ::
-       (forall k v.
-            Ord k
-         => ApplyMapKind mk1 k v
-         -> ApplyMapKind mk2 k v
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
 
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
@@ -511,6 +518,17 @@ deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
 instance GetTip (l EmptyMK) => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
   asAnchor = id
   getAnchorMeasure _ = getTipSlot . unDbChangelogState
+
+emptyDbChangeLog ::
+     (TableStuff l, GetTip (l EmptyMK))
+  => l EmptyMK -> DbChangelog l
+emptyDbChangeLog anchor =
+    DbChangelog {
+        changelogDiffAnchor      = getTipSlot anchor
+      , changelogDiffs           = pureLedgerTables (ApplySeqDiffMK emptySeqUtxoDiff)
+      , changelogImmutableStates = AS.Empty (DbChangelogState anchor)
+      , changelogVolatileStates  = AS.Empty (DbChangelogState anchor)
+      }
 
 extendDbChangelog ::
      (TableStuff l, GetTip (l EmptyMK))

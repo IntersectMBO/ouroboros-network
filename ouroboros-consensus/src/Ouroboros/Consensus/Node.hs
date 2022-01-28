@@ -90,7 +90,7 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
                      ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..),
-                     MapKind (EmptyMK))
+                     MapKind (ValuesMK))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
@@ -525,7 +525,7 @@ openChainDB
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk EmptyMK
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger
   -> ChainDbArgs Defaults m blk
   -> (ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk)
@@ -545,7 +545,7 @@ mkChainDbArgs
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk EmptyMK
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger
   -> ChunkInfo
   -> ChainDbArgs Defaults m blk

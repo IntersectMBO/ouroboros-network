@@ -740,7 +740,7 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 -- pools registered in that ledger state are guaranteed to be stable. This
 -- justifies merging the future and current stake pools.
 getPeersFromCurrentLedger ::
-     (IOLike m, LedgerSupportsPeerSelection blk, IsLedger (LedgerState blk))
+     (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
   -> (LedgerState blk EmptyMK -> Bool)
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
