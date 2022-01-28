@@ -91,7 +91,6 @@ instance Ord k => Semigroup (UtxoValues k v) where
 emptyUtxoValues :: UtxoValues k v
 emptyUtxoValues = UtxoValues Map.empty
 
--- | The function should be determined by the @v@ and @v'@ types
 mapUtxoValues :: (v -> v') -> UtxoValues k v -> UtxoValues k v'
 mapUtxoValues f (UtxoValues vs) = UtxoValues $ fmap f vs
 
@@ -387,7 +386,14 @@ splitAtFromEndSeqUtxoDiff n sq =
 
 -- | Isolate the diffs that are labeled @<= slot@
 --
--- TODO How to handle EBBs? Or else how to justify ignoring them?
+-- TODO How to handle EBBs? Or else how to justify ignoring them? It's possible
+-- for an EBB to have the same slot number as its successor. Suppose that's the
+-- case. If the EBB was the last thing flushed to the database, then the seqno
+-- of the database and the seqno of the block we'd flush next are already
+-- equivalent!
+--
+-- Should the seqno be the block number instead? That'd resolve this. Or, it
+-- could be the point instead of just the slot, EG.
 splitAfterSlotSeqUtxoDiff ::
      Ord k
   => SlotNo
