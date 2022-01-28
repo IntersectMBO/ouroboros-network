@@ -51,6 +51,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
+import qualified Codec.Serialise as InMemHD
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
@@ -355,19 +356,60 @@ initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI ss = do
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
-     Monad m
+     (IOLike m, LedgerSupportsProtocol blk)
   => SomeHasFS m
   -> DiskSnapshot
   -> ExceptT (InitFailure blk) m (LedgerBackingStore m (ExtLedgerState blk))
 restoreBackingStore (SomeHasFS hasFS) snapshot = lift $ do
     -- TODO reify errors into the ExceptT layer instead of lifting :grimace:
-    removeDirectoryRecursive hasFS tablesPath
-    copyDirectoryRecursive   hasFS (snapshotToTablesPath snapshot) tablesPath
-    pure undefined
+
+    -- TODO a backing store that actually resides on-disk during use should have
+    -- a @new*@ function that receives both the location it should load from (ie
+    -- 'loadPath') and also the location at which it should maintain itself (ie
+    -- '_tablesPath'). Perhaps the specific logic could detect that the two are
+    -- equivalent. Or perhaps a specific back-end might be able to efficiently
+    -- reset the second location to the value of the first (a la @rsync@). Etc.
+    -- The in-memory backing store, on the other hand, keeps nothing at
+    -- '_tablesPath'.
+
+    store <- HD.newTVarBackingStore
+               (zipLedgerTables lookup_)
+               (zipLedgerTables applyDiff_)
+               (Left (SomeHasFS hasFS, HD.BackingStorePath loadPath))
+    pure (LedgerBackingStore store)
+  where
+    loadPath = snapshotToTablesPath snapshot
 
 -- | Create a backing store from the given genesis ledger state
-newBackingStore :: SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
-newBackingStore = undefined tablesPath
+newBackingStore ::
+     ( IOLike m
+     , TableStuff l
+     , NoThunks          (LedgerTables l ValuesMK)
+     , InMemHD.Serialise (LedgerTables l ValuesMK)
+     )
+  => SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
+newBackingStore _someHasFS tables = do
+    store <- HD.newTVarBackingStore
+               (zipLedgerTables lookup_)
+               (zipLedgerTables applyDiff_)
+               (Right (Origin, tables))
+    pure (LedgerBackingStore store)
+
+lookup_ ::
+     Ord k
+  => ApplyMapKind KeysMK   k v
+  -> ApplyMapKind ValuesMK k v
+  -> ApplyMapKind ValuesMK k v
+lookup_ (ApplyKeysMK keys) (ApplyValuesMK values) =
+  ApplyValuesMK (HD.restrictValues values keys)
+
+applyDiff_ ::
+     Ord k
+  => ApplyMapKind ValuesMK k v
+  -> ApplyMapKind DiffMK   k v
+  -> ApplyMapKind ValuesMK k v
+applyDiff_ (ApplyValuesMK values) (ApplyDiffMK diff) =
+  ApplyValuesMK (HD.forwardValues values diff)
 
 -- | A handle to the backing store for the ledger tables
 newtype LedgerBackingStore m l = LedgerBackingStore
@@ -650,8 +692,8 @@ snapshotToTablesPath = mkFsPath . (\x -> [x, "tables"]) . snapshotToFileName
 
 -- | The path within the LgrDB's filesystem to the directory that contains the
 -- backing store
-tablesPath :: FsPath
-tablesPath = mkFsPath ["tables"]
+_tablesPath :: FsPath
+_tablesPath = mkFsPath ["tables"]
 
 snapshotFromPath :: String -> Maybe DiskSnapshot
 snapshotFromPath fileName = do
