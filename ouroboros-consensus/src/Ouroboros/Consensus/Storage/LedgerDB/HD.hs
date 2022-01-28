@@ -61,6 +61,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as MapMerge
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.String (fromString)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
@@ -318,7 +319,7 @@ newTVarBackingStore initialization = do
     ref <- do
       (slot, vs) <- case initialization of
         Left (FS.SomeHasFS fs, BackingStorePath path) -> do
-          FS.withFile fs path FS.ReadMode $ \h -> do
+          FS.withFile fs (extendPath path) FS.ReadMode $ \h -> do
             bs <- FS.hGetAll fs h
             case deserialiseOrFail bs of
               Left  err        -> Exn.throw $ TVarBackingStoreDeserialiseExn err
@@ -334,7 +335,8 @@ newTVarBackingStore initialization = do
               TVarBackingStoreContentsClosed                ->
                 pure $ Exn.throw TVarBackingStoreClosedExn
               TVarBackingStoreContents slot (UtxoValues vs) -> pure $ do
-                FS.withFile fs path (FS.WriteMode FS.MustBeNew) $ \h -> do
+                FS.createDirectory fs path
+                FS.withFile fs (extendPath path) (FS.WriteMode FS.MustBeNew) $ \h -> do
                   void $ FS.hPutAll fs h $ serialise (slot, vs)
       , bsValueHandle = join $ IOLike.atomically $ do
           IOLike.readTVar ref >>= \case
@@ -364,6 +366,9 @@ newTVarBackingStore initialization = do
                     (forwardValues values diff)
                 pure $ pure ()
       }
+  where
+    extendPath path =
+      FS.fsPathFromList $ FS.fsPathToList path <> [fromString "tvar"]
 
 {-------------------------------------------------------------------------------
   Sequence of diffs
