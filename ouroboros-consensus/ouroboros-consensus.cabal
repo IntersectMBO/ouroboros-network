@@ -245,6 +245,12 @@ library
 
                        -- Strict wrapper around SOP
                        Data.SOP.Strict
+
+                       -- UTxO HD related modules.
+                       -- TODO: find the right place to put this
+                       DuncanAndDouglas.DbChangelog
+                       ConsensusLedger.DbChangelog
+                      ConsensusLedger.DbChangelog.Impl.DuncanAndDouglas
   if os(windows)
      exposed-modules:
                        -- TODO Delete this module once all our projects have upgraded to at least

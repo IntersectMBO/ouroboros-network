@@ -88,6 +88,8 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL (makeHeaderView)
 import qualified Control.State.Transition.Extended as STS
 
+import           DuncanAndDouglas.DbChangelog (HasOnDiskTables (Tables),
+                     HasOnlyTables, HasTables, TableKind, TableType)
 import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
 import           Ouroboros.Consensus.Protocol.TPraos (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
@@ -234,6 +236,22 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock era)) wher
 
   -- TODO methods
 
+data ShelleyHDState (tk :: TableKind) = ShelleyHDState
+
+instance HasTables ShelleyHDState where
+
+instance HasTables (Tables ShelleyHDState) where
+
+instance HasOnlyTables (Tables ShelleyHDState) where
+
+instance HasOnDiskTables ShelleyHDState where
+
+  data Tables ShelleyHDState (tk :: TableKind) = LedgerTables --  (LedgerState (ShelleyBlock era))
+    -- ... LedgerTables
+
+data TableKindToMapKind (tk :: TableKind) (mk :: MapKind) where
+-- (tk :: TableKind) -> mk
+
 instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock era)) where
 
   -- TODO methods
@@ -284,6 +302,9 @@ data instance Ticked1 (LedgerState (ShelleyBlock era)) mk = TickedShelleyLedgerS
 
 deriving instance ShelleyBasedEra era
                => NoThunks (Ticked1 (LedgerState (ShelleyBlock era)) mk)
+
+deriving instance ( ShelleyBasedEra era
+                  ) => Eq (Ticked1 (LedgerState (ShelleyBlock era)) mk)
 
 untickedShelleyLedgerTipPoint ::
      TickedLedgerState (ShelleyBlock era) mk
