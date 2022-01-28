@@ -450,6 +450,9 @@ data family LedgerState blk :: LedgerStateKind
 type instance HeaderHash (LedgerState blk)    = HeaderHash blk
 type instance HeaderHash (LedgerState blk mk) = HeaderHash blk
 
+instance StandardHash blk => StandardHash (LedgerState blk)
+instance StandardHash blk => StandardHash (LedgerState blk mk)
+
 type LedgerConfig      blk    = LedgerCfg (LedgerState blk)
 type LedgerError       blk    = LedgerErr (LedgerState blk)
 type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk
