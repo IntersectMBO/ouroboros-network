@@ -310,6 +310,8 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
+                       Test.Ouroboros.Network.Testnet
+                       Test.Ouroboros.Network.Testnet.Simulation.Node
                        Test.Mux
                        Test.Pipe
                        Test.Socket

@@ -28,6 +28,7 @@ import qualified Test.Ouroboros.Network.PeerSelection.Json (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+import qualified Test.Ouroboros.Network.Testnet (tests)
 import qualified Test.Ouroboros.Network.TxSubmission (tests)
 import qualified Test.PeerState (tests)
 import qualified Test.Pipe (tests)
@@ -74,6 +75,7 @@ tests =
   , Test.Ouroboros.Network.TxSubmission.tests
   , Test.Ouroboros.Network.NodeToNode.Version.tests
   , Test.Ouroboros.Network.NodeToClient.Version.tests
+  , Test.Ouroboros.Network.Testnet.tests
   , Test.LedgerPeers.tests
   , Test.Ouroboros.Network.Diffusion.Policies.tests
 
