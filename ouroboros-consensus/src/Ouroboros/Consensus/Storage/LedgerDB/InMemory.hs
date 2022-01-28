@@ -528,8 +528,8 @@ ledgerDbCurrent =
 -- | Information about the state of the ledger at the anchor
 ledgerDbAnchor :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
 ledgerDbAnchor =
-    either unCheckpoint unCheckpoint
-  . AS.last
+    unCheckpoint
+  . AS.anchor
   . dbChangelogVolatileCheckpoints
   . ledgerDbChangelog
 
