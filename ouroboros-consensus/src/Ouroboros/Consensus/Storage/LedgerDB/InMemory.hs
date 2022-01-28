@@ -45,6 +45,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbBimap
   , ledgerDbCurrent
   , ledgerDbFlush
+  , ledgerDbOldest
   , ledgerDbPast
   , ledgerDbPrefix
   , ledgerDbPrune
@@ -530,6 +531,14 @@ ledgerDbAnchor =
     either unCheckpoint unCheckpoint
   . AS.last
   . dbChangelogVolatileCheckpoints
+  . ledgerDbChangelog
+
+-- | Information about the state of the youngest flushed ledger
+ledgerDbOldest :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
+ledgerDbOldest =
+    unDbChangelogState
+  . AS.anchor
+  . changelogImmutableStates
   . ledgerDbChangelog
 
 -- | All snapshots currently stored by the ledger DB (new to old)

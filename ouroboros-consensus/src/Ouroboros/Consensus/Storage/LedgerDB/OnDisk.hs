@@ -37,7 +37,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Low-level API (primarily exposed for testing)
   , deleteSnapshot
   , snapshotToFileName
-  , snapshotToPath
+  , snapshotToDirPath
     -- ** opaque
   , DiskSnapshot (..)
     -- * Trace events
@@ -475,18 +475,12 @@ takeSnapshot tracer hasFS backingStore encLedger db =
         if List.any ((== number) . dsNumber) snapshots then
           return Nothing
         else do
-          writeSnapshot hasFS encLedger snapshot oldest
-          HD.bsCopy
-            backingStore
-            hasFS
-            (HD.BackingStorePath
-              (mkFsPath [snapshotToFileName snapshot, "tables"])
-            )
+          writeSnapshot hasFS backingStore encLedger snapshot oldest
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where
     oldest :: ExtLedgerState blk EmptyMK
-    oldest = ledgerDbAnchor db
+    oldest = ledgerDbOldest db
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
 -- snapshots are stored on disk. The oldest snapshots are deleted.
@@ -554,7 +548,7 @@ readSnapshot ::
 readSnapshot hasFS decLedger decHash =
       ExceptT
     . readIncremental hasFS decoder
-    . snapshotToPath
+    . snapshotToStatePath
   where
     decoder :: Decoder s (ExtLedgerState blk EmptyMK)
     decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
@@ -563,19 +557,29 @@ readSnapshot hasFS decLedger decHash =
 writeSnapshot ::
      forall m blk. MonadThrow m
   => SomeHasFS m
+  -> HD.BackingStore m
+       (LedgerTables (ExtLedgerState blk) KeysMK)
+       (LedgerTables (ExtLedgerState blk) ValuesMK)
+       (LedgerTables (ExtLedgerState blk) DiffMK)
   -> (ExtLedgerState blk EmptyMK -> Encoding)
   -> DiskSnapshot
   -> ExtLedgerState blk EmptyMK -> m ()
-writeSnapshot (SomeHasFS hasFS) encLedger ss cs = do
-    withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
+writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
+    createDirectory hasFS (snapshotToDirPath snapshot)
+    withFile hasFS (snapshotToStatePath snapshot) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
+    HD.bsCopy
+      backingStore
+      (SomeHasFS hasFS)
+      (HD.BackingStorePath (snapshotToTablesPath snapshot))
   where
     encode :: ExtLedgerState blk EmptyMK -> Encoding
     encode = encodeSnapshot encLedger
 
 -- | Delete snapshot from disk
 deleteSnapshot :: HasCallStack => SomeHasFS m -> DiskSnapshot -> m ()
-deleteSnapshot (SomeHasFS HasFS{..}) = removeFile . snapshotToPath
+deleteSnapshot (SomeHasFS HasFS{..}) =
+    removeDirectoryRecursive . snapshotToDirPath
 
 -- | List on-disk snapshots, highest number first.
 listSnapshots :: Monad m => SomeHasFS m -> m [DiskSnapshot]
@@ -593,8 +597,14 @@ snapshotToFileName DiskSnapshot { dsNumber, dsSuffix } =
       Nothing -> ""
       Just s  -> "_" <> s
 
-snapshotToPath :: DiskSnapshot -> FsPath
-snapshotToPath = mkFsPath . (:[]) . snapshotToFileName
+snapshotToDirPath :: DiskSnapshot -> FsPath
+snapshotToDirPath = mkFsPath . (:[]) . snapshotToFileName
+
+snapshotToStatePath :: DiskSnapshot -> FsPath
+snapshotToStatePath = mkFsPath . (\x -> [x, "state"]) . snapshotToFileName
+
+snapshotToTablesPath :: DiskSnapshot -> FsPath
+snapshotToTablesPath = mkFsPath . (\x -> [x, "tables"]) . snapshotToFileName
 
 snapshotFromPath :: String -> Maybe DiskSnapshot
 snapshotFromPath fileName = do
