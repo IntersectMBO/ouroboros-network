@@ -47,9 +47,6 @@ data ChainDbArgs f m blk = ChainDbArgs {
       cdbHasFSImmutableDB       :: SomeHasFS m
     , cdbHasFSVolatileDB        :: SomeHasFS m
     , cdbHasFSLgrDB             :: SomeHasFS m
-    , cbdHasFSLedgerState       :: SomeHasFS m
-      -- ^ TODO: should the handle of the database live here, and if so what
-      -- would be an appropriate name for it?
 
       -- Policy
     , cdbImmutableDbValidation  :: ImmutableDB.ValidationPolicy
@@ -61,7 +58,7 @@ data ChainDbArgs f m blk = ChainDbArgs {
     , cdbTopLevelConfig         :: HKD f (TopLevelConfig blk)
     , cdbChunkInfo              :: HKD f ChunkInfo
     , cdbCheckIntegrity         :: HKD f (blk -> Bool)
-    , cdbGenesis                :: HKD f (m (ExtLedgerState blk EmptyMK))
+    , cdbGenesis                :: HKD f (m (ExtLedgerState blk ValuesMK))
     , cdbCheckInFuture          :: HKD f (CheckInFuture m blk)
     , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
 
@@ -143,7 +140,7 @@ defaultArgs ::
 defaultArgs mkFS diskPolicy =
   toChainDbArgs (ImmutableDB.defaultArgs immFS)
                 (VolatileDB.defaultArgs  volFS)
-                (LgrDB.defaultArgs       lgrFS lgrFSLedgerSt diskPolicy)
+                (LgrDB.defaultArgs       lgrFS diskPolicy)
                 defaultSpecificArgs
   where
     immFS, volFS, lgrFS :: SomeHasFS m
@@ -151,7 +148,6 @@ defaultArgs mkFS diskPolicy =
     immFS         = mkFS $ RelativeMountPoint "immutable"
     volFS         = mkFS $ RelativeMountPoint "volatile"
     lgrFS         = mkFS $ RelativeMountPoint "ledger"
-    lgrFSLedgerSt = mkFS $ RelativeMountPoint "ledger-state"
 
 -- | Internal: split 'ChainDbArgs' into 'ImmutableDbArgs', 'VolatileDbArgs,
 -- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
@@ -185,7 +181,6 @@ fromChainDbArgs ChainDbArgs{..} = (
     , LgrDB.LgrDbArgs {
           lgrTopLevelConfig   = cdbTopLevelConfig
         , lgrHasFS            = cdbHasFSLgrDB
-        , lgrHasFSLedgerSt    = cbdHasFSLedgerState
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
@@ -219,7 +214,6 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
       cdbHasFSImmutableDB       = immHasFS
     , cdbHasFSVolatileDB        = volHasFS
     , cdbHasFSLgrDB             = lgrHasFS
-    , cbdHasFSLedgerState       = lgrHasFSLedgerSt
       -- Policy
     , cdbImmutableDbValidation  = immValidationPolicy
     , cdbVolatileDbValidation   = volValidationPolicy
