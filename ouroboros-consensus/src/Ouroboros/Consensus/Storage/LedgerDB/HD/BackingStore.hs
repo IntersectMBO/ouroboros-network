@@ -1,3 +1,8 @@
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+
 module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
     -- * Backing store interface
     BackingStore (..)
@@ -6,6 +11,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
   , bsRead
   , withBsValueHandle
   ) where
+
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
 
@@ -23,18 +30,23 @@ data BackingStore m keys values diff = BackingStore {
     -- | Close the backing store
     --
     -- Other methods throw exceptions if called on a closed store.
-    bsClose       :: m ()
+    bsClose       :: !(m ())
     -- | Create a persistent copy
     --
     -- Each backing store implementation will offer a way to initialize itself
     -- from such a path.
-  , bsCopy        :: FS.SomeHasFS m -> BackingStorePath -> m ()
+  , bsCopy        :: !(FS.SomeHasFS m -> BackingStorePath -> m ())
     -- | Open a 'BackingStoreValueHandle' capturing the current value of the
     -- entire database
-  , bsValueHandle :: m (WithOrigin SlotNo, BackingStoreValueHandle m keys values)
+  , bsValueHandle :: !(m (WithOrigin SlotNo, BackingStoreValueHandle m keys values))
     -- | Apply a valid diff to the contents of the backing store
-  , bsWrite       :: SlotNo -> diff -> m ()
+  , bsWrite       :: !(SlotNo -> diff -> m ())
   }
+
+-- | TODO Is there a good way to not assume that any function that creates a
+-- 'BackingStore' doesn't hold space leaks in its closure?
+deriving via OnlyCheckWhnfNamed "BackingStore" (BackingStore m keys values diff)
+  instance NoThunks (BackingStore m keys values diff)
 
 newtype BackingStorePath = BackingStorePath FS.FsPath
 
@@ -46,12 +58,12 @@ data BackingStoreValueHandle m keys values = BackingStoreValueHandle {
     -- | Close the handle
     --
     -- Other methods throw exceptions if called on a closed handle.
-    bsvhClose :: m ()
+    bsvhClose :: !(m ())
     -- | Read the given keys from the handle
     --
     -- Absent keys will merely not be present in the result instead of causing a
     -- failure or an exception.
-  , bsvhRead  :: keys -> m values
+  , bsvhRead  :: !(keys -> m values)
   }
 
 -- | A combination of 'bsValueHandle' and 'bsvhRead'
