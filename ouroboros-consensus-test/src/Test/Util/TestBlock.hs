@@ -388,6 +388,7 @@ instance InMemory (LedgerState TestBlock) where
 newtype instance Ticked1 (LedgerState TestBlock) mk = TickedTestLedger {
       getTickedTestLedger :: LedgerState TestBlock mk
     }
+  deriving stock   (Eq)
 
 instance UpdateLedger TestBlock
 
