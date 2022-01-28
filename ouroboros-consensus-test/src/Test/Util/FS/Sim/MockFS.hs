@@ -41,6 +41,7 @@ module Test.Util.FS.Sim.MockFS (
   , doesDirectoryExist
   , doesFileExist
   , listDirectory
+  , removeDirectoryRecursive
   , removeFile
   , renameFile
     -- * Exported for the benefit of tests only
@@ -748,6 +749,34 @@ doesFileExist fp = readMockFS $ \fs ->
     return $ case FS.getFile fp fs of
                Left  _ -> False
                Right _ -> True
+
+-- | Remove a directory and its contents
+--
+-- Same limitations as 'removeFile'.
+removeDirectoryRecursive :: CanSimFS m => FsPath -> m ()
+removeDirectoryRecursive fp =
+    modifyMockFS $ \fs -> case fsPathToList fp of
+      []
+        -> throwError FsError {
+               fsErrorType   = FsIllegalOperation
+             , fsErrorPath   = fsToFsErrorPathUnmounted fp
+             , fsErrorString = "cannot remove the root directory"
+             , fsErrorNo     = Nothing
+             , fsErrorStack  = prettyCallStack
+             , fsLimitation  = True
+             }
+      _ | fp `S.member` openFilePaths fs
+        -> throwError FsError {
+               fsErrorType   = FsIllegalOperation
+             , fsErrorPath   = fsToFsErrorPathUnmounted fp
+             , fsErrorString = "cannot remove an open file"
+             , fsErrorNo     = Nothing
+             , fsErrorStack  = prettyCallStack
+             , fsLimitation  = True
+             }
+      _ -> do
+        files' <- checkFsTree $ FS.removeDirRecursive fp (mockFiles fs)
+        return ((), fs { mockFiles = files' })
 
 -- | Remove a file
 --
