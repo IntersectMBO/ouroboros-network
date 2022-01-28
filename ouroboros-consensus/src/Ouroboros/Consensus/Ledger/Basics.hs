@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -11,7 +12,6 @@
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE FlexibleInstances     #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -39,6 +39,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerStateKind
   , TickedLedgerState
     -- * UTxO HD
+  , AnnTableKeySets
+  , AnnTableReadSets
   , ApplyMapKind (..)
   , DiskLedgerView
   , FootprintL (..)
@@ -46,9 +48,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , SMapKind
   , Sing (..)
   , TableKeySets
-  , AnnTableKeySets
   , TableReadSets
-  , AnnTableReadSets
   , TableStuff (..)
   , TickedTableStuff (..)
   , emptyAppliedMK
@@ -69,7 +69,8 @@ import           Data.Typeable (Typeable)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type (FootprintL (..))
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+                     (FootprintL (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
@@ -238,7 +239,10 @@ class ( -- Requirements on the ledger state itself
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
-class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: LedgerStateKind) where
+class ( ShowLedgerState (LedgerTables l)
+      , Eq (l ValuesMK)
+      , NoThunks (LedgerTables l ValuesMK)
+      ) => TableStuff (l :: LedgerStateKind) where
 
   data family LedgerTables l :: LedgerStateKind
 
@@ -262,6 +266,7 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
   -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
   withLedgerTables :: HasCallStack => l any -> LedgerTables l mk -> l mk
 
+
   -- | Apply the differences in a tracking map to a values map. This is intended
   -- to be used to check that a ledger state computed by the old implementation
   -- and a ledger state computed by the new implementation both agree.
@@ -277,6 +282,14 @@ class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
   withLedgerTablesTicked :: HasCallStack => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
 
   trackingTablesToDiffs :: l TrackingMK -> l DiffMK
+
+  -- | Given l with some tables in it, append tables to it. Where withLedgerTables
+  -- overrides existing tables, the appendLedgerTables will append them
+  appendLedgerTables :: HasCallStack => l mk -> LedgerTables l mk -> l mk
+
+instance ( TableStuff (Ticked1 l)
+         , TickedTableStuff l
+         ) => TickedTableStuff (Ticked1 l) where
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l mk -> Ticked1 l mk

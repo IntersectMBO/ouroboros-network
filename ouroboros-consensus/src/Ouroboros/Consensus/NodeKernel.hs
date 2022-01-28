@@ -41,6 +41,7 @@ import           System.Random (StdGen)
 
 import           Control.Tracer
 
+import           Ouroboros.Consensus.Ticked (Ticked1 (..))
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -72,6 +73,8 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ReadsKeySets (..))
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.EarlyExit
 import           Ouroboros.Consensus.Util.IOLike
@@ -136,6 +139,8 @@ initNodeKernel
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
+       , ReadsKeySets m (Ticked1 (LedgerState blk))
+       , NoThunks (LedgerTables (LedgerState blk) DiffMK)
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
@@ -193,6 +198,8 @@ initInternalState
     :: forall m remotePeer localPeer blk.
        ( IOLike m
        , LedgerSupportsProtocol blk
+       , ReadsKeySets m (Ticked1 (LedgerState blk))
+       , NoThunks (LedgerTables (LedgerState blk) DiffMK)
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk

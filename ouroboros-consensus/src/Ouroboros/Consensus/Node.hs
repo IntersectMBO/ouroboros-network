@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -63,6 +65,11 @@ import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ReadsKeySets (..))
+import           Ouroboros.Consensus.Ticked (Ticked1 (..))
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import qualified Ouroboros.Network.Diffusion as Diffusion
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
@@ -89,7 +96,8 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
                      ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..), MapKind (EmptyMK))
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..),
+                     MapKind (EmptyMK))
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
@@ -261,7 +269,9 @@ deriving instance Show (NetworkP2PMode p2p)
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
 run :: forall blk p2p.
-     RunNode blk
+     ( RunNode blk
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
+     )
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
@@ -275,6 +285,8 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 -- This function runs forever unless an exception is thrown.
 runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      ( RunNode blk
+     , ReadsKeySets m (Ticked1 (LedgerState blk))
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
      )

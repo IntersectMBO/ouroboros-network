@@ -40,6 +40,9 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ReadsKeySets (..))
+import           Ouroboros.Consensus.Ticked (Ticked1 (..))
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -55,8 +58,10 @@ import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
 openMempool
   :: ( IOLike m
      , LedgerSupportsMempool blk
+     , ReadsKeySets m (Ticked1 (LedgerState blk))
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
      )
   => ResourceRegistry m
   -> LedgerInterface m blk
@@ -77,7 +82,9 @@ openMempool registry ledger cfg capacityOverride tracer txSize = do
 openMempoolWithoutSyncThread
   :: ( IOLike m
      , LedgerSupportsMempool blk
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
      , HasTxId (GenTx blk)
+     , ReadsKeySets m (Ticked1 (LedgerState blk))
      , ValidateEnvelope blk
      )
   => LedgerInterface m blk
@@ -92,6 +99,7 @@ openMempoolWithoutSyncThread ledger cfg capacityOverride tracer txSize =
 mkMempool
   :: ( IOLike m
      , LedgerSupportsMempool blk
+     , ReadsKeySets m (Ticked1 (LedgerState blk))
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
      )
@@ -151,6 +159,7 @@ data MempoolEnv m blk = MempoolEnv {
 
 initMempoolEnv :: ( IOLike m
                   , NoThunks (GenTxId blk)
+                  , NoThunks (LedgerTables (LedgerState blk) DiffMK)
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
                   )
@@ -162,8 +171,9 @@ initMempoolEnv :: ( IOLike m
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
-    let (slot, st') = tickLedgerState cfg (ForgeInUnknownSlot st)
-    isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
+    let (slot, st')          = tickLedgerState cfg (ForgeInUnknownSlot st)
+        initMempoolChangelog = undefined -- TODO initialize mempool, this should be simple
+    isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot initMempoolChangelog
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg

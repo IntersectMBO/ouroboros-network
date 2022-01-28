@@ -32,10 +32,13 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Mempool.Impl.Types
+import           Ouroboros.Consensus.Mempool.Impl.Types as Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxTicket (..),
                      zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ReadsKeySets (..), dbChangelogDiskAnchor)
+import           Ouroboros.Consensus.Ticked (Ticked1 (..))
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -81,6 +84,7 @@ implTryAddTxs
   :: forall m blk.
      ( MonadSTM m
      , LedgerSupportsMempool blk
+     , ReadsKeySets m (Ticked1 (LedgerState blk))
      , HasTxId (GenTx blk)
      )
   => StrictTVar m (InternalState blk)
@@ -101,15 +105,48 @@ implTryAddTxs istate cfg txSize trcr wti =
   where
     go acc = \case
       []     -> pure (reverse acc, [])
-      tx:txs -> join $ atomically $ do
-        is <- readTVar istate
-        case pureTryAddTxs cfg txSize wti tx is of
-          NoSpaceLeft             -> pure $ pure (reverse acc, tx:txs)
-          TryAddTxs is' result ev -> do
-            whenJust is' (writeTVar istate)
-            pure $ do
-              traceWith trcr ev
-              go (result:acc) txs
+      tx:txs -> do
+        tempIs <- atomically $ readTVar istate
+        let tempMemChlog = isMempoolChangelog tempIs
+            ks = getTransactionKeySets tx
+            aks = rewindTableKeySetsOnMempool tempMemChlog ks
+        urs <- readDb aks
+        join $ atomically $ do
+          is <- readTVar istate
+          -- check if disk anchor has changed
+          -- if it did, retry the whole computation for tx
+          if diskAnchorHasChanged is tempIs then pure $ go acc (tx:txs)
+          else do
+           let memChlog = isMempoolChangelog is
+           case forwardTableKeySetsOnMempool memChlog urs of
+             -- The forwarding was unsuccessful, this means that content on disk
+             -- has changed but Mempool is not yet aware of it. It means that we
+             -- have to wait till the Mempool will be modified and to rerun the
+             -- process for the given transaction tx
+             Nothing -> pure $ do
+               atomically $ do
+                 is' <- readTVar istate
+                 check $ diskAnchorHasChanged is is'
+               go acc (tx:txs)
+             -- we've successfully managed to get a TickedLedgerTables ValuesMk
+             -- that hold required values for the transaction validation. We now
+             -- must append those values to the TickedLedgerState
+             Just lt -> do
+               let is' = is {
+                 isMempoolChangelog =
+                   memChlog `appendLedgerTablesOnMempoolChangelog` lt
+               }
+               case pureTryAddTxs cfg txSize wti tx is' of
+                  NoSpaceLeft              -> pure $ pure (reverse acc, tx:txs)
+                  TryAddTxs is'' result ev -> do
+                    whenJust is'' (writeTVar istate)
+                    pure $ do
+                      traceWith trcr ev
+                      go (result:acc) txs
+
+    diskAnchorHasChanged is1 is2 =
+      let diskAnchor = dbChangelogDiskAnchor . mcChangelog . isMempoolChangelog
+      in diskAnchor is1 /= diskAnchor is2
 
 -- | Craft a 'TryAddTxs' value containing the resulting state if applicable, the
 -- tracing event and the result of adding this transaction. See the
@@ -197,6 +234,7 @@ pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
     -- escape hatch when there's an inconsistency between the ledger and the
     -- mempool.
     let toRemove       = Set.fromList txIds
+        temp           = undefined -- TODO modify MempoolChangelog
         txTickets'     = filter
                            (   (`notElem` toRemove)
                              . txId
@@ -209,7 +247,7 @@ pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
                            capacityOverride
                            cfg
                            slot
-                           ticked
+                           (temp ticked)
                            isLastTicketNo
                            txTickets'
         is'            = internalStateFromVR vr

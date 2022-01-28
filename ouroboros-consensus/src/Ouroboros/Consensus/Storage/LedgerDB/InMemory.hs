@@ -1,26 +1,26 @@
-{-# LANGUAGE ConstraintKinds        #-}
-{-# LANGUAGE DataKinds              #-}
-{-# LANGUAGE DeriveAnyClass         #-}
-{-# LANGUAGE DeriveGeneric          #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE NamedFieldPuns         #-}
-{-# LANGUAGE QuantifiedConstraints  #-}
-{-# LANGUAGE RankNTypes             #-}
-{-# LANGUAGE RecordWildCards        #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE StandaloneDeriving     #-}
-{-# LANGUAGE TypeApplications       #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE UndecidableInstances   #-}
-{-# LANGUAGE EmptyDataDeriving      #-}
-{-# LANGUAGE LambdaCase             #-}
-{-# LANGUAGE DeriveFunctor      #-}
-{-# LANGUAGE DerivingStrategies      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving  #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE EmptyDataDeriving          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
@@ -30,12 +30,13 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- ** opaque
   , LedgerDB
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
-  , ReadsKeySets (..)
-  , ReadKeySets
-  , DbReader (..)
   , DbChangelog
+  , DbReader (..)
+  , ReadKeySets
+  , ReadsKeySets (..)
   , RewoundTableKeySets (..)
   , UnforwardedReadSets (..)
+  , dbChangelogDiskAnchor
   , defaultReadKeySets
   , ledgerDbFlush
     -- ** Serialisation
@@ -88,6 +89,8 @@ import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
 
+import           Cardano.Slotting.Slot (WithOrigin (At))
+import           Control.Exception
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -97,8 +100,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
-import Cardano.Slotting.Slot (WithOrigin(At))
-import Control.Exception
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -425,7 +426,7 @@ seqAnchorAt = undefined
 seqLength :: Seq state (state EmptyMK) -> Int
 seqLength = undefined
 
-data DbChangelog (l :: LedgerStateKind)
+data DbChangelog (l :: LedgerStateKind) = DbChangelog
   deriving (Eq, Generic, NoThunks)
 
 newtype RewoundTableKeySets l = RewoundTableKeySets (AnnTableKeySets l ()) -- KeySetSanityInfo l
@@ -438,7 +439,7 @@ rewindTableKeySets
   :: DbChangelog l -> TableKeySets l -> RewoundTableKeySets l
 rewindTableKeySets = undefined
 
-newtype UnforwardedReadSets l = UnforwardedReadSets (AnnTableReadSets l ())
+newtype UnforwardedReadSets l = UnforwardedReadSets (AnnTableReadSets l ()) -- KeySetSanityInfo l
 
 forwardTableKeySets
   :: DbChangelog l -> UnforwardedReadSets l -> Maybe (TableReadSets l)
@@ -454,6 +455,9 @@ extendDbChangelog = undefined
 
 dbChangelogStateAnchor :: DbChangelog state -> SeqNo state
 dbChangelogStateAnchor = undefined
+
+dbChangelogDiskAnchor :: DbChangelog state -> SeqNo state
+dbChangelogDiskAnchor = undefined
 
 dbChangelogStates :: DbChangelog state -> Seq state (state EmptyMK)
 dbChangelogStates = undefined
@@ -488,6 +492,9 @@ newtype DbReader m l a = DbReader { runDbReader :: ReaderT (ReadKeySets m l) m a
 
 instance ReadsKeySets (DbReader m l) l where
   readDb rks = DbReader $ ReaderT $ \f -> f rks
+
+instance ReadsKeySets IO l where
+  readDb = undefined
 
 -- TODO: this is leaking details on how we want to compose monads at the higher levels.
 instance (Monad m, ReadsKeySets m l) => ReadsKeySets (ReaderT r m) l where
@@ -611,7 +618,6 @@ ledgerDbPrune (SecurityParam k) db = db {
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
 {-# INLINE ledgerDbPrune #-}
-{-# LANGUAGE DerivingStrategies #-}
 
 {-------------------------------------------------------------------------------
   Internal updates
