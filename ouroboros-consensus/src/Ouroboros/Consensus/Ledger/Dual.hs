@@ -498,6 +498,18 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                        dualBlockMain
                        tickedDualLedgerStateMain
 
+instance
+     ( PreApplyBlock (LedgerState m) m
+     , PreApplyBlock (LedgerState a) a
+     , TableStuff (LedgerState a)
+     )
+  => PreApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
+  getBlockKeySets DualBlock{dualBlockMain, dualBlockAux} =
+      DualBlockLedgerTables m a
+    where
+      m = getBlockKeySets                              dualBlockMain
+      a = maybe emptyLedgerStateTables getBlockKeySets dualBlockAux
+
 data instance LedgerState (DualBlock m a) mk = DualLedgerState {
       dualLedgerStateMain   :: LedgerState m mk
     , dualLedgerStateAux    :: LedgerState a mk

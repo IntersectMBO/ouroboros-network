@@ -268,6 +268,7 @@ instance ( CanHardFork xs
          , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , StowableLedgerTables (LedgerState (HardForkBlock xs))
+         , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
          )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
 
@@ -348,6 +349,7 @@ instance ( CanHardFork xs
          , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , StowableLedgerTables (LedgerState (HardForkBlock xs))
+         , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
          ) => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
@@ -424,6 +426,7 @@ type CanHardFork' xs =
   , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , StowableLedgerTables (LedgerState (HardForkBlock xs))
+  , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
   )
 
 instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
