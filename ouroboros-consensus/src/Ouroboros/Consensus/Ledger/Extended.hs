@@ -177,12 +177,6 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
   newtype LedgerTables (ExtLedgerState blk) mk = ExtLedgerStateTables (LedgerTables (LedgerState blk) mk)
     deriving (Generic)
 
-  forgetLedgerStateTracking (ExtLedgerState lstate hstate) =
-      ExtLedgerState (forgetLedgerStateTracking lstate) hstate
-
-  forgetLedgerStateTables (ExtLedgerState lstate hstate) =
-      ExtLedgerState (forgetLedgerStateTables lstate) hstate
-
   projectLedgerTables (ExtLedgerState lstate _) =
       ExtLedgerStateTables (projectLedgerTables lstate)
   withLedgerTables (ExtLedgerState lstate hstate) (ExtLedgerStateTables tables) =
@@ -195,8 +189,12 @@ instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks
 deriving instance InMemHD.Serialise (LedgerTables (LedgerState blk) mk) => InMemHD.Serialise (LedgerTables (ExtLedgerState blk) mk)
 
 instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk)) => TickedTableStuff (ExtLedgerState blk) where
-  forgetTickedLedgerStateTracking (TickedExtLedgerState lstate lview hstate) =
-      TickedExtLedgerState (forgetTickedLedgerStateTracking lstate) lview hstate
+  projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =
+      ExtLedgerStateTables (projectLedgerTablesTicked lstate)
+  withLedgerTablesTicked
+    (TickedExtLedgerState lstate view hstate)
+    (ExtLedgerStateTables tables) =
+      TickedExtLedgerState (lstate `withLedgerTablesTicked` tables) view hstate
 
 instance (LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk) blk where
   applyBlockLedgerResult cfg blk TickedExtLedgerState{..} = do
