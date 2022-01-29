@@ -192,16 +192,17 @@ instance GetTip (l EmptyMK) => Anchorable (WithOrigin SlotNo) (Checkpoint (l Emp
 
 -- | Ledger DB starting at the specified ledger state
 ledgerDbWithAnchor ::
-     (TableStuff l, GetTip (l EmptyMK), GetTip (l ValuesMK))
+     ( TableStuff l
+     , GetTip (l EmptyMK)
+     , GetTip (l ValuesMK)
+     , StowableLedgerTables l
+     )
   => l EmptyMK -> LedgerDB l
 ledgerDbWithAnchor anchor = LedgerDB {
-      ledgerDbCheckpoints = Empty (Checkpoint (trick anchor))
+      ledgerDbCheckpoints = Empty (Checkpoint (unstowLedgerTables anchor))
     , ledgerDbChangelog   = emptyDbChangeLog anchor
     , runDual = True -- TODO: This is not yet implemented.
     }
-  where
-    trick :: l EmptyMK -> l ValuesMK
-    trick = error "do our UTxO HD trick, for the MVP"
 
 {-------------------------------------------------------------------------------
   Compute signature
@@ -554,7 +555,10 @@ ledgerDbAnchor =
 --
 -- This is what will be serialized when snapshotting.
 ledgerDbOldest :: forall l.
-     (StandardHash (l EmptyMK), GetTip (l EmptyMK))
+     ( StandardHash (l EmptyMK)
+     , GetTip (l EmptyMK)
+     , StowableLedgerTables l
+     )
   => LedgerDB l -> l EmptyMK
 ledgerDbOldest db =
     if runDual db
@@ -571,16 +575,13 @@ ledgerDbOldest db =
     isFlushed = castPoint (getTip stuffedLegacyAnchor) == getTip immAnchor
 
     stuffedLegacyAnchor :: l EmptyMK
-    stuffedLegacyAnchor = trick legacyAnchor
+    stuffedLegacyAnchor = stowLedgerTables legacyAnchor
 
     legacyAnchor :: l ValuesMK
     legacyAnchor =
         unCheckpoint
       $ AS.anchor
       $ ledgerDbCheckpoints db
-
-    trick :: l ValuesMK -> l EmptyMK
-    trick = error "do our UTxO HD trick, for the MVP"
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --

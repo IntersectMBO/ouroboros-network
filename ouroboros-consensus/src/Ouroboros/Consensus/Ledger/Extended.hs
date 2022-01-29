@@ -230,6 +230,22 @@ instance (LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk) blk whe
           (getHeader blk)
           tickedHeaderState
 
+instance
+     StowableLedgerTables (LedgerState blk)
+  => StowableLedgerTables (ExtLedgerState blk) where
+
+  stowLedgerTables ExtLedgerState{headerState, ledgerState} =
+      ExtLedgerState {
+          headerState
+        , ledgerState = stowLedgerTables ledgerState
+        }
+
+  unstowLedgerTables ExtLedgerState{headerState, ledgerState} =
+      ExtLedgerState {
+          headerState
+        , ledgerState = unstowLedgerTables ledgerState
+        }
+
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
