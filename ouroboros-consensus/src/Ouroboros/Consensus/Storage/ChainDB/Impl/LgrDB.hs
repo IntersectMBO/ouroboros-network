@@ -24,10 +24,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Ledger HD operations
   , flush
     -- ** Read/Write lock operations
-  , unsafeAcquireReadLock
-  , unsafeAcquireWriteLock
-  , unsafeReleaseReadLock
-  , unsafeReleaseWriteLock
   , withReadLock
   , withWriteLock
     -- * 'TraceReplayEvent' decorator
@@ -80,6 +76,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as Lock
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
@@ -127,7 +124,9 @@ data LgrDB m blk = LgrDB {
     , lgrBackingStore     :: !(LedgerBackingStore m (ExtLedgerState blk))
       -- ^ Handle to the ledger's backing store, containing the parts that grow
       -- too big for in-memory residency
-    , lgrDbFlushLock      :: !FlushLock
+    , lgrFlushLock        :: !(Lock.RAWLock m ())
+      -- ^ Lock used to ensure the contents of 'varDB' and 'lgrBackingStore'
+      -- remain coherent
     , resolveBlock        :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
       -- ^ Read a block from disk
     , cfg                 :: !(TopLevelConfig blk)
@@ -235,16 +234,13 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
     let dbPrunedToImmDBTip = LedgerDB.ledgerDbPrune (SecurityParam 0) db
     (varDB, varPrevApplied) <-
       (,) <$> newTVarIO dbPrunedToImmDBTip <*> newTVarIO Set.empty
-    flock <- mkFlushLock -- TODO: do we want to register this lock in any
-                         -- resource registry? Depending on how the lock will be
-                         -- implemented an exception after lock creation might
-                         -- not be a problem (eg using MVars or TVars).
+    flushLock <- Lock.new ()
     return (
         LgrDB {
             varDB           = varDB
           , varPrevApplied  = varPrevApplied
           , lgrBackingStore = lgrBackingStore
-          , lgrDbFlushLock  = flock
+          , lgrFlushLock    = flushLock
           , resolveBlock    = getBlock
           , cfg             = lgrTopLevelConfig
           , diskPolicy      = lgrDiskPolicy
@@ -293,11 +289,11 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
 mkLgrDB :: StrictTVar m (LedgerDB' blk)
         -> StrictTVar m (Set (RealPoint blk))
         -> LedgerBackingStore m (ExtLedgerState blk)
-        -> FlushLock
+        -> Lock.RAWLock m ()
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs Identity m blk
         -> LgrDB m blk
-mkLgrDB varDB varPrevApplied lgrBackingStore lgrDbFlushLock resolveBlock args = LgrDB {..}
+mkLgrDB varDB varPrevApplied lgrBackingStore lgrFlushLock resolveBlock args = LgrDB {..}
   where
     LgrDbArgs {
         lgrTopLevelConfig = cfg
@@ -525,34 +521,12 @@ configLedgerDb cfg = LedgerDbCfg {
   Flush lock operations
 -------------------------------------------------------------------------------}
 
--- | Perform an action acquiring and holding the ledger DB read lock.
+-- | Acquire the ledger DB read lock and hold it while performing an action
 withReadLock :: IOLike m => LgrDB m blk -> m a -> m a
-withReadLock lgrDB =
-  bracket_ (unsafeAcquireReadLock lgrDB) (unsafeReleaseReadLock lgrDB)
+withReadLock lgrDB m =
+    Lock.withReadAccess (lgrFlushLock lgrDB) (\() -> m)
 
--- | Perform an action acquiring and holding the ledger DB write lock.
-withWriteLock :: IOLike m => LgrDB m blk -> m () -> m ()
-withWriteLock lgrDB =
-  bracket_ (unsafeAcquireWriteLock lgrDB) (unsafeReleaseWriteLock lgrDB)
-
--- | Acquire a read lock on the ledger DB.
---
--- This operation must be guarded against (asyncrhonous) exceptions, ensuring
--- that the corresponding release operation is called.
-unsafeAcquireReadLock :: LgrDB m blk -> m ()
-unsafeAcquireReadLock = undefined
-
-unsafeReleaseReadLock :: LgrDB m blk -> m ()
-unsafeReleaseReadLock = undefined
-
-unsafeAcquireWriteLock :: LgrDB m blk -> m ()
-unsafeAcquireWriteLock = undefined
-
-unsafeReleaseWriteLock :: LgrDB m blk -> m ()
-unsafeReleaseWriteLock = undefined
-
-data FlushLock = FlushLock
-  deriving (Show, Eq, Generic, NoThunks)
-
-mkFlushLock :: IOLike m => m FlushLock
-mkFlushLock = undefined
+-- | Acquire the ledger DB write lock and hold it while performing an action
+withWriteLock :: IOLike m => LgrDB m blk -> m a -> m a
+withWriteLock lgrDB m =
+    Lock.withWriteAccess (lgrFlushLock lgrDB) (\() -> (,) () <$> m)
