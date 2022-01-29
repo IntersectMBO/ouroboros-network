@@ -57,7 +57,6 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -236,10 +235,7 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
 copyAndSnapshotRunner
   :: forall m blk.
      ( IOLike m
-     , ConsensusProtocol (BlockProtocol blk)
-     , HasHeader blk
      , GetHeader blk
-     , IsLedger (LedgerState blk)
      , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      )
@@ -273,7 +269,8 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
       immSlotno <- copyToImmutableDB cdb
       scheduleGC' immSlotno
 
---      TODO: giveTheLedgerDbAnOpportunityToFlushNow (cfg?) cdbLgrDB immSlotno
+      -- Let the LedgerDB flush
+      LgrDB.withWriteLock cdbLgrDB $ LgrDB.flush cdbLgrDB
 
       now <- getMonotonicTime
       let distance' = distance + numToWrite
@@ -302,19 +299,10 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 updateLedgerSnapshots ::
      ( IOLike m
      , LgrDbSerialiseConstraints blk
-     , HasHeader blk
-     , IsLedger (LedgerState blk)
      , LedgerSupportsProtocol blk
      )
   => ChainDbEnv m blk -> m ()
 updateLedgerSnapshots CDB{..} = do
-    -- TODO: if we couple snapshotting and flushing we need to make sure these
-    -- calls are not interleaved.
-    LgrDB.flush cdbLgrDB
-    -- TODO: Here we should create a restore point.
-    --
-    -- We must make sure that the SeqNo passed to 'createRestorePoint' is
-    -- the 'SeqNo' of the last flushed state.
     void $ LgrDB.takeSnapshot  cdbLgrDB
     void $ LgrDB.trimSnapshots cdbLgrDB
 
