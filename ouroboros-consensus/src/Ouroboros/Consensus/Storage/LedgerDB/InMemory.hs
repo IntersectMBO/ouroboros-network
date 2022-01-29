@@ -329,7 +329,11 @@ applyBlock cfg ap db = case ap of
       old <- oldApplyBlock ap
       new <- newApplyBlock ap
 
-      assert (old == applyTracking oldLedgerDbCurrent new) $ return (old, new)
+      let oldnew =
+              applyDiffsLedgerTables oldLedgerDbCurrent
+            $ projectLedgerTables
+            $ trackingTablesToDiffs new
+      assert (old == oldnew) $ return (old, new)
 
   where
 
