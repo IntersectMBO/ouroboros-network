@@ -231,6 +231,11 @@ instance (LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk) blk whe
           tickedHeaderState
 
 instance
+     PreApplyBlock (LedgerState blk)    blk
+  => PreApplyBlock (ExtLedgerState blk) blk where
+  getBlockKeySets = ExtLedgerStateTables . getBlockKeySets
+
+instance
      StowableLedgerTables (LedgerState blk)
   => StowableLedgerTables (ExtLedgerState blk) where
 
