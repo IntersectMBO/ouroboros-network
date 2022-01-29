@@ -77,6 +77,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , trackingTablesToDiffs
     -- ** Special classes of ledger states
   , InMemory (..)
+  , StowableLedgerTables (..)
     -- ** Changelog
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
@@ -211,6 +212,7 @@ class ( -- Requirements on the ledger state itself
       , NoThunks (LedgerTables l SeqDiffMK)
       , NoThunks          (LedgerTables l ValuesMK)   -- for in-memory store
       , InMemHD.Serialise (LedgerTables l ValuesMK)   -- for in-memory store
+      , StowableLedgerTables l
       ) => IsLedger (l :: LedgerStateKind) where
   -- | Errors that can arise when updating the ledger
   --
@@ -602,6 +604,11 @@ class InMemory (l :: LedgerStateKind) where
   convertMapKind :: l mk -> l mk'
 
 type TableReadSets l = LedgerTables l ValuesMK
+
+-- | TODO Once we remove the dual ledger, we won't need this anymore
+class StowableLedgerTables (l :: LedgerStateKind) where
+  stowLedgerTables   :: l ValuesMK -> l EmptyMK
+  unstowLedgerTables :: l EmptyMK  -> l ValuesMK
 
 {-------------------------------------------------------------------------------
   Changelog
