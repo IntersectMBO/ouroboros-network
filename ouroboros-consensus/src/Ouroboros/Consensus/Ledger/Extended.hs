@@ -14,8 +14,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
     ExtLedgerCfg (..)
