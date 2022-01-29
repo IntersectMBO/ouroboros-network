@@ -44,22 +44,40 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerStateKind
   , TickedLedgerState
     -- * UTxO HD
-  , ApplyMapKind (..)
-  , DiskLedgerView
-  , FootprintL (..)
+    -- ** Isolating the tables
+  , TableStuff (..)
+  , TickedTableStuff (..)
+  , mapOverLedgerTables
+  , overLedgerTables
+  , zipOverLedgerTables
+  , mapOverLedgerTablesTicked
+  , overLedgerTablesTicked
+  , zipOverLedgerTablesTicked
+    -- ** Tables values
   , MapKind (..)
   , SMapKind
   , Sing (..)
-  , TableKeySets
-  , TableReadSets
-  , TableStuff (..)
-  , TickedTableStuff (..)
+  , ApplyMapKind (..)
+  , diffTrackingMK
   , emptyAppliedMK
   , mapValuesAppliedMK
   , toSMapKind
-    -- * Special classes of ledger states
+  , valuesTrackingMK
+    -- ** Queries
+  , DiskLedgerView
+  , FootprintL (..)
+    -- ** Convenience alises
+  , TableKeySets
+  , TableReadSets
+  , applyDiffsLedgerTables
+  , emptyLedgerStateTables
+  , forgetLedgerStateTables
+  , forgetLedgerStateTracking
+  , forgetTickedLedgerStateTracking
+  , trackingTablesToDiffs
+    -- ** Special classes of ledger states
   , InMemory (..)
-    -- * Changelog
+    -- ** Changelog
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
   , DbChangelogState (..)
@@ -70,7 +88,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , prefixDbChangelog
   , pruneDbChangelog
   , rollbackDbChangelog
-    -- * Misc
+    -- ** Misc
   , ShowLedgerState (..)
   ) where
 
@@ -80,7 +98,6 @@ import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
 
@@ -260,6 +277,9 @@ class ( -- Requirements on the ledger state itself
   ---
   getTickKeySets :: SlotNo -> l EmptyMK  -> TableKeySets l
 
+-- | 'lrResult' after 'applyChainTickLedgerResult'
+applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l mk -> Ticked1 l mk
+applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
@@ -267,13 +287,6 @@ class ( -- Requirements on the ledger state itself
 class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: LedgerStateKind) where
 
   data family LedgerTables l :: LedgerStateKind
-
-  forgetLedgerStateTracking :: l TrackingMK -> l ValuesMK
-
-  forgetLedgerStateTables :: l any -> l EmptyMK
-
-  -- | Empty values for every table
-  emptyLedgerStateTables :: LedgerTables l mk
 
   projectLedgerTables :: l mk -> LedgerTables l mk
 
@@ -286,14 +299,7 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
   -- current era of the ledger state argument.
   --
   -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
-  withLedgerTables :: HasCallStack => l any -> LedgerTables l mk -> l mk
-
-  -- | Apply the differences in a tracking map to a values map. This is intended
-  -- to be used to check that a ledger state computed by the old implementation
-  -- and a ledger state computed by the new implementation both agree.
-  --
-  -- Old + ResultNew == ResultOld
-  applyTracking :: l ValuesMK -> l TrackingMK -> l ValuesMK
+  withLedgerTables :: l any -> LedgerTables l mk -> l mk
 
   pureLedgerTables ::
        (forall k v.
@@ -310,6 +316,7 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
        )
     -> LedgerTables l mk1
     -> LedgerTables l mk2
+
   zipLedgerTables ::
        (forall k v.
             Ord k
@@ -321,18 +328,120 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
     -> LedgerTables l mk2
     -> LedgerTables l mk3
 
+overLedgerTables ::
+     TableStuff l
+  => (LedgerTables l mk1 -> LedgerTables l mk2)
+  -> l mk1
+  -> l mk2
+overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
+
+mapOverLedgerTables ::
+     TableStuff l
+  => (forall k v.
+          Ord k
+       => ApplyMapKind mk1 k v
+       -> ApplyMapKind mk2 k v
+     )
+  -> l mk1
+  -> l mk2
+mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
+
+zipOverLedgerTables ::
+     TableStuff l
+  => (forall k v.
+          Ord k
+       => ApplyMapKind mk1 k v
+       -> ApplyMapKind mk2 k v
+       -> ApplyMapKind mk3 k v
+     )
+  ->              l mk1
+  -> LedgerTables l mk2
+  ->              l mk3
+zipOverLedgerTables f l tables2 =
+    overLedgerTables
+      (\tables1 -> zipLedgerTables f tables1 tables2)
+      l
+
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
 class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
-  forgetTickedLedgerStateTracking :: Ticked1 l TrackingMK -> Ticked1 l ValuesMK
+  projectLedgerTablesTicked :: Ticked1 l mk  -> LedgerTables l mk
+  withLedgerTablesTicked    :: Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
 
-  withLedgerTablesTicked :: HasCallStack => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
+overLedgerTablesTicked ::
+     TickedTableStuff l
+  => (LedgerTables l mk1 -> LedgerTables l mk2)
+  -> Ticked1 l mk1
+  -> Ticked1 l mk2
+overLedgerTablesTicked f l =
+    withLedgerTablesTicked l $ f $ projectLedgerTablesTicked l
 
-  trackingTablesToDiffs :: l TrackingMK -> l DiffMK
+mapOverLedgerTablesTicked ::
+     TickedTableStuff l
+  => (forall k v.
+         Ord k
+      => ApplyMapKind mk1 k v
+      -> ApplyMapKind mk2 k v
+     )
+  -> Ticked1 l mk1
+  -> Ticked1 l mk2
+mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
 
--- | 'lrResult' after 'applyChainTickLedgerResult'
-applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l mk -> Ticked1 l mk
-applyChainTick = lrResult ..: applyChainTickLedgerResult
+zipOverLedgerTablesTicked ::
+     TickedTableStuff l
+  => (forall k v.
+         Ord k
+      => ApplyMapKind mk1 k v
+      -> ApplyMapKind mk2 k v
+      -> ApplyMapKind mk3 k v
+     )
+  -> Ticked1      l mk1
+  -> LedgerTables l mk2
+  -> Ticked1      l mk3
+zipOverLedgerTablesTicked f l tables2 =
+    overLedgerTablesTicked
+      (\tables1 -> zipLedgerTables f tables1 tables2)
+      l
+
+{-------------------------------------------------------------------------------
+  Convenience aliases
+-------------------------------------------------------------------------------}
+
+-- | Empty values for every table
+emptyLedgerStateTables :: forall l mk.
+  (TableStuff l, SingI mk) => LedgerTables l mk
+emptyLedgerStateTables =
+    pureLedgerTables $ emptyAppliedMK (sing :: SMapKind mk)
+
+forgetLedgerStateTracking :: TableStuff l => l TrackingMK -> l ValuesMK
+forgetLedgerStateTracking = mapOverLedgerTables valuesTrackingMK
+
+forgetLedgerStateTables :: TableStuff l => l mk -> l EmptyMK
+forgetLedgerStateTables =
+    mapOverLedgerTables f
+  where
+    f :: ApplyMapKind mk k v -> ApplyMapKind EmptyMK k v
+    f _ = ApplyEmptyMK
+
+-- | Used only for the dual ledger
+applyDiffsLedgerTables :: TableStuff l => l ValuesMK -> LedgerTables l DiffMK -> l ValuesMK
+applyDiffsLedgerTables =
+    zipOverLedgerTables f
+  where
+    f ::
+         Ord k
+      => ApplyMapKind ValuesMK k v
+      -> ApplyMapKind DiffMK   k v
+      -> ApplyMapKind ValuesMK k v
+    f (ApplyValuesMK values) (ApplyDiffMK diff) =
+      ApplyValuesMK (forwardValues values diff)
+
+trackingTablesToDiffs :: TableStuff l => l TrackingMK -> l DiffMK
+trackingTablesToDiffs = mapOverLedgerTables diffTrackingMK
+
+forgetTickedLedgerStateTracking ::
+  TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l ValuesMK
+forgetTickedLedgerStateTracking = mapOverLedgerTablesTicked valuesTrackingMK
 
 {-------------------------------------------------------------------------------
   Concrete ledger tables
@@ -377,6 +486,12 @@ mapValuesAppliedMK f = \case
   ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
   ApplyRewoundMK rew      -> ApplyRewoundMK  (mapRewoundKeys f rew)
 
+diffTrackingMK :: ApplyMapKind TrackingMK k v -> ApplyMapKind DiffMK k v
+diffTrackingMK (ApplyTrackingMK _values diff) = ApplyDiffMK diff
+
+valuesTrackingMK :: ApplyMapKind TrackingMK k v -> ApplyMapKind ValuesMK k v
+valuesTrackingMK (ApplyTrackingMK values _diff) = ApplyValuesMK values
+
 {-
 instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
   ApplyEmptyMK    == _               = True
@@ -417,9 +532,15 @@ instance SingI DiffMK     where sing = SDiffMK
 instance SingI SeqDiffMK  where sing = SSeqDiffMK
 instance SingI RewoundMK  where sing = SRewoundMK
 
-toSMapKind :: SingI mk => proxy mk k v -> SMapKind mk
-toSMapKind _ = sing
-
+toSMapKind :: ApplyMapKind mk k v -> SMapKind mk
+toSMapKind = \case
+    ApplyEmptyMK{}    -> SEmptyMK
+    ApplyKeysMK{}     -> SKeysMK
+    ApplyValuesMK{}   -> SValuesMK
+    ApplyTrackingMK{} -> STrackingMK
+    ApplyDiffMK{}     -> SDiffMK
+    ApplySeqDiffMK{}  -> SSeqDiffMK
+    ApplyRewoundMK{}  -> SRewoundMK
 
 instance Eq (Sing (mk :: MapKind)) where
   _ == _ = True
@@ -471,7 +592,7 @@ type TableKeySets l = LedgerTables l KeysMK
 -------------------------------------------------------------------------------}
 
 class InMemory (l :: LedgerStateKind) where
-
+  
   -- | If the ledger state is always in memory, then l mk will be isomorphic to
   -- l mk' for all mk, mk'. As a result, we can convert between ledgers states
   -- indexed by different map kinds.
