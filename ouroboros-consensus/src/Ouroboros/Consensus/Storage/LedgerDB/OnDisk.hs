@@ -28,7 +28,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , StreamAPI (..)
     -- * Abstraction over the ledger-state HD interface
   , LedgerBackingStore (..)
-  , flushDb
+  , flush
   , readKeySets
     -- * Read from disk
   , readSnapshot
@@ -241,18 +241,6 @@ initLedgerDB replayTracer
         -- TODO this needs to go in the resource registry
         backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger)
         ml     <- runExceptT
-                  -- TODO: here initStartingWith could and should probably flush!
-                  --
-                  -- If we're replaying from genesis (or simply replaying a very
-                  -- large number of blocks) we will need to flush from time to
-                  -- time inside this function.
-                  --
-                  -- Note that at the moment no LedgerDB snapshots are taken by
-                  -- this function.
-                  --
-                  -- Note that whatever restore point we take here, it will
-                  -- belong to the immutable part of the chain. So the restore
-                  -- point will not lie ahead of the immutable DB tip.
                   $ initStartingWith
                       replayTracer'
                       cfg
@@ -441,10 +429,15 @@ readKeySets (LedgerBackingStore backingStore) (RewoundTableKeySets rew) = do
     comb (ApplyRewoundMK rew') (ApplyValuesMK vs) =
           ApplyValuesMK (HD.rkPresent rew' <> vs)
 
-flushDb ::
+-- | Flush the immutable changes to the backing store
+--
+-- The 'Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB.LgrDb'
+-- 'Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB.flushLock' write lock must be
+-- held before calling this function.
+flush ::
      (Applicative m, TableStuff l)
   => LedgerBackingStore m l -> DbChangelog l -> m ()
-flushDb (LedgerBackingStore backingStore) dblog =
+flush (LedgerBackingStore backingStore) dblog =
     case changelogDiffAnchor dblog of
       Origin  -> pure ()
       At slot ->
@@ -483,25 +476,20 @@ initStartingWith tracer cfg backingStore streamAPI initDb = do
     push blk !(!db, !replayed) = do
         !db' <- defaultReadKeySets (readKeySets backingStore) $
                   ledgerDbPush cfg (ReapplyVal blk) db
-        -- TODO: here it is important that we don't have a lock acquired.
 
-        -- Alternatively, we could chose not to check for a lock when we're
-        -- flushing here since we know the `LgrDB` does not exist at this point
-        -- yet.
+        -- TODO flush policy: flush less often?
+
+        -- It's OK to flush without a lock here, since the `LgrDB` has not
+        -- finishined initializing: only this thread has access to the backing
+        -- store.
         db'' <- do
           let (toFlush, toKeep) =
                 ledgerDbFlush DbChangelogFlushAllImmutable db'
-          flushDb backingStore toFlush
+          flush backingStore toFlush
           pure toKeep
 
-        -- TODO: it seems we'd want:
-        --
-        --     - flush
-        --
-        --     - make a restore-point
-        --
-        -- We can't make the flush in the levels above push since this function
-        -- consumes the whole stream of immutable DB blocks.
+        -- TODO snapshot policy: create snapshots during replay?
+
         let replayed' :: Word64
             !replayed' = replayed + 1
 

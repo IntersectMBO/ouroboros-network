@@ -328,18 +328,18 @@ takeSnapshot ::
      )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
-    -- TODO need to hold lock, I think
+    -- TODO if @not 'runDual'@, then we don't need to flush and thus only need
+    -- the read access
+    withWriteLock lgrDB $ do
+      flush lgrDB
 
-    -- TODO this flush is currently required if runDual = True
-    flush lgrDB
-
-    ledgerDB <- atomically $ getCurrent lgrDB
-    LedgerDB.takeSnapshot
-      tracer
-      hasFS
-      lgrBackingStore
-      encodeExtLedgerState'
-      ledgerDB
+      ledgerDB <- atomically $ getCurrent lgrDB
+      LedgerDB.takeSnapshot
+        tracer
+        hasFS
+        lgrBackingStore
+        encodeExtLedgerState'
+        ledgerDB
   where
     ccfg = configCodec cfg
 
@@ -361,18 +361,15 @@ trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
 getDiskPolicy :: LgrDB m blk -> DiskPolicy
 getDiskPolicy = diskPolicy
 
+-- | The 'flushLock' write lock must be held before calling this function
 flush :: (IOLike m, LedgerSupportsProtocol blk) => LgrDB m blk -> m ()
-flush lgrDB@LgrDB { varDB, lgrBackingStore } =
-  -- TODO: why putting the lock inside LgrDB and not in the CDB? I rather couple
-  -- the ledger DB with the flush lock that guards it. I don't feel comfortable
-  -- with the possiblility of having a lock as a parameter here that could come
-  -- from anywhere. Also, when we use this function, we don't have to pass the
-  -- extra argument.
-  withWriteLock lgrDB $ do
-    db  <- readTVarIO varDB
-    let (toFlush, db') = LedgerDB.ledgerDbFlush DbChangelogFlushAllImmutable db
-    LedgerDB.flushDb lgrBackingStore toFlush
-    atomically $ writeTVar varDB db'
+flush LgrDB { varDB, lgrBackingStore } = do
+    toFlush <- atomically $ do
+      db <- readTVar varDB
+      let (toFlush, db') = LedgerDB.ledgerDbFlush DbChangelogFlushAllImmutable db
+      writeTVar varDB db'
+      pure toFlush
+    LedgerDB.flush lgrBackingStore toFlush
 
 {-------------------------------------------------------------------------------
   Validation
