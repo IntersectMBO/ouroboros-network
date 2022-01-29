@@ -23,7 +23,6 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ticked (Ticked1)
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Generalized transaction
@@ -66,7 +65,6 @@ class ( UpdateLedger blk
       , Show (GenTx blk)
       , Show (Validated (GenTx blk))
       , Show (ApplyTxErr blk)
-      , TableStuff (Ticked1 (LedgerState blk))
       ) => LedgerSupportsMempool blk where
 
   -- | Check whether the internal invariants of the transaction hold.

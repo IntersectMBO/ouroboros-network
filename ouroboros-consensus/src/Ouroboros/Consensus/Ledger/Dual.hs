@@ -71,6 +71,7 @@ import           Data.Functor ((<&>))
 import           Data.Kind (Type)
 import           Data.Typeable
 import           GHC.Generics (Generic)
+import           GHC.Show (showCommaSpace, showSpace)
 import           GHC.Stack
 import           NoThunks.Class (AllowThunk (..), NoThunks (..))
 
@@ -390,7 +391,35 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
     deriving (Generic)
     deriving NoThunks via AllowThunk (LedgerTables (LedgerState (DualBlock m a)) mk)
 
-  -- TODO methods
+  projectLedgerTables DualLedgerState{..} =
+      DualBlockLedgerTables
+        (projectLedgerTables dualLedgerStateMain)
+        (projectLedgerTables dualLedgerStateAux)
+
+  withLedgerTables DualLedgerState{..} (DualBlockLedgerTables main aux) =
+      DualLedgerState {
+          dualLedgerStateMain   = withLedgerTables dualLedgerStateMain main
+        , dualLedgerStateAux    = withLedgerTables dualLedgerStateAux  aux
+        , dualLedgerStateBridge = dualLedgerStateBridge
+        }
+
+  pureLedgerTables f =
+      DualBlockLedgerTables
+        (pureLedgerTables f)
+        (pureLedgerTables f)
+
+  mapLedgerTables f (DualBlockLedgerTables main aux) =
+      DualBlockLedgerTables
+        (mapLedgerTables f main)
+        (mapLedgerTables f aux)
+
+  zipLedgerTables
+    f
+    (DualBlockLedgerTables mainL auxL)
+    (DualBlockLedgerTables mainR auxR) =
+      DualBlockLedgerTables
+        (zipLedgerTables f mainL mainR)
+        (zipLedgerTables f auxL  auxR)
 
 -- TODO only for InMemHD
 deriving instance
@@ -401,20 +430,25 @@ deriving instance
 
 instance Bridge m a => TickedTableStuff (LedgerState (DualBlock m a)) where
 
-  -- TODO methods
+  projectLedgerTablesTicked TickedDualLedgerState{..} =
+      DualBlockLedgerTables
+        (projectLedgerTablesTicked tickedDualLedgerStateMain)
+        (projectLedgerTablesTicked tickedDualLedgerStateAux)
+
+  withLedgerTablesTicked
+    TickedDualLedgerState{..}
+    (DualBlockLedgerTables main aux) =
+      TickedDualLedgerState {
+          tickedDualLedgerStateMain   =
+            withLedgerTablesTicked tickedDualLedgerStateMain main
+        , tickedDualLedgerStateAux    =
+            withLedgerTablesTicked tickedDualLedgerStateAux  aux
+        , tickedDualLedgerStateBridge
+        , tickedDualLedgerStateAuxOrig
+        }
 
 instance ShowLedgerState (LedgerTables (LedgerState (DualBlock m a))) where
   showsLedgerState = error "showsLedgerState @LedgerTables DualBlock"
-
-instance (Eq (Ticked1 (LedgerState (DualBlock m a)) ValuesMK), Bridge m a) => TableStuff (Ticked1 (LedgerState (DualBlock m a))) where
-
-  data LedgerTables (Ticked1 (LedgerState (DualBlock m a))) mk =
-      TickedDualBlockLedgerTables
-        (Ticked1 (LedgerTables (LedgerState m)) mk)
-        (Ticked1 (LedgerTables (LedgerState a)) mk)
-    deriving NoThunks via AllowThunk (LedgerTables (Ticked1 (LedgerState (DualBlock m a))) mk)
-
-  -- TODO methods
 
 instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (DualBlock m a)))) where
   showsLedgerState = error "showsLedgerState @Ticked1 LedgerTables DualBlock"
@@ -482,7 +516,21 @@ instance ( ShowLedgerState (LedgerState m)
          , ShowLedgerState (LedgerState a)
          , Bridge m a
          ) => ShowLedgerState (LedgerState (DualBlock m a)) where
-  showsLedgerState = error "showsLedgerState @DualBlock"
+  showsLedgerState mk st =
+      showString "DualLedgerState" . showSpace . showString "{" .
+                             showsLedgerState mk dualLedgerStateMain
+          . showCommaSpace . showsLedgerState mk dualLedgerStateAux
+          . showCommaSpace . shows dualLedgerStateBridge
+          . showString "}"
+    where
+      -- these patterns together ensure we're printing all the fields; the
+      -- record pattern should have the same arity as the plain pattern
+      DualLedgerState _dummy _ _ = st
+      DualLedgerState {
+          dualLedgerStateMain
+        , dualLedgerStateAux
+        , dualLedgerStateBridge
+        } = st
 
 {-------------------------------------------------------------------------------
   Utilities for working with the extended ledger state
