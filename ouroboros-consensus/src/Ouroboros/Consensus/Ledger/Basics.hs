@@ -260,25 +260,6 @@ class ( -- Requirements on the ledger state itself
     -> l mk
     -> LedgerResult l (Ticked1 l mk)
 
-  -- | Given a block, get the key-sets that we need to apply it to a ledger
-  -- state.
-  --
-  -- TODO: we assume this function will be implemented in terms of
-  -- 'getTickKeySets'. Thus, the resulting keys set will contain the keys that
-  -- the ledger needs to tick to the slot of a given block.
-  --
-  -- TODO: this might not be the best place to define this function. Maybe we
-  -- want to make the on-disk ledger state storage concern orthogonal to the
-  -- ledger state transformation concern.
-  getBlockKeySets :: blk -> TableKeySets l
-
-  -- | We won't use this in the first iteration.
-  --
-  -- TODO: should we check in property tests that the result 'getTickKeySets' is a
-  -- subset of what 'getBlockKeySets' return?
-  ---
-  getTickKeySets :: SlotNo -> l EmptyMK  -> TableKeySets l
-
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l mk -> Ticked1 l mk
 applyChainTick = lrResult ..: applyChainTickLedgerResult
