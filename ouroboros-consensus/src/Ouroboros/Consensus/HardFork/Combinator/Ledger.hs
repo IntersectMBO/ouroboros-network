@@ -36,12 +36,14 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger (
 
 import           Control.Monad.Except
 import qualified Codec.Serialise as InMemHD
+import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.Functor.Product
 import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           GHC.Show (showSpace)
 import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Block
@@ -193,21 +195,60 @@ tickOne ei slot index pcfg (Flip st) = Comp $ fmap FlipTickedLedgerState $
     $ applyChainTickLedgerResult (completeLedgerConfig' ei pcfg) slot st
 
 instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerState (HardForkBlock '[x])) where
-  newtype LedgerTables (LedgerState (HardForkBlock '[x])) mk = LedgerTablesOne (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
+  newtype LedgerTables (LedgerState (HardForkBlock '[x])) mk = LedgerTablesOne (LedgerTables (LedgerState x) mk)
     deriving (Generic)
 
-  -- TODO methods
+  projectLedgerTables = LedgerTablesOne . projectLedgerTables . projectOneState
 
-instance (SingleEraBlock x, TickedTableStuff (LedgerState x)) => TickedTableStuff (LedgerState (HardForkBlock '[x])) where
+  withLedgerTables st (LedgerTablesOne tables) =
+      withOneState st $ projectOneState st `withLedgerTables` tables
 
-  -- TODO methods
+  pureLedgerTables f = coerce $ pureLedgerTables @(LedgerState x) f
+  mapLedgerTables  f = coerce $ mapLedgerTables  @(LedgerState x) f
+  zipLedgerTables  f = coerce $ zipLedgerTables  @(LedgerState x) f
+
+projectOneState :: LedgerState (HardForkBlock '[x]) mk -> LedgerState x mk
+projectOneState (HardForkLedgerState (HardForkState (TZ current))) =
+    unFlip $ currentState $ current
+
+withOneState ::
+     LedgerState (HardForkBlock '[x]) any
+  -> LedgerState x mk
+  -> LedgerState (HardForkBlock '[x]) mk
+withOneState
+  (HardForkLedgerState (HardForkState (TZ current)))
+  st'
+    = HardForkLedgerState $ HardForkState $ TZ current{currentState = Flip st'}
+
+instance (SingleEraBlock x) => TickedTableStuff (LedgerState (HardForkBlock '[x])) where
+
+  projectLedgerTablesTicked st =
+      LedgerTablesOne $ projectLedgerTablesTicked x
+    where
+      HardForkState (TZ current) = tickedHardForkLedgerStatePerEra st
+      FlipTickedLedgerState x    = currentState current
+
+  withLedgerTablesTicked st (LedgerTablesOne tables) =
+      st{tickedHardForkLedgerStatePerEra = HardForkState $ TZ current'}
+    where
+      HardForkState (TZ current) = tickedHardForkLedgerStatePerEra st
+      FlipTickedLedgerState x    = currentState current
+
+      x'       = withLedgerTablesTicked x tables
+      current' = current{currentState = FlipTickedLedgerState x'}
 
 instance TableStuff (LedgerState x) => ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[x]))) where
   showsLedgerState sing (LedgerTablesOne x) =
-      -- TODO parens
-      showString "LedgerTablesOne " . showsLedgerState sing x
+        showString "LedgerTablesOne"
+      . showSpace
+      . showParen True (showsLedgerState sing x)
 
-instance (TableStuff (LedgerState x), Typeable mk) => NoThunks (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
+instance
+     ( TableStuff (LedgerState x)
+     , Typeable mk
+     , NoThunks (LedgerTables (LedgerState x) mk)
+     )
+  => NoThunks (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
 
 {-------------------------------------------------------------------------------
   ApplyBlock
@@ -368,7 +409,6 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
 type CanHardFork' xs =
   ( CanHardFork xs
   , TickedTableStuff (LedgerState (HardForkBlock xs))
-  , TableStuff (Ticked1 (LedgerState (HardForkBlock xs)))
   , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
   , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
