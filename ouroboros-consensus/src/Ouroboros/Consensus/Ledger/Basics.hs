@@ -357,19 +357,15 @@ data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind ValuesMK     k v
   ApplyRewoundMK  :: !(RewoundKeys k v)                    -> ApplyMapKind RewoundMK    k v
 
-class HasEmptyMK mk where
-  emptyAppliedMK_ :: Ord k => ApplyMapKind mk k v
-
-emptyAppliedMK :: (HasEmptyMK mk, Ord k) => proxy mk -> ApplyMapKind mk k v
-emptyAppliedMK _ = emptyAppliedMK_
-
-instance HasEmptyMK EmptyMK    where emptyAppliedMK_ = ApplyEmptyMK
-instance HasEmptyMK KeysMK     where emptyAppliedMK_ = ApplyKeysMK     emptyUtxoKeys
-instance HasEmptyMK ValuesMK   where emptyAppliedMK_ = ApplyValuesMK   emptyUtxoValues
-instance HasEmptyMK TrackingMK where emptyAppliedMK_ = ApplyTrackingMK emptyUtxoValues emptyUtxoDiff
-instance HasEmptyMK DiffMK     where emptyAppliedMK_ = ApplyDiffMK     emptyUtxoDiff
--- intentionally no instance for SeqDiffMK
--- intentionally no instance for RewoundMK
+emptyAppliedMK :: Ord k => SMapKind mk -> ApplyMapKind mk k v
+emptyAppliedMK = \case
+    SEmptyMK    -> ApplyEmptyMK
+    SKeysMK     -> ApplyKeysMK     emptyUtxoKeys
+    SValuesMK   -> ApplyValuesMK   emptyUtxoValues
+    STrackingMK -> ApplyTrackingMK emptyUtxoValues emptyUtxoDiff
+    SDiffMK     -> ApplyDiffMK     emptyUtxoDiff
+    SSeqDiffMK  -> ApplySeqDiffMK  emptySeqUtxoDiff
+    SRewoundMK  -> ApplyRewoundMK  (RewoundKeys emptyUtxoKeys emptyUtxoValues emptyUtxoKeys)
 
 mapValuesAppliedMK :: Ord k => (v -> v') -> ApplyMapKind mk k v ->  ApplyMapKind mk k v'
 mapValuesAppliedMK f = \case
