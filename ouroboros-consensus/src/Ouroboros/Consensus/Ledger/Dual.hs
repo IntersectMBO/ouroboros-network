@@ -532,6 +532,38 @@ instance ( ShowLedgerState (LedgerState m)
         , dualLedgerStateBridge
         } = st
 
+instance
+     ( StowableLedgerTables (LedgerState m)
+     , StowableLedgerTables (LedgerState a)
+     )
+  => StowableLedgerTables (LedgerState (DualBlock m a)) where
+
+  stowLedgerTables st =
+      DualLedgerState {
+          dualLedgerStateMain   = stowLedgerTables dualLedgerStateMain
+        , dualLedgerStateAux    = stowLedgerTables dualLedgerStateAux
+        , dualLedgerStateBridge
+        }
+    where
+      DualLedgerState {
+          dualLedgerStateMain
+        , dualLedgerStateAux
+        , dualLedgerStateBridge
+        } = st
+
+  unstowLedgerTables st =
+      DualLedgerState {
+          dualLedgerStateMain   = unstowLedgerTables dualLedgerStateMain
+        , dualLedgerStateAux    = unstowLedgerTables dualLedgerStateAux
+        , dualLedgerStateBridge
+        }
+    where
+      DualLedgerState {
+          dualLedgerStateMain
+        , dualLedgerStateAux
+        , dualLedgerStateBridge
+        } = st
+
 {-------------------------------------------------------------------------------
   Utilities for working with the extended ledger state
 -------------------------------------------------------------------------------}
