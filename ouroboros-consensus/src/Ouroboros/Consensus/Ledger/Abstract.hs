@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Ledger.Abstract (
     Validated
     -- * Apply block
   , ApplyBlock (..)
+  , PreApplyBlock (..)
   , UpdateLedger
     -- * Derived
   , applyLedgerBlock
@@ -80,6 +81,7 @@ class ( IsLedger l
       , HeaderHash l ~ HeaderHash blk
       , HasHeader blk
       , HasHeader (Header blk)
+      , PreApplyBlock l blk
       ) => ApplyBlock l blk where
 
   -- | Apply a block to the ledger state.
@@ -108,6 +110,18 @@ class ( IsLedger l
     -> blk
     -> Ticked1 l ValuesMK
     -> LedgerResult l (l TrackingMK)
+
+-- | This is separated from 'ApplyBlock' because
+-- 'Ouroboros.Consensus.HardFork.Combinator.Basics.HardForkBlock' has a
+-- compositional instance for 'ApplyBlock' but not for 'PreApplyBlock'.
+class PreApplyBlock l blk where
+  -- | Given a block, get the key-sets that we need to apply it to a ledger
+  -- state.
+  --
+  -- TODO: this might not be the best place to define this function. Maybe we
+  -- want to make the on-disk ledger state storage concern orthogonal to the
+  -- ledger state transformation concern.
+  getBlockKeySets :: blk -> TableKeySets l
 
 -- | Interaction with the ledger layer
 class (ApplyBlock (LedgerState blk) blk, TickedTableStuff (LedgerState blk)) => UpdateLedger blk
