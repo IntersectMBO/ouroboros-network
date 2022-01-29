@@ -135,7 +135,7 @@ initInternalState
 initInternalState capacityOverride lastTicketNo slot st = IS {
       isTxs          = TxSeq.Empty
     , isTxIds        = Set.empty
-    , isLedgerState  = st `withLedgerTables` emptyLedgerStateTables
+    , isLedgerState  = st `withLedgerTablesTicked` emptyLedgerStateTables
     , isTip          = castHash (getTipHash st)
     , isSlotNo       = slot
     , isLastTicketNo = lastTicketNo
