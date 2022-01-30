@@ -75,7 +75,7 @@ import           GHC.Show (showCommaSpace, showSpace)
 import           GHC.Stack
 import           NoThunks.Class (AllowThunk (..), NoThunks (..))
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -92,6 +92,7 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.CBOR.Simple
 
 import           Ouroboros.Consensus.Storage.Serialisation
 
@@ -421,12 +422,25 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
         (zipLedgerTables f mainL mainR)
         (zipLedgerTables f auxL  auxR)
 
--- TODO only for InMemHD
-deriving instance
-     ( Serialise (LedgerTables (LedgerState m) mk)
-     , Serialise (LedgerTables (LedgerState a) mk)
+-- TODO only for in-memory backing store
+instance
+     ( Typeable mk, Typeable m, Typeable a
+     , ToCBOR (LedgerTables (LedgerState m) mk)
+     , ToCBOR (LedgerTables (LedgerState a) mk)
      )
-  => Serialise (LedgerTables (LedgerState (DualBlock m a)) mk)
+  => ToCBOR (LedgerTables (LedgerState (DualBlock m a)) mk) where
+  toCBOR (DualBlockLedgerTables m a) =
+      versionZeroProductToCBOR [toCBOR m, toCBOR a]
+
+instance
+     ( Typeable mk, Typeable m, Typeable a
+     , FromCBOR (LedgerTables (LedgerState m) mk)
+     , FromCBOR (LedgerTables (LedgerState a) mk)
+     )
+  => FromCBOR (LedgerTables (LedgerState (DualBlock m a)) mk) where
+  fromCBOR =
+        versionZeroProductFromCBOR "DualBlockLedgerTables" 2
+      $ DualBlockLedgerTables <$> fromCBOR <*> fromCBOR
 
 instance Bridge m a => TickedTableStuff (LedgerState (DualBlock m a)) where
 

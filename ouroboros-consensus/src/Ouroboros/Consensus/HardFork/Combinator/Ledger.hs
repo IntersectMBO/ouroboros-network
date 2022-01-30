@@ -35,7 +35,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger (
   ) where
 
 import           Control.Monad.Except
-import qualified Codec.Serialise as InMemHD
 import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.Functor.Product
@@ -45,6 +44,8 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Show (showSpace)
 import           NoThunks.Class (NoThunks (..))
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -59,6 +60,7 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 import           Ouroboros.Consensus.Util.SOP
@@ -133,7 +135,8 @@ deriving anyclass instance
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
          , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , StowableLedgerTables (LedgerState (HardForkBlock xs))
          )
   => IsLedger (LedgerState (HardForkBlock xs)) where
@@ -252,6 +255,18 @@ instance
   => NoThunks (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
 
 instance
+     (Typeable x, Typeable mk, ToCBOR (LedgerTables (LedgerState x) mk))
+  => ToCBOR (LedgerTables (LedgerState (HardForkBlock '[x])) mk) where
+  toCBOR (LedgerTablesOne x)  = versionZeroProductToCBOR [toCBOR x]
+
+instance
+     (Typeable x, Typeable mk, FromCBOR (LedgerTables (LedgerState x) mk))
+  => FromCBOR (LedgerTables (LedgerState (HardForkBlock '[x])) mk) where
+  fromCBOR =
+        versionZeroProductFromCBOR "LedgerTablesOne" 1
+      $ LedgerTablesOne <$> fromCBOR
+
+instance
      StowableLedgerTables (LedgerState x)
   => StowableLedgerTables (LedgerState (HardForkBlock '[x])) where
   stowLedgerTables   st =
@@ -265,8 +280,9 @@ instance
 
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
-         , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , StowableLedgerTables (LedgerState (HardForkBlock xs))
          , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
          )
@@ -346,8 +362,9 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st))
 instance ( CanHardFork xs
          , TickedTableStuff (LedgerState (HardForkBlock xs))
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
-         , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , StowableLedgerTables (LedgerState (HardForkBlock xs))
          , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
          ) => UpdateLedger (HardForkBlock xs)
@@ -423,8 +440,9 @@ type CanHardFork' xs =
   ( CanHardFork xs
   , TickedTableStuff (LedgerState (HardForkBlock xs))
   , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
-  , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-  , InMemHD.Serialise (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+  , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+  , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+  , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , StowableLedgerTables (LedgerState (HardForkBlock xs))
   , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
   )

@@ -186,6 +186,7 @@ data instance BlockQuery (ShelleyBlock era) :: FootprintL -> Type -> Type where
 
   GetRewardInfoPools
     :: BlockQuery (ShelleyBlock era)
+                  SmallL
                   (SL.RewardParams,
                     Map (SL.KeyHash 'SL.StakePool (EraCrypto era))
                         (SL.RewardInfoPool))
@@ -364,9 +365,9 @@ instance EqQuery (BlockQuery (ShelleyBlock era)) where
     = Nothing
   eqQuery (GetStakePoolParams _) _
     = Nothing
-  sameDepIndex GetRewardInfoPools GetRewardInfoPools
+  eqQuery GetRewardInfoPools GetRewardInfoPools
     = Just Refl
-  sameDepIndex GetRewardInfoPools _
+  eqQuery GetRewardInfoPools _
     = Nothing
 
 deriving instance Show (BlockQuery (ShelleyBlock era) fp result)
@@ -413,6 +414,7 @@ instance ShelleyBasedEra era => IsQuery (BlockQuery (ShelleyBlock era)) where
       GetUTxOByTxIn {}                           -> Left Refl
       GetStakePools                              -> Left Refl
       GetStakePoolParams {}                      -> Left Refl
+      GetRewardInfoPools {}                      -> Left Refl
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock era) fp result -> ShelleyNodeToClientVersion -> Bool
