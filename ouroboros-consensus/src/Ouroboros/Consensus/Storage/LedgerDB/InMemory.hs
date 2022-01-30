@@ -69,6 +69,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- ** Additional queries
   , ledgerDbIsSaturated
   , ledgerDbMaxRollback
+  , ledgerDbCurrentValues
     -- ** Pure API
   , ledgerDbPush'
   , ledgerDbPushMany'
@@ -534,6 +535,15 @@ defaultReadKeySets f dbReader = runReaderT (runDbReader dbReader) f
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
+
+-- | The ledger state at the tip of the chain
+--
+-- TODO This won't work if @not 'runDual'@.
+ledgerDbCurrentValues :: GetTip (l ValuesMK) => LedgerDB l -> l ValuesMK
+ledgerDbCurrentValues =
+    either unCheckpoint unCheckpoint
+  . AS.head
+  . ledgerDbCheckpoints
 
 -- | The ledger state at the tip of the chain
 ledgerDbCurrent :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
