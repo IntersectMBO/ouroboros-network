@@ -1,11 +1,13 @@
 {-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE PatternSynonyms         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
@@ -24,6 +26,7 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardShelley
     -- * Shelley-based era
   , ShelleyBasedEra (..)
+  , TxOutWrapper (..)
   , WrapTx (..)
     -- * Type synonyms for convenience
   , EraCrypto
@@ -38,6 +41,8 @@ import           Control.Monad.Except
 import           Data.Default.Class (Default)
 import qualified Data.Set as Set
 import           Data.Text (Text)
+import           Data.Void (Void)
+import           GHC.Generics (Generic)
 import           GHC.Records
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
@@ -321,3 +326,33 @@ instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) WrapTx
         fmap (WrapTx . Alonzo.unTx)
       . Core.translateEra @(AlonzoEra c) ctxt
       . Alonzo.Tx . unwrapTx
+
+{-------------------------------------------------------------------------------
+  Tx family wrapper
+-------------------------------------------------------------------------------}
+
+-- | Wrapper for partially applying the 'Core.TxOut' type family
+--
+-- For generality, Consensus uses that type family as eg the index of
+-- 'Core.TranslateEra'. We thus need to partially apply it.
+newtype TxOutWrapper era = TxOutWrapper {unTxOutWrapper :: Core.TxOut era}
+  deriving (Generic)
+
+deriving instance ShelleyBasedEra era => Eq       (TxOutWrapper era)
+deriving instance ShelleyBasedEra era => NoThunks (TxOutWrapper era)
+
+instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) TxOutWrapper where
+  type TranslationError (AllegraEra c) TxOutWrapper = Void
+  translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
+
+instance ShelleyBasedEra (MaryEra c) => Core.TranslateEra (MaryEra c) TxOutWrapper where
+  type TranslationError (MaryEra c) TxOutWrapper = Void
+  translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
+
+instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) TxOutWrapper where
+  type TranslationError (AlonzoEra c) TxOutWrapper = Void
+  translateEra _ctxt =
+        pure
+      . TxOutWrapper
+      . Alonzo.translateTxOut
+      . unTxOutWrapper
