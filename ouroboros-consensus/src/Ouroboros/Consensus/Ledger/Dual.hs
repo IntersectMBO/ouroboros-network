@@ -374,7 +374,8 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                                            dualLedgerConfigAux
                                            slot
                                           dualLedgerStateAux
-        , tickedDualLedgerStateAuxOrig = error "UTxO HD" dualLedgerStateAux :: LedgerState a EmptyMK
+        , tickedDualLedgerStateAuxOrig =
+            forgetLedgerStateTables dualLedgerStateAux
         , tickedDualLedgerStateBridge  = dualLedgerStateBridge
         }
     where
@@ -482,7 +483,7 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
               (dualLedgerConfigAux cfg)
               dualBlockAux
               tickedDualLedgerStateAux
-              (error "UTxO HD" tickedDualLedgerStateAuxOrig :: LedgerState a TrackingMK)
+              tickedDualLedgerStateAuxOrig
           )
       return $ castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
           dualLedgerStateMain   = main'
@@ -501,7 +502,7 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                                   (dualLedgerConfigAux cfg)
                                   dualBlockAux
                                   tickedDualLedgerStateAux
-                                  (error "UTxO HD" tickedDualLedgerStateAuxOrig :: LedgerState a TrackingMK)
+                                  tickedDualLedgerStateAuxOrig
       , dualLedgerStateBridge = updateBridgeWithBlock
                                   block
                                   tickedDualLedgerStateBridge
@@ -919,10 +920,13 @@ applyMaybeBlock :: UpdateLedger blk
                 => LedgerConfig blk
                 -> Maybe blk
                 -> TickedLedgerState blk ValuesMK
-                -> LedgerState blk TrackingMK
+                -> LedgerState blk EmptyMK
                 -> Except (LedgerError blk) (LedgerState blk TrackingMK)
-applyMaybeBlock _   Nothing      _   st = return st
-applyMaybeBlock cfg (Just block) tst _  = applyLedgerBlock cfg block tst
+applyMaybeBlock _   Nothing      _   st =
+    -- if there is no block, then are no changes to track
+    return $ st `withLedgerTables` emptyLedgerTables
+applyMaybeBlock cfg (Just block) tst _  =
+    applyLedgerBlock cfg block tst
 
 -- | Lift 'reapplyLedgerBlock' to @Maybe blk@
 --
@@ -931,10 +935,13 @@ reapplyMaybeBlock :: UpdateLedger blk
                   => LedgerConfig blk
                   -> Maybe blk
                   -> TickedLedgerState blk ValuesMK
+                  -> LedgerState blk EmptyMK
                   -> LedgerState blk TrackingMK
-                  -> LedgerState blk TrackingMK
-reapplyMaybeBlock _   Nothing      _   st = st
-reapplyMaybeBlock cfg (Just block) tst _  = reapplyLedgerBlock cfg block tst
+reapplyMaybeBlock _   Nothing      _   st =
+    -- if there is no block, then are no changes to track
+    st `withLedgerTables` emptyLedgerTables
+reapplyMaybeBlock cfg (Just block) tst _  =
+    reapplyLedgerBlock cfg block tst
 
 -- | Used when the concrete and abstract implementation should agree on errors
 --
