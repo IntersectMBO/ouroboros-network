@@ -64,6 +64,7 @@ import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 import           Ouroboros.Consensus.Util.SOP
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -144,7 +145,9 @@ instance ( CanHardFork xs
 
   type AuxLedgerEvent (LedgerState (HardForkBlock xs)) = OneEraLedgerEvent xs
 
-  applyChainTickLedgerResult :: forall mk . LedgerCfg (LedgerState (HardForkBlock xs))
+  applyChainTickLedgerResult :: forall mk .
+                                       SingI mk
+                                    => LedgerCfg (LedgerState (HardForkBlock xs))
                                     -> SlotNo
                                     -> LedgerState (HardForkBlock xs) mk
                                     -> LedgerResult
@@ -185,7 +188,7 @@ instance ( CanHardFork xs
       extended :: HardForkState (Flip LedgerState mk) xs
       extended = State.extendToSlot cfg slot st
 
-tickOne :: SingleEraBlock blk
+tickOne :: (SingleEraBlock blk, SingI mk)
         => EpochInfo (Except PastHorizonException)
         -> SlotNo
         -> Index xs                                           blk
