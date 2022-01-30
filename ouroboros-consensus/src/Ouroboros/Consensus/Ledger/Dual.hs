@@ -507,8 +507,8 @@ instance
   getBlockKeySets DualBlock{dualBlockMain, dualBlockAux} =
       DualBlockLedgerTables m a
     where
-      m = getBlockKeySets                              dualBlockMain
-      a = maybe emptyLedgerStateTables getBlockKeySets dualBlockAux
+      m = getBlockKeySets                         dualBlockMain
+      a = maybe emptyLedgerTables getBlockKeySets dualBlockAux
 
 data instance LedgerState (DualBlock m a) mk = DualLedgerState {
       dualLedgerStateMain   :: LedgerState m mk
