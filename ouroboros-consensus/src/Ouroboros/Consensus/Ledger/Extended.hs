@@ -29,7 +29,6 @@ module Ouroboros.Consensus.Ledger.Extended (
   , Ticked1 (..)
     -- * MapKind
   , MapKind (..)
-  , toEmptyMK
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -56,9 +55,6 @@ import           Ouroboros.Consensus.Util.CBOR.Simple
 {-------------------------------------------------------------------------------
   Extended ledger state
 -------------------------------------------------------------------------------}
-
-toEmptyMK :: ExtLedgerState blk mk -> ExtLedgerState blk EmptyMK
-toEmptyMK = error "toEmptyMK"
 
 -- | Extended ledger state
 --
