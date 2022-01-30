@@ -52,10 +52,12 @@ import           Data.ByteString (ByteString)
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (encodeListLen, enforceSize, fromCBOR, toCBOR)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), encodeListLen,
+                     enforceSize)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -79,6 +81,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..), (..:))
+import           Ouroboros.Consensus.Util.CBOR.Simple
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
@@ -187,30 +190,45 @@ instance ShowLedgerState (LedgerState ByronBlock) where
   showsLedgerState _sing = shows
 
 instance TableStuff (LedgerState ByronBlock) where
-  newtype LedgerTables (LedgerState ByronBlock) mk = NoByronLedgerTables (SMapKind mk)
+  data LedgerTables (LedgerState ByronBlock) mk = NoByronLedgerTables
     deriving (Generic, Eq, Show, NoThunks)
 
-  -- TODO methods
+  projectLedgerTables _st                 = NoByronLedgerTables
+  withLedgerTables st NoByronLedgerTables = convertMapKind st
+
+  pureLedgerTables _f                                         = NoByronLedgerTables
+  mapLedgerTables  _f                     NoByronLedgerTables = NoByronLedgerTables
+  zipLedgerTables  _f NoByronLedgerTables NoByronLedgerTables = NoByronLedgerTables
+
+instance InMemory (LedgerState ByronBlock) where
+  convertMapKind ByronLedgerState{..} = ByronLedgerState{..}
+
+instance InMemory (Ticked1 (LedgerState ByronBlock)) where
+  convertMapKind TickedByronLedgerState{..} = TickedByronLedgerState{..}
 
 instance TickedTableStuff (LedgerState ByronBlock) where
-
-  -- TODO methods
+  projectLedgerTablesTicked _st                 = NoByronLedgerTables
+  withLedgerTablesTicked st NoByronLedgerTables = convertMapKind st
 
 instance ShowLedgerState (LedgerTables (LedgerState ByronBlock)) where
   showsLedgerState _sing = shows
 
-instance TableStuff (Ticked1 (LedgerState ByronBlock)) where
-  newtype LedgerTables (Ticked1 (LedgerState ByronBlock)) mk = TickedNoByronLedgerTables (SMapKind mk)
-    deriving (Generic, Eq, Show, NoThunks)
+instance StowableLedgerTables (LedgerState ByronBlock) where
+  stowLedgerTables   = convertMapKind
+  unstowLedgerTables = convertMapKind
 
-  -- TODO methods
+instance Typeable mk => ToCBOR (LedgerTables (LedgerState ByronBlock) mk) where
+  toCBOR NoByronLedgerTables = versionZeroProductToCBOR []
 
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState ByronBlock))) where
-  showsLedgerState _sing = shows
+instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronBlock) mk) where
+  fromCBOR = versionZeroProductFromCBOR "LedgerTables Byron" 0 $ pure NoByronLedgerTables
 
 {-------------------------------------------------------------------------------
   Supporting the various consensus interfaces
 -------------------------------------------------------------------------------}
+
+instance PreApplyBlock (LedgerState ByronBlock) ByronBlock where
+  getBlockKeySets _ = emptyLedgerTables
 
 instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
   applyBlockLedgerResult = fmap pureLedgerResult ..: applyByronBlock validationMode
