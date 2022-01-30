@@ -308,8 +308,13 @@ instance ( ShelleyBasedEra era
           shelleyLedgerTip        = tip'
         , shelleyLedgerState      = state'
         , shelleyLedgerTransition = ShelleyTransitionInfo 0
-        , shelleyLedgerTables     = error "UTxO HD translate UTxO map" tables
+        , shelleyLedgerTables     = castEmptyTables tables
         }
+    where
+      castEmptyTables ::
+           TableStuff l2
+        => LedgerTables l1 EmptyMK -> LedgerTables l2 EmptyMK
+      castEmptyTables _ = emptyLedgerTables
 
 instance ( ShelleyBasedEra era
          , SL.TranslateEra era WrapTx
