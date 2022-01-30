@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
@@ -20,14 +21,16 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
   , TVarBackingStoreValueHandleClosedExn (..)
   ) where
 
-import           Codec.Serialise (DeserialiseFailure, Serialise,
-                     deserialiseOrFail, serialise)
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR
 import qualified Control.Exception as Exn
-import           Control.Monad (join, void)
+import           Control.Monad (join, unless, void)
+import qualified Data.ByteString.Lazy as BSL
 import           Data.String (fromString)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
+import           Cardano.Binary as CBOR
 import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
 
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
@@ -124,15 +127,19 @@ data TVarBackingStoreValueHandleClosedExn = TVarBackingStoreValueHandleClosedExn
   deriving anyclass (Exn.Exception)
   deriving stock    (Show)
 
-newtype TVarBackingStoreDeserialiseExn = TVarBackingStoreDeserialiseExn DeserialiseFailure
+data TVarBackingStoreDeserialiseExn =
+    TVarBackingStoreDeserialiseExn CBOR.DeserialiseFailure
+  | TVarIncompleteDeserialiseExn
   deriving anyclass (Exn.Exception)
   deriving stock    (Show)
 
 -- | Use a 'TVar' as a trivial backing store
 newTVarBackingStore ::
-     (IOLike m, NoThunks values, Serialise values)
+     (IOLike m, NoThunks values)
   => (keys -> values -> values)
   -> (values -> diff -> values)
+  -> (values -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s values)
   -> Either
        (FS.SomeHasFS m, BackingStorePath)
        (WithOrigin SlotNo, values)   -- ^ initial seqno and contents
@@ -141,15 +148,17 @@ newTVarBackingStore ::
           values
           diff
        )
-newTVarBackingStore lookup_ forwardValues_ initialization = do
+newTVarBackingStore lookup_ forwardValues_ enc dec initialization = do
     ref <- do
       (slot, values) <- case initialization of
         Left (FS.SomeHasFS fs, BackingStorePath path) -> do
           FS.withFile fs (extendPath path) FS.ReadMode $ \h -> do
             bs <- FS.hGetAll fs h
-            case deserialiseOrFail bs of
-              Left  err -> Exn.throw $ TVarBackingStoreDeserialiseExn err
-              Right x   -> pure x
+            case CBOR.deserialiseFromBytes ((,) <$> CBOR.fromCBOR <*> dec) bs of
+              Left  err        -> Exn.throw $ TVarBackingStoreDeserialiseExn err
+              Right (extra, x) -> do
+                unless (BSL.null extra) $ Exn.throw TVarIncompleteDeserialiseExn
+                pure x
         Right x -> pure x
       IOLike.newTVarIO $ TVarBackingStoreContents slot values
     pure BackingStore {
@@ -163,7 +172,7 @@ newTVarBackingStore lookup_ forwardValues_ initialization = do
               TVarBackingStoreContents slot values -> pure $ do
                 FS.createDirectory fs path
                 FS.withFile fs (extendPath path) (FS.WriteMode FS.MustBeNew) $ \h -> do
-                  void $ FS.hPutAll fs h $ serialise (slot, values)
+                  void $ FS.hPutAll fs h $ CBOR.toLazyByteString $ CBOR.toCBOR slot <> enc values
       , bsValueHandle = join $ IOLike.atomically $ do
           IOLike.readTVar ref >>= \case
             TVarBackingStoreContentsClosed                ->

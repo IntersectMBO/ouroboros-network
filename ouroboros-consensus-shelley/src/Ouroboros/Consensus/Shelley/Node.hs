@@ -378,21 +378,21 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
         , shelleyStorageConfigSecurityParam     = tpraosSecurityParam     tpraosParams
         }
 
-    initLedgerState :: LedgerState (ShelleyBlock era) EmptyMK
+    initLedgerState :: LedgerState (ShelleyBlock era) ValuesMK
     initLedgerState = ShelleyLedgerState {
         shelleyLedgerTip        = Origin
       , shelleyLedgerState      =
           registerGenesisStaking (SL.sgStaking genesis) $
             SL.initialState genesis additionalGenesisConfig
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-      , shelleyLedgerTables     = ShelleyLedgerTables ApplyEmptyMK
+      , shelleyLedgerTables     = emptyLedgerTables   -- TODO are they ever not empty?
       }
 
     initChainDepState :: TPraosState (EraCrypto era)
     initChainDepState = TPraosState Origin $
       SL.initialChainDepState initialNonce (SL.sgGenDelegs genesis)
 
-    initExtLedgerState :: ExtLedgerState (ShelleyBlock era) EmptyMK
+    initExtLedgerState :: ExtLedgerState (ShelleyBlock era) ValuesMK
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState
