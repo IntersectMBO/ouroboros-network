@@ -55,7 +55,7 @@ import           Cardano.Prelude (forceElemsToWHNF)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
-                     HeaderHash, SlotNo, SomeSecond)
+                     HeaderHash, SlotNo)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,

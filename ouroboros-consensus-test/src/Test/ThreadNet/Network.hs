@@ -110,6 +110,8 @@ import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (ledgerDbCurrentValues)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.ThreadNet.TxGen
@@ -338,7 +340,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
             TestNodeInitialization{tniProtocolInfo} = nodeInitData
             ProtocolInfo{pInfoInitLedger} = tniProtocolInfo
             ExtLedgerState{ledgerState} = pInfoInitLedger
-        v <- uncheckedNewTVarM (VDown Genesis ledgerState)
+        v <-
+            uncheckedNewTVarM
+          $ VDown Genesis
+          $ forgetLedgerStateTables ledgerState
         pure (nid, v)
 
     -- fork the directed edges, which also allocates their status variables
@@ -666,25 +671,25 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> STM m (ExtLedgerState blk EmptyMK)
+                   -> STM m (LedgerDB' blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer coreNodeId registry clock cfg nodeSeed getExtLedger mempool =
+    forkTxProducer coreNodeId registry clock cfg nodeSeed getLedgerDB mempool =
       void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
-        ledger <- atomically $ ledgerState <$> getExtLedger
+        ledgerSt <- (ledgerState . ledgerDbCurrentValues) <$> atomically getLedgerDB
         -- Combine the node's seed with the current slot number, to make sure
         -- we generate different transactions in each slot.
         let txs = runGen
                 (nodeSeed `combineWith` unSlotNo curSlotNo)
-                (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra (error "UTxO HD hole" ledger))     -- TODO
+                (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra ledgerSt)
 
         void $ addTxs mempool txs
 
     mkArgs :: OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
-           -> ExtLedgerState blk EmptyMK
+           -> ExtLedgerState blk ValuesMK
            -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)
@@ -871,8 +876,9 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
                   -- fail if the EBB is invalid
                   -- if it is valid, we retick to the /same/ slot
-                  let apply = applyLedgerBlock (configLedger pInfoConfig)
-                  tickedLdgSt' <- case Exc.runExcept $ apply ebb (error "UTxOHD hole" tickedLdgSt) of
+                  let apply  = applyLedgerBlock (configLedger pInfoConfig)
+                      tables = emptyLedgerTables   -- EBBs need no input tables
+                  tickedLdgSt' <- case Exc.runExcept $ apply ebb (tickedLdgSt `withLedgerTablesTicked` tables) of
                     Left e   -> Exn.throw $ JitEbbError @blk e
                     Right st -> pure $ applyChainTick
                                         (configLedger pInfoConfig)
@@ -1060,7 +1066,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         (seed `combineWith` unCoreNodeId coreNodeId)
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.
-        (ChainDB.getCurrentLedger chainDB)
+        (ChainDB.getLedgerDB chainDB)
         mempool
 
       return (nodeKernel, LimitedApp app)
