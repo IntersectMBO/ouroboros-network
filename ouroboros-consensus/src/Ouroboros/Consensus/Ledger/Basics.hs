@@ -261,14 +261,23 @@ class ( -- Requirements on the ledger state itself
   --
   -- >    ledgerTipPoint (applyChainTick cfg slot st)
   -- > == ledgerTipPoint st
+  --
+  -- NOTE: The 'SingI' constraint is here for the same reason its on
+  -- 'projectLedgerTables'
   applyChainTickLedgerResult ::
-       LedgerCfg l
+       SingI mk
+    => LedgerCfg l
     -> SlotNo
     -> l mk
     -> LedgerResult l (Ticked1 l mk)
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
-applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l mk -> Ticked1 l mk
+applyChainTick ::
+     (IsLedger l, SingI mk)
+  => LedgerCfg l
+  -> SlotNo
+  -> l mk
+  -> Ticked1 l mk
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 -- This can't be in IsLedger because we have a compositional IsLedger instance
@@ -278,7 +287,14 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
 
   data family LedgerTables l :: LedgerStateKind
 
-  projectLedgerTables :: l mk -> LedgerTables l mk
+  -- | Some values of @l mk@ do not determine @mk@, hence the 'SingI' constraint.
+  --
+  -- If it were always the case that @l mk@ not determing @mk@ implies
+  -- @LedgerTables l mk@ also does not determine @mk@, then we would not need
+  -- the 'SingI' constraint. Unfortunately, that is not always the case. The
+  -- example we have found in our prototype UTxO HD implementat is that a Byron
+  -- ledger state does not determine @mk@, but the Cardano ledger tables do.
+  projectLedgerTables :: SingI mk => l mk -> LedgerTables l mk
 
   -- | Overwrite the tables in some ledger state.
   --
@@ -319,14 +335,14 @@ class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: Le
     -> LedgerTables l mk3
 
 overLedgerTables ::
-     TableStuff l
+     (TableStuff l, SingI mk1)
   => (LedgerTables l mk1 -> LedgerTables l mk2)
   -> l mk1
   -> l mk2
 overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
 
 mapOverLedgerTables ::
-     TableStuff l
+     (TableStuff l, SingI mk1)
   => (forall k v.
           Ord k
        => ApplyMapKind mk1 k v
@@ -337,7 +353,7 @@ mapOverLedgerTables ::
 mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
 
 zipOverLedgerTables ::
-     TableStuff l
+     (TableStuff l, SingI mk1)
   => (forall k v.
           Ord k
        => ApplyMapKind mk1 k v
@@ -355,11 +371,13 @@ zipOverLedgerTables f l tables2 =
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
 class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
-  projectLedgerTablesTicked :: Ticked1 l mk  -> LedgerTables l mk
-  withLedgerTablesTicked    :: Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
+  -- | NOTE: The 'SingI' constraint is here for the same reason its on
+  -- 'projectLedgerTables'
+  projectLedgerTablesTicked :: SingI mk => Ticked1 l mk  -> LedgerTables l mk
+  withLedgerTablesTicked    ::             Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
 
 overLedgerTablesTicked ::
-     TickedTableStuff l
+     (TickedTableStuff l, SingI mk1)
   => (LedgerTables l mk1 -> LedgerTables l mk2)
   -> Ticked1 l mk1
   -> Ticked1 l mk2
@@ -367,7 +385,7 @@ overLedgerTablesTicked f l =
     withLedgerTablesTicked l $ f $ projectLedgerTablesTicked l
 
 mapOverLedgerTablesTicked ::
-     TickedTableStuff l
+     (TickedTableStuff l, SingI mk1)
   => (forall k v.
          Ord k
       => ApplyMapKind mk1 k v
@@ -378,7 +396,7 @@ mapOverLedgerTablesTicked ::
 mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
 
 zipOverLedgerTablesTicked ::
-     TickedTableStuff l
+     (TickedTableStuff l, SingI mk1)
   => (forall k v.
          Ord k
       => ApplyMapKind mk1 k v
