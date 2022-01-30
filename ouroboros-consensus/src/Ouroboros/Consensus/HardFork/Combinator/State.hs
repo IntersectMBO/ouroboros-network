@@ -41,6 +41,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Counting (getExactly)
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -173,7 +174,8 @@ epochInfoPrecomputedTransitionInfo shape transition st =
 -------------------------------------------------------------------------------}
 
 -- | Extend the telescope until the specified slot is within the era at the tip
-extendToSlot :: forall xs mk . CanHardFork xs
+extendToSlot :: forall xs mk .
+                (CanHardFork xs, SingI mk)
              => HardForkLedgerConfig xs
              -> SlotNo
              -> HardForkState (Flip LedgerState mk) xs -> HardForkState (Flip LedgerState mk) xs

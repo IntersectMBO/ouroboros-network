@@ -31,6 +31,7 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerState, MapKind (..))
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope)
@@ -103,7 +104,8 @@ newtype TranslateForecast f g x y = TranslateForecast {
 
 newtype TranslateLedgerState x y = TranslateLedgerState {
       translateLedgerStateWith :: forall mk .
-           EpochNo
+           SingI mk
+        => EpochNo
         -> LedgerState x mk
         -> LedgerState y mk
     }
