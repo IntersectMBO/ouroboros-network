@@ -78,6 +78,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import qualified Ouroboros.Consensus.Util.SOP as SOP
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
@@ -363,16 +364,17 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
     deriving (Eq, Generic, NoThunks)
 
   projectLedgerTables :: forall mk.
-                     LedgerState (CardanoBlock c)  mk
+       SingI mk
+    =>               LedgerState (CardanoBlock c)  mk
     -> LedgerTables (LedgerState (CardanoBlock c)) mk
   projectLedgerTables (HardForkLedgerState (HardForkState st)) =
       case st of
         -- the first era is Byron
         TZ Current {
             currentState =
-              Flip (projectLedgerTables -> NoByronLedgerTables sing)
+              Flip (projectLedgerTables -> NoByronLedgerTables)
           } ->
-          CardanoLedgerTables (emptyAppliedMK sing)
+          emptyLedgerTables
 
         -- all the remaining eras are Shelley
         TS _past tele ->
@@ -414,15 +416,13 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
           TZ Current {
               currentStart
             , currentState =
-                Flip byronSt@(projectLedgerTables -> NoByronLedgerTables _sing)
+                Flip byronSt
             } ->
             TZ Current {
                    currentStart
                  , currentState =
                        Flip
-                     $ withLedgerTables
-                         byronSt
-                         (NoByronLedgerTables (toSMapKind appliedMK))
+                     $ withLedgerTables byronSt NoByronLedgerTables
                  }
 
           -- all the remaining eras are Shelley
@@ -466,13 +466,6 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
 
 instance ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
   showsLedgerState = error "showsLedgerState @CardanoBlock"
-
--- | Auxiliary so we can effectively pass 'Core.TxOut' unapplied
-newtype TxOutWrapper era = TxOutWrapper {unTxOutWrapper :: Core.TxOut era}
-  deriving (Generic)
-
-deriving instance ShelleyBasedEra era => Eq       (TxOutWrapper era)
-deriving instance ShelleyBasedEra era => NoThunks (TxOutWrapper era)
 
 -- | Auxiliary for convenience
 --
@@ -571,16 +564,6 @@ instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoB
 
   -- TODO methods
 
-instance CardanoHardForkConstraints c
-      => TableStuff (Ticked1 (LedgerState (CardanoBlock c))) where
-  newtype LedgerTables (Ticked1 (LedgerState (CardanoBlock c))) mk =
-    TickedCardanoLedgerTables (LedgerTables (LedgerState (CardanoBlock c)) mk)
-
-  -- TODO methods
-
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (CardanoBlock c)))) where
-  showsLedgerState = error "showsLedgerState @Ticked CardanoBlock"
-
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley
 -------------------------------------------------------------------------------}
@@ -618,7 +601,7 @@ translatePointByronToShelley point bNo =
       _otherwise ->
         error "translatePointByronToShelley: invalid Byron state"
 
-translateLedgerStateByronToShelleyWrapper ::
+translateLedgerStateByronToShelleyWrapper :: forall c.
      ( ShelleyBasedEra (ShelleyEra c)
      , HASH     c ~ Blake2b_256
      , ADDRHASH c ~ Blake2b_224
@@ -643,8 +626,14 @@ translateLedgerStateByronToShelleyWrapper =
             (byronLedgerState ledgerByron)
       , shelleyLedgerTransition =
           ShelleyTransitionInfo{shelleyAfterVoting = 0}
-      , shelleyLedgerTables = error "UTxO HD translate Byron UTxO map"
+      , shelleyLedgerTables = translateNoTables (projectLedgerTables ledgerByron)
       }
+  where
+    translateNoTables ::
+         SingI mk
+      => LedgerTables (LedgerState ByronBlock)                    mk
+      -> LedgerTables (LedgerState (ShelleyBlock (ShelleyEra c))) mk
+    translateNoTables NoByronLedgerTables = emptyLedgerTables
 
 translateChainDepStateByronToShelleyWrapper ::
      RequiringBoth

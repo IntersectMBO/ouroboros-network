@@ -352,13 +352,6 @@ instance ShelleyBasedHardForkConstraints era1 era2
 
   -- TODO methods
 
--- | Auxiliary so we can effectively pass 'Core.TxOut' unapplied
-newtype TxOutWrapper era = TxOutWrapper {unTxOutWrapper :: Core.TxOut era}
-  deriving (Generic)
-
-deriving instance ShelleyBasedEra era => Eq       (TxOutWrapper era)
-deriving instance ShelleyBasedEra era => NoThunks (TxOutWrapper era)
-
 -- | Auxiliary alias for convenenience
 class    (ShelleyBasedEra era, SL.Crypto era ~ c) => ShelleyBasedEra' c era
 instance (ShelleyBasedEra era, SL.Crypto era ~ c) => ShelleyBasedEra' c era

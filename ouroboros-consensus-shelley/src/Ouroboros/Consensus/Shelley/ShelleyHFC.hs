@@ -6,10 +6,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | This module is the Shelley Hard Fork Combinator
@@ -51,6 +53,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
+import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
@@ -296,10 +299,13 @@ instance ( ShelleyBasedEra era
       return $ ShelleyTip sno bno (ShelleyHash hash)
 
 instance ( ShelleyBasedEra era
-         , SL.TranslateEra era ShelleyTip
-         , SL.TranslateEra era SL.NewEpochState
+         , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+         , SL.TranslateEra     era ShelleyTip
+         , SL.TranslateEra     era SL.NewEpochState
          , SL.TranslationError era SL.NewEpochState ~ Void
-         ) => SL.TranslateEra era (Flip LedgerState EmptyMK :.: ShelleyBlock) where
+         , SL.TranslateEra     era TxOutWrapper
+         , SL.TranslationError era TxOutWrapper ~ Void
+         ) => SL.TranslateEra era (Flip LedgerState mk :.: ShelleyBlock) where
   translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition tables))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state
@@ -307,13 +313,22 @@ instance ( ShelleyBasedEra era
           shelleyLedgerTip        = tip'
         , shelleyLedgerState      = state'
         , shelleyLedgerTransition = ShelleyTransitionInfo 0
-        , shelleyLedgerTables     = castEmptyTables tables
+        , shelleyLedgerTables     = translateShelleyTables ctxt tables
         }
-    where
-      castEmptyTables ::
-           TableStuff l2
-        => LedgerTables l1 EmptyMK -> LedgerTables l2 EmptyMK
-      castEmptyTables _ = emptyLedgerTables
+
+translateShelleyTables ::
+     ( SL.TranslateEra     era TxOutWrapper
+     , SL.TranslationError era TxOutWrapper ~ Void
+     , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+     )
+  => SL.TranslationContext era
+  -> LedgerTables (LedgerState (ShelleyBlock (SL.PreviousEra era))) mk
+  -> LedgerTables (LedgerState (ShelleyBlock                 era))  mk
+translateShelleyTables ctxt (ShelleyLedgerTables utxoTable) =
+      ShelleyLedgerTables
+    $ mapValuesAppliedMK
+        (unTxOutWrapper . SL.translateEra' ctxt . TxOutWrapper)
+        utxoTable
 
 instance ( ShelleyBasedEra era
          , SL.TranslateEra era WrapTx
