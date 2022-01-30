@@ -61,6 +61,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , diffTrackingMK
   , emptyAppliedMK
   , mapValuesAppliedMK
+  , sMapKind
   , toSMapKind
   , valuesTrackingMK
     -- ** Queries
@@ -94,6 +95,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   ) where
 
 import qualified Codec.Serialise as InMemHD
+import qualified Codec.Serialise.Decoding as InMemHD
+import qualified Codec.Serialise.Encoding as InMemHD
 import qualified Control.Exception as Exn
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
@@ -515,6 +518,9 @@ instance SingI DiffMK     where sing = SDiffMK
 instance SingI SeqDiffMK  where sing = SSeqDiffMK
 instance SingI RewoundMK  where sing = SRewoundMK
 
+sMapKind :: SingI mk => SMapKind mk
+sMapKind = sing
+
 toSMapKind :: ApplyMapKind mk k v -> SMapKind mk
 toSMapKind = \case
     ApplyEmptyMK{}    -> SEmptyMK
@@ -539,6 +545,14 @@ instance Show (Sing (mk :: MapKind)) where
     SRewoundMK  -> "SRewoundMK"
 
 deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
+
+instance InMemHD.Serialise (Sing EmptyMK)    where encode SEmptyMK    = InMemHD.encodeNull; decode = SEmptyMK    <$ InMemHD.decodeNull
+instance InMemHD.Serialise (Sing KeysMK)     where encode SKeysMK     = InMemHD.encodeNull; decode = SKeysMK     <$ InMemHD.decodeNull
+instance InMemHD.Serialise (Sing ValuesMK)   where encode SValuesMK   = InMemHD.encodeNull; decode = SValuesMK   <$ InMemHD.decodeNull
+instance InMemHD.Serialise (Sing TrackingMK) where encode STrackingMK = InMemHD.encodeNull; decode = STrackingMK <$ InMemHD.decodeNull
+instance InMemHD.Serialise (Sing DiffMK)     where encode SDiffMK     = InMemHD.encodeNull; decode = SDiffMK     <$ InMemHD.decodeNull
+instance InMemHD.Serialise (Sing SeqDiffMK)  where encode SSeqDiffMK  = InMemHD.encodeNull; decode = SSeqDiffMK  <$ InMemHD.decodeNull
+instance InMemHD.Serialise (Sing RewoundMK)  where encode SRewoundMK  = InMemHD.encodeNull; decode = SRewoundMK  <$ InMemHD.decodeNull
 
 {-------------------------------------------------------------------------------
   Link block to its ledger
