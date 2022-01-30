@@ -70,7 +70,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TableKeySets
   , TableReadSets
   , applyDiffsLedgerTables
-  , emptyLedgerStateTables
+  , emptyLedgerTables
   , forgetLedgerStateTables
   , forgetLedgerStateTracking
   , forgetTickedLedgerStateTracking
@@ -391,9 +391,9 @@ zipOverLedgerTablesTicked f l tables2 =
 -------------------------------------------------------------------------------}
 
 -- | Empty values for every table
-emptyLedgerStateTables :: forall l mk.
+emptyLedgerTables :: forall l mk.
   (TableStuff l, SingI mk) => LedgerTables l mk
-emptyLedgerStateTables =
+emptyLedgerTables =
     pureLedgerTables $ emptyAppliedMK (sing :: SMapKind mk)
 
 forgetLedgerStateTracking :: TableStuff l => l TrackingMK -> l ValuesMK
