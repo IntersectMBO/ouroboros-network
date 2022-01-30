@@ -5,6 +5,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -58,6 +59,8 @@ module Test.Util.TestBlock (
   ) where
 
 import           Codec.Serialise (Serialise (..))
+import qualified Codec.Serialise.Decoding as InMemHD
+import qualified Codec.Serialise.Encoding as InMemHD
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
 import           Data.Int
@@ -338,28 +341,35 @@ instance ShowLedgerState (LedgerState TestBlock) where
   showsLedgerState _sing = shows
 
 instance TableStuff (LedgerState TestBlock) where
-  newtype LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables (SMapKind mk)
-    deriving stock   (Generic, Eq, Show)
-    deriving newtype (NoThunks)
+  data LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables
+    deriving stock    (Generic, Eq, Show)
+    deriving anyclass (NoThunks)
 
-  -- TODO methods
+  projectLedgerTables _                              = NoTestLedgerTables
+  withLedgerTables (TestLedger p) NoTestLedgerTables = TestLedger p
+
+  pureLedgerTables _                                       = NoTestLedgerTables
+  mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
+  zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+
+instance Serialise (LedgerTables (LedgerState TestBlock) mk) where
+  encode _ =                       InMemHD.encodeNull
+  decode   = NoTestLedgerTables <$ InMemHD.decodeNull
 
 instance TickedTableStuff (LedgerState TestBlock) where
-
-  -- TODO methods
+  projectLedgerTablesTicked _                         = NoTestLedgerTables
+  withLedgerTablesTicked (TickedTestLedger st) tables =
+      TickedTestLedger $ withLedgerTables st tables
 
 instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
   showsLedgerState _sing = shows
 
-instance TableStuff (Ticked1 (LedgerState TestBlock)) where
-  newtype LedgerTables (Ticked1 (LedgerState TestBlock)) mk = TickedNoTestLedgerTables (SMapKind mk)
-    deriving stock   (Generic, Eq, Show)
-    deriving newtype (NoThunks)
+instance StowableLedgerTables (LedgerState TestBlock) where
+  stowLedgerTables   (TestLedger p) = TestLedger p
+  unstowLedgerTables (TestLedger p) = TestLedger p
 
-  -- TODO methods
-
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState TestBlock))) where
-  showsLedgerState _sing = shows
+instance PreApplyBlock (LedgerState TestBlock) TestBlock where
+  getBlockKeySets _ = NoTestLedgerTables
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
