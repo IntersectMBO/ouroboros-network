@@ -34,7 +34,6 @@ module Ouroboros.Consensus.Ledger.Extended (
 
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
-import qualified Codec.Serialise as InMemHD
 import           Control.Monad.Except
 import           Data.Coerce
 import           Data.Functor ((<&>))
@@ -43,6 +42,8 @@ import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
@@ -50,6 +51,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util.CBOR.Simple
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -188,7 +190,17 @@ deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedger
 
 instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) mk)
 
-deriving instance InMemHD.Serialise (LedgerTables (LedgerState blk) mk) => InMemHD.Serialise (LedgerTables (ExtLedgerState blk) mk)
+instance
+     (Typeable blk, Typeable mk, ToCBOR (LedgerTables (LedgerState blk) mk))
+  => ToCBOR (LedgerTables (ExtLedgerState blk) mk) where
+  toCBOR (ExtLedgerStateTables tables) = versionZeroProductToCBOR [toCBOR tables]
+
+instance
+     (Typeable blk, Typeable mk, FromCBOR (LedgerTables (LedgerState blk) mk))
+  => FromCBOR (LedgerTables (ExtLedgerState blk) mk) where
+  fromCBOR =
+        versionZeroProductFromCBOR "LedgerTables ExtLedgerState" 1
+      $ ExtLedgerStateTables <$> fromCBOR
 
 instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk)) => TickedTableStuff (ExtLedgerState blk) where
   projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =

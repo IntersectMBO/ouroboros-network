@@ -58,9 +58,9 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
-import qualified Codec.Serialise.Decoding as InMemHD
-import qualified Codec.Serialise.Encoding as InMemHD
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
 import           Data.Int
@@ -75,12 +75,14 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import qualified System.Random as R
 import           Test.QuickCheck hiding (Result)
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
@@ -352,9 +354,11 @@ instance TableStuff (LedgerState TestBlock) where
   mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
   zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
 
-instance Serialise (LedgerTables (LedgerState TestBlock) mk) where
-  encode _ =                       InMemHD.encodeNull
-  decode   = NoTestLedgerTables <$ InMemHD.decodeNull
+instance Typeable mk => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
+  toCBOR NoTestLedgerTables = CBOR.encodeNull
+
+instance Typeable mk => FromCBOR (LedgerTables (LedgerState TestBlock) mk) where
+  fromCBOR = NoTestLedgerTables <$ CBOR.decodeNull
 
 instance TickedTableStuff (LedgerState TestBlock) where
   projectLedgerTablesTicked _                         = NoTestLedgerTables

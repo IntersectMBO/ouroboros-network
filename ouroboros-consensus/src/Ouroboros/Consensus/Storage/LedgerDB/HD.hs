@@ -48,7 +48,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , SudMeasure (..)
   ) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
+import           Data.Foldable (toList)
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as MapMerge
@@ -57,10 +60,13 @@ import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Slot (SlotNo)
 
 import           Data.FingerTree.Strict (StrictFingerTree)
 import qualified Data.FingerTree.Strict as FT
+
+import           Ouroboros.Consensus.Util.CBOR.Simple
 
 {-------------------------------------------------------------------------------
   Map of values
@@ -76,7 +82,7 @@ import qualified Data.FingerTree.Strict as FT
 -- TODO should we use the bespoke @compact-map@ that the ledger team recently
 -- developed? We don't need to, if this type is only every use for tests.
 newtype UtxoValues k v = UtxoValues (Map k v)
-  deriving (Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks)
 
 instance Ord k => Monoid (UtxoValues k v) where
   mempty = UtxoValues Map.empty
@@ -87,6 +93,12 @@ instance Ord k => Semigroup (UtxoValues k v) where
       UtxoValues $ Map.unionWith err m1 m2
     where
       err = error "impossible! Semigroup UtxoValues collision"
+
+instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (UtxoValues k v) where
+  toCBOR (UtxoValues m) = versionZeroProductToCBOR [toCBOR m]
+
+instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (UtxoValues k v) where
+  fromCBOR = versionZeroProductFromCBOR "UtxoValues" 1 $ UtxoValues <$> fromCBOR
 
 emptyUtxoValues :: UtxoValues k v
 emptyUtxoValues = UtxoValues Map.empty
@@ -100,15 +112,45 @@ mapUtxoValues f (UtxoValues vs) = UtxoValues $ fmap f vs
 
 -- | The differences that could be applied to a 'UtxoValues'
 newtype UtxoDiff k v = UtxoDiff (Map k (UtxoEntryDiff v))
-  deriving (Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks)
+
+instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (UtxoDiff k v) where
+  toCBOR (UtxoDiff m) = versionZeroProductToCBOR [toCBOR m]
+
+instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (UtxoDiff k v) where
+  fromCBOR = versionZeroProductFromCBOR "UtxoDiff" 1 $ UtxoDiff <$> fromCBOR
 
 -- | The key's value and how it changed
 data UtxoEntryDiff v = UtxoEntryDiff !v !UtxoEntryDiffState
-  deriving (Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks)
+
+instance ToCBOR v => ToCBOR (UtxoEntryDiff v) where
+  toCBOR (UtxoEntryDiff v diffstate) =
+      versionZeroProductToCBOR [toCBOR v, toCBOR diffstate]
+
+instance FromCBOR v => FromCBOR (UtxoEntryDiff v) where
+  fromCBOR =
+        versionZeroProductFromCBOR "UtxoEntryDiff" 2
+      $ UtxoEntryDiff <$> fromCBOR <*> fromCBOR
 
 -- | Whether an entry was deleted, inserted, or inserted-and-then-deleted
 data UtxoEntryDiffState = UedsDel | UedsIns | UedsInsAndDel
-  deriving (Generic, NoThunks, Show)
+  deriving (Eq, Generic, NoThunks, Show)
+
+instance ToCBOR UtxoEntryDiffState where
+  toCBOR = (CBOR.encodeListLen 1 <>) . \case
+    UedsDel       -> CBOR.encodeTag 0
+    UedsIns       -> CBOR.encodeTag 1
+    UedsInsAndDel -> CBOR.encodeTag 2
+
+instance FromCBOR UtxoEntryDiffState where
+  fromCBOR = do
+      CBOR.decodeListLenOf 1
+      CBOR.decodeTag >>= \case
+        0 -> pure UedsDel
+        1 -> pure UedsIns
+        2 -> pure UedsInsAndDel
+        o -> fail $ "UtxoEntryDiffState unknown tag: " <> show o
 
 -- | Assumes the colliding value is equivalent, since UTxO map is functional
 --
@@ -157,7 +199,13 @@ differenceUtxoValues (UtxoValues m1) (UtxoValues m2) =
 
 -- | Just the keys
 newtype UtxoKeys k v = UtxoKeys (Set k)
-  deriving (Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks)
+
+instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (UtxoKeys k v) where
+  toCBOR (UtxoKeys m) = versionZeroProductToCBOR [toCBOR m]
+
+instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (UtxoKeys k v) where
+  fromCBOR = versionZeroProductFromCBOR "UtxoKeys" 1 $ UtxoKeys <$> fromCBOR
 
 instance Ord k => Monoid (UtxoKeys k v) where
   mempty = UtxoKeys Set.empty
@@ -195,7 +243,18 @@ data RewoundKeys k v = RewoundKeys {
     -- determined by the diff
   , rkUnknown :: UtxoKeys k v
   }
-  deriving (Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks)
+
+instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (RewoundKeys k v) where
+  toCBOR rew =
+        versionZeroProductToCBOR
+      $ map ($ rew)
+      $ [toCBOR . rkAbsent, toCBOR . rkPresent, toCBOR . rkUnknown]
+
+instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (RewoundKeys k v) where
+  fromCBOR =
+        versionZeroProductFromCBOR "RewoundKeys" 3
+      $ RewoundKeys <$> fromCBOR <*> fromCBOR <*> fromCBOR
 
 mapRewoundKeys :: (v -> v') -> RewoundKeys k v -> RewoundKeys k v'
 mapRewoundKeys f rew =
@@ -286,7 +345,15 @@ forwardValues (UtxoValues values) (UtxoDiff diffs) =
 -- See 'SudElement' and 'SudMeasure'.
 newtype SeqUtxoDiff k v =
     SeqUtxoDiff (StrictFingerTree (SudMeasure k v) (SudElement k v))
-  deriving (Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks)
+
+instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SeqUtxoDiff k v) where
+  toCBOR (SeqUtxoDiff ft) = versionZeroProductToCBOR [toCBOR (toList ft)]
+
+instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SeqUtxoDiff k v) where
+  fromCBOR =
+        versionZeroProductFromCBOR "SeqUtxoDiff" 1
+      $ (SeqUtxoDiff . FT.fromList) <$> fromCBOR
 
 -- TODO no Semigroup instance just because I don't think we need it
 
@@ -302,6 +369,23 @@ data SudMeasure k v =
       {-# UNPACK #-} !Int   -- ^ cumulative size
       {-# UNPACK #-} !SlotNo   -- ^ rightmost, ie maximum
                      !(UtxoDiff k v)   -- ^ cumulative diff
+  deriving (Eq, Generic)
+
+instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SudMeasure k v) where
+  toCBOR = \case
+    SudMeasureNothing             -> CBOR.encodeListLen 1 <> CBOR.encodeTag 0
+    SudMeasureJust size slot diff ->
+         CBOR.encodeListLen 4 <> CBOR.encodeTag 1
+      <> toCBOR size <> toCBOR slot <> toCBOR diff
+
+instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SudMeasure k v) where
+  fromCBOR = do
+      len <- CBOR.decodeListLen
+      tag <- CBOR.decodeTag
+      case (len, tag) of
+        (1, 0) -> pure SudMeasureNothing
+        (4, 1) -> SudMeasureJust <$> fromCBOR <*> fromCBOR <*> fromCBOR
+        o -> fail $ "SudMeasure unknown len and tag: " <> show o
 
 sizeSudMeasure :: SudMeasure k v -> Int
 sizeSudMeasure = \case
@@ -328,7 +412,15 @@ instance Ord k => Semigroup (SudMeasure k v) where
 
 -- | An element of the sequence
 data SudElement k v = SudElement {-# UNPACK #-} !SlotNo !(UtxoDiff k v)
-  deriving (Generic, NoThunks)
+  deriving (Eq, Generic, NoThunks)
+
+instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SudElement k v) where
+  toCBOR (SudElement slot diff) = versionZeroProductToCBOR [toCBOR slot, toCBOR diff]
+
+instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SudElement k v) where
+  fromCBOR =
+        versionZeroProductFromCBOR "SudElement" 1
+      $ SudElement <$> fromCBOR <*> fromCBOR
 
 instance
      Ord k

@@ -153,6 +153,12 @@ class ( SL.ShelleyBasedEra era
       , Eq       (Core.TxOut era)
       , NoThunks (Core.TxOut era)
 
+        -- for snapshotting the in-memory backing store
+      , FromCBOR (SL.TxIn (EraCrypto era))
+      , ToCBOR   (SL.TxIn (EraCrypto era))
+      , FromCBOR (Core.TxOut era)
+      , ToCBOR   (Core.TxOut era)
+
       ) => ShelleyBasedEra era where
 
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
