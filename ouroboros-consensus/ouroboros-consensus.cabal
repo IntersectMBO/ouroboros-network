@@ -297,7 +297,6 @@ library
                      , bimap             >=0.3   && <0.5
                      , binary            >=0.8   && <0.11
                      , bytestring        >=0.10  && <0.11
-                     , Cabal
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-prelude

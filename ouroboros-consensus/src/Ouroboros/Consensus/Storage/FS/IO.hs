@@ -9,7 +9,6 @@ import           Control.Concurrent.MVar
 import qualified Control.Exception as E
 import qualified Data.ByteString.Unsafe as BS
 import qualified Data.Set as Set
-import qualified Distribution.Simple.Utils as Cabal
 import           Foreign (castPtr)
 import           GHC.Stack
 import qualified System.Directory as Dir
@@ -71,11 +70,6 @@ ioHasFS mount = HasFS {
         Dir.removeFile (root fp)
     , renameFile = \fp1 fp2 -> rethrowFsError fp1 $
         Dir.renameFile (root fp1) (root fp2)
-    , copyDirectoryRecursive = \fp1 fp2 -> rethrowFsError fp1 $ do
-        Cabal.copyDirectoryRecursive
-          (let verbosity = minBound in verbosity)
-          (root fp1)
-          (root fp2)
     , mkFsErrorPath = fsToFsErrorPath mount
     }
   where

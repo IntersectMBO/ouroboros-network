@@ -145,10 +145,6 @@ data HasFS m h = HasFS {
     -- NOTE: only works for files within the same folder.
   , renameFile               :: HasCallStack => FsPath -> FsPath -> m ()
 
-    -- | Copy the directory (which must exist) and its contents from the first
-    -- path to the second path (which must not exist).
-  , copyDirectoryRecursive   :: HasCallStack => FsPath -> FsPath -> m ()
-
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
   }
