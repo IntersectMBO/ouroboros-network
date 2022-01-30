@@ -15,6 +15,7 @@
 {-# LANGUAGE Rank2Types            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -94,17 +95,19 @@ module Ouroboros.Consensus.Ledger.Basics (
   , ShowLedgerState (..)
   ) where
 
-import qualified Codec.Serialise as InMemHD
-import qualified Codec.Serialise.Decoding as InMemHD
-import qualified Codec.Serialise.Encoding as InMemHD
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
+import           Control.Monad (when)
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
+import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.AnchoredSeq (AnchoredSeq)
@@ -214,7 +217,8 @@ class ( -- Requirements on the ledger state itself
       , HeaderHash (l TrackingMK) ~ HeaderHash l
       , NoThunks (LedgerTables l SeqDiffMK)
       , NoThunks          (LedgerTables l ValuesMK)   -- for in-memory store
-      , InMemHD.Serialise (LedgerTables l ValuesMK)   -- for in-memory store
+      , ToCBOR   (LedgerTables l ValuesMK)
+      , FromCBOR (LedgerTables l ValuesMK)
       , StowableLedgerTables l
       ) => IsLedger (l :: LedgerStateKind) where
   -- | Errors that can arise when updating the ledger
@@ -403,11 +407,7 @@ forgetLedgerStateTracking :: TableStuff l => l TrackingMK -> l ValuesMK
 forgetLedgerStateTracking = mapOverLedgerTables valuesTrackingMK
 
 forgetLedgerStateTables :: TableStuff l => l mk -> l EmptyMK
-forgetLedgerStateTables =
-    mapOverLedgerTables f
-  where
-    f :: ApplyMapKind mk k v -> ApplyMapKind EmptyMK k v
-    f _ = ApplyEmptyMK
+forgetLedgerStateTables l = withLedgerTables l emptyLedgerTables
 
 -- | Used only for the dual ledger
 applyDiffsLedgerTables :: TableStuff l => l ValuesMK -> LedgerTables l DiffMK -> l ValuesMK
@@ -478,14 +478,14 @@ diffTrackingMK (ApplyTrackingMK _values diff) = ApplyDiffMK diff
 valuesTrackingMK :: ApplyMapKind TrackingMK k v -> ApplyMapKind ValuesMK k v
 valuesTrackingMK (ApplyTrackingMK values _diff) = ApplyValuesMK values
 
-{-
 instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
-  ApplyEmptyMK    == _               = True
-  ApplyKeysMK   l == ApplyKeysMK   r = l == r
-  ApplyValuesMK l == ApplyValuesMK r = l == r
-  ApplyTrackingMK == _               = True
-  ApplyDiffMK     == _               = True
--}
+  ApplyEmptyMK          == _                     = True
+  ApplyKeysMK   l       == ApplyKeysMK   r       = l == r
+  ApplyValuesMK l       == ApplyValuesMK r       = l == r
+  ApplyTrackingMK l1 l2 == ApplyTrackingMK r1 r2 = l1 == r1 && l2 == r2
+  ApplyDiffMK l         == ApplyDiffMK r         = l == r
+  ApplySeqDiffMK l      == ApplySeqDiffMK r      = l == r
+  ApplyRewoundMK l      == ApplyRewoundMK r      = l == r
 
 instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
   wNoThunks ctxt   = NoThunks.allNoThunks . \case
@@ -498,6 +498,46 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
     ApplyRewoundMK rew      -> [noThunks ctxt rew]
 
   showTypeOf _ = "ApplyMapKind"
+
+instance
+     (Typeable mk, Ord k, ToCBOR k, ToCBOR v, SingI mk)
+  => ToCBOR (ApplyMapKind mk k v) where
+  toCBOR = \case
+      ApplyEmptyMK            -> encodeArityAndTag 0 []
+      ApplyKeysMK ks          -> encodeArityAndTag 1 [toCBOR ks]
+      ApplyValuesMK vs        -> encodeArityAndTag 2 [toCBOR vs]
+      ApplyTrackingMK vs diff -> encodeArityAndTag 3 [toCBOR vs, toCBOR diff]
+      ApplyDiffMK diff        -> encodeArityAndTag 4 [toCBOR diff]
+      ApplySeqDiffMK diffs    -> encodeArityAndTag 5 [toCBOR diffs]
+      ApplyRewoundMK rew      -> encodeArityAndTag 6 [toCBOR rew]
+    where
+      encodeArityAndTag :: Word8 -> [CBOR.Encoding] -> CBOR.Encoding
+      encodeArityAndTag tag xs =
+           CBOR.encodeListLen (1 + toEnum (length xs))
+        <> CBOR.encodeWord8 tag
+
+instance
+     (Typeable mk, Ord k, FromCBOR k, FromCBOR v, SingI mk)
+  => FromCBOR (ApplyMapKind mk k v) where
+  fromCBOR = do
+    case smk of
+      SEmptyMK    -> decodeArityAndTag 0 0 *> (ApplyEmptyMK    <$  pure ())
+      SKeysMK     -> decodeArityAndTag 1 1 *> (ApplyKeysMK     <$> fromCBOR)
+      SValuesMK   -> decodeArityAndTag 2 1 *> (ApplyValuesMK   <$> fromCBOR)
+      STrackingMK -> decodeArityAndTag 3 2 *> (ApplyTrackingMK <$> fromCBOR <*> fromCBOR)
+      SDiffMK     -> decodeArityAndTag 4 1 *> (ApplyDiffMK     <$> fromCBOR)
+      SSeqDiffMK  -> decodeArityAndTag 5 1 *> (ApplySeqDiffMK  <$> fromCBOR)
+      SRewoundMK  -> decodeArityAndTag 6 1 *> (ApplyRewoundMK  <$> fromCBOR)
+    where
+      smk = sMapKind @mk
+
+      decodeArityAndTag :: Int -> Word8 -> CBOR.Decoder s ()
+      decodeArityAndTag len tag = do
+        len' <- CBOR.decodeListLen
+        tag' <- CBOR.decodeWord8
+        when
+          (len /= 1 + len' || tag /= tag')
+          (fail $ "decode @ApplyMapKind " <> show smk)
 
 data instance Sing (mk :: MapKind) :: Type where
   SEmptyMK    :: Sing EmptyMK
@@ -546,13 +586,23 @@ instance Show (Sing (mk :: MapKind)) where
 
 deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
 
-instance InMemHD.Serialise (Sing EmptyMK)    where encode SEmptyMK    = InMemHD.encodeNull; decode = SEmptyMK    <$ InMemHD.decodeNull
-instance InMemHD.Serialise (Sing KeysMK)     where encode SKeysMK     = InMemHD.encodeNull; decode = SKeysMK     <$ InMemHD.decodeNull
-instance InMemHD.Serialise (Sing ValuesMK)   where encode SValuesMK   = InMemHD.encodeNull; decode = SValuesMK   <$ InMemHD.decodeNull
-instance InMemHD.Serialise (Sing TrackingMK) where encode STrackingMK = InMemHD.encodeNull; decode = STrackingMK <$ InMemHD.decodeNull
-instance InMemHD.Serialise (Sing DiffMK)     where encode SDiffMK     = InMemHD.encodeNull; decode = SDiffMK     <$ InMemHD.decodeNull
-instance InMemHD.Serialise (Sing SeqDiffMK)  where encode SSeqDiffMK  = InMemHD.encodeNull; decode = SSeqDiffMK  <$ InMemHD.decodeNull
-instance InMemHD.Serialise (Sing RewoundMK)  where encode SRewoundMK  = InMemHD.encodeNull; decode = SRewoundMK  <$ InMemHD.decodeNull
+-- TODO include a tag, for some self-description
+instance ToCBOR (Sing EmptyMK)    where toCBOR SEmptyMK    = CBOR.encodeNull
+instance ToCBOR (Sing KeysMK)     where toCBOR SKeysMK     = CBOR.encodeNull
+instance ToCBOR (Sing ValuesMK)   where toCBOR SValuesMK   = CBOR.encodeNull
+instance ToCBOR (Sing TrackingMK) where toCBOR STrackingMK = CBOR.encodeNull
+instance ToCBOR (Sing DiffMK)     where toCBOR SDiffMK     = CBOR.encodeNull
+instance ToCBOR (Sing SeqDiffMK)  where toCBOR SSeqDiffMK  = CBOR.encodeNull
+instance ToCBOR (Sing RewoundMK)  where toCBOR SRewoundMK  = CBOR.encodeNull
+
+-- TODO include a tag, for some self-description
+instance FromCBOR (Sing EmptyMK)    where fromCBOR = SEmptyMK    <$ CBOR.decodeNull
+instance FromCBOR (Sing KeysMK)     where fromCBOR = SKeysMK     <$ CBOR.decodeNull
+instance FromCBOR (Sing ValuesMK)   where fromCBOR = SValuesMK   <$ CBOR.decodeNull
+instance FromCBOR (Sing TrackingMK) where fromCBOR = STrackingMK <$ CBOR.decodeNull
+instance FromCBOR (Sing DiffMK)     where fromCBOR = SDiffMK     <$ CBOR.decodeNull
+instance FromCBOR (Sing SeqDiffMK)  where fromCBOR = SSeqDiffMK  <$ CBOR.decodeNull
+instance FromCBOR (Sing RewoundMK)  where fromCBOR = SRewoundMK  <$ CBOR.decodeNull
 
 {-------------------------------------------------------------------------------
   Link block to its ledger

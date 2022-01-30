@@ -51,7 +51,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
-import qualified Codec.Serialise as InMemHD
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
@@ -66,6 +65,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.Block (Point (Point))
@@ -203,6 +203,8 @@ initLedgerDB ::
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
+       , FromCBOR (LedgerTables (ExtLedgerState blk) ValuesMK)
+       , ToCBOR   (LedgerTables (ExtLedgerState blk) ValuesMK)
        , HasCallStack
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
@@ -299,6 +301,8 @@ initFromSnapshot ::
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
+       , FromCBOR (LedgerTables (ExtLedgerState blk) ValuesMK)
+       , ToCBOR   (LedgerTables (ExtLedgerState blk) ValuesMK)
        , HasCallStack
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
@@ -342,7 +346,11 @@ initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI snapshot = do
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
-     (IOLike m, LedgerSupportsProtocol blk)
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , FromCBOR (LedgerTables (ExtLedgerState blk) ValuesMK)
+     , ToCBOR   (LedgerTables (ExtLedgerState blk) ValuesMK)
+     )
   => SomeHasFS m
   -> DiskSnapshot
   -> ExceptT (InitFailure blk) m (LedgerBackingStore m (ExtLedgerState blk))
@@ -361,6 +369,8 @@ restoreBackingStore (SomeHasFS hasFS) snapshot = lift $ do
     store <- HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (zipLedgerTables applyDiff_)
+               toCBOR
+               fromCBOR
                (Left (SomeHasFS hasFS, HD.BackingStorePath loadPath))
     pure (LedgerBackingStore store)
   where
@@ -370,14 +380,17 @@ restoreBackingStore (SomeHasFS hasFS) snapshot = lift $ do
 newBackingStore ::
      ( IOLike m
      , TableStuff l
-     , NoThunks          (LedgerTables l ValuesMK)
-     , InMemHD.Serialise (LedgerTables l ValuesMK)
+     , NoThunks (LedgerTables l ValuesMK)
+     , FromCBOR (LedgerTables l ValuesMK)
+     , ToCBOR   (LedgerTables l ValuesMK)
      )
   => SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
 newBackingStore _someHasFS tables = do
     store <- HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (zipLedgerTables applyDiff_)
+               toCBOR
+               fromCBOR
                (Right (Origin, tables))
     pure (LedgerBackingStore store)
 

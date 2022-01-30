@@ -65,6 +65,8 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
+import           Cardano.Binary (FromCBOR, ToCBOR)
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
@@ -149,6 +151,8 @@ type LgrDbSerialiseConstraints blk =
   , DecodeDisk blk (AnnTip      blk)
   , EncodeDisk blk (ChainDepState (BlockProtocol blk))
   , DecodeDisk blk (ChainDepState (BlockProtocol blk))
+  , FromCBOR (LedgerTables (LedgerState blk) ValuesMK)
+  , ToCBOR   (LedgerTables (LedgerState blk) ValuesMK)
   )
 
 {-------------------------------------------------------------------------------
