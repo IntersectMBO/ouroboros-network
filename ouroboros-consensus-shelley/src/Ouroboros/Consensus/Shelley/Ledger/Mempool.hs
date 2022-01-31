@@ -11,6 +11,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -57,6 +58,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.TxLimits
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
@@ -73,6 +75,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Ledger
                      (ShelleyLedgerConfig (shelleyLedgerGlobals),
                      Ticked1 (TickedShelleyLedgerState, tickedShelleyLedgerState),
                      getPParams)
+import qualified Ouroboros.Consensus.Shelley.Ledger.Ledger as ShelleyLedger
 
 data instance GenTx (ShelleyBlock era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Core.Tx era)
   deriving stock    (Generic)
@@ -224,11 +227,14 @@ applyShelleyTx :: forall era.
        ( TickedLedgerState (ShelleyBlock era) TrackingMK
        , Validated (GenTx (ShelleyBlock era))
        )
-applyShelleyTx cfg wti slot (ShelleyTx _ tx) st = do
+applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
+    let st1 :: TickedLedgerState (ShelleyBlock era) EmptyMK
+        st1 = cnv $ stowLedgerTables $ vnc st0
+
+        innerSt :: SL.NewEpochState era
+        innerSt = tickedShelleyLedgerState st1
+
     (mempoolState', vtx) <-
-
-        -- TODO copy over the values
-
        applyShelleyBasedTx
          (shelleyLedgerGlobals cfg)
          (SL.mkMempoolEnv   innerSt slot)
@@ -236,13 +242,49 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st = do
          wti
          tx
 
-    -- TODO compute differences
+    let st2 :: TickedLedgerState (ShelleyBlock era) EmptyMK
+        st2 = set theLedgerLens mempoolState' st1
 
-    let st' = fudge $ set theLedgerLens mempoolState' st
+        st3 :: TickedLedgerState (ShelleyBlock era) ValuesMK
+        st3 = cnv $ unstowLedgerTables $ vnc st2
 
-    pure (st', mkShelleyValidatedTx vtx)
-  where
-    innerSt = tickedShelleyLedgerState st
+        st4 :: TickedLedgerState (ShelleyBlock era) TrackingMK
+        st4 =
+          overLedgerTablesTicked
+            (zipLedgerTables
+               calculateDifference
+               (projectLedgerTablesTicked st0)
+            )
+            st3
+
+    pure (st4, mkShelleyValidatedTx vtx)
+
+calculateDifference ::
+     Ord k
+  => ApplyMapKind ValuesMK k v
+  -> ApplyMapKind ValuesMK k v
+  -> ApplyMapKind TrackingMK k v
+calculateDifference (ApplyValuesMK before) (ApplyValuesMK after) =
+    ApplyTrackingMK after (HD.differenceUtxoValues before after)
+
+-- TODO flot the stow/unstow logic out of the StowLedgerTables ShelleyBlock
+-- instance and reuse it here instead of jumping through this confusing vnc/cnv
+-- hoop (or instantiate the class for TickedLedgerState too)
+cnv :: LedgerState (ShelleyBlock era) mk -> TickedLedgerState (ShelleyBlock era) mk
+cnv ShelleyLedger.ShelleyLedgerState{..} = TickedShelleyLedgerState {
+      ShelleyLedger.untickedShelleyLedgerTip      = shelleyLedgerTip
+    , ShelleyLedger.tickedShelleyLedgerTransition = shelleyLedgerTransition
+    , ShelleyLedger.tickedShelleyLedgerState      = shelleyLedgerState
+    , ShelleyLedger.tickedShelleyLedgerTables     = shelleyLedgerTables
+    }
+
+vnc :: TickedLedgerState (ShelleyBlock era) mk -> LedgerState (ShelleyBlock era) mk
+vnc TickedShelleyLedgerState{..} = ShelleyLedger.ShelleyLedgerState {
+      shelleyLedgerTip        = untickedShelleyLedgerTip
+    , shelleyLedgerTransition = tickedShelleyLedgerTransition
+    , shelleyLedgerState      = tickedShelleyLedgerState
+    , shelleyLedgerTables     = tickedShelleyLedgerTables
+    }
 
 reapplyShelleyTx ::
      ShelleyBasedEra era
@@ -251,27 +293,29 @@ reapplyShelleyTx ::
   -> Validated (GenTx (ShelleyBlock era))
   -> TickedLedgerState (ShelleyBlock era) ValuesMK
   -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era) TrackingMK)
-reapplyShelleyTx cfg slot vgtx st = do
+reapplyShelleyTx cfg slot vgtx st0 = do
+    let st1     = cnv $ stowLedgerTables $ vnc st0
+        innerSt = tickedShelleyLedgerState st1
+
     mempoolState' <-
-
-        -- TODO copy over the values
-
         SL.reapplyTx
           (shelleyLedgerGlobals cfg)
           (SL.mkMempoolEnv   innerSt slot)
           (SL.mkMempoolState innerSt)
           vtx
 
-    -- TODO compute differences
+    let st2 =
+            overLedgerTablesTicked
+              (zipLedgerTables
+                 calculateDifference
+                 (projectLedgerTablesTicked st0)
+              )
+          $ cnv $ unstowLedgerTables $ vnc
+          $ set theLedgerLens mempoolState' st1
 
-    pure $ fudge $ set theLedgerLens mempoolState' st
+    pure st2
   where
     ShelleyValidatedTx _txid vtx = vgtx
-
-    innerSt = tickedShelleyLedgerState st
-
-fudge :: l ValuesMK -> l TrackingMK
-fudge = error "UTxO HD apply Shelley tx"
 
 -- | The lens combinator
 set ::
