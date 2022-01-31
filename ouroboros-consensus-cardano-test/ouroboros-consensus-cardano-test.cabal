@@ -33,9 +33,11 @@ library
                        Test.ThreadNet.TxGen.Mary
 
   build-depends:       base
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-slotting
+                     , cborg
                      , containers
                      , compact-map
                      , mtl
