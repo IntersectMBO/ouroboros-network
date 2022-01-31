@@ -76,6 +76,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
@@ -330,13 +331,33 @@ instance
 projectUtxoSL ::
      SL.NewEpochState era
   -> ApplyMapKind ValuesMK (SL.TxIn (EraCrypto era)) (Core.TxOut era)
-projectUtxoSL = undefined
+projectUtxoSL =
+      ApplyValuesMK
+    . HD.UtxoValues
+    . SL.unUTxO
+    . SL._utxo
+    . SL._utxoState
+    . SL.esLState
+    . SL.nesEs
 
 withUtxoSL ::
      SL.NewEpochState era
   -> ApplyMapKind ValuesMK (SL.TxIn (EraCrypto era)) (Core.TxOut era)
   -> SL.NewEpochState era
-withUtxoSL = undefined
+withUtxoSL nes (ApplyValuesMK (HD.UtxoValues m)) =
+    nes {
+        SL.nesEs = es {
+            SL.esLState = us {
+                SL._utxoState = utxo {
+                    SL._utxo = SL.UTxO m
+                  }
+              }
+          }
+      }
+  where
+    es   = SL.nesEs nes
+    us   = SL.esLState es
+    utxo = SL._utxoState us
 
 {-------------------------------------------------------------------------------
   GetTip
