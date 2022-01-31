@@ -20,8 +20,11 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
 
 import           Codec.Serialise
 import           Control.Monad.Except
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
@@ -32,6 +35,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
+import           Ouroboros.Consensus.Util.CBOR.Simple
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
@@ -122,30 +126,47 @@ instance ShowLedgerState (LedgerState ByronSpecBlock) where
   showsLedgerState _sing = shows
 
 instance TableStuff (LedgerState ByronSpecBlock) where
-  newtype LedgerTables (LedgerState ByronSpecBlock) mk = NoByronSpecLedgerTables (SMapKind mk)
+  data LedgerTables (LedgerState ByronSpecBlock) mk = NoByronSpecLedgerTables
     deriving (Generic, Eq, Show, NoThunks)
 
-  -- TODO methods
+  projectLedgerTables _st                     = NoByronSpecLedgerTables
+  withLedgerTables st NoByronSpecLedgerTables = convertMapKind st
+
+  pureLedgerTables _f                                                 = NoByronSpecLedgerTables
+  mapLedgerTables  _f                         NoByronSpecLedgerTables = NoByronSpecLedgerTables
+  zipLedgerTables  _f NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
 
 instance TickedTableStuff (LedgerState ByronSpecBlock) where
+  projectLedgerTablesTicked _st                     = NoByronSpecLedgerTables
+  withLedgerTablesTicked st NoByronSpecLedgerTables = convertMapKind st
 
-  -- TODO methods
+instance InMemory (LedgerState ByronSpecBlock) where
+  convertMapKind ByronSpecLedgerState{..} = ByronSpecLedgerState{..}
+
+instance InMemory (Ticked1 (LedgerState ByronSpecBlock)) where
+  convertMapKind TickedByronSpecLedgerState{..} = TickedByronSpecLedgerState{..}
 
 instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
   showsLedgerState _sing = shows
 
-instance TableStuff (Ticked1 (LedgerState ByronSpecBlock)) where
-  newtype LedgerTables (Ticked1 (LedgerState ByronSpecBlock)) mk = TickedNoByronSpecLedgerTables (SMapKind mk)
-    deriving (Generic, Eq, Show, NoThunks)
+instance StowableLedgerTables (LedgerState ByronSpecBlock) where
+  stowLedgerTables   = convertMapKind
+  unstowLedgerTables = convertMapKind
 
-  -- TODO methods
+instance Typeable mk => ToCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
+  toCBOR NoByronSpecLedgerTables = versionZeroProductToCBOR []
 
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState ByronSpecBlock))) where
-  showsLedgerState _sing = shows
+instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
+  fromCBOR =
+        versionZeroProductFromCBOR "LedgerTables ByronSpec" 0
+      $ pure NoByronSpecLedgerTables
 
 {-------------------------------------------------------------------------------
   Applying blocks
 -------------------------------------------------------------------------------}
+
+instance PreApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
+  getBlockKeySets _ = emptyLedgerTables
 
 instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
   applyBlockLedgerResult cfg block (TickedByronSpecLedgerState _tip state) =

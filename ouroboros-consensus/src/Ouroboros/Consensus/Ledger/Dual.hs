@@ -708,7 +708,7 @@ instance (Typeable m, Typeable a)
 
 type instance ApplyTxErr (DualBlock m a) = DualGenTxErr m a
 
-instance (Eq (Ticked1 (LedgerState (DualBlock m a)) ValuesMK), Bridge m a) => LedgerSupportsMempool (DualBlock m a) where
+instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
   applyTx DualLedgerConfig{..}
           wti
           slot
