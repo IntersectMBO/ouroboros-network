@@ -10,6 +10,8 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -45,14 +47,16 @@ import           Data.SOP.Strict (NP (..), NS (..), type (-.->), unComp,
 import qualified Data.SOP.Strict as SOP
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
+import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import qualified Ouroboros.Consensus.Util.SOP as SOP
 
@@ -78,6 +82,7 @@ import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node
+import           Ouroboros.Consensus.Shelley.ShelleyHFC (ShelleyTxOut (..))
 
 import           Ouroboros.Consensus.Cardano.CanHardFork
                      (ShelleyPartialLedgerConfig (..), forecastAcrossShelley,
@@ -154,13 +159,20 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslateEra       era2 SL.NewEpochState
   , SL.TranslateEra       era2 SL.ShelleyGenesis
   , SL.TranslateEra       era2 WrapTx
+  , SL.TranslateEra       era2 TxOutWrapper
 
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
+  , SL.TranslationError   era2 TxOutWrapper      ~ Void
 
   , SL.TranslationContext era1 ~ ()
 
   , Core.Compactible (Core.Value era1)
+
+    -- TODO need to actually define these instances here instead of putting them here
+  , FromCBOR (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK)
+  , ToCBOR   (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK)
+  , StowableLedgerTables (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)))
   )
 
 instance ShelleyBasedHardForkConstraints era1 era2
@@ -247,6 +259,98 @@ instance ShelleyBasedHardForkConstraints era1 era2
   TableStuff
 -------------------------------------------------------------------------------}
 
+projectLedgerTablesHelper :: forall era1 era2 fmk mk.
+     ShelleyBasedHardForkConstraints era1 era2
+  => (forall x.
+         TickedTableStuff (LedgerState x)
+      => fmk x -> LedgerTables (LedgerState x) mk
+     )
+  -> HardForkState fmk (ShelleyBasedHardForkEras era1 era2)
+  -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk
+projectLedgerTablesHelper prj (HardForkState tele) =
+      SOP.hcollapse
+    $ SOP.hcimap
+        (Proxy @(ShelleyBasedEra' (EraCrypto era1)))
+        projectOne
+        (Telescope.tip (consolidateShelleyTele tele))
+  where
+    projectOne :: forall era.
+         ShelleyBasedEra' (EraCrypto era1) era
+      => SOP.Index '[era1, era2]                              era
+         -- ^ the current era of the ledger state we're projecting from
+      -> (HFC.Current fmk :.: ShelleyBlock) era
+         -- ^ the ledger state we're projecting from
+      -> SOP.K (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk) era
+    projectOne idx (Comp current) =
+        SOP.K $ ShelleyBasedHardForkLedgerTables $ inj appliedMK
+      where
+        ShelleyLedgerTables appliedMK =
+            prj $ HFC.currentState current
+
+        inj ::
+             ApplyMapKind mk (SL.TxIn (EraCrypto era1)) (Core.TxOut era)
+          -> ApplyMapKind mk (SL.TxIn (EraCrypto era1)) (ShelleyTxOut '[era1, era2])
+        inj = mapValuesAppliedMK (ShelleyTxOut . SOP.injectNS idx . TxOutWrapper)
+
+-- Same note regarding the @TickedTableStuff x@ constraint as
+-- 'projectLedgerTablesHelper'
+withLedgerTablesHelper ::
+  forall era1 era2 mk fany fmk.
+     ShelleyBasedHardForkConstraints era1 era2
+  => (forall x.
+         TickedTableStuff (LedgerState x)
+      => fany x -> LedgerTables (LedgerState x) mk -> fmk x
+     )
+  -> HardForkState fany (ShelleyBasedHardForkEras era1 era2)
+  -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk
+  -> HardForkState fmk (ShelleyBasedHardForkEras era1 era2)
+withLedgerTablesHelper with (HardForkState tele) (ShelleyBasedHardForkLedgerTables appliedMK) =
+      HardForkState
+    $ unconsolidateShelleyTele
+    $ SOP.hap
+        updateOne
+        (consolidateShelleyTele tele)
+  where
+    -- how to update the ledger table of each possible individual era
+    updateOne ::
+      NP
+        (     HFC.Current fany :.: ShelleyBlock
+         -.-> HFC.Current fmk  :.: ShelleyBlock
+        )
+        '[era1, era2]
+    updateOne =
+        ($ translations)
+      $ SOP.hcmap (Proxy @(ShelleyBasedEra' (EraCrypto era1)))
+      $ \translate -> SOP.fn $ \(Comp current) ->
+        let HFC.Current{HFC.currentState = innerSt} = current
+            newInnerSt =
+                with innerSt
+              $ ShelleyLedgerTables
+              $ mapValuesAppliedMK
+                  (unTxOutWrapper . SOP.apFn translate . SOP.K . unShelleyTxOut)
+                  appliedMK
+        in Comp $ current{HFC.currentState = newInnerSt}
+
+    -- the composed translations for each possible era; see
+    -- 'composeTxOutTranslationPairs' to understand why this is partial but
+    -- is safe in the absence of Consensus bugs
+    translations ::
+      NP
+        (     SOP.K (NS TxOutWrapper '[era1, era2])
+         -.-> TxOutWrapper
+        )
+        '[era1, era2]
+    translations =
+         SOP.fn (\case
+             SOP.K (Z txo) -> txo
+             _             -> error "bad ShelleyBasedHardForkBlock txout translation"
+         )
+      :* SOP.fn (\case
+             SOP.K (Z txo)     -> error "ShelleyBasedHardForkBlock txout translation" txo   -- need a new class for every Shelley era but the first...
+             SOP.K (S (Z txo)) -> txo
+         )
+      :* Nil
+
 -- Note that this is a HardForkBlock instance, but it's not compositional. This
 -- is because the LedgerTables relies on knowledge specific to Shelley and we
 -- have so far not found a pleasant way to express that compositionally.
@@ -257,90 +361,25 @@ instance ShelleyBasedHardForkConstraints era1 era2
             ApplyMapKind
               mk
               (SL.TxIn (EraCrypto era1))
-              (NS TxOutWrapper '[era1, era2])
+              (ShelleyTxOut '[era1, era2])
       }
     deriving (Generic, NoThunks)
 
-  projectLedgerTables :: forall mk.
-                     LedgerState (ShelleyBasedHardForkBlock era1 era2)  mk
-    -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk
-  projectLedgerTables (HardForkLedgerState (HardForkState tele)) =
-        SOP.hcollapse
-      $ SOP.hcimap
-          (Proxy @(ShelleyBasedEra' (EraCrypto era1)))
-          projectOne
-          (Telescope.tip (consolidateShelleyTele tele))
-    where
-      projectOne :: forall era.
-           ShelleyBasedEra' (EraCrypto era1) era
-        => SOP.Index '[era1, era2]                              era
-           -- ^ the current era of the ledger state we're projecting from
-        -> (HFC.Current (Flip LedgerState mk) :.: ShelleyBlock) era
-           -- ^ the ledger state we're projecting from
-        -> SOP.K (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk) era
-      projectOne idx (Comp current) =
-          SOP.K $ ShelleyBasedHardForkLedgerTables $ inj appliedMK
-        where
-          ShelleyLedgerTables appliedMK =
-              projectLedgerTables $ unFlip $ HFC.currentState current
+  projectLedgerTables (HardForkLedgerState hfstate) =
+      projectLedgerTablesHelper
+        (projectLedgerTables . unFlip)
+        hfstate
 
-          inj ::
-               ApplyMapKind mk (SL.TxIn (EraCrypto era1)) (Core.TxOut era)
-            -> ApplyMapKind mk (SL.TxIn (EraCrypto era1)) (NS TxOutWrapper '[era1, era2])
-          inj = mapValuesAppliedMK (SOP.injectNS idx . TxOutWrapper)
-  withLedgerTables ::
-    forall any mk.
-       HasCallStack
-    => LedgerState (ShelleyBasedHardForkBlock era1 era2) any
-    -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk
-    -> LedgerState (ShelleyBasedHardForkBlock era1 era2) mk
-  withLedgerTables (HardForkLedgerState (HardForkState tele)) (ShelleyBasedHardForkLedgerTables appliedMK) =
+  withLedgerTables (HardForkLedgerState hfstate) tables =
         HardForkLedgerState
-      $ HardForkState
-      $ unconsolidateShelleyTele
-      $ SOP.hap
-          updateOne
-          (consolidateShelleyTele tele)
-    where
-      -- how to update the ledger table of each possible individual era
-      updateOne ::
-        NP
-          (     HFC.Current (Flip LedgerState any) :.: ShelleyBlock
-           -.-> HFC.Current (Flip LedgerState mk)  :.: ShelleyBlock
-          )
-          '[era1, era2]
-      updateOne =
-          ($ translations)
-        $ SOP.hcmap (Proxy @(ShelleyBasedEra' (EraCrypto era1)))
-        $ \translate -> SOP.fn $ \(Comp current) ->
-          let HFC.Current{HFC.currentState = Flip innerSt} = current
-              newInnerSt =
-                  withLedgerTables innerSt
-                $ ShelleyLedgerTables
-                $ mapValuesAppliedMK
-                    (unTxOutWrapper . SOP.apFn translate . SOP.K)
-                    appliedMK
-          in Comp $ current{HFC.currentState = Flip newInnerSt}
+      $ withLedgerTablesHelper
+          (\(Flip st) tables' -> Flip $ withLedgerTables st tables')
+          hfstate
+          tables
 
-      -- the composed translations for each possible era; see
-      -- 'composeTxOutTranslationPairs' to understand why this is partial but
-      -- is safe in the absence of Consensus bugs
-      translations ::
-        NP
-          (     SOP.K (NS TxOutWrapper '[era1, era2])
-           -.-> TxOutWrapper
-          )
-          '[era1, era2]
-      translations =
-           SOP.fn (\case
-               SOP.K (Z txo) -> txo
-               _             -> error "bad ShelleyBasedHardForkBlock txout translation"
-           )
-        :* SOP.fn (\case
-               SOP.K (Z txo)     -> error "ShelleyBasedHardForkBlock txout translation" txo   -- need a new class for every Shelley era but the first...
-               SOP.K (S (Z txo)) -> txo
-           )
-        :* Nil
+  pureLedgerTables f                                                                           = ShelleyBasedHardForkLedgerTables f
+  mapLedgerTables  f                                      (ShelleyBasedHardForkLedgerTables x) = ShelleyBasedHardForkLedgerTables (f x)
+  zipLedgerTables  f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables (f l r)
 
 deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk)
 
@@ -350,7 +389,21 @@ instance ShowLedgerState (LedgerTables (LedgerState (ShelleyBasedHardForkBlock e
 instance ShelleyBasedHardForkConstraints era1 era2
       => TickedTableStuff (LedgerState (ShelleyBasedHardForkBlock era1 era2)) where
 
-  -- TODO methods
+  projectLedgerTablesTicked st =
+      projectLedgerTablesHelper
+        (\(FlipTickedLedgerState st') -> projectLedgerTablesTicked st')
+        (tickedHardForkLedgerStatePerEra st)
+
+  withLedgerTablesTicked TickedHardForkLedgerState{..} tables =
+      TickedHardForkLedgerState {
+          tickedHardForkLedgerStateTransition = tickedHardForkLedgerStateTransition
+        , tickedHardForkLedgerStatePerEra     =
+            withLedgerTablesHelper
+              (\(FlipTickedLedgerState st) tables' ->
+                 FlipTickedLedgerState $ withLedgerTablesTicked st tables')
+              tickedHardForkLedgerStatePerEra
+              tables
+        }
 
 -- | Auxiliary alias for convenenience
 class    (ShelleyBasedEra era, SL.Crypto era ~ c) => ShelleyBasedEra' c era
@@ -387,15 +440,17 @@ instance IsShelleyTele xs => IsShelleyTele (x ': xs) where
     TZ (Comp x)       -> TZ x
     TS (Comp p) inner -> TS p (unconsolidateShelleyTele inner)
 
-instance ShelleyBasedHardForkConstraints era1 era2
-      => TableStuff (Ticked1 (LedgerState (ShelleyBasedHardForkBlock era1 era2))) where
-  newtype LedgerTables (Ticked1 (LedgerState (ShelleyBasedHardForkBlock era1 era2))) mk =
-    TickedShelleyBasedHardForkLedgerTables (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk)
+instance
+     ShelleyBasedHardForkConstraints era1 era2
+  => ToCBOR (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK) where
+  toCBOR (ShelleyBasedHardForkLedgerTables utxo) = versionZeroProductToCBOR [toCBOR utxo]
 
-  -- TODO methods
-
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (ShelleyBasedHardForkBlock era1 era2)))) where
-  showsLedgerState = error "showsLedgerState @Ticked ShelleyBasedHardForkBlock"
+instance
+     ShelleyBasedHardForkConstraints era1 era2
+  => FromCBOR (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK) where
+  fromCBOR =
+        versionZeroProductFromCBOR "ShelleyBasedHardForkLedgerTables" 1
+      $ ShelleyBasedHardForkLedgerTables <$> fromCBOR
 
 {-------------------------------------------------------------------------------
   Protocol info

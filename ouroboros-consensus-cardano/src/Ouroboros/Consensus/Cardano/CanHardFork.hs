@@ -48,14 +48,11 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , LedgerTables (..)
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Monad
 import           Control.Monad.Except (runExcept, throwError)
 import           Data.Kind (Type)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
-import qualified Data.Monoid as Monoid
 import           Data.Proxy
 import           Data.SOP.Strict (NP (..), NS (..), type (-.->), unComp,
                      (:.:) (..))
@@ -361,60 +358,7 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
   TableStuff
 -------------------------------------------------------------------------------}
 
--- | We use this type for clarity, and because we don't want to declare
--- 'FromCBOR' and 'ToCBOR' for 'NS'; serializations of sum involves design
--- decisions that cannot be captured by an all-purpose 'NS' instance
-newtype CardanoTxOut c =
-    CardanoTxOut {unCardanoTxOut :: NS TxOutWrapper (ShelleyBasedEras c)}
-  deriving (Eq, Generic, NoThunks)
-
--- unline SOP.nsToIndex, this is not restricted to the interval [0, 24)
-idxLength :: SOP.Index xs x -> Int
-idxLength = \case
-    SOP.IZ     -> 0
-    SOP.IS idx -> 1 + idxLength idx
-
-instance CardanoHardForkConstraints c => ToCBOR (CardanoTxOut c) where
-  toCBOR (CardanoTxOut x) =
-        SOP.hcollapse
-      $ SOP.hcimap (Proxy @(CardanoShelleyBasedEra c)) each x
-    where
-      each ::
-           CardanoShelleyBasedEra c x
-        => SOP.Index (ShelleyBasedEras c) x
-        -> TxOutWrapper x
-        -> SOP.K CBOR.Encoding x
-      each idx (TxOutWrapper txout) = SOP.K $
-           CBOR.encodeListLen 2 <> CBOR.encodeTag (toEnum (idxLength idx))
-        <> toCBOR txout
-
-instance CardanoHardForkConstraints c => FromCBOR (CardanoTxOut c) where
-  fromCBOR = do
-      CBOR.decodeListLenOf 2
-      tag <- CBOR.decodeTag
-      let aDecoder =
-              mconcat
-            $ SOP.hcollapse
-            $ SOP.hcmap
-                (Proxy @(CardanoShelleyBasedEra c))
-                each
-                (SOP.indices @(ShelleyBasedEras c))
-      case Monoid.getFirst $ aDecoder tag of
-        Nothing -> error $ "FromCBOR CardanoTxOut, unknown tag " <> show tag
-        Just x  -> unADecoder x
-    where
-      each ::
-           CardanoShelleyBasedEra c x
-        => SOP.Index (ShelleyBasedEras c) x
-        -> SOP.K (Word -> Monoid.First (ADecoder c)) x
-      each idx = SOP.K $ \w -> Monoid.First $
-        if w /= toEnum (idxLength idx) then Nothing else
-        Just
-          $ ADecoder
-          $ (CardanoTxOut . SOP.injectNS idx . TxOutWrapper) <$> fromCBOR
-
-newtype ADecoder c =
-  ADecoder {unADecoder :: forall s. CBOR.Decoder s (CardanoTxOut c)}
+type CardanoTxOut c = ShelleyTxOut (ShelleyBasedEras c)
 
 -- We reuse this for both TableStuff and TickedTableStuff instances, so the
 -- @TickedTableStuff x@ constraint here is excessive in the TableStuff case.
@@ -460,7 +404,7 @@ projectLedgerTablesHelper prjLT (HardForkState st) =
         inj ::
              ApplyMapKind mk (SL.TxIn c) (Core.TxOut era)
           -> ApplyMapKind mk (SL.TxIn c) (CardanoTxOut c)
-        inj = mapValuesAppliedMK (CardanoTxOut . SOP.injectNS idx . TxOutWrapper)
+        inj = mapValuesAppliedMK (ShelleyTxOut . SOP.injectNS idx . TxOutWrapper)
 
 -- Same note regarding the @TickedTableStuff x@ constraint as
 -- 'projectLedgerTablesHelper'
@@ -524,7 +468,7 @@ withLedgerTablesHelper withLT (HardForkState st) (CardanoLedgerTables appliedMK)
         (ShelleyBasedEras c)
     translations =
         SOP.hmap
-          (\f -> SOP.fn $ \(SOP.K (CardanoTxOut x)) -> f `SOP.apFn` SOP.K x)
+          (\f -> SOP.fn $ \(SOP.K (ShelleyTxOut x)) -> f `SOP.apFn` SOP.K x)
       $ composeTxOutTranslationPairs translateTxOut
 
 -- Note that this is a HardForkBlock instance, but it's not compositional. This
@@ -653,12 +597,10 @@ instance IsShelleyTele xs => IsShelleyTele (x ': xs) where
     TS (Comp p) inner -> TS p (unconsolidateShelleyTele inner)
 
 instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoBlock c)) where
-
   projectLedgerTablesTicked st =
       projectLedgerTablesHelper
         (\(FlipTickedLedgerState st') -> projectLedgerTablesTicked st')
         (tickedHardForkLedgerStatePerEra st)
-
   withLedgerTablesTicked TickedHardForkLedgerState{..} tables =
       TickedHardForkLedgerState {
           tickedHardForkLedgerStateTransition = tickedHardForkLedgerStateTransition
@@ -669,6 +611,37 @@ instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoB
               tickedHardForkLedgerStatePerEra
               tables
         }
+
+class    StowableLedgerTables (LedgerState a) => Helper a
+instance StowableLedgerTables (LedgerState a) => Helper a
+
+instance
+     CardanoHardForkConstraints c
+  => StowableLedgerTables (LedgerState (CardanoBlock c)) where
+  stowLedgerTables st =
+      withLedgerTables
+        (HardForkLedgerState $ HardForkState tele')
+        emptyLedgerTables
+    where
+      HardForkLedgerState (HardForkState tele) = st
+
+      tele' =
+        SOP.hcmap
+          (Proxy @Helper)
+          (\current -> current{currentState = Flip $ stowLedgerTables $ unFlip $ currentState current})
+          tele
+  unstowLedgerTables st =
+      withLedgerTables
+        (HardForkLedgerState $ HardForkState tele')
+        emptyLedgerTables
+    where
+      HardForkLedgerState (HardForkState tele) = st
+
+      tele' =
+        SOP.hcmap
+          (Proxy @Helper)
+          (\current -> current{currentState = Flip $ unstowLedgerTables $ unFlip $ currentState current})
+          tele
 
 instance
      CardanoHardForkConstraints c
