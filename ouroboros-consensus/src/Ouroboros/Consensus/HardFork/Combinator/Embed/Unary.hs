@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -7,12 +6,10 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 
@@ -317,7 +314,7 @@ instance Isomorphic TopLevelConfig where
             hardForkConsensusConfigK      = protocolSecurityParam cfg
           , hardForkConsensusConfigShape  = History.singletonShape eraParams
           , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
-                 WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @blk) cfg)
+                 WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @(BlockProtocol blk)) cfg)
               :* Nil
           }
 
