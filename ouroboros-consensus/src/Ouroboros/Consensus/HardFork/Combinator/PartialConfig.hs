@@ -49,6 +49,20 @@ class ( ConsensusProtocol p
                                   -> PartialConsensusConfig p -> ConsensusConfig p
   completeConsensusConfig _ _ = id
 
+  -- | Construct partial consensus config from full consensus config
+  --
+  -- NOTE: This is basically just losing 'EpochInfo', but that is constant
+  -- anyway when we are dealing with a single era.
+  toPartialConsensusConfig :: proxy p
+                           -> ConsensusConfig p
+                           -> PartialConsensusConfig p
+  default toPartialConsensusConfig
+    :: (PartialConsensusConfig p ~ ConsensusConfig p)
+    => proxy p
+    -> ConsensusConfig p
+    -> PartialConsensusConfig p
+  toPartialConsensusConfig _ = id
+
 -- | Partial ledger config
 class ( UpdateLedger blk
       , NoThunks (PartialLedgerConfig blk)
