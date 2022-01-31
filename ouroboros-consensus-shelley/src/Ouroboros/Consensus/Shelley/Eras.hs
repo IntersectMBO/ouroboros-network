@@ -172,6 +172,8 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (Core.TxOut era)
       , ToCBOR   (Core.TxOut era)
 
+      , Eq       (TxOutWrapper era)
+      , NoThunks (TxOutWrapper era)
       ) => ShelleyBasedEra era where
 
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
