@@ -1,5 +1,8 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -23,7 +26,10 @@ module Ouroboros.Consensus.Mempool.Impl (
   , openMempoolWithoutSyncThread
   ) where
 
+import qualified Control.Exception as Exn
+import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)  -- TODO invariant checking?
 import           Control.Monad.Except
+import qualified Data.Set as Set
 import           Data.Typeable
 
 import           Control.Tracer
@@ -40,6 +46,7 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
+import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -97,18 +104,20 @@ mkMempool
      )
   => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool mpEnv = Mempool
-    { tryAddTxs      = implTryAddTxs istate cfg txSize trcr
-    , removeTxs      = \txs -> do
-        mTrace <- atomically $ do
-          is <- readTVar istate
-          ls <- getCurrentLedgerState ldgr
-          let p = pureRemoveTxs cfg co txs is ls
-          runRemoveTxs istate p
-        whenJust mTrace (traceWith trcr)
+    { tryAddTxs      = implTryAddTxs mpEnv
+    , removeTxs      = \txids -> getStatePair mpEnv txids [] >>= \case
+        (_is, Nothing) -> pure ()
+        (is,  Just ls) -> do
+          mTrace <- atomically $ do
+            let p = pureRemoveTxs cfg co txids is ls
+            runRemoveTxs istate p
+          whenJust mTrace (traceWith trcr)
     , syncWithLedger = implSyncWithLedger mpEnv
-    , getSnapshot    = implSnapshotFromIS <$> readTVar istate
-    , getSnapshotFor = \fls -> pureGetSnapshotFor cfg fls co <$> readTVar istate
-    , getCapacity    = isCapacity <$> readTVar istate
+    , getSnapshot    = implSnapshotFromIS <$> readTMVar istate
+    , getSnapshotFor = \fls ->
+            pureGetSnapshotFor cfg (fls `withLedgerTablesFLS` emptyLedgerTables) co
+        <$> readTMVar istate   -- TODO this emptyLedgerTables is a stub!
+    , getCapacity    = isCapacity <$> readTMVar istate
     , getTxSize      = txSize
     , zeroIdx        = zeroTicketNo
     }
@@ -116,13 +125,14 @@ mkMempool mpEnv = Mempool
                    , mpEnvLedgerCfg = cfg
                    , mpEnvTxSize = txSize
                    , mpEnvTracer = trcr
-                   , mpEnvLedger = ldgr
                    , mpEnvCapacityOverride = co
                    } = mpEnv
 
 -- | Abstract interface needed to run a Mempool.
 data LedgerInterface m blk = LedgerInterface
-    { getCurrentLedgerState :: STM m (LedgerState blk EmptyMK)
+    { getCurrentLedgerState       :: STM m (LedgerState blk EmptyMK)
+    , getCurrentLedgerStateForTxs ::
+        forall a. m (a, [GenTx blk]) -> m (a, LedgerState blk ValuesMK)
     }
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
@@ -130,7 +140,8 @@ chainDBLedgerInterface ::
      (IOLike m, IsLedger (LedgerState blk))
   => ChainDB m blk -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
-    { getCurrentLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
+    { getCurrentLedgerState       = ledgerState <$> ChainDB.getCurrentLedger chainDB
+    , getCurrentLedgerStateForTxs = undefined  -- TODO ugh, ChainDB doesn't offer LgrDB access
     }
 
 {-------------------------------------------------------------------------------
@@ -143,14 +154,14 @@ chainDBLedgerInterface chainDB = LedgerInterface
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger           :: LedgerInterface m blk
     , mpEnvLedgerCfg        :: LedgerConfig blk
-    , mpEnvStateVar         :: StrictTVar m (InternalState blk)
+    , mpEnvStateVar         :: StrictTMVar m (InternalState blk)
     , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
     , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
     , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
     }
 
 initMempoolEnv :: ( IOLike m
-                  , NoThunks (GenTxId blk)
+--                  , NoThunks (GenTxId blk)   -- TODO how to use this with the TMVar?
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
                   )
@@ -163,7 +174,7 @@ initMempoolEnv :: ( IOLike m
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg (ForgeInUnknownSlot st)
-    isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
+    isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
@@ -205,6 +216,68 @@ forkSyncStateOnTipPointChange registry menv =
           ledgerTipPoint (Proxy @blk)
       <$> getCurrentLedgerState (mpEnvLedger menv)
 
+
+
+-- | Add a list of transactions (oldest to newest) by interpreting a 'TryAddTxs'
+-- from 'pureTryAddTxs'.
+--
+-- This function returns two lists: the transactions that were added or
+-- rejected, and the transactions that could not yet be added, because the
+-- Mempool capacity was reached. See 'addTxs' for a function that blocks in
+-- case the Mempool capacity is reached.
+--
+-- Transactions are added one by one, updating the Mempool each time one was
+-- added successfully.
+--
+-- See the necessary invariants on the Haddock for 'API.tryAddTxs'.
+--
+-- This function does not sync the Mempool contents with the ledger state in
+-- case the latter changes, it relies on the background thread to do that.
+--
+-- INVARIANT: The code needs that read and writes on the state are coupled
+-- together or inconsistencies will arise. To ensure that STM transactions are
+-- short, each iteration of the helper function is a separate STM transaction.
+implTryAddTxs
+  :: forall m blk.
+     ( IOLike m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     , ValidateEnvelope blk
+     )
+  => MempoolEnv m blk
+  -> WhetherToIntervene
+  -> [GenTx blk]
+  -> m ([MempoolAddTxResult blk], [GenTx blk])
+implTryAddTxs mpEnv wti =
+    go []
+  where
+    MempoolEnv {
+        mpEnvCapacityOverride = capacityOverride
+      , mpEnvLedgerCfg        = cfg
+      , mpEnvStateVar         = istate
+      , mpEnvTracer           = trcr
+      , mpEnvTxSize           = txSize
+      } = mpEnv
+
+    -- TODO batch the txs
+    go acc = \case
+      []     -> pure (reverse acc, [])
+      tx:txs -> do
+        getStatePair mpEnv [] [tx] >>= \case
+          (_is0, Nothing) -> error "impossible! implTryAddTxs"
+          (is0,  Just ls) -> do
+            let p@(NewSyncedState is1 _snapshot mTrace) =
+                  pureSyncWithLedger is0 ls cfg capacityOverride
+            whenJust mTrace (traceWith trcr)
+            case pureTryAddTxs cfg txSize wti tx is1 of
+              NoSpaceLeft             -> do
+                void $ atomically $ runSyncWithLedger istate p
+                pure (reverse acc, tx:txs)
+              TryAddTxs mbIs2 result ev -> do
+                whenJust mbIs2 (atomically . putTMVar istate)
+                traceWith trcr ev
+                go (result:acc) txs
+
 implSyncWithLedger ::
      forall m blk. (
        IOLike m
@@ -214,18 +287,75 @@ implSyncWithLedger ::
      )
   => MempoolEnv m blk
   -> m (MempoolSnapshot blk TicketNo)
-implSyncWithLedger menv = do
-  (mTrace, mp) <- atomically $ do
-    is <- readTVar istate
-    ls <- getCurrentLedgerState ldgrInterface
-    let p = pureSyncWithLedger is ls cfg co
-    runSyncWithLedger istate p
-  whenJust mTrace (traceWith trcr)
-  return mp
+implSyncWithLedger mpEnv = getStatePair mpEnv [] [] >>= \case
+    (is, Nothing) -> pure (implSnapshotFromIS is)
+    (is, Just ls) -> do
+      (_is', mTrace, snapshot) <- atomically $ do
+        let p = pureSyncWithLedger is ls cfg capacityOverride
+        runSyncWithLedger istate p
+      whenJust mTrace (traceWith trcr)
+      return snapshot
   where
-    MempoolEnv { mpEnvStateVar = istate
-               , mpEnvLedger = ldgrInterface
-               , mpEnvTracer = trcr
-               , mpEnvLedgerCfg = cfg
-               , mpEnvCapacityOverride = co
-               } = menv
+    MempoolEnv { mpEnvStateVar         = istate
+               , mpEnvTracer           = trcr
+               , mpEnvLedgerCfg        = cfg
+               , mpEnvCapacityOverride = capacityOverride
+               } = mpEnv
+
+-- | Get the current state pair and the current ledger state loaded with all the
+-- necessary 'ValuesMK'
+--
+-- No ledger state is returned (ie 'Nothing') if there are no txs being removed,
+-- added, or revalidated.
+--
+-- NOTE: The ledger state is not necessarily the anchor of the 'InternalState'!
+getStatePair :: forall m blk.
+     ( IOLike m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     )
+  => MempoolEnv m blk
+  -> [GenTxId blk]
+     -- ^ txids in internal state to not fetch the inputs of
+  -> [GenTx blk]
+     -- ^ txs not in internal state to fetch the inputs of
+  -> m (InternalState blk, Maybe (LedgerState blk ValuesMK))
+getStatePair mpEnv removals txs =
+    wrap $ do
+      tip <- getTip <$> getCurrentLedgerState ldgrInterface
+      is0 <- takeTMVar istate
+      let nothingToDo =
+               isTip is0 == castHash (pointHash tip)
+            && null removals
+            && null txs
+      when nothingToDo $ throwSTM $ ShortCircuitGetStatePairExn is0
+      -- Beyond this point, every exception is fatal. There's no need for
+      -- @flip finally (putTMVar istate is)@ or similar, since that 'TMVar' is
+      -- inconsequential for a clean shutdown.
+      --
+      -- TODO confirm that logic ^^^
+      let keptTxs :: [GenTx blk]
+          keptTxs =
+              filter ((`notElem` Set.fromList removals) . txId)
+            $ map (txForgetValidated . TxSeq.txTicketTx) . TxSeq.toList
+            $ isTxs is0
+      pure (is0, keptTxs <> txs)
+  where
+    MempoolEnv {
+        mpEnvStateVar = istate
+      , mpEnvLedger   = ldgrInterface
+      } = mpEnv
+
+    wrap stm =
+         handle (\(ShortCircuitGetStatePairExn is) -> pure (is, Nothing))
+       $ fmap (\(is, ls) -> (is, Just ls))
+       $ getCurrentLedgerStateForTxs ldgrInterface
+       $ atomically stm
+
+data ShortCircuitGetStatePairExn blk =
+    ShortCircuitGetStatePairExn (InternalState blk)
+  deriving (Exn.Exception)
+
+instance Show (ShortCircuitGetStatePairExn blk) where
+  showsPrec p (ShortCircuitGetStatePairExn _is) =
+      showParen (p > 10) $ showString "ShortCircuitGetStatePairExn _is"

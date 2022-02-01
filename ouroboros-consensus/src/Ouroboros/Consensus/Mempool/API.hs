@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mempool.API (
     -- * Mempool Snapshot
   , ForgeLedgerState (..)
   , MempoolSnapshot (..)
+  , withLedgerTablesFLS
     -- * Mempool size and capacity
   , MempoolCapacityBytes (..)
   , MempoolCapacityBytesOverride (..)
@@ -175,7 +176,10 @@ data Mempool m blk idx = Mempool {
       -- the given ledger state
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk idx)
+    , getSnapshotFor :: ForgeLedgerState blk EmptyMK -> STM m (MempoolSnapshot blk idx)
+         -- TODO ^^^ this has got to be in m, since we may need to read from
+         -- disk to convert that EmptyMK to ValuesMK depending on what txs are
+         -- in the mempool!
 
       -- | Get the mempool's capacity in bytes.
       --
@@ -297,12 +301,12 @@ addTxsHelper mempool wti = \txs -> do
 -- ledger: the update system might be updated, scheduled delegations might be
 -- applied, etc., and such changes should take effect before we validate any
 -- transactions.
-data ForgeLedgerState blk =
+data ForgeLedgerState blk mk =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
     -- and we are actually producing a block.
-    ForgeInKnownSlot SlotNo (TickedLedgerState blk EmptyMK)
+    ForgeInKnownSlot SlotNo (TickedLedgerState blk mk)
 
     -- | The slot number of the block is not yet known
     --
@@ -310,7 +314,18 @@ data ForgeLedgerState blk =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | ForgeInUnknownSlot (LedgerState blk EmptyMK)
+  | ForgeInUnknownSlot (LedgerState blk mk)
+
+withLedgerTablesFLS ::
+     TickedTableStuff (LedgerState blk)
+  => ForgeLedgerState blk any
+  -> LedgerTables (LedgerState blk) mk
+  -> ForgeLedgerState blk mk
+withLedgerTablesFLS flst tables = case flst of
+    ForgeInKnownSlot slot tickedLst ->
+      ForgeInKnownSlot slot $ withLedgerTablesTicked tickedLst tables
+    ForgeInUnknownSlot lst ->
+      ForgeInUnknownSlot $ withLedgerTables lst tables
 
 {-------------------------------------------------------------------------------
   Mempool capacity in bytes
