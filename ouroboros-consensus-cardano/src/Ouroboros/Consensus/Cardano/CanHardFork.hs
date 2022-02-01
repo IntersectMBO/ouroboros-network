@@ -46,6 +46,9 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
   , translateChainDepStateAcrossShelley
     -- * Data families
   , LedgerTables (..)
+    -- * For re-use by other hardfork tests
+  , IsShelleyTele (..)
+  , consolidateShelleyNS
   ) where
 
 import           Control.Monad
