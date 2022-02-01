@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 {-------------------------------------------------------------------------------
   Internal State
@@ -262,7 +263,7 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 validateIS
   :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => InternalState blk
-  -> LedgerState blk EmptyMK
+  -> LedgerState blk ValuesMK
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> ValidationResult (Validated (GenTx blk)) blk
@@ -282,7 +283,7 @@ validateStateFor
   :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => MempoolCapacityBytesOverride
   -> LedgerConfig     blk
-  -> ForgeLedgerState blk
+  -> ForgeLedgerState blk ValuesMK
   -> InternalState    blk
   -> ValidationResult (Validated (GenTx blk)) blk
 validateStateFor capacityOverride cfg blockLedgerState is
@@ -309,7 +310,7 @@ revalidateTxsFor
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
   -> SlotNo
-  -> TickedLedgerState blk EmptyMK
+  -> TickedLedgerState blk ValuesMK
   -> TicketNo
      -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
   -> [TxTicket (Validated (GenTx blk))]
@@ -320,7 +321,9 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
       txTickets
       (validationResultFromIS is)
   where
-    is = initInternalState capacityOverride lastTicketNo slot st
+    is =
+        initInternalState capacityOverride lastTicketNo slot
+      $ withLedgerTablesTicked st emptyLedgerTables
 
 {-------------------------------------------------------------------------------
   Ticking the ledger state
@@ -328,10 +331,10 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
 
 -- | Tick the 'LedgerState' using the given 'BlockSlot'.
 tickLedgerState
-  :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
+  :: forall blk mk. (UpdateLedger blk, ValidateEnvelope blk, SingI mk)
   => LedgerConfig     blk
-  -> ForgeLedgerState blk
-  -> (SlotNo, TickedLedgerState blk EmptyMK)
+  -> ForgeLedgerState blk mk
+  -> (SlotNo, TickedLedgerState blk mk)
 tickLedgerState _cfg (ForgeInKnownSlot slot st) = (slot, st)
 tickLedgerState  cfg (ForgeInUnknownSlot st) =
     (slot, applyChainTick cfg slot st)
