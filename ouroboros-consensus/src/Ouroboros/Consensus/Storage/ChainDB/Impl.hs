@@ -201,21 +201,22 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
                     }
       h <- fmap CDBHandle $ newTVarIO $ ChainDbOpen env
       let chainDB = API.ChainDB
-            { addBlockAsync         = getEnv1    h ChainSel.addBlockAsync
-            , getCurrentChain       = getEnvSTM  h Query.getCurrentChain
-            , getLedgerDB           = getEnvSTM  h Query.getLedgerDB
-            , getTipBlock           = getEnv     h Query.getTipBlock
-            , getTipHeader          = getEnv     h Query.getTipHeader
-            , getTipPoint           = getEnvSTM  h Query.getTipPoint
-            , getBlockComponent     = getEnv2    h Query.getBlockComponent
-            , getIsFetched          = getEnvSTM  h Query.getIsFetched
-            , getIsValid            = getEnvSTM  h Query.getIsValid
-            , getMaxSlotNo          = getEnvSTM  h Query.getMaxSlotNo
-            , stream                = Iterator.stream  h
-            , newFollower           = Follower.newFollower h
-            , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
-            , closeDB               = closeDB h
-            , isOpen                = isOpen  h
+            { addBlockAsync                = getEnv1    h ChainSel.addBlockAsync
+            , getCurrentChain              = getEnvSTM  h Query.getCurrentChain
+            , getLedgerDB                  = getEnvSTM  h Query.getLedgerDB
+            , getTipBlock                  = getEnv     h Query.getTipBlock
+            , getTipHeader                 = getEnv     h Query.getTipHeader
+            , getTipPoint                  = getEnvSTM  h Query.getTipPoint
+            , getBlockComponent            = getEnv2    h Query.getBlockComponent
+            , getIsFetched                 = getEnvSTM  h Query.getIsFetched
+            , getIsValid                   = getEnvSTM  h Query.getIsValid
+            , getMaxSlotNo                 = getEnvSTM  h Query.getMaxSlotNo
+            , stream                       = Iterator.stream  h
+            , newFollower                  = Follower.newFollower h
+            , getIsInvalidBlock            = getEnvSTM  h Query.getIsInvalidBlock
+            , getCurrentLedgerStateForKeys = getEnv1    h Query.getCurrentLedgerStateForKeys
+            , closeDB                      = closeDB h
+            , isOpen                       = isOpen  h
             }
           testing = Internal
             { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB

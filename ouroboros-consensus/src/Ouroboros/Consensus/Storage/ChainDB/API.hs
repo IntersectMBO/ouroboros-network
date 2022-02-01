@@ -318,6 +318,13 @@ data ChainDB m blk = ChainDB {
       -- change, since the function will not detect new invalid blocks.
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
+      -- | Get a ledger state that contains the backing store values necessary
+      -- for the given transactions
+    , getCurrentLedgerStateForKeys ::
+        forall a.
+             m (a, LedgerTables (ExtLedgerState blk) KeysMK)
+          -> m (a, ExtLedgerState blk ValuesMK)
+
       -- | Close the ChainDB
       --
       -- Idempotent.

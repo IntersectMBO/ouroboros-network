@@ -37,12 +37,15 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , TypeOf_readDB
   , UnforwardedReadSets (..)
   , defaultReadKeySets
+  , forwardTableKeySets
+  , rewindTableKeySets
     -- ** Serialisation
   , decodeSnapshotBackwardsCompatible
   , encodeSnapshot
     -- ** Queries
   , ledgerDbAnchor
   , ledgerDbBimap
+  , ledgerDbChangelog
   , ledgerDbCurrent
   , ledgerDbFlush
   , ledgerDbOldest
