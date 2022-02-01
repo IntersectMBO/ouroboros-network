@@ -38,6 +38,8 @@ import qualified Test.Cardano.Ledger.Shelley.Generator.Presets as Gen.Presets
 import           Test.Cardano.Ledger.Shelley.Generator.ShelleyEraGen ()
 import qualified Test.Cardano.Ledger.Shelley.Generator.Utxo as Gen
 
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Test.Consensus.Shelley.MockCrypto (MockCrypto, MockShelley)
 import           Test.ThreadNet.Infra.Shelley
 
@@ -48,9 +50,9 @@ data ShelleyTxGenExtra h = ShelleyTxGenExtra
   , stgeStartAt :: SlotNo
   }
 
-instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
+instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) where
 
-  type TxGenExtra (ShelleyBlock (MockShelley h)) = ShelleyTxGenExtra h
+  type TxGenExtra (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) = ShelleyTxGenExtra h
 
   testGenTxs _coreNodeId _numCoreNodes curSlotNo cfg extra lst
       | stgeStartAt > curSlotNo = pure []
@@ -71,13 +73,13 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
         , stgeStartAt
         } = extra
 
-      lcfg :: LedgerConfig (ShelleyBlock (MockShelley h))
+      lcfg :: LedgerConfig (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
       lcfg = configLedger cfg
 
-      go :: [GenTx (ShelleyBlock (MockShelley h))]  -- ^ Accumulator
+      go :: [GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
-         -> TickedLedgerState (ShelleyBlock (MockShelley h))
-         -> Gen [GenTx (ShelleyBlock (MockShelley h))]
+         -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
+         -> Gen [GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
         mbTx <- genTx cfg curSlotNo st stgeGenEnv
@@ -90,11 +92,11 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
 
 genTx
   :: forall h. HashAlgorithm h
-  => TopLevelConfig (ShelleyBlock (MockShelley h))
+  => TopLevelConfig (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
   -> SlotNo
-  -> TickedLedgerState (ShelleyBlock (MockShelley h))
+  -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
   -> Gen.GenEnv (MockShelley h)
-  -> Gen (Maybe (GenTx (ShelleyBlock (MockShelley h))))
+  -> Gen (Maybe (GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))))
 genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
     Just . mkShelleyTx <$> Gen.genTx
       genEnv
