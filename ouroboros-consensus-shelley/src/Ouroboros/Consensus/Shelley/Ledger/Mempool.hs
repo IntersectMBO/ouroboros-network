@@ -268,7 +268,7 @@ calculateDifference ::
 calculateDifference (ApplyValuesMK before) (ApplyValuesMK after) =
     ApplyTrackingMK after (HD.differenceUtxoValues before after)
 
--- TODO flot the stow/unstow logic out of the StowLedgerTables ShelleyBlock
+-- TODO float the stow/unstow logic out of the StowLedgerTables ShelleyBlock
 -- instance and reuse it here instead of jumping through this confusing vnc/cnv
 -- hoop (or instantiate the class for TickedLedgerState too)
 cnv :: LedgerState (ShelleyBlock era) mk -> TickedLedgerState (ShelleyBlock era) mk
