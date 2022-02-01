@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -11,6 +12,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
     -- * Queries
     getBlockComponent
   , getCurrentChain
+  , getCurrentLedgerStateForKeys
   , getIsFetched
   , getIsInvalidBlock
   , getIsValid
@@ -34,6 +36,9 @@ import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike
@@ -45,6 +50,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -185,6 +192,30 @@ getMaxSlotNo CDB{..} = do
                      <$> readTVar cdbChain
     volatileDbMaxSlotNo    <- VolatileDB.getMaxSlotNo cdbVolatileDB
     return $ curChainMaxSlotNo `max` volatileDbMaxSlotNo
+
+getCurrentLedgerStateForKeys :: forall m blk a.
+     (IOLike m, LedgerSupportsProtocol blk)
+  => ChainDbEnv m blk
+  -> m (a, LedgerTables (ExtLedgerState blk) KeysMK)
+  -> m (a, ExtLedgerState blk ValuesMK)
+getCurrentLedgerStateForKeys CDB{..} m = LgrDB.withReadLock cdbLgrDB $ do
+    (a, ks) <- m
+    ldb <- atomically $ LgrDB.getCurrent cdbLgrDB
+    let chlog :: DbChangelog (ExtLedgerState blk)
+        chlog = LedgerDB.ledgerDbChangelog ldb
+
+        rew :: LedgerDB.RewoundTableKeySets (ExtLedgerState blk)
+        rew = LedgerDB.rewindTableKeySets chlog ks
+
+    ufs <- LedgerDB.readKeySets (LgrDB.lgrBackingStore cdbLgrDB) rew
+    let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk)
+    case LedgerDB.forwardTableKeySets chlog ufs of
+      Nothing     -> error "getCurrentLedgerStateForKeys read lock violation"
+      Just values -> do
+        let st :: ExtLedgerState blk EmptyMK
+            st = LedgerDB.ledgerDbCurrent ldb
+
+        pure (a, st `withLedgerTables` values)
 
 {-------------------------------------------------------------------------------
   Unifying interface over the immutable DB and volatile DB, but independent

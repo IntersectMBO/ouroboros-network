@@ -118,6 +118,9 @@ type instance ApplyTxErr ByronBlock = CC.ApplyMempoolPayloadErr
 -- orphaned instance
 instance ShowProxy CC.ApplyMempoolPayloadErr where
 
+instance PreLedgerSupportsMempool ByronBlock where
+  getTransactionKeySets _ = emptyLedgerTables
+
 instance LedgerSupportsMempool ByronBlock where
   -- Check that the annotation is the canonical encoding. This is currently
   -- enforced by 'decodeByronGenTx', see its docstring for more context.

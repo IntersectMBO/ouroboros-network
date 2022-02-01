@@ -480,6 +480,9 @@ emptyAppliedMK = \case
     SSeqDiffMK  -> ApplySeqDiffMK  emptySeqUtxoDiff
     SRewoundMK  -> ApplyRewoundMK  (RewoundKeys emptyUtxoKeys emptyUtxoValues emptyUtxoKeys)
 
+instance Ord k => Semigroup (ApplyMapKind KeysMK k v) where
+  ApplyKeysMK l <> ApplyKeysMK r = ApplyKeysMK (l <> r)
+
 mapValuesAppliedMK :: Ord k => (v -> v') -> ApplyMapKind mk k v ->  ApplyMapKind mk k v'
 mapValuesAppliedMK f = \case
   ApplyEmptyMK            -> ApplyEmptyMK

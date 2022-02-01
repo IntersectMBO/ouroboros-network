@@ -10,6 +10,7 @@ module Ouroboros.Consensus.Ledger.SupportsMempool (
   , HasTxId (..)
   , HasTxs (..)
   , LedgerSupportsMempool (..)
+  , PreLedgerSupportsMempool (..)
   , TxId
   , Validated
   , WhetherToIntervene (..)
@@ -58,6 +59,16 @@ data WhetherToIntervene
     -- arrives over NTC, we reject it in order to avoid the ledger penalizing
     -- them for it.
 
+-- | NOTE this class exists for the same reason that 'PreApplyBlock' does
+class PreLedgerSupportsMempool blk where
+  -- | Given a transaction, get the key-sets that we need to apply it to a
+  -- ledger state.
+  --
+  -- TODO: this might not be the best place to define this function. Maybe we
+  -- want to make the on-disk ledger state storage concern orthogonal to the
+  -- ledger state transformation concern.
+  getTransactionKeySets :: GenTx blk -> LedgerTables (LedgerState blk) KeysMK
+
 class ( UpdateLedger blk
       , NoThunks (GenTx blk)
       , NoThunks (Validated (GenTx blk))
@@ -65,6 +76,7 @@ class ( UpdateLedger blk
       , Show (GenTx blk)
       , Show (Validated (GenTx blk))
       , Show (ApplyTxErr blk)
+      , PreLedgerSupportsMempool blk
       ) => LedgerSupportsMempool blk where
 
   -- | Check whether the internal invariants of the transaction hold.

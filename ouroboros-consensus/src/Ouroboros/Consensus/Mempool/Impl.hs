@@ -137,11 +137,22 @@ data LedgerInterface m blk = LedgerInterface
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
 chainDBLedgerInterface ::
-     (IOLike m, IsLedger (LedgerState blk))
+     ( IOLike m
+     , LedgerSupportsMempool blk
+     )
   => ChainDB m blk -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState       = ledgerState <$> ChainDB.getCurrentLedger chainDB
-    , getCurrentLedgerStateForTxs = undefined  -- TODO ugh, ChainDB doesn't offer LgrDB access
+    , getCurrentLedgerStateForTxs = \m -> do
+        let m' = do
+              (a, txs) <- m
+              pure
+                $ (,) a
+                $ ExtLedgerStateTables
+                $ foldl (zipLedgerTables (<>)) emptyLedgerTables
+                $ map getTransactionKeySets txs
+        (a, st) <- ChainDB.getCurrentLedgerStateForKeys chainDB m'
+        pure (a, ledgerState st)
     }
 
 {-------------------------------------------------------------------------------

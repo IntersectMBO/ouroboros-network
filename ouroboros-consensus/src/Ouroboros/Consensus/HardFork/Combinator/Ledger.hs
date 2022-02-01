@@ -57,6 +57,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.SupportsMempool (PreLedgerSupportsMempool)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -448,6 +449,7 @@ type CanHardFork' xs =
   , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , StowableLedgerTables (LedgerState (HardForkBlock xs))
   , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
+  , PreLedgerSupportsMempool (HardForkBlock xs)
   )
 
 instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
