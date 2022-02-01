@@ -76,6 +76,8 @@ import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      addSlots)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool (PreLedgerSupportsMempool (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.CBOR.Simple
@@ -579,6 +581,12 @@ class IsShelleyTele eras where
        Telescope (g :.: ShelleyBlock) (f :.: ShelleyBlock)                  eras
     -> Telescope  g                    f                   (MapShelleyBlock eras)
 
+consolidateShelleyNS ::
+     IsShelleyTele eras
+  => NS f (MapShelleyBlock eras) -> NS (f :.: ShelleyBlock) eras
+consolidateShelleyNS =
+    Telescope.tip . consolidateShelleyTele . Telescope.fromTip
+
 instance IsShelleyTele '[] where
   consolidateShelleyTele   = \case {}
   unconsolidateShelleyTele = \case {}
@@ -607,37 +615,6 @@ instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoB
               tables
         }
 
-class    StowableLedgerTables (LedgerState a) => Helper a
-instance StowableLedgerTables (LedgerState a) => Helper a
-
-instance
-     CardanoHardForkConstraints c
-  => StowableLedgerTables (LedgerState (CardanoBlock c)) where
-  stowLedgerTables st =
-      withLedgerTables
-        (HardForkLedgerState $ HardForkState tele')
-        emptyLedgerTables
-    where
-      HardForkLedgerState (HardForkState tele) = st
-
-      tele' =
-        SOP.hcmap
-          (Proxy @Helper)
-          (\current -> current{currentState = Flip $ stowLedgerTables $ unFlip $ currentState current})
-          tele
-  unstowLedgerTables st =
-      withLedgerTables
-        (HardForkLedgerState $ HardForkState tele')
-        emptyLedgerTables
-    where
-      HardForkLedgerState (HardForkState tele) = st
-
-      tele' =
-        SOP.hcmap
-          (Proxy @Helper)
-          (\current -> current{currentState = Flip $ unstowLedgerTables $ unFlip $ currentState current})
-          tele
-
 instance
      CardanoHardForkConstraints c
   => ToCBOR (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK) where
@@ -649,6 +626,64 @@ instance
   fromCBOR =
         versionZeroProductFromCBOR "CardanoLedgerTables" 1
       $ CardanoLedgerTables <$> fromCBOR
+
+instance
+     CardanoHardForkConstraints c
+  => PreApplyBlock (LedgerState (CardanoBlock c)) (CardanoBlock c) where
+  getBlockKeySets blk =
+      case ns of
+        Z x  -> case getBlockKeySets (SOP.unI x) of
+          NoByronLedgerTables -> emptyLedgerTables
+        S xs ->
+            SOP.hcollapse
+          $ SOP.hcmap
+              (Proxy @(CardanoShelleyBasedEra c))
+              projectOne
+              (consolidateShelleyNS xs)
+    where
+      ns :: NS SOP.I (CardanoEras c)
+      ns = getOneEraBlock $ getHardForkBlock blk
+
+      projectOne :: forall era.
+           CardanoShelleyBasedEra c era
+        => (SOP.I :.: ShelleyBlock)                                   era
+        -> SOP.K (LedgerTables (LedgerState (CardanoBlock c)) KeysMK) era
+      projectOne (Comp (SOP.I x)) =
+          SOP.K $ CardanoLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
+        where
+          tables :: LedgerTables (LedgerState (ShelleyBlock era)) KeysMK
+          tables = getBlockKeySets x
+
+          ShelleyLedgerTables (ApplyKeysMK keys) = tables
+
+instance
+     CardanoHardForkConstraints c
+  => PreLedgerSupportsMempool (CardanoBlock c) where
+  getTransactionKeySets tx =
+      case ns of
+        Z x  -> case getTransactionKeySets x of
+          NoByronLedgerTables -> emptyLedgerTables
+        S xs ->
+            SOP.hcollapse
+          $ SOP.hcmap
+              (Proxy @(CardanoShelleyBasedEra c))
+              projectOne
+              (consolidateShelleyNS xs)
+    where
+      ns :: NS GenTx (CardanoEras c)
+      ns = getOneEraGenTx $ getHardForkGenTx tx
+
+      projectOne :: forall era.
+           CardanoShelleyBasedEra c era
+        => (GenTx :.: ShelleyBlock)                                   era
+        -> SOP.K (LedgerTables (LedgerState (CardanoBlock c)) KeysMK) era
+      projectOne (Comp x) =
+          SOP.K $ CardanoLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
+        where
+          tables :: LedgerTables (LedgerState (ShelleyBlock era)) KeysMK
+          tables = getTransactionKeySets x
+
+          ShelleyLedgerTables (ApplyKeysMK keys) = tables
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley
