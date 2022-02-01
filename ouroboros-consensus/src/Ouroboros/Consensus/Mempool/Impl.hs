@@ -278,10 +278,12 @@ implTryAddTxs mpEnv wti =
           (_is0, Nothing) -> error "impossible! implTryAddTxs"
           (is0,  Just ls) -> do
             let p@(NewSyncedState is1 _snapshot mTrace) =
+                  -- this is approximately a noop if the state is already in
+                  -- sync
                   pureSyncWithLedger is0 ls cfg capacityOverride
             whenJust mTrace (traceWith trcr)
             case pureTryAddTxs cfg txSize wti tx is1 of
-              NoSpaceLeft             -> do
+              NoSpaceLeft               -> do
                 void $ atomically $ runSyncWithLedger istate p
                 pure (reverse acc, tx:txs)
               TryAddTxs mbIs2 result ev -> do
