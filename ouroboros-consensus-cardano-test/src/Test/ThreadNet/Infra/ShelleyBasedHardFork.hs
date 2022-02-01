@@ -168,11 +168,6 @@ type ShelleyBasedHardForkConstraints era1 era2 =
   , SL.TranslationContext era1 ~ ()
 
   , Core.Compactible (Core.Value era1)
-
-    -- TODO need to actually define these instances here instead of putting them here
-  , FromCBOR (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK)
-  , ToCBOR   (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK)
-  , StowableLedgerTables (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)))
   )
 
 instance ShelleyBasedHardForkConstraints era1 era2
