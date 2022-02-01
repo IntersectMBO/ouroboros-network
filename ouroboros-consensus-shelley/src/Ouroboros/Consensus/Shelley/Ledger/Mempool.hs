@@ -237,7 +237,7 @@ applyShelleyTx :: forall era.
        )
 applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
     let st1 :: TickedLedgerState (ShelleyBlock era) EmptyMK
-        st1 = cnv $ stowLedgerTables $ vnc st0
+        st1 = ShelleyLedger.cnv $ stowLedgerTables $ ShelleyLedger.vnc st0
 
         innerSt :: SL.NewEpochState era
         innerSt = tickedShelleyLedgerState st1
@@ -254,45 +254,18 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
         st2 = set theLedgerLens mempoolState' st1
 
         st3 :: TickedLedgerState (ShelleyBlock era) ValuesMK
-        st3 = cnv $ unstowLedgerTables $ vnc st2
+        st3 = ShelleyLedger.cnv $ unstowLedgerTables $ ShelleyLedger.vnc st2
 
         st4 :: TickedLedgerState (ShelleyBlock era) TrackingMK
         st4 =
           overLedgerTablesTicked
             (zipLedgerTables
-               calculateDifference
+               ShelleyLedger.calculateDifference
                (projectLedgerTablesTicked st0)
             )
             st3
 
     pure (st4, mkShelleyValidatedTx vtx)
-
-calculateDifference ::
-     Ord k
-  => ApplyMapKind ValuesMK k v
-  -> ApplyMapKind ValuesMK k v
-  -> ApplyMapKind TrackingMK k v
-calculateDifference (ApplyValuesMK before) (ApplyValuesMK after) =
-    ApplyTrackingMK after (HD.differenceUtxoValues before after)
-
--- TODO float the stow/unstow logic out of the StowLedgerTables ShelleyBlock
--- instance and reuse it here instead of jumping through this confusing vnc/cnv
--- hoop (or instantiate the class for TickedLedgerState too)
-cnv :: LedgerState (ShelleyBlock era) mk -> TickedLedgerState (ShelleyBlock era) mk
-cnv ShelleyLedger.ShelleyLedgerState{..} = TickedShelleyLedgerState {
-      ShelleyLedger.untickedShelleyLedgerTip      = shelleyLedgerTip
-    , ShelleyLedger.tickedShelleyLedgerTransition = shelleyLedgerTransition
-    , ShelleyLedger.tickedShelleyLedgerState      = shelleyLedgerState
-    , ShelleyLedger.tickedShelleyLedgerTables     = shelleyLedgerTables
-    }
-
-vnc :: TickedLedgerState (ShelleyBlock era) mk -> LedgerState (ShelleyBlock era) mk
-vnc TickedShelleyLedgerState{..} = ShelleyLedger.ShelleyLedgerState {
-      shelleyLedgerTip        = untickedShelleyLedgerTip
-    , shelleyLedgerTransition = tickedShelleyLedgerTransition
-    , shelleyLedgerState      = tickedShelleyLedgerState
-    , shelleyLedgerTables     = tickedShelleyLedgerTables
-    }
 
 reapplyShelleyTx ::
      ShelleyBasedEra era
@@ -302,7 +275,7 @@ reapplyShelleyTx ::
   -> TickedLedgerState (ShelleyBlock era) ValuesMK
   -> Except (ApplyTxErr (ShelleyBlock era)) (TickedLedgerState (ShelleyBlock era) TrackingMK)
 reapplyShelleyTx cfg slot vgtx st0 = do
-    let st1     = cnv $ stowLedgerTables $ vnc st0
+    let st1     = ShelleyLedger.cnv $ stowLedgerTables $ ShelleyLedger.vnc st0
         innerSt = tickedShelleyLedgerState st1
 
     mempoolState' <-
@@ -315,10 +288,10 @@ reapplyShelleyTx cfg slot vgtx st0 = do
     let st2 =
             overLedgerTablesTicked
               (zipLedgerTables
-                 calculateDifference
+                 ShelleyLedger.calculateDifference
                  (projectLedgerTablesTicked st0)
               )
-          $ cnv $ unstowLedgerTables $ vnc
+          $ ShelleyLedger.cnv $ unstowLedgerTables $ ShelleyLedger.vnc
           $ set theLedgerLens mempoolState' st1
 
     pure st2

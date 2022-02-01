@@ -11,6 +11,7 @@
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -44,6 +45,10 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , encodeShelleyAnnTip
   , encodeShelleyHeaderState
   , encodeShelleyLedgerState
+    -- * TEMPORARY exports to unblock prototyping
+  , calculateDifference
+  , cnv
+  , vnc
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -94,7 +99,8 @@ import qualified Control.State.Transition.Extended as STS
 import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
 import           Ouroboros.Consensus.Protocol.TPraos (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
-import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto,
+                     getShelleyTxInputs)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
@@ -451,7 +457,14 @@ data ShelleyLedgerEvent era =
 
 instance ShelleyBasedEra era
       => PreApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
-  getBlockKeySets = error "UTxO HD hole"
+  getBlockKeySets blk =
+        ShelleyLedgerTables
+      $ ApplyKeysMK
+      $ HD.UtxoKeys
+      $ foldMap getShelleyTxInputs
+      $ Core.fromTxSeq @era txs
+    where
+      ShelleyBlock { shelleyBlockRaw = SL.Block _ txs } = blk
 
 instance ShelleyBasedEra era
       => ApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
@@ -514,7 +527,34 @@ instance Show ShelleyReapplyException where
 
 instance Exception.Exception ShelleyReapplyException where
 
-applyHelper ::
+calculateDifference ::
+     Ord k
+  => ApplyMapKind ValuesMK k v
+  -> ApplyMapKind ValuesMK k v
+  -> ApplyMapKind TrackingMK k v
+calculateDifference (ApplyValuesMK before) (ApplyValuesMK after) =
+    ApplyTrackingMK after (HD.differenceUtxoValues before after)
+
+-- TODO float the stow/unstow logic out of the StowLedgerTables ShelleyBlock
+-- instance and reuse it here instead of jumping through this confusing vnc/cnv
+-- hoop (or instantiate the class for TickedLedgerState too)
+cnv :: LedgerState (ShelleyBlock era) mk -> TickedLedgerState (ShelleyBlock era) mk
+cnv ShelleyLedgerState{..} = TickedShelleyLedgerState {
+      untickedShelleyLedgerTip      = shelleyLedgerTip
+    , tickedShelleyLedgerTransition = shelleyLedgerTransition
+    , tickedShelleyLedgerState      = shelleyLedgerState
+    , tickedShelleyLedgerTables     = shelleyLedgerTables
+    }
+
+vnc :: TickedLedgerState (ShelleyBlock era) mk -> LedgerState (ShelleyBlock era) mk
+vnc TickedShelleyLedgerState{..} = ShelleyLedgerState {
+      shelleyLedgerTip        = untickedShelleyLedgerTip
+    , shelleyLedgerTransition = tickedShelleyLedgerTransition
+    , shelleyLedgerState      = tickedShelleyLedgerState
+    , shelleyLedgerTables     = tickedShelleyLedgerTables
+    }
+
+applyHelper :: forall m era.
      (ShelleyBasedEra era, Monad m)
   => (   SL.Globals
       -> SL.NewEpochState era
@@ -530,10 +570,12 @@ applyHelper ::
   -> m (LedgerResult
           (LedgerState (ShelleyBlock era))
           (LedgerState (ShelleyBlock era) TrackingMK))
-applyHelper f cfg blk TickedShelleyLedgerState{
-                          tickedShelleyLedgerTransition
-                        , tickedShelleyLedgerState
-                        } = do
+applyHelper f cfg blk stBefore = do
+    let TickedShelleyLedgerState{
+            tickedShelleyLedgerTransition
+          , tickedShelleyLedgerState
+          } = cnv $ stowLedgerTables $ vnc stBefore
+
     ledgerResult <-
       f
         globals
@@ -546,10 +588,17 @@ applyHelper f cfg blk TickedShelleyLedgerState{
           -- safe use.
           in SL.UnsafeUnserialisedBlock h' (SL.bbody b)
         )
-    -- TODO copy over values into the NewEpochState
 
+    let track ::
+             LedgerState (ShelleyBlock era) ValuesMK
+          -> LedgerState (ShelleyBlock era) TrackingMK
+        track stAfter =
+          zipOverLedgerTables
+            (\after before -> calculateDifference before after)
+            stAfter
+            (projectLedgerTablesTicked stBefore)
 
-    return $ ledgerResult <&> \newNewEpochState -> ShelleyLedgerState {
+    return $ ledgerResult <&> \newNewEpochState -> track $ unstowLedgerTables $ ShelleyLedgerState {
         shelleyLedgerTip = NotOrigin ShelleyTip {
             shelleyTipBlockNo = blockNo   blk
           , shelleyTipSlotNo  = blockSlot blk
@@ -564,7 +613,7 @@ applyHelper f cfg blk TickedShelleyLedgerState{
               (if blockSlot blk >= votingDeadline then succ else id) $
                 shelleyAfterVoting tickedShelleyLedgerTransition
           }
-      , shelleyLedgerTables = ShelleyLedgerTables $ error "compute TrackingMK difference @ShelleyBlock"
+      , shelleyLedgerTables = emptyLedgerTables @EmptyMK
       }
   where
     globals = shelleyLedgerGlobals cfg
