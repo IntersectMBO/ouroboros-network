@@ -139,7 +139,9 @@ instance ( CanHardFork xs
          , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , StowableLedgerTables (LedgerState (HardForkBlock xs))
+         , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
+         , PreLedgerSupportsMempool (HardForkBlock xs)
+         , TickedTableStuff (LedgerState (HardForkBlock xs))
          )
   => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
@@ -270,14 +272,6 @@ instance
         versionZeroProductFromCBOR "LedgerTablesOne" 1
       $ LedgerTablesOne <$> fromCBOR
 
-instance
-     StowableLedgerTables (LedgerState x)
-  => StowableLedgerTables (LedgerState (HardForkBlock '[x])) where
-  stowLedgerTables   st =
-      st `withOneState` stowLedgerTables (projectOneState st)
-  unstowLedgerTables st =
-      st `withOneState` unstowLedgerTables (projectOneState st)
-
 {-------------------------------------------------------------------------------
   ApplyBlock
 -------------------------------------------------------------------------------}
@@ -287,7 +281,8 @@ instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , StowableLedgerTables (LedgerState (HardForkBlock xs))
+         , TickedTableStuff (LedgerState (HardForkBlock xs))
+         , PreLedgerSupportsMempool (HardForkBlock xs)
          , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
          )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
@@ -369,8 +364,8 @@ instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , StowableLedgerTables (LedgerState (HardForkBlock xs))
          , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
+         , PreLedgerSupportsMempool (HardForkBlock xs)
          ) => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
@@ -447,7 +442,6 @@ type CanHardFork' xs =
   , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-  , StowableLedgerTables (LedgerState (HardForkBlock xs))
   , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
   , PreLedgerSupportsMempool (HardForkBlock xs)
   )
@@ -514,6 +508,34 @@ instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
         where
           cfg' :: LedgerConfig blk
           cfg' = completeLedgerConfig' ei cfg
+
+instance
+     CanHardFork' xs
+  => StowableLedgerTables (LedgerState (HardForkBlock xs)) where
+  stowLedgerTables st =
+      withLedgerTables
+        (HardForkLedgerState $ HardForkState tele')
+        emptyLedgerTables
+    where
+      HardForkLedgerState (HardForkState tele) = st
+
+      tele' =
+        hcmap
+          proxySingle
+          (\current -> current{currentState = Flip $ stowLedgerTables $ unFlip $ currentState current})
+          tele
+  unstowLedgerTables st =
+      withLedgerTables
+        (HardForkLedgerState $ HardForkState tele')
+        emptyLedgerTables
+    where
+      HardForkLedgerState (HardForkState tele) = st
+
+      tele' =
+        hcmap
+          proxySingle
+          (\current -> current{currentState = Flip $ unstowLedgerTables $ unFlip $ currentState current})
+          tele
 
 {-------------------------------------------------------------------------------
   Annotated forecasts
