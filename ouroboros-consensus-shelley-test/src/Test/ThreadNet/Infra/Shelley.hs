@@ -94,9 +94,14 @@ import qualified Cardano.Protocol.TPraos.OCert as SL (KESPeriod, OCert (OCert),
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..),
-                     ShelleyBasedEra, ShelleyBlock, mkShelleyTx)
+                     ShelleyBasedEra, ShelleyBlock, ShelleyCompatible,
+                     mkShelleyTx)
 import           Ouroboros.Consensus.Shelley.Node
 
+import           Ouroboros.Consensus.Protocol.Praos.Common
+                     (PraosCanBeLeader (PraosCanBeLeader),
+                     praosCanBeLeaderColdVerKey, praosCanBeLeaderOpCert,
+                     praosCanBeLeaderSignKeyVRF)
 import qualified Test.Cardano.Ledger.Shelley.Generator.Core as Gen
 import           Test.Cardano.Ledger.Shelley.Utils (unsafeBoundRational)
 
@@ -211,16 +216,16 @@ genCoreNode startKESPeriod = do
     genSeed :: Integral a => a -> Gen Cardano.Crypto.Seed
     genSeed = fmap mkSeedFromBytes . genBytes
 
-mkLeaderCredentials :: PraosCrypto c => CoreNode c -> TPraosLeaderCredentials c
+mkLeaderCredentials :: PraosCrypto c => CoreNode c -> ShelleyLeaderCredentials c
 mkLeaderCredentials CoreNode { cnDelegateKey, cnVRF, cnKES, cnOCert } =
-    TPraosLeaderCredentials {
-        tpraosLeaderCredentialsInitSignKey = cnKES
-      , tpraosLeaderCredentialsCanBeLeader = TPraosCanBeLeader {
-          tpraosCanBeLeaderOpCert     = cnOCert
-        , tpraosCanBeLeaderColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
-        , tpraosCanBeLeaderSignKeyVRF = cnVRF
+    ShelleyLeaderCredentials {
+        shelleyLeaderCredentialsInitSignKey = cnKES
+      , shelleyLeaderCredentialsCanBeLeader = PraosCanBeLeader {
+          praosCanBeLeaderOpCert     = cnOCert
+        , praosCanBeLeaderColdVerKey = SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
+        , praosCanBeLeaderSignKeyVRF = cnVRF
         }
-      , tpraosLeaderCredentialsLabel       = "ThreadNet"
+      , shelleyLeaderCredentialsLabel       = "ThreadNet"
       }
 
 {-------------------------------------------------------------------------------
@@ -407,12 +412,13 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
             ]
 
 mkProtocolShelley ::
-     forall m c. (IOLike m, ShelleyBasedEra (ShelleyEra c))
+     forall m c.
+     (IOLike m, PraosCrypto c, ShelleyCompatible (TPraos c) (ShelleyEra c))
   => ShelleyGenesis (ShelleyEra c)
   -> SL.Nonce
   -> ProtVer
   -> CoreNode c
-  -> ProtocolInfo m (ShelleyBlock (ShelleyEra c))
+  -> ProtocolInfo m (ShelleyBlock (TPraos c) (ShelleyEra c))
 mkProtocolShelley genesis initialNonce protVer coreNode =
     protocolInfoShelley
       ProtocolParamsShelleyBased {
@@ -432,12 +438,12 @@ incrementMinorProtVer :: SL.ProtVer -> SL.ProtVer
 incrementMinorProtVer (SL.ProtVer major minor) = SL.ProtVer major (succ minor)
 
 mkSetDecentralizationParamTxs ::
-     forall c. ShelleyBasedEra (ShelleyEra c)
+     forall c. (ShelleyBasedEra (ShelleyEra c))
   => [CoreNode c]
   -> ProtVer   -- ^ The proposed protocol version
   -> SlotNo   -- ^ The TTL
   -> DecentralizationParam   -- ^ The new value
-  -> [GenTx (ShelleyBlock (ShelleyEra c))]
+  -> [GenTx (ShelleyBlock (TPraos c) (ShelleyEra c))]
 mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
@@ -524,16 +530,16 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 initialLovelacePerCoreNode :: Word64
 initialLovelacePerCoreNode = 1000000
 
-mkCredential :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.Credential r c
+mkCredential :: Crypto c => SL.SignKeyDSIGN c -> SL.Credential r c
 mkCredential = SL.KeyHashObj . mkKeyHash
 
-mkKeyHash :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyHash r c
+mkKeyHash :: Crypto c => SL.SignKeyDSIGN c -> SL.KeyHash r c
 mkKeyHash = SL.hashKey . mkVerKey
 
-mkVerKey :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.VKey r c
+mkVerKey :: Crypto c => SL.SignKeyDSIGN c -> SL.VKey r c
 mkVerKey = SL.VKey . deriveVerKeyDSIGN
 
-mkKeyPair :: PraosCrypto c => SL.SignKeyDSIGN c -> SL.KeyPair r c
+mkKeyPair :: Crypto c => SL.SignKeyDSIGN c -> SL.KeyPair r c
 mkKeyPair sk = SL.KeyPair { vKey = mkVerKey sk, sKey = sk }
 
 mkKeyHashVrf :: (HashAlgorithm h, VRFAlgorithm vrf)
@@ -553,7 +559,7 @@ networkId = SL.Testnet
 -- Our current plan is to replace all of this infrastructure with the ThreadNet
 -- rewrite; so we're minimizing the work and maintenance here for now.
 mkMASetDecentralizationParamTxs ::
-     forall era.
+     forall proto era.
      ( ShelleyBasedEra era
      , Core.Tx era ~ SL.Tx era
      , Core.TxBody era ~ MA.TxBody era

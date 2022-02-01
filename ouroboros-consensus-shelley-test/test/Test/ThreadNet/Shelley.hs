@@ -42,14 +42,17 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Node
 
-import           Test.Consensus.Shelley.MockCrypto (MockShelley)
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Test.Consensus.Shelley.MockCrypto (MockCrypto, MockShelley)
 import           Test.ThreadNet.TxGen.Shelley
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 import           Test.ThreadNet.Util.NodeToNodeVersion (genVersion)
 import           Test.ThreadNet.Util.Seed (runGen)
 
-type Era = MockShelley ShortHash
+type Era   = MockShelley ShortHash
+type Proto = TPraos (MockCrypto ShortHash)
 
 data TestSetup = TestSetup
   { setupD            :: DecentralizationParam
@@ -65,7 +68,7 @@ data TestSetup = TestSetup
     -- This test varies it too ensure it explores different leader schedules.
   , setupK            :: SecurityParam
   , setupTestConfig   :: TestConfig
-  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Era))
+  , setupVersion      :: (NodeToNodeVersion, BlockNodeToNodeVersion (ShelleyBlock Proto Era))
   }
   deriving (Show)
 
@@ -92,7 +95,7 @@ instance Arbitrary TestSetup where
 
       setupTestConfig <- arbitrary
 
-      setupVersion <- genVersion (Proxy @(ShelleyBlock Era))
+      setupVersion <- genVersion (Proxy @(ShelleyBlock Proto Era))
 
       pure TestSetup
         { setupD
@@ -209,7 +212,7 @@ prop_simple_real_tpraos_convergence TestSetup
       , numSlots
       } = setupTestConfig
 
-    testConfigB :: TestConfigB (ShelleyBlock Era)
+    testConfigB :: TestConfigB (ShelleyBlock Proto Era)
     testConfigB = TestConfigB
       { forgeEbbEnv  = Nothing
       , future       = singleEraFuture tpraosSlotLength epochSize
@@ -362,11 +365,11 @@ prop_simple_real_tpraos_convergence TestSetup
             DoGeneratePPUs    -> True
             DoNotGeneratePPUs -> False
 
-        finalLedgers :: [(NodeId, LedgerState (ShelleyBlock Era))]
+        finalLedgers :: [(NodeId, LedgerState (ShelleyBlock Proto Era))]
         finalLedgers =
             Map.toList $ nodeOutputFinalLedger <$> testOutputNodes testOutput
 
-        ledgerConfig :: LedgerConfig (ShelleyBlock Era)
+        ledgerConfig :: LedgerConfig (ShelleyBlock Proto Era)
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
             ()  -- trivial translation context

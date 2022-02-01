@@ -33,14 +33,18 @@ import           Test.Cardano.Ledger.Shelley.Orphans ()
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Golden (labelled, unlabelled)
 import qualified Test.Util.Serialisation.Golden as Golden
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
-import           Ouroboros.Consensus.Protocol.TPraos (TPraosState (TPraosState))
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos,
+                     TPraosState (TPraosState))
 
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import           Ouroboros.Consensus.Shelley.HFEras
 import           Test.Cardano.Ledger.Allegra.Examples.Consensus
                      (ledgerExamplesAllegra)
 import           Test.Cardano.Ledger.Alonzo.Examples.Consensus
@@ -51,17 +55,18 @@ import           Test.Cardano.Ledger.Shelley.Examples.Consensus
                      (ShelleyLedgerExamples (..), ShelleyResultExamples (..),
                      ledgerExamplesShelley, testShelleyGenesis)
 
+
 {-------------------------------------------------------------------------------
   Examples
 -------------------------------------------------------------------------------}
 
-codecConfig :: CodecConfig (ShelleyBlock Ouroboros.Consensus.Shelley.Eras.StandardShelley)
+codecConfig :: CodecConfig StandardShelleyBlock
 codecConfig = ShelleyCodecConfig
 
 fromShelleyLedgerExamples
-  :: ShelleyBasedEra era
+  :: ShelleyCompatible (TPraos (EraCrypto era)) era
   => ShelleyLedgerExamples era
-  -> Golden.Examples (ShelleyBlock proto era)
+  -> Golden.Examples (ShelleyBlock (TPraos (EraCrypto era)) era)
 fromShelleyLedgerExamples ShelleyLedgerExamples {
                             sleResultExamples = ShelleyResultExamples{..}
                             , ..} =
@@ -84,7 +89,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     }
   where
     blk = mkShelleyBlock sleBlock
-    hash = ShelleyHash sleHashHeader
+    hash = ShelleyHash $ SL.unHashHeader sleHashHeader
     serialisedBlock = Serialised "<BLOCK>"
     tx = mkShelleyTx sleTx
     slotNo = SlotNo 42
@@ -128,14 +133,14 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                        ledgerState
                        (genesisHeaderState chainDepState)
 
-examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
+examplesShelley :: Golden.Examples StandardShelleyBlock
 examplesShelley = fromShelleyLedgerExamples ledgerExamplesShelley
 
-examplesAllegra :: Golden.Examples (ShelleyBlock StandardAllegra)
+examplesAllegra :: Golden.Examples StandardAllegraBlock
 examplesAllegra = fromShelleyLedgerExamples ledgerExamplesAllegra
 
-examplesMary :: Golden.Examples (ShelleyBlock StandardMary)
+examplesMary :: Golden.Examples StandardMaryBlock
 examplesMary = fromShelleyLedgerExamples ledgerExamplesMary
 
-examplesAlonzo :: Golden.Examples (ShelleyBlock StandardAlonzo)
+examplesAlonzo :: Golden.Examples StandardAlonzoBlock
 examplesAlonzo = fromShelleyLedgerExamples ledgerExamplesAlonzo

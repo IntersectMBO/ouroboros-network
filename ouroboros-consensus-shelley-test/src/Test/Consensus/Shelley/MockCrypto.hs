@@ -29,9 +29,12 @@ import           Test.Cardano.Crypto.VRF.Fake (FakeVRF)
 import qualified Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL (Mock)
 import qualified Test.Cardano.Ledger.Shelley.Generator.EraGen as SL (EraGen)
 
-import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyBasedEra,
-                     ShelleyEra)
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
+                     ShelleyCompatible)
 
 -- | A mock replacement for 'StandardCrypto'
 --
@@ -52,11 +55,11 @@ type MockShelley h = ShelleyEra (MockCrypto h)
 
 instance HashAlgorithm h => SL.PraosCrypto (MockCrypto h)
 
-type Block h = ShelleyBlock (MockShelley h)
+type Block h = ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)
 
 -- | Cryptography that can easily be mocked
-type CanMock era =
-  ( ShelleyBasedEra era
+type CanMock era proto =
+  ( ShelleyCompatible proto era
   , SL.EraGen era
   , SL.Mock (EraCrypto era)
   , SL.ValidateScript era
