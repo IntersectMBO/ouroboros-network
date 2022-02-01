@@ -51,6 +51,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , TraceReplayEvent (..)
     -- * Exported for testing purposes
   , mkLgrDB
+    -- * Temporarily exported
+  , lgrBackingStore
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)

@@ -785,6 +785,17 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
           , vDualGenTxBridge
           } = vtx
 
+instance Bridge m a => PreLedgerSupportsMempool (DualBlock m a) where
+  getTransactionKeySets tx =
+      DualBlockLedgerTables
+        (getTransactionKeySets dualGenTxMain)
+        (getTransactionKeySets dualGenTxAux)
+    where
+      DualGenTx {
+          dualGenTxMain
+        , dualGenTxAux
+        } = tx
+
 -- We don't need a pair of IDs, as long as we can unique ID the transaction
 newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {
       dualGenTxIdMain :: GenTxId m

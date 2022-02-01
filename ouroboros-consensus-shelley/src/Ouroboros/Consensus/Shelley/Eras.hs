@@ -39,6 +39,7 @@ module Ouroboros.Consensus.Shelley.Eras (
 import           Control.Exception (Exception, throw)
 import           Control.Monad.Except
 import           Data.Default.Class (Default)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import           Data.Void (Void)
@@ -184,6 +185,8 @@ class ( SL.ShelleyBasedEra era
          , SL.Validated (Core.Tx era)
          )
 
+  getShelleyTxInputs :: Core.Tx era -> Set (SL.TxIn (EraCrypto era))
+
 -- | The default implementation of 'applyShelleyBasedTx', a thin wrapper around
 -- 'SL.applyTx'
 defaultApplyShelleyBasedTx ::
@@ -205,20 +208,30 @@ defaultApplyShelleyBasedTx globals ledgerEnv mempoolState _wti tx =
       mempoolState
       tx
 
+defaultGetShelleyTxInputs ::
+     ( HasField "body"    (Core.Tx era)     (Core.TxBody era)
+     , HasField "inputs" (Core.TxBody era) (Set (SL.TxIn (EraCrypto era)))
+     )
+  => Core.Tx era -> Set (SL.TxIn (EraCrypto era))
+defaultGetShelleyTxInputs tx = getField @"inputs" $ getField @"body" tx
+
 instance SL.PraosCrypto c => ShelleyBasedEra (ShelleyEra c) where
   shelleyBasedEraName _ = "Shelley"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
+  getShelleyTxInputs  = defaultGetShelleyTxInputs
 
 instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
   shelleyBasedEraName _ = "Allegra"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
+  getShelleyTxInputs  = defaultGetShelleyTxInputs
 
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
+  getShelleyTxInputs  = defaultGetShelleyTxInputs
 
 instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
   shelleyBasedEraName _ = "Alonzo"
@@ -260,6 +273,13 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
               tx{Alonzo.isValid = Alonzo.IsValid (not flag)}
         _ -> throwError e
                -- reject the transaction, protecting the local wallet
+
+  getShelleyTxInputs tx =
+        getField @"collateral" body
+      `Set.union`
+        getField @"inputs" body
+    where
+      body = getField @"body" tx
 
 -- not exported
 --

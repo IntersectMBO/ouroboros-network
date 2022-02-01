@@ -131,6 +131,14 @@ perTxOverhead :: Num a => a
 perTxOverhead = 4
 
 instance ShelleyBasedEra era
+      => PreLedgerSupportsMempool (ShelleyBlock era) where
+  getTransactionKeySets (ShelleyTx _ tx) =
+        ShelleyLedger.ShelleyLedgerTables
+      $ ApplyKeysMK
+      $ HD.UtxoKeys
+      $ getShelleyTxInputs tx
+
+instance ShelleyBasedEra era
       => LedgerSupportsMempool (ShelleyBlock era) where
   txInvariant = const True
 
