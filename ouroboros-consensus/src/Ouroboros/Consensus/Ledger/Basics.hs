@@ -416,7 +416,7 @@ zipOverLedgerTablesTicked f l tables2 =
 -------------------------------------------------------------------------------}
 
 -- | Empty values for every table
-emptyLedgerTables :: forall l mk.
+emptyLedgerTables :: forall mk l.
   (TableStuff l, SingI mk) => LedgerTables l mk
 emptyLedgerTables =
     pureLedgerTables $ emptyAppliedMK (sing :: SMapKind mk)
@@ -482,6 +482,9 @@ emptyAppliedMK = \case
 
 instance Ord k => Semigroup (ApplyMapKind KeysMK k v) where
   ApplyKeysMK l <> ApplyKeysMK r = ApplyKeysMK (l <> r)
+
+instance Ord k => Monoid (ApplyMapKind KeysMK k v) where
+  mempty = ApplyKeysMK mempty
 
 mapValuesAppliedMK :: Ord k => (v -> v') -> ApplyMapKind mk k v ->  ApplyMapKind mk k v'
 mapValuesAppliedMK f = \case
