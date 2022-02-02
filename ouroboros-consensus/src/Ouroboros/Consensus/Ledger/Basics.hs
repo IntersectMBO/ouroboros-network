@@ -10,6 +10,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE Rank2Types            #-}
@@ -107,6 +108,7 @@ import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
+import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
 
@@ -744,11 +746,34 @@ data DbChangelog l = DbChangelog {
 deriving instance (Eq       (LedgerTables l SeqDiffMK), Eq       (l EmptyMK)) => Eq       (DbChangelog l)
 deriving instance (NoThunks (LedgerTables l SeqDiffMK), NoThunks (l EmptyMK)) => NoThunks (DbChangelog l)
 
+instance (ShowLedgerState l, ShowLedgerState (LedgerTables l)) => Show (DbChangelog l) where
+  showsPrec p dblog =
+        showParen (p >= 11)
+      $   showString "DbChangelog {"
+        . showSpace      . showString "changelogDiffAnchor = "      . shows changelogDiffAnchor
+        . showCommaSpace . showString "changelogDiffs = "           . showsLedgerState sMapKind changelogDiffs
+        . showCommaSpace . showString "changelogImmutableStates = " . shows changelogImmutableStates
+        . showCommaSpace . showString "changelogVolatileStates = "  . shows changelogVolatileStates
+        . showString " }"
+    where
+      DbChangelog _dummy _ _ _ = dblog
+      DbChangelog {
+          changelogDiffAnchor
+        , changelogDiffs
+        , changelogImmutableStates
+        , changelogVolatileStates
+        } = dblog
+
 newtype DbChangelogState l = DbChangelogState {unDbChangelogState :: l EmptyMK}
   deriving (Generic)
 
 deriving instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
 deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
+
+instance ShowLedgerState l => Show (DbChangelogState l) where
+  showsPrec p (DbChangelogState x) =
+        showParen (p >= 11)
+      $ showString "DbChangelogState " . showsLedgerState sMapKind x
 
 instance GetTip (l EmptyMK) => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
   asAnchor = id
@@ -770,14 +795,21 @@ extendDbChangelog ::
   => DbChangelog l -> l DiffMK -> DbChangelog l
 extendDbChangelog dblog newState =
     DbChangelog {
-        changelogDiffAnchor      = changelogDiffAnchor dblog
+        changelogDiffAnchor
       , changelogDiffs           =
-          zipLedgerTables ext (changelogDiffs dblog) tablesDiff
-      , changelogImmutableStates = changelogImmutableStates dblog
+          zipLedgerTables ext changelogDiffs tablesDiff
+      , changelogImmutableStates
       , changelogVolatileStates  =
-          changelogVolatileStates dblog AS.:> DbChangelogState l'
+          changelogVolatileStates AS.:> DbChangelogState l'
       }
   where
+    DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates
+      } = dblog
+
     l'         = forgetLedgerStateTables newState
     tablesDiff = projectLedgerTables     newState
 
@@ -797,15 +829,23 @@ pruneDbChangelog ::
      GetTip (l EmptyMK)
   => SecurityParam -> DbChangelog l -> DbChangelog l
 pruneDbChangelog (SecurityParam k) dblog =
+    Exn.assert (AS.length imm' + AS.length vol' == AS.length imm + AS.length vol) $
     DbChangelog {
-        changelogDiffAnchor      = changelogDiffAnchor dblog
-      , changelogDiffs           = changelogDiffs      dblog
+        changelogDiffAnchor
+      , changelogDiffs
       , changelogImmutableStates = imm'
       , changelogVolatileStates  = vol'
       }
   where
-    imm = changelogImmutableStates dblog
-    vol = changelogVolatileStates  dblog
+    DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates
+      } = dblog
+
+    imm = changelogImmutableStates
+    vol = changelogVolatileStates
 
     nvol = AS.length vol
 
@@ -819,16 +859,23 @@ data DbChangelogFlushPolicy =
     -- | Always flush everything older than the immutable tip
     DbChangelogFlushAllImmutable
 
-flushDbChangelog ::
+flushDbChangelog :: forall l.
      (GetTip (l EmptyMK), TableStuff l)
   => DbChangelogFlushPolicy
   -> DbChangelog l
   -> (DbChangelog l, DbChangelog l)
 flushDbChangelog DbChangelogFlushAllImmutable dblog =
-    (ldblog, rdblog)
+      (ldblog, rdblog)
   where
-    imm = changelogImmutableStates dblog
-    vol = changelogVolatileStates  dblog
+    DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates
+      } = dblog
+
+    imm = changelogImmutableStates
+    vol = changelogVolatileStates
 
     immTip = AS.anchor vol
 
@@ -842,11 +889,11 @@ flushDbChangelog DbChangelogFlushAllImmutable dblog =
       $ splitAtSeqUtxoDiff (AS.length imm) sq
 
     -- TODO #1 one pass
-    l = mapLedgerTables (fst . split) (changelogDiffs dblog)
-    r = mapLedgerTables (snd . split) (changelogDiffs dblog)
+    l = mapLedgerTables (fst . split) changelogDiffs
+    r = mapLedgerTables (snd . split) changelogDiffs
 
     ldblog = DbChangelog {
-        changelogDiffAnchor      = changelogDiffAnchor dblog
+        changelogDiffAnchor
       , changelogDiffs           = l
       , changelogImmutableStates = imm
       , changelogVolatileStates  = AS.Empty immTip
@@ -867,7 +914,7 @@ prefixDbChangelog ::
      )
   => Point blk -> DbChangelog l -> Maybe (DbChangelog l)
 prefixDbChangelog pt dblog = do
-    let vol = changelogVolatileStates dblog
+    let vol = changelogVolatileStates
     vol' <-
       AS.rollback
         (pointSlot pt)
@@ -875,29 +922,43 @@ prefixDbChangelog pt dblog = do
         vol
     let ndropped                  = AS.length vol - AS.length vol'
         diffs'                    =
-          mapLedgerTables (trunc ndropped) (changelogDiffs dblog)
+          mapLedgerTables (trunc ndropped) changelogDiffs
     Exn.assert (ndropped >= 0) $ pure DbChangelog {
-          changelogDiffAnchor      = changelogDiffAnchor      dblog
+          changelogDiffAnchor
         , changelogDiffs           = diffs'
-        , changelogImmutableStates = changelogImmutableStates dblog
+        , changelogImmutableStates
         , changelogVolatileStates  = vol'
         }
+  where
+    DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates
+      } = dblog
 
 prefixBackToAnchorDbChangelog ::
      (GetTip (l EmptyMK), TableStuff l)
   => DbChangelog l -> DbChangelog l
 prefixBackToAnchorDbChangelog dblog =
     DbChangelog {
-        changelogDiffAnchor      = changelogDiffAnchor      dblog
+        changelogDiffAnchor
       , changelogDiffs           = diffs'
-      , changelogImmutableStates = changelogImmutableStates dblog
+      , changelogImmutableStates
       , changelogVolatileStates  = AS.Empty (AS.anchor vol)
       }
   where
-    vol                       = changelogVolatileStates dblog
+    DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates
+      } = dblog
+
+    vol                       = changelogVolatileStates
     ndropped                  = AS.length vol
     diffs'                    =
-      mapLedgerTables (trunc ndropped) (changelogDiffs dblog)
+      mapLedgerTables (trunc ndropped) changelogDiffs
 
 trunc ::
      Ord k
@@ -910,8 +971,15 @@ rollbackDbChangelog ::
   => Int -> DbChangelog l -> DbChangelog l
 rollbackDbChangelog n dblog =
     DbChangelog {
-        changelogDiffAnchor      = changelogDiffAnchor      dblog
-      , changelogDiffs           = mapLedgerTables (trunc n) (changelogDiffs dblog)
-      , changelogImmutableStates = changelogImmutableStates dblog
-      , changelogVolatileStates  = AS.dropNewest n (changelogImmutableStates dblog)
+        changelogDiffAnchor
+      , changelogDiffs           = mapLedgerTables (trunc n) changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates  = AS.dropNewest n changelogVolatileStates
       }
+  where
+    DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates
+      } = dblog
