@@ -34,6 +34,7 @@ import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans as Trans
 import           Control.Tracer (nullTracer)
 import           Data.Bifunctor
 import           Data.Foldable (toList)
@@ -237,7 +238,7 @@ mockInit = Mock [] Map.empty GenesisPoint
 mockCurrent :: Mock -> ExtLedgerState TestBlock EmptyMK
 mockCurrent Mock{..} =
     case mockLedger of
-      []       -> testInitExtLedger
+      []       -> convertMapKind testInitExtLedger
       (_, l):_ -> l
 
 mockChainLength :: Mock -> Word64
@@ -436,7 +437,7 @@ runMock cmd initMock =
         mapM_ push bs
 
     cur :: MockLedger -> ExtLedgerState TestBlock EmptyMK
-    cur []         = testInitExtLedger
+    cur []         = convertMapKind testInitExtLedger
     cur ((_, l):_) = l
 
 {-------------------------------------------------------------------------------
@@ -496,7 +497,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain = []
 
     initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbWithAnchor testInitExtLedger
+    initDB = ledgerDbWithAnchor (convertMapKind testInitExtLedger)
 
     getBlock ::
          RealPoint TestBlock
@@ -575,6 +576,9 @@ runDB standalone@DB{..} cmd =
       -> ExtValidationError TestBlock
     annLedgerErr' = annLedgerErr
 
+    reader :: TypeOf_readDB m (ExtLedgerState TestBlock)
+    reader _rew = pure $ UnforwardedReadSets (error "UTxO HD seqNo") emptyLedgerTables
+
     go :: SomeHasFS m -> Cmd DiskSnapshot -> m (Success DiskSnapshot)
     go _ Current =
         atomically $ (Ledger . ledgerDbCurrent . snd) <$> readTVar dbState
@@ -583,6 +587,7 @@ runDB standalone@DB{..} cmd =
           uncurry Map.insert (refValPair b)
         upd (push b) $ \db ->
           fmap (first annLedgerErr') $
+            defaultReadKeySets reader $
             defaultThrowLedgerErrors $
               ledgerDbPush
                 dbLedgerDbCfg
@@ -593,7 +598,8 @@ runDB standalone@DB{..} cmd =
           repeatedly (uncurry Map.insert) (map refValPair bs)
         upd (switch n bs) $ \db ->
           fmap (bimap annLedgerErr' ignoreExceedRollback) $
-            defaultResolveWithErrors dbResolve $
+            defaultReadKeySets reader $
+            defaultResolveWithErrors (DbReader . Trans.lift . dbResolve) $
               ledgerDbSwitch
                 dbLedgerDbCfg
                 n
@@ -606,10 +612,11 @@ runDB standalone@DB{..} cmd =
           takeSnapshot
             nullTracer
             hasFS
+            (error "UTxO HD backing store")
             S.encode
             db
     go hasFS Restore = do
-        (initLog, db, _replayed) <-
+        (initLog, db, _replayed, _backingStore) <-
           initLedgerDB
             nullTracer
             nullTracer
@@ -673,7 +680,7 @@ runDB standalone@DB{..} cmd =
 
     truncateSnapshot :: SomeHasFS m -> DiskSnapshot -> m ()
     truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss =
-        withFile hasFS (snapshotToPath ss) (AppendMode AllowExisting) $ \h ->
+        withFile hasFS (snapshotToDirPath ss) (AppendMode AllowExisting) $ \h ->
           hTruncate h 0
 
     refValPair :: TestBlock -> (RealPoint TestBlock, TestBlock)

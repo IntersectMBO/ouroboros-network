@@ -67,6 +67,7 @@ import qualified Data.Binary as Binary
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor (($>))
+import           Data.Functor.Identity (Identity)
 import           Data.Hashable
 import           Data.Int (Int64)
 import           Data.List.NonEmpty (NonEmpty)
@@ -82,6 +83,7 @@ import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadThrow
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -110,6 +112,7 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as InMemory
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -118,6 +121,10 @@ import           Test.Util.Orphans.SignableRepresentation ()
 {-------------------------------------------------------------------------------
   TestBlock
 -------------------------------------------------------------------------------}
+
+instance InMemory.ReadsKeySets Identity (LedgerState TestBlock) where
+  readDb (InMemory.RewoundTableKeySets seqNo NoTestLedgerTables) =
+      pure $ InMemory.UnforwardedReadSets seqNo NoTestLedgerTables
 
 data TestBlock = TestBlock {
       testHeader :: !TestHeader
@@ -556,28 +563,38 @@ instance ShowLedgerState (LedgerState TestBlock) where
   showsLedgerState _sing = shows
 
 instance TableStuff (LedgerState TestBlock) where
-  newtype LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables (SMapKind mk)
-    deriving stock   (Generic, Eq, Show)
-    deriving newtype (NoThunks)
+  data LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables
+    deriving stock    (Generic, Eq, Show)
+    deriving anyclass (NoThunks)
 
-  -- TODO methods
+  projectLedgerTables _st                    = NoTestLedgerTables
+  withLedgerTables    st  NoTestLedgerTables = convertMapKind st
+
+  pureLedgerTables _                                       = NoTestLedgerTables
+  mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
+  zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  foldLedgerTables _ NoTestLedgerTables                    = mempty
+
+instance Typeable mk => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
+  toCBOR NoTestLedgerTables = toCBOR ()
+
+instance Typeable mk => FromCBOR (LedgerTables (LedgerState TestBlock) mk) where
+  fromCBOR = (\() -> NoTestLedgerTables) <$> fromCBOR
+
+instance StowableLedgerTables (LedgerState TestBlock) where
+  stowLedgerTables   = convertMapKind
+  unstowLedgerTables = convertMapKind
 
 instance TickedTableStuff (LedgerState TestBlock) where
-
-  -- TODO methods
+  projectLedgerTablesTicked _                         = NoTestLedgerTables
+  withLedgerTablesTicked (TickedTestLedger st) tables =
+      TickedTestLedger $ withLedgerTables st tables
 
 instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
   showsLedgerState _sing = shows
 
-instance TableStuff (Ticked1 (LedgerState TestBlock)) where
-  newtype LedgerTables (Ticked1 (LedgerState TestBlock)) mk = TickedNoTestLedgerTables (SMapKind mk)
-    deriving stock   (Generic, Eq, Show)
-    deriving newtype (NoThunks)
-
-  -- TODO methods
-
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState TestBlock))) where
-  showsLedgerState _sing = shows
+instance PreApplyBlock (LedgerState TestBlock) TestBlock where
+  getBlockKeySets _blk = NoTestLedgerTables
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
