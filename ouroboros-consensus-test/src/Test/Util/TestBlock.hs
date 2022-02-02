@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -15,6 +16,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
@@ -24,8 +26,9 @@ module Test.Util.TestBlock (
   , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
+  , Payload
   , StorageConfig (..)
-  , TestBlock (..)
+  , TestBlock
   , TestBlockError (..)
   , TestHash (TestHash)
   , firstBlock
@@ -34,6 +37,12 @@ module Test.Util.TestBlock (
   , successorBlock
   , testHashFromList
   , unTestHash
+    -- ** Test block with payload
+  , TestBlockWithPayload
+  , firstBlockWithPayload
+  , successorBlockWithPayload
+    -- * LedgerState
+  , lastAppliedPoint
     -- * Chain
   , BlockChain (..)
   , blockChain
@@ -45,7 +54,6 @@ module Test.Util.TestBlock (
   , treeToBlocks
   , treeToChains
     -- * Ledger infrastructure
-  , lastAppliedBlock
   , singleNodeTestConfig
   , singleNodeTestConfigWithK
   , testInitExtLedger
@@ -62,6 +70,7 @@ import           Data.Int
 import           Data.List (transpose)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
@@ -168,20 +177,64 @@ instance Show TestHash where
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
-data TestBlock = TestBlock {
-      tbHash  :: TestHash
-    , tbSlot  :: SlotNo
+type TestBlock = TestBlockWithPayload 'NoPayload
+
+data BlockPayloadType = NoPayload | KVMap
+
+type family Payload (ptype :: BlockPayloadType)
+
+type instance Payload 'NoPayload = ()
+-- | The choice of the key types is arbitrary.
+type instance Payload 'KVMap     = Map Int Int
+
+data TestBlockWithPayload (ptype :: BlockPayloadType) = TestBlock { -- TODO: change constructor name to 'TestBlockWithPayload'
+      tbHash    :: TestHash
+    , tbSlot    :: SlotNo
       -- ^ We store a separate 'Block.SlotNo', as slots can have gaps between
       -- them, unlike block numbers.
       --
       -- Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same slot number.
-    , tbValid :: Bool
+    , tbValid   :: Bool
       -- ^ Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
+    , tbPayload :: Payload ptype
     }
-  deriving stock    (Show, Eq, Ord, Generic)
-  deriving anyclass (Serialise, NoThunks, ToExpr)
+
+deriving stock instance Show    (Payload ptype) => Show    (TestBlockWithPayload ptype)
+deriving stock instance Eq      (Payload ptype) => Eq      (TestBlockWithPayload ptype)
+deriving stock instance Ord     (Payload ptype) => Ord     (TestBlockWithPayload ptype)
+deriving stock instance                            Generic (TestBlockWithPayload ptype)
+
+deriving anyclass instance ( Generic   (Payload ptype)
+                           , Serialise (Payload ptype)) => Serialise (TestBlockWithPayload ptype)
+deriving anyclass instance ( Generic   (Payload ptype)
+                           , NoThunks  (Payload ptype)) => NoThunks  (TestBlockWithPayload ptype)
+deriving anyclass instance ( Generic   (Payload ptype)
+                           , ToExpr    (Payload ptype)) => ToExpr    (TestBlockWithPayload ptype)
+
+-- | Create the first block in the given fork, @[fork]@, with the given payload.
+-- The 'SlotNo' will be 1.
+firstBlockWithPayload :: Word64 -> Payload ptype -> TestBlockWithPayload ptype
+firstBlockWithPayload forkNo payload = TestBlock
+    { tbHash    = TestHash (forkNo NE.:| [])
+    , tbSlot    = 1
+    , tbValid   = True
+    , tbPayload = payload
+    }
+
+-- | Create the successor of the given block without forking: @b -> b ++ [0]@ (in
+-- the printed representation) The 'SlotNo' is increased by 1.
+--
+-- In Zipper parlance, this corresponds to going down in a tree.
+successorBlockWithPayload ::
+  TestHash -> SlotNo -> Payload ptype -> TestBlockWithPayload ptype
+successorBlockWithPayload hash slot payload = TestBlock
+    { tbHash    = TestHash (NE.cons 0 (unTestHash hash))
+    , tbSlot    = succ slot
+    , tbValid   = True
+    , tbPayload = payload
+    }
 
 instance ShowProxy TestBlock where
 
@@ -196,7 +249,7 @@ instance GetHeader TestBlock where
   blockMatchesHeader (TestHeader blk') blk = blk == blk'
   headerIsEBB = const Nothing
 
-type instance HeaderHash TestBlock = TestHash
+type instance HeaderHash (TestBlockWithPayload ptype) = TestHash
 
 instance HasHeader TestBlock where
   getHeaderFields = getBlockHeaderFields
@@ -362,17 +415,6 @@ instance UpdateLedger TestBlock
 instance InspectLedger TestBlock where
   -- Defaults are fine
 
--- | Last applied block
---
--- Returns 'Nothing' if the ledger is empty.
-lastAppliedBlock :: LedgerState TestBlock -> Maybe TestBlock
-lastAppliedBlock (TestLedger p) = go p
-  where
-    -- We can only have applied valid blocks
-    go :: Point TestBlock -> Maybe TestBlock
-    go GenesisPoint           = Nothing
-    go (BlockPoint slot hash) = Just $ TestBlock hash slot True
-
 instance HasAnnTip TestBlock where
   -- Use defaults
 
@@ -462,26 +504,13 @@ instance Arbitrary BlockChain where
   arbitrary = BlockChain <$> choose (0, 30)
   shrink (BlockChain c) = BlockChain <$> shrink c
 
--- Create the first block in the given fork: @[fork]@
--- The 'SlotNo' will be 1.
+-- | See 'firstBlockWithPayload'.
 firstBlock :: Word64 -> TestBlock
-firstBlock forkNo = TestBlock
-    { tbHash  = TestHash (forkNo NE.:| [])
-    , tbSlot  = 1
-    , tbValid = True
-    }
+firstBlock forkNo = firstBlockWithPayload forkNo ()
 
--- Create the successor of the given block without forking:
--- @b -> b ++ [0]@ (in the printed representation)
--- The 'SlotNo' is increased by 1.
---
--- In Zipper parlance, this corresponds to going down in a tree.
+-- | See 'successorBlockWithPayload'.
 successorBlock :: TestBlock -> TestBlock
-successorBlock TestBlock{..} = TestBlock
-    { tbHash  = TestHash (NE.cons 0 (unTestHash tbHash))
-    , tbSlot  = succ tbSlot
-    , tbValid = True
-    }
+successorBlock TestBlock{tbHash, tbSlot} = successorBlockWithPayload tbHash tbSlot ()
 
 -- Modify the (last) fork number of the given block:
 -- @g@ -> @[.., f]@ -> @[.., g f]@
