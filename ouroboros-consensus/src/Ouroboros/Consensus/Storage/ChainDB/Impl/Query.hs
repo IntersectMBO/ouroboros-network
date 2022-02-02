@@ -210,8 +210,8 @@ getCurrentLedgerStateForKeys CDB{..} m = LgrDB.withReadLock cdbLgrDB $ do
     ufs <- LedgerDB.readKeySets (LgrDB.lgrBackingStore cdbLgrDB) rew
     let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk)
     case LedgerDB.forwardTableKeySets chlog ufs of
-      Nothing     -> error "getCurrentLedgerStateForKeys read lock violation"
-      Just values -> do
+      Left err     -> error $ "getCurrentLedgerStateForKeys read lock violation " <> show err
+      Right values -> do
         let st :: ExtLedgerState blk EmptyMK
             st = LedgerDB.ledgerDbCurrent ldb
 
