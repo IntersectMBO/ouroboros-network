@@ -339,6 +339,16 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
 
+  foldLedgerTables ::
+       Monoid m
+    => (forall k v.
+            Ord k
+         => ApplyMapKind mk k v
+         -> m
+       )
+    -> LedgerTables l mk
+    -> m
+
 overLedgerTables ::
      (TableStuff l, SingI mk1)
   => (LedgerTables l mk1 -> LedgerTables l mk2)

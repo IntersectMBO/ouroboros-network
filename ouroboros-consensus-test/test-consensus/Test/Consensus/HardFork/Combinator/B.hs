@@ -44,6 +44,8 @@ import           Data.Void
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+
 import           Test.Util.Time (dawnOfTime)
 
 import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
@@ -169,20 +171,20 @@ data instance LedgerState BlockB mk = LgrB {
   deriving NoThunks via OnlyCheckWhnfNamed "LgrB" (LedgerState BlockB mk)
 
 instance TableStuff (LedgerState BlockB) where
-  data LedgerTables (LedgerState BlockB) mk = BlockATablesUnit
-    deriving (Generic, NoThunks, Show)
-  -- TODO methods
+  data LedgerTables (LedgerState BlockB) mk = NoBTables
+    deriving (Eq, Generic, NoThunks, Show)
+
+  projectLedgerTables _st           = NoBTables
+  withLedgerTables    st  NoBTables = convertMapKind st
+
+  pureLedgerTables _f                     = NoBTables
+  mapLedgerTables  _f           NoBTables = NoBTables
+  zipLedgerTables  _f NoBTables NoBTables = NoBTables
+  foldLedgerTables _f           NoBTables = mempty
 
 instance TickedTableStuff (LedgerState BlockB) where
-  -- TODO methods
-
-
-instance (TableStuff (Ticked1 (LedgerState BlockB))) where
-  data LedgerTables (Ticked1 (LedgerState BlockB)) mk = TickedNoTables
-    deriving (Generic, Eq, Show, NoThunks)
-
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState BlockB))) where
-  showsLedgerState _sing = shows
+  projectLedgerTablesTicked _ = NoBTables
+  withLedgerTablesTicked    st NoBTables = convertMapKind st
 
 instance ShowLedgerState (LedgerState BlockB) where
   showsLedgerState _sing = shows
@@ -191,6 +193,22 @@ instance (ShowLedgerState (LedgerTables (LedgerState BlockB))) where
   showsLedgerState _sing = shows
 
 type instance LedgerCfg (LedgerState BlockB) = ()
+
+instance InMemory (LedgerState BlockB) where
+  convertMapKind LgrB {..} = LgrB {..}
+
+instance InMemory (Ticked1 (LedgerState BlockB)) where
+  convertMapKind = TickedLedgerStateB . convertMapKind . getTickedLedgerStateB
+
+instance StowableLedgerTables (LedgerState BlockB) where
+  stowLedgerTables   = convertMapKind
+  unstowLedgerTables = convertMapKind
+
+instance ToCBOR (LedgerTables (LedgerState BlockB) ValuesMK) where
+  toCBOR NoBTables = toCBOR ()
+
+instance FromCBOR (LedgerTables (LedgerState BlockB) ValuesMK) where
+  fromCBOR = (\() -> NoBTables) <$> fromCBOR
 
 -- | Ticking has no state on the B ledger state
 newtype instance Ticked1 (LedgerState BlockB) mk = TickedLedgerStateB {
@@ -211,6 +229,9 @@ instance IsLedger (LedgerState BlockB) where
     VoidLedgerEvent (LedgerState BlockB)
 
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateB
+
+instance PreApplyBlock (LedgerState BlockB) BlockB where
+  getBlockKeySets _blk = NoBTables
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyBlockLedgerResult   = \_ b _ -> return $ pureLedgerResult $ LgrB (blockPoint b)
@@ -281,6 +302,9 @@ data instance Validated (GenTx BlockB)
   deriving (Show, Eq, Generic, NoThunks)
 
 type instance ApplyTxErr BlockB = Void
+
+instance PreLedgerSupportsMempool BlockB where
+  getTransactionKeySets _tx = NoBTables
 
 instance LedgerSupportsMempool BlockB where
   applyTx   = \_ _ _wti tx -> case tx of {}
