@@ -422,7 +422,7 @@ applyBlock cfg ap db = case ap of
       let aks = rewindTableKeySets (ledgerDbChangelog db) ks :: RewoundTableKeySets l
       urs <- readDb aks
       case withHydratedLedgerState urs f of
-        Nothing ->
+        Left err ->
           -- We performed the rewind;read;forward sequence in this function. So
           -- the forward operation should not fail. If this is the case we're in
           -- the presence of a problem that we cannot deal with at this level,
@@ -433,29 +433,32 @@ applyBlock cfg ap db = case ap of
           -- place when __after__ we read the unforwarded keys-set from disk.
           -- However, performing rewind;read;forward with the same __locked__
           -- changelog should always succeed.
-          error "Changelog rewind;read;forward sequence failed."
-        Just res -> res
+          error $ "Changelog rewind;read;forward sequence failed, " <> show err
+        Right res -> res
 
     withHydratedLedgerState
       :: UnforwardedReadSets l
       -> (l ValuesMK -> a)
-      -> Maybe a
-    withHydratedLedgerState urs f = do
-      rs <- forwardTableKeySets (ledgerDbChangelog db) urs
-      return $ f $ withLedgerTables (ledgerDbCurrent db)  rs
+      -> Either (WithOrigin SlotNo, WithOrigin SlotNo) a
+    withHydratedLedgerState urs f =
+          (\rs -> f $ withLedgerTables (ledgerDbCurrent db) rs)
+      <$> forwardTableKeySets (ledgerDbChangelog db) urs
 
 {-------------------------------------------------------------------------------
   HD Interface that I need (Could be moved to  Ouroboros.Consensus.Ledger.Basics )
 -------------------------------------------------------------------------------}
 
-newtype RewoundTableKeySets l =
-  RewoundTableKeySets (LedgerTables l RewoundMK) -- TODO KeySetSanityInfo l
+data RewoundTableKeySets l =
+    RewoundTableKeySets
+      !(WithOrigin SlotNo)   -- ^ the slot to which the keys were rewounded
+      !(LedgerTables l RewoundMK)
 
 rewindTableKeySets ::
      TableStuff l
   => DbChangelog l -> TableKeySets l -> RewoundTableKeySets l
 rewindTableKeySets dblog = \keys ->
       RewoundTableKeySets
+        (changelogDiffAnchor dblog)
     $ zipLedgerTables rewind keys
     $ changelogDiffs dblog
   where
@@ -474,13 +477,18 @@ data UnforwardedReadSets l = UnforwardedReadSets {
 
 forwardTableKeySets ::
      TableStuff l
-  => DbChangelog l -> UnforwardedReadSets l -> Maybe (TableReadSets l)
-forwardTableKeySets dblog = \(UnforwardedReadSets seqNo values) -> do
-    guard $ seqNo == changelogDiffAnchor (dblog)
-    pure
+  => DbChangelog l
+  -> UnforwardedReadSets l
+  -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
+            (TableReadSets l)
+forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values) ->
+    if seqNo /= seqNo' then Left (seqNo, seqNo') else
+    Right
       $ zipLedgerTables forward values
       $ changelogDiffs dblog
   where
+    seqNo = changelogDiffAnchor dblog
+
     forward ::
          Ord k
       => ApplyMapKind ValuesMK  k v
