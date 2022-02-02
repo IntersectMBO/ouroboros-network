@@ -58,6 +58,7 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
+import           Data.Functor.Identity (Identity (..))
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
@@ -107,6 +108,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as InMemory
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -174,6 +176,10 @@ instance Show TestHash where
 
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
+
+instance InMemory.ReadsKeySets Identity (LedgerState TestBlock) where
+  readDb (InMemory.RewoundTableKeySets seqNo NoTestLedgerTables) =
+      pure $ InMemory.UnforwardedReadSets seqNo NoTestLedgerTables
 
 data TestBlock = TestBlock {
       tbHash  :: TestHash
