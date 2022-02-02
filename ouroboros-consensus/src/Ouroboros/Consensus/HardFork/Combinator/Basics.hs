@@ -91,7 +91,24 @@ instance (SingI mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) mk) 
   showsPrec p = showParen (p >= 11) . showsLedgerState sing
 
 instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
-  showsLedgerState = error "showsLedgerState @HardForkBlock"
+  showsLedgerState = \mk (HardForkLedgerState hfstate) ->
+        showParen True
+      $ (showString "HardForkLedgerState " .)
+      $ shows
+      $ hcmap proxySingle (showInner mk) hfstate
+    where
+       showInner ::
+            SingleEraBlock x
+         => SMapKind mk
+         -> Flip LedgerState mk x
+         -> AlreadyShown        x
+       showInner mk (Flip st) =
+           AlreadyShown
+         $ showParen True
+         $ showString "Flip " . showsLedgerState mk st
+
+newtype AlreadyShown x = AlreadyShown {unAlreadyShown :: ShowS}
+instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown
 
 {-------------------------------------------------------------------------------
   Protocol config

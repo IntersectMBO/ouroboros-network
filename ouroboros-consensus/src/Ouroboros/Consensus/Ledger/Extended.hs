@@ -39,6 +39,7 @@ import           Data.Functor ((<&>))
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
+import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -87,8 +88,17 @@ deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError    blk)
 deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError    blk)
 
 instance LedgerSupportsProtocol blk => ShowLedgerState (ExtLedgerState blk) where
-  showsLedgerState = error "showsLedgerState @ExtLedgerState"
-  -- TODO is the idea that we remove this error?
+  showsLedgerState mk st =
+      showParen True $ showString "ExtLedgerState {"
+        . showSpace      . showString "headerState = " . shows               headerState
+        . showCommaSpace . showString "ledgerState = " . showsLedgerState mk ledgerState
+        . showString " }"
+    where
+      ExtLedgerState _dummy _ = st
+      ExtLedgerState {
+          headerState
+        , ledgerState
+        } = st
 
 -- | We override 'showTypeOf' to show the type of the block
 --
@@ -184,6 +194,7 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
 
 deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedgerState (LedgerTables (ExtLedgerState blk))
 
+deriving instance Eq        (LedgerTables (LedgerState blk) mk)               => Eq       (LedgerTables (ExtLedgerState blk) mk)
 instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) mk)
 
 instance

@@ -423,6 +423,12 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
         (zipLedgerTables f mainL mainR)
         (zipLedgerTables f auxL  auxR)
 
+deriving instance
+     ( Eq (LedgerTables (LedgerState m) mk)
+     , Eq (LedgerTables (LedgerState a) mk)
+     )
+  => Eq (LedgerTables (LedgerState (DualBlock m a)) mk)
+
 -- TODO only for in-memory backing store
 instance
      ( Typeable mk, Typeable m, Typeable a
