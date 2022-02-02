@@ -176,7 +176,7 @@ data Mempool m blk idx = Mempool {
       -- the given ledger state
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: ForgeLedgerState blk EmptyMK -> STM m (MempoolSnapshot blk idx)
+    , getSnapshotFor :: ForgeLedgerState blk EmptyMK -> m (MempoolSnapshot blk idx)
          -- TODO ^^^ this has got to be in m, since we may need to read from
          -- disk to convert that EmptyMK to ValuesMK depending on what txs are
          -- in the mempool!

@@ -114,7 +114,7 @@ mkMempool mpEnv = Mempool
           whenJust mTrace (traceWith trcr)
     , syncWithLedger = implSyncWithLedger mpEnv
     , getSnapshot    = implSnapshotFromIS <$> readTMVar istate
-    , getSnapshotFor = \fls ->
+    , getSnapshotFor = \fls -> atomically $
             pureGetSnapshotFor cfg (fls `withLedgerTablesFLS` emptyLedgerTables) co
         <$> readTMVar istate   -- TODO this emptyLedgerTables is a stub!
     , getCapacity    = isCapacity <$> readTMVar istate
