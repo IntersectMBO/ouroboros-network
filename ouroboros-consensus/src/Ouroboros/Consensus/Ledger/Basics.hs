@@ -59,10 +59,13 @@ module Ouroboros.Consensus.Ledger.Basics (
   , SMapKind
   , Sing (..)
   , ApplyMapKind (..)
+  , calculateDifference
+  , diffKeysMK
   , diffTrackingMK
   , emptyAppliedMK
   , mapValuesAppliedMK
   , sMapKind
+  , showsApplyMapKind
   , toSMapKind
   , valuesTrackingMK
     -- ** Queries
@@ -184,9 +187,8 @@ pureLedgerResult a = LedgerResult {
   Basic LedgerState classes
 -------------------------------------------------------------------------------}
 
--- TODO where is this class needed?
 class ShowLedgerState (l :: LedgerStateKind) where
-  showsLedgerState :: SMapKind mk -> l mk -> ShowS   -- TODO someway to show the mk values
+  showsLedgerState :: SMapKind mk -> l mk -> ShowS
 
 {-------------------------------------------------------------------------------
   Definition of a ledger independent of a choice of block
@@ -283,7 +285,10 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
-class (ShowLedgerState (LedgerTables l), Eq (l ValuesMK)) => TableStuff (l :: LedgerStateKind) where
+class ( ShowLedgerState (LedgerTables l)
+      , Eq (l EmptyMK)
+      , Eq (LedgerTables l ValuesMK)
+      ) => TableStuff (l :: LedgerStateKind) where
 
   data family LedgerTables l :: LedgerStateKind
 
@@ -496,6 +501,9 @@ mapValuesAppliedMK f = \case
   ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
   ApplyRewoundMK rew      -> ApplyRewoundMK  (mapRewoundKeys f rew)
 
+diffKeysMK :: ApplyMapKind DiffMK k v -> ApplyMapKind KeysMK k v
+diffKeysMK (ApplyDiffMK diff) = ApplyKeysMK $ keysUtxoDiff diff
+
 diffTrackingMK :: ApplyMapKind TrackingMK k v -> ApplyMapKind DiffMK k v
 diffTrackingMK (ApplyTrackingMK _values diff) = ApplyDiffMK diff
 
@@ -563,6 +571,16 @@ instance
           (len /= 1 + len' || tag /= tag')
           (fail $ "decode @ApplyMapKind " <> show smk)
 
+showsApplyMapKind :: (Show k, Show v) => ApplyMapKind mk k v -> ShowS
+showsApplyMapKind = \case
+    ApplyEmptyMK                -> showString "ApplyEmptyMK"
+    ApplyKeysMK keys            -> showParen True $ showString "ApplyKeysMK " . shows keys
+    ApplyValuesMK values        -> showParen True $ showString "ApplyValuesMK " . shows values
+    ApplyTrackingMK values diff -> showParen True $ showString "ApplyTrackingMK " . shows values . showString " " . shows diff
+    ApplyDiffMK diff            -> showParen True $ showString "ApplyDiffMK " . shows diff
+    ApplySeqDiffMK sq           -> showParen True $ showString "ApplySeqDiffMK " . shows sq
+    ApplyRewoundMK rew          -> showParen True $ showString "ApplyRewoundMK " . shows rew
+
 data instance Sing (mk :: MapKind) :: Type where
   SEmptyMK    :: Sing EmptyMK
   SKeysMK     :: Sing KeysMK
@@ -627,6 +645,14 @@ instance FromCBOR (Sing TrackingMK) where fromCBOR = STrackingMK <$ CBOR.decodeN
 instance FromCBOR (Sing DiffMK)     where fromCBOR = SDiffMK     <$ CBOR.decodeNull
 instance FromCBOR (Sing SeqDiffMK)  where fromCBOR = SSeqDiffMK  <$ CBOR.decodeNull
 instance FromCBOR (Sing RewoundMK)  where fromCBOR = SRewoundMK  <$ CBOR.decodeNull
+
+calculateDifference ::
+     Ord k
+  => ApplyMapKind ValuesMK k v
+  -> ApplyMapKind ValuesMK k v
+  -> ApplyMapKind TrackingMK k v
+calculateDifference (ApplyValuesMK before) (ApplyValuesMK after) =
+    ApplyTrackingMK after (differenceUtxoValues before after)
 
 {-------------------------------------------------------------------------------
   Link block to its ledger

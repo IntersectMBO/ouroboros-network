@@ -217,6 +217,8 @@ instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerSta
   mapLedgerTables  f = coerce $ mapLedgerTables  @(LedgerState x) f
   zipLedgerTables  f = coerce $ zipLedgerTables  @(LedgerState x) f
 
+deriving instance Eq (LedgerTables (LedgerState x) mk) => Eq (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
+
 projectOneState :: LedgerState (HardForkBlock '[x]) mk -> LedgerState x mk
 projectOneState (HardForkLedgerState (HardForkState (TZ current))) =
     unFlip $ currentState $ current
