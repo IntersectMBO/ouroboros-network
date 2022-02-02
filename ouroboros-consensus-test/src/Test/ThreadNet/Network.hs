@@ -42,7 +42,6 @@ import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Either (isRight)
 import           Data.Functor.Identity (Identity)
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
@@ -596,34 +595,11 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
-    forkCrucialTxs clock s0 registry unblockForge lcfg getLdgr mempool txs0 =
+    forkCrucialTxs clock s0 registry unblockForge _lcfg getLdgr mempool txs0 =
       void $ forkLinkedThread registry "crucialTxs" $ do
-        let wouldBeValid slot st tx =
-                isRight $ Exc.runExcept $ applyTx lcfg DoNotIntervene slot tx st
-
-            checkSt slot snap =
-                any (wouldBeValid slot (snapshotLedgerState snap)) txs0
-
         let loop :: (SlotNo, LedgerState blk EmptyMK, [TicketNo]) -> m a
             loop (slot, ledger, mempFp) = do
-              (snap1, snap2) <- atomically $ do
-                snap1 <- getSnapshotFor mempool $
-                  -- This node would include these crucial txs if it leads in
-                  -- this slot.
-                  ForgeInKnownSlot slot $ applyChainTick lcfg slot ledger
-                snap2 <- getSnapshotFor mempool $
-                  -- Other nodes might include these crucial txs when leading
-                  -- in the next slot.
-                  ForgeInKnownSlot (succ slot) $ applyChainTick lcfg (succ slot) ledger
-                -- This loop will repeat for the next slot, so we only need to
-                -- check for this one and the next.
-                pure (snap1, snap2)
-
-              -- Don't attempt to add them if we're sure they'll be invalid.
-              -- That just risks blocking on a full mempool unnecessarily.
-              when (checkSt slot snap1 || checkSt (succ slot) snap2) $ do
-                _ <- addTxs mempool txs0
-                pure ()
+              _ <- addTxs mempool txs0
 
               -- See 'unblockForge' in 'forkNode'
               atomically $ unblockForge slot
