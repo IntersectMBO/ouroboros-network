@@ -234,6 +234,7 @@ test-suite test-storage
                      , bifunctors
                      , binary
                      , bytestring
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-slotting
                      , cborg

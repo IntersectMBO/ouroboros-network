@@ -94,7 +94,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB,
+                     ReadsKeySets)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -281,6 +282,8 @@ type TestConstraints blk =
   , SerialiseDiskConstraints          blk
   , Show (LedgerState                 blk EmptyMK)
   , InMemory (LedgerState             blk)
+  , ReadsKeySets Identity (LedgerState blk)
+  , Eq (LedgerTables (LedgerState blk) SeqDiffMK)
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   flr)
@@ -1635,7 +1638,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbTopLevelConfig         = cfg
     , cdbChunkInfo              = chunkInfo
     , cdbCheckIntegrity         = testBlockIsValid
-    , cdbGenesis                = return initLedger
+    , cdbGenesis                = return (convertMapKind initLedger)
     , cdbCheckInFuture          = InFuture.miracle
                                     (readTVar varCurSlot)
                                     maxClockSkew
