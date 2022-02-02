@@ -504,6 +504,7 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
   pureLedgerTables f                                                 = CardanoLedgerTables f
   mapLedgerTables  f                         (CardanoLedgerTables x) = CardanoLedgerTables (f x)
   zipLedgerTables  f (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
+  foldLedgerTables f                         (CardanoLedgerTables x) = f x
 
 instance PraosCrypto c => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
   showsLedgerState _mk (CardanoLedgerTables utxo) =

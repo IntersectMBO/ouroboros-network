@@ -353,6 +353,7 @@ instance TableStuff (LedgerState TestBlock) where
   pureLedgerTables _                                       = NoTestLedgerTables
   mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
   zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  foldLedgerTables _ NoTestLedgerTables                    = mempty
 
 instance Typeable mk => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
   toCBOR NoTestLedgerTables = CBOR.encodeNull
@@ -459,10 +460,10 @@ instance ShowQuery (BlockQuery TestBlock) where
 
 instance IsQuery (BlockQuery TestBlock) where
 
-testInitLedger :: LedgerState TestBlock EmptyMK
+testInitLedger :: LedgerState TestBlock ValuesMK
 testInitLedger = TestLedger GenesisPoint
 
-testInitExtLedger :: ExtLedgerState TestBlock EmptyMK
+testInitExtLedger :: ExtLedgerState TestBlock ValuesMK
 testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()

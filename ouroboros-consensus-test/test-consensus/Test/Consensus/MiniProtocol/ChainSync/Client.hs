@@ -449,7 +449,7 @@ computePastLedger ::
   -> Maybe (ExtLedgerState TestBlock EmptyMK)
 computePastLedger cfg pt chain
     | pt `elem` validPoints
-    = Just $ go testInitExtLedger (Chain.toOldestFirst chain)
+    = Just $ go (convertMapKind testInitExtLedger) (Chain.toOldestFirst chain)
     | otherwise
     = Nothing
   where

@@ -380,6 +380,7 @@ instance ShelleyBasedHardForkConstraints era1 era2
   pureLedgerTables f                                                                           = ShelleyBasedHardForkLedgerTables f
   mapLedgerTables  f                                      (ShelleyBasedHardForkLedgerTables x) = ShelleyBasedHardForkLedgerTables (f x)
   zipLedgerTables  f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables (f l r)
+  foldLedgerTables f                                      (ShelleyBasedHardForkLedgerTables x) = f x
 
 deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk)
 

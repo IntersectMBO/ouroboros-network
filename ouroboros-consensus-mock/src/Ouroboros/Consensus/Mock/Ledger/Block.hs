@@ -77,7 +77,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
@@ -356,6 +356,10 @@ instance MockProtocolSpecific c ext
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedSimpleLedgerState . SimpleLedgerState . simpleLedgerState
 
 instance MockProtocolSpecific c ext
+      => PreApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
+  getBlockKeySets _ = emptyLedgerTables
+
+instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
   applyBlockLedgerResult _ = fmap pureLedgerResult .: updateSimpleLedgerState
 
@@ -384,27 +388,39 @@ newtype instance Ticked1 (LedgerState (SimpleBlock c ext)) mk = TickedSimpleLedg
   deriving stock   (Generic, Show, Eq)
   deriving newtype (NoThunks)
 
-instance TableStuff (LedgerState (SimpleBlock c ext)) where
-  data LedgerTables (LedgerState (SimpleBlock c ext)) mk = MockTablesUnit
-    deriving (Generic, NoThunks, Show)
+instance (SimpleCrypto c, Typeable ext) => TableStuff (LedgerState (SimpleBlock c ext)) where
+  data LedgerTables (LedgerState (SimpleBlock c ext)) mk = NoMockTables
+    deriving (Eq, Generic, NoThunks, Show)
 
-  -- TODO methods
+  projectLedgerTables _st                                = NoMockTables
+  withLedgerTables    (SimpleLedgerState x) NoMockTables = SimpleLedgerState x
 
-instance TickedTableStuff (LedgerState (SimpleBlock c ext)) where
+  pureLedgerTables _f                           = NoMockTables
+  mapLedgerTables  _f              NoMockTables = NoMockTables
+  zipLedgerTables  _f NoMockTables NoMockTables = NoMockTables
+  foldLedgerTables _f              NoMockTables = mempty
 
-  -- TODO methods
+instance (SimpleCrypto c, Typeable ext) => TickedTableStuff (LedgerState (SimpleBlock c ext)) where
+  projectLedgerTablesTicked _st                                 = NoMockTables
+  withLedgerTablesTicked    (TickedSimpleLedgerState st) tables =
+      TickedSimpleLedgerState $ withLedgerTables st tables
 
 instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
   showsLedgerState _sing = shows
 
-instance TableStuff (Ticked1 (LedgerState (SimpleBlock c ext))) where
-  data LedgerTables (Ticked1 (LedgerState (SimpleBlock c ext))) mk = TickedMockTablesUnit
-    deriving (Generic, NoThunks, Show)
+instance
+     (Typeable c, Typeable ext)
+  => ToCBOR (LedgerTables (LedgerState (SimpleBlock c ext)) ValuesMK) where
+  toCBOR NoMockTables = CBOR.encodeNull
 
-  -- TODO methods
+instance
+     (Typeable c, Typeable ext)
+  => FromCBOR (LedgerTables (LedgerState (SimpleBlock c ext)) ValuesMK) where
+  fromCBOR = NoMockTables <$ CBOR.decodeNull
 
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (SimpleBlock c ext)))) where
-  showsLedgerState _sing = shows
+instance StowableLedgerTables (LedgerState (SimpleBlock c ext)) where
+  stowLedgerTables   = convertMapKind
+  unstowLedgerTables = convertMapKind
 
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
@@ -456,6 +472,10 @@ instance (Typeable c, Typeable ext)
     => ShowProxy (GenTx (SimpleBlock c ext)) where
 
 type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
+
+instance MockProtocolSpecific c ext
+      => PreLedgerSupportsMempool (SimpleBlock c ext) where
+  getTransactionKeySets _ = emptyLedgerTables
 
 instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where
