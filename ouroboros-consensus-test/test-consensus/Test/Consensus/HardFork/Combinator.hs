@@ -16,6 +16,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -25,12 +26,15 @@ import qualified Data.Map as Map
 import           Data.SOP.Strict hiding (shape)
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 import           Quiet (Quiet (..))
 
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Time (dawnOfTime)
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import qualified Ouroboros.Network.MockChain.Chain as Mock
 
@@ -57,7 +61,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (Flip))
+                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
@@ -246,7 +250,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
             ]
         }
 
-    initLedgerState :: LedgerState BlockA EmptyMK
+    initLedgerState :: LedgerState BlockA ValuesMK
     initLedgerState = LgrA {
           lgrA_tip        = GenesisPoint
         , lgrA_transition = Nothing
@@ -364,28 +368,53 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 instance TxGen TestBlock where
   testGenTxs _ _ _ _ _ _ = return []
 
-
 instance TableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
+  data LedgerTables (LedgerState TestBlock) mk = NoAbTables
+    deriving (Eq, Generic, NoThunks, Show)
 
-  -- TODO methods
+  projectLedgerTables _st            = NoAbTables
+  withLedgerTables    st  NoAbTables = convertMapKind st
+
+  pureLedgerTables _f                       = NoAbTables
+  mapLedgerTables  _f            NoAbTables = NoAbTables
+  zipLedgerTables  _f NoAbTables NoAbTables = NoAbTables
+  foldLedgerTables _f            NoAbTables = mempty
 
 instance TickedTableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
+  projectLedgerTablesTicked _ = NoAbTables
+  withLedgerTablesTicked    st NoAbTables = convertMapKind st
 
-  -- TODO methods
+instance PreApplyBlock (LedgerState (HardForkBlock '[BlockA, BlockB])) (HardForkBlock '[BlockA, BlockB]) where
+  getBlockKeySets _blk = NoAbTables
+
+instance PreLedgerSupportsMempool (HardForkBlock '[BlockA, BlockB]) where
+  getTransactionKeySets _blk = NoAbTables
+
+instance InMemory (LedgerState (HardForkBlock '[BlockA, BlockB])) where
+  convertMapKind (HardForkLedgerState hfstate) =
+        HardForkLedgerState
+      $ hcmap
+          (Proxy @(Compose InMemory LedgerState))
+          (Flip . convertMapKind . unFlip)
+          hfstate
+
+instance InMemory (Ticked1 (LedgerState (HardForkBlock '[BlockA, BlockB]))) where
+  convertMapKind (TickedHardForkLedgerState info hfstate) =
+        TickedHardForkLedgerState
+          info
+      $ hcmap
+          (Proxy @(Compose (Compose InMemory Ticked1) LedgerState))
+          (FlipTickedLedgerState . convertMapKind . getFlipTickedLedgerState)
+          hfstate
+
+instance ToCBOR (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB])) ValuesMK) where
+  toCBOR NoAbTables = toCBOR ()
+
+instance FromCBOR (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB])) ValuesMK) where
+  fromCBOR = (\() -> NoAbTables) <$> fromCBOR
 
 instance ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB]))) where
-
-  -- TODO define this
-  showsLedgerState _sing = undefined
-
-instance TableStuff (Ticked1 (LedgerState (HardForkBlock '[BlockA, BlockB]))) where
-
-  -- TODO methods
-
-
-instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (HardForkBlock '[BlockA, BlockB])))) where
-
-    -- TODO methods
+  showsLedgerState _mk = shows
 
 {-------------------------------------------------------------------------------
   Hard fork

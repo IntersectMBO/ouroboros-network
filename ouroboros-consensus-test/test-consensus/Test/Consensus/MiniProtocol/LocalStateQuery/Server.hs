@@ -27,6 +27,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.Ledger.Basics (convertMapKind)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (Query (..),
                      QueryWithSomeFootprintL (..))
@@ -186,7 +187,7 @@ initLgrDB
 initLgrDB k chain = do
     varDB          <- newTVarIO genesisLedgerDB
     varPrevApplied <- newTVarIO mempty
-    let lgrDB = mkLgrDB varDB varPrevApplied resolve args
+    let lgrDB = mkLgrDB varDB varPrevApplied (error "TODO UTxO HD") (error "TODO UTxO HD") resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0 noopTrace
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
         LgrDB.ValidateExceededRollBack _ ->
@@ -206,7 +207,7 @@ initLgrDB k chain = do
 
     cfg = testCfg k
 
-    genesisLedgerDB = LgrDB.ledgerDbWithAnchor testInitExtLedger
+    genesisLedgerDB = LgrDB.ledgerDbWithAnchor (convertMapKind testInitExtLedger)
 
     noopTrace :: blk -> m ()
     noopTrace = const $ pure ()
