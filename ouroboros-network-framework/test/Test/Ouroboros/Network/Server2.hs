@@ -24,8 +24,7 @@
 
 module Test.Ouroboros.Network.Server2 (tests) where
 
-import           Control.Exception (AssertionFailed, SomeAsyncException (..),
-                     throw)
+import           Control.Exception (AssertionFailed, SomeAsyncException (..))
 import           Control.Monad (replicateM, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -37,16 +36,14 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), contramap, nullTracer)
+import           Control.Tracer (Tracer (..), contramap, contramapM, nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.Bifoldable
-import           Data.Bifunctor
 import           Data.Bitraversable
 import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
-import           Data.Dynamic (fromDynamic)
 import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
 import           Data.List (delete, dropWhileEnd, find, foldl', intercalate,
@@ -55,7 +52,7 @@ import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, isNothing)
+import           Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import           Data.Monoid (Sum (..))
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import qualified Data.Set as Set
@@ -2139,7 +2136,8 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
              tpTransitions         = trs
           }
        )
-    . traceSplitConns
+    . fmap (map ttTransition)
+    . splitConns id
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -2232,7 +2230,8 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
            _             -> AllProperty (property False)
        )
        verifyAbstractTransitionOrder
-    . traceSplitConns
+    . fmap (map ttTransition)
+    . splitConns id
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -2473,23 +2472,31 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
                        (MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      transitionSignal :: [[(Time, AbstractTransitionTrace SimAddr)]]
-      transitionSignal = splitConns
-                       . getTraceEvents
+      transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace SimAddr)]
+      transitionSignal = fmap (map ((,) <$> wtTime <*> wtEvent))
+                       . splitConns wtEvent
+                       . withTimeNameTraceEvents
                        $ trace
 
   in counterexample (ppTrace trace)
+   $ getAllProperty
    $ verifyAllTimeouts transitionSignal
   where
-    verifyAllTimeouts :: [[(Time , AbstractTransitionTrace SimAddr)]]
-                      -> Property
-    verifyAllTimeouts [] = property True
-    verifyAllTimeouts (t:tts) =
-      counterexample ("\nConnection transition trace:\n"
-                     ++ intercalate "\n" (map show t)
-                     )
-      $ verifyTimeouts Nothing t
-      .&&. verifyAllTimeouts tts
+    verifyAllTimeouts :: Trace (SimResult ()) [(Time, AbstractTransitionTrace SimAddr)]
+                      -> AllProperty
+    verifyAllTimeouts =
+      bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           v             -> AllProperty
+                         $ counterexample (show v) (property False)
+       )
+       (\ tr ->
+         AllProperty
+         $ counterexample ("\nConnection transition trace:\n"
+                         ++ intercalate "\n" (map show tr)
+                         )
+         $ verifyTimeouts Nothing tr)
 
     -- verifyTimeouts checks that in all \tau transition states the timeout is
     -- respected. It does so by checking the stream of abstract transitions
@@ -2697,27 +2704,22 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
            TerminatingSt         -> verifyTimeouts newState xs
            _                     -> verifyTimeouts Nothing xs
 
-    getTraceEvents :: forall a b. Typeable b
-                      => SimTrace a
-                      -> [(Time, b)]
-    getTraceEvents = go
-      where
-        go (SimTrace t _ _ (EventLog e) trace)
-         | Just (WithName MainServer x)
-              <- fromDynamic
-                  @(WithName (Name SimAddr) b)
-                  e = (t,x) : go trace
-        go (SimTrace _ _ _ _ trace)   = go trace
-        go (TraceMainException _ e _) = throw e
-        go (TraceDeadlock      _   _) = [] -- expected result in many cases
-        go (TraceMainReturn    _ _ _) = []
+    tracerWithTime :: MonadMonotonicTime m => Tracer m (WithTime a) -> Tracer m a
+    tracerWithTime = contramapM $ \a -> flip WithTime a <$> getMonotonicTime
 
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
-                       absNoAttenuation
-                       maxAcceptedConnectionsLimit
-                       events
-                       attenuationMap
+    sim = multiNodeSimTracer serverAcc dataFlow
+                             absNoAttenuation
+                             maxAcceptedConnectionsLimit
+                             events
+                             attenuationMap
+                             (Tracer traceM <> sayTracer)
+                             ( tracerWithTime (Tracer traceM)
+                             <> Tracer traceM
+                             <> sayTracer
+                             )
+                             (Tracer traceM <> sayTracer)
+                             (Tracer traceM <> sayTracer)
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -3079,7 +3081,8 @@ prop_connection_manager_pruning serverAcc
              tpTransitions         = trs
           }
        )
-    . traceSplitConns
+    . fmap (map ttTransition)
+    . splitConns id
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -3362,16 +3365,35 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
 
 
 
-multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
-             => req
-             -> DataFlow
-             -> AbsBearerInfo
-             -> AcceptedConnectionsLimit
-             -> [ConnectionEvent req TestAddr]
-             -> Map TestAddr (Script AbsBearerInfo)
-             -> IOSim s ()
-multiNodeSim serverAcc dataFlow defaultBearerInfo
-             acceptedConnLimit events attenuationMap = do
+multiNodeSimTracer :: (Serialise req, Show req, Eq req, Typeable req)
+                   => req
+                   -> DataFlow
+                   -> AbsBearerInfo
+                   -> AcceptedConnectionsLimit
+                   -> [ConnectionEvent req TestAddr]
+                   -> Map TestAddr (Script AbsBearerInfo)
+                   -> Tracer
+                      (IOSim s)
+                      (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr))
+                   -> Tracer
+                      (IOSim s)
+                      (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                   -> Tracer
+                      (IOSim s)
+                      (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
+                   -> Tracer
+                      (IOSim s)
+                      (WithName
+                       (Name SimAddr)
+                        (ConnectionManagerTrace
+                         SimAddr
+                          (ConnectionHandlerTrace
+                            UnversionedProtocol DataFlowProtocolData)))
+                   -> IOSim s ()
+multiNodeSimTracer serverAcc dataFlow defaultBearerInfo
+                   acceptedConnLimit events attenuationMap
+                   remoteTrTracer abstractTrTracer
+                   inboundGovTracer connMgrTracer = do
 
       let attenuationMap' = (fmap toBearerInfo <$>)
                           . Map.mapKeys ( normaliseId
@@ -3384,10 +3406,10 @@ multiNodeSim serverAcc dataFlow defaultBearerInfo
                                   (toBearerInfo defaultBearerInfo)
                                   attenuationMap'
               $ \snocket _ ->
-                 multinodeExperiment (Tracer traceM <> Tracer (say . show))
-                                     (Tracer traceM <> Tracer (say . show))
-                                     (Tracer traceM <> Tracer (say . show))
-                                     (Tracer traceM <> Tracer (say . show))
+                 multinodeExperiment remoteTrTracer
+                                     abstractTrTracer
+                                     inboundGovTracer
+                                     connMgrTracer
                                      snocket
                                      Snocket.TestFamily
                                      mainServerAddr
@@ -3405,6 +3427,25 @@ multiNodeSim serverAcc dataFlow defaultBearerInfo
   where
     mainServerAddr :: SimAddr
     mainServerAddr = Snocket.TestAddress 0
+
+
+multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
+             => req
+             -> DataFlow
+             -> AbsBearerInfo
+             -> AcceptedConnectionsLimit
+             -> [ConnectionEvent req TestAddr]
+             -> Map TestAddr (Script AbsBearerInfo)
+             -> IOSim s ()
+multiNodeSim serverAcc dataFlow defaultBearerInfo
+                   acceptedConnLimit events attenuationMap = do
+  let dynamicTracer :: (Typeable a, Show a) => Tracer (IOSim s) a
+      dynamicTracer = Tracer traceM <> sayTracer
+
+  multiNodeSimTracer serverAcc dataFlow defaultBearerInfo acceptedConnLimit
+                     events attenuationMap dynamicTracer dynamicTracer
+                     dynamicTracer dynamicTracer
+
 
 -- | Connection terminated while negotiating it.
 --
@@ -3451,64 +3492,40 @@ unit_connection_terminated_when_negotiating =
 -- the property that every connection is terminated with 'UnknownConnectionSt'.
 -- This property is verified by 'verifyAbstractTransitionOrder'.
 --
-traceSplitConns :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-                -> Trace (SimResult ()) [AbstractTransition]
-traceSplitConns =
-    bimap id fromJust
+splitConns :: (a -> AbstractTransitionTrace SimAddr)
+           -> Trace (SimResult ()) a
+           -> Trace (SimResult ()) [a]
+splitConns getTransition =
+    fmap fromJust
   . Trace.filter isJust
   -- there might be some connections in the state, push them onto the 'Trace'
   . (\(s, o) -> foldr (\a as -> Trace.Cons (Just a) as) o (Map.elems s))
   . bimapAccumL
-      ( \ s a -> ( s, a))
-      ( \ s TransitionTrace { ttPeerAddr, ttTransition } ->
-          case ttTransition of
-            Transition _ UnknownConnectionSt ->
-              case ttPeerAddr `Map.lookup` s of
-                Nothing  -> ( Map.insert ttPeerAddr [ttTransition] s
-                            , Nothing
-                            )
-                Just trs -> ( Map.delete ttPeerAddr s
-                            , Just (reverse $ ttTransition : trs)
-                            )
-            _ ->            ( Map.alter ( \ case
-                                              Nothing -> Just [ttTransition]
-                                              Just as -> Just (ttTransition : as)
-                                        ) ttPeerAddr s
-                            , Nothing
-                            )
-      )
-      Map.empty
-
-splitConns :: [(Time, AbstractTransitionTrace SimAddr)]
-           -> [[(Time, AbstractTransitionTrace SimAddr)]]
-splitConns =
-    catMaybes
-  -- there might be some connections in the state, push them onto the 'Trace'
-  . (\(s, o) -> foldr (\a as -> Just a : as) o (Map.elems s))
-  . mapAccumL
-      ( \ s (t, tt@TransitionTrace { ttPeerAddr, ttTransition }) ->
-          case ttTransition of
-            Transition _ UnknownConnectionSt ->
-              case ttPeerAddr `Map.lookup` s of
-                Nothing  -> ( Map.insert ttPeerAddr [(t, tt)] s
-                            , Nothing
-                            )
-                Just trs -> ( Map.delete ttPeerAddr s
-                            , Just (reverse $ (t, tt) : trs)
-                            )
-            _ ->            ( Map.alter ( \ case
-                                              Nothing -> Just [(t, tt)]
-                                              Just as -> Just ((t, tt) : as)
-                                        ) ttPeerAddr s
-                            , Nothing
-                            )
+      ( \ s a -> (s, a))
+      ( \ s a ->
+          let TransitionTrace { ttPeerAddr, ttTransition } = getTransition a
+           in case ttTransition of
+             Transition _ UnknownConnectionSt ->
+               case ttPeerAddr `Map.lookup` s of
+                 Nothing  -> ( Map.insert ttPeerAddr [a] s
+                             , Nothing
+                             )
+                 Just trs -> ( Map.delete ttPeerAddr s
+                             , Just (reverse $ a : trs)
+                             )
+             _ ->            ( Map.alter ( \ case
+                                               Nothing -> Just [a]
+                                               Just as -> Just (a : as)
+                                         ) ttPeerAddr s
+                             , Nothing
+                             )
       )
       Map.empty
 
 splitRemoteConns :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
                  -> Trace (SimResult ()) [RemoteTransition]
 splitRemoteConns =
-    bimap id fromJust
+    fmap fromJust
   . Trace.filter isJust
   -- there might be some connections in the state, push them onto the 'Trace'
   . (\(s, o) -> foldr (\a as -> Trace.Cons (Just a) as) o (Map.elems s))
@@ -3585,6 +3602,12 @@ data WithName name event = WithName {
   }
   deriving (Show, Functor)
 
+data WithTime event = WithTime {
+  wtTime  :: Time,
+  wtEvent :: event
+  }
+  deriving (Show, Functor)
+
 traceWithNameTraceEvents :: forall b. Typeable b
                     => SimTrace () -> Trace (SimResult ()) b
 traceWithNameTraceEvents = fmap wnEvent
@@ -3599,6 +3622,14 @@ withNameTraceEvents = fmap wnEvent
           . selectTraceEventsDynamic
               @()
               @(WithName (Name SimAddr) b)
+
+withTimeNameTraceEvents :: forall b. Typeable b => SimTrace ()
+                        -> Trace (SimResult ()) (WithTime b)
+withTimeNameTraceEvents = fmap (\(WithTime t (WithName _ e)) -> WithTime t e)
+          . Trace.filter ((MainServer ==) . wnName . wtEvent)
+          . traceSelectTraceEventsDynamic
+              @()
+              @(WithTime (WithName (Name SimAddr) b))
 
 sayTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 sayTracer = Tracer $
@@ -3691,8 +3722,6 @@ classifyActivityType as =
 -- debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
 -- debugTracer = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
            -- <> Tracer Debug.traceShowM
-
-
 
 
 withLock :: ( MonadSTM   m
