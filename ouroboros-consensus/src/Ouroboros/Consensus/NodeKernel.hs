@@ -579,7 +579,7 @@ forkBlockForging IS{..} blockForging =
         -- produce a block that fits onto the ledger we got above; if the
         -- ledger in the meantime changes, the block we produce here may or
         -- may not be adopted, but it won't be invalid.
-        mempoolSnapshot <- lift $ atomically $
+        mempoolSnapshot <- lift $
                              getSnapshotFor
                                mempool
                                (ForgeInKnownSlot
