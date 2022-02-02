@@ -500,8 +500,10 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
   mapLedgerTables  f                         (CardanoLedgerTables x) = CardanoLedgerTables (f x)
   zipLedgerTables  f (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
 
-instance ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
-  showsLedgerState = error "showsLedgerState @CardanoBlock"
+instance PraosCrypto c => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
+  showsLedgerState _mk (CardanoLedgerTables utxo) =
+        showParen True
+      $ showString "CardanoLedgerTables " . showsApplyMapKind utxo
 
 -- | Auxiliary for convenience
 --

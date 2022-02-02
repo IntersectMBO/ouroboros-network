@@ -381,6 +381,17 @@ instance SOP.All ShelleyBasedEra eras => NoThunks (ShelleyTxOut eras) where
       Z l -> noThunks ("Z" : ctxt) l
       S r -> noThunks ("S" : ctxt) (ShelleyTxOut r)
 
+-- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
+-- inlined it
+instance SOP.All ShelleyBasedEra eras => Show (ShelleyTxOut eras) where
+  showsPrec = 
+      \p (ShelleyTxOut ns) -> showParen (p > 10) $ showString "ShelleyTxOut " . go ns
+    where
+      go :: SOP.All ShelleyBasedEra eras' => NS TxOutWrapper eras' -> ShowS
+      go = showParen True . \case
+        Z l -> showString "Z " . shows l
+        S r -> showString "S " . go r
+
 -- unline SOP.nsToIndex, this is not restricted to the interval [0, 24)
 idxLength :: SOP.Index xs x -> Int
 idxLength = \case

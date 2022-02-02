@@ -260,7 +260,7 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
         st4 =
           overLedgerTablesTicked
             (zipLedgerTables
-               ShelleyLedger.calculateDifference
+               calculateDifference
                (projectLedgerTablesTicked st0)
             )
             st3
@@ -288,7 +288,7 @@ reapplyShelleyTx cfg slot vgtx st0 = do
     let st2 =
             overLedgerTablesTicked
               (zipLedgerTables
-                 ShelleyLedger.calculateDifference
+                 calculateDifference
                  (projectLedgerTablesTicked st0)
               )
           $ ShelleyLedger.cnv $ unstowLedgerTables $ ShelleyLedger.vnc

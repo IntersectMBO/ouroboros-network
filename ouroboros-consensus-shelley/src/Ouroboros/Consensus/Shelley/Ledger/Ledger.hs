@@ -46,7 +46,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , encodeShelleyHeaderState
   , encodeShelleyLedgerState
     -- * TEMPORARY exports to unblock prototyping
-  , calculateDifference
   , cnv
   , vnc
   ) where
@@ -64,6 +63,7 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Records
+import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
@@ -204,7 +204,22 @@ deriving instance ShelleyBasedEra era => Eq       (LedgerState (ShelleyBlock era
 deriving instance ShelleyBasedEra era => NoThunks (LedgerState (ShelleyBlock era) mk)
 
 instance ShelleyBasedEra era => ShowLedgerState (LedgerState (ShelleyBlock era)) where
-  showsLedgerState = error "showsLedgerState @ShelleyBlock"
+  showsLedgerState mk st =
+        showParen True
+      $   showString "ShelleyLedgerState {"
+        . showSpace      . showString "shelleyLedgerTip = " . shows shelleyLedgerTip
+        . showCommaSpace . showString "shelleyLedgerState = " . shows shelleyLedgerState
+        . showCommaSpace . showString "shelleyLedgerTransition = " . shows shelleyLedgerTransition
+        . showCommaSpace . showString "shelleyLedgerTables = " . showsLedgerState mk shelleyLedgerTables
+        . showString " }"
+    where
+      ShelleyLedgerState _dummy _ _ _ = st
+      ShelleyLedgerState {
+          shelleyLedgerState
+        , shelleyLedgerTables
+        , shelleyLedgerTip
+        , shelleyLedgerTransition
+        } = st
 
 -- | Information required to determine the hard fork point from Shelley to the
 -- next ledger
@@ -298,7 +313,9 @@ instance
       ShelleyLedgerTables <$> fromCBOR
 
 instance ShelleyBasedEra era => ShowLedgerState (LedgerTables (LedgerState (ShelleyBlock era))) where
-  showsLedgerState = error "showsLedgerState @LedgerTables ShelleyBlock"
+  showsLedgerState _mk (ShelleyLedgerTables utxo) =
+        showParen True
+      $ showString "ShelleyLedgerTables " . showsApplyMapKind utxo
 
 instance
      ShelleyBasedEra era
@@ -526,14 +543,6 @@ instance Show ShelleyReapplyException where
   show (ShelleyReapplyException err) = "(ShelleyReapplyException " <> show err <> ")"
 
 instance Exception.Exception ShelleyReapplyException where
-
-calculateDifference ::
-     Ord k
-  => ApplyMapKind ValuesMK k v
-  -> ApplyMapKind ValuesMK k v
-  -> ApplyMapKind TrackingMK k v
-calculateDifference (ApplyValuesMK before) (ApplyValuesMK after) =
-    ApplyTrackingMK after (HD.differenceUtxoValues before after)
 
 -- TODO float the stow/unstow logic out of the StowLedgerTables ShelleyBlock
 -- instance and reuse it here instead of jumping through this confusing vnc/cnv

@@ -158,6 +158,7 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (Annotator (TxSeq era))
       , Eq       (Core.TxOut era)
       , NoThunks (Core.TxOut era)
+      , Show     (Core.TxOut era)
 
         -- for snapshotting the in-memory backing store
       , FromCBOR (SL.TxIn (EraCrypto era))
@@ -165,8 +166,6 @@ class ( SL.ShelleyBasedEra era
       , FromCBOR (Core.TxOut era)
       , ToCBOR   (Core.TxOut era)
 
-      , Eq       (TxOutWrapper era)
-      , NoThunks (TxOutWrapper era)
       ) => ShelleyBasedEra era where
 
   -- | Return the name of the Shelley-based era, e.g., @"Shelley"@, @"Allegra"@,
@@ -348,8 +347,9 @@ instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) WrapTx
 newtype TxOutWrapper era = TxOutWrapper {unTxOutWrapper :: Core.TxOut era}
   deriving (Generic)
 
-deriving instance ShelleyBasedEra era => Eq       (TxOutWrapper era)
-deriving instance ShelleyBasedEra era => NoThunks (TxOutWrapper era)
+deriving instance Eq       (Core.TxOut era) => Eq       (TxOutWrapper era)
+deriving instance NoThunks (Core.TxOut era) => NoThunks (TxOutWrapper era)
+deriving instance Show     (Core.TxOut era) => Show     (TxOutWrapper era)
 
 instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) TxOutWrapper where
   type TranslationError (AllegraEra c) TxOutWrapper = Void
