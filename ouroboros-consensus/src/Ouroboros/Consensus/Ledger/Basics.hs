@@ -95,6 +95,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , prefixDbChangelog
   , pruneDbChangelog
   , rollbackDbChangelog
+  , youngestImmutableSlotDbChangelog
     -- ** Misc
   , ShowLedgerState (..)
   ) where
@@ -983,3 +984,12 @@ rollbackDbChangelog n dblog =
       , changelogImmutableStates
       , changelogVolatileStates
       } = dblog
+
+youngestImmutableSlotDbChangelog ::
+     GetTip (l EmptyMK)
+  => DbChangelog l -> WithOrigin SlotNo
+youngestImmutableSlotDbChangelog =
+      getTipSlot
+    . either unDbChangelogState unDbChangelogState
+    . AS.head
+    . changelogImmutableStates
