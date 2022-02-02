@@ -756,7 +756,11 @@ withTestMempool setup@TestSetup {..} prop =
       -- Set up the LedgerInterface
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
       let ledgerInterface = LedgerInterface
-            { getCurrentLedgerState = readTVar varCurrentLedgerState
+            { getCurrentLedgerState       = readTVar varCurrentLedgerState
+            , getCurrentLedgerStateForTxs = \m -> do
+                (a, _) <- m
+                lst <- atomically $ readTVar varCurrentLedgerState
+                pure (a, convertMapKind lst)
             }
 
       -- Set up the Tracer
