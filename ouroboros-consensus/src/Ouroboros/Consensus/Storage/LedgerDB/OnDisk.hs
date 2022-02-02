@@ -424,7 +424,7 @@ readKeySets :: forall m l.
   => LedgerBackingStore m l
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
-readKeySets (LedgerBackingStore backingStore) (RewoundTableKeySets rew) = do
+readKeySets (LedgerBackingStore backingStore) (RewoundTableKeySets _seqNo rew) = do
     (slot, values) <- HD.bsRead backingStore (mapLedgerTables prj rew)
     pure UnforwardedReadSets {
         ursSeqNo  = slot
