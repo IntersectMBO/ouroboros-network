@@ -448,11 +448,11 @@ readKeySets (LedgerBackingStore backingStore) (RewoundTableKeySets rew) = do
 -- 'Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB.flushLock' write lock must be
 -- held before calling this function.
 flush ::
-     (Applicative m, TableStuff l)
+     (Applicative m, TableStuff l, GetTip (l EmptyMK))
   => LedgerBackingStore m l -> DbChangelog l -> m ()
 flush (LedgerBackingStore backingStore) dblog =
-    case changelogDiffAnchor dblog of
-      Origin  -> pure ()
+    case youngestImmutableSlotDbChangelog dblog of
+      Origin  -> pure ()   -- the diff is necessarily empty
       At slot ->
         HD.bsWrite
           backingStore
