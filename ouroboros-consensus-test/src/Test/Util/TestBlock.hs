@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -15,6 +16,9 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
@@ -25,15 +29,21 @@ module Test.Util.TestBlock (
   , CodecConfig (..)
   , Header (..)
   , StorageConfig (..)
-  , TestBlock (..)
   , TestBlockError (..)
+  , TestBlockWith
   , TestHash (TestHash)
-  , firstBlock
+  , firstBlockWithPayload
   , forkBlock
   , modifyFork
-  , successorBlock
+  , successorBlockWithPayload
   , testHashFromList
   , unTestHash
+    -- ** Test block without payload
+  , TestBlock
+  , firstBlock
+  , successorBlock
+    -- * LedgerState
+  , lastAppliedPoint
     -- * Chain
   , BlockChain (..)
   , blockChain
@@ -45,7 +55,6 @@ module Test.Util.TestBlock (
   , treeToBlocks
   , treeToChains
     -- * Ledger infrastructure
-  , lastAppliedBlock
   , singleNodeTestConfig
   , singleNodeTestConfigWithK
   , testInitExtLedger
@@ -59,6 +68,7 @@ import           Codec.Serialise (Serialise (..))
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
 import           Data.Int
+import           Data.Kind (Type)
 import           Data.List (transpose)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
@@ -70,6 +80,7 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -168,55 +179,87 @@ instance Show TestHash where
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
-data TestBlock = TestBlock {
-      tbHash  :: TestHash
-    , tbSlot  :: SlotNo
+-- | Test block parametrized on the payload type
+--
+-- For blocks without payload see the 'TestBlock' type alias.
+--
+-- By defining a 'PayloadSemantics' it is possible to obtain an 'ApplyBlock'
+-- instance. See the former class for more details.
+--
+data TestBlockWith ptype = TestBlockWith {
+      tbHash    :: TestHash
+    , tbSlot    :: SlotNo
       -- ^ We store a separate 'Block.SlotNo', as slots can have gaps between
       -- them, unlike block numbers.
       --
       -- Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same slot number.
-    , tbValid :: Bool
+    , tbValid   :: Bool
       -- ^ Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
+    , tbPayload :: ptype
     }
   deriving stock    (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
 
+-- | Create the first block in the given fork, @[fork]@, with the given payload.
+-- The 'SlotNo' will be 1.
+firstBlockWithPayload :: Word64 -> ptype -> TestBlockWith ptype
+firstBlockWithPayload forkNo payload = TestBlockWith
+    { tbHash    = TestHash (forkNo NE.:| [])
+    , tbSlot    = 1
+    , tbValid   = True
+    , tbPayload = payload
+    }
+
+-- | Create the successor of the given block without forking: @b -> b ++ [0]@ (in
+-- the printed representation) The 'SlotNo' is increased by 1.
+--
+-- In Zipper parlance, this corresponds to going down in a tree.
+successorBlockWithPayload ::
+  TestHash -> SlotNo -> ptype -> TestBlockWith ptype
+successorBlockWithPayload hash slot payload = TestBlockWith
+    { tbHash    = TestHash (NE.cons 0 (unTestHash hash))
+    , tbSlot    = succ slot
+    , tbValid   = True
+    , tbPayload = payload
+    }
+
 instance ShowProxy TestBlock where
 
-newtype instance Header TestBlock = TestHeader { testHeader :: TestBlock }
-  deriving stock   (Eq, Show)
+newtype instance Header (TestBlockWith ptype) =
+    TestHeader { testHeader :: TestBlockWith ptype }
+  deriving stock (Eq, Show)
   deriving newtype (NoThunks, Serialise)
 
-instance ShowProxy (Header TestBlock) where
+instance Typeable ptype => ShowProxy (Header (TestBlockWith ptype)) where
 
-instance GetHeader TestBlock where
-  getHeader = TestHeader
-  blockMatchesHeader (TestHeader blk') blk = blk == blk'
-  headerIsEBB = const Nothing
-
-type instance HeaderHash TestBlock = TestHash
-
-instance HasHeader TestBlock where
-  getHeaderFields = getBlockHeaderFields
-
-instance HasHeader (Header TestBlock) where
-  getHeaderFields (TestHeader TestBlock{..}) = HeaderFields {
+instance (Typeable ptype, Eq ptype) => HasHeader (Header (TestBlockWith ptype)) where
+  getHeaderFields (TestHeader TestBlockWith{..}) = HeaderFields {
         headerFieldHash    = tbHash
       , headerFieldSlot    = tbSlot
       , headerFieldBlockNo = fromIntegral . NE.length . unTestHash $ tbHash
       }
 
-instance GetPrevHash TestBlock where
+instance (Typeable ptype, Eq ptype) => GetHeader (TestBlockWith ptype) where
+  getHeader = TestHeader
+  blockMatchesHeader (TestHeader blk') blk = blk == blk'
+  headerIsEBB = const Nothing
+
+type instance HeaderHash (TestBlockWith ptype) = TestHash
+
+instance (Typeable ptype, Eq ptype) => HasHeader (TestBlockWith ptype) where
+  getHeaderFields = getBlockHeaderFields
+
+instance (Typeable ptype, Eq ptype) => GetPrevHash (TestBlockWith ptype) where
   headerPrevHash (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
         Nothing       -> GenesisHash
         Just prevHash -> BlockHash (TestHash prevHash)
 
-instance StandardHash TestBlock
+instance StandardHash (TestBlockWith ptype)
 
-instance Condense TestBlock where
+instance (Typeable ptype, Eq ptype) => Condense (TestBlockWith ptype) where
   condense b = mconcat [
         "(H:"
       , condense (blockHash b)
@@ -227,14 +270,14 @@ instance Condense TestBlock where
       , ")"
       ]
 
-instance Condense (Header TestBlock) where
+instance (Typeable ptype, Eq ptype) => Condense (Header (TestBlockWith ptype)) where
   condense = condense . testHeader
 
-instance Condense (ChainHash TestBlock) where
+instance Condense (ChainHash (TestBlockWith ptype)) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
 
-data instance BlockConfig TestBlock = TestBlockConfig {
+data instance BlockConfig (TestBlockWith ptype) = TestBlockConfig {
       -- | Number of core nodes
       --
       -- We need this in order to compute the 'ValidateView', which must
@@ -243,18 +286,10 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     }
   deriving (Show, Generic, NoThunks)
 
--- | The 'TestBlock' does not need any codec config
-data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Show, Generic, NoThunks)
-
--- | The 'TestBlock' does not need any storage config
-data instance StorageConfig TestBlock = TestBlockStorageConfig
-  deriving (Show, Generic, NoThunks)
-
-instance HasNetworkProtocolVersion TestBlock where
+instance HasNetworkProtocolVersion (TestBlockWith ptype) where
   -- Use defaults
 
-instance ConfigSupportsNode TestBlock where
+instance ConfigSupportsNode (TestBlockWith ptype) where
   getSystemStart = const (SystemStart dummyDate)
     where
       --  This doesn't matter much
@@ -262,6 +297,28 @@ instance ConfigSupportsNode TestBlock where
 
   getNetworkMagic = const (NetworkMagic 42)
 
+{-------------------------------------------------------------------------------
+  Payload semantics
+-------------------------------------------------------------------------------}
+
+class ( Typeable ptype
+      , Eq ptype
+      , Eq (PayloadDependentState ptype)
+      , Show (PayloadDependentState ptype)
+      , Generic (PayloadDependentState ptype)
+      , ToExpr (PayloadDependentState ptype)
+      , Serialise (PayloadDependentState ptype)
+      , NoThunks (PayloadDependentState ptype)
+      ) => PayloadSemantics ptype where
+
+  type PayloadDependentState ptype :: Type
+
+  applyPayload :: PayloadDependentState ptype -> ptype -> PayloadDependentState ptype
+
+instance PayloadSemantics () where
+  type PayloadDependentState () = ()
+
+  applyPayload _ _ = ()
 
 {-------------------------------------------------------------------------------
   NestedCtxt
@@ -284,29 +341,34 @@ instance HasNestedContent f TestBlock
   Test infrastructure: ledger state
 -------------------------------------------------------------------------------}
 
-type instance BlockProtocol TestBlock = Bft BftMockCrypto
+type instance BlockProtocol (TestBlockWith ptype) = Bft BftMockCrypto
 
-type instance Signed (Header TestBlock) = ()
-instance SignedHeader (Header TestBlock) where
+type instance Signed (Header (TestBlockWith ptype)) = ()
+instance SignedHeader (Header (TestBlockWith ptype)) where
   headerSigned _ = ()
 
-data TestBlockError =
+data TestBlockError ptype =
     -- | The hashes don't line up
     InvalidHash
-      (ChainHash TestBlock)  -- ^ Expected hash
-      (ChainHash TestBlock)  -- ^ Invalid hash
+      (ChainHash (TestBlockWith ptype))  -- ^ Expected hash
+      (ChainHash (TestBlockWith ptype))  -- ^ Invalid hash
 
     -- | The block itself is invalid
   | InvalidBlock
   deriving (Eq, Show, Generic, NoThunks)
 
-instance BlockSupportsProtocol TestBlock where
+instance ( Typeable ptype
+         , Eq       ptype
+         , NoThunks ptype
+         , NoThunks (CodecConfig (TestBlockWith ptype))
+         , NoThunks (StorageConfig (TestBlockWith ptype))
+         ) => BlockSupportsProtocol (TestBlockWith ptype) where
   validateView TestBlockConfig{..} =
       bftValidateView bftFields
     where
       NumCoreNodes numCore = testBlockNumCoreNodes
 
-      bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
+      bftFields :: Header (TestBlockWith ptype) -> BftFields BftMockCrypto ()
       bftFields (TestHeader tb) = BftFields {
             bftSignature = SignedDSIGN $ mockSign () (signKey (tbSlot tb))
           }
@@ -316,62 +378,69 @@ instance BlockSupportsProtocol TestBlock where
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
-type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
-
-instance GetTip (LedgerState TestBlock) where
-  getTip = castPoint . lastAppliedPoint
-
-instance GetTip (Ticked (LedgerState TestBlock)) where
-  getTip = castPoint . lastAppliedPoint . getTickedTestLedger
-
-instance IsLedger (LedgerState TestBlock) where
-  type LedgerErr (LedgerState TestBlock) = TestBlockError
-
-  type AuxLedgerEvent (LedgerState TestBlock) =
-    VoidLedgerEvent (LedgerState TestBlock)
-
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
-
-instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
+instance PayloadSemantics ptype
+         => ApplyBlock (LedgerState (TestBlockWith ptype)) (TestBlockWith ptype) where
+  applyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
     = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
-    = return     $ pureLedgerResult $ TestLedger (Chain.blockPoint tb)
+    = return     $ pureLedgerResult
+                 $ TestLedger {
+                       lastAppliedPoint      = Chain.blockPoint tb
+                     , payloadDependentState = applyPayload payloadDependentState tbPayload
+                     }
 
-  reapplyBlockLedgerResult _ tb _ =
-                   pureLedgerResult $ TestLedger (Chain.blockPoint tb)
+  reapplyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..}) =
+                   pureLedgerResult
+                 $ TestLedger {
+                       lastAppliedPoint      = Chain.blockPoint tb
+                     , payloadDependentState = applyPayload payloadDependentState tbPayload
+                     }
 
-newtype instance LedgerState TestBlock =
+data instance LedgerState (TestBlockWith ptype) =
     TestLedger {
-        -- The ledger state simply consists of the last applied block
-        lastAppliedPoint :: Point TestBlock
+        -- | The ledger state simply consists of the last applied block
+        lastAppliedPoint      :: Point (TestBlockWith ptype)
+        -- | State that depends on the application of the block payload to the
+        -- state.
+      , payloadDependentState :: PayloadDependentState ptype
       }
-  deriving stock   (Show, Eq, Generic)
-  deriving newtype (Serialise, NoThunks, ToExpr)
+
+deriving stock instance PayloadSemantics ptype => Show    (LedgerState (TestBlockWith ptype))
+deriving stock instance PayloadSemantics ptype => Eq      (LedgerState (TestBlockWith ptype))
+deriving stock instance Generic (LedgerState (TestBlockWith ptype))
+
+deriving anyclass instance PayloadSemantics ptype => Serialise (LedgerState (TestBlockWith ptype))
+deriving anyclass instance PayloadSemantics ptype => NoThunks  (LedgerState (TestBlockWith ptype))
+deriving anyclass instance PayloadSemantics ptype => ToExpr    (LedgerState (TestBlockWith ptype))
 
 -- Ticking has no effect
-newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {
-      getTickedTestLedger :: LedgerState TestBlock
+newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
+      getTickedTestLedger :: LedgerState (TestBlockWith ptype)
     }
+
+type instance LedgerCfg (LedgerState (TestBlockWith ptype)) = HardFork.EraParams
+
+instance GetTip (LedgerState (TestBlockWith ptype)) where
+  getTip = castPoint . lastAppliedPoint
+
+instance GetTip (Ticked (LedgerState (TestBlockWith ptype))) where
+  getTip = castPoint . lastAppliedPoint . getTickedTestLedger
+
+instance PayloadSemantics ptype => IsLedger (LedgerState (TestBlockWith ptype)) where
+  type LedgerErr (LedgerState (TestBlockWith ptype)) = TestBlockError ptype
+
+  type AuxLedgerEvent (LedgerState (TestBlockWith ptype)) =
+    VoidLedgerEvent (LedgerState (TestBlockWith ptype))
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
 
 instance UpdateLedger TestBlock
 
 instance InspectLedger TestBlock where
   -- Defaults are fine
-
--- | Last applied block
---
--- Returns 'Nothing' if the ledger is empty.
-lastAppliedBlock :: LedgerState TestBlock -> Maybe TestBlock
-lastAppliedBlock (TestLedger p) = go p
-  where
-    -- We can only have applied valid blocks
-    go :: Point TestBlock -> Maybe TestBlock
-    go GenesisPoint           = Nothing
-    go (BlockPoint slot hash) = Just $ TestBlock hash slot True
 
 instance HasAnnTip TestBlock where
   -- Use defaults
@@ -408,7 +477,7 @@ instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
 
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger GenesisPoint
+testInitLedger = TestLedger GenesisPoint ()
 
 testInitExtLedger :: ExtLedgerState TestBlock
 testInitExtLedger = ExtLedgerState {
@@ -445,7 +514,22 @@ singleNodeTestConfigWithK k = TopLevelConfig {
     eraParams = HardFork.defaultEraParams k slotLength
 
 {-------------------------------------------------------------------------------
-  Chain of blocks
+  Test blocks without payload
+-------------------------------------------------------------------------------}
+
+-- | Block without payload
+type TestBlock = TestBlockWith ()
+
+-- | The 'TestBlock' does not need any codec config
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Show, Generic, NoThunks)
+
+-- | The 'TestBlock' does not need any storage config
+data instance StorageConfig TestBlock = TestBlockStorageConfig
+  deriving (Show, Generic, NoThunks)
+
+{-------------------------------------------------------------------------------
+  Chain of blocks (without payload)
 -------------------------------------------------------------------------------}
 
 newtype BlockChain = BlockChain Word64
@@ -462,32 +546,19 @@ instance Arbitrary BlockChain where
   arbitrary = BlockChain <$> choose (0, 30)
   shrink (BlockChain c) = BlockChain <$> shrink c
 
--- Create the first block in the given fork: @[fork]@
--- The 'SlotNo' will be 1.
+-- | See 'firstBlockWithPayload'.
 firstBlock :: Word64 -> TestBlock
-firstBlock forkNo = TestBlock
-    { tbHash  = TestHash (forkNo NE.:| [])
-    , tbSlot  = 1
-    , tbValid = True
-    }
+firstBlock forkNo = firstBlockWithPayload forkNo ()
 
--- Create the successor of the given block without forking:
--- @b -> b ++ [0]@ (in the printed representation)
--- The 'SlotNo' is increased by 1.
---
--- In Zipper parlance, this corresponds to going down in a tree.
+-- | See 'successorBlockWithPayload'.
 successorBlock :: TestBlock -> TestBlock
-successorBlock TestBlock{..} = TestBlock
-    { tbHash  = TestHash (NE.cons 0 (unTestHash tbHash))
-    , tbSlot  = succ tbSlot
-    , tbValid = True
-    }
+successorBlock TestBlockWith{tbHash, tbSlot} = successorBlockWithPayload tbHash tbSlot ()
 
 -- Modify the (last) fork number of the given block:
 -- @g@ -> @[.., f]@ -> @[.., g f]@
 -- The 'SlotNo' is left unchanged.
 modifyFork :: (Word64 -> Word64) -> TestBlock -> TestBlock
-modifyFork g tb@TestBlock{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
+modifyFork g tb@TestBlockWith{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
     { tbHash = let !gf = g f in UnsafeTestHash (gf NE.:| h)
     }
 
@@ -500,7 +571,7 @@ forkBlock :: TestBlock -> TestBlock
 forkBlock = modifyFork succ
 
 {-------------------------------------------------------------------------------
-  Tree of blocks
+  Tree of blocks (without payload)
 -------------------------------------------------------------------------------}
 
 newtype BlockTree = BlockTree (Tree ())

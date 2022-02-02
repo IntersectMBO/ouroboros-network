@@ -46,7 +46,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
 
-import           Test.QuickCheck (Gen)
+import           Test.QuickCheck (Arbitrary, Gen)
 import qualified Test.QuickCheck as QC
 import qualified Test.QuickCheck.Monadic as QC
 import qualified Test.QuickCheck.Random as QC
@@ -92,21 +92,28 @@ tests = testGroup "OnDisk" [
 -------------------------------------------------------------------------------}
 
 genBlocks ::
-     ExtLedgerCfg TestBlock
+     (Arbitrary ptype, HasHeader (TestBlockWith ptype))
+  => ExtLedgerCfg TestBlock
   -> Word64
-  -> ExtLedgerState TestBlock
-  -> [TestBlock]
-genBlocks _   0 _ = []
-genBlocks cfg n l = b:bs
-  where
-    b  = genBlock l
-    l' = tickThenReapply cfg b l
-    bs = genBlocks cfg (n - 1) l'
+  -> Point (TestBlockWith ptype)
+  -> Gen [TestBlockWith ptype]
+genBlocks _ 0 _ = pure []
+genBlocks cfg n b = do
+  b' <- genBlock b
+  bs <- genBlocks cfg (n - 1) (blockPoint b')
+  pure $! b':bs
 
-genBlock :: ExtLedgerState TestBlock -> TestBlock
-genBlock l = case lastAppliedBlock (ledgerState l) of
-               Nothing -> firstBlock 0
-               Just b  -> successorBlock b
+genBlock ::
+     Arbitrary payload
+  => Point (TestBlockWith ptype) -> Gen (TestBlockWith payload)
+genBlock GenesisPoint           = firstBlockWithPayload 0             <$> QC.arbitrary
+genBlock (BlockPoint slot hash) = successorBlockWithPayload hash slot <$> QC.arbitrary
+
+genBlockFromLedgerState ::
+     Arbitrary payload
+  => ExtLedgerState TestBlock
+  -> Gen (TestBlockWith payload)
+genBlockFromLedgerState = genBlock . lastAppliedPoint . ledgerState
 
 extLedgerDbConfig :: SecurityParam -> LedgerDbCfg (ExtLedgerState TestBlock)
 extLedgerDbConfig secParam = LedgerDbCfg {
@@ -776,7 +783,7 @@ generator secParam (Model mock hs) = Just $ QC.oneof $ concat [
     withoutRef :: [Gen (Cmd :@ Symbolic)]
     withoutRef = [
           fmap At $ return Current
-        , fmap At $ return $ Push $ genBlock (mockCurrent mock)
+        , fmap (At . Push) $ genBlockFromLedgerState (mockCurrent mock)
         , fmap At $ do
             let maxRollback = minimum [
                     mockMaxRollback mock
@@ -784,12 +791,13 @@ generator secParam (Model mock hs) = Just $ QC.oneof $ concat [
                   ]
             numRollback  <- QC.choose (0, maxRollback)
             numNewBlocks <- QC.choose (numRollback, numRollback + 2)
-            let afterRollback = mockRollback numRollback mock
-            return $ Switch numRollback $
-                       genBlocks
+            let
+              afterRollback = mockRollback numRollback mock
+            blocks <- genBlocks
                          (ledgerDbCfg cfg)
                          numNewBlocks
-                         (mockCurrent afterRollback)
+                         (lastAppliedPoint . ledgerState . mockCurrent $ afterRollback)
+            return $ Switch numRollback blocks
         , fmap At $ return Snap
         , fmap At $ return Restore
         , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
