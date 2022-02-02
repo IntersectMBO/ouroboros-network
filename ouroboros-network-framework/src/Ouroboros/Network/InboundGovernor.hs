@@ -112,7 +112,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
     st <- atomically $ newTVar emptyState
     inboundGovernorLoop st
      `catch`
-       (\(e :: SomeAsyncException) -> do
+       (\(e :: SomeException) -> do
          state <- atomically $ readTVar st
          _ <- Map.traverseWithKey
                (\connId _ ->
@@ -120,7 +120,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                            (mkRemoteTransitionTrace connId state emptyState)
                )
                (igsConnections state)
-
+         traceWith tracer (TrInboundGovernorError e)
          throwIO e
        )
   where
@@ -562,4 +562,5 @@ data InboundGovernorTrace peerAddr
     | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
+    | TrInboundGovernorError  !SomeException
   deriving Show
