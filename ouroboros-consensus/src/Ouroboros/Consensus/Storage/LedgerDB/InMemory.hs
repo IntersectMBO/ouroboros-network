@@ -88,6 +88,7 @@ import           Control.Monad.Reader hiding (ap)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
+import qualified Debug.Trace
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
@@ -334,22 +335,37 @@ applyBlock cfg ap db = case ap of
       old <- oldApplyBlock ap
       new <- newApplyBlock ap
 
-      let oldnew =
+      let oldValues    = forgetLedgerStateTracking old
+          oldNewValues =
               applyDiffsLedgerTables oldLedgerDbCurrent
             $ projectLedgerTables
             $ trackingTablesToDiffs new
-      assert (old == oldnew) $ return (old, new)
 
+          showsTrackingDiff =
+              showsLedgerState SKeysMK
+            . mapLedgerTables (diffKeysMK . diffTrackingMK)
+            . projectLedgerTables
+
+          bare = flip withLedgerTables (emptyLedgerTables :: LedgerTables l EmptyMK)
+
+      id
+        $ Debug.Trace.trace
+            (($ "") $ showString "XXX\n" . showsTrackingDiff old . showString "\n" . showsTrackingDiff new)
+        $ Debug.Trace.trace
+            (($ "") $ showString "YYY\n" . showsLedgerState SEmptyMK (bare old) . showString "\n" . showsLedgerState SEmptyMK (bare new))
+        $ assert (bare old == bare new)
+        $ assert (projectLedgerTables oldValues == projectLedgerTables oldNewValues)
+        $ return (oldValues, new)
   where
 
     oldLedgerDbCurrent :: l ValuesMK
     oldLedgerDbCurrent = either unCheckpoint unCheckpoint . AS.head . ledgerDbCheckpoints $ db
 
-    oldApplyBlock :: Ap m l blk c -> m (l ValuesMK)
+    oldApplyBlock :: Ap m l blk c -> m (l TrackingMK)
     oldApplyBlock = \case
-      ReapplyVal b -> return $ forgetLedgerStateTracking $ tickThenReapply cfg b oldLedgerDbCurrent
+      ReapplyVal b -> return $ tickThenReapply cfg b oldLedgerDbCurrent
 
-      ApplyVal b -> forgetLedgerStateTracking <$>
+      ApplyVal b ->
                (  either (throwLedgerError db (blockRealPoint b)) return
                 $ runExcept
                 $ tickThenApply cfg b oldLedgerDbCurrent)
@@ -357,12 +373,12 @@ applyBlock cfg ap db = case ap of
       ReapplyRef r  -> do
         b <- resolveBlock r -- TODO: ask: would it make sense to recursively call applyBlock using ReapplyVal?
 
-        return $ forgetLedgerStateTracking $ tickThenReapply cfg b oldLedgerDbCurrent
+        return $ tickThenReapply cfg b oldLedgerDbCurrent
 
       ApplyRef r -> do
         b <- resolveBlock r
 
-        forgetLedgerStateTracking <$>
+        id $
              ( either (throwLedgerError db (blockRealPoint b)) return
              $ runExcept
              $ tickThenApply cfg b oldLedgerDbCurrent)

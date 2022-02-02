@@ -383,8 +383,11 @@ instance ShelleyBasedHardForkConstraints era1 era2
 
 deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk)
 
-instance ShowLedgerState (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2))) where
-  showsLedgerState = error "showsLedgerState @ShelleyBasedHardForkBlock"
+instance ShelleyBasedHardForkConstraints era1 era2
+      => ShowLedgerState (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2))) where
+  showsLedgerState _mk (ShelleyBasedHardForkLedgerTables utxo) =
+        showParen True
+      $ showString "ShelleyBasedHardForkLedgerTables " . showsApplyMapKind utxo
 
 instance ShelleyBasedHardForkConstraints era1 era2
       => TickedTableStuff (LedgerState (ShelleyBasedHardForkBlock era1 era2)) where
