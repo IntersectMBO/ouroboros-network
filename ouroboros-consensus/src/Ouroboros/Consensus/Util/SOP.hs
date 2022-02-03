@@ -173,7 +173,7 @@ fn_5 f = Fn $ \x0 ->
   Type-level non-empty lists
 -------------------------------------------------------------------------------}
 
-data ProofNonEmpty :: [Type] -> Type where
+data ProofNonEmpty :: [a] -> Type where
   ProofNonEmpty :: Proxy x -> Proxy xs -> ProofNonEmpty (x ': xs)
 
 class IsNonEmpty xs where
