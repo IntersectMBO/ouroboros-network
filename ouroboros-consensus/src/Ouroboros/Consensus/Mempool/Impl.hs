@@ -120,16 +120,17 @@ mkMempool mpEnv = Mempool
     , getLedgerAndSnapshotFor = \p slot -> do
         o <- getStatePair mpEnv (StaticRight p) [] []
         let StaticRight mbPair = o
-        pure $ case mbPair of
-          Nothing        -> Nothing
-          Just (is, ls') ->
+        case mbPair of
+          Nothing        -> pure Nothing
+          Just (is, ls') -> do
             let snapshot =
                   pureGetSnapshotFor
                     cfg
                     (ForgeInKnownSlot slot $ applyChainTick cfg slot $ ledgerState ls')
                     capacityOverride
                     is
-            in Just (forgetLedgerStateTables ls', snapshot)
+            atomically $ putTMVar istate is
+            pure $ Just (forgetLedgerStateTables ls', snapshot)
     , getCapacity    = isCapacity <$> readTMVar istate
     , getTxSize      = txSize
     , zeroIdx        = zeroTicketNo
