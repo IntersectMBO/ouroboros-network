@@ -88,7 +88,7 @@ import           Control.Monad.Reader hiding (ap)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
-import qualified Debug.Trace
+--import qualified Debug.Trace
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
@@ -335,30 +335,41 @@ applyBlock cfg ap db = case ap of
     Weaken ap' ->
         applyBlock cfg ap' db
     _ -> do
-      old <- oldApplyBlock ap
-      new <- newApplyBlock ap
+      legacyLs' <- oldApplyBlock ap
+      ls'       <- newApplyBlock ap
 
-      let oldValues    = forgetLedgerStateTracking old
-          oldNewValues =
-              applyDiffsLedgerTables oldLedgerDbCurrent
+      let _ = legacyLs' :: l TrackingMK
+          _ = ls'       :: l TrackingMK
+
+          legacyValues          :: l ValuesMK
+          legacyValues          =
+            forgetLedgerStateTracking legacyLs'
+          commutingSquareValues :: l ValuesMK
+          commutingSquareValues =
+              applyDiffsLedgerTables
+                oldLedgerDbCurrent
             $ projectLedgerTables
-            $ trackingTablesToDiffs new
+            $ trackingTablesToDiffs ls'
 
+          bare :: l any -> l EmptyMK
+          bare = flip withLedgerTables emptyLedgerTables
+
+{-
           showsTrackingDiff =
               showsLedgerState SKeysMK
             . mapLedgerTables (diffKeysMK . diffTrackingMK)
             . projectLedgerTables
-
-          bare = flip withLedgerTables (emptyLedgerTables :: LedgerTables l EmptyMK)
+-}
 
       id
-        $ Debug.Trace.trace
+{-        $ Debug.Trace.trace
             (($ "") $ showString "XXX\n" . showsTrackingDiff old . showString "\n" . showsTrackingDiff new)
         $ Debug.Trace.trace
             (($ "") $ showString "YYY\n" . showsLedgerState SEmptyMK (bare old) . showString "\n" . showsLedgerState SEmptyMK (bare new))
-        $ assert (bare old == bare new)
-        $ assert (projectLedgerTables oldValues == projectLedgerTables oldNewValues)
-        $ return (oldValues, new)
+-}
+        $ assert (bare legacyValues == bare ls')
+        $ assert (projectLedgerTables legacyValues == projectLedgerTables commutingSquareValues)
+        $ return (legacyValues, ls')
   where
 
     oldLedgerDbCurrent :: l ValuesMK
