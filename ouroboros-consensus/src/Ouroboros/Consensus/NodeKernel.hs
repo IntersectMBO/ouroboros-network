@@ -439,10 +439,18 @@ forkBlockForging IS{..} blockForging =
         -- 'getPastLedger', we switched to a fork where 'bcPrevPoint' is no longer
         -- on our chain. When that happens, we simply give up on the chance to
         -- produce a block.
-        unticked <- do
-          mExtLedger <- lift $ atomically $ ChainDB.getPastLedger chainDB bcPrevPoint
-          case mExtLedger of
-            Just l  -> return l
+        --
+        -- Also get a snapshot of the mempool that is consistent with that ledger
+        --
+        -- NOTE: It is possible that due to adoption of new blocks the
+        -- /current/ ledger will have changed. This doesn't matter: we will
+        -- produce a block that fits onto the ledger we got above; if the
+        -- ledger in the meantime changes, the block we produce here may or
+        -- may not be adopted, but it won't be invalid.
+        (unticked, mempoolSnapshot) <- do
+          mb <- lift $ getLedgerAndSnapshotFor mempool bcPrevPoint currentSlot
+          case mb of
+            Just x  -> return x
             Nothing -> do
               trace $ TraceNoLedgerState currentSlot bcPrevPoint
               exitEarly
@@ -515,19 +523,6 @@ forkBlockForging IS{..} blockForging =
                 currentSlot
                 (ledgerState unticked)
 
-        -- Get a snapshot of the mempool that is consistent with the ledger
-        --
-        -- NOTE: It is possible that due to adoption of new blocks the
-        -- /current/ ledger will have changed. This doesn't matter: we will
-        -- produce a block that fits onto the ledger we got above; if the
-        -- ledger in the meantime changes, the block we produce here may or
-        -- may not be adopted, but it won't be invalid.
-        mempoolSnapshot <- lift $
-                             getSnapshotFor
-                               mempool
-                               (ForgeInKnownSlot
-                                  currentSlot
-                                  tickedLedgerState)
         let txs = map fst $ snapshotTxs mempoolSnapshot
 
         -- Actually produce the block

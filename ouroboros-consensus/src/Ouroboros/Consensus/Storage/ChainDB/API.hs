@@ -80,7 +80,7 @@ import           Ouroboros.Consensus.HeaderStateHistory
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util ((.:), StaticEither (..))
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -320,10 +320,20 @@ data ChainDB m blk = ChainDB {
 
       -- | Get a ledger state that contains the backing store values necessary
       -- for the given transactions
-    , getCurrentLedgerStateForKeys ::
-        forall a.
-             m (a, LedgerTables (ExtLedgerState blk) KeysMK)
-          -> m (a, ExtLedgerState blk ValuesMK)
+      --
+      -- In the 'StaticRight' case, 'Nothing' out means the point is not on
+      -- current chain.
+    , getLedgerStateForKeys ::
+        forall b a.
+             StaticEither b () (Point blk)
+          -> (   ExtLedgerState blk EmptyMK
+              -> m (a, LedgerTables (ExtLedgerState blk) KeysMK)
+             )
+          -> m (StaticEither
+                 b
+                 (a, LedgerTables (ExtLedgerState blk) ValuesMK)
+                 (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
+               )
 
       -- | Close the ChainDB
       --
