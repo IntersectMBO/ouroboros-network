@@ -41,7 +41,9 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import qualified Ouroboros.Consensus.HeaderValidation as TechDebt
 import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.Ledger.Extended as TechDebt
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
@@ -755,12 +757,19 @@ withTestMempool setup@TestSetup {..} prop =
 
       -- Set up the LedgerInterface
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
-      let ledgerInterface = LedgerInterface
-            { getCurrentLedgerState       = readTVar varCurrentLedgerState
-            , getLedgerStateForTxs = \seP m -> case seP of
+      let fudge ls = TechDebt.ExtLedgerState {
+              headerState = TechDebt.HeaderState {
+                  headerStateTip      = Origin
+                , headerStateChainDep = ()
+                }
+            , ledgerState = ls
+            }
+          ledgerInterface = LedgerInterface
+            { getCurrentLedgerState = fudge <$> readTVar varCurrentLedgerState
+            , getLedgerStateForTxs  = \seP m -> case seP of
                 StaticLeft () -> do
                   lst <- atomically $ readTVar varCurrentLedgerState
-                  (a, _) <- m lst
+                  (a, _) <- m $ fudge lst
                   pure $ StaticLeft (a, emptyLedgerTables)
                 StaticRight _p -> error "TODO Mempool test does not yet exercise this, does it?"
             }
