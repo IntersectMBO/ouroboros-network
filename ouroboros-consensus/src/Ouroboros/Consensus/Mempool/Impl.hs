@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Mempool.Impl (
 import qualified Control.Exception as Exn
 import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)  -- TODO invariant checking?
 import           Control.Monad.Except
+import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import           Data.Typeable
 
@@ -318,7 +319,7 @@ implTryAddTxs mpEnv wti =
                 void $ atomically $ runSyncWithLedger istate p
                 pure (reverse acc, tx:txs)
               TryAddTxs mbIs2 result ev -> do
-                whenJust mbIs2 (atomically . putTMVar istate)
+                atomically $ putTMVar istate $ fromMaybe is1 mbIs2
                 traceWith trcr ev
                 go (result:acc) txs
 
