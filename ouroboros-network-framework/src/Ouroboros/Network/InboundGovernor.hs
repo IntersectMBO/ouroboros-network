@@ -115,9 +115,13 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
        (\(e :: SomeException) -> do
          state <- atomically $ readTVar st
          _ <- Map.traverseWithKey
-               (\connId _ ->
+               (\connId _ -> do
+                 -- Remove the connection from the state so
+                 -- mkRemoteTransitionTrace can create the correct state
+                 -- transition to Nothing value.
+                 let state' = unregisterConnection connId state
                  traceWith trTracer
-                           (mkRemoteTransitionTrace connId state emptyState)
+                           (mkRemoteTransitionTrace connId state state')
                )
                (igsConnections state)
          traceWith tracer (TrInboundGovernorError e)

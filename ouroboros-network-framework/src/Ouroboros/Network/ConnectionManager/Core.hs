@@ -41,7 +41,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
 import           GHC.Stack (CallStack, HasCallStack, callStack)
 
-import           Data.Map (Map, traverseWithKey)
+import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
@@ -652,11 +652,18 @@ withConnectionManager ConnectionManagerArguments {
               }
 
     k connectionManager
-      `finally` do
+      -- Since this exception handler is blocking it might receive exceptions
+      -- during its execution, which we want to avoid, so we wrap it around
+      -- uninterruptibleMask_.
+      `finally` uninterruptibleMask_ (do
         traceWith tracer TrShutdown
 
         state <- atomically $ readTMVar stateVar
-        void $ traverseWithKey
+        -- Spawning one thread for each connection cleanup avoids spending time
+        -- waiting for locks and cleanup logic that could delay closing the
+        -- connections and making us not respecting certain timeouts.
+        asyncs <- Map.elems
+          <$> Map.traverseMaybeWithKey
           (\peerAddr MutableConnState { connVar } -> do
             -- cleanup handler for that thread will close socket associated
             -- with the thread.  We put each connection in 'TerminatedState' to
@@ -679,11 +686,20 @@ withConnectionManager ConnectionManagerArguments {
 
             when shouldTrace $
               traceWith trTracer tr
-            -- using 'cancel' here, since we want to block until connection
-            -- handler thread terminates.
-            traverse_ cancel (getConnThread connState)
-          )
-          state
+            -- using 'throwTo' here, since we want to block only until connection
+            -- handler thread receives an exception so as to not take up extra
+            -- time and making us go above timeout schedules.
+            traverse
+              (\thread -> do
+                throwTo (asyncThreadId thread) AsyncCancelled
+                pure thread
+              )
+              (getConnThread connState)
+          ) state
+
+        atomically $ runLastToFinishM
+                   $ foldMap (LastToFinishM . void <$> waitCatchSTM) asyncs
+      )
   where
     traceCounters :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m) -> m ()
     traceCounters stateVar = do

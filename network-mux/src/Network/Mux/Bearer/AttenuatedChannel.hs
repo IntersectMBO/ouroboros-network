@@ -19,7 +19,6 @@ module Network.Mux.Bearer.AttenuatedChannel
 import           Prelude hiding (read)
 
 import           Control.Monad (when)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -29,9 +28,7 @@ import           Control.Tracer (Tracer, traceWith)
 import           GHC.IO.Exception
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Functor (($>))
 import           Data.Int (Int64)
-import           Data.Maybe (isJust)
 
 import           Network.Mux.Codec
 import           Network.Mux.Time
@@ -85,16 +82,23 @@ readQueueChannel QueueChannel { qcRead } =
 
 writeQueueChannel :: MonadSTM m
                   => QueueChannel m -> Message -> m Bool
-writeQueueChannel QueueChannel { qcWrite } msg =
+writeQueueChannel QueueChannel { qcWrite, qcRead } msg =
     atomically $ do
       mq <- readTVar qcWrite
+      -- Match SO_LINGER set with 0 interval, by not writing MsgClose
+      -- and closing this end without any waiting for any ack. It is
+      -- simulating a lost message, so if the receiver does not get the packet,
+      -- it will get an error the next time it tries to send a packet, closing
+      -- its end.
       case mq of
-        Nothing -> return False
-        Just q  -> writeTQueue q msg
-                >> case msg of
-                      MsgClose -> writeTVar qcWrite Nothing
-                      _        -> return ()
-                >> return True
+        Nothing -> do
+          writeTVar qcRead Nothing
+          return False
+        Just q  -> do
+          case msg of
+            MsgClose -> writeTVar qcWrite Nothing
+            _        -> writeTQueue q msg
+          return True
 
 
 newConnectedQueueChannelPair :: ( MonadSTM         m
@@ -213,32 +217,17 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
       when (not sent) $
         throwIO (resourceVanishedIOError "AttenuatedChannel.write" "")
 
-    -- closing is a 3-way handshake.
+    -- acClose simulates SO_LINGER TCP option with interval set to 0.
+    --
+    -- It is assumed that the MsgClose is lost, where in this case
+    -- we only close the local end. When the remote end gets
+    -- used it will be closed.
     --
     acClose :: m ()
     acClose = do
       -- send 'MsgClose' and close the underlying channel
       sent <- writeQueueChannel qc MsgClose
-      traceWith tr (AttChannClosing sent)
-
-      -- await for a reply, unless the read channel is already closed.
-      --
-      -- TODO: switch to timeout once it's fixed.
-      d <- registerDelay 120
-      res <-
-        atomically $
-          (LazySTM.readTVar d >>= \b -> check b $> Nothing)
-          `orElse`
-          (fmap Just $ do
-              msg <- readTVar (qcRead qc)
-                  >>= traverse readTQueue
-              case msg of
-                Nothing       -> return ()
-                Just MsgClose -> return ()
-                -- some other message; let the appliction read it first.
-                Just _        -> retry)
-
-      traceWith tr (AttChannClosed (isJust res))
+      traceWith tr (AttChannLocalClose sent)
 
 
 -- | Create a pair of connected 'AttenuatedChannel's.
@@ -315,8 +304,7 @@ attenuationChannelAsMuxBearer sduSize sduTimeout muxTracer chan =
 --
 
 data AttenuatedChannelTrace =
-    AttChannClosing Bool
-  | AttChannClosed  Bool
+    AttChannLocalClose Bool
   | AttChannRemoteClose
   deriving Show
 

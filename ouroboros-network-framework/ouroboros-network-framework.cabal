@@ -146,6 +146,7 @@ test-suite test
                      , quickcheck-instances
                      , tasty
                      , tasty-quickcheck
+                     , these
 
                      , cardano-prelude
                      , contra-tracer
