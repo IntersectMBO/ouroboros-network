@@ -38,9 +38,11 @@ module Test.Util.TestBlock (
   , testHashFromList
   , unTestHash
     -- ** Test block with payload
-  , TestBlockWithPayload
+  , TestBlockWith
   , firstBlockWithPayload
   , successorBlockWithPayload
+    -- ** Test block without payload
+  , TestBlockKV
     -- * LedgerState
   , lastAppliedPoint
     -- * Chain
@@ -177,7 +179,11 @@ instance Show TestHash where
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
-type TestBlock = TestBlockWithPayload 'NoPayload
+-- | Block without payload
+type TestBlock = TestBlockWith 'NoPayload
+
+-- | Blocks with a key-value payload
+type TestBlockKV = TestBlockWith 'KVMap
 
 data BlockPayloadType = NoPayload | KVMap
 
@@ -187,7 +193,7 @@ type instance Payload 'NoPayload = ()
 -- | The choice of the key types is arbitrary.
 type instance Payload 'KVMap     = Map Int Int
 
-data TestBlockWithPayload (ptype :: BlockPayloadType) = TestBlock { -- TODO: change constructor name to 'TestBlockWithPayload'
+data TestBlockWith (ptype :: BlockPayloadType) = TestBlockWith {
       tbHash    :: TestHash
     , tbSlot    :: SlotNo
       -- ^ We store a separate 'Block.SlotNo', as slots can have gaps between
@@ -201,22 +207,22 @@ data TestBlockWithPayload (ptype :: BlockPayloadType) = TestBlock { -- TODO: cha
     , tbPayload :: Payload ptype
     }
 
-deriving stock instance Show    (Payload ptype) => Show    (TestBlockWithPayload ptype)
-deriving stock instance Eq      (Payload ptype) => Eq      (TestBlockWithPayload ptype)
-deriving stock instance Ord     (Payload ptype) => Ord     (TestBlockWithPayload ptype)
-deriving stock instance                            Generic (TestBlockWithPayload ptype)
+deriving stock instance Show    (Payload ptype) => Show    (TestBlockWith ptype)
+deriving stock instance Eq      (Payload ptype) => Eq      (TestBlockWith ptype)
+deriving stock instance Ord     (Payload ptype) => Ord     (TestBlockWith ptype)
+deriving stock instance                            Generic (TestBlockWith ptype)
 
 deriving anyclass instance ( Generic   (Payload ptype)
-                           , Serialise (Payload ptype)) => Serialise (TestBlockWithPayload ptype)
+                           , Serialise (Payload ptype)) => Serialise (TestBlockWith ptype)
 deriving anyclass instance ( Generic   (Payload ptype)
-                           , NoThunks  (Payload ptype)) => NoThunks  (TestBlockWithPayload ptype)
+                           , NoThunks  (Payload ptype)) => NoThunks  (TestBlockWith ptype)
 deriving anyclass instance ( Generic   (Payload ptype)
-                           , ToExpr    (Payload ptype)) => ToExpr    (TestBlockWithPayload ptype)
+                           , ToExpr    (Payload ptype)) => ToExpr    (TestBlockWith ptype)
 
 -- | Create the first block in the given fork, @[fork]@, with the given payload.
 -- The 'SlotNo' will be 1.
-firstBlockWithPayload :: Word64 -> Payload ptype -> TestBlockWithPayload ptype
-firstBlockWithPayload forkNo payload = TestBlock
+firstBlockWithPayload :: Word64 -> Payload ptype -> TestBlockWith ptype
+firstBlockWithPayload forkNo payload = TestBlockWith
     { tbHash    = TestHash (forkNo NE.:| [])
     , tbSlot    = 1
     , tbValid   = True
@@ -228,8 +234,8 @@ firstBlockWithPayload forkNo payload = TestBlock
 --
 -- In Zipper parlance, this corresponds to going down in a tree.
 successorBlockWithPayload ::
-  TestHash -> SlotNo -> Payload ptype -> TestBlockWithPayload ptype
-successorBlockWithPayload hash slot payload = TestBlock
+  TestHash -> SlotNo -> Payload ptype -> TestBlockWith ptype
+successorBlockWithPayload hash slot payload = TestBlockWith
     { tbHash    = TestHash (NE.cons 0 (unTestHash hash))
     , tbSlot    = succ slot
     , tbValid   = True
@@ -249,13 +255,13 @@ instance GetHeader TestBlock where
   blockMatchesHeader (TestHeader blk') blk = blk == blk'
   headerIsEBB = const Nothing
 
-type instance HeaderHash (TestBlockWithPayload ptype) = TestHash
+type instance HeaderHash (TestBlockWith ptype) = TestHash
 
 instance HasHeader TestBlock where
   getHeaderFields = getBlockHeaderFields
 
 instance HasHeader (Header TestBlock) where
-  getHeaderFields (TestHeader TestBlock{..}) = HeaderFields {
+  getHeaderFields (TestHeader TestBlockWith{..}) = HeaderFields {
         headerFieldHash    = tbHash
       , headerFieldSlot    = tbSlot
       , headerFieldBlockNo = fromIntegral . NE.length . unTestHash $ tbHash
@@ -386,7 +392,7 @@ instance IsLedger (LedgerState TestBlock) where
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
-  applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
+  applyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
     = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
     | not tbValid
@@ -510,13 +516,13 @@ firstBlock forkNo = firstBlockWithPayload forkNo ()
 
 -- | See 'successorBlockWithPayload'.
 successorBlock :: TestBlock -> TestBlock
-successorBlock TestBlock{tbHash, tbSlot} = successorBlockWithPayload tbHash tbSlot ()
+successorBlock TestBlockWith{tbHash, tbSlot} = successorBlockWithPayload tbHash tbSlot ()
 
 -- Modify the (last) fork number of the given block:
 -- @g@ -> @[.., f]@ -> @[.., g f]@
 -- The 'SlotNo' is left unchanged.
 modifyFork :: (Word64 -> Word64) -> TestBlock -> TestBlock
-modifyFork g tb@TestBlock{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
+modifyFork g tb@TestBlockWith{ tbHash = UnsafeTestHash (f NE.:| h) } = tb
     { tbHash = let !gf = g f in UnsafeTestHash (gf NE.:| h)
     }
 
