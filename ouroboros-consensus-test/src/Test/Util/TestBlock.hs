@@ -28,20 +28,20 @@ module Test.Util.TestBlock (
   , Header (..)
   , Payload
   , StorageConfig (..)
-  , TestBlock
   , TestBlockError (..)
+  , TestBlockWith
   , TestHash (TestHash)
-  , firstBlock
+  , firstBlockWithPayload
   , forkBlock
   , modifyFork
-  , successorBlock
+  , successorBlockWithPayload
   , testHashFromList
   , unTestHash
-    -- ** Test block with payload
-  , TestBlockWith
-  , firstBlockWithPayload
-  , successorBlockWithPayload
     -- ** Test block without payload
+  , TestBlock
+  , firstBlock
+  , successorBlock
+    -- ** Test block with payload
   , TestBlockKV
     -- * LedgerState
   , lastAppliedPoint
@@ -81,6 +81,7 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -179,19 +180,9 @@ instance Show TestHash where
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
--- | Block without payload
-type TestBlock = TestBlockWith 'NoPayload
-
--- | Blocks with a key-value payload
-type TestBlockKV = TestBlockWith 'KVMap
-
-data BlockPayloadType = NoPayload | KVMap
-
 type family Payload (ptype :: BlockPayloadType)
 
-type instance Payload 'NoPayload = ()
--- | The choice of the key types is arbitrary.
-type instance Payload 'KVMap     = Map Int Int
+data BlockPayloadType = NoPayload | KVMap
 
 data TestBlockWith (ptype :: BlockPayloadType) = TestBlockWith {
       tbHash    :: TestHash
@@ -244,38 +235,46 @@ successorBlockWithPayload hash slot payload = TestBlockWith
 
 instance ShowProxy TestBlock where
 
-newtype instance Header TestBlock = TestHeader { testHeader :: TestBlock }
-  deriving stock   (Eq, Show)
-  deriving newtype (NoThunks, Serialise)
+newtype instance Header (TestBlockWith ptype) =
+    TestHeader { testHeader :: TestBlockWith ptype }
 
-instance ShowProxy (Header TestBlock) where
+deriving stock instance   Eq (Payload ptype)   => Eq   (Header (TestBlockWith ptype))
+deriving stock instance   Show (Payload ptype) => Show (Header (TestBlockWith ptype))
 
-instance GetHeader TestBlock where
-  getHeader = TestHeader
-  blockMatchesHeader (TestHeader blk') blk = blk == blk'
-  headerIsEBB = const Nothing
+deriving newtype instance ( Generic (Payload ptype)
+                          , NoThunks (Payload ptype))  => NoThunks  (Header (TestBlockWith ptype))
+deriving newtype instance ( Generic (Payload ptype)
+                          , Serialise (Payload ptype)) => Serialise (Header (TestBlockWith ptype))
 
-type instance HeaderHash (TestBlockWith ptype) = TestHash
+instance Typeable ptype => ShowProxy (Header (TestBlockWith ptype)) where
 
-instance HasHeader TestBlock where
-  getHeaderFields = getBlockHeaderFields
-
-instance HasHeader (Header TestBlock) where
+instance (Typeable ptype, Eq (Payload ptype)) => HasHeader (Header (TestBlockWith ptype)) where
   getHeaderFields (TestHeader TestBlockWith{..}) = HeaderFields {
         headerFieldHash    = tbHash
       , headerFieldSlot    = tbSlot
       , headerFieldBlockNo = fromIntegral . NE.length . unTestHash $ tbHash
       }
 
-instance GetPrevHash TestBlock where
+instance (Typeable ptype, Eq (Payload ptype)) => GetHeader (TestBlockWith ptype) where
+  getHeader = TestHeader
+  blockMatchesHeader (TestHeader blk') blk = blk == blk'
+  headerIsEBB = const Nothing
+
+type instance HeaderHash (TestBlockWith ptype) = TestHash
+
+instance (Typeable ptype, Eq (Payload ptype)) => HasHeader (TestBlockWith ptype) where
+  getHeaderFields = getBlockHeaderFields
+
+
+instance (Typeable ptype, Eq (Payload ptype)) => GetPrevHash (TestBlockWith ptype) where
   headerPrevHash (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
         Nothing       -> GenesisHash
         Just prevHash -> BlockHash (TestHash prevHash)
 
-instance StandardHash TestBlock
+instance StandardHash (TestBlockWith ptype)
 
-instance Condense TestBlock where
+instance (Typeable ptype, Eq (Payload ptype)) => Condense (TestBlockWith ptype) where
   condense b = mconcat [
         "(H:"
       , condense (blockHash b)
@@ -286,14 +285,14 @@ instance Condense TestBlock where
       , ")"
       ]
 
-instance Condense (Header TestBlock) where
+instance (Typeable ptype, Eq (Payload ptype)) => Condense (Header (TestBlockWith ptype)) where
   condense = condense . testHeader
 
-instance Condense (ChainHash TestBlock) where
+instance Condense (ChainHash (TestBlockWith ptype)) where
   condense GenesisHash   = "genesis"
   condense (BlockHash h) = show h
 
-data instance BlockConfig TestBlock = TestBlockConfig {
+data instance BlockConfig (TestBlockWith ptype) = TestBlockConfig {
       -- | Number of core nodes
       --
       -- We need this in order to compute the 'ValidateView', which must
@@ -302,18 +301,10 @@ data instance BlockConfig TestBlock = TestBlockConfig {
     }
   deriving (Show, Generic, NoThunks)
 
--- | The 'TestBlock' does not need any codec config
-data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Show, Generic, NoThunks)
-
--- | The 'TestBlock' does not need any storage config
-data instance StorageConfig TestBlock = TestBlockStorageConfig
-  deriving (Show, Generic, NoThunks)
-
-instance HasNetworkProtocolVersion TestBlock where
+instance HasNetworkProtocolVersion (TestBlockWith ptype) where
   -- Use defaults
 
-instance ConfigSupportsNode TestBlock where
+instance ConfigSupportsNode (TestBlockWith ptype) where
   getSystemStart = const (SystemStart dummyDate)
     where
       --  This doesn't matter much
@@ -323,73 +314,21 @@ instance ConfigSupportsNode TestBlock where
 
 
 {-------------------------------------------------------------------------------
-  NestedCtxt
+  Test blocks without payload
 -------------------------------------------------------------------------------}
 
-data instance NestedCtxt_ TestBlock f a where
-  CtxtTestBlock :: NestedCtxt_ TestBlock f (f TestBlock)
+-- | Block without payload
+type TestBlock = TestBlockWith 'NoPayload
 
-deriving instance Show (NestedCtxt_ TestBlock f a)
+type instance Payload 'NoPayload = ()
 
-instance TrivialDependency (NestedCtxt_ TestBlock f) where
-  type TrivialIndex (NestedCtxt_ TestBlock f) = f TestBlock
-  hasSingleIndex CtxtTestBlock CtxtTestBlock = Refl
-  indexIsTrivial = CtxtTestBlock
+-- | The 'TestBlock' does not need any codec config
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Show, Generic, NoThunks)
 
-instance SameDepIndex (NestedCtxt_ TestBlock f)
-instance HasNestedContent f TestBlock
-
-{-------------------------------------------------------------------------------
-  Test infrastructure: ledger state
--------------------------------------------------------------------------------}
-
-type instance BlockProtocol TestBlock = Bft BftMockCrypto
-
-type instance Signed (Header TestBlock) = ()
-instance SignedHeader (Header TestBlock) where
-  headerSigned _ = ()
-
-data TestBlockError =
-    -- | The hashes don't line up
-    InvalidHash
-      (ChainHash TestBlock)  -- ^ Expected hash
-      (ChainHash TestBlock)  -- ^ Invalid hash
-
-    -- | The block itself is invalid
-  | InvalidBlock
-  deriving (Eq, Show, Generic, NoThunks)
-
-instance BlockSupportsProtocol TestBlock where
-  validateView TestBlockConfig{..} =
-      bftValidateView bftFields
-    where
-      NumCoreNodes numCore = testBlockNumCoreNodes
-
-      bftFields :: Header TestBlock -> BftFields BftMockCrypto ()
-      bftFields (TestHeader tb) = BftFields {
-            bftSignature = SignedDSIGN $ mockSign () (signKey (tbSlot tb))
-          }
-
-      -- We don't want /our/ signing key, but rather the signing key of the
-      -- node that produced the block
-      signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
-      signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
-
-type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
-
-instance GetTip (LedgerState TestBlock) where
-  getTip = castPoint . lastAppliedPoint
-
-instance GetTip (Ticked (LedgerState TestBlock)) where
-  getTip = castPoint . lastAppliedPoint . getTickedTestLedger
-
-instance IsLedger (LedgerState TestBlock) where
-  type LedgerErr (LedgerState TestBlock) = TestBlockError
-
-  type AuxLedgerEvent (LedgerState TestBlock) =
-    VoidLedgerEvent (LedgerState TestBlock)
-
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
+-- | The 'TestBlock' does not need any storage config
+data instance StorageConfig TestBlock = TestBlockStorageConfig
+  deriving (Show, Generic, NoThunks)
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..})
@@ -415,6 +354,91 @@ newtype instance LedgerState TestBlock =
 newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {
       getTickedTestLedger :: LedgerState TestBlock
     }
+
+{-------------------------------------------------------------------------------
+  Test blocks with a key-value map as payload
+-------------------------------------------------------------------------------}
+
+-- | Blocks with a key-value payload
+type TestBlockKV = TestBlockWith 'KVMap
+
+-- | The choice of the key types is arbitrary.
+type instance Payload 'KVMap     = Map Int Int
+
+{-------------------------------------------------------------------------------
+  NestedCtxt
+-------------------------------------------------------------------------------}
+
+data instance NestedCtxt_ TestBlock f a where
+  CtxtTestBlock :: NestedCtxt_ TestBlock f (f TestBlock)
+
+deriving instance Show (NestedCtxt_ TestBlock f a)
+
+instance TrivialDependency (NestedCtxt_ TestBlock f) where
+  type TrivialIndex (NestedCtxt_ TestBlock f) = f TestBlock
+  hasSingleIndex CtxtTestBlock CtxtTestBlock = Refl
+  indexIsTrivial = CtxtTestBlock
+
+instance SameDepIndex (NestedCtxt_ TestBlock f)
+instance HasNestedContent f TestBlock
+
+{-------------------------------------------------------------------------------
+  Test infrastructure: ledger state
+-------------------------------------------------------------------------------}
+
+type instance BlockProtocol (TestBlockWith ptype) = Bft BftMockCrypto
+
+type instance Signed (Header (TestBlockWith ptype)) = ()
+instance SignedHeader (Header (TestBlockWith ptype)) where
+  headerSigned _ = ()
+
+data TestBlockError ptype =
+    -- | The hashes don't line up
+    InvalidHash
+      (ChainHash (TestBlockWith ptype))  -- ^ Expected hash
+      (ChainHash (TestBlockWith ptype))  -- ^ Invalid hash
+
+    -- | The block itself is invalid
+  | InvalidBlock
+  deriving (Eq, Show, Generic, NoThunks)
+
+instance ( Typeable ptype
+         , Eq (Payload ptype)
+         , Generic (Payload ptype)
+         , NoThunks (Payload ptype)
+         , NoThunks (CodecConfig (TestBlockWith ptype))
+         , NoThunks (StorageConfig (TestBlockWith ptype))
+         ) => BlockSupportsProtocol (TestBlockWith ptype) where
+  validateView TestBlockConfig{..} =
+      bftValidateView bftFields
+    where
+      NumCoreNodes numCore = testBlockNumCoreNodes
+
+      bftFields :: Header (TestBlockWith ptype) -> BftFields BftMockCrypto ()
+      bftFields (TestHeader tb) = BftFields {
+            bftSignature = SignedDSIGN $ mockSign () (signKey (tbSlot tb))
+          }
+
+      -- We don't want /our/ signing key, but rather the signing key of the
+      -- node that produced the block
+      signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
+      signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
+
+type instance LedgerCfg (LedgerState (TestBlockWith ptype)) = HardFork.EraParams
+
+instance GetTip (LedgerState TestBlock) where
+  getTip = castPoint . lastAppliedPoint
+
+instance GetTip (Ticked (LedgerState TestBlock)) where
+  getTip = castPoint . lastAppliedPoint . getTickedTestLedger
+
+instance IsLedger (LedgerState TestBlock) where
+  type LedgerErr (LedgerState TestBlock) = TestBlockError 'NoPayload
+
+  type AuxLedgerEvent (LedgerState TestBlock) =
+    VoidLedgerEvent (LedgerState TestBlock)
+
+  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
 
 instance UpdateLedger TestBlock
 
@@ -493,7 +517,7 @@ singleNodeTestConfigWithK k = TopLevelConfig {
     eraParams = HardFork.defaultEraParams k slotLength
 
 {-------------------------------------------------------------------------------
-  Chain of blocks
+  Chain of blocks (without payload)
 -------------------------------------------------------------------------------}
 
 newtype BlockChain = BlockChain Word64
@@ -535,7 +559,7 @@ forkBlock :: TestBlock -> TestBlock
 forkBlock = modifyFork succ
 
 {-------------------------------------------------------------------------------
-  Tree of blocks
+  Tree of blocks (without payload)
 -------------------------------------------------------------------------------}
 
 newtype BlockTree = BlockTree (Tree ())
