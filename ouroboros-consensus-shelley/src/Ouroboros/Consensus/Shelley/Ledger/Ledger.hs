@@ -203,6 +203,9 @@ data instance LedgerState (ShelleyBlock era) mk = ShelleyLedgerState {
 deriving instance ShelleyBasedEra era => Eq       (LedgerState (ShelleyBlock era) mk)
 deriving instance ShelleyBasedEra era => NoThunks (LedgerState (ShelleyBlock era) mk)
 
+instance (ShelleyBasedEra era, SingI mk) => Show (LedgerState (ShelleyBlock era) mk) where
+  showsPrec _prec = showsLedgerState sMapKind
+
 instance ShelleyBasedEra era => ShowLedgerState (LedgerState (ShelleyBlock era)) where
   showsLedgerState mk st =
         showParen True
