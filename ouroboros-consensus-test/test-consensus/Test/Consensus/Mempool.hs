@@ -48,8 +48,8 @@ import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
-                     safeMaximumOn, (.:))
+import           Ouroboros.Consensus.Util (StaticEither (..), repeatedly,
+                     repeatedlyM, safeMaximumOn, (.:))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -757,10 +757,12 @@ withTestMempool setup@TestSetup {..} prop =
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
       let ledgerInterface = LedgerInterface
             { getCurrentLedgerState       = readTVar varCurrentLedgerState
-            , getCurrentLedgerStateForTxs = \m -> do
-                (a, _) <- m
-                lst <- atomically $ readTVar varCurrentLedgerState
-                pure (a, convertMapKind lst)
+            , getLedgerStateForTxs = \seP m -> case seP of
+                StaticLeft () -> do
+                  lst <- atomically $ readTVar varCurrentLedgerState
+                  (a, _) <- m lst
+                  pure $ StaticLeft (a, emptyLedgerTables)
+                StaticRight _p -> error "TODO Mempool test does not yet exercise this, does it?"
             }
 
       -- Set up the Tracer

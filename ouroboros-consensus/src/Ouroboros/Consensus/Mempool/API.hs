@@ -34,8 +34,9 @@ import           Data.Word (Word32)
 
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
 
-import           Ouroboros.Consensus.Block (SlotNo)
+import           Ouroboros.Consensus.Block (Point, SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -173,13 +174,13 @@ data Mempool m blk idx = Mempool {
     , getSnapshot    :: STM m (MempoolSnapshot blk idx)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
-      -- the given ledger state
+      -- the returned ledger state when it's ticked to the given slot
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: ForgeLedgerState blk EmptyMK -> m (MempoolSnapshot blk idx)
-         -- TODO ^^^ this has got to be in m, since we may need to read from
-         -- disk to convert that EmptyMK to ValuesMK depending on what txs are
-         -- in the mempool!
+    , getLedgerAndSnapshotFor ::
+           Point blk
+        -> SlotNo
+        -> m (Maybe (ExtLedgerState blk EmptyMK, MempoolSnapshot blk idx))
 
       -- | Get the mempool's capacity in bytes.
       --
