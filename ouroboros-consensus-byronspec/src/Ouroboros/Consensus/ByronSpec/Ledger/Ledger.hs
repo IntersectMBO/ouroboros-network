@@ -167,7 +167,7 @@ instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) 
 -------------------------------------------------------------------------------}
 
 instance PreApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
-  getBlockKeySets _ = emptyLedgerTables
+  getBlockKeySets _ = polyEmptyLedgerTables
 
 instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
   applyBlockLedgerResult cfg block (TickedByronSpecLedgerState _tip state) =

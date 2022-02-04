@@ -239,7 +239,7 @@ initLedgerDB replayTracer
         traceWith replayTracer ReplayFromGenesis
         genesisLedger <- getGenesisLedger
         let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-            initDb        = ledgerDbWithAnchor (forgetLedgerStateTables genesisLedger)
+            initDb        = ledgerDbWithAnchor (stowLedgerTables genesisLedger)
         -- TODO this needs to go in the resource registry
         backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger)
         ml     <- runExceptT

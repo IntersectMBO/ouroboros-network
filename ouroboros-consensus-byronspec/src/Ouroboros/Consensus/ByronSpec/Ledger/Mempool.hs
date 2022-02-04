@@ -16,7 +16,7 @@ import           Codec.Serialise
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
 
-import           Ouroboros.Consensus.Ledger.Basics (emptyLedgerTables)
+import           Ouroboros.Consensus.Ledger.Basics (polyEmptyLedgerTables)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
@@ -42,7 +42,7 @@ newtype instance Validated (GenTx ByronSpecBlock) = ValidatedByronSpecGenTx {
 type instance ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
 
 instance PreLedgerSupportsMempool ByronSpecBlock where
-  getTransactionKeySets _ = emptyLedgerTables
+  getTransactionKeySets _ = polyEmptyLedgerTables
 
 instance LedgerSupportsMempool ByronSpecBlock where
   applyTx cfg _wti _slot tx (TickedByronSpecLedgerState tip st) =

@@ -770,7 +770,7 @@ withTestMempool setup@TestSetup {..} prop =
                 StaticLeft () -> do
                   lst <- atomically $ readTVar varCurrentLedgerState
                   (a, _) <- m $ fudge lst
-                  pure $ StaticLeft (a, emptyLedgerTables)
+                  pure $ StaticLeft (a, polyEmptyLedgerTables)   -- TestBlock has no tables
                 StaticRight _p -> error "TODO Mempool test does not yet exercise this, does it?"
             }
 
