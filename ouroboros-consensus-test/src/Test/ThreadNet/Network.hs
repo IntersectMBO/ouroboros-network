@@ -109,7 +109,8 @@ import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (ledgerDbCurrentValues)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (RunAlsoLegacy (RunBoth), ledgerDbCurrentValues)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -660,7 +661,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> m ()
     forkTxProducer coreNodeId registry clock cfg nodeSeed getLedgerDB mempool =
       void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
-        ledgerSt <- (ledgerState . ledgerDbCurrentValues) <$> atomically getLedgerDB
+        ledgerSt <- (ledgerState . maybe (error "tests can only be run with dual ledger for now")  id. ledgerDbCurrentValues) <$> atomically getLedgerDB
         -- Combine the node's seed with the current slot number, to make sure
         -- we generate different transactions in each slot.
         let txs = runGen
@@ -710,6 +711,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         -- Misc
         , cdbTracer                 = instrumentationTracer <> nullDebugTracer
         , cdbTraceLedger            = nullDebugTracer
+        , cdbLedgerRunAlsoLegacy    = RunBoth
         , cdbRegistry               = registry
           -- TODO vary these
         , cdbGcDelay                = 0

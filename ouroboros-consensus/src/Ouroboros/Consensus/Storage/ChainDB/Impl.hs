@@ -77,6 +77,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
+import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy(..))
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -140,13 +141,19 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             LgrDB.decorateReplayTracerWithGoal
               immutableDbTipPoint
               (contramap TraceLedgerReplayEvent tracer)
+
       traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
       -- TODO confirm this env var is sufficient, eg for Benchmarking and QA Team
-      let runDual = maybe False (== "1") $ unsafePerformIO (lookupEnv "DUAL_LEDGER")
-      (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
+      let runDual =
+            if LgrDB.lgrRunAlsoLegacy argsLgrDb == RunOnlyNew
+            then RunOnlyNew
+            else if maybe False (== "1") $ unsafePerformIO (lookupEnv "DISABLE_DUAL_LEDGER")
+                 then RunBoth
+                 else RunOnlyNew
+      (lgrDB, replayed) <- LgrDB.openDB (argsLgrDb { LgrDB.lgrRunAlsoLegacy = runDual })
                             lgrReplayTracer
                             immutableDB
-                            (Query.getAnyKnownBlock immutableDB volatileDB) runDual
+                            (Query.getAnyKnownBlock immutableDB volatileDB)
       traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
       varInvalid      <- newTVarIO (WithFingerprint Map.empty (Fingerprint 0))
