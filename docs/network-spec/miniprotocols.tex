@@ -639,13 +639,20 @@ The protocol uses the following messages:
 \item [\MsgFindIntersect{} {\boldmath $\langle point_{head} \rangle $}]
       Ask the producer to try to find an improved intersection point between
       the consumer and producer's chains.
-      The consumer sends a sequence {\boldmath $\langle point \rangle $}
-      and it is up to the producer
-      to find the first intersection point on its chain and send it back to the consumer.
+      The consumer sends a sequence {\boldmath $\langle point \rangle $} which
+      shall be ordered by perference (e.g. points with highest slot number
+      first) and it is up to the producer to find the first intersection point
+      on its chain and send it back to the consumer.  If an empty list of
+      points is send with \MsgFindIntersect{} the server will reply with
+      \MsgIntersectNotFound{}.  
 \item [\MsgIntersectFound{} {\boldmath $(point_{intersect} ,tip)$}]
       The producer replies with the first point of the request that is on his current chain.
       The consumer can decide whether to send more points.
       The message also tells the consumer about the $tip$ of the producer.
+      Whenever the server replies with \MsgIntersectFound{} the client can
+      expect the next update (i.e. a replay to \MsgRequestNext{}) to be
+      \MsgRollBackward{} to the specified $point_{intersect}$ (which makes
+      handling state updates on the client side easier).
 \item [\MsgIntersectNotFound{} {\boldmath $(tip)$}]
       The reply to the consumer that no intersection was found: none of the
       points the consumer supplied are on the producer chain.
@@ -802,6 +809,10 @@ where $point(b-i)$ is the point of the $i$th predecessor of block $b$ and
 $b$ is the head of the consumer fork.
 Maximum depth of a fork in Ouroboros is bounded and the intersection will always be found with a small number of
 iterations of this algorithm.
+
+\subparagraph{Additional remarks}
+Note that by sending \MsgFindIntersect{} the server will not modify its
+\readpointer{}.
 
 \subsection{Implementation of the Chain Consumer}
 In principle, the chain consumer has to guard against a malicious chain producer

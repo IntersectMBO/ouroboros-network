@@ -105,7 +105,8 @@ instance Protocol (ChainSync header point tip) where
     -- | Ask the producer to try to find an improved intersection point between
     -- the consumer and producer's chains. The consumer sends a sequence of
     -- points and it is up to the producer to find the first intersection point
-    -- on its chain and send it back to the consumer.
+    -- on its chain and send it back to the consumer.  The list of points should
+    -- be ordered by the preference, e.g. highest slot number to lowest.
     --
     MsgFindIntersect :: [point]
                      -> Message (ChainSync header point tip)
