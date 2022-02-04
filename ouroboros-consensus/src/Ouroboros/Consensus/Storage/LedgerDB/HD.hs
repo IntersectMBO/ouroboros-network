@@ -59,6 +59,7 @@ import qualified Data.Map.Merge.Strict as MapMerge
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -316,7 +317,7 @@ rewindKeys (UtxoKeys query) (UtxoDiff diffs) =
 -- Note that this fails via 'error' if the diff is invalid, eg it deletes a key
 -- that is not present in the argument or inserts a key that is already in the
 -- argument.
-forwardValues :: Ord k => UtxoValues k v -> UtxoDiff k v -> UtxoValues k v
+forwardValues :: (Ord k, HasCallStack) => UtxoValues k v -> UtxoDiff k v -> UtxoValues k v
 forwardValues (UtxoValues values) (UtxoDiff diffs) =
       UtxoValues
     $ MapMerge.merge
@@ -330,7 +331,7 @@ forwardValues (UtxoValues values) (UtxoDiff diffs) =
     newKeys _k (UtxoEntryDiff v diffState) = case diffState of
       UedsIns       -> Just v
       UedsInsAndDel -> Nothing
-      UedsDel       -> error "impossible! delete of missing key"
+      UedsDel       -> Nothing -- TODO error "impossible! delete of missing key"
 
     oldKeys :: k -> v -> UtxoEntryDiff v -> Maybe v
     oldKeys _k _v1 (UtxoEntryDiff _v2 diffState) = case diffState of

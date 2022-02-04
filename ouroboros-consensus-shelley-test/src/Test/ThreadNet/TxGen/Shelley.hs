@@ -64,10 +64,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
 
       | otherwise               = do
       n <- choose (0, 20)
-      go [] n
-        $ (`withLedgerTablesTicked` projectLedgerTables lst)
-        $ applyChainTick lcfg curSlotNo
-        $ forgetLedgerStateTables lst
+      go [] n $ applyChainTick lcfg curSlotNo lst
     where
       ShelleyTxGenExtra
         { stgeGenEnv
@@ -89,7 +86,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (MockShelley h)) where
           Just tx -> case runExcept $ fst <$> applyTx lcfg DoNotIntervene curSlotNo tx st of
               -- We don't mind generating invalid transactions
               Left  _   -> go (tx:acc) (n - 1) st
-              Right st' -> go (tx:acc) (n - 1) (withLedgerTablesTicked st' emptyLedgerTables)
+              Right st' -> go (tx:acc) (n - 1) (mapOverLedgerTablesTicked valuesTrackingMK st')
 
 genTx
   :: forall h. HashAlgorithm h

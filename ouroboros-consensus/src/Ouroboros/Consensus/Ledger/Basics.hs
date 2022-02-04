@@ -66,6 +66,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , emptyAppliedMK
   , mapValuesAppliedMK
   , sMapKind
+  , sMapKind'
   , showsApplyMapKind
   , toSMapKind
   , valuesTrackingMK
@@ -80,6 +81,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , forgetLedgerStateTables
   , forgetLedgerStateTracking
   , forgetTickedLedgerStateTracking
+  , polyEmptyLedgerTables
   , trackingTablesToDiffs
     -- ** Special classes of ledger states
   , InMemory (..)
@@ -109,6 +111,7 @@ import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
 import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
@@ -290,6 +293,7 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 -- compositional LedgerTables instance for HardForkBlock.
 class ( ShowLedgerState (LedgerTables l)
       , Eq (l EmptyMK)
+      , Eq (LedgerTables l DiffMK)
       , Eq (LedgerTables l ValuesMK)
       ) => TableStuff (l :: LedgerStateKind) where
 
@@ -433,10 +437,13 @@ zipOverLedgerTablesTicked f l tables2 =
   Convenience aliases
 -------------------------------------------------------------------------------}
 
+emptyLedgerTables :: TableStuff l => LedgerTables l EmptyMK
+emptyLedgerTables = polyEmptyLedgerTables
+
 -- | Empty values for every table
-emptyLedgerTables :: forall mk l.
+polyEmptyLedgerTables :: forall mk l.
   (TableStuff l, SingI mk) => LedgerTables l mk
-emptyLedgerTables =
+polyEmptyLedgerTables =
     pureLedgerTables $ emptyAppliedMK (sing :: SMapKind mk)
 
 forgetLedgerStateTracking :: TableStuff l => l TrackingMK -> l ValuesMK
@@ -446,7 +453,11 @@ forgetLedgerStateTables :: TableStuff l => l mk -> l EmptyMK
 forgetLedgerStateTables l = withLedgerTables l emptyLedgerTables
 
 -- | Used only for the dual ledger
-applyDiffsLedgerTables :: TableStuff l => l ValuesMK -> LedgerTables l DiffMK -> l ValuesMK
+applyDiffsLedgerTables ::
+     (TableStuff l, HasCallStack)
+  => l ValuesMK
+  -> LedgerTables l DiffMK
+  -> l ValuesMK
 applyDiffsLedgerTables =
     zipOverLedgerTables f
   where
@@ -615,6 +626,9 @@ instance SingI RewoundMK  where sing = SRewoundMK
 
 sMapKind :: SingI mk => SMapKind mk
 sMapKind = sing
+
+sMapKind' :: SingI mk => proxy mk -> SMapKind mk
+sMapKind' _ = sMapKind
 
 toSMapKind :: ApplyMapKind mk k v -> SMapKind mk
 toSMapKind = \case

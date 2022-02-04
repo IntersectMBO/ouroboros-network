@@ -379,13 +379,13 @@ protocolInfoShelleyBased ProtocolParamsShelleyBased {
         }
 
     initLedgerState :: LedgerState (ShelleyBlock era) ValuesMK
-    initLedgerState = ShelleyLedgerState {
+    initLedgerState = unstowLedgerTables $ ShelleyLedgerState {
         shelleyLedgerTip        = Origin
       , shelleyLedgerState      =
           registerGenesisStaking (SL.sgStaking genesis) $
             SL.initialState genesis additionalGenesisConfig
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-      , shelleyLedgerTables     = emptyLedgerTables   -- TODO are they ever not empty?
+      , shelleyLedgerTables     = emptyLedgerTables
       }
 
     initChainDepState :: TPraosState (EraCrypto era)

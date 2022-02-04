@@ -149,37 +149,35 @@ reapplyLedgerBlock ::
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
-     (ApplyBlock l blk, TickedTableStuff l)
+     ApplyBlock l blk
   => LedgerCfg l
   -> blk
   -> l ValuesMK
   -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
 tickThenApplyLedgerResult cfg blk l = do
-  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
-  lrBlock <-   applyBlockLedgerResult     cfg            blk
-                 (lrResult lrTick `withLedgerTablesTicked` projectLedgerTables l)
+  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) l
+  lrBlock <-   applyBlockLedgerResult     cfg            blk  (lrResult lrTick)
   pure LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
     , lrResult = lrResult lrBlock
     }
 
 tickThenReapplyLedgerResult ::
-     (ApplyBlock l blk, TickedTableStuff l)
+     ApplyBlock l blk
   => LedgerCfg l
   -> blk
   -> l ValuesMK
   -> LedgerResult l (l TrackingMK)
 tickThenReapplyLedgerResult cfg blk l =
-  let lrTick  = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
-      lrBlock = reapplyBlockLedgerResult   cfg            blk
-                  (lrResult lrTick `withLedgerTablesTicked` projectLedgerTables l)
+  let lrTick  = applyChainTickLedgerResult cfg (blockSlot blk) l
+      lrBlock = reapplyBlockLedgerResult   cfg            blk  (lrResult lrTick)
   in LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
     , lrResult = lrResult lrBlock
     }
 
 tickThenApply ::
-     (ApplyBlock l blk, TickedTableStuff l)
+     ApplyBlock l blk
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -187,7 +185,7 @@ tickThenApply ::
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
-     (ApplyBlock l blk, TickedTableStuff l)
+     ApplyBlock l blk
   => LedgerCfg l
   -> blk
   -> l ValuesMK

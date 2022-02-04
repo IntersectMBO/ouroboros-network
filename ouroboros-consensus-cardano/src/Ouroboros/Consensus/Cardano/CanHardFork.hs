@@ -384,7 +384,7 @@ projectLedgerTablesHelper prjLT (HardForkState st) =
       TZ Current {
           currentState = prjLT -> NoByronLedgerTables
         } ->
-        emptyLedgerTables
+        polyEmptyLedgerTables
 
       -- all the remaining eras are Shelley
       TS _past tele ->
@@ -644,7 +644,7 @@ instance
   getBlockKeySets blk =
       case ns of
         Z x  -> case getBlockKeySets (SOP.unI x) of
-          NoByronLedgerTables -> emptyLedgerTables
+          NoByronLedgerTables -> polyEmptyLedgerTables
         S xs ->
             SOP.hcollapse
           $ SOP.hcmap
@@ -673,7 +673,7 @@ instance
   getTransactionKeySets tx =
       case ns of
         Z x  -> case getTransactionKeySets x of
-          NoByronLedgerTables -> emptyLedgerTables
+          NoByronLedgerTables -> polyEmptyLedgerTables
         S xs ->
             SOP.hcollapse
           $ SOP.hcmap
@@ -746,6 +746,10 @@ translateLedgerStateByronToShelleyWrapper :: forall c.
 translateLedgerStateByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
     TranslateLedgerState $ \epochNo ledgerByron ->
+      -- TODO yuck! this fixup step is too clever
+      (\x -> case sMapKind' ledgerByron of
+          SValuesMK -> unstowLedgerTables x
+          _         -> unstowLedgerTables x `withLedgerTables` polyEmptyLedgerTables) $
       ShelleyLedgerState {
         shelleyLedgerTip =
           translatePointByronToShelley
@@ -762,9 +766,8 @@ translateLedgerStateByronToShelleyWrapper =
       }
   where
     translateNoTables ::
-         SingI mk
-      => LedgerTables (LedgerState ByronBlock)                    mk
-      -> LedgerTables (LedgerState (ShelleyBlock (ShelleyEra c))) mk
+         LedgerTables (LedgerState ByronBlock)                    mk
+      -> LedgerTables (LedgerState (ShelleyBlock (ShelleyEra c))) EmptyMK
     translateNoTables NoByronLedgerTables = emptyLedgerTables
 
 translateChainDepStateByronToShelleyWrapper ::
