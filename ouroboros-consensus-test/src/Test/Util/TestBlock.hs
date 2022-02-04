@@ -183,7 +183,7 @@ instance Condense TestHash where
 --
 -- For blocks without payload see the 'TestBlock' type alias.
 --
--- By defining a 'PayloadSemantics' it is possible to obtain a 'ApplyBlock'
+-- By defining a 'PayloadSemantics' it is possible to obtain an 'ApplyBlock'
 -- instance. See the former class for more details.
 --
 data TestBlockWith ptype = TestBlockWith {
@@ -251,7 +251,6 @@ type instance HeaderHash (TestBlockWith ptype) = TestHash
 instance (Typeable ptype, Eq ptype) => HasHeader (TestBlockWith ptype) where
   getHeaderFields = getBlockHeaderFields
 
-
 instance (Typeable ptype, Eq ptype) => GetPrevHash (TestBlockWith ptype) where
   headerPrevHash (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
@@ -297,63 +296,6 @@ instance ConfigSupportsNode (TestBlockWith ptype) where
       dummyDate = UTCTime (fromGregorian 2019 8 13) 0
 
   getNetworkMagic = const (NetworkMagic 42)
-
-
-{-------------------------------------------------------------------------------
-  Test blocks without payload
--------------------------------------------------------------------------------}
-
--- | Block without payload
-type TestBlock = TestBlockWith ()
-
--- | The 'TestBlock' does not need any codec config
-data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Show, Generic, NoThunks)
-
--- | The 'TestBlock' does not need any storage config
-data instance StorageConfig TestBlock = TestBlockStorageConfig
-  deriving (Show, Generic, NoThunks)
-
-instance PayloadSemantics ptype
-         => ApplyBlock (LedgerState (TestBlockWith ptype)) (TestBlockWith ptype) where
-  applyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..})
-    | blockPrevHash tb /= pointHash lastAppliedPoint
-    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
-    | not tbValid
-    = throwError $ InvalidBlock
-    | otherwise
-    = return     $ pureLedgerResult $ TestLedger {
-                                        lastAppliedPoint      = Chain.blockPoint tb
-                                      , payloadDependentState = applyPayload @ptype payloadDependentState tbPayload
-                                      }
-
-  reapplyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..}) =
-                   pureLedgerResult $ TestLedger {
-                                        lastAppliedPoint      = Chain.blockPoint tb
-                                      , payloadDependentState = applyPayload @ptype payloadDependentState tbPayload
-                                      }
-
-data instance LedgerState (TestBlockWith ptype) =
-    TestLedger {
-        -- | The ledger state simply consists of the last applied block
-        lastAppliedPoint      :: Point (TestBlockWith ptype)
-        -- | State that depends on the application of the block payload to the
-        -- state.
-      , payloadDependentState :: PayloadDependentState ptype
-      }
-
-deriving stock instance PayloadSemantics ptype => Show    (LedgerState (TestBlockWith ptype))
-deriving stock instance PayloadSemantics ptype => Eq      (LedgerState (TestBlockWith ptype))
-deriving stock instance Generic (LedgerState (TestBlockWith ptype))
-
-deriving anyclass instance PayloadSemantics ptype => Serialise (LedgerState (TestBlockWith ptype))
-deriving anyclass instance PayloadSemantics ptype => NoThunks  (LedgerState (TestBlockWith ptype))
-deriving anyclass instance PayloadSemantics ptype => ToExpr    (LedgerState (TestBlockWith ptype))
-
--- Ticking has no effect
-newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
-      getTickedTestLedger :: LedgerState (TestBlockWith ptype)
-    }
 
 {-------------------------------------------------------------------------------
   Payload semantics
@@ -435,6 +377,49 @@ instance ( Typeable ptype
       -- node that produced the block
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
+
+instance PayloadSemantics ptype
+         => ApplyBlock (LedgerState (TestBlockWith ptype)) (TestBlockWith ptype) where
+  applyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..})
+    | blockPrevHash tb /= pointHash lastAppliedPoint
+    = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
+    | not tbValid
+    = throwError $ InvalidBlock
+    | otherwise
+    = return     $ pureLedgerResult
+                 $ TestLedger {
+                       lastAppliedPoint      = Chain.blockPoint tb
+                     , payloadDependentState = applyPayload payloadDependentState tbPayload
+                     }
+
+  reapplyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..}) =
+                   pureLedgerResult
+                 $ TestLedger {
+                       lastAppliedPoint      = Chain.blockPoint tb
+                     , payloadDependentState = applyPayload payloadDependentState tbPayload
+                     }
+
+data instance LedgerState (TestBlockWith ptype) =
+    TestLedger {
+        -- | The ledger state simply consists of the last applied block
+        lastAppliedPoint      :: Point (TestBlockWith ptype)
+        -- | State that depends on the application of the block payload to the
+        -- state.
+      , payloadDependentState :: PayloadDependentState ptype
+      }
+
+deriving stock instance PayloadSemantics ptype => Show    (LedgerState (TestBlockWith ptype))
+deriving stock instance PayloadSemantics ptype => Eq      (LedgerState (TestBlockWith ptype))
+deriving stock instance Generic (LedgerState (TestBlockWith ptype))
+
+deriving anyclass instance PayloadSemantics ptype => Serialise (LedgerState (TestBlockWith ptype))
+deriving anyclass instance PayloadSemantics ptype => NoThunks  (LedgerState (TestBlockWith ptype))
+deriving anyclass instance PayloadSemantics ptype => ToExpr    (LedgerState (TestBlockWith ptype))
+
+-- Ticking has no effect
+newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
+      getTickedTestLedger :: LedgerState (TestBlockWith ptype)
+    }
 
 type instance LedgerCfg (LedgerState (TestBlockWith ptype)) = HardFork.EraParams
 
@@ -527,6 +512,21 @@ singleNodeTestConfigWithK k = TopLevelConfig {
 
     eraParams :: HardFork.EraParams
     eraParams = HardFork.defaultEraParams k slotLength
+
+{-------------------------------------------------------------------------------
+  Test blocks without payload
+-------------------------------------------------------------------------------}
+
+-- | Block without payload
+type TestBlock = TestBlockWith ()
+
+-- | The 'TestBlock' does not need any codec config
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Show, Generic, NoThunks)
+
+-- | The 'TestBlock' does not need any storage config
+data instance StorageConfig TestBlock = TestBlockStorageConfig
+  deriving (Show, Generic, NoThunks)
 
 {-------------------------------------------------------------------------------
   Chain of blocks (without payload)
