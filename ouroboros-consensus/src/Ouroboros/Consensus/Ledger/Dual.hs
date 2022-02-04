@@ -532,8 +532,8 @@ instance
   getBlockKeySets DualBlock{dualBlockMain, dualBlockAux} =
       DualBlockLedgerTables m a
     where
-      m = getBlockKeySets                         dualBlockMain
-      a = maybe emptyLedgerTables getBlockKeySets dualBlockAux
+      m = getBlockKeySets                             dualBlockMain
+      a = maybe polyEmptyLedgerTables getBlockKeySets dualBlockAux
 
 data instance LedgerState (DualBlock m a) mk = DualLedgerState {
       dualLedgerStateMain   :: LedgerState m mk
@@ -945,7 +945,7 @@ applyMaybeBlock :: UpdateLedger blk
                 -> Except (LedgerError blk) (LedgerState blk TrackingMK)
 applyMaybeBlock _   Nothing      _   st =
     -- if there is no block, then are no changes to track
-    return $ st `withLedgerTables` emptyLedgerTables
+    return $ st `withLedgerTables` polyEmptyLedgerTables
 applyMaybeBlock cfg (Just block) tst _  =
     applyLedgerBlock cfg block tst
 
@@ -960,7 +960,7 @@ reapplyMaybeBlock :: UpdateLedger blk
                   -> LedgerState blk TrackingMK
 reapplyMaybeBlock _   Nothing      _   st =
     -- if there is no block, then are no changes to track
-    st `withLedgerTables` emptyLedgerTables
+    st `withLedgerTables` polyEmptyLedgerTables
 reapplyMaybeBlock cfg (Just block) tst _  =
     reapplyLedgerBlock cfg block tst
 

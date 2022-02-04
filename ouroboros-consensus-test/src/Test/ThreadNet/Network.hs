@@ -585,7 +585,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
     --
     forkCrucialTxs
       :: HasCallStack
-      => OracularClock m
+      => CoreNodeId
+      -> OracularClock m
       -> SlotNo
       -> ResourceRegistry m
       -> (SlotNo -> STM m ())
@@ -595,11 +596,17 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
-    forkCrucialTxs clock s0 registry unblockForge _lcfg getLdgr mempool txs0 =
+    forkCrucialTxs nid clock s0 registry unblockForge _lcfg getLdgr mempool txs0 =
       void $ forkLinkedThread registry "crucialTxs" $ do
         let loop :: (SlotNo, LedgerState blk EmptyMK, [TicketNo]) -> m a
             loop (slot, ledger, mempFp) = do
-              _ <- addTxs mempool txs0
+              traceWith debugTracer $ "ZZZ1 " <> show slot <> " " <> show nid
+              results <- addTxs mempool txs0
+
+              let count1 = length [ () | MempoolTxAdded{}    <- results ]
+                  errs = [ e | MempoolTxRejected _tx e <- results ]
+
+              traceWith debugTracer $ "ZZZ2 " <> show (slot, count1, length errs, length results) <> " " <> show nid <> " " <> unwords (map show errs)
 
               -- See 'unblockForge' in 'forkNode'
               atomically $ unblockForge slot
@@ -853,7 +860,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- fail if the EBB is invalid
                   -- if it is valid, we retick to the /same/ slot
                   let apply  = applyLedgerBlock (configLedger pInfoConfig)
-                      tables = emptyLedgerTables   -- EBBs need no input tables
+                      tables = polyEmptyLedgerTables   -- EBBs need no input tables
                   tickedLdgSt' <- case Exc.runExcept $ apply ebb (tickedLdgSt `withLedgerTablesTicked` tables) of
                     Left e   -> Exn.throw $ JitEbbError @blk e
                     Right st -> pure $ applyChainTick
@@ -1023,6 +1030,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -- TODO Is there a risk that this will block because the 'forkTxProducer'
       -- fills up the mempool too quickly?
       forkCrucialTxs
+        coreNodeId
         clock
         joinSlot
         registry

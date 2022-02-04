@@ -357,7 +357,7 @@ instance MockProtocolSpecific c ext
 
 instance MockProtocolSpecific c ext
       => PreApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
-  getBlockKeySets _ = emptyLedgerTables
+  getBlockKeySets _ = polyEmptyLedgerTables
 
 instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
@@ -475,7 +475,7 @@ type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
 instance MockProtocolSpecific c ext
       => PreLedgerSupportsMempool (SimpleBlock c ext) where
-  getTransactionKeySets _ = emptyLedgerTables
+  getTransactionKeySets _ = polyEmptyLedgerTables
 
 instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where

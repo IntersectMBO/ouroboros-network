@@ -345,7 +345,7 @@ instance
       ShelleyLedgerState {
           shelleyLedgerTip        = shelleyLedgerTip
         , shelleyLedgerState      =
-            shelleyLedgerState `withUtxoSL` shelleyUTxOTable emptyLedgerTables
+            shelleyLedgerState `withUtxoSL` shelleyUTxOTable polyEmptyLedgerTables
         , shelleyLedgerTransition = shelleyLedgerTransition
         , shelleyLedgerTables     =
             ShelleyLedgerTables $ projectUtxoSL shelleyLedgerState
@@ -628,7 +628,7 @@ applyHelper f cfg blk stBefore = do
               (if blockSlot blk >= votingDeadline then succ else id) $
                 shelleyAfterVoting tickedShelleyLedgerTransition
           }
-      , shelleyLedgerTables = emptyLedgerTables @EmptyMK
+      , shelleyLedgerTables = emptyLedgerTables
       }
   where
     globals = shelleyLedgerGlobals cfg

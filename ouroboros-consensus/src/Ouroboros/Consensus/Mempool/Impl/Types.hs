@@ -131,12 +131,12 @@ initInternalState
   => MempoolCapacityBytesOverride
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
   -> SlotNo
-  -> TickedLedgerState blk EmptyMK
+  -> TickedLedgerState blk ValuesMK
   -> InternalState blk
 initInternalState capacityOverride lastTicketNo slot st = IS {
       isTxs          = TxSeq.Empty
     , isTxIds        = Set.empty
-    , isLedgerState  = st `withLedgerTablesTicked` emptyLedgerTables
+    , isLedgerState  = st
     , isTip          = castHash (getTipHash st)
     , isSlotNo       = slot
     , isLastTicketNo = lastTicketNo
@@ -321,9 +321,7 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
       txTickets
       (validationResultFromIS is)
   where
-    is =
-        initInternalState capacityOverride lastTicketNo slot
-      $ withLedgerTablesTicked st emptyLedgerTables
+    is = initInternalState capacityOverride lastTicketNo slot st
 
 {-------------------------------------------------------------------------------
   Ticking the ledger state
