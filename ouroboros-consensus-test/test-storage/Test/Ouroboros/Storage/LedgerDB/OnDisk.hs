@@ -1,28 +1,29 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveFoldable            #-}
-{-# LANGUAGE DeriveFunctor             #-}
-{-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DeriveTraversable         #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE InstanceSigs              #-}
-{-# LANGUAGE KindSignatures            #-}
-{-# LANGUAGE LambdaCase                #-}
-{-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TupleSections             #-}
-{-# LANGUAGE TypeApplications          #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-
 module Test.Ouroboros.Storage.LedgerDB.OnDisk (
     showLabelledExamples
   , tests
@@ -42,6 +43,8 @@ import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
@@ -72,9 +75,11 @@ import qualified Test.Util.Classify as C
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
 import           Test.Util.Range
-import           Test.Util.TestBlock
+import           Test.Util.TestBlock hiding (TestBlock, TestBlockCodecConfig,
+                     TestBlockStorageConfig)
 
 -- For the Arbitrary instance of 'MemPolicy'
+import           Codec.Serialise (Serialise)
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
@@ -88,7 +93,87 @@ tests = testGroup "OnDisk" [
     ]
 
 {-------------------------------------------------------------------------------
-  Auxiliary functions for working with TestBlock
+  TestBlock
+-------------------------------------------------------------------------------}
+
+type TestBlock = TestBlockWith Tx
+
+-- | Simple block transaction
+--
+data Tx = Tx { consumed :: Maybe Token, produced :: (Token, TValue) }
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise, NoThunks, ToExpr)
+
+newtype Token = Token Int
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving newtype (Serialise, NoThunks, ToExpr)
+
+newtype TValue = TValue Int
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving newtype (Serialise, NoThunks, ToExpr)
+
+{-------------------------------------------------------------------------------
+  A ledger semantics for TestBlock
+-------------------------------------------------------------------------------}
+
+data UTxTok = UTxTok { utxtok  :: Map Token TValue
+                     , -- | All the tokens that ever existed. We use this to
+                       -- make sure a token is not created more than once. See
+                       -- the definition of 'applyPayload' in the
+                       -- 'PayloadSemantics' of 'Tx'.
+                       utxhist :: Set Token
+                     }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (NoThunks, Serialise, ToExpr)
+
+instance Semigroup UTxTok where
+  u0 <> u1 = UTxTok { utxtok  = utxtok u0  <> utxtok u1
+                    , utxhist = utxhist u0 <> utxhist u1
+                    }
+
+instance Monoid UTxTok where
+  mempty = UTxTok { utxtok  = mempty
+                  , utxhist = mempty
+                  }
+
+data TxErr
+  = TokenWasAlreadyCreated Token
+  | TokenDoesNotExist      Token
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (NoThunks, Serialise, ToExpr)
+
+instance PayloadSemantics Tx where
+  type PayloadDependentState Tx = UTxTok
+
+  type PayloadDependentError Tx = TxErr
+
+
+  -- We need to exercise the HD backend which requires that store key-values
+  -- ledger tables and the block application semantics satisfy:
+  --
+  -- * a key is deleted at most once
+  -- * a key is inserted at most once
+  --
+  applyPayload st Tx{consumed, produced} =
+      delete consumed st >>= uncurry insert produced
+    where
+      insert :: Token -> TValue -> UTxTok -> Either TxErr UTxTok
+      insert tok val UTxTok{utxtok, utxhist} =
+        if tok `Set.member` utxhist
+        then Left  $ TokenWasAlreadyCreated tok
+        else Right $ UTxTok { utxtok  = Map.insert tok val utxtok
+                            , utxhist = Set.insert tok utxhist
+                            }
+
+      delete :: Maybe Token -> UTxTok -> Either TxErr UTxTok
+      delete Nothing    st'                         = Right st'
+      delete (Just tok) st'@UTxTok{utxtok, utxhist} =
+        if tok `Set.member` utxhist
+        then Right $ st' { utxtok = Map.delete tok utxtok }
+        else Left  $ TokenDoesNotExist tok
+
+{-------------------------------------------------------------------------------
+  TestBlock generation
 -------------------------------------------------------------------------------}
 
 genBlocks ::
@@ -118,8 +203,30 @@ genBlockFromLedgerState = genBlock . lastAppliedPoint . ledgerState
 extLedgerDbConfig :: SecurityParam -> LedgerDbCfg (ExtLedgerState TestBlock)
 extLedgerDbConfig secParam = LedgerDbCfg {
       ledgerDbCfgSecParam = secParam
-    , ledgerDbCfg         = ExtLedgerCfg $ singleNodeTestConfigWithK secParam
+    , ledgerDbCfg         = ExtLedgerCfg $ singleNodeTestConfigWith TestBlockCodecConfig TestBlockStorageConfig secParam
     }
+
+
+instance Arbitrary Tx where
+  arbitrary = do
+    let arbitraryToken = Token  <$> QC.chooseInt (0, 20)
+        -- We pick elements from a small range to have a high probability of
+        -- spending inputs we previosly created.
+        arbitraryValue = TValue <$> QC.chooseInt (0, 10)
+    mc <- QC.oneof [pure Nothing, Just <$> arbitraryToken ]
+    p  <-                                  arbitraryToken
+    v  <-                                  arbitraryValue
+    return $! Tx { consumed = mc, produced = (p, v) }
+
+
+-- | TODO: for the time being 'TestBlock' does not have any codec config
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Show, Generic, NoThunks)
+
+-- | TODO: for the time being 'TestBlock' does not have any storage config
+data instance StorageConfig TestBlock = TestBlockStorageConfig
+  deriving (Show, Generic, NoThunks)
+
 
 {-------------------------------------------------------------------------------
   Commands
@@ -197,7 +304,8 @@ type MockLedger = [(TestBlock, ExtLedgerState TestBlock)]
 -- about generated tests. The mock implementation doesn't actually " take "
 -- any snapshots (instead it stores the ledger state at each point).
 newtype MockSnap = MockSnap Word64
-  deriving (Show, Eq, Ord, Generic, ToExpr)
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving newtype (ToExpr)
 
 -- | State of all snapshots on disk
 --
@@ -240,7 +348,7 @@ mockInit = Mock [] Map.empty GenesisPoint
 mockCurrent :: Mock -> ExtLedgerState TestBlock
 mockCurrent Mock{..} =
     case mockLedger of
-      []       -> testInitExtLedger
+      []       -> testInitExtLedgerWithState mempty
       (_, l):_ -> l
 
 mockChainLength :: Mock -> Word64
@@ -439,7 +547,7 @@ runMock cmd initMock =
         mapM_ push bs
 
     cur :: MockLedger -> ExtLedgerState TestBlock
-    cur []         = testInitExtLedger
+    cur []         = testInitExtLedgerWithState mempty
     cur ((_, l):_) = l
 
 {-------------------------------------------------------------------------------
@@ -499,7 +607,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain = []
 
     initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbWithAnchor testInitExtLedger
+    initDB = ledgerDbWithAnchor (testInitExtLedgerWithState mempty)
 
     getBlock ::
          RealPoint TestBlock
@@ -620,7 +728,7 @@ runDB standalone@DB{..} cmd =
             S.decode
             S.decode
             dbLedgerDbCfg
-            (return testInitExtLedger)
+            (return (testInitExtLedgerWithState mempty))
             streamAPI
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
