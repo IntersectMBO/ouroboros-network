@@ -18,8 +18,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-{-# LANGUAGE AllowAmbiguousTypes        #-}
-
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
 module Test.Util.TestBlock (
@@ -30,7 +28,7 @@ module Test.Util.TestBlock (
   , Header (..)
   , StorageConfig (..)
   , TestBlockError (..)
-  , TestBlockWith
+  , TestBlockWith (tbPayload)
   , TestHash (TestHash)
   , firstBlockWithPayload
   , forkBlock
@@ -42,6 +40,8 @@ module Test.Util.TestBlock (
   , TestBlock
   , firstBlock
   , successorBlock
+    -- ** Payload semantics
+  , PayloadSemantics (..)
     -- * LedgerState
   , lastAppliedPoint
     -- * Chain
@@ -56,9 +56,12 @@ module Test.Util.TestBlock (
   , treeToChains
     -- * Ledger infrastructure
   , singleNodeTestConfig
+  , singleNodeTestConfigWith
   , singleNodeTestConfigWithK
   , testInitExtLedger
+  , testInitExtLedgerWithState
   , testInitLedger
+  , testInitLedgerWithState
     -- * Support for tests
   , Permutation (..)
   , permute
@@ -302,23 +305,42 @@ instance ConfigSupportsNode (TestBlockWith ptype) where
 -------------------------------------------------------------------------------}
 
 class ( Typeable ptype
-      , Eq ptype
-      , Eq (PayloadDependentState ptype)
-      , Show (PayloadDependentState ptype)
-      , Generic (PayloadDependentState ptype)
-      , ToExpr (PayloadDependentState ptype)
+      , Eq       ptype
+      , NoThunks ptype
+
+      , Eq        (PayloadDependentState ptype)
+      , Show      (PayloadDependentState ptype)
+      , Generic   (PayloadDependentState ptype)
+      , ToExpr    (PayloadDependentState ptype)
       , Serialise (PayloadDependentState ptype)
-      , NoThunks (PayloadDependentState ptype)
+      , NoThunks  (PayloadDependentState ptype)
+
+      , Eq        (PayloadDependentError ptype)
+      , Show      (PayloadDependentError ptype)
+      , Generic   (PayloadDependentError ptype)
+      , ToExpr    (PayloadDependentError ptype)
+      , Serialise (PayloadDependentError ptype)
+      , NoThunks  (PayloadDependentError ptype)
+
+      , NoThunks (CodecConfig (TestBlockWith ptype))
+      , NoThunks (StorageConfig (TestBlockWith ptype))
       ) => PayloadSemantics ptype where
 
   type PayloadDependentState ptype :: Type
 
-  applyPayload :: PayloadDependentState ptype -> ptype -> PayloadDependentState ptype
+  type PayloadDependentError ptype :: Type
+
+  applyPayload ::
+       PayloadDependentState ptype
+    -> ptype
+    -> Either (PayloadDependentError ptype) (PayloadDependentState ptype)
 
 instance PayloadSemantics () where
   type PayloadDependentState () = ()
 
-  applyPayload _ _ = ()
+  type PayloadDependentError () = ()
+
+  applyPayload _ _ = Right ()
 
 {-------------------------------------------------------------------------------
   NestedCtxt
@@ -355,7 +377,16 @@ data TestBlockError ptype =
 
     -- | The block itself is invalid
   | InvalidBlock
-  deriving (Eq, Show, Generic, NoThunks)
+  | InvalidPayload (PayloadDependentError ptype)
+
+deriving stock instance Eq (PayloadDependentError ptype) => Eq (TestBlockError ptype)
+deriving stock instance Show (PayloadDependentError ptype) => Show (TestBlockError ptype)
+deriving stock instance Generic (TestBlockError ptype)
+
+deriving anyclass instance
+  ( Typeable ptype
+  , Generic (PayloadDependentError ptype)
+  , NoThunks (PayloadDependentError ptype)) => NoThunks (TestBlockError ptype)
 
 instance ( Typeable ptype
          , Eq       ptype
@@ -386,18 +417,23 @@ instance PayloadSemantics ptype
     | not tbValid
     = throwError $ InvalidBlock
     | otherwise
-    = return     $ pureLedgerResult
-                 $ TestLedger {
-                       lastAppliedPoint      = Chain.blockPoint tb
-                     , payloadDependentState = applyPayload payloadDependentState tbPayload
-                     }
+    = case applyPayload payloadDependentState tbPayload of
+        Left err  -> throwError $ InvalidPayload err
+        Right st' -> return     $ pureLedgerResult
+                                $ TestLedger {
+                                    lastAppliedPoint      = Chain.blockPoint tb
+                                  , payloadDependentState = st'
+                                  }
 
   reapplyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..}) =
-                   pureLedgerResult
-                 $ TestLedger {
-                       lastAppliedPoint      = Chain.blockPoint tb
-                     , payloadDependentState = applyPayload payloadDependentState tbPayload
-                     }
+    case applyPayload payloadDependentState tbPayload of
+        Left err  -> error $ "Found an error when reapplying a block: " ++ show err
+        Right st' ->              pureLedgerResult
+                                $ TestLedger {
+                                    lastAppliedPoint      = Chain.blockPoint tb
+                                  , payloadDependentState = st'
+                                  }
+
 
 data instance LedgerState (TestBlockWith ptype) =
     TestLedger {
@@ -416,9 +452,18 @@ deriving anyclass instance PayloadSemantics ptype => Serialise (LedgerState (Tes
 deriving anyclass instance PayloadSemantics ptype => NoThunks  (LedgerState (TestBlockWith ptype))
 deriving anyclass instance PayloadSemantics ptype => ToExpr    (LedgerState (TestBlockWith ptype))
 
+testInitLedgerWithState :: PayloadDependentState ptype -> LedgerState (TestBlockWith ptype)
+testInitLedgerWithState = TestLedger GenesisPoint
+
 -- Ticking has no effect
 newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
       getTickedTestLedger :: LedgerState (TestBlockWith ptype)
+    }
+
+testInitExtLedgerWithState :: PayloadDependentState ptype -> ExtLedgerState (TestBlockWith ptype)
+testInitExtLedgerWithState st = ExtLedgerState {
+      ledgerState = testInitLedgerWithState st
+    , headerState = genesisHeaderState ()
     }
 
 type instance LedgerCfg (LedgerState (TestBlockWith ptype)) = HardFork.EraParams
@@ -437,24 +482,67 @@ instance PayloadSemantics ptype => IsLedger (LedgerState (TestBlockWith ptype)) 
 
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
 
-instance UpdateLedger TestBlock
+instance PayloadSemantics ptype => UpdateLedger (TestBlockWith ptype)
 
-instance InspectLedger TestBlock where
+instance InspectLedger (TestBlockWith ptype) where
   -- Defaults are fine
 
-instance HasAnnTip TestBlock where
+instance (Typeable ptype, PayloadSemantics ptype) => HasAnnTip (TestBlockWith ptype) where
   -- Use defaults
 
-instance BasicEnvelopeValidation TestBlock where
+instance (Typeable ptype, PayloadSemantics ptype) => BasicEnvelopeValidation (TestBlockWith ptype) where
   -- The block number of a test block is derived from the length of the hash
   expectedFirstBlockNo _ = BlockNo 1
 
-instance ValidateEnvelope TestBlock where
+instance (Typeable ptype, PayloadSemantics ptype) => ValidateEnvelope (TestBlockWith ptype) where
   -- Use defaults
 
-instance LedgerSupportsProtocol TestBlock where
+instance (Typeable ptype, PayloadSemantics ptype) => LedgerSupportsProtocol (TestBlockWith ptype) where
   protocolLedgerView   _ _  = TickedTrivial
   ledgerViewForecastAt _    = trivialForecast
+
+singleNodeTestConfigWith ::
+     CodecConfig (TestBlockWith ptype)
+  -> StorageConfig (TestBlockWith ptype)
+  -> SecurityParam -> TopLevelConfig (TestBlockWith ptype)
+singleNodeTestConfigWith codecConfig storageConfig k = TopLevelConfig {
+      topLevelConfigProtocol = BftConfig {
+          bftParams  = BftParams { bftSecurityParam = k
+                                 , bftNumNodes      = numCoreNodes
+                                 }
+        , bftSignKey = SignKeyMockDSIGN 0
+        , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
+        }
+    , topLevelConfigLedger  = eraParams
+    , topLevelConfigBlock   = TestBlockConfig numCoreNodes
+    , topLevelConfigCodec   = codecConfig
+    , topLevelConfigStorage = storageConfig
+    }
+  where
+    slotLength :: SlotLength
+    slotLength = slotLengthFromSec 20
+
+    numCoreNodes :: NumCoreNodes
+    numCoreNodes = NumCoreNodes 1
+
+    eraParams :: HardFork.EraParams
+    eraParams = HardFork.defaultEraParams k slotLength
+
+
+{-------------------------------------------------------------------------------
+  Test blocks without payload
+-------------------------------------------------------------------------------}
+
+-- | Block without payload
+type TestBlock = TestBlockWith ()
+
+-- | The 'TestBlock' does not need any codec config
+data instance CodecConfig TestBlock = TestBlockCodecConfig
+  deriving (Show, Generic, NoThunks)
+
+-- | The 'TestBlock' does not need any storage config
+data instance StorageConfig TestBlock = TestBlockStorageConfig
+  deriving (Show, Generic, NoThunks)
 
 instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
@@ -477,56 +565,17 @@ instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
 
 testInitLedger :: LedgerState TestBlock
-testInitLedger = TestLedger GenesisPoint ()
+testInitLedger = testInitLedgerWithState ()
 
 testInitExtLedger :: ExtLedgerState TestBlock
-testInitExtLedger = ExtLedgerState {
-      ledgerState = testInitLedger
-    , headerState = genesisHeaderState ()
-    }
+testInitExtLedger = testInitExtLedgerWithState ()
 
 -- | Trivial test configuration with a single core node
 singleNodeTestConfig :: TopLevelConfig TestBlock
 singleNodeTestConfig = singleNodeTestConfigWithK (SecurityParam 4)
 
 singleNodeTestConfigWithK :: SecurityParam -> TopLevelConfig TestBlock
-singleNodeTestConfigWithK k = TopLevelConfig {
-      topLevelConfigProtocol = BftConfig {
-          bftParams  = BftParams { bftSecurityParam = k
-                                 , bftNumNodes      = numCoreNodes
-                                 }
-        , bftSignKey = SignKeyMockDSIGN 0
-        , bftVerKeys = Map.singleton (CoreId (CoreNodeId 0)) (VerKeyMockDSIGN 0)
-        }
-    , topLevelConfigLedger  = eraParams
-    , topLevelConfigBlock   = TestBlockConfig numCoreNodes
-    , topLevelConfigCodec   = TestBlockCodecConfig
-    , topLevelConfigStorage = TestBlockStorageConfig
-    }
-  where
-    slotLength :: SlotLength
-    slotLength = slotLengthFromSec 20
-
-    numCoreNodes :: NumCoreNodes
-    numCoreNodes = NumCoreNodes 1
-
-    eraParams :: HardFork.EraParams
-    eraParams = HardFork.defaultEraParams k slotLength
-
-{-------------------------------------------------------------------------------
-  Test blocks without payload
--------------------------------------------------------------------------------}
-
--- | Block without payload
-type TestBlock = TestBlockWith ()
-
--- | The 'TestBlock' does not need any codec config
-data instance CodecConfig TestBlock = TestBlockCodecConfig
-  deriving (Show, Generic, NoThunks)
-
--- | The 'TestBlock' does not need any storage config
-data instance StorageConfig TestBlock = TestBlockStorageConfig
-  deriving (Show, Generic, NoThunks)
+singleNodeTestConfigWithK = singleNodeTestConfigWith TestBlockCodecConfig TestBlockStorageConfig
 
 {-------------------------------------------------------------------------------
   Chain of blocks (without payload)
@@ -684,14 +733,14 @@ permute (Permutation n) = go (R.mkStdGen n)
   Additional Serialise instances
 -------------------------------------------------------------------------------}
 
-instance Serialise (AnnTip TestBlock) where
+instance Serialise (AnnTip (TestBlockWith ptype)) where
   encode = defaultEncodeAnnTip encode
   decode = defaultDecodeAnnTip decode
 
-instance Serialise (ExtLedgerState TestBlock) where
+instance PayloadSemantics ptype => Serialise (ExtLedgerState (TestBlockWith ptype)) where
   encode = encodeExtLedgerState encode encode encode
   decode = decodeExtLedgerState decode decode decode
 
-instance Serialise (RealPoint TestBlock) where
+instance Serialise (RealPoint (TestBlockWith ptype)) where
   encode = encodeRealPoint encode
   decode = decodeRealPoint decode
