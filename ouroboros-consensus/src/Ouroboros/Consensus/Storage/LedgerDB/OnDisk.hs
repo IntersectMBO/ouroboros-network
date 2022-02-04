@@ -215,6 +215,7 @@ initLedgerDB ::
   -> LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk
+  -> RunAlsoLegacy
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore m (ExtLedgerState blk))
 initLedgerDB replayTracer
              tracer
@@ -223,7 +224,8 @@ initLedgerDB replayTracer
              decHash
              cfg
              getGenesisLedger
-             streamAPI = do
+             streamAPI
+             runAlsoLegacy = do
     snapshots <- listSnapshots hasFS
     tryNewestFirst id snapshots
   where
@@ -239,7 +241,7 @@ initLedgerDB replayTracer
         traceWith replayTracer ReplayFromGenesis
         genesisLedger <- getGenesisLedger
         let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-            initDb        = ledgerDbWithAnchor (stowLedgerTables genesisLedger)
+            initDb        = ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
         -- TODO this needs to go in the resource registry
         backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger)
         ml     <- runExceptT
@@ -262,6 +264,7 @@ initLedgerDB replayTracer
                              cfg
                              streamAPI
                              s
+                             runAlsoLegacy
         case ml of
           Left err -> do
             when (diskSnapshotIsTemporary s) $
@@ -312,13 +315,14 @@ initFromSnapshot ::
   -> LedgerDbCfg (ExtLedgerState blk)
   -> StreamAPI m blk
   -> DiskSnapshot
+  -> RunAlsoLegacy
   -> ExceptT (InitFailure blk) m
       ( RealPoint blk
       , LedgerDB' blk
       , Word64
       , LedgerBackingStore m (ExtLedgerState blk)
       )
-initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI snapshot = do
+initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI snapshot runAlsoLegacy = do
     extLedgerSt <-
         withExceptT InitFailureRead
       $ readSnapshot hasFS decLedger decHash snapshot
@@ -341,7 +345,7 @@ initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI snapshot = do
             cfg
             backingStore
             streamAPI
-            (ledgerDbWithAnchor extLedgerSt)
+            (ledgerDbWithAnchor runAlsoLegacy extLedgerSt)
         return (tip, initDB, replayed, backingStore)
 
 -- | Overwrite the ChainDB tables with the snapshot's tables

@@ -36,6 +36,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
 
 {-------------------------------------------------------------------------------
   Arguments
@@ -65,6 +66,7 @@ data ChainDbArgs f m blk = ChainDbArgs {
       -- Misc
     , cdbTracer                 :: Tracer m (TraceEvent blk)
     , cdbTraceLedger            :: Tracer m (LedgerDB' blk)
+    , cdbLedgerRunAlsoLegacy    :: RunAlsoLegacy
     , cdbRegistry               :: HKD f (ResourceRegistry m)
     , cdbGcDelay                :: DiffTime
     , cdbGcInterval             :: DiffTime
@@ -185,6 +187,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
         , lgrTraceLedger      = cdbTraceLedger
+        , lgrRunAlsoLegacy    = cdbLedgerRunAlsoLegacy
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -229,6 +232,7 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
       -- Misc
     , cdbTracer                 = cdbsTracer
     , cdbTraceLedger            = lgrTraceLedger
+    , cdbLedgerRunAlsoLegacy    = lgrRunAlsoLegacy
     , cdbRegistry               = cdbsRegistry
     , cdbGcDelay                = cdbsGcDelay
     , cdbGcInterval             = cdbsGcInterval
