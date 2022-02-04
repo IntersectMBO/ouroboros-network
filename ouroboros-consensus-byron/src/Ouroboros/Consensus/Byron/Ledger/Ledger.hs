@@ -229,7 +229,7 @@ instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronBlock) mk) wher
 -------------------------------------------------------------------------------}
 
 instance PreApplyBlock (LedgerState ByronBlock) ByronBlock where
-  getBlockKeySets _ = emptyLedgerTables
+  getBlockKeySets _ = polyEmptyLedgerTables
 
 instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
   applyBlockLedgerResult = fmap pureLedgerResult ..: applyByronBlock validationMode

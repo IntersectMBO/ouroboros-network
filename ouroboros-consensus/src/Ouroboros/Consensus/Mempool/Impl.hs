@@ -172,7 +172,7 @@ chainDBLedgerInterface chainDB = LedgerInterface
               pure
                 $ (,) a
                 $ ExtLedgerStateTables
-                $ foldl (zipLedgerTables (<>)) emptyLedgerTables
+                $ foldl (zipLedgerTables (<>)) polyEmptyLedgerTables
                 $ map getTransactionKeySets txs
         case seP of
           StaticLeft () -> do
@@ -216,7 +216,7 @@ initMempoolEnv :: ( IOLike m
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ ledgerState <$> getCurrentLedgerState ledgerInterface
-    let (slot, st') = tickLedgerState cfg (ForgeInUnknownSlot st)
+    let (slot, st') = tickLedgerState cfg $ ForgeInUnknownSlot $ unstowLedgerTables st
     isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface

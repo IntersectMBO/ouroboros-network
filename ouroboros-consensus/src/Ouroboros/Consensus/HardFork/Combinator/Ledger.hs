@@ -516,9 +516,7 @@ instance
      CanHardFork' xs
   => StowableLedgerTables (LedgerState (HardForkBlock xs)) where
   stowLedgerTables st =
-      withLedgerTables
-        (HardForkLedgerState $ HardForkState tele')
-        emptyLedgerTables
+      HardForkLedgerState $ HardForkState tele'
     where
       HardForkLedgerState (HardForkState tele) = st
 
@@ -528,9 +526,7 @@ instance
           (\current -> current{currentState = Flip $ stowLedgerTables $ unFlip $ currentState current})
           tele
   unstowLedgerTables st =
-      withLedgerTables
-        (HardForkLedgerState $ HardForkState tele')
-        emptyLedgerTables
+      HardForkLedgerState $ HardForkState tele'
     where
       HardForkLedgerState (HardForkState tele) = st
 

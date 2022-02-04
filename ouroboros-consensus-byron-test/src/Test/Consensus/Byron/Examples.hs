@@ -177,7 +177,7 @@ exampleChainDepState = S.fromList signers
   where
     signers = map (`S.PBftSigner` CC.exampleKeyHash) [1..4]
 
-emptyLedgerState :: LedgerState ByronBlock EmptyMK
+emptyLedgerState :: LedgerState ByronBlock ValuesMK
 emptyLedgerState = ByronLedgerState {
       byronLedgerTipBlockNo = Origin
     , byronLedgerState      = initState
@@ -192,7 +192,6 @@ ledgerStateAfterEBB :: LedgerState ByronBlock ValuesMK
 ledgerStateAfterEBB =
       forgetLedgerStateTracking
     . reapplyLedgerBlock ledgerConfig exampleEBB
-    . (`withLedgerTablesTicked` NoByronLedgerTables)
     . applyChainTick ledgerConfig (SlotNo 0)
     $ emptyLedgerState
 
@@ -200,9 +199,7 @@ exampleLedgerState :: LedgerState ByronBlock ValuesMK
 exampleLedgerState =
       forgetLedgerStateTracking
     . reapplyLedgerBlock ledgerConfig exampleBlock
-    . (`withLedgerTablesTicked` NoByronLedgerTables)
     . applyChainTick ledgerConfig (SlotNo 1)
-    . forgetLedgerStateTables
     $ ledgerStateAfterEBB
 
 exampleHeaderState :: HeaderState ByronBlock
