@@ -28,7 +28,6 @@ module Test.Util.TestBlock (
   , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
-  , Payload
   , StorageConfig (..)
   , TestBlockError (..)
   , TestBlockWith
@@ -43,8 +42,6 @@ module Test.Util.TestBlock (
   , TestBlock
   , firstBlock
   , successorBlock
-    -- ** Test block with payload
-  , TestBlockKV
     -- * LedgerState
   , lastAppliedPoint
     -- * Chain
@@ -75,7 +72,6 @@ import           Data.Kind (Type)
 import           Data.List (transpose)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Proxy
@@ -183,13 +179,14 @@ instance Show TestHash where
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
--- ^ TODO: comment
-type family Payload (ptype :: BlockPayloadType)
-
-
-data BlockPayloadType = NoPayload | KVMap
-
-data TestBlockWith (ptype :: BlockPayloadType) = TestBlockWith {
+-- | Test block parametrized on the payload type
+--
+-- For blocks without payload see the 'TestBlock' type alias.
+--
+-- By defining a 'PayloadSemantics' it is possible to obtain a 'ApplyBlock'
+-- instance. See the former class for more details.
+--
+data TestBlockWith ptype = TestBlockWith {
       tbHash    :: TestHash
     , tbSlot    :: SlotNo
       -- ^ We store a separate 'Block.SlotNo', as slots can have gaps between
@@ -200,24 +197,14 @@ data TestBlockWith (ptype :: BlockPayloadType) = TestBlockWith {
     , tbValid   :: Bool
       -- ^ Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
-    , tbPayload :: Payload ptype -- TODO: change to ptype
+    , tbPayload :: ptype
     }
-
-deriving stock instance Show    (Payload ptype) => Show    (TestBlockWith ptype)
-deriving stock instance Eq      (Payload ptype) => Eq      (TestBlockWith ptype)
-deriving stock instance Ord     (Payload ptype) => Ord     (TestBlockWith ptype)
-deriving stock instance                            Generic (TestBlockWith ptype)
-
-deriving anyclass instance ( Generic   (Payload ptype)
-                           , Serialise (Payload ptype)) => Serialise (TestBlockWith ptype)
-deriving anyclass instance ( Generic   (Payload ptype)
-                           , NoThunks  (Payload ptype)) => NoThunks  (TestBlockWith ptype)
-deriving anyclass instance ( Generic   (Payload ptype)
-                           , ToExpr    (Payload ptype)) => ToExpr    (TestBlockWith ptype)
+  deriving stock    (Show, Eq, Ord, Generic)
+  deriving anyclass (Serialise, NoThunks, ToExpr)
 
 -- | Create the first block in the given fork, @[fork]@, with the given payload.
 -- The 'SlotNo' will be 1.
-firstBlockWithPayload :: Word64 -> Payload ptype -> TestBlockWith ptype
+firstBlockWithPayload :: Word64 -> ptype -> TestBlockWith ptype
 firstBlockWithPayload forkNo payload = TestBlockWith
     { tbHash    = TestHash (forkNo NE.:| [])
     , tbSlot    = 1
@@ -230,7 +217,7 @@ firstBlockWithPayload forkNo payload = TestBlockWith
 --
 -- In Zipper parlance, this corresponds to going down in a tree.
 successorBlockWithPayload ::
-  TestHash -> SlotNo -> Payload ptype -> TestBlockWith ptype
+  TestHash -> SlotNo -> ptype -> TestBlockWith ptype
 successorBlockWithPayload hash slot payload = TestBlockWith
     { tbHash    = TestHash (NE.cons 0 (unTestHash hash))
     , tbSlot    = succ slot
@@ -242,36 +229,30 @@ instance ShowProxy TestBlock where
 
 newtype instance Header (TestBlockWith ptype) =
     TestHeader { testHeader :: TestBlockWith ptype }
-
-deriving stock instance   Eq (Payload ptype)   => Eq   (Header (TestBlockWith ptype))
-deriving stock instance   Show (Payload ptype) => Show (Header (TestBlockWith ptype))
-
-deriving newtype instance ( Generic (Payload ptype)
-                          , NoThunks (Payload ptype))  => NoThunks  (Header (TestBlockWith ptype))
-deriving newtype instance ( Generic (Payload ptype)
-                          , Serialise (Payload ptype)) => Serialise (Header (TestBlockWith ptype))
+  deriving stock (Eq, Show)
+  deriving newtype (NoThunks, Serialise)
 
 instance Typeable ptype => ShowProxy (Header (TestBlockWith ptype)) where
 
-instance (Typeable ptype, Eq (Payload ptype)) => HasHeader (Header (TestBlockWith ptype)) where
+instance (Typeable ptype, Eq ptype) => HasHeader (Header (TestBlockWith ptype)) where
   getHeaderFields (TestHeader TestBlockWith{..}) = HeaderFields {
         headerFieldHash    = tbHash
       , headerFieldSlot    = tbSlot
       , headerFieldBlockNo = fromIntegral . NE.length . unTestHash $ tbHash
       }
 
-instance (Typeable ptype, Eq (Payload ptype)) => GetHeader (TestBlockWith ptype) where
+instance (Typeable ptype, Eq ptype) => GetHeader (TestBlockWith ptype) where
   getHeader = TestHeader
   blockMatchesHeader (TestHeader blk') blk = blk == blk'
   headerIsEBB = const Nothing
 
 type instance HeaderHash (TestBlockWith ptype) = TestHash
 
-instance (Typeable ptype, Eq (Payload ptype)) => HasHeader (TestBlockWith ptype) where
+instance (Typeable ptype, Eq ptype) => HasHeader (TestBlockWith ptype) where
   getHeaderFields = getBlockHeaderFields
 
 
-instance (Typeable ptype, Eq (Payload ptype)) => GetPrevHash (TestBlockWith ptype) where
+instance (Typeable ptype, Eq ptype) => GetPrevHash (TestBlockWith ptype) where
   headerPrevHash (TestHeader b) =
       case NE.nonEmpty . NE.tail . unTestHash . tbHash $ b of
         Nothing       -> GenesisHash
@@ -279,7 +260,7 @@ instance (Typeable ptype, Eq (Payload ptype)) => GetPrevHash (TestBlockWith ptyp
 
 instance StandardHash (TestBlockWith ptype)
 
-instance (Typeable ptype, Eq (Payload ptype)) => Condense (TestBlockWith ptype) where
+instance (Typeable ptype, Eq ptype) => Condense (TestBlockWith ptype) where
   condense b = mconcat [
         "(H:"
       , condense (blockHash b)
@@ -290,7 +271,7 @@ instance (Typeable ptype, Eq (Payload ptype)) => Condense (TestBlockWith ptype) 
       , ")"
       ]
 
-instance (Typeable ptype, Eq (Payload ptype)) => Condense (Header (TestBlockWith ptype)) where
+instance (Typeable ptype, Eq ptype) => Condense (Header (TestBlockWith ptype)) where
   condense = condense . testHeader
 
 instance Condense (ChainHash (TestBlockWith ptype)) where
@@ -323,9 +304,7 @@ instance ConfigSupportsNode (TestBlockWith ptype) where
 -------------------------------------------------------------------------------}
 
 -- | Block without payload
-type TestBlock = TestBlockWith 'NoPayload
-
-type instance Payload 'NoPayload = ()
+type TestBlock = TestBlockWith ()
 
 -- | The 'TestBlock' does not need any codec config
 data instance CodecConfig TestBlock = TestBlockCodecConfig
@@ -381,7 +360,7 @@ newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
 -------------------------------------------------------------------------------}
 
 class ( Typeable ptype
-      , Eq (Payload ptype)
+      , Eq ptype
       , Eq (PayloadDependentState ptype)
       , Show (PayloadDependentState ptype)
       , Generic (PayloadDependentState ptype)
@@ -392,23 +371,12 @@ class ( Typeable ptype
 
   type PayloadDependentState ptype :: Type
 
-  applyPayload :: PayloadDependentState ptype -> Payload ptype -> PayloadDependentState ptype
+  applyPayload :: PayloadDependentState ptype -> ptype -> PayloadDependentState ptype
 
-instance PayloadSemantics 'NoPayload where
-  type PayloadDependentState 'NoPayload = ()
+instance PayloadSemantics () where
+  type PayloadDependentState () = ()
 
   applyPayload _ _ = ()
-
-
-{-------------------------------------------------------------------------------
-  Test blocks with a key-value map as payload
--------------------------------------------------------------------------------}
-
--- | Blocks with a key-value payload
-type TestBlockKV = TestBlockWith 'KVMap
-
--- | The choice of the key types is arbitrary.
-type instance Payload 'KVMap     = Map Int Int
 
 {-------------------------------------------------------------------------------
   NestedCtxt
@@ -448,9 +416,8 @@ data TestBlockError ptype =
   deriving (Eq, Show, Generic, NoThunks)
 
 instance ( Typeable ptype
-         , Eq (Payload ptype)
-         , Generic (Payload ptype)
-         , NoThunks (Payload ptype)
+         , Eq       ptype
+         , NoThunks ptype
          , NoThunks (CodecConfig (TestBlockWith ptype))
          , NoThunks (StorageConfig (TestBlockWith ptype))
          ) => BlockSupportsProtocol (TestBlockWith ptype) where

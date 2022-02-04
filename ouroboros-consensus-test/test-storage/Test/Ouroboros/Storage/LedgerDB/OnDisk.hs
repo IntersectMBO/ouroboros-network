@@ -92,7 +92,7 @@ tests = testGroup "OnDisk" [
 -------------------------------------------------------------------------------}
 
 genBlocks ::
-     (Arbitrary (Payload ptype), HasHeader (TestBlockWith ptype))
+     (Arbitrary ptype, HasHeader (TestBlockWith ptype))
   => ExtLedgerCfg TestBlock
   -> Word64
   -> Point (TestBlockWith ptype)
@@ -104,13 +104,13 @@ genBlocks cfg n b = do
   pure $! b':bs
 
 genBlock ::
-     Arbitrary (Payload payload)
+     Arbitrary payload
   => Point (TestBlockWith ptype) -> Gen (TestBlockWith payload)
 genBlock GenesisPoint           = firstBlockWithPayload 0             <$> QC.arbitrary
 genBlock (BlockPoint slot hash) = successorBlockWithPayload hash slot <$> QC.arbitrary
 
 genBlockFromLedgerState ::
-     Arbitrary (Payload payload)
+     Arbitrary payload
   => ExtLedgerState TestBlock
   -> Gen (TestBlockWith payload)
 genBlockFromLedgerState = genBlock . lastAppliedPoint . ledgerState
