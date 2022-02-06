@@ -27,6 +27,7 @@ module Test.Util.TestBlock (
   , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
+  , LedgerTables (..)
   , StorageConfig (..)
   , TestBlock (..)
   , TestBlockError (..)
@@ -404,6 +405,9 @@ newtype instance LedgerState TestBlock mk =
 
 instance InMemory (LedgerState TestBlock) where
   convertMapKind TestLedger {..} = TestLedger {..}
+
+instance InMemory (LedgerTables (LedgerState TestBlock)) where
+  convertMapKind NoTestLedgerTables = NoTestLedgerTables
 
 -- Ticking has no effect
 newtype instance Ticked1 (LedgerState TestBlock) mk = TickedTestLedger {
