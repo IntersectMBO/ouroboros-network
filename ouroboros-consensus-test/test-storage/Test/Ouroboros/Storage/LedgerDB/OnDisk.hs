@@ -577,7 +577,8 @@ runDB standalone@DB{..} cmd =
     annLedgerErr' = annLedgerErr
 
     reader :: TypeOf_readDB m (ExtLedgerState TestBlock)
-    reader _rew = pure $ UnforwardedReadSets (error "UTxO HD seqNo") emptyLedgerTables
+    reader (RewoundTableKeySets seqNo _tables) =
+      pure $ UnforwardedReadSets seqNo (convertMapKind emptyLedgerTables)
 
     go :: SomeHasFS m -> Cmd DiskSnapshot -> m (Success DiskSnapshot)
     go _ Current =

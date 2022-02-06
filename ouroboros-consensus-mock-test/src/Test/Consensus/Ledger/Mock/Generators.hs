@@ -115,7 +115,7 @@ instance Arbitrary (SomeQuery (BlockQuery (SimpleBlock c ext))) where
 instance (SimpleCrypto c, Typeable ext) => Arbitrary (SomeResult (SimpleBlock c ext)) where
   arbitrary = SomeResult QueryLedgerTip <$> arbitrary
 
-instance Arbitrary (LedgerState (SimpleBlock c ext)) where
+instance Arbitrary (LedgerState (SimpleBlock c ext) mk) where
   arbitrary = SimpleLedgerState <$> arbitrary
 
 instance HashAlgorithm (SimpleHash c) => Arbitrary (AnnTip (SimpleBlock c ext)) where

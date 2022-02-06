@@ -198,6 +198,10 @@ deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedger
 deriving instance Eq        (LedgerTables (LedgerState blk) mk)               => Eq       (LedgerTables (ExtLedgerState blk) mk)
 instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) mk)
 
+instance InMemory (LedgerTables (LedgerState blk)) => InMemory (LedgerTables (ExtLedgerState blk)) where
+  convertMapKind (ExtLedgerStateTables st) =
+      ExtLedgerStateTables $ convertMapKind st
+
 instance
      (Typeable blk, Typeable mk, ToCBOR (LedgerTables (LedgerState blk) mk))
   => ToCBOR (LedgerTables (ExtLedgerState blk) mk) where
