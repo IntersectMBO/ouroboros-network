@@ -254,7 +254,13 @@ analyse CmdLine {..} args =
         SelectImmutableDB initializeFrom -> do
           initLedgerErr <- runExceptT $ case initializeFrom of
             Nothing       -> pure genesisLedger
-            Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
+            Just snapshot ->
+                fmap (error "UTxO HD TODO")   -- unstowLedgerTables?
+              $ readSnapshot
+                  ledgerDbFS
+                  (decodeExtLedgerState' cfg)
+                  decode
+                  snapshot
           initLedger <- either (error . show) pure initLedgerErr
           -- This marker divides the "loading" phase of the program, where the
           -- system is principally occupied with reading snapshot data from
@@ -308,7 +314,7 @@ analyse CmdLine {..} args =
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
 
-    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState EmptyMK blk)
+    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk EmptyMK)
     decodeExtLedgerState' cfg =
       let ccfg = configCodec cfg
       in decodeExtLedgerState

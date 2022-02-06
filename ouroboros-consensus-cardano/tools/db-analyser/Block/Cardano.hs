@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -28,6 +29,7 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..), getHardForkState,
                      hardForkLedgerStatePerEra)
 import           Ouroboros.Consensus.HardFork.Combinator.State (currentState)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
@@ -81,15 +83,15 @@ analyseWithLedgerState f (WithLedgerState cb sb sa) =
     p :: Proxy HasAnalysis
     p = Proxy
 
-    zipLS (Comp (Just sb')) (Comp (Just sa')) (I blk) =
+    zipLS (Comp (Just (Flip sb'))) (Comp (Just (Flip sa'))) (I blk) =
       Comp . Just $ WithLedgerState blk sb' sa'
     zipLS _ _ _ = Comp Nothing
 
     oeb = getOneEraBlock . getHardForkBlock $ cb
 
     goLS ::
-      LedgerState (CardanoBlock StandardCrypto) ->
-      NP (Maybe :.: LedgerState) (CardanoEras StandardCrypto)
+      LedgerState (CardanoBlock StandardCrypto) ValuesMK ->
+      NP (Maybe :.: Flip LedgerState ValuesMK) (CardanoEras StandardCrypto)
     goLS =
       hexpand (Comp Nothing)
         . hmap (Comp . Just . currentState)
