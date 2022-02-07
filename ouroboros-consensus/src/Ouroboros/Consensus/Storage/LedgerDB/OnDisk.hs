@@ -19,7 +19,7 @@
 
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
-    InitFailure (..)
+    RecoverableInitFailure(..)
   , InitLog (..)
   , initLedgerDB
     -- ** Instantiate in-memory to @blk@
@@ -178,7 +178,7 @@ data InitLog blk =
     -- We record the reason why it was skipped.
     --
     -- NOTE: We should /only/ see this if data corrupted occurred.
-  | InitFailure DiskSnapshot (InitFailure blk) (InitLog blk)
+  | InitFailure DiskSnapshot (RecoverableInitFailure blk) (InitLog blk)
   deriving (Show, Eq, Generic)
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
@@ -230,68 +230,38 @@ initLedgerDB replayTracer
              getGenesisLedger
              streamAPI
              runAlsoLegacy = do
-    snapshots <- listSnapshots hasFS
-    tryNewestFirst id snapshots
-  where
-    tryNewestFirst :: (InitLog blk -> InitLog blk)
-                   -> [DiskSnapshot]
-                   -> m ( InitLog blk
-                        , LedgerDB' blk
-                        , Word64
-                        , LedgerBackingStore m (ExtLedgerState blk)
-                        )
-    tryNewestFirst acc [] = do
-        -- We're out of snapshots. Start at genesis
-        traceWith replayTracer ReplayFromGenesis
-        genesisLedger <- getGenesisLedger
-        let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-            initDb        = ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
-        -- TODO this needs to go in the resource registry
-        backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger)
-        ml     <- runExceptT
-                  $ initStartingWith
-                      replayTracer'
-                      cfg
-                      backingStore
-                      streamAPI
-                      initDb
-        case ml of
-          Left _  -> error "invariant violation: invalid current chain"
-          Right (l, replayed) -> return (acc InitFromGenesis, l, replayed, backingStore)
-    tryNewestFirst acc (s:ss) = do
-        -- If we fail to use this snapshot, delete it and try an older one
-        ml <- runExceptT $ initFromSnapshot
-                             replayTracer
-                             hasFS
-                             decLedger
-                             decHash
-                             cfg
-                             streamAPI
-                             s
-                             runAlsoLegacy
-        case ml of
-          Left err -> do
-            when (diskSnapshotIsTemporary s) $
-              -- We don't delete permanent snapshots, even if we couldn't parse
-              -- them
-              deleteSnapshot hasFS s
-            traceWith tracer $ InvalidSnapshot s err
-            tryNewestFirst (acc . InitFailure s err) ss
-          Right (r, l, replayed, backingStore) ->
-            return (acc (InitFromSnapshot s r), l, replayed, backingStore)
+    (initLog, initDb, backingStore, replayTracer') <- initFromSnapshotOrGenesis
+                                                        replayTracer
+                                                        tracer
+                                                        getGenesisLedger
+                                                        hasFS
+                                                        decLedger
+                                                        decHash
+                                                        runAlsoLegacy
+    (replayedDB, replayedBlocks) <- replayStartingWith
+                                        replayTracer'
+                                        cfg
+                                        backingStore
+                                        streamAPI
+                                        initDb
+    return (initLog, replayedDB, replayedBlocks, backingStore)
 
 {-------------------------------------------------------------------------------
   Internal: initialize using the given snapshot
 -------------------------------------------------------------------------------}
 
-data InitFailure blk =
+-- | Errors that can happen during initialization and cannot be recovered,
+-- leading to a call to @error@ and aborting the program.
+data FatalInitFailure blk = InitFailureTooRecent (RealPoint blk)
+  deriving (Show, Eq, Generic)
+
+-- | Internal errors which are recoverable and exposed through the chain of
+-- failures recorded in 'InitLog'.
+data RecoverableInitFailure blk =
     -- | We failed to deserialise the snapshot
     --
     -- This can happen due to data corruption in the ledger DB.
     InitFailureRead ReadIncrementalErr
-
-    -- | This snapshot is too recent (ahead of the tip of the chain)
-  | InitFailureTooRecent (RealPoint blk)
 
     -- | This snapshot was of the ledger state at genesis, even though we never
     -- take snapshots at genesis, so this is unexpected.
@@ -303,54 +273,79 @@ data InitFailure blk =
 -- If the chain DB or ledger layer reports an error, the whole thing is aborted
 -- and an error is returned. This should not throw any errors itself (ignoring
 -- unexpected exceptions such as asynchronous exceptions, of course).
-initFromSnapshot ::
+initFromSnapshotOrGenesis ::
      forall m blk . (
          IOLike m
        , LedgerSupportsProtocol blk
-       , InspectLedger blk
        , FromCBOR (LedgerTables (ExtLedgerState blk) ValuesMK)
        , ToCBOR   (LedgerTables (ExtLedgerState blk) ValuesMK)
        , HasCallStack
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
+  -> Tracer m (TraceEvent blk)
+  -> m (ExtLedgerState blk ValuesMK)
   -> SomeHasFS m
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState blk)
-  -> StreamAPI m blk
-  -> DiskSnapshot
   -> RunAlsoLegacy
-  -> ExceptT (InitFailure blk) m
-      ( RealPoint blk
+  -> m
+      ( InitLog blk
       , LedgerDB' blk
-      , Word64
       , LedgerBackingStore m (ExtLedgerState blk)
+      , Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
       )
-initFromSnapshot tracer hasFS decLedger decHash cfg streamAPI snapshot runAlsoLegacy = do
-    extLedgerSt <-
-        withExceptT InitFailureRead
-      $ readSnapshot hasFS decLedger decHash snapshot
-    let initialPoint =
-            withOrigin (Point Origin) annTipPoint
-          $ headerStateTip
-          $ headerState
-          $ extLedgerSt
-    case pointToWithOriginRealPoint (castPoint (getTip extLedgerSt)) of
-      Origin        -> throwError InitFailureGenesis
-      NotOrigin tip -> do
-        -- TODO this needs to go in the resource registry
-        backingStore <- restoreBackingStore hasFS snapshot
-        lift $ traceWith tracer $
-          ReplayFromSnapshot snapshot tip (ReplayStart initialPoint)
-        let tracer' = decorateReplayTracerWithStart initialPoint tracer
-        (initDB, replayed) <-
-          initStartingWith
-            tracer'
-            cfg
-            backingStore
-            streamAPI
-            (ledgerDbWithAnchor runAlsoLegacy extLedgerSt)
-        return (tip, initDB, replayed, backingStore)
+initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS decLedger decHash runAlsoLegacy = do
+    listSnapshots hasFS >>= tryNewestFirst id
+  where
+    tryNewestFirst :: (InitLog blk -> InitLog blk)
+                   -> [DiskSnapshot]
+                   -> m ( InitLog   blk
+                        , LedgerDB' blk
+                        , LedgerBackingStore m (ExtLedgerState blk)
+                        , Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
+                        )
+    tryNewestFirst acc [] = do
+      -- We're out of snapshots. Start at genesis
+      traceWith replayTracer ReplayFromGenesis
+      genesisLedger <- getGenesisLedger
+      let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
+          initDb        = ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
+      backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
+      return ( acc InitFromGenesis
+             , initDb
+             , backingStore
+             , replayTracer'
+             )
+
+    tryNewestFirst acc (s:ss) = do
+      eExtLedgerSt <- runExceptT $ readSnapshot hasFS decLedger decHash s
+      case eExtLedgerSt of
+        Left err -> do
+          when (diskSnapshotIsTemporary s) $
+            deleteSnapshot hasFS s
+          traceWith snapshotTracer . InvalidSnapshot s . InitFailureRead $ err
+          tryNewestFirst (acc . InitFailure s (InitFailureRead err)) ss
+        Right extLedgerSt -> do
+          let initialPoint =
+                withOrigin (Point Origin) annTipPoint
+                $ headerStateTip
+                $ headerState
+                $ extLedgerSt
+          case pointToWithOriginRealPoint (castPoint (getTip extLedgerSt)) of
+            Origin        -> do
+              -- Delete the snapshot of the Genesis ledger state. It should have
+              -- never existed.
+              deleteSnapshot hasFS s
+              traceWith snapshotTracer . InvalidSnapshot s $ InitFailureGenesis
+              tryNewestFirst (acc . InitFailure s InitFailureGenesis) []
+            NotOrigin tip -> do
+              backingStore <- restoreBackingStore hasFS s -- TODO this needs to go in the resource registry
+              traceWith replayTracer $
+                ReplayFromSnapshot s tip (ReplayStart initialPoint)
+              let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
+                  initDb  = ledgerDbWithAnchor runAlsoLegacy extLedgerSt
+                  -- TODO: @js if the provided extLedgerSt has an empty UTxO, then we cannot run the legacy db
+              return (acc (InitFromSnapshot s tip), initDb, backingStore, tracer')
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
@@ -361,10 +356,8 @@ restoreBackingStore ::
      )
   => SomeHasFS m
   -> DiskSnapshot
-  -> ExceptT (InitFailure blk) m (LedgerBackingStore m (ExtLedgerState blk))
-restoreBackingStore (SomeHasFS hasFS) snapshot = lift $ do
-    -- TODO reify errors into the ExceptT layer instead of lifting :grimace:
-
+  -> m (LedgerBackingStore m (ExtLedgerState blk))
+restoreBackingStore (SomeHasFS hasFS) snapshot = do
     -- TODO a backing store that actually resides on-disk during use should have
     -- a @new*@ function that receives both the location it should load from (ie
     -- 'loadPath') and also the location at which it should maintain itself (ie
@@ -491,8 +484,14 @@ flush (LedgerBackingStore backingStore) dblog =
       -> ApplyMapKind DiffMK k v
     prj (ApplySeqDiffMK sq) = ApplyDiffMK (HD.cumulativeDiffSeqUtxoDiff sq)
 
--- | Attempt to initialize the ledger DB starting from the given ledger DB
-initStartingWith ::
+-- | Replay all blocks in the Immutable database using the ''StreamAPI' provided
+-- on top of the given @LedgerDB' blk@.
+--
+-- If the starting snapshot is ahead than the Immutable database tip, this
+-- function will call @error@ and abort.
+--
+-- It will also return the number of blocks that were replayed.
+replayStartingWith ::
      forall m blk. (
          IOLike m
        , LedgerSupportsProtocol blk
@@ -504,12 +503,14 @@ initStartingWith ::
   -> LedgerBackingStore m (ExtLedgerState blk)
   -> StreamAPI m blk
   -> LedgerDB' blk
-  -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
-initStartingWith tracer cfg backingStore streamAPI initDb = do
-    streamAll streamAPI (castPoint (ledgerDbTip initDb))
-      InitFailureTooRecent
-      (initDb, 0)
-      push
+  -> m (LedgerDB' blk, Word64)
+replayStartingWith tracer cfg backingStore streamAPI initDb = do
+    eInitDB <- runExceptT $
+      streamAll streamAPI (castPoint (ledgerDbTip initDb))
+        InitFailureTooRecent
+        (initDb, 0)
+        push
+    either (\err -> error $ "invariant violation: invalid immutable chain. Error: " <> show err) return eInitDB
   where
     push :: blk -> (LedgerDB' blk, Word64) -> m (LedgerDB' blk, Word64)
     push blk !(!db, !replayed) = do
@@ -760,7 +761,7 @@ decorateReplayTracerWithStart
 decorateReplayTracerWithStart start = contramap ($ (ReplayStart start))
 
 data TraceEvent blk
-  = InvalidSnapshot DiskSnapshot (InitFailure blk)
+  = InvalidSnapshot DiskSnapshot (RecoverableInitFailure blk)
     -- ^ An on disk snapshot was skipped because it was invalid.
   | TookSnapshot DiskSnapshot (RealPoint blk)
     -- ^ A snapshot was written to disk.

@@ -168,7 +168,6 @@ data LedgerDB (l :: LedgerStateKind) = LedgerDB {
       -- | Ledger states
       ledgerDbCheckpoints :: Maybe (LegacyLedgerDB l)
     , ledgerDbChangelog   :: ModernLedgerDB l
-    , runDual             :: Bool
     }
   deriving (Generic)
 
@@ -215,11 +214,10 @@ ledgerDbWithAnchor ::
      )
   => RunAlsoLegacy -> l EmptyMK -> LedgerDB l
 ledgerDbWithAnchor runAlsoLegacy anchor = LedgerDB {
-      ledgerDbCheckpoints = case runAlsoLegacy of
-          RunBoth -> Just (Empty (Checkpoint (unstowLedgerTables anchor)))
-          RunOnlyNew -> Nothing
+      ledgerDbCheckpoints = case (isCandidateForUnstow anchor, runAlsoLegacy) of
+          (True, RunBoth) -> Just (Empty (Checkpoint (unstowLedgerTables anchor)))
+          _               -> Nothing
     , ledgerDbChangelog   = emptyDbChangeLog anchor
-    , runDual = True -- TODO: This is not yet implemented.
     }
 
 {-------------------------------------------------------------------------------
@@ -739,7 +737,6 @@ ledgerDbPrefix pt db
     = Just $ LedgerDB {
           ledgerDbCheckpoints = AS.Empty . AS.anchor <$>      (ledgerDbCheckpoints db)
         , ledgerDbChangelog   = prefixBackToAnchorDbChangelog (ledgerDbChangelog db)
-        , runDual             = runDual db
         }
     | otherwise
     =  do
@@ -751,7 +748,6 @@ ledgerDbPrefix pt db
         return $ LedgerDB
                   { ledgerDbCheckpoints = checkpoints'
                   , ledgerDbChangelog   = dblog'
-                  , runDual = runDual db
                   }
 
 
