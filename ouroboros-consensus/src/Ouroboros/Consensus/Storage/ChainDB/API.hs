@@ -323,11 +323,11 @@ data ChainDB m blk = ChainDB {
       -- change, since the function will not detect new invalid blocks.
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
-      -- | Get a ledger state that contains the backing store values necessary
-      -- for the given transactions
+      -- | Get a ledger state that contains the backing store values of the
+      -- given keys
       --
-      -- In the 'StaticRight' case, 'Nothing' out means the point is not on
-      -- current chain.
+      -- In the 'StaticRight' case, 'Nothing' out means the requested point is
+      -- not on current chain, so that ledger state is unavailable.
     , getLedgerStateForKeys ::
         forall b a.
              StaticEither b () (Point blk)
