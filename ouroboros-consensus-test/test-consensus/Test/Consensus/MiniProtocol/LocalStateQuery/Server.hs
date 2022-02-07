@@ -207,7 +207,7 @@ initLgrDB k chain = do
 
     cfg = testCfg k
 
-    genesisLedgerDB = LgrDB.ledgerDbWithAnchor (convertMapKind testInitExtLedger)
+    genesisLedgerDB = LgrDB.ledgerDbWithAnchor LgrDB.RunBoth (convertMapKind testInitExtLedger)
 
     noopTrace :: blk -> m ()
     noopTrace = const $ pure ()
@@ -219,6 +219,7 @@ initLgrDB k chain = do
       , lgrGenesis              = return testInitExtLedger
       , lgrTracer               = nullTracer
       , lgrTraceLedger          = nullTracer
+      , lgrRunAlsoLegacy        = LgrDB.RunBoth
       }
 
 testCfg :: SecurityParam -> TopLevelConfig TestBlock

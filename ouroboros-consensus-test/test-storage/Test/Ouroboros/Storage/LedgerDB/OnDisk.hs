@@ -497,7 +497,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain = []
 
     initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbWithAnchor (convertMapKind testInitExtLedger)
+    initDB = ledgerDbWithAnchor RunBoth (convertMapKind testInitExtLedger)
 
     getBlock ::
          RealPoint TestBlock
@@ -627,6 +627,7 @@ runDB standalone@DB{..} cmd =
             dbLedgerDbCfg
             (return testInitExtLedger)
             streamAPI
+            RunBoth
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =

@@ -119,7 +119,7 @@ prop_genesisCurrent :: Property
 prop_genesisCurrent =
     ledgerDbCurrent genSnaps === convertMapKind testInitLedger
   where
-    genSnaps = ledgerDbWithAnchor (convertMapKind testInitLedger)
+    genSnaps = ledgerDbWithAnchor RunBoth (convertMapKind testInitLedger)
 
 {-------------------------------------------------------------------------------
   Constructing snapshots
@@ -167,7 +167,7 @@ prop_pastLedger setup@ChainSetup{..} =
 
 prop_maxRollbackGenesisZero :: Property
 prop_maxRollbackGenesisZero =
-        ledgerDbMaxRollback (ledgerDbWithAnchor (convertMapKind testInitLedger))
+        ledgerDbMaxRollback (ledgerDbWithAnchor RunBoth (convertMapKind testInitLedger))
     === 0
 
 prop_snapshotsMaxRollback :: ChainSetup -> Property
@@ -311,7 +311,7 @@ mkTestSetup :: SecurityParam -> Word64 -> Word64 -> ChainSetup
 mkTestSetup csSecParam csNumBlocks csPrefixLen =
     ChainSetup {..}
   where
-    csGenSnaps = ledgerDbWithAnchor (convertMapKind testInitLedger)
+    csGenSnaps = ledgerDbWithAnchor RunBoth (convertMapKind testInitLedger)
     csChain    = take (fromIntegral csNumBlocks) $
                    iterate successorBlock (firstBlock 0)
     csPushed   = ledgerDbPushMany' (csBlockConfig' csSecParam) csChain csGenSnaps
