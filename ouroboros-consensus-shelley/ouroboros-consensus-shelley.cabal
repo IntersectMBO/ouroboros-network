@@ -43,6 +43,7 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol
                        Ouroboros.Consensus.Shelley.Node
                        Ouroboros.Consensus.Shelley.Node.Common
+                       Ouroboros.Consensus.Shelley.Node.Praos
                        Ouroboros.Consensus.Shelley.Node.TPraos
                        Ouroboros.Consensus.Shelley.Node.Serialisation
                        Ouroboros.Consensus.Shelley.Protocol.Abstract
