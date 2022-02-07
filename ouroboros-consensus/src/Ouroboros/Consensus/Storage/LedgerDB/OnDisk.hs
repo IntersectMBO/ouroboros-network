@@ -19,7 +19,7 @@
 
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
-    RecoverableInitFailure(..)
+    InitFailure(..)
   , InitLog (..)
   , initLedgerDB
     -- ** Instantiate in-memory to @blk@
@@ -178,7 +178,20 @@ data InitLog blk =
     -- We record the reason why it was skipped.
     --
     -- NOTE: We should /only/ see this if data corrupted occurred.
-  | InitFailure DiskSnapshot (RecoverableInitFailure blk) (InitLog blk)
+  | InitFailure DiskSnapshot (InitFailure blk) (InitLog blk)
+  deriving (Show, Eq, Generic)
+
+-- | Internal errors which are recoverable and exposed through the chain of
+-- failures recorded in 'InitLog'.
+data InitFailure blk =
+    -- | We failed to deserialise the snapshot
+    --
+    -- This can happen due to data corruption in the ledger DB.
+    InitFailureRead ReadIncrementalErr
+
+    -- | This snapshot was of the ledger state at genesis, even though we never
+    -- take snapshots at genesis, so this is unexpected.
+  | InitFailureGenesis
   deriving (Show, Eq, Generic)
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
@@ -220,7 +233,7 @@ initLedgerDB ::
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk
   -> RunAlsoLegacy
-  -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore m (ExtLedgerState blk))
+  -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
 initLedgerDB replayTracer
              tracer
              hasFS
@@ -246,28 +259,6 @@ initLedgerDB replayTracer
                                         initDb
     return (initLog, replayedDB, replayedBlocks, backingStore)
 
-{-------------------------------------------------------------------------------
-  Internal: initialize using the given snapshot
--------------------------------------------------------------------------------}
-
--- | Errors that can happen during initialization and cannot be recovered,
--- leading to a call to @error@ and aborting the program.
-data FatalInitFailure blk = InitFailureTooRecent (RealPoint blk)
-  deriving (Show, Eq, Generic)
-
--- | Internal errors which are recoverable and exposed through the chain of
--- failures recorded in 'InitLog'.
-data RecoverableInitFailure blk =
-    -- | We failed to deserialise the snapshot
-    --
-    -- This can happen due to data corruption in the ledger DB.
-    InitFailureRead ReadIncrementalErr
-
-    -- | This snapshot was of the ledger state at genesis, even though we never
-    -- take snapshots at genesis, so this is unexpected.
-  | InitFailureGenesis
-  deriving (Show, Eq, Generic)
-
 -- | Attempt to initialize the ledger DB from the given snapshot
 --
 -- If the chain DB or ledger layer reports an error, the whole thing is aborted
@@ -291,7 +282,7 @@ initFromSnapshotOrGenesis ::
   -> m
       ( InitLog blk
       , LedgerDB' blk
-      , LedgerBackingStore m (ExtLedgerState blk)
+      , LedgerBackingStore' m blk
       , Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
       )
 initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS decLedger decHash runAlsoLegacy = do
@@ -301,7 +292,7 @@ initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS dec
                    -> [DiskSnapshot]
                    -> m ( InitLog   blk
                         , LedgerDB' blk
-                        , LedgerBackingStore m (ExtLedgerState blk)
+                        , LedgerBackingStore' m blk
                         , Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
                         )
     tryNewestFirst acc [] = do
@@ -344,8 +335,69 @@ initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS dec
                 ReplayFromSnapshot s tip (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
                   initDb  = ledgerDbWithAnchor runAlsoLegacy extLedgerSt
-                  -- TODO: @js if the provided extLedgerSt has an empty UTxO, then we cannot run the legacy db
               return (acc (InitFromSnapshot s tip), initDb, backingStore, tracer')
+
+-- | Replay all blocks in the Immutable database using the ''StreamAPI' provided
+-- on top of the given @LedgerDB' blk@.
+--
+-- If the starting snapshot is ahead than the Immutable database tip, this
+-- function will call @error@ and abort.
+--
+-- It will also return the number of blocks that were replayed.
+replayStartingWith ::
+     forall m blk. (
+         IOLike m
+       , LedgerSupportsProtocol blk
+       , InspectLedger blk
+       , HasCallStack
+       )
+  => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
+  -> LedgerDbCfg (ExtLedgerState blk)
+  -> LedgerBackingStore' m blk
+  -> StreamAPI m blk
+  -> LedgerDB' blk
+  -> m (LedgerDB' blk, Word64)
+replayStartingWith tracer cfg backingStore streamAPI initDb = do
+    eInitDB <- runExceptT $
+      streamAll streamAPI (castPoint (ledgerDbTip initDb))
+        id
+        (initDb, 0)
+        push
+    either (\pt -> error $ "invariant violation: snapshot (@" <> show pt <> ") is ahead of immutable db") return eInitDB
+  where
+    push :: blk -> (LedgerDB' blk, Word64) -> m (LedgerDB' blk, Word64)
+    push blk !(!db, !replayed) = do
+        !db' <- defaultReadKeySets (readKeySets backingStore) $
+                  ledgerDbPush cfg (ReapplyVal blk) db
+
+        -- TODO flush policy: flush less often?
+
+        -- It's OK to flush without a lock here, since the `LgrDB` has not
+        -- finishined initializing: only this thread has access to the backing
+        -- store.
+        db'' <- do
+          let (toFlush, toKeep) =
+                ledgerDbFlush DbChangelogFlushAllImmutable db'
+          flush backingStore toFlush
+          pure toKeep
+
+        -- TODO snapshot policy: create snapshots during replay?
+
+        let replayed' :: Word64
+            !replayed' = replayed + 1
+
+            events :: [LedgerEvent blk]
+            events = inspectLedger
+                       (getExtLedgerCfg (ledgerDbCfg cfg))
+                       (ledgerState (ledgerDbCurrent db))
+                       (ledgerState (ledgerDbCurrent db''))
+
+        traceWith tracer (ReplayedBlock (blockRealPoint blk) events)
+        return (db'', replayed')
+
+{-------------------------------------------------------------------------------
+  BackingStore utilities
+-------------------------------------------------------------------------------}
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
@@ -356,7 +408,7 @@ restoreBackingStore ::
      )
   => SomeHasFS m
   -> DiskSnapshot
-  -> m (LedgerBackingStore m (ExtLedgerState blk))
+  -> m (LedgerBackingStore' m blk)
 restoreBackingStore (SomeHasFS hasFS) snapshot = do
     -- TODO a backing store that actually resides on-disk during use should have
     -- a @new*@ function that receives both the location it should load from (ie
@@ -430,6 +482,8 @@ data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
   deriving stock    (Generic)
   deriving anyclass (NoThunks)
 
+type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)
+
 readKeySets :: forall m l.
      (IOLike m, TableStuff l)
   => LedgerBackingStore m l
@@ -484,138 +538,8 @@ flush (LedgerBackingStore backingStore) dblog =
       -> ApplyMapKind DiffMK k v
     prj (ApplySeqDiffMK sq) = ApplyDiffMK (HD.cumulativeDiffSeqUtxoDiff sq)
 
--- | Replay all blocks in the Immutable database using the ''StreamAPI' provided
--- on top of the given @LedgerDB' blk@.
---
--- If the starting snapshot is ahead than the Immutable database tip, this
--- function will call @error@ and abort.
---
--- It will also return the number of blocks that were replayed.
-replayStartingWith ::
-     forall m blk. (
-         IOLike m
-       , LedgerSupportsProtocol blk
-       , InspectLedger blk
-       , HasCallStack
-       )
-  => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
-  -> LedgerDbCfg (ExtLedgerState blk)
-  -> LedgerBackingStore m (ExtLedgerState blk)
-  -> StreamAPI m blk
-  -> LedgerDB' blk
-  -> m (LedgerDB' blk, Word64)
-replayStartingWith tracer cfg backingStore streamAPI initDb = do
-    eInitDB <- runExceptT $
-      streamAll streamAPI (castPoint (ledgerDbTip initDb))
-        InitFailureTooRecent
-        (initDb, 0)
-        push
-    either (\err -> error $ "invariant violation: invalid immutable chain. Error: " <> show err) return eInitDB
-  where
-    push :: blk -> (LedgerDB' blk, Word64) -> m (LedgerDB' blk, Word64)
-    push blk !(!db, !replayed) = do
-        !db' <- defaultReadKeySets (readKeySets backingStore) $
-                  ledgerDbPush cfg (ReapplyVal blk) db
-
-        -- TODO flush policy: flush less often?
-
-        -- It's OK to flush without a lock here, since the `LgrDB` has not
-        -- finishined initializing: only this thread has access to the backing
-        -- store.
-        db'' <- do
-          let (toFlush, toKeep) =
-                ledgerDbFlush DbChangelogFlushAllImmutable db'
-          flush backingStore toFlush
-          pure toKeep
-
-        -- TODO snapshot policy: create snapshots during replay?
-
-        let replayed' :: Word64
-            !replayed' = replayed + 1
-
-            events :: [LedgerEvent blk]
-            events = inspectLedger
-                       (getExtLedgerCfg (ledgerDbCfg cfg))
-                       (ledgerState (ledgerDbCurrent db))
-                       (ledgerState (ledgerDbCurrent db''))
-
-        traceWith tracer (ReplayedBlock (blockRealPoint blk) events)
-        return (db'', replayed')
-
 {-------------------------------------------------------------------------------
-  Write to disk
--------------------------------------------------------------------------------}
-
--- | Take a snapshot of the /oldest ledger state/ in the ledger DB
---
--- We write the /oldest/ ledger state to disk because the intention is to only
--- write ledger states to disk that we know to be immutable. Primarily for
--- testing purposes, 'takeSnapshot' returns the block reference corresponding
--- to the snapshot that we wrote.
---
--- If a snapshot with the same number already exists on disk or if the tip is at
--- genesis, no snapshot is taken.
---
--- Note that an EBB can have the same slot number and thus snapshot number as
--- the block after it. This doesn't matter. The one block difference in the
--- ledger state doesn't warrant an additional snapshot. The number in the name
--- of the snapshot is only indicative, we don't rely on it being correct.
---
--- NOTE: This is a lower-level API that takes a snapshot independent from
--- whether this snapshot corresponds to a state that is more than @k@ back.
---
--- TODO: Should we delete the file if an error occurs during writing?
-takeSnapshot ::
-     forall m blk.
-     ( MonadThrow m
-     , IsLedger (LedgerState blk)
-     , StandardHash blk
-     )
-  => Tracer m (TraceEvent blk)
-  -> SomeHasFS m
-  -> LedgerBackingStore m (ExtLedgerState blk)
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
-  -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot tracer hasFS backingStore encLedger db =
-    case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
-      Origin ->
-        return Nothing
-      NotOrigin tip -> do
-        let number   = unSlotNo (realPointSlot tip)
-            snapshot = DiskSnapshot number Nothing
-        snapshots <- listSnapshots hasFS
-        if List.any ((== number) . dsNumber) snapshots then
-          return Nothing
-        else do
-          writeSnapshot hasFS backingStore encLedger snapshot oldest
-          traceWith tracer $ TookSnapshot snapshot tip
-          return $ Just (snapshot, tip)
-  where
-    oldest :: ExtLedgerState blk EmptyMK
-    oldest = ledgerDbOldest db
-
--- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
--- snapshots are stored on disk. The oldest snapshots are deleted.
---
--- The deleted snapshots are returned.
-trimSnapshots ::
-     Monad m
-  => Tracer m (TraceEvent r)
-  -> SomeHasFS m
-  -> DiskPolicy
-  -> m [DiskSnapshot]
-trimSnapshots tracer hasFS DiskPolicy{..} = do
-    -- We only trim temporary snapshots
-    snapshots <- filter diskSnapshotIsTemporary <$> listSnapshots hasFS
-    -- The snapshot are most recent first, so we can simply drop from the
-    -- front to get the snapshots that are "too" old.
-    forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
-      deleteSnapshot hasFS snapshot
-      traceWith tracer $ DeletedSnapshot snapshot
-      return snapshot
-
-{-------------------------------------------------------------------------------
-  Internal: reading from disk
+  Disk snapshots
 -------------------------------------------------------------------------------}
 
 data DiskSnapshot = DiskSnapshot {
@@ -648,55 +572,6 @@ diskSnapshotIsPermanent = isJust . dsSuffix
 -- deleted when trimming
 diskSnapshotIsTemporary :: DiskSnapshot -> Bool
 diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
-
--- | Read snapshot from disk
-readSnapshot ::
-     forall m blk. IOLike m
-  => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
-  -> (forall s. Decoder s (HeaderHash blk))
-  -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
-readSnapshot hasFS decLedger decHash = do
-      ExceptT
-    . readIncremental hasFS decoder
-    . snapshotToStatePath
-  where
-    decoder :: Decoder s (ExtLedgerState blk EmptyMK)
-    decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
-
--- | Write snapshot to disk
-writeSnapshot ::
-     forall m blk. MonadThrow m
-  => SomeHasFS m
-  -> LedgerBackingStore m (ExtLedgerState blk)
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
-  -> DiskSnapshot
-  -> ExtLedgerState blk EmptyMK -> m ()
-writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
-    createDirectory hasFS (snapshotToDirPath snapshot)
-    withFile hasFS (snapshotToStatePath snapshot) (WriteMode MustBeNew) $ \h ->
-      void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
-    HD.bsCopy
-      (let LedgerBackingStore store = backingStore in store)
-      (SomeHasFS hasFS)
-      (HD.BackingStorePath (snapshotToTablesPath snapshot))
-  where
-    encode :: ExtLedgerState blk EmptyMK -> Encoding
-    encode = encodeSnapshot encLedger
-
--- | Delete snapshot from disk
-deleteSnapshot :: HasCallStack => SomeHasFS m -> DiskSnapshot -> m ()
-deleteSnapshot (SomeHasFS HasFS{..}) =
-    removeDirectoryRecursive . snapshotToDirPath
-
--- | List on-disk snapshots, highest number first.
-listSnapshots :: Monad m => SomeHasFS m -> m [DiskSnapshot]
-listSnapshots (SomeHasFS HasFS{..}) =
-    aux <$> listDirectory (mkFsPath [])
-  where
-    aux :: Set String -> [DiskSnapshot]
-    aux = List.sortOn (Down . dsNumber) . mapMaybe snapshotFromPath . Set.toList
 
 snapshotToFileName :: DiskSnapshot -> String
 snapshotToFileName DiskSnapshot { dsNumber, dsSuffix } =
@@ -738,8 +613,144 @@ snapshotFromPath fileName = do
       _ : str -> Just str
 
 {-------------------------------------------------------------------------------
+  Snapshots: Writing to disk
+-------------------------------------------------------------------------------}
+
+-- | Take a snapshot of the /oldest ledger state/ in the ledger DB
+--
+-- We write the /oldest/ ledger state to disk because the intention is to only
+-- write ledger states to disk that we know to be immutable. Primarily for
+-- testing purposes, 'takeSnapshot' returns the block reference corresponding
+-- to the snapshot that we wrote.
+--
+-- If a snapshot with the same number already exists on disk or if the tip is at
+-- genesis, no snapshot is taken.
+--
+-- Note that an EBB can have the same slot number and thus snapshot number as
+-- the block after it. This doesn't matter. The one block difference in the
+-- ledger state doesn't warrant an additional snapshot. The number in the name
+-- of the snapshot is only indicative, we don't rely on it being correct.
+--
+-- NOTE: This is a lower-level API that takes a snapshot independent from
+-- whether this snapshot corresponds to a state that is more than @k@ back.
+--
+-- TODO: Should we delete the file if an error occurs during writing?
+takeSnapshot ::
+     forall m blk.
+     ( MonadThrow m
+     , IsLedger (LedgerState blk)
+     , StandardHash blk
+     )
+  => Tracer m (TraceEvent blk)
+  -> SomeHasFS m
+  -> LedgerBackingStore' m blk
+  -> (ExtLedgerState blk EmptyMK -> Encoding)
+  -> LedgerDB' blk
+  -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot tracer hasFS backingStore encLedger db =
+    case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
+      Origin ->
+        return Nothing
+      NotOrigin tip -> do
+        let number   = unSlotNo (realPointSlot tip)
+            snapshot = DiskSnapshot number Nothing
+        snapshots <- listSnapshots hasFS
+        if List.any ((== number) . dsNumber) snapshots then
+          return Nothing
+        else do
+          writeSnapshot hasFS backingStore encLedger snapshot oldest
+          traceWith tracer $ TookSnapshot snapshot tip
+          return $ Just (snapshot, tip)
+  where
+    oldest :: ExtLedgerState blk EmptyMK
+    oldest = ledgerDbOldest db
+
+-- | Write snapshot to disk
+writeSnapshot ::
+     forall m blk. MonadThrow m
+  => SomeHasFS m
+  -> LedgerBackingStore' m blk
+  -> (ExtLedgerState blk EmptyMK -> Encoding)
+  -> DiskSnapshot
+  -> ExtLedgerState blk EmptyMK
+  -> m ()
+writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
+    createDirectory hasFS (snapshotToDirPath snapshot)
+    withFile hasFS (snapshotToStatePath snapshot) (WriteMode MustBeNew) $ \h ->
+      void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
+    HD.bsCopy
+      (let LedgerBackingStore store = backingStore in store)
+      (SomeHasFS hasFS)
+      (HD.BackingStorePath (snapshotToTablesPath snapshot))
+  where
+    encode :: ExtLedgerState blk EmptyMK -> Encoding
+    encode = encodeSnapshot encLedger
+
+-- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
+-- snapshots are stored on disk. The oldest snapshots are deleted.
+--
+-- The deleted snapshots are returned.
+trimSnapshots ::
+     Monad m
+  => Tracer m (TraceEvent blk)
+  -> SomeHasFS m
+  -> DiskPolicy
+  -> m [DiskSnapshot]
+trimSnapshots tracer hasFS DiskPolicy{..} = do
+    -- We only trim temporary snapshots
+    snapshots <- filter diskSnapshotIsTemporary <$> listSnapshots hasFS
+    -- The snapshot are most recent first, so we can simply drop from the
+    -- front to get the snapshots that are "too" old.
+    forM (drop (fromIntegral onDiskNumSnapshots) snapshots) $ \snapshot -> do
+      deleteSnapshot hasFS snapshot
+      traceWith tracer $ DeletedSnapshot snapshot
+      return snapshot
+
+-- | Delete snapshot from disk
+deleteSnapshot :: HasCallStack => SomeHasFS m -> DiskSnapshot -> m ()
+deleteSnapshot (SomeHasFS HasFS{..}) =
+    removeDirectoryRecursive . snapshotToDirPath
+
+{-------------------------------------------------------------------------------
+  Snapshots: reading from disk
+-------------------------------------------------------------------------------}
+
+-- | Read snapshot from disk
+readSnapshot ::
+     forall m blk. IOLike m
+  => SomeHasFS m
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
+  -> (forall s. Decoder s (HeaderHash blk))
+  -> DiskSnapshot
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
+readSnapshot hasFS decLedger decHash = do
+      ExceptT
+    . readIncremental hasFS decoder
+    . snapshotToStatePath
+  where
+    decoder :: Decoder s (ExtLedgerState blk EmptyMK)
+    decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
+
+-- | List on-disk snapshots, highest number first.
+listSnapshots :: Monad m => SomeHasFS m -> m [DiskSnapshot]
+listSnapshots (SomeHasFS HasFS{..}) =
+    aux <$> listDirectory (mkFsPath [])
+  where
+    aux :: Set String -> [DiskSnapshot]
+    aux = List.sortOn (Down . dsNumber) . mapMaybe snapshotFromPath . Set.toList
+
+{-------------------------------------------------------------------------------
   Trace events
 -------------------------------------------------------------------------------}
+
+data TraceEvent blk
+  = InvalidSnapshot DiskSnapshot (InitFailure blk)
+    -- ^ An on disk snapshot was skipped because it was invalid.
+  | TookSnapshot DiskSnapshot (RealPoint blk)
+    -- ^ A snapshot was written to disk.
+  | DeletedSnapshot DiskSnapshot
+    -- ^ An old or invalid on-disk snapshot was deleted
+  deriving (Generic, Eq, Show)
 
 -- | Add the tip of the Immutable DB to the trace event
 --
@@ -760,15 +771,6 @@ decorateReplayTracerWithStart
   -> Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
 decorateReplayTracerWithStart start = contramap ($ (ReplayStart start))
 
-data TraceEvent blk
-  = InvalidSnapshot DiskSnapshot (RecoverableInitFailure blk)
-    -- ^ An on disk snapshot was skipped because it was invalid.
-  | TookSnapshot DiskSnapshot (RealPoint blk)
-    -- ^ A snapshot was written to disk.
-  | DeletedSnapshot DiskSnapshot
-    -- ^ An old or invalid on-disk snapshot was deleted
-  deriving (Generic, Eq, Show)
-
 -- | Which point the replay started from
 newtype ReplayStart blk = ReplayStart (Point blk) deriving (Eq, Show)
 
@@ -779,8 +781,8 @@ newtype ReplayGoal blk = ReplayGoal (Point blk) deriving (Eq, Show)
 -- date w.r.t. the tip of the ImmutableDB during initialisation. As this
 -- process takes a while, we trace events to inform higher layers of our
 -- progress.
-data TraceReplayEvent blk
-  = -- | There were no LedgerDB snapshots on disk, so we're replaying all blocks
+data TraceReplayEvent blk =
+    -- | There were no LedgerDB snapshots on disk, so we're replaying all blocks
     -- starting from Genesis against the initial ledger.
     ReplayFromGenesis
         (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
