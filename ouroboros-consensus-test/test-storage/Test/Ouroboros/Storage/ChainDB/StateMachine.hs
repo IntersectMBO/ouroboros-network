@@ -95,7 +95,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB,
-                     ReadsKeySets)
+                     ReadsKeySets, RunAlsoLegacy (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -1655,6 +1655,9 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
       -- We don't run the background threads, so these are not used
     , cdbGcDelay                = 1
     , cdbGcInterval             = 1
+
+      -- UTxO HD scaffolding
+    , cdbLedgerRunAlsoLegacy    = RunBoth
     }
 
 tests :: TestTree

@@ -352,7 +352,7 @@ getLedgerDB ::
 getLedgerDB cfg m@Model{..} =
       ledgerDbPrune (SecurityParam (maxActualRollback k m))
     $ ledgerDbPushMany' ledgerDbCfg blks
-    $ ledgerDbWithAnchor initLedger
+    $ ledgerDbWithAnchor RunBoth initLedger
   where
     blks = Chain.toOldestFirst $ currentChain m
 
