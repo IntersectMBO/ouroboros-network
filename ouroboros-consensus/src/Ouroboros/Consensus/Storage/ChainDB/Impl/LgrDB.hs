@@ -92,7 +92,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
-                     ExceededRollback (..), LedgerDbCfg (..))
+                     ExceededRollback (..), LedgerDbCfg (..), RunAlsoLegacy (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      DiskSnapshot, LedgerDB', NextBlock (..),
@@ -168,6 +168,7 @@ data LgrDbArgs f m blk = LgrDbArgs {
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (TraceEvent blk)
+    , lgrRunAlsoLegacy  :: RunAlsoLegacy
     }
 
 -- | Default arguments
@@ -183,6 +184,7 @@ defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
+    , lgrRunAlsoLegacy  = RunBoth
     }
 
 -- | Open the ledger DB
@@ -215,9 +217,8 @@ openDB :: forall m blk.
        -- DB does not know where the boundary is at any given point.
        --
        -- TODO: should we replace this type with @ResolveBlock blk m@?
-       -> Bool
        -> m (LgrDB m blk, Word64)
-openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock _runDual = do
+openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock = do
     createDirectoryIfMissing hasFS True (mkFsPath [])
     (db, replayed, lgrBackingStore) <- initFromDisk args replayTracer immutableDB
     -- When initializing the ledger DB from disk we:
@@ -279,6 +280,7 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
         (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
+        lgrRunAlsoLegacy
     return (db, replayed, backingStore)
   where
     LgrDbArgs { lgrHasFS = hasFS, .. } = args
