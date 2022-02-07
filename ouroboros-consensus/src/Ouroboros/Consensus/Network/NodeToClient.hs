@@ -104,7 +104,8 @@ data Handlers m peer blk = Handlers {
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 
     , hStateQueryServer
-        :: LocalStateQueryServer blk (Point blk) (Query blk) m ()
+        :: ResourceRegistry m
+        -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
 
     , hTxMonitorServer
         :: LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
@@ -131,9 +132,10 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
           localTxSubmissionServer
             (Node.localTxSubmissionServerTracer tracers)
             getMempool
-      , hStateQueryServer =
+      , hStateQueryServer = \rreg ->
           localStateQueryServer
             (ExtLedgerCfg cfg)
+            rreg
             (ChainDB.getTipPoint getChainDB)
             (\pt -> ledgerDbPrefix pt <$> ChainDB.getLedgerDB getChainDB)
             (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
@@ -438,13 +440,13 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
       :: localPeer
       -> Channel m bSQ
       -> m ((), Maybe bSQ)
-    aStateQueryServer them channel = do
+    aStateQueryServer them channel = withRegistry $ \reg -> do
       labelThisThread "LocalStateQueryServer"
       runPeer
         (contramap (TraceLabelPeer them) tStateQueryTracer)
         cStateQueryCodec
         channel
-        (localStateQueryServerPeer hStateQueryServer)
+        (localStateQueryServerPeer (hStateQueryServer reg))
 
     aTxMonitorServer
       :: localPeer

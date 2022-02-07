@@ -15,10 +15,12 @@ import           Ouroboros.Consensus.Ledger.Query (Query, QueryLedger)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 localStateQueryServer ::
      forall m blk. (IOLike m, QueryLedger blk, Query.ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
+  -> ResourceRegistry m
   -> STM m (Point blk)
      -- ^ Get tip point
   -> (Point blk -> STM m (Maybe (LedgerDB' blk)))
@@ -26,7 +28,7 @@ localStateQueryServer ::
   -> STM m (Point blk)
      -- ^ Get the immutable point
   -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
-localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
+localStateQueryServer cfg _rreg getTipPoint getPastLedger getImmutablePoint =
     LocalStateQueryServer $ return idle
   where
     idle :: ServerStIdle blk (Point blk) (Query blk) m ()
