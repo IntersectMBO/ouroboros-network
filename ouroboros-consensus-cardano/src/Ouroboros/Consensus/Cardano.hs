@@ -28,6 +28,7 @@ import           Ouroboros.Consensus.Shelley.ShelleyHFC
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 
 {-------------------------------------------------------------------------------
   Supported protocols
@@ -40,8 +41,8 @@ import           Ouroboros.Consensus.Cardano.Node
 
 type ProtocolByron   = HardForkProtocol '[ ByronBlock ]
 type ProtocolCardano = HardForkProtocol '[ ByronBlock
-                                         , ShelleyBlock StandardShelley
-                                         , ShelleyBlock StandardAllegra
-                                         , ShelleyBlock StandardMary
-                                         , ShelleyBlock StandardAlonzo
+                                         , ShelleyBlock (TPraos StandardCrypto) StandardShelley
+                                         , ShelleyBlock (TPraos StandardCrypto) StandardAllegra
+                                         , ShelleyBlock (TPraos StandardCrypto) StandardMary
+                                         , ShelleyBlock (TPraos StandardCrypto) StandardAlonzo
                                          ]

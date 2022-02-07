@@ -1,15 +1,16 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
 {-# OPTIONS_GHC -Wno-orphans
                 -Wno-incomplete-patterns
                 -Wno-incomplete-uni-patterns
@@ -83,7 +84,7 @@ import           Ouroboros.Consensus.Byron.Node
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 
-import           Ouroboros.Consensus.Protocol.TPraos (TPraosParams (..))
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..))
 import qualified Ouroboros.Consensus.Protocol.TPraos as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
@@ -91,9 +92,17 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.ShelleyBased
 
+import qualified Cardano.Ledger.BaseTypes as SL
+import           Cardano.Slotting.Time (SystemStart (SystemStart))
+import           Data.Kind (Type)
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.ShelleyBased
+import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
+import           Ouroboros.Consensus.Shelley.Node.Common
+                     (shelleyBlockIssuerVKey)
+import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
+import qualified Ouroboros.Consensus.Shelley.Node.TPraos as TPraos
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
@@ -385,7 +394,7 @@ instance CardanoHardForkConstraints c
       , (NodeToNodeV_9, CardanoNodeToNodeVersion5)
       ]
 
-  supportedNodeToClientVersions _ = Map.fromList $
+  supportedNodeToClientVersions _ = Map.fromList
       [ (NodeToClientV_1 , CardanoNodeToClientVersion1)
       , (NodeToClientV_2 , CardanoNodeToClientVersion1)
       , (NodeToClientV_3 , CardanoNodeToClientVersion2)
@@ -411,6 +420,17 @@ data ProtocolTransitionParamsShelleyBased era = ProtocolTransitionParamsShelleyB
       transitionTranslationContext :: Core.TranslationContext era
     , transitionTrigger            :: TriggerHardFork
     }
+
+type ShelleyTPraosEras c =
+  [ ShelleyEra c
+  , AllegraEra c
+  , MaryEra c
+  , AlonzoEra c
+  ]
+
+type ShelleyPraosEras :: Type -> [Type]
+-- | TODO Remove this copy of Alonzo and add Babbage
+type ShelleyPraosEras c = '[AlonzoEra c]
 
 -- | Create a 'ProtocolInfo' for 'CardanoBlock'
 --
@@ -523,12 +543,25 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           initialNonceShelley
           genesisShelley
 
+    praosParams :: PraosParams
+    praosParams = PraosParams
+      { praosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesisShelley,
+        praosLeaderF = SL.mkActiveSlotCoeff $ SL.sgActiveSlotsCoeff genesisShelley,
+        praosSecurityParam = SecurityParam $ SL.sgSecurityParam genesisShelley,
+        praosMaxKESEvo = SL.sgMaxKESEvolutions genesisShelley,
+        praosQuorum = SL.sgUpdateQuorum genesisShelley,
+        praosMaxMajorPV = maxMajorProtVer,
+        praosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesisShelley,
+        praosNetworkId = SL.sgNetworkId genesisShelley,
+        praosSystemStart = SystemStart $ SL.sgSystemStart genesisShelley
+      }
+
     blockConfigShelley :: BlockConfig (ShelleyBlock (TPraos c) (ShelleyEra c))
     blockConfigShelley =
         Shelley.mkShelleyBlockConfig
           protVerShelley
           genesisShelley
-          (tpraosBlockIssuerVKey <$> credssShelleyBased)
+          (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigShelley ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (ShelleyEra c)))
@@ -550,12 +583,12 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     genesisAllegra :: ShelleyGenesis (AllegraEra c)
     genesisAllegra = Core.translateEra' () genesisShelley
 
-    blockConfigAllegra :: BlockConfig (ShelleyBlock (AllegraEra c))
+    blockConfigAllegra :: BlockConfig (ShelleyBlock (TPraos c) (AllegraEra c))
     blockConfigAllegra =
         Shelley.mkShelleyBlockConfig
           protVerAllegra
           genesisAllegra
-          (tpraosBlockIssuerVKey <$> credssShelleyBased)
+          (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAllegra ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (AllegraEra c)))
@@ -574,18 +607,18 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     genesisMary :: ShelleyGenesis (MaryEra c)
     genesisMary = Core.translateEra' () genesisAllegra
 
-    blockConfigMary :: BlockConfig (ShelleyBlock (MaryEra c))
+    blockConfigMary :: BlockConfig (ShelleyBlock (TPraos c) (MaryEra c))
     blockConfigMary =
         Shelley.mkShelleyBlockConfig
           protVerMary
           genesisMary
-          (tpraosBlockIssuerVKey <$> credssShelleyBased)
+          (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigMary ::
-         PartialConsensusConfig (BlockProtocol (ShelleyBlock (MaryEra c)))
+         PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (MaryEra c)))
     partialConsensusConfigMary = tpraosParams
 
-    partialLedgerConfigMary :: PartialLedgerConfig (ShelleyBlock (MaryEra c))
+    partialLedgerConfigMary :: PartialLedgerConfig (ShelleyBlock (TPraos c) (MaryEra c))
     partialLedgerConfigMary =
         mkPartialLedgerConfigShelley
           genesisMary
@@ -598,18 +631,18 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     genesisAlonzo :: ShelleyGenesis (AlonzoEra c)
     genesisAlonzo = Core.translateEra' transCtxtAlonzo genesisMary
 
-    blockConfigAlonzo :: BlockConfig (ShelleyBlock (AlonzoEra c))
+    blockConfigAlonzo :: BlockConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
     blockConfigAlonzo =
         Shelley.mkShelleyBlockConfig
           protVerAlonzo
           genesisAlonzo
-          (tpraosBlockIssuerVKey <$> credssShelleyBased)
+          (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAlonzo ::
-         PartialConsensusConfig (BlockProtocol (ShelleyBlock (AlonzoEra c)))
+         PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (AlonzoEra c)))
     partialConsensusConfigAlonzo = tpraosParams
 
-    partialLedgerConfigAlonzo :: PartialLedgerConfig (ShelleyBlock (AlonzoEra c))
+    partialLedgerConfigAlonzo :: PartialLedgerConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
     partialLedgerConfigAlonzo =
         mkPartialLedgerConfigShelley
           genesisAlonzo
@@ -726,13 +759,15 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- threads for the remaining Shelley ones.
     blockForging :: m [BlockForging m (CardanoBlock c)]
     blockForging = do
-        shelleyBased <- blockForgingShelleyBased
+        shelleyBased <- blockForgingShelleyTPraosBased
+        -- praosBased <- blockForgingShelleyPraosBased
+        let praosBased = []
         let blockForgings :: [OptNP 'False (BlockForging m) (CardanoEras c)]
-            blockForgings = case (mBlockForgingByron, shelleyBased) of
-              (Nothing,    shelleys)         -> shelleys
-              (Just byron, [])               -> [byron]
-              (Just byron, shelley:shelleys) ->
-                  OptNP.zipWith merge byron shelley : shelleys
+            blockForgings = case (mBlockForgingByron, shelleyBased, praosBased) of
+              (Nothing,    shelley, praoses)         -> shelley <> praoses
+              (Just byron, [], [])              -> [byron]
+              (Just byron, shelley:shelleys, praoses) ->
+                  OptNP.zipWith merge byron shelley : (shelleys <> praoses)
                 where
                   -- When merging Byron with Shelley-based eras, we should never
                   -- merge two from the same era.
@@ -747,12 +782,12 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         creds <- mCredsByron
         return $ byronBlockForging maxTxCapacityOverridesByron creds `OptNP.at` IZ
 
-    blockForgingShelleyBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
-    blockForgingShelleyBased = do
+    blockForgingShelleyTPraosBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
+    blockForgingShelleyTPraosBased = do
         shelleyBased <-
           traverse
-            (\creds -> shelleySharedBlockForging
-               (Proxy @(ShelleyBasedEras c))
+            (\creds -> TPraos.shelleySharedBlockForging
+               (Proxy @(ShelleyTPraosEras c))
                tpraosParams
                creds
                maxTxCapacityOverridess
@@ -762,7 +797,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         return $ reassoc <$> shelleyBased
       where
         reassoc ::
-             NP (BlockForging m :.: ShelleyBlock) (ShelleyBasedEras c)
+             NP (BlockForging m :.: ShelleyBlock (TPraos c)) (ShelleyTPraosEras c)
           -> OptNP 'False (BlockForging m) (CardanoEras c)
         reassoc = OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
 
@@ -772,6 +807,31 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           Comp maxTxCapacityOverridesMary    :*
           Comp maxTxCapacityOverridesAlonzo  :*
           Nil
+
+    -- blockForgingShelleyPraosBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
+    -- blockForgingShelleyPraosBased = do
+    --     shelleyBased <-
+    --       traverse
+    --         (\creds -> Praos.praosSharedBlockForging
+    --            (Proxy @(ShelleyPraosEras c))
+    --            praosParams
+    --            creds
+    --            maxTxCapacityOverridess
+    --         )
+    --         credssShelleyBased
+
+    --     return $ reassoc <$> shelleyBased
+    --   where
+    --     -- TODO This is rather ugly! Can we do this in a nicer way?
+    --     reassoc ::
+    --          NP (BlockForging m :.: ShelleyBlock (Praos c)) (ShelleyPraosEras c)
+    --       -> OptNP 'False (BlockForging m) (CardanoEras c)
+    --     reassoc = OptSkip . OptSkip . OptSkip . OptSkip . OptSkip
+    --             . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+
+    --     maxTxCapacityOverridess =
+    --       Comp (error "maxTxCapacityOverridesAlonzo")  :* Nil
+
 
 protocolClientInfoCardano
   :: forall c.
