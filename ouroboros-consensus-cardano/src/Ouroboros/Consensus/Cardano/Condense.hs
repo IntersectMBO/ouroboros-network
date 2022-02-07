@@ -21,6 +21,6 @@ import           Ouroboros.Consensus.Cardano.CanHardFork
 
 instance CondenseConstraints ByronBlock
 
-instance ShelleyBasedEra era => CondenseConstraints (ShelleyBlock proto era)
+instance ShelleyCompatible proto era => CondenseConstraints (ShelleyBlock proto era)
 
 instance CardanoHardForkConstraints c => CondenseConstraints (CardanoBlock c)
