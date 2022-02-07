@@ -216,7 +216,8 @@ ledgerDbWithAnchor ::
 ledgerDbWithAnchor runAlsoLegacy anchor = LedgerDB {
       ledgerDbCheckpoints = case (isCandidateForUnstow anchor, runAlsoLegacy) of
           (True, RunBoth) -> Just (Empty (Checkpoint (unstowLedgerTables anchor)))
-          _               -> Nothing
+          (False, RunBoth) -> error "Requested to run with legacy DB but anchor loaded from disk has no in-mem UTxO"
+          _ -> Nothing
     , ledgerDbChangelog   = emptyDbChangeLog anchor
     }
 
