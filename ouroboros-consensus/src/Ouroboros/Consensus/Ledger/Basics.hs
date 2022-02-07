@@ -729,8 +729,16 @@ type TableReadSets l = LedgerTables l ValuesMK
 
 -- | TODO Once we remove the dual ledger, we won't need this anymore
 class StowableLedgerTables (l :: LedgerStateKind) where
-  stowLedgerTables   :: l ValuesMK -> l EmptyMK
-  unstowLedgerTables :: l EmptyMK  -> l ValuesMK
+  stowLedgerTables     :: l ValuesMK -> l EmptyMK
+  unstowLedgerTables   :: l EmptyMK  -> l ValuesMK
+  -- | When we deserialize a snapshot from the disk, said snapshot will be
+  -- @ExtLedgerState blk EmptyMK@ and we will try to unstow it to get the legacy
+  -- style ledger state. However, if we run without the legacy database, it will
+  -- be the case that the serialized ledger state is indeed deprived from a
+  -- UTxO, and unstowing it will result in an empty UTxO in the legacy database.
+  --
+  -- This function should check that the UTxO inside the ledger state is not empty.
+  isCandidateForUnstow :: l EmptyMK -> Bool
 
 {-------------------------------------------------------------------------------
   Changelog
