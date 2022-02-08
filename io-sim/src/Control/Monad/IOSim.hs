@@ -338,13 +338,21 @@ ppEvents events =
 runSimTrace :: forall a. (forall s. IOSim s a) -> SimTrace a
 runSimTrace mainAction = runST (runSimTraceST mainAction)
 
-controlSimTrace :: forall a. Maybe Int -> ScheduleControl -> (forall s. IOSim s a) -> SimTrace a
-controlSimTrace limit control mainAction = runST (controlSimTraceST limit control mainAction)
+controlSimTrace :: forall a.
+                   Maybe Int
+                -> ScheduleControl
+                -- ^ note: must be either `ControlDefault` or `ControlAwait`. 
+                -> (forall s. IOSim s a)
+                -> SimTrace a
+controlSimTrace limit control mainAction =
+    runST (controlSimTraceST limit control mainAction)
 
-exploreSimTrace ::
-  forall a test. (Testable test) =>
-    (ExplorationOptions->ExplorationOptions) ->
-    (forall s. IOSim s a) -> (Maybe (SimTrace a) -> SimTrace a -> test) -> Property
+exploreSimTrace
+  :: forall a test. Testable test
+  => (ExplorationOptions -> ExplorationOptions)
+  -> (forall s. IOSim s a)
+  -> (Maybe (SimTrace a) -> SimTrace a -> test)
+  -> Property
 exploreSimTrace optsf mainAction k =
   case explorationReplay opts of
     Nothing ->

@@ -130,7 +130,7 @@ happensBeforeStep step step' =
                   (getVectorClock $ stepVClock step')
 
 labelledTVarId :: TVar s a -> ST s (Labelled TVarId)
-labelledTVarId TVar { tvarId, tvarLabel } = (Labelled tvarId) <$> readSTRef tvarLabel
+labelledTVarId TVar { tvarId, tvarLabel } = Labelled tvarId <$> readSTRef tvarLabel
 
 labelledThreads :: Map ThreadId (Thread s a) -> [Labelled ThreadId]
 labelledThreads threadMap =
@@ -892,7 +892,7 @@ removeMinimums = \psq ->
 
 traceMany :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
           -> SimTrace a -> SimTrace a
-traceMany []                      trace = trace
+traceMany []                            trace = trace
 traceMany ((time, tid, tlbl, event):ts) trace =
     SimTrace time tid tlbl event (traceMany ts trace)
 
@@ -910,7 +910,10 @@ runSimTraceST mainAction = controlSimTraceST Nothing ControlDefault mainAction
 
 controlSimTraceST :: Maybe Int -> ScheduleControl -> IOSim s a -> ST s (SimTrace a)
 controlSimTraceST limit control mainAction =
-  schedule mainThread initialState{ control = control, control0 = control, perStepTimeLimit = limit }
+  schedule mainThread initialState { control  = control,
+                                     control0 = control,
+                                     perStepTimeLimit = limit
+                                   }
   where
     mainThread =
       Thread {
@@ -1242,7 +1245,7 @@ someTvarId :: SomeTVar s -> TVarId
 someTvarId (SomeTVar r) = tvarId r
 
 onlyReadEffect :: Effect -> Bool
-onlyReadEffect e@Effect { effectReads } = e == mempty { effectReads }
+onlyReadEffect e = e { effectReads = effectReads mempty } == mempty
 
 racingEffects :: Effect -> Effect -> Bool
 racingEffects e e' =
@@ -1267,11 +1270,13 @@ data Step = Step {
   deriving Show
 
 -- steps race if they can be reordered with a possibly different outcome
-racingSteps :: Step -> Step -> Bool
+racingSteps :: Step -- ^ an earlier step
+            -> Step -- ^ a later step
+            -> Bool
 racingSteps s s' =
      stepThreadId s /= stepThreadId s'
   && not (stepThreadId s' `elem` effectWakeup (stepEffect s))
-  && (racingEffects (stepEffect s) (stepEffect s')
+  && (stepEffect s `racingEffects` stepEffect s'
    || throwsTo s s'
    || throwsTo s' s)
   where throwsTo s1 s2 =
@@ -1333,6 +1338,9 @@ updateRacesInSimState thread SimState{ control, threads, races } =
               (Map.keysSet (Map.filter (not . threadDone) threads))
               races
 
+-- | 'updateRaces' turns a current 'Step' into 'StepInfo', and updates all
+-- 'activeRaces'.
+--
 -- We take care that steps can only race against threads in their
 -- concurrent set. When this becomes empty, a step can be retired into
 -- the "complete" category, but only if there are some steps racing
@@ -1343,9 +1351,13 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
             control
             newConcurrent0
             races@Races{ activeRaces } =
-  let -- a new step cannot race with any threads that it just woke up
-      newConcurrent = foldr Set.delete newConcurrent0 (effectWakeup newEffect)
-      new | isTestThreadId tid     = []  -- test threads do not race
+
+  let justBlocking :: Bool
+      justBlocking = blocking && onlyReadEffect newEffect
+
+      -- a new step cannot race with any threads that it just woke up
+      new :: [StepInfo]
+      new | isTestThreadId tid  = []  -- test threads do not race
           | Set.null newConcurrent = []  -- cannot race with anything
           | justBlocking           = []  -- no need to defer a blocking transaction
           | otherwise              =
@@ -1355,14 +1367,18 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
                           stepInfoNonDep     = [],
                           stepInfoRaces      = []
                         }]
-      justBlocking = blocking && onlyReadEffect newEffect
-      updateActive =
+        where
+          newConcurrent :: Set ThreadId
+          newConcurrent = foldr Set.delete newConcurrent0 (effectWakeup newEffect)
+
+      activeRaces' :: [StepInfo]
+      activeRaces' =
         [ -- if this step depends on the previous step, or is not concurrent,
           -- then any threads that it wakes up become non-concurrent also.
           let lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
           if tid `elem` concurrent then
             let theseStepsRace = not (isTestThreadId tid) && racingSteps step newStep
-                happensBefore  = happensBeforeStep step newStep
+                happensBefore  = step `happensBeforeStep` newStep
                 nondep' | happensBefore = nondep
                         | otherwise     = newStep : nondep
                 -- We will only record the first race with each thread---reversing
@@ -1378,18 +1394,22 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
                               control == ControlFollow [] []) &&
                              theseStepsRace  = newStep : stepRaces
                            | otherwise       = stepRaces
-            in stepInfo { stepInfoConcurrent = effectForks newEffect `Set.union` concurrent',
+
+            in stepInfo { stepInfoConcurrent = effectForks newEffect
+                                             `Set.union` concurrent',
                           stepInfoNonDep     = nondep',
                           stepInfoRaces      = stepRaces'
                         }
+
           else stepInfo { stepInfoConcurrent = lessConcurrent }
+
         | stepInfo@StepInfo { stepInfoStep       = step,
                               stepInfoConcurrent = concurrent,
                               stepInfoNonDep     = nondep,
                               stepInfoRaces      = stepRaces
                             }
             <- activeRaces ]
-  in normalizeRaces $ races { activeRaces = new ++ updateActive }
+  in normalizeRaces $ races { activeRaces = new ++ activeRaces' }
 
 -- When a thread terminates, we remove it from the concurrent thread
 -- sets of active races.
@@ -1420,10 +1440,10 @@ quiescentRacesInSimState simstate@SimState{ races } =
 quiescentRaces :: Races -> Races
 quiescentRaces Races{ activeRaces, completeRaces } =
   Races{ activeRaces = [],
-         completeRaces = [s{stepInfoConcurrent = Set.empty} |
-                          s <- activeRaces,
-                          not (null (stepInfoRaces s))] ++
-                         completeRaces }
+         completeRaces = [ s{stepInfoConcurrent = Set.empty}
+                         | s <- activeRaces
+                         , not (null (stepInfoRaces s))
+                         ] ++ completeRaces }
 
 traceRaces :: Races -> Races
 traceRaces r = r
@@ -1448,15 +1468,18 @@ stepInfoToScheduleMods
   -- It is actually possible for a later step that races with an earlier one
   -- not to *depend* on it in a happens-before sense. But we don't want to try
   -- to follow any steps *after* the later one.
-  [ ScheduleMod (stepStepId step)
-                control
-                (takeWhile (/=stepStepId step')
-                   (map stepStepId (reverse nondep))
-                   ++ [stepStepId step'])
-                   -- It should be unnecessary to include the delayed step in the insertion,
-                   -- since the default scheduling should run it anyway. Removing it may
-                   -- help avoid redundant schedules.
-                   -- ++ [stepStepId step])
+  [ ScheduleMod 
+      { scheduleModTarget    = stepStepId step
+      , scheduleModControl   = control
+      , scheduleModInsertion = takeWhile (/=stepStepId step')
+                                         (map stepStepId (reverse nondep))
+                            ++ [stepStepId step']
+                            -- It should be unnecessary to include the delayed
+                            -- step in the insertion, since the default
+                            -- scheduling should run it anyway. Removing it may
+                            -- help avoid redundant schedules.
+                            -- ++ [stepStepId step]
+      }
   | step' <- races ]
 
 traceFinalRacesFound :: SimState s a -> SimTrace a -> SimTrace a
@@ -1502,10 +1525,8 @@ advanceControl stepId c =
   c
 
 followControl :: ScheduleControl -> ScheduleControl
-followControl (ControlAwait
-                 (ScheduleMod{scheduleModTarget,
-                              scheduleModInsertion} : mods)) =
-  ControlFollow scheduleModInsertion mods
+followControl (ControlAwait (ScheduleMod { scheduleModInsertion } : mods)) =
+               ControlFollow scheduleModInsertion mods
 followControl (ControlAwait []) = error "Impossible: followControl (ControlAwait [])"
 followControl ControlDefault{}  = error "Impossible: followControl ControlDefault{}"
 followControl ControlFollow{}   = error "Impossible: followControl ControlFollow{}"
