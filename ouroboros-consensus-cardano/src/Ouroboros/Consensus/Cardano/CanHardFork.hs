@@ -633,34 +633,25 @@ instance
         versionZeroProductFromCBOR "CardanoLedgerTables" 1
       $ CardanoLedgerTables <$> fromCBOR
 
-instance
-     CardanoHardForkConstraints c
-  => PreApplyBlock (LedgerState (CardanoBlock c)) (CardanoBlock c) where
-  getBlockKeySets blk =
-      case ns of
-        Z x  -> case getBlockKeySets (SOP.unI x) of
-          NoByronLedgerTables -> polyEmptyLedgerTables
-        S xs ->
-            SOP.hcollapse
-          $ SOP.hcmap
-              (Proxy @(CardanoShelleyBasedEra c))
-              projectOne
-              (consolidateShelleyNS xs)
+instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c) where
+  hardForkInjectLedgerTablesKeysMK =
+         byron
+      :* shelley
+      :* shelley
+      :* shelley
+      :* shelley
+      :* Nil
     where
-      ns :: NS SOP.I (CardanoEras c)
-      ns = getOneEraBlock $ getHardForkBlock blk
+      byron :: InjectLedgerTables (CardanoEras c) ByronBlock
+      byron = InjectLedgerTables $ \NoByronLedgerTables -> polyEmptyLedgerTables
 
-      projectOne :: forall era.
+      shelley ::
            CardanoShelleyBasedEra c era
-        => (SOP.I :.: ShelleyBlock)                                   era
-        -> SOP.K (LedgerTables (LedgerState (CardanoBlock c)) KeysMK) era
-      projectOne (Comp (SOP.I x)) =
-          SOP.K $ CardanoLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
-        where
-          tables :: LedgerTables (LedgerState (ShelleyBlock era)) KeysMK
-          tables = getBlockKeySets x
-
-          ShelleyLedgerTables (ApplyKeysMK keys) = tables
+        => InjectLedgerTables (CardanoEras c) (ShelleyBlock era)
+      shelley =
+          InjectLedgerTables
+        $ \(ShelleyLedgerTables (ApplyKeysMK keys)) ->
+            CardanoLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
 
 instance
      CardanoHardForkConstraints c

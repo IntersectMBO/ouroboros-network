@@ -29,6 +29,7 @@ module Test.Consensus.HardFork.Combinator.B (
   , GenTx (..)
   , Header (..)
   , LedgerState (..)
+  , LedgerTables (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
   , TxId (..)

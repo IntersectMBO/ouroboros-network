@@ -113,7 +113,9 @@ data instance BlockQuery (HardForkBlock xs) :: FootprintL -> Type -> Type where
     => QueryHardFork (x ': xs)              fp result
     -> BlockQuery (HardForkBlock (x ': xs)) fp result
 
-instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
+instance
+     (All SingleEraBlock xs, LedgerTablesCanHardFork xs)
+  => QueryLedger (HardForkBlock xs) where
   answerBlockQuery
     (ExtLedgerCfg cfg)
     query
@@ -267,11 +269,21 @@ interpretQueryIfCurrent = go
         Left $ MismatchEraInfo $ MR (hardForkQueryInfo qry) (ledgerInfo st)
 
 prepareQueryIfCurrent ::
-     QueryIfCurrent xs fp result
+  forall xs result.
+     (All SingleEraBlock xs, LedgerTablesCanHardFork xs)
+  => QueryIfCurrent xs LargeL result
   -> TableKeySets (LedgerState (HardForkBlock xs))
-prepareQueryIfCurrent = error "prepareQueryIfCurrent"
-  -- TODO I realized here that the Tables definition for HardForkBlock is going
-  -- to be interesting...
+prepareQueryIfCurrent =
+    \qic -> go qic hardForkInjectLedgerTablesKeysMK
+  where
+    go ::
+         All SingleEraBlock ys
+      => QueryIfCurrent ys LargeL result
+      -> NP (InjectLedgerTables xs) ys
+      -> TableKeySets (LedgerState (HardForkBlock xs))
+    go (QS qic) (_   :* injs) = go qic injs
+    go (QZ bq)  (inj :* _)    =
+      applyInjectLedgerTables inj $ prepareBlockQuery bq
 
 {-------------------------------------------------------------------------------
   Any era queries
