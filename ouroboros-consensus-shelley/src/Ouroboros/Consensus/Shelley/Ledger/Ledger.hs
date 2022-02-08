@@ -478,17 +478,6 @@ data ShelleyLedgerEvent era =
   | ShelleyLedgerEventTICK  (STS.Event (Core.EraRule "TICK"  era))
 
 instance ShelleyBasedEra era
-      => PreApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
-  getBlockKeySets blk =
-        ShelleyLedgerTables
-      $ ApplyKeysMK
-      $ HD.UtxoKeys
-      $ foldMap getShelleyTxInputs
-      $ Core.fromTxSeq @era txs
-    where
-      ShelleyBlock { shelleyBlockRaw = SL.Block _ txs } = blk
-
-instance ShelleyBasedEra era
       => ApplyBlock (LedgerState (ShelleyBlock era)) (ShelleyBlock era) where
   -- Note: in the Shelley ledger, the @CHAIN@ rule is used to apply a whole
   -- block. In consensus, we split up the application of a block to the ledger
@@ -539,6 +528,15 @@ instance ShelleyBasedEra era
                 , asoValidation = STS.ValidateNone
                 , asoEvents     = STS.EPReturn
                 }
+
+  getBlockKeySets blk =
+        ShelleyLedgerTables
+      $ ApplyKeysMK
+      $ HD.UtxoKeys
+      $ foldMap getShelleyTxInputs
+      $ Core.fromTxSeq @era txs
+    where
+      ShelleyBlock { shelleyBlockRaw = SL.Block _ txs } = blk
 
 data ShelleyReapplyException =
   forall era. Show (SL.BlockTransitionError era)

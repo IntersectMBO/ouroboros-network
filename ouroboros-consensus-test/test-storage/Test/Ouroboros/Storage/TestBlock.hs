@@ -593,9 +593,6 @@ instance TickedTableStuff (LedgerState TestBlock) where
 instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
   showsLedgerState _sing = shows
 
-instance PreApplyBlock (LedgerState TestBlock) TestBlock where
-  getBlockKeySets _blk = NoTestLedgerTables
-
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= lastAppliedHash
@@ -607,6 +604,8 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
 
   reapplyBlockLedgerResult _ tb _ =
                    pureLedgerResult $ TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
+
+  getBlockKeySets _blk = NoTestLedgerTables
 
 data instance LedgerState TestBlock mk =
     TestLedger {
