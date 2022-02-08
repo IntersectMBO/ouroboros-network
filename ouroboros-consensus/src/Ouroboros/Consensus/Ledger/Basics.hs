@@ -579,11 +579,11 @@ instance
     case smk of
       SEmptyMK    -> decodeArityAndTag 0 0 *> (ApplyEmptyMK    <$  pure ())
       SKeysMK     -> decodeArityAndTag 1 1 *> (ApplyKeysMK     <$> fromCBOR)
-      SValuesMK   -> decodeArityAndTag 2 1 *> (ApplyValuesMK   <$> fromCBOR)
-      STrackingMK -> decodeArityAndTag 3 2 *> (ApplyTrackingMK <$> fromCBOR <*> fromCBOR)
-      SDiffMK     -> decodeArityAndTag 4 1 *> (ApplyDiffMK     <$> fromCBOR)
-      SSeqDiffMK  -> decodeArityAndTag 5 1 *> (ApplySeqDiffMK  <$> fromCBOR)
-      SRewoundMK  -> decodeArityAndTag 6 1 *> (ApplyRewoundMK  <$> fromCBOR)
+      SValuesMK   -> decodeArityAndTag 1 2 *> (ApplyValuesMK   <$> fromCBOR)
+      STrackingMK -> decodeArityAndTag 2 3 *> (ApplyTrackingMK <$> fromCBOR <*> fromCBOR)
+      SDiffMK     -> decodeArityAndTag 1 4 *> (ApplyDiffMK     <$> fromCBOR)
+      SSeqDiffMK  -> decodeArityAndTag 1 5 *> (ApplySeqDiffMK  <$> fromCBOR)
+      SRewoundMK  -> decodeArityAndTag 1 6 *> (ApplyRewoundMK  <$> fromCBOR)
     where
       smk = sMapKind @mk
 
@@ -593,7 +593,7 @@ instance
         tag' <- CBOR.decodeWord8
         when
           (len /= 1 + len' || tag /= tag')
-          (fail $ "decode @ApplyMapKind " <> show smk)
+          (fail $ "decode @ApplyMapKind " <> show (smk, len', tag'))
 
 showsApplyMapKind :: (Show k, Show v) => ApplyMapKind mk k v -> ShowS
 showsApplyMapKind = \case
