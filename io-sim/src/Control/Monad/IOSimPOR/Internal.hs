@@ -734,11 +734,6 @@ reschedule :: SimState s a -> ST s (SimTrace a)
 reschedule simstate@SimState{ runqueue, threads,
                               control=control@(ControlFollow ((tid,tstep):_) _)
                               } =
-    if not (tid `elem` runqueue) then
-      error ("Can't follow "++show control++"\n"++
-             "  tid: "++show tid++"\n"++
-             "  tstep: "++show tstep++"\n"++
-             "  runqueue: "++show runqueue++"\n") else
     assert (tid `elem` runqueue) $
     assert (tid `Map.member` threads) $
     assert (invariant Nothing simstate) $
