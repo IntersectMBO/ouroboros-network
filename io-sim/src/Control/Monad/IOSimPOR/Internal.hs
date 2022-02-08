@@ -449,11 +449,27 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl k ctl }
       schedule thread' simstate
 
-    CancelTimeout (Timeout _tvar _tvar' tmid) k -> do
+    CancelTimeout (Timeout tvar _tvar' tmid) k -> do
       let timers' = PSQ.delete tmid timers
-          thread' = thread { threadControl = ThreadControl k ctl }
-      trace <- schedule thread' simstate { timers = timers' }
-      return (SimTrace time tid tlbl (EventTimerCancelled tmid) trace)
+      written <- execAtomically' (runSTM $ writeTVar tvar TimeoutCancelled)
+      (wakeup, wokeby) <- threadsUnblockedByWrites written
+      mapM_ (\(SomeTVar var) -> unblockAllThreadsFromTVar var) written
+      let effect' = effect
+                 <> writeEffects written
+                 <> wakeupEffects wakeup
+          thread' = thread { threadControl = ThreadControl k ctl
+                           , threadEffect  = effect'
+                           }
+          (unblocked,
+           simstate') = unblockThreads vClock wakeup simstate
+      trace <- deschedule Yield thread' simstate' { timers = timers' }
+      return $ SimTrace time tid tlbl (EventTimerCancelled tmid)
+             $ traceMany
+                 [ (time, tid', tlbl', EventTxWakeup vids)
+                 | tid' <- unblocked
+                 , let tlbl' = lookupThreadLabel tid' threads
+                 , let Just vids = Set.toList <$> Map.lookup tid' wokeby ]
+             $ trace
 
     -- cancelling a negative timer is a no-op
     CancelTimeout (NegativeTimeout _tmid) k -> do
