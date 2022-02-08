@@ -1,6 +1,8 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
@@ -28,8 +30,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , StreamAPI (..)
     -- * Abstraction over the ledger-state HD interface
   , LedgerBackingStore (..)
+  , LedgerBackingStoreValueHandle (..)
   , flush
   , readKeySets
+  , readKeySetsVH
     -- * Read from disk
   , readSnapshot
     -- * Write to disk
@@ -421,15 +425,33 @@ newtype LedgerBackingStore m l = LedgerBackingStore
       (LedgerTables l ValuesMK)
       (LedgerTables l DiffMK)
     )
-  deriving (NoThunks)
+  deriving newtype (NoThunks)
+
+-- | A handle to the backing store for the ledger tables
+data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
+    !(WithOrigin SlotNo)
+    !(HD.BackingStoreValueHandle m
+      (LedgerTables l KeysMK)
+      (LedgerTables l ValuesMK)
+    )
+  deriving stock    (Generic)
+  deriving anyclass (NoThunks)
 
 readKeySets :: forall m l.
      (IOLike m, TableStuff l)
   => LedgerBackingStore m l
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
-readKeySets (LedgerBackingStore backingStore) (RewoundTableKeySets _seqNo rew) = do
-    (slot, values) <- HD.bsRead backingStore (mapLedgerTables prj rew)
+readKeySets (LedgerBackingStore backingStore) rew = do
+    readKeySetsVH (HD.bsRead backingStore) rew
+
+readKeySetsVH :: forall m l.
+     (IOLike m, TableStuff l)
+  => (LedgerTables l KeysMK -> m (WithOrigin SlotNo, LedgerTables l ValuesMK))
+  -> RewoundTableKeySets l
+  -> m (UnforwardedReadSets l)
+readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
+    (slot, values) <- readKeys (mapLedgerTables prj rew)
     pure UnforwardedReadSets {
         ursSeqNo  = slot
       , ursValues = zipLedgerTables comb rew values

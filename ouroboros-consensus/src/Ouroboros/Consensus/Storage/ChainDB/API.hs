@@ -90,6 +90,8 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+                    (LedgerBackingStoreValueHandle, LedgerDB')
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
@@ -333,6 +335,32 @@ data ChainDB m blk = ChainDB {
                  b
                  (a, LedgerTables (ExtLedgerState blk) ValuesMK)
                  (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
+               )
+
+      -- | Get a 'LedgerDB' and a handle to a value of the backing store
+      -- corresponding to the anchor of the 'LedgerDB'
+      --
+      -- In the 'StaticRight' case, 'Nothing' out means the requested point is
+      -- not on current chain, so that 'LedgerDB' is unavailable.
+      --
+      -- The value handle is allocated in the given registry.
+    , getLedgerBackingStoreValueHandle ::
+        forall b.
+             ResourceRegistry m
+          -> StaticEither b () (Point blk)
+          -> m (StaticEither
+                 b
+                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+                 , LedgerDB' blk
+                 , m ()
+                 )
+                 (Either
+                    (Point blk)
+                    ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+                    , LedgerDB' blk
+                    , m ()
+                    )
+                 )
                )
 
       -- | Close the ChainDB

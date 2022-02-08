@@ -45,7 +45,6 @@ import           Data.Void (Void)
 
 import           Network.TypedProtocol.Codec
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
                      encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
@@ -69,6 +68,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView (..))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -82,8 +82,10 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (ledgerDbPrefix)
-import           Ouroboros.Consensus.Util (ShowProxy)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
+import           Ouroboros.Consensus.Util (ShowProxy, StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -135,11 +137,28 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
       , hStateQueryServer = \rreg ->
           localStateQueryServer
             (ExtLedgerCfg cfg)
-            rreg
-            (ChainDB.getTipPoint getChainDB)
-            (\pt -> ledgerDbPrefix pt <$> ChainDB.getLedgerDB getChainDB)
-            (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
-
+            (\seP -> do
+                let mkDLV (LedgerDB.LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
+                      DiskLedgerView
+                        (LedgerDB.ledgerDbCurrent ldb)
+                        (\ks -> do
+                           let chlog = LedgerDB.ledgerDbChangelog ldb
+                               rew   = LedgerDB.rewindTableKeySets chlog ks
+                           unfwd <-
+                             LedgerDB.readKeySetsVH
+                               (\ks' -> (,) seqNo <$> BackingStore.bsvhRead vh ks')
+                               rew
+                           case LedgerDB.forwardTableKeySets chlog unfwd of
+                             Left _err -> error "impossible!"
+                             Right vs  -> pure vs
+                        )
+                        close
+                se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
+                case se of
+                  StaticRight (Left p)  -> pure $ StaticRight (Left p)
+                  StaticLeft         x  -> pure $ StaticLeft  $         mkDLV x
+                  StaticRight (Right x) -> pure $ StaticRight $ Right $ mkDLV x
+            )
       , hTxMonitorServer =
           localTxMonitorServer
             getMempool

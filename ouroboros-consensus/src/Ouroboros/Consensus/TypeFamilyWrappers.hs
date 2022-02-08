@@ -9,7 +9,6 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
     -- * Block based
     WrapApplyTxErr (..)
   , WrapCannotForge (..)
-  , WrapDiskLedgerView (..)
   , WrapEnvelopeErr (..)
   , WrapForgeStateInfo (..)
   , WrapForgeStateUpdateError (..)
@@ -55,7 +54,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 
 newtype WrapApplyTxErr            blk = WrapApplyTxErr            { unwrapApplyTxErr            :: ApplyTxErr                  blk   }
 newtype WrapCannotForge           blk = WrapCannotForge           { unwrapCannotForge           :: CannotForge                 blk   }
-newtype WrapDiskLedgerView      m blk = WrapDiskLedgerView        { unwrapDiskLedgerView        :: DiskLedgerView              blk m }
 newtype WrapEnvelopeErr           blk = WrapEnvelopeErr           { unwrapEnvelopeErr           :: OtherHeaderEnvelopeError    blk   }
 newtype WrapForgeStateInfo        blk = WrapForgeStateInfo        { unwrapForgeStateInfo        :: ForgeStateInfo              blk   }
 newtype WrapForgeStateUpdateError blk = WrapForgeStateUpdateError { unwrapForgeStateUpdateError :: ForgeStateUpdateError       blk   }
