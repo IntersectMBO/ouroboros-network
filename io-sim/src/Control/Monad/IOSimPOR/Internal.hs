@@ -121,8 +121,13 @@ lubVClock (VectorClock m) (VectorClock m') = VectorClock (Map.unionWith max m m'
 -- hbfVClock :: VectorClock -> VectorClock -> Bool
 -- hbfVClock (VectorClock m) (VectorClock m') = Map.isSubmapOfBy (<=) m m'
 
-hbfStep :: ThreadId -> Int -> VectorClock -> Bool
-hbfStep tid tstep (VectorClock m) = Just tstep <= Map.lookup tid m
+happensBeforeStep :: Step -- ^ an earlier step
+                  -> Step -- ^ a later step
+                  -> Bool
+happensBeforeStep step step' =
+       Just (stepStep step)
+    <= Map.lookup (stepThreadId step)
+                  (getVectorClock $ stepVClock step')
 
 labelledTVarId :: TVar s a -> ST s (Labelled TVarId)
 labelledTVarId TVar { tvarId, tvarLabel } = (Labelled tvarId) <$> readSTRef tvarLabel
@@ -1357,7 +1362,7 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
           let lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
           if tid `elem` concurrent then
             let theseStepsRace = not (isTestThreadId tid) && racingSteps step newStep
-                happensBefore  = hbfStep (stepThreadId step) (stepStep step) (stepVClock newStep)
+                happensBefore  = happensBeforeStep step newStep
                 nondep' | happensBefore = nondep
                         | otherwise     = newStep : nondep
                 -- We will only record the first race with each thread---reversing

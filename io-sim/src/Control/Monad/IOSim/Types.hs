@@ -642,7 +642,8 @@ setNonTestThread tid@ThreadId{}    = tid
 newtype TVarId      = TVarId    Int   deriving (Eq, Ord, Enum, Show)
 newtype TimeoutId   = TimeoutId Int   deriving (Eq, Ord, Enum, Show)
 newtype ClockId     = ClockId   [Int] deriving (Eq, Ord, Show)
-newtype VectorClock = VectorClock (Map ThreadId Int) deriving Show
+newtype VectorClock = VectorClock { getVectorClock :: Map ThreadId Int }
+  deriving Show
 
 unTimeoutId :: TimeoutId -> Int
 unTimeoutId (TimeoutId a) = a
