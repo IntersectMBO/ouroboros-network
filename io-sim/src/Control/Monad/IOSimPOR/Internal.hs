@@ -222,6 +222,12 @@ timeSinceEpoch :: Time -> NominalDiffTime
 timeSinceEpoch (Time t) = fromRational (toRational t)
 
 
+-- | Insert thread into `runqueue`.
+--
+insertThread :: Thread s a -> [ThreadId] -> [ThreadId]
+insertThread t = List.insertBy (comparing Down) (threadId t)
+
+
 -- | Schedule / run a thread.
 --
 schedule :: Thread s a -> SimState s a -> ST s (SimTrace a)
@@ -477,7 +483,7 @@ schedule thread@Thread{
           threads' = Map.insert tid' thread'' threads
       -- A newly forked thread may have a higher priority, so we deschedule this one.
       trace <- deschedule Yield thread'
-                 simstate { runqueue = List.insertBy (comparing Down) tid' runqueue
+                 simstate { runqueue = insertThread thread'' runqueue
                           , threads  = threads' }
       return (SimTrace time tid tlbl (EventThreadForked tid') trace)
 
@@ -640,7 +646,7 @@ deschedule Yield thread@Thread { threadId     = tid }
     -- We do it here by inserting the current thread into the runqueue in priority order.
 
     let thread'   = stepThread thread
-        runqueue' = List.insertBy (comparing Down) tid runqueue
+        runqueue' = insertThread thread' runqueue
         threads'  = Map.insert tid thread' threads
         control'  = advanceControl (threadStepId thread) control in
     reschedule simstate { runqueue = runqueue', threads  = threads',
@@ -728,7 +734,7 @@ deschedule Sleep thread@Thread { threadId = tid }
     -- Schedule control says we should run a different thread. Put
     -- this one to sleep without recording a step.
 
-    let runqueue' = List.insertBy (comparing Down) tid runqueue
+    let runqueue' = insertThread thread runqueue
         threads'  = Map.insert tid thread threads in
     reschedule simstate { runqueue = runqueue', threads  = threads' }
 
@@ -813,29 +819,39 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time, ra
         TimeoutFired     -> error "MonadTimer(Sim): invariant violation"
         TimeoutCancelled -> return ()
 
-unblockThreads :: VectorClock -> [ThreadId] -> SimState s a -> ([ThreadId], SimState s a)
+unblockThreads :: forall s a.
+                  VectorClock
+               -> [ThreadId]
+               -> SimState s a
+               -> ([ThreadId], SimState s a)
 unblockThreads vClock wakeup simstate@SimState {runqueue, threads} =
     -- To preserve our invariants (that threadBlocked is correct)
     -- we update the runqueue and threads together here
-    (unblocked, simstate {
-                  runqueue = foldr (List.insertBy (comparing Down)) runqueue unblocked,
-                  threads  = threads'
-                })
+    ( unblockedIds
+    , simstate { runqueue = foldr insertThread runqueue unblocked,
+                 threads  = threads'
+               })
   where
     -- can only unblock if the thread exists and is blocked (not running)
-    unblocked = [ tid
+    unblocked :: [Thread s a]
+    unblocked = [ thread
                 | tid <- wakeup
-                , case Map.lookup tid threads of
-                       Just Thread { threadDone    = True } -> False
-                       Just Thread { threadBlocked = True } -> True
-                       _                                    -> False
+                , thread <-
+                    case Map.lookup tid threads of
+                      Just   Thread { threadDone    = True } -> [ ]
+                      Just t@Thread { threadBlocked = True } -> [t]
+                      _                                      -> [ ]
                 ]
+
+    unblockedIds :: [ThreadId]
+    unblockedIds = map threadId unblocked
+
     -- and in which case we mark them as now running
     threads'  = List.foldl'
                   (flip (Map.adjust
                     (\t -> t { threadBlocked = False,
                                threadVClock = vClock `leastUpperBoundVClock` threadVClock t })))
-                  threads unblocked
+                  threads unblockedIds
 
 
 -- | Iterate through the control stack to find an enclosing exception handler
