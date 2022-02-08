@@ -116,16 +116,7 @@ import           Ouroboros.Consensus.Util.Versioned
   Ledger DB types
 -------------------------------------------------------------------------------}
 
-type LegacyLedgerDB l = AnchoredSeq
-                               (WithOrigin SlotNo)
-                               (Checkpoint (l ValuesMK))
-                               (Checkpoint (l ValuesMK))
-
-type ModernLedgerDB l = DbChangelog l
-
--- | Internal state of the ledger DB
---
--- The ledger DB looks like
+-- | The legacy ledger DB looks like
 --
 -- > anchor |> snapshots <| current
 --
@@ -142,31 +133,80 @@ type ModernLedgerDB l = DbChangelog l
 -- below, where we indicate the anchor number of blocks, the stored snapshots,
 -- and the current ledger.
 --
--- > anchor |> #   [ snapshots ]                   <| tip
+-- > anchor |> #   [ snapshots ]                    <| tip
 -- > ---------------------------------------------------------------------------
--- > G      |> (0) [ ]                             <| G
--- > G      |> (1) [ L1]                           <| L1
--- > G      |> (2) [ L1,  L2]                      <| L2
--- > G      |> (3) [ L1,  L2,  L3]                 <| L3
--- > G      |> (4) [ L1,  L2,  L3,  L4]            <| L4
--- > G      |> (5) [ L1,  L2,  L3,  L4,  L5]       <| L5
--- > G      |> (6) [ L1,  L2,  L3,  L4,  L5,  L6]  <| L6
--- > L1     |> (6) [ L2,  L3,  L4,  L5,  L6,  L7]  <| L7
--- > L2     |> (6) [ L3,  L4,  L5,  L6,  L7,  L8]  <| L8
--- > L3     |> (6) [ L4,  L5,  L6,  L7,  L8,  L9]  <| L9   (*)
--- > L4     |> (6) [ L5,  L6,  L7,  L8,  L9,  L10] <| L10
--- > L5     |> (6) [*L6,  L7,  L8,  L9,  L10, L11] <| L11
--- > L6     |> (6) [ L7,  L8,  L9,  L10, L11, L12] <| L12
--- > L7     |> (6) [ L8,  L9,  L10, L12, L12, L13] <| L13
--- > L8     |> (6) [ L9,  L10, L12, L12, L13, L14] <| L14
+-- > G      |> (0) [ ]                              <| G
+-- > G      |> (1) [ L1 ]                           <| L1
+-- > G      |> (2) [ L1,  L2 ]                      <| L2
+-- > G      |> (3) [ L1,  L2,  L3 ]                 <| L3
+-- > G      |> (4) [ L1,  L2,  L3,  L4 ]            <| L4
+-- > G      |> (5) [ L1,  L2,  L3,  L4,  L5 ]       <| L5
+-- > G      |> (6) [ L1,  L2,  L3,  L4,  L5,  L6 ]  <| L6
+-- > L1     |> (6) [ L2,  L3,  L4,  L5,  L6,  L7 ]  <| L7
+-- > L2     |> (6) [ L3,  L4,  L5,  L6,  L7,  L8 ]  <| L8
+-- > L3     |> (6) [ L4,  L5,  L6,  L7,  L8,  L9 ]  <| L9   (*)
+-- > L4     |> (6) [ L5,  L6,  L7,  L8,  L9,  L10 ] <| L10
+-- > L5     |> (6) [*L6,  L7,  L8,  L9,  L10, L11 ] <| L11
+-- > L6     |> (6) [ L7,  L8,  L9,  L10, L11, L12 ] <| L12
+-- > L7     |> (6) [ L8,  L9,  L10, L12, L12, L13 ] <| L13
+-- > L8     |> (6) [ L9,  L10, L12, L12, L13, L14 ] <| L14
 --
 -- The ledger DB must guarantee that at all times we are able to roll back @k@
 -- blocks. For example, if we are on line (*), and roll back 6 blocks, we get
 --
 -- > L3 |> []
+type LegacyLedgerDB l = AnchoredSeq
+                               (WithOrigin SlotNo)
+                               (Checkpoint (l ValuesMK))
+                               (Checkpoint (l ValuesMK))
+
+-- | Type alias for the new-style database
+--
+-- This type is a 'DbChangelog'. We illustrate its contents below, where @k = 3@
+-- (for a state @Li@, the corresponding set of differences is @Di@):
+--
+-- > stateAnchor | diskAnchor | states                     | tableDiffs
+-- > --------------------------------------------------------------------------
+-- >      0      |      0     | [ L0 ]                     | [ ]
+-- >      0      |      0     | [ L0, L1 ]                 | [ D1 ]
+-- >      0      |      0     | [ L0, L1, L2 ]             | [ D1, D2 ]
+-- >      0      |      0     | [ L0, L1, L2, L3 ]         | [ D1, D2, D3 ]
+-- >      1      |      0     | [ L0, L1, L2, L3, L4 ]     | [ D1, D2, D3, D4 ]
+-- >      2      |      0     | [ L0, L1, L2, L3, L4, L5 ] | [ D1, D2, D3, D4, D5 ]    (*)
+-- >      2      |      2     | [ L2, L3, L4, L5 ]         | [ D3, D4, D5 ]   -- flush (**)
+-- >      3      |      2     | [ L2, L3, L4, L5, L6 ]     | [ D3, D4, D5, D6 ]
+--
+-- The disk anchor moves when we flush data to disk, and the state anchor points
+-- always to the state that represents the tip of the logical immutable
+-- database. Notice that @seqNo (last states) - stateAnchor@ is usually @k@
+-- except when rollbacks or data corruption take place and will be less than @k@
+-- when we just loaded a snapshot. We cannot roll back more than @k@ blocks.
+-- This means that after a rollback of @k@ blocks at (*), the database will look
+-- something like this:
+--
+-- >      2      |      0     | [ L0, L1, L2 ]             | [ D1, D2 ]
+--
+-- And a rollback of @k@ blocks at (**) will look something like this:
+--
+-- >      2      |      0     | [ L2 ]                     | [ ]
+--
+-- Notice how the states list always contains the in-memory state of the anchor,
+-- but the table differences might not contain the differences for that anchor
+-- if they have been flushed to the backend.
+--
+-- The new-style database has to be coupled with the @BackingStore@ which
+-- provides the pointers to the on-disk data.
+--
+-- When the LegacyLedgerDB is removed, this comment will belong to LedgerDB
+-- itself.
+type ModernLedgerDB l = DbChangelog l
+
+-- | Internal state of the ledger DB
 data LedgerDB (l :: LedgerStateKind) = LedgerDB {
-      -- | Ledger states
+      -- | Legacy LedgerDB. If specified, this will be @Nothing@ and we will
+      -- just run the modern database.
       ledgerDbCheckpoints :: Maybe (LegacyLedgerDB l)
+      -- | Modern database
     , ledgerDbChangelog   :: ModernLedgerDB l
     }
   deriving (Generic)
@@ -222,10 +262,7 @@ ledgerDbWithAnchor runAlsoLegacy anchor = LedgerDB {
     }
 
 {-------------------------------------------------------------------------------
-  Compute signature
-
-  Depending on the parameters (apply by value or by reference, previously
-  applied or not) we get different signatures.
+  Resolve a block
 -------------------------------------------------------------------------------}
 
 -- | Resolve a block
@@ -240,6 +277,28 @@ ledgerDbWithAnchor runAlsoLegacy anchor = LedgerDB {
 -- validation mode.
 type ResolveBlock m blk = RealPoint blk -> m blk
 
+-- | Monads in which we can resolve blocks
+--
+-- To guide type inference, we insist that we must be able to infer the type
+-- of the block we are resolving from the type of the monad.
+class Monad m => ResolvesBlocks m blk | m -> blk where
+  resolveBlock :: ResolveBlock m blk
+
+instance Monad m => ResolvesBlocks (ReaderT (ResolveBlock m blk) m) blk where
+  resolveBlock r = ReaderT $ \f -> f r
+
+instance (Monad m, ResolvesBlocks m blk) => ResolvesBlocks (ExceptT e m) blk where
+  resolveBlock = lift . resolveBlock
+
+defaultResolveBlocks :: ResolveBlock m blk
+                     -> ReaderT (ResolveBlock m blk) m a
+                     -> m a
+defaultResolveBlocks = flip runReaderT
+
+{-------------------------------------------------------------------------------
+  Throw a ledger error
+-------------------------------------------------------------------------------}
+
 -- | Annotated ledger errors
 data AnnLedgerError (l :: LedgerStateKind) blk = AnnLedgerError {
       -- | The ledger DB just /before/ this block was applied
@@ -252,28 +311,12 @@ data AnnLedgerError (l :: LedgerStateKind) blk = AnnLedgerError {
     , annLedgerErr    :: LedgerErr l
     }
 
--- | Monads in which we can resolve blocks
---
--- To guide type inference, we insist that we must be able to infer the type
--- of the block we are resolving from the type of the monad.
-class Monad m => ResolvesBlocks m blk | m -> blk where
-  resolveBlock :: ResolveBlock m blk
-
-instance Monad m => ResolvesBlocks (ReaderT (ResolveBlock m blk) m) blk where
-  resolveBlock r = ReaderT $ \f -> f r
-
-defaultResolveBlocks :: ResolveBlock m blk
-                     -> ReaderT (ResolveBlock m blk) m a
-                     -> m a
-defaultResolveBlocks = flip runReaderT
-
--- Quite a specific instance so we can satisfy the fundep
-instance Monad m
-      => ResolvesBlocks (ExceptT e (ReaderT (ResolveBlock m blk) m)) blk where
-  resolveBlock = lift . resolveBlock
-
+-- | Monads in which we can throw ledger errors
 class Monad m => ThrowsLedgerError m l blk where
   throwLedgerError :: LedgerDB l -> RealPoint blk -> LedgerErr l -> m a
+
+instance Monad m => ThrowsLedgerError (ExceptT (AnnLedgerError l blk) m) l blk where
+  throwLedgerError l r e = throwError $ AnnLedgerError l r e
 
 defaultThrowLedgerErrors :: ExceptT (AnnLedgerError l blk) m a
                          -> m (Either (AnnLedgerError l blk) a)
@@ -288,8 +331,9 @@ defaultResolveWithErrors resolve =
       defaultResolveBlocks resolve
     . defaultThrowLedgerErrors
 
-instance Monad m => ThrowsLedgerError (ExceptT (AnnLedgerError l blk) m) l blk where
-  throwLedgerError l r e = throwError $ AnnLedgerError l r e
+{-------------------------------------------------------------------------------
+  Apply blocks on top of a LedgerDB
+-------------------------------------------------------------------------------}
 
 -- | 'Ap' is used to pass information about blocks to ledger DB updates
 --
@@ -319,10 +363,6 @@ data Ap :: (Type -> Type) -> LedgerStateKind -> Type -> Constraint -> Type where
   -- This is primarily useful when combining multiple 'Ap's in a single
   -- homogeneous structure.
   Weaken :: (c' => c) => Ap m l blk c -> Ap m l blk c'
-
-{-------------------------------------------------------------------------------
-  Internal utilities for 'Ap'
--------------------------------------------------------------------------------}
 
 toRealPoint :: HasHeader blk => Ap m l blk c -> RealPoint blk
 toRealPoint (ReapplyVal blk) = blockRealPoint blk
