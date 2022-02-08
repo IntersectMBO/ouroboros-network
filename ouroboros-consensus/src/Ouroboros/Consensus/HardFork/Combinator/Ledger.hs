@@ -277,20 +277,6 @@ instance
   ApplyBlock
 -------------------------------------------------------------------------------}
 
-instance
-     (CanHardFork xs, LedgerTablesCanHardFork xs)
-  => PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
-  getBlockKeySets (HardForkBlock (OneEraBlock ns)) =
-        hcollapse
-      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
-    where
-      f ::
-           SingleEraBlock                                    x
-        => InjectLedgerTables xs                             x
-        -> I                                                 x
-        -> K (TableKeySets (LedgerState (HardForkBlock xs))) x
-      f inj (I blk) = K $ applyInjectLedgerTables inj $ getBlockKeySets blk
-
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
@@ -340,6 +326,17 @@ instance ( CanHardFork xs
                (hardForkLedgerConfigShape cfg)
                transition
                st
+
+  getBlockKeySets (HardForkBlock (OneEraBlock ns)) =
+        hcollapse
+      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
+    where
+      f ::
+           SingleEraBlock                                    x
+        => InjectLedgerTables xs                             x
+        -> I                                                 x
+        -> K (TableKeySets (LedgerState (HardForkBlock xs))) x
+      f inj (I blk) = K $ applyInjectLedgerTables inj $ getBlockKeySets blk
 
 apply :: SingleEraBlock blk
       => Index xs                                           blk

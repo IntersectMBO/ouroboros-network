@@ -41,9 +41,6 @@ newtype instance Validated (GenTx ByronSpecBlock) = ValidatedByronSpecGenTx {
 
 type instance ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
 
-instance PreLedgerSupportsMempool ByronSpecBlock where
-  getTransactionKeySets _ = polyEmptyLedgerTables
-
 instance LedgerSupportsMempool ByronSpecBlock where
   applyTx cfg _wti _slot tx (TickedByronSpecLedgerState tip st) =
         fmap (\st' ->
@@ -63,3 +60,5 @@ instance LedgerSupportsMempool ByronSpecBlock where
   txInBlockSize = const 0
 
   txForgetValidated = forgetValidatedByronSpecGenTx
+
+  getTransactionKeySets _ = polyEmptyLedgerTables

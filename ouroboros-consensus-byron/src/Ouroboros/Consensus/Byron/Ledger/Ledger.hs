@@ -228,9 +228,6 @@ instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronBlock) mk) wher
   Supporting the various consensus interfaces
 -------------------------------------------------------------------------------}
 
-instance PreApplyBlock (LedgerState ByronBlock) ByronBlock where
-  getBlockKeySets _ = polyEmptyLedgerTables
-
 instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
   applyBlockLedgerResult = fmap pureLedgerResult ..: applyByronBlock validationMode
     where
@@ -241,6 +238,8 @@ instance ApplyBlock (LedgerState ByronBlock) ByronBlock where
       ..: applyByronBlock validationMode
     where
       validationMode = CC.fromBlockValidationMode CC.NoBlockValidation
+
+  getBlockKeySets _ = polyEmptyLedgerTables
 
 data instance BlockQuery ByronBlock :: FootprintL -> Type -> Type where
   GetUpdateInterfaceState :: BlockQuery ByronBlock SmallL UPI.State

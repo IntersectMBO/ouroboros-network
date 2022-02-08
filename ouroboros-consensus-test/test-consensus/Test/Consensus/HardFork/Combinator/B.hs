@@ -231,12 +231,11 @@ instance IsLedger (LedgerState BlockB) where
 
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateB
 
-instance PreApplyBlock (LedgerState BlockB) BlockB where
-  getBlockKeySets _blk = NoBTables
-
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyBlockLedgerResult   = \_ b _ -> return $ pureLedgerResult $ LgrB (blockPoint b)
   reapplyBlockLedgerResult = \_ b _ ->          pureLedgerResult $ LgrB (blockPoint b)
+
+  getBlockKeySets _blk = NoBTables
 
 instance UpdateLedger BlockB
 
@@ -304,9 +303,6 @@ data instance Validated (GenTx BlockB)
 
 type instance ApplyTxErr BlockB = Void
 
-instance PreLedgerSupportsMempool BlockB where
-  getTransactionKeySets _tx = NoBTables
-
 instance LedgerSupportsMempool BlockB where
   applyTx   = \_ _ _wti tx -> case tx of {}
   reapplyTx = \_ _ vtx -> case vtx of {}
@@ -315,6 +311,8 @@ instance LedgerSupportsMempool BlockB where
   txInBlockSize _ = 0
 
   txForgetValidated = \case {}
+
+  getTransactionKeySets _tx = NoBTables
 
 data instance TxId (GenTx BlockB)
   deriving stock    (Show, Eq, Ord, Generic)
