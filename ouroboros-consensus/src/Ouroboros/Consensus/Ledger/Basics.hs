@@ -71,7 +71,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , toSMapKind
   , valuesTrackingMK
     -- ** Queries
-  , DiskLedgerView
+  , DiskLedgerView (..)
   , FootprintL (..)
     -- ** Convenience alises
   , TableKeySets
@@ -704,7 +704,11 @@ type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk
 
 -- | Monadic functions used to query this this block type's 'LargeL' ledger
 -- states, which typically involve accessing disk.
-data family DiskLedgerView blk :: (Type -> Type) -> Type
+data DiskLedgerView m l =
+    DiskLedgerView
+      !(l EmptyMK)
+      (LedgerTables l KeysMK -> m (LedgerTables l ValuesMK))
+      (m ())
 
 type TableKeySets l = LedgerTables l KeysMK
 

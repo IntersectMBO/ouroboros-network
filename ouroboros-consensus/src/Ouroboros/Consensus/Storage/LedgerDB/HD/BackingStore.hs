@@ -86,6 +86,11 @@ data BackingStoreValueHandle m keys values = BackingStoreValueHandle {
   , bsvhRead  :: !(keys -> m values)
   }
 
+-- | TODO Is there a good way to not assume that any function that creates a
+-- 'BackingStoreValueHandle' doesn't hold space leaks in its closure?
+deriving via OnlyCheckWhnfNamed "BackingStoreValueHandle" (BackingStoreValueHandle m keys values)
+  instance NoThunks (BackingStoreValueHandle m keys values)
+
 -- | A combination of 'bsValueHandle' and 'bsvhRead'
 bsRead ::
      IOLike m
