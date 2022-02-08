@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -64,6 +65,7 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
+import           Test.Tasty.ExpectedFailure
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Pretty.Simple
 
@@ -128,13 +130,12 @@ tests =
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
   
-  -- FIXME: The following property fails; it generates a race
-  -- condition that falsifies an assertion in the code of the governor
-  -- itself. Really the assertion should be removed, or, if it is
-  -- important, then the governor should be updated so that it
-  -- holds. For the time being, we disable the test instead. See no
-  -- evil!
-  -- , testProperty "governor no livelock (racing)"    prop_explore_governor_nolivelock
+
+  , 
+#ifndef NIGHTLY
+    ignoreTest $
+#endif
+    testProperty "governor no livelock (racing)" $ prop_explore_governor_nolivelock
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others
