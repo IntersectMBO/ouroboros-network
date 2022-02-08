@@ -44,8 +44,10 @@ import           Ouroboros.Network.Block (Serialised (..), decodePoint,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics (ApplyMapKind (..))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import qualified Cardano.Ledger.Core as LC
@@ -113,13 +115,13 @@ data instance BlockQuery (ShelleyBlock era) :: FootprintL -> Type -> Type where
   --
   GetUTxOByAddress
     :: Set (SL.Addr (EraCrypto era))
-    -> BlockQuery (ShelleyBlock era) SmallL (SL.UTxO era)
+    -> BlockQuery (ShelleyBlock era) LargeL (SL.UTxO era)
 
   -- | Get the /entire/ UTxO. This is only suitable for debug/testing purposes
   -- because otherwise it is far too much data.
   --
   GetUTxOWhole
-    :: BlockQuery (ShelleyBlock era) SmallL (SL.UTxO era)
+    :: BlockQuery (ShelleyBlock era) LargeL (SL.UTxO era)
 
   -- | Only for debugging purposes, we make no effort to ensure binary
   -- compatibility (cf the comment on 'GetCBOR'). Moreover, it is huge.
@@ -170,7 +172,7 @@ data instance BlockQuery (ShelleyBlock era) :: FootprintL -> Type -> Type where
   --
   GetUTxOByTxIn
     :: Set (SL.TxIn (EraCrypto era))
-    -> BlockQuery (ShelleyBlock era) SmallL (SL.UTxO era)
+    -> BlockQuery (ShelleyBlock era) LargeL (SL.UTxO era)
 
   GetStakePools
     :: BlockQuery (ShelleyBlock era)
@@ -205,15 +207,14 @@ data instance BlockQuery (ShelleyBlock era) :: FootprintL -> Type -> Type where
   -- longer used (because mainnet has hard-forked to a newer version), it can be
   -- removed.
 
-pattern GetUTxO :: BlockQuery (ShelleyBlock era) SmallL (SL.UTxO era)
+pattern GetUTxO :: BlockQuery (ShelleyBlock era) LargeL (SL.UTxO era)
 pattern GetUTxO = GetUTxOWhole
 {-# DEPRECATED GetUTxO "Use 'GetUTxOWhole'" #-}
 
 pattern GetFilteredUTxO :: Set (SL.Addr (EraCrypto era))
-                        -> BlockQuery (ShelleyBlock era) SmallL (SL.UTxO era)
+                        -> BlockQuery (ShelleyBlock era) LargeL (SL.UTxO era)
 pattern GetFilteredUTxO x = GetUTxOByAddress x
 {-# DEPRECATED GetFilteredUTxO "Use 'GetUTxOByAddress'" #-}
-
 
 instance Typeable era => ShowProxy (BlockQuery (ShelleyBlock era)) where
 
@@ -275,7 +276,8 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
       st  = shelleyLedgerState lst
 
   prepareBlockQuery = \case
-    GetCBOR q -> prepareBlockQuery q
+    GetCBOR q        -> prepareBlockQuery q
+    GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK $ HD.UtxoKeys ks
 
 instance EqQuery (BlockQuery (ShelleyBlock era)) where
   eqQuery GetLedgerTip GetLedgerTip
@@ -397,25 +399,25 @@ instance ShelleyBasedEra era => ShowQuery (BlockQuery (ShelleyBlock era)) where
 
 instance ShelleyBasedEra era => IsQuery (BlockQuery (ShelleyBlock era)) where
   classifyQuery = \case
-      GetLedgerTip                               -> Left Refl
-      GetEpochNo                                 -> Left Refl
-      GetNonMyopicMemberRewards {}               -> Left Refl
-      GetCurrentPParams                          -> Left Refl
-      GetProposedPParamsUpdates                  -> Left Refl
-      GetStakeDistribution                       -> Left Refl
-      GetUTxOByAddress {}                        -> Left Refl
-      GetUTxOWhole                               -> Left Refl
-      DebugEpochState                            -> Left Refl
+      GetLedgerTip                               -> Left  Refl
+      GetEpochNo                                 -> Left  Refl
+      GetNonMyopicMemberRewards {}               -> Left  Refl
+      GetCurrentPParams                          -> Left  Refl
+      GetProposedPParamsUpdates                  -> Left  Refl
+      GetStakeDistribution                       -> Left  Refl
+      GetUTxOByAddress {}                        -> Right Refl
+      GetUTxOWhole                               -> Right Refl
+      DebugEpochState                            -> Left  Refl
       GetCBOR q                                  -> classifyQuery q
-      GetFilteredDelegationsAndRewardAccounts {} -> Left Refl
-      GetGenesisConfig                           -> Left Refl
-      DebugNewEpochState                         -> Left Refl
-      DebugChainDepState                         -> Left Refl
-      GetRewardProvenance                        -> Left Refl
-      GetUTxOByTxIn {}                           -> Left Refl
-      GetStakePools                              -> Left Refl
-      GetStakePoolParams {}                      -> Left Refl
-      GetRewardInfoPools {}                      -> Left Refl
+      GetFilteredDelegationsAndRewardAccounts {} -> Left  Refl
+      GetGenesisConfig                           -> Left  Refl
+      DebugNewEpochState                         -> Left  Refl
+      DebugChainDepState                         -> Left  Refl
+      GetRewardProvenance                        -> Left  Refl
+      GetUTxOByTxIn {}                           -> Right Refl
+      GetStakePools                              -> Left  Refl
+      GetStakePoolParams {}                      -> Left  Refl
+      GetRewardInfoPools {}                      -> Left  Refl
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock era) fp result -> ShelleyNodeToClientVersion -> Bool
