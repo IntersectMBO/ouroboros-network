@@ -272,7 +272,8 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
       hst = headerState ext
       st  = shelleyLedgerState lst
 
-  prepareBlockQuery = error "prepareBlockQuery @Shelley"
+  prepareBlockQuery = \case
+    GetCBOR q -> prepareBlockQuery q
 
 instance EqQuery (BlockQuery (ShelleyBlock era)) where
   eqQuery GetLedgerTip GetLedgerTip
