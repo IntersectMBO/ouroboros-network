@@ -207,8 +207,8 @@ invariant Nothing SimState{runqueue,threads,clocks} =
 
 -- | Interpret the simulation monotonic time as a 'NominalDiffTime' since
 -- the start.
-timeSiceEpoch :: Time -> NominalDiffTime
-timeSiceEpoch (Time t) = fromRational (toRational t)
+timeSinceEpoch :: Time -> NominalDiffTime
+timeSinceEpoch (Time t) = fromRational (toRational t)
 
 
 -- | Schedule / run a thread.
@@ -355,14 +355,14 @@ schedule thread@Thread{
     GetWallTime k -> do
       let clockid  = threadClockId thread
           clockoff = clocks Map.! clockid
-          walltime = timeSiceEpoch time `addUTCTime` clockoff
+          walltime = timeSinceEpoch time `addUTCTime` clockoff
           thread'  = thread { threadControl = ThreadControl (k walltime) ctl }
       schedule thread' simstate
 
     SetWallTime walltime' k -> do
       let clockid   = threadClockId thread
           clockoff  = clocks Map.! clockid
-          walltime  = timeSiceEpoch time `addUTCTime` clockoff
+          walltime  = timeSinceEpoch time `addUTCTime` clockoff
           clockoff' = addUTCTime (diffUTCTime walltime' walltime) clockoff
           thread'   = thread { threadControl = ThreadControl k ctl }
           simstate' = simstate { clocks = Map.insert clockid clockoff' clocks }
