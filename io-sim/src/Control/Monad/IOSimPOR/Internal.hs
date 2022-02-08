@@ -115,8 +115,9 @@ bottomVClock = VectorClock Map.empty
 insertVClock :: ThreadId -> Int -> VectorClock -> VectorClock
 insertVClock tid !step (VectorClock m) = VectorClock (Map.insert tid step m)
 
-lubVClock :: VectorClock -> VectorClock -> VectorClock
-lubVClock (VectorClock m) (VectorClock m') = VectorClock (Map.unionWith max m m')
+leastUpperBoundVClock :: VectorClock -> VectorClock -> VectorClock
+leastUpperBoundVClock (VectorClock m) (VectorClock m') =
+    VectorClock (Map.unionWith max m m')
 
 -- hbfVClock :: VectorClock -> VectorClock -> Bool
 -- hbfVClock (VectorClock m) (VectorClock m') = Map.isSubmapOfBy (<=) m m'
@@ -480,8 +481,8 @@ schedule thread@Thread{
         StmTxCommitted x read written nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
-          vClockRead <- lubTVarVClocks read
-          let vClock'     = vClock `lubVClock` vClockRead
+          vClockRead <- leastUpperBoundTVarVClocks read
+          let vClock'     = vClock `leastUpperBoundVClock` vClockRead
               effect'     = effect
                          <> readEffects read
                          <> writeEffects written
@@ -491,9 +492,9 @@ schedule thread@Thread{
                                      threadEffect  = effect' }
               (unblocked,
                simstate') = unblockThreads vClock' wakeup simstate
-          sequence_ [ modifySTRef (tvarVClock r) (lubVClock vClock') | SomeTVar r <- written ]
+          sequence_ [ modifySTRef (tvarVClock r) (leastUpperBoundVClock vClock') | SomeTVar r <- written ]
           vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
-              -- We deschedule a thread after a transaction... another may have woken up.
+          -- We deschedule a thread after a transaction... another may have woken up.
           trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $
             SimTrace time tid tlbl (EventTxCommitted vids [nextVid..pred nextVid']) $
@@ -506,10 +507,10 @@ schedule thread@Thread{
 
         StmTxAborted read e -> do
           -- schedule this thread to immediately raise the exception
-          vClockRead <- lubTVarVClocks read
+          vClockRead <- leastUpperBoundTVarVClocks read
           let effect' = effect <> readEffects read
               thread' = thread { threadControl = ThreadControl (Throw e) ctl,
-                                 threadVClock  = vClock `lubVClock` vClockRead,
+                                 threadVClock  = vClock `leastUpperBoundVClock` vClockRead,
                                  threadEffect  = effect' }
           trace <- schedule thread' simstate
           return $ SimTrace time tid tlbl EventTxAborted trace
@@ -517,9 +518,9 @@ schedule thread@Thread{
         StmTxBlocked read -> do
           mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
           vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) read
-          vClockRead <- lubTVarVClocks read
+          vClockRead <- leastUpperBoundTVarVClocks read
           let effect' = effect <> readEffects read
-              thread' = thread { threadVClock  = vClock `lubVClock` vClockRead,
+              thread' = thread { threadVClock  = vClock `leastUpperBoundVClock` vClockRead,
                                  threadEffect  = effect' }
           trace <- deschedule Blocked thread' simstate
           return $ SimTrace time tid tlbl (EventTxBlocked vids) trace
@@ -568,7 +569,7 @@ schedule thread@Thread{
     ThrowTo e tid' k -> do
       let thread'    = thread { threadControl = ThreadControl k ctl,
                                 threadEffect  = effect <> throwToEffect tid' <> wakeUpEffect,
-                                threadVClock  = vClock `lubVClock` vClockTgt }
+                                threadVClock  = vClock `leastUpperBoundVClock` vClockTgt }
           (vClockTgt,
            wakeUpEffect,
            willBlock) = (threadVClock t,
@@ -601,7 +602,7 @@ schedule thread@Thread{
                 t { threadControl = ThreadControl (Throw e) ctl'
                   , threadBlocked = False
                   , threadMasking = MaskedInterruptible
-                  , threadVClock  = vClock' `lubVClock` vClock }
+                  , threadVClock  = vClock' `leastUpperBoundVClock` vClock }
               simstate'@SimState { threads = threads' }
                          = snd (unblockThreads vClock [tid'] simstate)
               threads''  = Map.adjust adjustTarget tid' threads'
@@ -657,7 +658,7 @@ deschedule Interruptable thread@Thread {
     let thread' = thread { threadControl = ThreadControl (Throw e) ctl
                          , threadMasking = MaskedInterruptible
                          , threadThrowTo = etids
-                         , threadVClock  = vClock `lubVClock` vClock' }
+                         , threadVClock  = vClock `leastUpperBoundVClock` vClock' }
         (unblocked,
          simstate') = unblockThreads vClock [l_labelled tid'] simstate
     -- the thread is stepped when we Yield
@@ -828,7 +829,7 @@ unblockThreads vClock wakeup simstate@SimState {runqueue, threads} =
     threads'  = List.foldl'
                   (flip (Map.adjust
                     (\t -> t { threadBlocked = False,
-                               threadVClock = vClock `lubVClock` threadVClock t })))
+                               threadVClock = vClock `leastUpperBoundVClock` threadVClock t })))
                   threads unblocked
 
 
@@ -1138,9 +1139,9 @@ commitTVar TVar{tvarUndo} = do
 readTVarUndos :: TVar s a -> ST s [a]
 readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
 
-lubTVarVClocks :: [SomeTVar s] -> ST s VectorClock
-lubTVarVClocks tvars =
-  foldr lubVClock bottomVClock <$>
+leastUpperBoundTVarVClocks :: [SomeTVar s] -> ST s VectorClock
+leastUpperBoundTVarVClocks tvars =
+  foldr leastUpperBoundVClock bottomVClock <$>
     sequence [readSTRef (tvarVClock r) | SomeTVar r <- tvars]
 
 --
