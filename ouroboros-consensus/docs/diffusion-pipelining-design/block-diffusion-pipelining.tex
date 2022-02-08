@@ -68,8 +68,8 @@ The purpose of this document is to present a proposed change to the algorithm
 for Ouroboros chain diffusion that, if implemented, could facilitate higher block validation times
 for the same choice of the $\Delta$~diffusion time.
 Ergo, we would enjoy a faster $\Delta$~diffusion time in the context of our current block validation requirements.
-This additional budget may be spent on increasing block-size, and/or increasing CPU \& memory limits for Plutus scripts.
-This document will attempt to analyse the algorithm, and review its implications. The document also discusses which 
+This additional budget may be spent on increasing block-size and/or increasing CPU \& memory limits for Plutus scripts.
+This document will attempt to analyse the algorithm and review its implications. The document also discusses which 
 implementation changes would be necessary to execute the change in practice.
 
 \pagebreak
@@ -488,7 +488,7 @@ described in \cref{many-valid-block-headers}.
 \section{Implementation changes}
 The implementation changes required to deliver on the approach discussed in this document
 are all to be made within the Consensus layer. The discussion in this section pertains specifically 
-to the "non-aggressive" diffusion pipelining variant, the specific novel behaviour here is, nodes now
+to the "non-aggressive" diffusion pipelining variant. The specific novel behaviour is that nodes now
 forward \emph{one unvalidated block}, so that multiple nodes can download and validate the latest 
 block \emph{concurrently}. To begin, let us remind ourselves how Cardano currently diffuses data:
 
@@ -497,9 +497,9 @@ block \emph{concurrently}. To begin, let us remind ourselves how Cardano current
   \item With Praos, a node will adopt the chain which is most dense and whose intersection with the previous "best" known chain is less than $k$ blocks, where $k$ is currently set to 2160.
   \item Cognisant of the above, the process continues as follows:
   \begin{enumerate}
-    \item A node will notify interested peers that a new block is available by posting the new header to \lstinline{chainSync}, after block validation. 
+    \item A node will notify interested peers that a new block is available by posting the new header to \lstinline{ChainSync} mini-protocol, after block validation. 
     \item After validation of the header locally, the downstream peer will request/pull the corresponding block body.
-    \item The block is validated, and if it satisfies checks resulting in a new longer/better chain, it will be appended as the head of our "new" chain.
+    \item The block is validated, and if it satisfies checks resulting in a new longer/better chain, it will be selected as the head of our "new" chain.
     \item This process repeats for each downstream peer.
   \end{enumerate}
 \end{itemize}
@@ -514,7 +514,7 @@ can expedite a block's propagation prior to its validation whilst not invalidati
   \item The aim is to expedite data propagation where appropriate, and to do so without destructive change.
   \begin{enumerate}
     \item Extend the current API to pre-notify subscribed threads when a new desirable block is seen, prior to block body validation.
-    \item Implement a new mini-protocol which can function as an "expedited" version of \lstinline{chainSync}.
+    \item Implement a new mini-protocol which can function as an "expedited" version of \lstinline{ChainSync} mini-protocol.
     \item The new protocol should provide two new mechanisms:
     \begin{itemize}
       \item The ability to send a fresh block header to a downstream peer as soon as a given node witnesses a new desirable block, prior to actually validating its body. This enables the downstream peer to pre-emptively fetch this new block.
@@ -541,7 +541,7 @@ though which one should bear in mind during implementation:
 \begin{itemize}
   \item We must of course, ensure faster than real-time syncing of the chain. This is not an issue for the proposed implementation herein, however it's something we must be cognisant of in the future.
   \item The changes proposed herein don’t affect the structural properties of the chain.
-  \item Intuitively one may be inclined to suggest a change to minting policy, given that with pipelining an SPO now \emph{knows} that a potentially better chain exists to extend. However, knowledge of this reality (\emph{which existed prior to pipelining}), should not alter minting behaviour. 
+  \item Intuitively one may be inclined to suggest a change to minting policy, given that with pipelining an SPO now \emph{knows} that a potentially better chain exists to extend. However, knowledge of this reality (\emph{which existed prior to pipelining}), should not alter minting behaviour. It is not advantageous to wait for the potentially better chain. SPOs are still on equal footing. 
   \item We should not expedite/pipeline a subsequent block until the previously pipelined block is validated, i.e. do not pipeline multiple blocks concurrently.
   \item Pipelining ultimately results in maximal use of computing resource, which may not always be desirable as said resource is needed for other functions. However, this is not a concern for this proposed non-aggressive variant.
   \item We may wish to implement logic to deal with the receipt of multiple bad blocks. As discussed above we cannot simply "cut-off" a connection to a peer, as blame cannot be levied directly at a given peer. However, we could run a check on the KES (Key-evolving Signature), which would enable us to build conditional logic to ignore blocks from a misbehaving block producer.
