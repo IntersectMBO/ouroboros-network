@@ -485,6 +485,7 @@ type LedgerStateKind = MapKind -> Type
 data MapKind = DiffMK
              | EmptyMK
              | KeysMK
+             | QueryMK
              | RewoundMK
              | SeqDiffMK
              | TrackingMK
@@ -499,6 +500,9 @@ data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind ValuesMK     k v
   ApplyRewoundMK  :: !(RewoundKeys k v)                    -> ApplyMapKind RewoundMK    k v
 
+  ApplyQueryAllMK  ::                    ApplyMapKind QueryMK k v
+  ApplyQuerySomeMK :: !(UtxoKeys k v) -> ApplyMapKind QueryMK k v
+
 emptyAppliedMK :: Ord k => SMapKind mk -> ApplyMapKind mk k v
 emptyAppliedMK = \case
     SEmptyMK    -> ApplyEmptyMK
@@ -508,6 +512,7 @@ emptyAppliedMK = \case
     SDiffMK     -> ApplyDiffMK     emptyUtxoDiff
     SSeqDiffMK  -> ApplySeqDiffMK  emptySeqUtxoDiff
     SRewoundMK  -> ApplyRewoundMK  (RewoundKeys emptyUtxoKeys emptyUtxoValues emptyUtxoKeys)
+    SQueryMK    -> ApplyQuerySomeMK emptyUtxoKeys
 
 instance Ord k => Semigroup (ApplyMapKind KeysMK k v) where
   ApplyKeysMK l <> ApplyKeysMK r = ApplyKeysMK (l <> r)
@@ -524,6 +529,9 @@ mapValuesAppliedMK f = \case
   ApplyDiffMK diff        -> ApplyDiffMK     (mapUtxoDiff f diff)
   ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
   ApplyRewoundMK rew      -> ApplyRewoundMK  (mapRewoundKeys f rew)
+
+  ApplyQueryAllMK         -> ApplyQueryAllMK
+  ApplyQuerySomeMK ks     -> ApplyQuerySomeMK (castUtxoKeys ks)
 
 diffKeysMK :: ApplyMapKind DiffMK k v -> ApplyMapKind KeysMK k v
 diffKeysMK (ApplyDiffMK diff) = ApplyKeysMK $ keysUtxoDiff diff
@@ -542,6 +550,9 @@ instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
   ApplyDiffMK l         == ApplyDiffMK r         = l == r
   ApplySeqDiffMK l      == ApplySeqDiffMK r      = l == r
   ApplyRewoundMK l      == ApplyRewoundMK r      = l == r
+  ApplyQueryAllMK       == ApplyQueryAllMK       = True
+  ApplyQuerySomeMK l    == ApplyQuerySomeMK r    = l == r
+  _                     == _                     = False
 
 instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
   wNoThunks ctxt   = NoThunks.allNoThunks . \case
@@ -552,6 +563,8 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
     ApplyDiffMK diff        -> [noThunks ctxt diff]
     ApplySeqDiffMK diffs    -> [noThunks ctxt diffs]
     ApplyRewoundMK rew      -> [noThunks ctxt rew]
+    ApplyQueryAllMK         -> []
+    ApplyQuerySomeMK ks     -> [noThunks ctxt ks]
 
   showTypeOf _ = "ApplyMapKind"
 
@@ -566,6 +579,8 @@ instance
       ApplyDiffMK diff        -> encodeArityAndTag 4 [toCBOR diff]
       ApplySeqDiffMK diffs    -> encodeArityAndTag 5 [toCBOR diffs]
       ApplyRewoundMK rew      -> encodeArityAndTag 6 [toCBOR rew]
+      ApplyQueryAllMK         -> encodeArityAndTag 7 []
+      ApplyQuerySomeMK ks     -> encodeArityAndTag 7 [toCBOR ks]
     where
       encodeArityAndTag :: Word8 -> [CBOR.Encoding] -> CBOR.Encoding
       encodeArityAndTag tag xs =
@@ -584,6 +599,13 @@ instance
       SDiffMK     -> decodeArityAndTag 1 4 *> (ApplyDiffMK     <$> fromCBOR)
       SSeqDiffMK  -> decodeArityAndTag 1 5 *> (ApplySeqDiffMK  <$> fromCBOR)
       SRewoundMK  -> decodeArityAndTag 1 6 *> (ApplyRewoundMK  <$> fromCBOR)
+      SQueryMK    -> do
+        len <- CBOR.decodeListLen
+        tag <- CBOR.decodeWord8
+        case (len, tag) of
+          (2, 7) -> pure ApplyQueryAllMK
+          (3, 8) -> ApplyQuerySomeMK <$> fromCBOR
+          o      -> fail $ "decode @ApplyMapKind SQueryMK, " <> show o
     where
       smk = sMapKind @mk
 
@@ -605,6 +627,9 @@ showsApplyMapKind = \case
     ApplySeqDiffMK sq           -> showParen True $ showString "ApplySeqDiffMK " . shows sq
     ApplyRewoundMK rew          -> showParen True $ showString "ApplyRewoundMK " . shows rew
 
+    ApplyQueryAllMK       -> showParen True $ showString "ApplyQueryAllMK"
+    ApplyQuerySomeMK keys -> showParen True $ showString "ApplyQuerySomeMK " . shows keys
+
 data instance Sing (mk :: MapKind) :: Type where
   SEmptyMK    :: Sing EmptyMK
   SKeysMK     :: Sing KeysMK
@@ -613,6 +638,7 @@ data instance Sing (mk :: MapKind) :: Type where
   SDiffMK     :: Sing DiffMK
   SSeqDiffMK  :: Sing SeqDiffMK
   SRewoundMK  :: Sing RewoundMK
+  SQueryMK    :: Sing QueryMK
 
 type SMapKind = Sing :: MapKind -> Type
 
@@ -623,6 +649,7 @@ instance SingI TrackingMK where sing = STrackingMK
 instance SingI DiffMK     where sing = SDiffMK
 instance SingI SeqDiffMK  where sing = SSeqDiffMK
 instance SingI RewoundMK  where sing = SRewoundMK
+instance SingI QueryMK    where sing = SQueryMK
 
 sMapKind :: SingI mk => SMapKind mk
 sMapKind = sing
@@ -640,6 +667,9 @@ toSMapKind = \case
     ApplySeqDiffMK{}  -> SSeqDiffMK
     ApplyRewoundMK{}  -> SRewoundMK
 
+    ApplyQueryAllMK{}  -> SQueryMK
+    ApplyQuerySomeMK{} -> SQueryMK
+
 instance Eq (Sing (mk :: MapKind)) where
   _ == _ = True
 
@@ -652,6 +682,7 @@ instance Show (Sing (mk :: MapKind)) where
     SDiffMK     -> "SDiffMK"
     SSeqDiffMK  -> "SSeqDiffMK"
     SRewoundMK  -> "SRewoundMK"
+    SQueryMK    -> "SQueryMK"
 
 deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
 
@@ -663,6 +694,7 @@ instance ToCBOR (Sing TrackingMK) where toCBOR STrackingMK = CBOR.encodeNull
 instance ToCBOR (Sing DiffMK)     where toCBOR SDiffMK     = CBOR.encodeNull
 instance ToCBOR (Sing SeqDiffMK)  where toCBOR SSeqDiffMK  = CBOR.encodeNull
 instance ToCBOR (Sing RewoundMK)  where toCBOR SRewoundMK  = CBOR.encodeNull
+instance ToCBOR (Sing QueryMK)    where toCBOR SQueryMK    = CBOR.encodeNull
 
 -- TODO include a tag, for some self-description
 instance FromCBOR (Sing EmptyMK)    where fromCBOR = SEmptyMK    <$ CBOR.decodeNull
@@ -672,6 +704,7 @@ instance FromCBOR (Sing TrackingMK) where fromCBOR = STrackingMK <$ CBOR.decodeN
 instance FromCBOR (Sing DiffMK)     where fromCBOR = SDiffMK     <$ CBOR.decodeNull
 instance FromCBOR (Sing SeqDiffMK)  where fromCBOR = SSeqDiffMK  <$ CBOR.decodeNull
 instance FromCBOR (Sing RewoundMK)  where fromCBOR = SRewoundMK  <$ CBOR.decodeNull
+instance FromCBOR (Sing QueryMK)    where fromCBOR = SQueryMK    <$ CBOR.decodeNull
 
 calculateDifference ::
      Ord k
