@@ -17,6 +17,125 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 
+{-|
+  = Snapshot managing and contents
+
+  Snapshotting a ledger state means saving a copy of the in-memory part of the
+  ledger state serialized as a file on disk, as well as flushing differences
+  between the last snapshotted ledger state and the one that we are snapshotting
+  now and making a copy of that resulting on-disk state. While the coupled
+  implementation is in place, the serialized file might also contain a
+  serialized version of the in-memory UTxO map carried by the legacy ledger
+  states, as explained below.
+
+  == Startup
+
+  On startup, the node will:
+
+  1. Find the latest snapshot which will be a directory identified by the slot
+     number of the snapshot:
+
+        > <cardano-node data dir>
+        > ├── volatile
+        > ├── immutable
+        > └── ledger
+        >     ├── <slotNumber1>
+        >     │   ├── tables
+        >     │   └── state
+        >     ├── <slotNumber2>
+        >     │   ├── tables
+        >     │   └── state
+        >     └── <slotNumber3>
+        >         ├── tables
+        >         └── state
+
+  2. Depending on the snapshots found, there are two possibilities:
+
+       - If there is no snapshot to load, create a new @'BackingStore'@ with the
+         contents of the Genesis UTxO and finish.
+
+       - If there is a snapshot found, then deserialize the @state@ file, which
+         contains either:
+
+            - If the node was running __with the legacy database enabled__, it
+              contains a full LedgerState snapshot in the same style as before
+              the UTxO HD implementation (i.e. in-memory part of the LedgerState
+              (equal among implementations) + UTxO map).
+
+            - Otherwise, it contains a serialization of the in-memory part of the
+              LedgerState, with an empty UTxO map.
+
+        In both cases, the snapshot will be deserialized as @ExtLedgerState blk
+        EmptyMK@. In case we found an snapshot, we will overwrite (either
+        literally overwriting it or using some feature the specific backend
+        used) the @BackingStore@ tables with the @tables@ file from said
+        snapshot as it was left in whatever state it was when the node shut
+        down.
+
+  3. Depending on whether the node is requested to run both databases and whether
+     or not the snapshot has a UTxO inside, the node will:
+
+       - __Run both__ + snapshot has UTxO inside: Extract the tables from the
+         deserialized snapshot to create a @ExtLedgerState blk ValuesMK@ which
+         can be 1. used in the legacy database and 2. after stripping out the
+         @ValuesMK@, used in the modern database.
+
+       - __Run both__ + snapshot has an empty UTxO map: an error will be
+         thrown as we cannot reconstruct an in-memory UTxO directly from the
+         @BackingStore@.
+
+       - Otherwise: Strip out the values inside the @ExtLedgerState blk EmptyMK@
+         to make sure that we don't have an in-memory UTxO map and use it as the
+         anchor for the modern database.
+
+  4. Replay on top of this ledger database all blocks up to the immutable
+     database tip.
+
+  At this point, the node carries a @LedgerDB@ that is initialized and ready to
+  be applied blocks on the volatile database.
+
+  == Taking snapshots during normal operation
+
+  Snapshots are taken by the @'copyAndSnapshotRunner'@ when the disk policy
+  dictates to do so. Whenever the chain grows past @k@ blocks, said runner will
+  copy the blocks which are more than @k@ blocks from the tip (i.e. the ones
+  that must be considered immutable) to the immutable database and then:
+
+  1. Flush differences in the modern DB up to the immutable db tip.
+
+  2. If dictated by the disk policy, serialize an @ExtLedgerState blk EmptyMK@ containing:
+
+       - If the legacy database is enabled, the state to serialize is the anchor
+         of the legacy database (which should be the same as the one from the
+         modern database) with the tables stowed.
+
+       - Otherwise, the state to serialize is the modern database anchor which
+         requires no further modifications.
+
+     A directory is created named after the slot number of the ledger state
+     being snapshotted, and the serialization from above is written into the
+     @\<slotNumber\>/state@ file and the @BackingStore@ tables are copied into
+     the @\<slotNumber\>/tables@ file.
+
+  3. There is a maximum number of snapshots that should exist in the disk at any
+     time, dictated by the @DiskPolicy@, so if needed, we will trim out old
+     snapshots.
+
+  == Flush during startup and snapshot at the end of startup
+
+  Due to the nature of the modern database having to carry around all the
+  differences between the last snapshotted state and the current tip, there is a
+  need to flush when replaying the chain as otherwise, for example on a replay
+  from genesis to the tip, we would carry millions of differences in memory.
+
+  Because of this, when we are replaying blocks we will flush regularly. As the
+  last snapshot that was taken lives in a @\<slotNumber\>/tables@ file, there is
+  no risk of destroying it (overwriting tables at another earlier snapshot) by
+  flushing. Only when we finish replaying blocks and start the background
+  threads (and specifically the @copyAndSnapshotRunner@), we will take a
+  snapshot of the current immutable database anchor as described above.
+
+-}
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
     InitFailure(..)
@@ -34,9 +153,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , flush
   , readKeySets
   , readKeySetsVH
-    -- * Read from disk
+    -- * Snapshots: Read from disk
   , readSnapshot
-    -- * Write to disk
+    -- * Snapshots: Write to disk
   , takeSnapshot
   , trimSnapshots
   , writeSnapshot
@@ -44,8 +163,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , deleteSnapshot
   , snapshotToFileName
   , snapshotToDirPath
-    -- ** opaque
-  , DiskSnapshot (..)
+    -- ** Opaque
+  , DiskSnapshot
     -- * Trace events
   , ReplayGoal (..)
   , ReplayStart (..)
@@ -820,8 +939,8 @@ data TraceReplayEvent blk =
     -- | There was a LedgerDB snapshot on disk corresponding to the given tip.
     -- We're replaying more recent blocks against it.
   | ReplayFromSnapshot
-        DiskSnapshot
-        (RealPoint blk)
+        DiskSnapshot      -- ^ The snapshot we are replaying from
+        (RealPoint blk)   -- ^ The tip at which the snapshot is
         (ReplayStart blk) -- ^ the block at which this replay started
         (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
   -- | We replayed the given block (reference) on the genesis snapshot during
