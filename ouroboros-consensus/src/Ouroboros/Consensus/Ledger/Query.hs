@@ -64,15 +64,15 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      headerStateBlockNo, headerStatePoint)
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView, LedgerState,
-                     TableKeySets)
+import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView (..),
+                     LedgerState, TableKeySets, withLedgerTables)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
+import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (BlockNodeToClientVersion)
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.DepPair
 
@@ -290,7 +290,7 @@ class QuerySat (mk :: MapKind) (fp :: FootprintL)
 
 instance QuerySat mk SmallL
 
-instance QuerySat TrackingMK LargeL
+instance QuerySat ValuesMK LargeL
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: FootprintL -> Type -> Type
@@ -313,47 +313,39 @@ class IsQuery (BlockQuery blk) => QueryLedger blk where
 
 -- | Same as 'handleLargeQuery', but can also handle small queries.
 handleQuery ::
-     forall blk m fp result. (ConfigSupportsNode blk, HasAnnTip blk, QueryLedger blk, Monad m)
+     forall blk m fp result.
+     ( ConfigSupportsNode blk
+     , HasAnnTip blk
+     , QueryLedger blk
+     , Monad m
+     , LedgerSupportsProtocol blk
+     )
   => ExtLedgerCfg blk
-  -> DiskLedgerView blk m
+  -> DiskLedgerView m (ExtLedgerState blk)
   -> Query blk fp result
-  -> LedgerDB' blk
   -> m result
-handleQuery cfg dlv query lgrdb = case classifyQuery query of
-  Left  Refl -> pure $ answerQuery cfg query (error "getLatestState" lgrdb)
-  Right Refl -> handleLargeQuery cfg dlv query lgrdb
+handleQuery cfg dlv query = case classifyQuery query of
+    Left  Refl -> pure $ answerQuery cfg query st
+    Right Refl -> handleLargeQuery cfg dlv query
+  where
+    DiskLedgerView st _dbRead _dbClose = dlv
 
 handleLargeQuery ::
-     forall blk m result. (ConfigSupportsNode blk, HasAnnTip blk, QueryLedger blk, Monad m)
+     forall blk m result.
+     ( ConfigSupportsNode blk
+     , QueryLedger blk
+     , Monad m
+     , LedgerSupportsProtocol blk
+     )
   => ExtLedgerCfg blk
-  -> DiskLedgerView blk m
-     -- ^ interface used to read the on-disk ledger data
+  -> DiskLedgerView m (ExtLedgerState blk)
   -> Query blk LargeL result
-  -> LedgerDB' blk
-     -- ^ the ledger state to query, ie an in-memory ledger state along with its
-     -- contemporary 'DbChangelog'
-     --
-     -- We can answer queries about the tip of this ledger state until it is no
-     -- longer an extension of the on-disk tip. We therefore assume that whoever
-     -- is providing this 'DbChangelog' is also holding the lock that prevents
-     -- the on-disk tip from advancing, and they won't release it until we
-     -- return a @result@. (For this reason, every @answerQuery@ call should
-     -- return relatively quickly.)
   -> m result
-handleLargeQuery cfg dlv query lgrdb = do
-  let now_keys = prepareQuery query
-      chlog    = error "getChangelog" lgrdb
-      old_keys = error "rewindTableKeySets" chlog now_keys
-  (old_values, chlog') <- error "readKeys" dlv old_keys
-  let now_values = error "forwardTableReadSets" chlog' old_values
-      now_state  :: ExtLedgerState blk TrackingMK
-      now_state  = error "setTables" (error "getLatestState" lgrdb) now_values
-
-  -- All of the above is just bookkeeping necessary to enable this computation.
-  -- The @now_state@ includes a slice of the " large " data that is just enough
-  -- to answer @query@. That slice is typically small but eg could be the entire
-  -- disk data for some family of debug queries.
-  pure $ answerQuery cfg query now_state
+handleLargeQuery cfg dlv query = do
+    let DiskLedgerView st dbRead _dbClose = dlv
+        keys                              = prepareQuery query
+    values <- dbRead (ExtLedgerStateTables keys)
+    pure $ answerQuery cfg query (st `withLedgerTables` values)
 
 {-------------------------------------------------------------------------------
   Queries that are small
