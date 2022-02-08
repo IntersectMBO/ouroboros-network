@@ -627,17 +627,17 @@ data SimEventType
 type TraceEvent = SimEventType
 {-# DEPRECATED TraceEvent "Use 'SimEventType' instead." #-}
 
-data ThreadId = ThreadId  [Int]
-              | TestThreadId [Int]    -- test threads have higher priority
+data ThreadId = RacyThreadId [Int]
+              | ThreadId     [Int]    -- non racy threads have higher priority
   deriving (Eq, Ord, Show)
 
 childThreadId :: ThreadId -> Int -> ThreadId
+childThreadId (RacyThreadId is) i = RacyThreadId (is ++ [i])
 childThreadId (ThreadId     is) i = ThreadId     (is ++ [i])
-childThreadId (TestThreadId is) i = TestThreadId (is ++ [i])
 
-setNonTestThread :: ThreadId -> ThreadId
-setNonTestThread (TestThreadId is) = ThreadId is
-setNonTestThread tid@ThreadId{}    = tid
+setRacyThread :: ThreadId -> ThreadId
+setRacyThread (ThreadId is)      = RacyThreadId is
+setRacyThread tid@RacyThreadId{} = tid
 
 newtype TVarId      = TVarId    Int   deriving (Eq, Ord, Enum, Show)
 newtype TimeoutId   = TimeoutId Int   deriving (Eq, Ord, Enum, Show)

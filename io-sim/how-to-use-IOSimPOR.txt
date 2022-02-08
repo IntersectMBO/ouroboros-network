@@ -200,27 +200,26 @@ small number of tests.
 IOSimPOR Scheduling
 -------------------
 
-IOSimPOR distinguishes between test threads and system threads; test
-threads are intended to be part of the test itself, whereas system
-threads are part of the system under test. The main thread in a test
-is always a test thread; test threads can fork system threads, but not
-vice versa. Test threads always take priority over system threads, and
-IOSimPOR does not attempt to reverse races involving test threads. So
-when writing a test, one can assume that whatever the test threads do
-takes place first (at each simulated time point), and then the system
-threads run and any races between them are explored. Likewise, if a
-blocked test thread responds to an event in a system thread, then the
-test thread's response will take place before the system threads
-continue execution. Distinguishing test threads from system threads
-drastically reduces the set of races that IOSimPOR needs to consider.
+IOSimPOR distinguishes between non-racy threads and system threads; test
+threads are intended to be part of the test itself, whereas system threads are
+part of the system under test. The main thread in a test is always a non-racy
+thread; non-racy threads can fork system threads, but not vice versa. Test
+threads always take priority over system threads, and IOSimPOR does not
+attempt to reverse races involving test threads. So when writing a test, one
+can assume that whatever the test threads do takes place first (at each
+simulated time point), and then the system threads run and any races between
+them are explored. Likewise, if a blocked non-racy thread responds to an event
+in a system thread, then the test thread's response will take place before the
+system threads continue execution. Distinguishing non-racy threads from system
+threads drastically reduces the set of races that IOSimPOR needs to consider.
 
-To start a system thread, a test thread may call
+To start a system thread, a non-racy thread may call
 
     exploreRaces :: MonadTest m => m ()
 
 All threads forked (using forkIO) after such a call will be system
 threads. If there is no call to exploreRaces in a test, then all the
-threads forked will be test threads, and IOSimPOR will not reverse any
+threads forked will be non-racy threads, and IOSimPOR will not reverse any
 races---so it is necessary to include a call to exploreRaces somewhere
 in a test.
 
@@ -234,7 +233,7 @@ easy to see which thread forked which other, and relatively easy to
 map thread ids in debugging output to threads in the source code.
 
 Except when reversing races, IOSimPOR schedules threads using
-priorities. Test threads take priority over system threads, but
+priorities. Non-racy threads take priority over system threads, but
 otherwise priorities are determined by the thread ids: the thread with
 the lexicographically greatest thread Id has the highest priority. As
 a result, threads behave in a very predictable manner: newly forked

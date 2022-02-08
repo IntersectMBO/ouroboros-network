@@ -105,9 +105,14 @@ data Thread s a = Thread {
   }
   deriving Show
 
-isTestThreadId :: ThreadId -> Bool
-isTestThreadId (TestThreadId _) = True
-isTestThreadId _                = False
+isRacyThreadId :: ThreadId -> Bool
+isRacyThreadId (RacyThreadId _) = True
+isRacyThreadId _                = True
+
+isNotRacyThreadId :: ThreadId -> Bool
+isNotRacyThreadId (ThreadId _) = True
+isNotRacyThreadId _            = False
+
 
 bottomVClock :: VectorClock
 bottomVClock = VectorClock Map.empty
@@ -449,7 +454,7 @@ schedule thread@Thread{
 
     Fork a k -> do
       let nextTId = threadNextTId thread
-          tid' | threadRacy thread = setNonTestThread $ childThreadId tid nextTId
+          tid' | threadRacy thread = setRacyThread $ childThreadId tid nextTId
                | otherwise         = childThreadId tid nextTId
           thread'  = thread { threadControl = ThreadControl (k tid') ctl,
                               threadNextTId = nextTId + 1,
@@ -913,7 +918,7 @@ controlSimTraceST limit control mainAction =
   where
     mainThread =
       Thread {
-        threadId      = TestThreadId [],
+        threadId      = ThreadId [],
         threadControl = ThreadControl (runIOSim mainAction) MainFrame,
         threadBlocked = False,
         threadDone    = False,
@@ -923,7 +928,7 @@ controlSimTraceST limit control mainAction =
         threadLabel   = Just "main",
         threadNextTId = 1,
         threadStep    = 0,
-        threadVClock  = insertVClock (TestThreadId []) 0 bottomVClock,
+        threadVClock  = insertVClock (ThreadId []) 0 bottomVClock,
         threadEffect  = mempty,
         threadRacy    = False
       }
@@ -1353,7 +1358,7 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
 
       -- a new step cannot race with any threads that it just woke up
       new :: [StepInfo]
-      new | isTestThreadId tid  = []  -- test threads do not race
+      new | isNotRacyThreadId tid  = []  -- non-racy threads do not race
           | Set.null newConcurrent = []  -- cannot race with anything
           | justBlocking           = []  -- no need to defer a blocking transaction
           | otherwise              =
@@ -1373,7 +1378,7 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
           -- then any threads that it wakes up become non-concurrent also.
           let lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
           if tid `elem` concurrent then
-            let theseStepsRace = not (isTestThreadId tid) && racingSteps step newStep
+            let theseStepsRace = isRacyThreadId tid && racingSteps step newStep
                 happensBefore  = step `happensBeforeStep` newStep
                 nondep' | happensBefore = nondep
                         | otherwise     = newStep : nondep
