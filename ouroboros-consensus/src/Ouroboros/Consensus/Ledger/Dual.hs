@@ -523,12 +523,6 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                        dualBlockMain
                        tickedDualLedgerStateMain
 
-instance
-     ( PreApplyBlock (LedgerState m) m
-     , PreApplyBlock (LedgerState a) a
-     , TableStuff (LedgerState a)
-     )
-  => PreApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
   getBlockKeySets DualBlock{dualBlockMain, dualBlockAux} =
       DualBlockLedgerTables m a
     where
@@ -795,7 +789,6 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
           , vDualGenTxBridge
           } = vtx
 
-instance Bridge m a => PreLedgerSupportsMempool (DualBlock m a) where
   getTransactionKeySets tx =
       DualBlockLedgerTables
         (getTransactionKeySets dualGenTxMain)

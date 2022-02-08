@@ -118,9 +118,6 @@ type instance ApplyTxErr ByronBlock = CC.ApplyMempoolPayloadErr
 -- orphaned instance
 instance ShowProxy CC.ApplyMempoolPayloadErr where
 
-instance PreLedgerSupportsMempool ByronBlock where
-  getTransactionKeySets _ = polyEmptyLedgerTables
-
 instance LedgerSupportsMempool ByronBlock where
   -- Check that the annotation is the canonical encoding. This is currently
   -- enforced by 'decodeByronGenTx', see its docstring for more context.
@@ -150,6 +147,8 @@ instance LedgerSupportsMempool ByronBlock where
     . toMempoolPayload
 
   txForgetValidated = forgetValidatedByronTx
+
+  getTransactionKeySets _ = polyEmptyLedgerTables
 
 data instance TxId (GenTx ByronBlock)
   = ByronTxId             !Utxo.TxId

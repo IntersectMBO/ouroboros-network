@@ -79,7 +79,6 @@ import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      addSlots)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool (PreLedgerSupportsMempool (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
@@ -657,35 +656,6 @@ instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c)
           InjectLedgerTables
         $ \(ShelleyLedgerTables (ApplyKeysMK keys)) ->
             CardanoLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
-
-instance
-     CardanoHardForkConstraints c
-  => PreLedgerSupportsMempool (CardanoBlock c) where
-  getTransactionKeySets tx =
-      case ns of
-        Z x  -> case getTransactionKeySets x of
-          NoByronLedgerTables -> polyEmptyLedgerTables
-        S xs ->
-            SOP.hcollapse
-          $ SOP.hcmap
-              (Proxy @(CardanoShelleyBasedEra c))
-              projectOne
-              (consolidateShelleyNS xs)
-    where
-      ns :: NS GenTx (CardanoEras c)
-      ns = getOneEraGenTx $ getHardForkGenTx tx
-
-      projectOne :: forall era.
-           CardanoShelleyBasedEra c era
-        => (GenTx :.: ShelleyBlock)                                   era
-        -> SOP.K (LedgerTables (LedgerState (CardanoBlock c)) KeysMK) era
-      projectOne (Comp x) =
-          SOP.K $ CardanoLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
-        where
-          tables :: LedgerTables (LedgerState (ShelleyBlock era)) KeysMK
-          tables = getTransactionKeySets x
-
-          ShelleyLedgerTables (ApplyKeysMK keys) = tables
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley

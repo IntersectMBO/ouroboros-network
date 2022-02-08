@@ -257,9 +257,6 @@ instance IsLedger (LedgerState BlockA) where
 
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateA
 
-instance PreApplyBlock (LedgerState BlockA) BlockA where
-  getBlockKeySets _blk = NoATables
-
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyBlockLedgerResult cfg blk =
         fmap (pureLedgerResult . convertMapKind . setTip)
@@ -286,6 +283,8 @@ instance ApplyBlock (LedgerState BlockA) BlockA where
       dontExpectError mb = case runExcept mb of
         Left  _ -> error "reapplyBlockLedgerResult: unexpected error"
         Right b -> b
+
+  getBlockKeySets _blk = NoATables
 
 instance UpdateLedger BlockA
 
@@ -372,9 +371,6 @@ newtype instance Validated (GenTx BlockA) = ValidatedGenTxA { forgetValidatedGen
 
 type instance ApplyTxErr BlockA = Void
 
-instance PreLedgerSupportsMempool BlockA where
-  getTransactionKeySets _tx = NoATables
-
 instance LedgerSupportsMempool BlockA where
   applyTx _ _wti sno tx@(TxA _ payload) (TickedLedgerStateA st) =
       case payload of
@@ -387,6 +383,8 @@ instance LedgerSupportsMempool BlockA where
   txInBlockSize _ = 0
 
   txForgetValidated = forgetValidatedGenTxA
+
+  getTransactionKeySets _tx = NoATables
 
 newtype instance TxId (GenTx BlockA) = TxIdA Int
   deriving stock   (Show, Eq, Ord, Generic)

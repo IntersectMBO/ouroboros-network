@@ -166,9 +166,6 @@ instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) 
   Applying blocks
 -------------------------------------------------------------------------------}
 
-instance PreApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
-  getBlockKeySets _ = polyEmptyLedgerTables
-
 instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
   applyBlockLedgerResult cfg block (TickedByronSpecLedgerState _tip state) =
         withExcept ByronSpecLedgerError
@@ -191,6 +188,8 @@ instance ApplyBlock (LedgerState ByronSpecBlock) ByronSpecBlock where
       dontExpectError mb = case runExcept mb of
         Left  _ -> error "reapplyBlockLedgerResult: unexpected error"
         Right b -> b
+
+  getBlockKeySets _ = polyEmptyLedgerTables
 
 {-------------------------------------------------------------------------------
   CommonProtocolParams
