@@ -443,7 +443,6 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           ( apps
           , Diffusion.P2PApplications
               P2P.ApplicationsExtra {
-                P2P.daMiniProtocolParameters = miniProtocolParams,
                 P2P.daRethrowPolicy          = consensusRethrowPolicy (Proxy @blk),
                 P2P.daLocalRethrowPolicy     = localRethrowPolicy,
                 P2P.daPeerMetrics            = peerMetrics,

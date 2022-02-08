@@ -63,8 +63,6 @@ import qualified System.Posix.Signals as Signals
 #endif
 
 import qualified Network.DNS as DNS
-import           Network.Mux (MiniProtocolBundle (..),
-                     MiniProtocolDirection (..), MiniProtocolInfo (..))
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
@@ -93,11 +91,8 @@ import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
                      NodeToClientVersionData)
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
-                     DiffusionMode (..), MiniProtocolParameters (..),
-                     NodeToNodeVersion (..), NodeToNodeVersionData (..),
-                     RemoteAddress, blockFetchProtocolLimits,
-                     chainSyncProtocolLimits, keepAliveProtocolLimits,
-                     txSubmissionProtocolLimits)
+                     DiffusionMode (..), NodeToNodeVersion (..),
+                     NodeToNodeVersionData (..), RemoteAddress)
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -276,31 +271,6 @@ socketAddressType addr                    =
   error ("socketAddressType: unexpected address " ++ show addr)
 
 
--- | Combine two uni-directional 'MiniProtocolBundle's into one bi-directional
--- one.
---
-combineMiniProtocolBundles :: MiniProtocolBundle InitiatorMode
-                           -> MiniProtocolBundle ResponderMode
-                           -> MiniProtocolBundle InitiatorResponderMode
-combineMiniProtocolBundles (MiniProtocolBundle initiators)
-                           (MiniProtocolBundle responders)
-    = MiniProtocolBundle $
-         [ MiniProtocolInfo
-            { miniProtocolNum
-            , miniProtocolLimits
-            , miniProtocolDir = InitiatorDirection
-            }
-         | MiniProtocolInfo { miniProtocolNum, miniProtocolLimits } <- initiators
-         ]
-      ++ [ MiniProtocolInfo
-            { miniProtocolNum
-            , miniProtocolLimits
-            , miniProtocolDir = ResponderDirection
-            }
-         | MiniProtocolInfo { miniProtocolNum, miniProtocolLimits } <- responders
-         ]
-
-
 -- | P2P Applications Extras
 --
 -- TODO: we need initiator only mode for Deadalus, there's no reason why it
@@ -308,14 +278,9 @@ combineMiniProtocolBundles (MiniProtocolBundle initiators)
 --
 data ApplicationsExtra ntnAddr m =
     ApplicationsExtra {
-    -- | configuration of mini-protocol parameters; they impact size limits of
-    -- mux ingress queues.
-    --
-      daMiniProtocolParameters :: MiniProtocolParameters
-
     -- | /node-to-node/ rethrow policy
     --
-    , daRethrowPolicy          :: RethrowPolicy
+      daRethrowPolicy          :: RethrowPolicy
 
     -- | /node-to-client/ rethrow policy
     --
@@ -662,8 +627,7 @@ runM Interfaces
        , daLedgerPeersCtx
        }
      ApplicationsExtra
-       { daMiniProtocolParameters
-       , daRethrowPolicy
+       { daRethrowPolicy
        , daLocalRethrowPolicy
        , daPeerMetrics
        , daBlockFetchMode
@@ -748,7 +712,6 @@ runM Interfaces
                       makeConnectionHandler
                         dtLocalMuxTracer
                         SingResponderMode
-                        localMiniProtocolBundle
                         diNtcHandshakeArguments
                         ( ( \ (OuroborosApplication apps)
                            -> Bundle
@@ -868,7 +831,6 @@ runM Interfaces
                       makeConnectionHandler
                         dtMuxTracer
                         SingInitiatorMode
-                        miniProtocolBundleInitiatorMode
                         diNtnHandshakeArguments
                         daApplicationInitiatorMode
                         (mainThreadId, rethrowPolicy <> daRethrowPolicy)
@@ -991,7 +953,6 @@ runM Interfaces
                       makeConnectionHandler
                          dtMuxTracer
                          SingInitiatorResponderMode
-                         miniProtocolBundleInitiatorResponderMode
                          diNtnHandshakeArguments
                          daApplicationInitiatorResponderMode
                          (mainThreadId, rethrowPolicy <> daRethrowPolicy)
@@ -1113,92 +1074,6 @@ runM Interfaces
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
     (ntnInbgovRng,   ntcInbgovRng) = split rng4
-
-    miniProtocolBundleInitiatorResponderMode
-      :: MiniProtocolBundle InitiatorResponderMode
-    miniProtocolBundleInitiatorResponderMode =
-      combineMiniProtocolBundles miniProtocolBundleInitiatorMode
-                                 miniProtocolBundleResponderMode
-
-    -- node-to-node responder bundle; it is only used in combination with
-    -- the node-to-node initiator bundle defined below.
-    --
-    miniProtocolBundleResponderMode :: MiniProtocolBundle ResponderMode
-    miniProtocolBundleResponderMode = MiniProtocolBundle
-      [ MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 2,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = chainSyncProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 3,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = blockFetchProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 4,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = txSubmissionProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 8,
-          miniProtocolDir    = ResponderDirectionOnly,
-          miniProtocolLimits = keepAliveProtocolLimits daMiniProtocolParameters
-        }
-      -- TODO: `tip-sample` protocol
-      ]
-
-    -- node-to-node initiator bundle
-    miniProtocolBundleInitiatorMode :: MiniProtocolBundle InitiatorMode
-    miniProtocolBundleInitiatorMode = MiniProtocolBundle
-      [ MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 2,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = chainSyncProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 3,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = blockFetchProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 4,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = txSubmissionProtocolLimits daMiniProtocolParameters
-        }
-      , MiniProtocolInfo {
-          miniProtocolNum    = MiniProtocolNum 8,
-          miniProtocolDir    = InitiatorDirectionOnly,
-          miniProtocolLimits = keepAliveProtocolLimits daMiniProtocolParameters
-        }
-      -- TODO: `tip-sample` protocol
-      ]
-
-    -- node-to-client protocol bundle
-    localMiniProtocolBundle :: MiniProtocolBundle ResponderMode
-    localMiniProtocolBundle = MiniProtocolBundle
-        [ MiniProtocolInfo {
-            miniProtocolNum    = MiniProtocolNum 5,
-            miniProtocolDir    = ResponderDirectionOnly,
-            miniProtocolLimits = maximumMiniProtocolLimits
-          }
-        , MiniProtocolInfo {
-            miniProtocolNum    = MiniProtocolNum 6,
-            miniProtocolDir    = ResponderDirectionOnly,
-            miniProtocolLimits = maximumMiniProtocolLimits
-          }
-        , MiniProtocolInfo {
-            miniProtocolNum    = MiniProtocolNum 7,
-            miniProtocolDir    = ResponderDirectionOnly,
-            miniProtocolLimits = maximumMiniProtocolLimits
-          }
-        ]
-      where
-        maximumMiniProtocolLimits :: MiniProtocolLimits
-        maximumMiniProtocolLimits =
-            MiniProtocolLimits {
-              maximumIngressQueue = 0xffffffff
-            }
 
     -- Only the 'IOManagerError's are fatal, all the other exceptions in the
     -- networking code will only shutdown the bearer (see 'ShutdownPeer' why

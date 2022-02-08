@@ -53,7 +53,6 @@ import           Ouroboros.Network.BlockFetch.Decision (FetchMode (..))
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
-import qualified Ouroboros.Network.NodeToNode as NtN
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
@@ -202,9 +201,8 @@ run blockGeneratorArgs limits ni na =
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m
             appsExtra = Diff.P2P.ApplicationsExtra
-              { Diff.P2P.daMiniProtocolParameters = NtN.defaultMiniProtocolParameters
-                -- TODO: simulation errors should be critical
-              , Diff.P2P.daRethrowPolicy          =
+              { -- TODO: simulation errors should be critical
+                Diff.P2P.daRethrowPolicy          =
                      muxErrorRethrowPolicy
                   <> ioErrorRethrowPolicy
 

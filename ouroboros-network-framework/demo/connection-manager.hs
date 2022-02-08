@@ -237,7 +237,6 @@ withBidirectionalConnectionManager snocket socket
         (makeConnectionHandler
           muxTracer
           SingInitiatorResponderMode
-          serverMiniProtocolBundle
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,
@@ -274,42 +273,6 @@ withBidirectionalConnectionManager snocket socket
               (\thread -> link thread
                        >> k connectionManager serverAddr)
   where
-    -- for a bidirectional mux we need to define 'Mu.xMiniProtocolInfo' for each
-    -- protocol for each direction.
-    serverMiniProtocolBundle :: Mux.MiniProtocolBundle InitiatorResponderMode
-    serverMiniProtocolBundle = Mux.MiniProtocolBundle
-        [ Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 1,
-            Mux.miniProtocolDir = Mux.ResponderDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 1,
-            Mux.miniProtocolDir = Mux.InitiatorDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 2,
-            Mux.miniProtocolDir = Mux.ResponderDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 2,
-            Mux.miniProtocolDir = Mux.InitiatorDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 3,
-            Mux.miniProtocolDir = Mux.ResponderDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 3,
-            Mux.miniProtocolDir = Mux.InitiatorDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        ]
-
     serverApplication :: LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
