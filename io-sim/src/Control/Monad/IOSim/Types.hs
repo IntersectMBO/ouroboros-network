@@ -745,8 +745,17 @@ data StmStack s b a where
 ---
 
 data ScheduleControl = ControlDefault
+                     -- ^ default scheduling mode
                      | ControlAwait [ScheduleMod]
+                     -- ^ if the current control is 'ControlAwait', the normal
+                     -- scheduling will proceed, until the thread found in the
+                     -- first 'ScheduleMod' reaches the given step.  At this
+                     -- point the thread is put to sleep, until after all the
+                     -- steps are followed.
                      | ControlFollow [StepId] [ScheduleMod]
+                     -- ^ follow the steps then continue with schedule
+                     -- modifications.  This control is set by 'followControl'
+                     -- when 'controlTargets' returns true.
   deriving (Eq, Ord, Show)
 
 data ScheduleMod = ScheduleMod{

@@ -1577,7 +1577,11 @@ extendScheduleControl' (ControlAwait mods) m =
       if isUndo
         then ControlAwait mods          -- reject this mod... it's undoing a previous one
         else ControlAwait (take common mods++[m''])
-extendScheduleControl' ControlFollow{} ScheduleMod{} = error "Impossible: extendScheduleControl' ControlFollow{} ScheduleMod{}"
+extendScheduleControl' ControlFollow{} ScheduleMod{} =
+  -- note: this case is impossible, since `extendScheduleControl'` first
+  -- argument is either the initial `ControlDefault` or a result of calling
+  -- `extendScheduleControl'` itself.
+  error "Impossible: extendScheduleControl' ControlFollow{} ScheduleMod{}"
 
 extendScheduleControl :: ScheduleControl -> ScheduleMod -> ScheduleControl
 extendScheduleControl control m =
