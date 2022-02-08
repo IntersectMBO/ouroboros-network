@@ -384,11 +384,11 @@ instance TickedTableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   projectLedgerTablesTicked _ = NoAbTables
   withLedgerTablesTicked    st NoAbTables = convertMapKind st
 
-instance PreApplyBlock (LedgerState (HardForkBlock '[BlockA, BlockB])) (HardForkBlock '[BlockA, BlockB]) where
-  getBlockKeySets _blk = NoAbTables
-
-instance PreLedgerSupportsMempool (HardForkBlock '[BlockA, BlockB]) where
-  getTransactionKeySets _blk = NoAbTables
+instance LedgerTablesCanHardFork '[BlockA, BlockB] where
+  hardForkInjectLedgerTablesKeysMK =
+         (InjectLedgerTables $ \NoATables -> NoAbTables)
+      :* (InjectLedgerTables $ \NoBTables -> NoAbTables)
+      :* Nil
 
 instance InMemory (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   convertMapKind (HardForkLedgerState hfstate) =

@@ -7,6 +7,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -19,6 +20,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     HardForkBlock (..)
   , HardForkProtocol
   , LedgerState (..)
+    -- * UTxO HD
+  , LedgerTablesCanHardFork (..)
+  , InjectLedgerTables (..)
     -- * Config
   , BlockConfig (..)
   , CodecConfig (..)
@@ -109,6 +113,22 @@ instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) wher
 
 newtype AlreadyShown x = AlreadyShown {unAlreadyShown :: ShowS}
 instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown
+
+{-------------------------------------------------------------------------------
+  UTxO HD
+-------------------------------------------------------------------------------}
+
+-- | How to inject each era's ledger tables into their shared ledger tables
+class LedgerTablesCanHardFork xs where
+  hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables xs) xs
+
+-- TODO this could probably work for all map kinds, but we only need it now for
+-- keys
+newtype InjectLedgerTables xs x = InjectLedgerTables {
+      applyInjectLedgerTables ::
+           LedgerTables (LedgerState                  x) KeysMK
+        -> LedgerTables (LedgerState (HardForkBlock xs)) KeysMK
+    }
 
 {-------------------------------------------------------------------------------
   Protocol config
