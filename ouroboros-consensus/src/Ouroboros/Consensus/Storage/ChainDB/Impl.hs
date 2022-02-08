@@ -233,6 +233,9 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
                 Query.getLedgerStateForKeys env' p m
             , closeDB               = closeDB h
             , isOpen                = isOpen  h
+
+            , getLedgerBackingStoreValueHandle = \rreg p -> getEnv h $ \env' -> do
+                Query.getLedgerBackingStoreValueHandle env' rreg p
             }
           testing = Internal
             { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB
