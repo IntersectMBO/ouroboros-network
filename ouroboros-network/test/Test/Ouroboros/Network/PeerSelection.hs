@@ -14,6 +14,8 @@
 
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- TODO: remove it once #3601 is fixed
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 module Test.Ouroboros.Network.PeerSelection
   ( tests
@@ -65,7 +67,9 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
+#ifndef NIGHTLY
 import           Test.Tasty.ExpectedFailure
+#endif
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Pretty.Simple
 
@@ -130,12 +134,9 @@ tests =
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
   
-
-  , 
-#ifndef NIGHTLY
-    ignoreTest $
-#endif
-    testProperty "governor no livelock (racing)" $ prop_explore_governor_nolivelock
+  , nightlyTest $ testProperty "governor no livelock (racing)"       $ prop_explore_governor_nolivelock
+  -- TODO: issue #3601
+  -- , nightlyTest $ testProperty "governor connection status (racing)" $ prop_explore_governor_connstatus
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others
@@ -143,6 +144,14 @@ tests =
   -- is a one-sided target and we can and will overshoot, but we should not
   -- overshoot by too much.
 
+
+nightlyTest :: TestTree -> TestTree
+nightlyTest =
+#ifndef NIGHTLY
+  ignoreTest
+#else
+  id
+#endif
 
 --
 -- QuickCheck properties
