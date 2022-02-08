@@ -29,6 +29,7 @@ library
                        Control.Monad.IOSim,
                        Control.Monad.IOSim.Types
   other-modules:       Control.Monad.IOSim.Internal,
+                       Control.Monad.IOSim.InternalTypes,
                        Control.Monad.IOSimPOR.Internal,
                        Control.Monad.IOSimPOR.QuickCheckUtils,
                        Control.Monad.IOSimPOR.Timeout

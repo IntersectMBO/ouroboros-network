@@ -78,6 +78,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
 import           Control.Monad.IOSim.Types
+import           Control.Monad.IOSim.InternalTypes
 
 --
 -- Simulation interpreter
@@ -94,27 +95,6 @@ data Thread s a = Thread {
     threadLabel   :: Maybe ThreadLabel,
     threadNextTId :: !Int
   }
-
--- We hide the type @b@ here, so it's useful to bundle these two parts
--- together, rather than having Thread have an extential type, which
--- makes record updates awkward.
-data ThreadControl s a where
-  ThreadControl :: SimA s b
-                -> ControlStack s b a
-                -> ThreadControl s a
-
-data ControlStack s b a where
-  MainFrame  :: ControlStack s a  a
-  ForkFrame  :: ControlStack s () a
-  MaskFrame  :: (b -> SimA s c)         -- subsequent continuation
-             -> MaskingState            -- thread local state to restore
-             -> ControlStack s c a
-             -> ControlStack s b a
-  CatchFrame :: Exception e
-             => (e -> SimA s b)         -- exception continuation
-             -> (b -> SimA s c)         -- subsequent continuation
-             -> ControlStack s c a
-             -> ControlStack s b a
 
 labelledTVarId :: TVar s a -> ST s (Labelled TVarId)
 labelledTVarId TVar { tvarId, tvarLabel } = (Labelled tvarId) <$> readSTRef tvarLabel
