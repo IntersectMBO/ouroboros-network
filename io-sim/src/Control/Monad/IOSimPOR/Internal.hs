@@ -105,6 +105,9 @@ data Thread s a = Thread {
   }
   deriving Show
 
+threadStepId :: Thread s a -> (ThreadId, Int)
+threadStepId Thread{ threadId, threadStep } = (threadId, threadStep)
+
 isRacyThreadId :: ThreadId -> Bool
 isRacyThreadId (RacyThreadId _) = True
 isRacyThreadId _                = True
@@ -1215,7 +1218,9 @@ ordNub = go Set.empty
       | x `Set.member` s = go s xs
       | otherwise        = x : go (Set.insert x s) xs
 
+--
 -- Effects
+--
 
 data Effect = Effect {
     effectReads  :: !(Set TVarId),
@@ -1276,7 +1281,9 @@ racingEffects e e' =
              effectLiftST eff
           || not (Set.null (effectReads eff) && Set.null (effectWrites eff))
 
+--
 -- Steps
+--
 
 data Step = Step {
     stepThreadId :: !ThreadId,
@@ -1335,6 +1342,10 @@ data StepInfo = StepInfo {
     stepInfoRaces      :: [Step]
   }
   deriving Show
+
+--
+-- Races
+--
 
 data Races = Races { -- These steps may still race with future steps
                      activeRaces   :: ![StepInfo],
@@ -1467,13 +1478,59 @@ traceRaces r = r
 -- traceRaces r@Races{activeRaces,completeRaces} =
 --   Debug.trace ("Tracking "++show (length (concatMap stepInfoRaces activeRaces)) ++" races") r
 
+
+--
+-- Schedule control
+--
+
+controlTargets :: StepId -> ScheduleControl -> Bool
+controlTargets stepId
+               (ControlAwait (ScheduleMod{ scheduleModTarget }:_)) =
+  stepId == scheduleModTarget
+controlTargets _stepId _ = False
+
+followControl :: ScheduleControl -> ScheduleControl
+followControl (ControlAwait (ScheduleMod { scheduleModInsertion } : mods)) =
+               ControlFollow scheduleModInsertion mods
+followControl (ControlAwait []) = error "Impossible: followControl (ControlAwait [])"
+followControl ControlDefault{}  = error "Impossible: followControl ControlDefault{}"
+followControl ControlFollow{}   = error "Impossible: followControl ControlFollow{}"
+
+controlFollows :: StepId -> ScheduleControl -> Bool
+controlFollows _stepId  ControlDefault               = True
+controlFollows _stepId (ControlFollow [] _)          = True
+controlFollows stepId  (ControlFollow (stepId':_) _) = stepId == stepId'
+controlFollows stepId  (ControlAwait (smod:_))       = stepId /= scheduleModTarget smod
+controlFollows _       (ControlAwait [])             = error "Impossible: controlFollows _ (ControlAwait [])"
+
+advanceControl :: StepId -> ScheduleControl -> ScheduleControl
+advanceControl (tid,step) control@(ControlFollow ((tid',step'):sids') tgts)
+  | tid /= tid' =
+      -- we are switching threads to follow the schedule
+      --Debug.trace ("Switching threads from "++show (tid,step)++" to "++show (tid',step')++"\n") $
+      control
+  | step == step' =
+      ControlFollow sids' tgts
+  | otherwise =
+      error $ concat
+            [ "advanceControl ", show (tid,step)
+            , " cannot follow step ", show step'
+            , "\n"
+            ]
+advanceControl stepId (ControlFollow [] []) =
+  ControlDefault
+advanceControl stepId (ControlFollow [] tgts) =
+  ControlAwait tgts
+advanceControl stepId control =
+  assert (not $ controlTargets stepId control) $
+  control
+
+--
 -- Schedule modifications
+--
 
 stepStepId :: Step -> (ThreadId, Int)
 stepStepId Step{ stepThreadId = tid, stepStep = n } = (tid,n)
-
-threadStepId :: Thread s a -> (ThreadId, Int)
-threadStepId Thread{ threadId, threadStep } = (threadId, threadStep)
 
 stepInfoToScheduleMods :: StepInfo -> [ScheduleMod]
 stepInfoToScheduleMods
@@ -1506,51 +1563,6 @@ traceFinalRacesFound simstate@SimState{ control0 = control } =
           quiescentRacesInSimState simstate
         scheduleMods =
           concatMap stepInfoToScheduleMods $ completeRaces races
-
-
--- Schedule control
-
-controlTargets :: StepId -> ScheduleControl -> Bool
-controlTargets stepId
-               (ControlAwait (ScheduleMod{ scheduleModTarget }:_)) =
-  stepId == scheduleModTarget
-controlTargets _stepId _ = False
-
-controlFollows :: StepId -> ScheduleControl -> Bool
-controlFollows _stepId  ControlDefault               = True
-controlFollows _stepId (ControlFollow [] _)          = True
-controlFollows stepId  (ControlFollow (stepId':_) _) = stepId == stepId'
-controlFollows stepId  (ControlAwait (smod:_))       = stepId /= scheduleModTarget smod
-controlFollows _       (ControlAwait [])             = error "Impossible: controlFollows _ (ControlAwait [])"
-
-advanceControl :: StepId -> ScheduleControl -> ScheduleControl
-advanceControl (tid,step) control@(ControlFollow ((tid',step'):sids') tgts)
-  | tid /= tid' =
-      -- we are switching threads to follow the schedule
-      --Debug.trace ("Switching threads from "++show (tid,step)++" to "++show (tid',step')++"\n") $
-      control
-  | step == step' =
-      ControlFollow sids' tgts
-  | otherwise =
-      error $ concat
-            [ "advanceControl ", show (tid,step)
-            , " cannot follow step ", show step'
-            , "\n"
-            ]
-advanceControl stepId (ControlFollow [] []) =
-  ControlDefault
-advanceControl stepId (ControlFollow [] tgts) =
-  ControlAwait tgts
-advanceControl stepId control =
-  assert (not $ controlTargets stepId control) $
-  control
-
-followControl :: ScheduleControl -> ScheduleControl
-followControl (ControlAwait (ScheduleMod { scheduleModInsertion } : mods)) =
-               ControlFollow scheduleModInsertion mods
-followControl (ControlAwait []) = error "Impossible: followControl (ControlAwait [])"
-followControl ControlDefault{}  = error "Impossible: followControl ControlDefault{}"
-followControl ControlFollow{}   = error "Impossible: followControl ControlFollow{}"
 
 -- Extend an existing schedule control with a newly discovered schedule mod
 extendScheduleControl' :: ScheduleControl -> ScheduleMod -> ScheduleControl
