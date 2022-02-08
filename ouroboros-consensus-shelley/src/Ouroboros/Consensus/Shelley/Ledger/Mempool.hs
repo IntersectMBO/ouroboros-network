@@ -132,14 +132,6 @@ perTxOverhead :: Num a => a
 perTxOverhead = 4
 
 instance ShelleyBasedEra era
-      => PreLedgerSupportsMempool (ShelleyBlock era) where
-  getTransactionKeySets (ShelleyTx _ tx) =
-        ShelleyLedger.ShelleyLedgerTables
-      $ ApplyKeysMK
-      $ HD.UtxoKeys
-      $ getShelleyTxInputs tx
-
-instance ShelleyBasedEra era
       => LedgerSupportsMempool (ShelleyBlock era) where
   txInvariant = const True
 
@@ -157,6 +149,12 @@ instance ShelleyBasedEra era
       txSize = fromIntegral $ getField @"txsize" tx
 
   txForgetValidated (ShelleyValidatedTx txid vtx) = ShelleyTx txid (SL.extractTx vtx)
+
+  getTransactionKeySets (ShelleyTx _ tx) =
+        ShelleyLedger.ShelleyLedgerTables
+      $ ApplyKeysMK
+      $ HD.UtxoKeys
+      $ getShelleyTxInputs tx
 
 mkShelleyTx :: forall era. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock era)
 mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx

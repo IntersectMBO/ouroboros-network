@@ -380,9 +380,6 @@ instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables   (TestLedger p) = TestLedger p
   unstowLedgerTables (TestLedger p) = TestLedger p
 
-instance PreApplyBlock (LedgerState TestBlock) TestBlock where
-  getBlockKeySets _ = NoTestLedgerTables
-
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
@@ -394,6 +391,8 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
 
   reapplyBlockLedgerResult _ tb _ =
                    pureLedgerResult $ TestLedger (Chain.blockPoint tb)
+
+  getBlockKeySets _ = NoTestLedgerTables
 
 newtype instance LedgerState TestBlock mk =
     TestLedger {

@@ -356,10 +356,6 @@ instance MockProtocolSpecific c ext
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedSimpleLedgerState . SimpleLedgerState . simpleLedgerState
 
 instance MockProtocolSpecific c ext
-      => PreApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
-  getBlockKeySets _ = polyEmptyLedgerTables
-
-instance MockProtocolSpecific c ext
       => ApplyBlock (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) where
   applyBlockLedgerResult _ = fmap pureLedgerResult .: updateSimpleLedgerState
 
@@ -368,6 +364,8 @@ instance MockProtocolSpecific c ext
     where
       mustSucceed (Left  err) = error ("reapplyBlockLedgerResult: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
+
+  getBlockKeySets _ = polyEmptyLedgerTables
 
 newtype instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
@@ -474,10 +472,6 @@ instance (Typeable c, Typeable ext)
 type instance ApplyTxErr (SimpleBlock c ext) = MockError (SimpleBlock c ext)
 
 instance MockProtocolSpecific c ext
-      => PreLedgerSupportsMempool (SimpleBlock c ext) where
-  getTransactionKeySets _ = polyEmptyLedgerTables
-
-instance MockProtocolSpecific c ext
       => LedgerSupportsMempool (SimpleBlock c ext) where
   applyTx _cfg _wti slot tx st = do
       st' <- updateSimpleUTxO slot tx st
@@ -491,6 +485,8 @@ instance MockProtocolSpecific c ext
   txInBlockSize = txSize
 
   txForgetValidated = forgetValidatedSimpleGenTx
+
+  getTransactionKeySets _ = polyEmptyLedgerTables
 
 newtype instance TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId {
       unSimpleGenTxId :: Mock.TxId
