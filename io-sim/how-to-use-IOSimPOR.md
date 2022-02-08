@@ -51,22 +51,28 @@ The IOSimPOR API
 
 The common way to use IOSim is to call
 
-   runSimTrace :: forall a. (forall s. IOSim s a) -> Trace a
+```hs
+runSimTrace :: forall a. (forall s. IOSim s a) -> Trace a
+```
 
 which returns a trace, and then express the property to test as a
 predicate on the trace. Since IOSimPOR explores many traces, then the
 property to test is given as a continuation instead, which is called
 for each trace generated. The common way to use IOSimPOR is thus
 
-   exploreSimTrace :: forall a test. (Testable test, Show a) =>
-    (ExplorationOptions->ExplorationOptions) ->
-    (forall s. IOSim s a) ->
-    (Maybe (Trace a) -> Trace a -> test) ->
-    Property
+```hs
+exploreSimTrace :: forall a test. (Testable test, Show a) =>
+                   (ExplorationOptions->ExplorationOptions) ->
+                   (forall s. IOSim s a) ->
+                   (Maybe (Trace a) -> Trace a -> test) ->
+                   Property
+```
 
 The continuation is the last parameter, with type
 
-   Maybe (Trace a) -> Trace a -> test
+```hs
+Maybe (Trace a) -> Trace a -> test
+```
 
 Here the second parameter of the continuation is the trace that the
 property should check. The first parameter simply provides information
@@ -77,7 +83,7 @@ reversing one race.
 IOSimPOR Options
 ----------------
 
-exploreSimTrace can be controlled by a number of options, which are
+`exploreSimTrace` can be controlled by a number of options, which are
 obtained by passing the function passed as the first parameter to a
 default set of options. Passing the identity function id as the first
 parameter uses the defaults.
@@ -121,7 +127,7 @@ The options are:
    intended pure computations always finish well within that
    time. Note that garbage collection pauses are not included in the
    time limit (which would otherwise need to be considerably longer
-   than 100ms to accomodate them), provided the -T flag is supplied to
+   than 100ms to accommodate them), provided the -T flag is supplied to
    the run-time system.
 
  - the schedule control to replay, default Nothing, set by
@@ -139,6 +145,7 @@ IOSimPOR Statistics
 When a tested property passes, IOSimPOR displays some statistics about
 the schedules that were actually run. An example of this output is:
 
+```
 Branching factor (5865 in total):
 45.51% 1
 43.00% 0
@@ -177,6 +184,7 @@ Race reversals per schedule (5865 in total):
  3.10% 3
  1.71% 0
  0.10% 4
+```
 
 The first table shows us the branching factor at each point where
 IOSimPOR explored alternative schedules: in this case, in 43% of cases
@@ -215,7 +223,9 @@ threads drastically reduces the set of races that IOSimPOR needs to consider.
 
 To start a system thread, a non-racy thread may call
 
-    exploreRaces :: MonadTest m => m ()
+```hs
+exploreRaces :: MonadTest m => m ()
+```
 
 All threads forked (using forkIO) after such a call will be system
 threads. If there is no call to exploreRaces in a test, then all the
@@ -224,13 +234,13 @@ races---so it is necessary to include a call to exploreRaces somewhere
 in a test.
 
 IOSimPOR ThreadIds contain a list of small integers; the main thread
-contains the list [], its children are numbered [1], [2], [3] and so
-on, then threads forked by [2] are numbered [2,1], [2,2], [2,3] and so
-on. The id of a forked thread always extends its parent's id, and
-successively forked children of the same thread are numbered 1, 2, 3
-and so on. Thread Ids give us useful information for debugging; it is
-easy to see which thread forked which other, and relatively easy to
-map thread ids in debugging output to threads in the source code.
+contains the list `[]`, its children are numbered `[1]`, `[2]`, `[3]` and so
+on, then threads forked by `[2]` are numbered `[2,1]`, `[2,2]`, `[2,3]` and so
+on. The id of a forked thread always extends its parent's id, and successively
+forked children of the same thread are numbered 1, 2, 3 and so on. Thread Ids
+give us useful information for debugging; it is easy to see which thread forked
+which other, and relatively easy to map thread ids in debugging output to
+threads in the source code.
 
 Except when reversing races, IOSimPOR schedules threads using
 priorities. Non-racy threads take priority over system threads, but
@@ -245,6 +255,7 @@ When IOSimPOR reverses races, this is done by using a 'schedule
 control'. The schedule control is displayed in the test output when a
 test fails. Here is an example:
 
+```
 Schedule control:
   ControlAwait [ScheduleMod (ThreadId [4],0)
                             ControlDefault
@@ -258,13 +269,14 @@ ThreadId [4] delayed at time Time 0s
   until after:
     ThreadId [2]
     ThreadId [3]
+```
 
 The schedule control consists of one or more schedule modifications,
 each of which specifies that an event should be delayed until after a
 sequence of other events. The events consist of a thread id and a
 per-thread event number. The interpretation of the schedule
 modification above is that when the default scheduler would have
-performed the first event in thread [4] (that is, (ThreadId [4],0)),
+performed the first event in thread `[4]` (that is, (`ThreadId [4],0`)),
 then it should be delayed, and the list of events in the third field
 of the schedule modification should be performed first. In this case
 there is only one schedule modification, and so only one event is
@@ -274,11 +286,11 @@ the schedule control as an option to exploreSimTrace.
 
 The final part of the output tells us how the schedule in the failing
 test differed from the schedule in the most similar passing test:
-namely, thread [4] was delayed (at simulated time 0) until after the
-events in threads [2] and [3]. Since the schedule control delays
-thread [4] until after steps in threads [1], [2] and [3], then we can
-conclude that the last passing test already delayed thread [4] until
-after the events in thread [1].
+namely, thread `[4]` was delayed (at simulated time 0) until after the
+events in threads `[2]` and `[3]`. Since the schedule control delays
+thread `[4]` until after steps in threads `[1]`, `[2]` and `[3]`, then we can
+conclude that the last passing test already delayed thread `[4]` until
+after the events in thread `[1]`.
 
 Potential IOSimPOR Errors
 -------------------------
@@ -286,23 +298,25 @@ Potential IOSimPOR Errors
 Most reported errors are a result of faults in the code under test,
 but if you see an error of the following form:
 
+```
 Exception:
   Can't follow ControlFollow [(ThreadId [5],0)] []
     tid: ThreadId [5]
     tstep: 0
     runqueue: [ThreadId [3],ThreadId [2],ThreadId [1]]
+```
 
 then the probable cause is a bug in IOSimPOR itself. The message
 indicates that IOSimPOR scheduler is trying to follow a schedule
-modification that specifies that thread [5] should run next, but this
-is impossible because thread [5] is not in the runqueue (the list of
+modification that specifies that thread `[5]` should run next, but this
+is impossible because thread `[5]` is not in the runqueue (the list of
 runnable threads). If you supplied a schedule control explicitly,
 using withReplay, then you may perhaps have supplied a schedule
 control that does not match the version of the code you are running:
 in this case the exception is your fault. But if this message appears
 while you are exploring races, then it indicates a problem in
 IOSimPOR's dependency analysis: IOSimPOR has constructed a schedule as
-a result of race reversal that tries to run thread [5] at this point,
-because the dependency analysis indicates that thread [5] ought to be
+a result of race reversal that tries to run thread `[5]` at this point,
+because the dependency analysis indicates that thread `[5]` ought to be
 runnable---but it is not. Best to consult Quviq at this point.
 
