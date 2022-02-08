@@ -57,7 +57,6 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
-import           Ouroboros.Consensus.Ledger.SupportsMempool (PreLedgerSupportsMempool)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -139,8 +138,7 @@ instance ( CanHardFork xs
          , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
-         , PreLedgerSupportsMempool (HardForkBlock xs)
+         , LedgerTablesCanHardFork xs
          , TickedTableStuff (LedgerState (HardForkBlock xs))
          )
   => IsLedger (LedgerState (HardForkBlock xs)) where
@@ -279,14 +277,27 @@ instance
   ApplyBlock
 -------------------------------------------------------------------------------}
 
+instance
+     (CanHardFork xs, LedgerTablesCanHardFork xs)
+  => PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
+  getBlockKeySets (HardForkBlock (OneEraBlock ns)) =
+        hcollapse
+      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
+    where
+      f ::
+           SingleEraBlock                                    x
+        => InjectLedgerTables xs                             x
+        -> I                                                 x
+        -> K (TableKeySets (LedgerState (HardForkBlock xs))) x
+      f inj (I blk) = K $ applyInjectLedgerTables inj $ getBlockKeySets blk
+
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , TickedTableStuff (LedgerState (HardForkBlock xs))
-         , PreLedgerSupportsMempool (HardForkBlock xs)
-         , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
+         , LedgerTablesCanHardFork xs
          )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
 
@@ -367,8 +378,7 @@ instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-         , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
-         , PreLedgerSupportsMempool (HardForkBlock xs)
+         , LedgerTablesCanHardFork xs
          ) => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
@@ -445,8 +455,7 @@ type CanHardFork' xs =
   , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
   , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-  , PreApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
-  , PreLedgerSupportsMempool (HardForkBlock xs)
+  , LedgerTablesCanHardFork xs
   )
 
 instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where

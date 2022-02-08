@@ -51,7 +51,6 @@ import           NoThunks.Class (NoThunks)
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool (PreLedgerSupportsMempool (..))
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
@@ -88,7 +87,6 @@ import           Ouroboros.Consensus.Shelley.ShelleyHFC (ShelleyTxOut (..))
 import           Ouroboros.Consensus.Cardano.CanHardFork
                      ( ShelleyPartialLedgerConfig (..)
                      , IsShelleyTele (..)
-                     , consolidateShelleyNS
                      , forecastAcrossShelley
                      , translateChainDepStateAcrossShelley
                      )
@@ -425,56 +423,21 @@ instance
         versionZeroProductFromCBOR "ShelleyBasedHardForkLedgerTables" 1
       $ ShelleyBasedHardForkLedgerTables <$> fromCBOR
 
-
 instance
      ShelleyBasedHardForkConstraints era1 era2
-  => PreApplyBlock (LedgerState (ShelleyBasedHardForkBlock era1 era2)) (ShelleyBasedHardForkBlock era1 era2) where
-  getBlockKeySets blk =
-        SOP.hcollapse
-      $ SOP.hcmap
-          (Proxy @(ShelleyBasedEra' (EraCrypto era1)))
-          projectOne
-          (consolidateShelleyNS ns)
+  => LedgerTablesCanHardFork (ShelleyBasedHardForkEras era1 era2) where
+  hardForkInjectLedgerTablesKeysMK =
+         shelley
+      :* shelley
+      :* Nil
     where
-      ns :: NS SOP.I (ShelleyBasedHardForkEras era1 era2)
-      ns = getOneEraBlock $ getHardForkBlock blk
-
-      projectOne :: forall era.
-           ShelleyBasedEra' (EraCrypto era1) era
-        => (SOP.I :.: ShelleyBlock)                                                        era
-        -> SOP.K (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) KeysMK) era
-      projectOne (Comp (SOP.I x)) =
-          SOP.K $ ShelleyBasedHardForkLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
-        where
-          tables :: LedgerTables (LedgerState (ShelleyBlock era)) KeysMK
-          tables = getBlockKeySets x
-
-          ShelleyLedgerTables (ApplyKeysMK keys) = tables
-
-instance
-     ShelleyBasedHardForkConstraints era1 era2
-  => PreLedgerSupportsMempool (ShelleyBasedHardForkBlock era1 era2) where
-  getTransactionKeySets tx =
-        SOP.hcollapse
-      $ SOP.hcmap
-          (Proxy @(ShelleyBasedEra' (EraCrypto era1)))
-          projectOne
-          (consolidateShelleyNS ns)
-    where
-      ns :: NS GenTx (ShelleyBasedHardForkEras era1 era2)
-      ns = getOneEraGenTx $ getHardForkGenTx tx
-
-      projectOne :: forall era.
-           ShelleyBasedEra' (EraCrypto era1) era
-        => (GenTx :.: ShelleyBlock)                                                        era
-        -> SOP.K (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) KeysMK) era
-      projectOne (Comp x) =
-          SOP.K $ ShelleyBasedHardForkLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
-        where
-          tables :: LedgerTables (LedgerState (ShelleyBlock era)) KeysMK
-          tables = getTransactionKeySets x
-
-          ShelleyLedgerTables (ApplyKeysMK keys) = tables
+      shelley ::
+           (ShelleyBasedEra' (EraCrypto era1) era)
+        => InjectLedgerTables (ShelleyBasedHardForkEras era1 era2) (ShelleyBlock era)
+      shelley =
+          InjectLedgerTables
+        $ \(ShelleyLedgerTables (ApplyKeysMK keys)) ->
+            ShelleyBasedHardForkLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
 
 {-------------------------------------------------------------------------------
   Protocol info
