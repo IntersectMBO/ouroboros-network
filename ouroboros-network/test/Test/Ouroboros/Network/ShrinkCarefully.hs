@@ -21,6 +21,8 @@ instance (Eq a, Arbitrary a) => Arbitrary (ShrinkCarefully a) where
 
 prop_shrinkCarefully :: (Arbitrary a, Eq a, Show a) => ShrinkCarefully a -> Property
 prop_shrinkCarefully (ShrinkCarefully e) =
-  whenFail (pPrint e) $
-  counterexample (show $ map (==e) (shrink e)) $
-  e `notElem` shrink e
+    whenFail (pPrint e) $
+    counterexample (show $ map (==e) es) $
+    e `notElem` es
+  where
+    es = shrink e
