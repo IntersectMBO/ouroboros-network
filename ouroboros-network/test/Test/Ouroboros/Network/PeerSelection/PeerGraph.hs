@@ -17,6 +17,8 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
   , prop_shrink_GovernorScripts
   , prop_arbitrary_PeerGraph
   , prop_shrink_PeerGraph
+  , prop_shrinkCarefully_PeerGraph
+  , prop_shrinkCarefully_GovernorScripts
   ) where
 
 import           Data.Graph (Graph)
@@ -35,6 +37,7 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..),
 import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
                      prop_shrink_valid, renderRanges)
 import           Test.Ouroboros.Network.PeerSelection.Instances
+import           Test.Ouroboros.Network.ShrinkCarefully
 
 import           Test.QuickCheck
 
@@ -349,3 +352,8 @@ prop_shrink_PeerGraph x =
       prop_shrink_valid validPeerGraph x
  .&&. prop_shrink_nonequal x
 
+prop_shrinkCarefully_PeerGraph :: ShrinkCarefully PeerGraph -> Property
+prop_shrinkCarefully_PeerGraph = prop_shrinkCarefully
+
+prop_shrinkCarefully_GovernorScripts :: ShrinkCarefully GovernorScripts -> Property
+prop_shrinkCarefully_GovernorScripts = prop_shrinkCarefully
