@@ -542,6 +542,8 @@ instance
           (\current -> current{currentState = Flip $ unstowLedgerTables $ unFlip $ currentState current})
           tele
 
+  isCandidateForUnstow = isCandidateForUnstowDefault
+
 {-------------------------------------------------------------------------------
   Annotated forecasts
 -------------------------------------------------------------------------------}

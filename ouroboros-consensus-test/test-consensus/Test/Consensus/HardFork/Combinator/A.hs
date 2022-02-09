@@ -195,8 +195,9 @@ instance InMemory (LedgerState BlockA) where
   convertMapKind LgrA {..} = LgrA {..}
 
 instance StowableLedgerTables (LedgerState BlockA) where
-  stowLedgerTables   = convertMapKind
-  unstowLedgerTables = convertMapKind
+  stowLedgerTables     = convertMapKind
+  unstowLedgerTables   = convertMapKind
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 instance ToCBOR (LedgerTables (LedgerState BlockA) ValuesMK) where
   toCBOR NoATables = toCBOR ()

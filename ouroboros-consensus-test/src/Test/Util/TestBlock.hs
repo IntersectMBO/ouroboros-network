@@ -379,6 +379,7 @@ instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
 instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables   (TestLedger p) = TestLedger p
   unstowLedgerTables (TestLedger p) = TestLedger p
+  isCandidateForUnstow              = isCandidateForUnstowDefault
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
