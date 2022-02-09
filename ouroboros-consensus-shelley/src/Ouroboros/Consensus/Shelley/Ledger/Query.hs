@@ -44,7 +44,7 @@ import           Ouroboros.Network.Block (Serialised (..), decodePoint,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (ApplyMapKind (..))
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
@@ -276,15 +276,39 @@ instance ShelleyBasedEra era => QueryLedger (ShelleyBlock era) where
       st  = shelleyLedgerState lst
 
   prepareBlockQuery = \case
-    GetCBOR q        -> prepareBlockQuery q
-    GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK $ HD.UtxoKeys ks
+      GetCBOR q        -> prepareBlockQuery q
+      GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK $ HD.UtxoKeys ks
 
-  monoidWholeBlockQuery = \case
-      GetCBOR{}          -> error "TODO facepalm"
-      GetUTxOByAddress{} -> utxo
-      GetUTxOWhole{}     -> utxo
-   where
-     utxo = (error "TODO mempty UTxO", error "TODO <> UTxO")
+  answerWholeBlockQuery = \case
+      GetCBOR qry            -> case answerWholeBlockQuery qry of
+        IncrementalQueryHandler
+          partial
+          empty
+          comb
+          finish ->
+          IncrementalQueryHandler
+            partial
+            empty
+            comb
+            (mkSerialised (encodeShelleyResult qry) . finish)
+      GetUTxOByAddress addrs ->
+        IncrementalQueryHandler
+          (\st -> SL.getFilteredUTxO (shelleyLedgerState st) addrs)
+          emptyUtxo
+          combUtxo
+          id
+      GetUTxOWhole           ->
+        IncrementalQueryHandler
+          (\st ->
+             let ShelleyLedgerTables (ApplyValuesMK (HD.UtxoValues vs)) = projectLedgerTables st
+             in SL.UTxO vs
+          )
+          emptyUtxo
+          combUtxo
+          id
+    where
+      emptyUtxo                        = SL.UTxO Map.empty
+      combUtxo (SL.UTxO l) (SL.UTxO r) = SL.UTxO $ Map.union l r
 
 instance EqQuery (BlockQuery (ShelleyBlock era)) where
   eqQuery GetLedgerTip GetLedgerTip

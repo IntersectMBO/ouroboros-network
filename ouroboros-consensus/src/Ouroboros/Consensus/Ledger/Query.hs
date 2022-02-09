@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Ledger.Query (
     BlockQuery
   , ConfigSupportsNode (..)
   , FootprintQ (..)
+  , IncrementalQueryHandler (..)
   , Query (..)
   , QueryLedger (..)
   , QuerySat
@@ -297,11 +298,6 @@ instance QuerySat mk SmallL
 
 instance QuerySat ValuesMK LargeL
 
--- | The 'answerBlockQuery' will be applied to the state repeated, each time
--- with a different part the whole map in place. The results are combined via
--- 'monoidWholeBlockQuery'.
-instance QuerySat ValuesMK WholeL
-
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: FootprintL -> Type -> Type
 
@@ -316,7 +312,7 @@ class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   prepareBlockQuery :: BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
 
-  monoidWholeBlockQuery :: BlockQuery blk WholeL result -> (result, result -> result -> result)
+  answerWholeBlockQuery :: BlockQuery blk WholeL result -> IncrementalQueryHandler blk result
 
   -- This method need not be defined for a @'BlockQuery' blk@ that only contains
   -- 'SmallL' queries.
@@ -325,8 +321,16 @@ class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   -- This method need not be defined for a @'BlockQuery' blk@ that only contains
   -- 'SmallL' queries.
-  default monoidWholeBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk WholeL result -> (result, result -> result -> result)
-  monoidWholeBlockQuery query = proveNotWholeQuery query
+  default answerWholeBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk WholeL result -> IncrementalQueryHandler blk result
+  answerWholeBlockQuery query = proveNotWholeQuery query
+
+data IncrementalQueryHandler :: Type -> Type -> Type where
+  IncrementalQueryHandler ::
+       (LedgerState blk ValuesMK -> st)
+    -> st
+    -> (st -> st -> st)
+    -> (st -> result)
+    -> IncrementalQueryHandler blk result
 
 -- | Same as 'handleLargeQuery', but can also handle small queries.
 handleQuery ::
@@ -344,7 +348,7 @@ handleQuery ::
 handleQuery cfg dlv query = case classifyQuery query of
     SmallQ -> pure $ answerQuery cfg query st
     LargeQ -> handleLargeQuery cfg dlv query
-    WholeQ -> handleWholeQuery cfg dlv query
+    WholeQ -> handleWholeQuery dlv query
   where
     DiskLedgerView st _dbRead _dbRangeRead _dbClose = dlv
 
@@ -367,19 +371,34 @@ handleLargeQuery cfg dlv query = do
 
 handleWholeQuery ::
      forall blk m result.
-     ( ConfigSupportsNode blk
-     , QueryLedger blk
+     ( QueryLedger blk
      , Monad m
      , LedgerSupportsProtocol blk
      )
-  => ExtLedgerCfg blk
-  -> DiskLedgerView m (ExtLedgerState blk)
+  => DiskLedgerView m (ExtLedgerState blk)
   -> Query blk WholeL result
   -> m result
-handleWholeQuery cfg dlv query = do
-    loop 0 empty
+handleWholeQuery dlv query = do
+    case let BlockQuery bq = query in answerWholeBlockQuery bq of
+      IncrementalQueryHandler
+        partial
+        (empty :: st)
+        comb
+        post ->
+          let
+            loop ::
+                 Maybe (LedgerTables (ExtLedgerState blk) KeysMK)
+              -> st
+              -> m st
+            loop !prev !acc = do
+              (prev', ExtLedgerStateTables values) <-
+                dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
+              if getAll $ foldLedgerTables (All . f) values then pure acc else do
+                loop
+                  (Just prev')
+                  (comb acc $ partial $ ledgerState st `withLedgerTables` values)
+          in post <$> loop Nothing empty
   where
-    (empty, comb) = let BlockQuery bq = query in monoidWholeBlockQuery bq
 
     DiskLedgerView st _dbRead dbReadRange _dbClose = dlv
 
@@ -387,14 +406,6 @@ handleWholeQuery cfg dlv query = do
     f (ApplyValuesMK (HD.UtxoValues vs)) = Map.null vs
 
     batchSize = 100000   -- TODO tune, expose as config, etc
-
-    loop :: Int -> result -> m result
-    loop !n !acc = do
-      values <- dbReadRange RangeQuery{rqOffset = n, rqCount = batchSize}
-      if getAll $ foldLedgerTables (All . f) values then pure acc else do
-        loop
-          (n + batchSize)
-          (comb acc (answerQuery cfg query (st `withLedgerTables` values)))
 
 {-------------------------------------------------------------------------------
   Queries that are small
