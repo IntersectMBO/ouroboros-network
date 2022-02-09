@@ -1,57 +1,54 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
+
 module Analysis (
     AnalysisEnv (..)
   , AnalysisName (..)
-  , Limit (..)
   , runAnalysis
   ) where
 
+import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
+import           Codec.Serialise
 import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), traceWith)
+import           Data.IORef
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy
 import           Data.Word (Word16, Word64)
 import qualified Debug.Trace as Debug
-import           NoThunks.Class (noThunks)
 
-import           Ouroboros.Consensus.Block
+import           Ouroboros.Network.Point (WithOrigin (At))
+
+import           Ouroboros.Consensus.Util.IOLike
+
+import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Block.RealPoint
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
-                     HeaderState (..), annTipPoint)
-import           Ouroboros.Consensus.Ledger.Abstract (tickThenApplyLedgerResult)
-import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-                     (LedgerSupportsProtocol (..))
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
-                     StreamFrom (..))
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB hiding
+                     (TraceEvent)
+import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDB)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk hiding (TraceEvent)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as OnDisk
+import           Ouroboros.Consensus.Storage.Serialisation
 
-import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
-                     (LgrDbSerialiseConstraints)
-import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
-                     writeSnapshot)
-import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes,
-                     encodeDisk)
-
-import           HasAnalysis (HasAnalysis)
-import qualified HasAnalysis
+import           HasAnalysis
 
 {-------------------------------------------------------------------------------
   Run the requested analysis
@@ -73,22 +70,20 @@ data AnalysisName =
 runAnalysis ::
      forall blk .
      ( LgrDbSerialiseConstraints blk
-     , HasAnalysis blk
-     , LedgerSupportsProtocol blk
-     )
+     , HasAnalysis blk)
   => AnalysisName -> Analysis blk
-runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
+runAnalysis analysisName env@AnalysisEnv{ tracer } = do
   traceWith tracer (StartedEvent analysisName)
   go analysisName
   traceWith tracer DoneEvent
   where
     go ShowSlotBlockNo             = showSlotBlockNo env
-    go CountTxOutputs              = countTxOutputs env
+    go CountTxOutputs              = Analysis.countTxOutputs env
     go ShowBlockHeaderSize         = showHeaderSize env
     go ShowBlockTxsSize            = showBlockTxsSize env
     go ShowEBBs                    = showEBBs env
     go OnlyValidation              = return ()
-    go (StoreLedgerStateAt slotNo) = (storeLedgerStateAt slotNo) env
+    go (StoreLedgerStateAt slotNo) = storeLedgerStateAt slotNo env
     go CountBlocks                 = countBlocks env
     go (CheckNoThunksEvery nBks)   = checkNoThunksEvery nBks env
     go TraceLedgerProcessing       = traceLedgerProcessing env
@@ -97,11 +92,15 @@ type Analysis blk = AnalysisEnv IO blk -> IO ()
 
 data AnalysisEnv m blk = AnalysisEnv {
       cfg        :: TopLevelConfig blk
-    , initLedger :: ExtLedgerState blk ValuesMK
+    , initLedger :: Either DiskSnapshot (ExtLedgerState blk ValuesMK)
+      -- ^ Whether we are initializing from a snapshot or directly from a
+      -- genesis ledger state
     , db         :: Either (ImmutableDB IO blk) (ChainDB IO blk)
-    , registry   :: ResourceRegistry IO
     , ledgerDbFS :: SomeHasFS IO
-    , limit      :: Limit
+    , backing    :: BackingStoreSelector IO
+    , limit      :: Maybe Int
+      -- ^ Maybe stop when a certain number of blocks have been processed, or
+      -- process the whole Chain/ImmutableDB
     , tracer     :: Tracer m (TraceEvent blk)
     }
 
@@ -150,13 +149,13 @@ data TraceEvent blk =
     --   * total size of transactions in the block
 
 instance HasAnalysis blk => Show (TraceEvent blk) where
-  show (StartedEvent analysisName)        = "Started " <> (show analysisName)
+  show (StartedEvent analysisName)        = "Started " <> show analysisName
   show DoneEvent                          = "Done"
-  show (BlockSlotEvent bn sn)             = intercalate "\t" $ [
-      show bn
+  show (BlockSlotEvent bn sn)             = intercalate "\t" [
+      "Number of processed block: " <> show (unBlockNo bn)
     , show sn
     ]
-  show (CountTxOutputsEvent bn sn cumulative count) = intercalate "\t" $ [
+  show (CountTxOutputsEvent bn sn cumulative count) = intercalate "\t" [
       show bn
     , show sn
     , "cumulative: " <> show cumulative
@@ -168,7 +167,7 @@ instance HasAnalysis blk => Show (TraceEvent blk) where
     , "Known: " <> show known
     ]
   show (CountedBlocksEvent counted)       = "Counted " <> show counted <> " blocks."
-  show (HeaderSizeEvent bn sn headerSize) = intercalate "\t" $ [
+  show (HeaderSizeEvent bn sn headerSize) = intercalate "\t" [
       show bn
     , show sn
     , "header size: " <> show headerSize
@@ -192,28 +191,27 @@ instance HasAnalysis blk => Show (TraceEvent blk) where
 -------------------------------------------------------------------------------}
 
 showSlotBlockNo :: forall blk. HasAnalysis blk => Analysis blk
-showSlotBlockNo AnalysisEnv { db, registry, initLedger, limit, tracer } =
-    processAll_ db registry GetHeader initLedger limit process
+showSlotBlockNo env = do
+  doProcess env () process GetBlock
   where
-    process :: Header blk -> IO ()
-    process hdr = traceWith tracer $ BlockSlotEvent (blockNo hdr) (blockSlot hdr)
+    process :: blk -> () -> IO ()
+    process blk () = traceWith (tracer env) $ BlockSlotEvent (blockNo blk) (blockSlot blk)
 
 {-------------------------------------------------------------------------------
   Analysis: show total number of tx outputs per block
 -------------------------------------------------------------------------------}
 
 countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
-countTxOutputs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
-    void $ processAll db registry GetBlock initLedger limit 0 process
+countTxOutputs env = void $ doProcess env 0 process GetBlock
   where
-    process :: Int -> blk -> IO Int
-    process cumulative blk = do
+    process :: blk -> Int ->  IO Int
+    process blk cumulative = do
         let cumulative' = cumulative + count
             event       = CountTxOutputsEvent (blockNo blk)
                                               (blockSlot blk)
                                               cumulative'
                                               count
-        traceWith tracer event
+        traceWith (tracer env) event
         return cumulative'
       where
         count = HasAnalysis.countTxOutputs blk
@@ -223,17 +221,16 @@ countTxOutputs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
 -------------------------------------------------------------------------------}
 
 showHeaderSize :: forall blk. HasAnalysis blk => Analysis blk
-showHeaderSize AnalysisEnv { db, registry, initLedger, limit, tracer } = do
-    maxHeaderSize <-
-      processAll db registry ((,) <$> GetHeader <*> GetHeaderSize) initLedger limit 0 process
-    traceWith tracer $ MaxHeaderSizeEvent maxHeaderSize
+showHeaderSize env = do
+  maxHeaderSize <- doProcess env 0 process ((,) <$> GetHeader <*> GetHeaderSize)
+  traceWith (tracer env) $ MaxHeaderSizeEvent maxHeaderSize
   where
-    process :: Word16 -> (Header blk, Word16) -> IO Word16
-    process maxHeaderSize (hdr, headerSize) = do
+    process :: (Header blk, Word16) -> Word16 -> IO Word16
+    process (hdr, headerSize) maxHeaderSize = do
       let event = HeaderSizeEvent (blockNo hdr)
                                   (blockSlot hdr)
                                    headerSize
-      traceWith tracer event
+      traceWith (tracer env) event
       return $ maxHeaderSize `max` headerSize
 
 {-------------------------------------------------------------------------------
@@ -241,12 +238,14 @@ showHeaderSize AnalysisEnv { db, registry, initLedger, limit, tracer } = do
 -------------------------------------------------------------------------------}
 
 showBlockTxsSize :: forall blk. HasAnalysis blk => Analysis blk
-showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit, tracer } =
-    processAll_ db registry GetBlock initLedger limit process
+showBlockTxsSize env = void $ doProcess env () process GetBlock
   where
-    process :: blk -> IO ()
-    process blk =
-      traceWith tracer $ BlockTxSizeEvent (blockSlot blk) numBlockTxs blockTxsSize
+    process :: blk -> () -> IO ()
+    process blk () =
+      traceWith (tracer env) $ BlockTxSizeEvent
+                                 (blockSlot blk)
+                                 numBlockTxs
+                                 blockTxsSize
       where
         txSizes :: [SizeInBytes]
         txSizes = HasAnalysis.blockTxSizes blk
@@ -262,11 +261,10 @@ showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit, tracer } =
 -------------------------------------------------------------------------------}
 
 showEBBs :: forall blk. HasAnalysis blk => Analysis blk
-showEBBs AnalysisEnv { db, registry, initLedger, limit, tracer } =
-    processAll_ db registry GetBlock initLedger limit process
+showEBBs  env = void $ doProcess env () process GetBlock
   where
-    process :: blk -> IO ()
-    process blk =
+    process :: blk -> () -> IO ()
+    process blk () =
         case blockIsEBB blk of
           Just _epoch -> do
             let known =  Map.lookup
@@ -274,7 +272,7 @@ showEBBs AnalysisEnv { db, registry, initLedger, limit, tracer } =
                             (HasAnalysis.knownEBBs (Proxy @blk))
                        == Just (blockPrevHash blk)
                 event = EbbEvent (blockHash blk) (blockPrevHash blk) known
-            traceWith tracer event
+            traceWith (tracer env) event
           _otherwise -> return () -- Skip regular blocks
 
 {-------------------------------------------------------------------------------
@@ -285,99 +283,129 @@ storeLedgerStateAt ::
      forall blk .
      ( LgrDbSerialiseConstraints blk
      , HasAnalysis blk
-     , LedgerSupportsProtocol blk
      )
-  => SlotNo -> Analysis blk
-storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, ledgerDbFS, tracer }) =
-    void $ processAllUntil db registry GetBlock initLedger limit initLedger process
+  => SlotNo
+  -> Analysis blk
+storeLedgerStateAt slotNo AnalysisEnv { db, backing, initLedger, cfg, ledgerDbFS, tracer } = do
+
+    tp <- atomically $ either ImmutableDB.getTipPoint ChainDB.getTipPoint db
+    when (pointSlot tp < At slotNo) $ warning (pointSlot tp)
+
+    initLedger' <- initialiseLedger ledgerDbFS cfg initLedger
+
+    tracer' <- decorateReplayTracerWithStart (castPoint . getTip $ initLedger')
+             . mkTracer
+           <$> newIORef (0 :: Int)
+
+    (initDb, backingStore) <- ledgerDbAndBackingStore
+                                backing
+                                ledgerDbFS
+                              $ case initLedger of
+                                  Left s  -> Left (initLedger', s)
+                                  Right v -> Right v
+
+    eDB <- runExceptT
+         $ replayStartingWith
+             tracer'
+             configLedgerDb
+             backingStore
+             (mkStream (\b -> if blockSlot b >= slotNo
+                              then return NoMoreBlocks
+                              else return $ NextBlock b) GetBlock db)
+             initDb
+
+    case eDB of
+      Left e -> error $ show e
+      Right (ldb, _) -> do
+        -- The replay performed above leaves the DbChangelog at @tip - k@
+        -- blocks. We use this flush to push all the remaining differences into
+        -- the backing store.
+        OnDisk.flush backingStore $ ledgerDbChangelog ldb
+
+        writeSnapshot
+          ledgerDbFS
+          backingStore
+          encLedger
+          (snapshot (pointSlot $ Ouroboros.Consensus.Ledger.Abstract.getTip $ ledgerDbCurrent ldb))
+          (ledgerDbCurrent ldb)
+
+    traceWith tracer $ SnapshotStoredEvent slotNo
   where
-    process :: ExtLedgerState blk ValuesMK -> blk -> IO (NextStep, ExtLedgerState blk ValuesMK)
-    process oldLedger blk = do
-      let ledgerCfg     = ExtLedgerCfg cfg
-          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
-          newLedger     =
-              either (error . show) (applyLedgerTablesDiffs oldLedger . lrResult)
-            $ runExcept $ appliedResult
-      when (blockSlot blk >= slotNo) $ storeLedgerState blk newLedger
-      when (blockSlot blk > slotNo) $ issueWarning blk
-      when ((unBlockNo $ blockNo blk) `mod` 1000 == 0) $ reportProgress blk
-      return (continue blk, newLedger)
+    warning s = putStrLn $ "WARNING: The tip of your chain is behind the requested slot number: " <> show s <> " < " <> show slotNo
 
-    continue :: blk -> NextStep
-    continue blk
-      | blockSlot blk >= slotNo = Stop
-      | otherwise               = Continue
+    mkTracer traceIORef = Tracer $ \f ->
+          case f (ReplayGoal GenesisPoint) of
+            ReplayedBlock (RealPoint s _) _ _ _ -> do
+              c <- readIORef traceIORef
+              modifyIORef traceIORef (+ 1)
+              when (c `mod` 10000 == 0) $ traceWith tracer (BlockSlotEvent (fromIntegral c) s)
+            _ -> return ()
 
-    issueWarning blk   = let event = SnapshotWarningEvent slotNo (blockSlot blk)
-                         in traceWith tracer event
-    reportProgress blk = let event = BlockSlotEvent (blockNo blk) (blockSlot blk)
-                         in traceWith tracer event
-
-    storeLedgerState ::
-         blk
-      -> ExtLedgerState blk ValuesMK
-      -> IO ()
-    storeLedgerState blk ledgerState = do
-      let snapshot = DiskSnapshot
-                      (unSlotNo $ blockSlot blk)
-                      (Just $ "db-analyser")
-      writeSnapshot
-        ledgerDbFS
-        (error "UTxO HD BackingStore")
-        encLedger
-        snapshot
-        (error "UTxO HD TODO" ledgerState)  -- TODO stowLedgerTables?
-      traceWith tracer $ SnapshotStoredEvent (blockSlot blk)
+    ccfg = configCodec cfg
 
     encLedger :: ExtLedgerState blk EmptyMK -> Encoding
-    encLedger =
-      let ccfg = configCodec cfg
-      in encodeExtLedgerState
-           (encodeDisk ccfg)
-           (encodeDisk ccfg)
-           (encodeDisk ccfg)
+    encLedger = encodeExtLedgerState
+                 (encodeDisk ccfg)
+                 (encodeDisk ccfg)
+                 (encodeDisk ccfg)
+
+    snapshot woSlotNo = DiskSnapshot
+                        (withOrigin 0 unSlotNo woSlotNo)
+                        (Just "db-analyser")
+
+    configLedgerDb = LedgerDbCfg {
+        ledgerDbCfgSecParam = configSecurityParam cfg
+      , ledgerDbCfg         = ExtLedgerCfg cfg
+      }
+
+{-------------------------------------------------------------------------------
+  Analysis: count how many blocks are processed
+-------------------------------------------------------------------------------}
 
 countBlocks ::
      forall blk .
      ( HasAnalysis blk
      )
   => Analysis blk
-countBlocks (AnalysisEnv { db, registry, initLedger, limit, tracer }) = do
-    counted <- processAll db registry (GetPure ()) initLedger limit 0 process
-    traceWith tracer $ CountedBlocksEvent counted
+countBlocks env = do
+  counted <- doProcess env 0 process (GetPure ())
+  traceWith (tracer env) $ CountedBlocksEvent counted
   where
-    process :: Int -> () -> IO Int
-    process count _ = pure $ count + 1
+    process :: () -> Int -> IO Int
+    process () count = pure $ count + 1
+
 {-------------------------------------------------------------------------------
   Analysis: check for ledger state thunks every n blocks
 -------------------------------------------------------------------------------}
 
 checkNoThunksEvery ::
   forall blk.
-  ( HasAnalysis blk,
-    LedgerSupportsProtocol blk
-  ) =>
-  Word64 ->
-  Analysis blk
+     HasAnalysis blk
+  => Word64
+  -> Analysis blk
 checkNoThunksEvery
   nBlocks
-  (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
+  AnalysisEnv {db, initLedger, cfg, ledgerDbFS, limit, backing} = void $ do
     putStrLn $
       "Checking for thunks in each block where blockNo === 0 (mod " <> show nBlocks <> ")."
-    void $ processAll db registry GetBlock initLedger limit initLedger process
-  where
-    process :: ExtLedgerState blk ValuesMK -> blk -> IO (ExtLedgerState blk ValuesMK)
-    process oldLedger blk = do
-      let ledgerCfg     = ExtLedgerCfg cfg
-          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
-          newLedger     =
-              either (error . show) (applyLedgerTablesDiffs oldLedger . lrResult)
-            $ runExcept $ appliedResult
-          bn            = blockNo blk
-      when (unBlockNo bn `mod` nBlocks == 0 ) $ checkNoThunks bn newLedger
-      return newLedger
+    doCheck <- onlyCheckNumBlocks limit
 
-    checkNoThunks :: BlockNo -> ExtLedgerState blk ValuesMK -> IO ()
+    initLedger' <- initialiseLedger ledgerDbFS cfg initLedger
+
+    (ldb, bs) <- ledgerDbAndBackingStore backing ledgerDbFS $ case initLedger of
+                                                                Left s -> Left (initLedger', s)
+                                                                Right v -> Right v
+
+    runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0, 0) (push configLedgerDb f bs))
+  where
+    configLedgerDb = LedgerDbCfg {
+        ledgerDbCfgSecParam = configSecurityParam cfg
+      , ledgerDbCfg         = ExtLedgerCfg cfg
+      }
+
+    f blk _ newLedger = when (unBlockNo (blockNo blk) `mod` nBlocks == 0 ) $ checkNoThunks (blockNo blk) newLedger
+
+    checkNoThunks :: BlockNo -> ExtLedgerState blk EmptyMK -> IO ()
     checkNoThunks bn ls =
       noThunks [] (ledgerState ls) >>= \case
         Nothing -> putStrLn $ "BlockNo " <> show bn <> ": no thunks found."
@@ -392,148 +420,204 @@ checkNoThunksEvery
 
 traceLedgerProcessing ::
   forall blk.
-  ( HasAnalysis blk,
-    LedgerSupportsProtocol blk
-  ) =>
+  HasAnalysis blk =>
   Analysis blk
 traceLedgerProcessing
-  (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
-    void $ processAll db registry GetBlock initLedger limit initLedger process
+  AnalysisEnv {db, initLedger, cfg, limit, backing, ledgerDbFS} = void $ do
+    doCheck <- onlyCheckNumBlocks limit
+
+    initLedger' <- initialiseLedger ledgerDbFS cfg initLedger
+    (ldb, bs) <- ledgerDbAndBackingStore backing ledgerDbFS $ case initLedger of
+                                                                Left s -> Left (initLedger', s)
+                                                                Right v -> Right v
+
+    runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0, 0) (push configLedgerDb f bs))
   where
-    process
-      :: ExtLedgerState blk ValuesMK
-      -> blk
-      -> IO (ExtLedgerState blk ValuesMK)
-    process oldLedger blk = do
-      let ledgerCfg     = ExtLedgerCfg cfg
-          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
-          newLedger     =
-              either (error . show) (applyLedgerTablesDiffs oldLedger . lrResult)
-            $ runExcept $ appliedResult
-          traces        =
-            (HasAnalysis.emitTraces $
-              HasAnalysis.WithLedgerState blk (ledgerState oldLedger) (ledgerState newLedger))
+    configLedgerDb = LedgerDbCfg {
+        ledgerDbCfgSecParam = configSecurityParam cfg
+      , ledgerDbCfg         = ExtLedgerCfg cfg
+      }
+
+    f blk oldLedger newLedger = do
+      let traces = HasAnalysis.emitTraces $
+                   HasAnalysis.WithLedgerState blk (ledgerState oldLedger) (ledgerState newLedger)
       mapM_ Debug.traceMarkerIO traces
-      return $ newLedger
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB
 -------------------------------------------------------------------------------}
 
-data Limit = Limit Int | Unlimited
+-- | Perform a processing that just requires a stream of blocks and not a
+-- LedgerDB
+doProcess :: HasAnalysis blk
+          => AnalysisEnv m blk
+          -> st -- ^ Initial state
+          -> (a -> st -> IO st) -- ^ Transition function
+          -> BlockComponent blk a
+          -> IO st
+doProcess AnalysisEnv { db, initLedger, limit, ledgerDbFS, cfg } st process bc = do
+  doCheck <- onlyCheckNumBlocks limit
+  initLedger' <- initialiseLedger ledgerDbFS cfg initLedger
+  either (error . show) id
+      <$> runExceptT (consumeStream (mkStream doCheck bc db) (castPoint . getTip $ initLedger') st process)
 
-decreaseLimit :: Limit -> Maybe Limit
-decreaseLimit Unlimited = Just Unlimited
-decreaseLimit (Limit 0) = Nothing
-decreaseLimit (Limit n) = Just . Limit $ n - 1
+-- | Load an EmptyMK ledger state either from a snapshot or from the genesis
+-- ledger state.
+initialiseLedger ::
+  ( LedgerSupportsProtocol blk
+  , Serialise (HeaderHash blk)
+  , HasAnalysis blk
+  )
+  => SomeHasFS IO
+  -> TopLevelConfig blk
+  -> Either DiskSnapshot (ExtLedgerState blk ValuesMK)
+  -> IO (ExtLedgerState blk EmptyMK)
+initialiseLedger fs cfg e = do
+  r <- either
+    (\s -> either (error . show) id
+           <$> runExceptT (readSnapshot fs (decodeExtLedgerState' cfg) decode s))
+    (return . forgetLedgerTables) e
+  -- This marker divides the "loading" phase of the program, where the
+  -- system is principally occupied with reading snapshot data from
+  -- disk, from the "processing" phase, where we are streaming blocks
+  -- and running the ledger processing on them.
+  Debug.traceMarkerIO "SNAPSHOT_LOADED"
+  pure r
 
-data NextStep = Continue | Stop
+-- | Uniformly get a initial ledger DB and a Backing store either from genesis
+-- or from a snapshot.
+ledgerDbAndBackingStore ::
+     ( LedgerSupportsProtocol blk
+     , SufficientSerializationForAnyBackingStore (LedgerState blk)
+     )
+  => BackingStoreSelector IO
+  -> SomeHasFS IO
+  -> Either (ExtLedgerState blk EmptyMK, DiskSnapshot) (ExtLedgerState blk ValuesMK)
+  -> IO (LedgerDB' blk, LedgerBackingStore IO (ExtLedgerState blk))
+ledgerDbAndBackingStore bss fs  = \case
+  Left (initLedger', s) -> do
+        backingStore <- restoreBackingStore fs s bss
+        return (ledgerDbWithAnchor RunOnlyNew initLedger'
+               , backingStore)
+  Right genesisLedger -> do
+        backingStore <- newBackingStore mempty bss fs (projectLedgerTables genesisLedger)
+        return (ledgerDbWithAnchor RunOnlyNew (forgetLedgerTables genesisLedger)
+               , backingStore)
 
+decodeExtLedgerState' :: forall s blk .
+     HasAnalysis blk
+  => TopLevelConfig blk
+  -> Decoder s (ExtLedgerState blk EmptyMK)
+decodeExtLedgerState' cfg =
+  let ccfg = configCodec cfg
+  in decodeExtLedgerState
+           (decodeDisk ccfg)
+           (decodeDisk ccfg)
+           (decodeDisk ccfg)
 
-processAllUntil ::
-     forall blk b st. (HasHeader blk, HasAnnTip blk)
-  => Either (ImmutableDB IO blk) (ChainDB IO blk)
-  -> ResourceRegistry IO
-  -> BlockComponent blk b
-  -> ExtLedgerState blk ValuesMK
-  -> Limit
-  -> st
-  -> (st -> b -> IO (NextStep, st))
-  -> IO st
-processAllUntil = either processAllImmutableDB processAllChainDB
+-- | This is quite similar to Ou*.OnDisk.replayStartingWith.push but there we
+-- cannot inject the check we are doing here with the callback. Also it performs
+-- @ApplyVal@ instead of @ReapplyVal@.
+push :: forall blk. LedgerSupportsProtocol blk
+     => LedgerDbCfg (ExtLedgerState blk)
+     -> (   blk
+         -> ExtLedgerState blk EmptyMK
+         -> ExtLedgerState blk EmptyMK
+         -> IO ()
+        ) -- ^ A callback that will be executed on every call to push with the
+          -- block, old ledger state and new ledger state
+     -> LedgerBackingStore IO (ExtLedgerState blk)
+     -> blk
+     -> (LedgerDB' blk, Word64, Word64)
+     -> IO (LedgerDB' blk, Word64, Word64)
+push configLedgerDb callback backingStore blk (!ldb, !replayed, !sinceLast) = do
+        !edb' <-
+            defaultReadKeySets (readKeySets backingStore) $
+                  runExceptT $ ledgerDbPush configLedgerDb (ApplyVal blk) ldb
+        let _ = edb' :: Either (AnnLedgerError (ExtLedgerState blk) blk) (LedgerDB' blk)
+            db' = case edb' of
+              Left e -> error $ "Applying block " <> show (blockHash blk) <> " failed with " <> show (annLedgerErr e)
+              Right ld -> ld
 
-processAll ::
-     forall blk b st. (HasHeader blk, HasAnnTip blk)
-  => Either (ImmutableDB IO blk) (ChainDB IO blk)
-  -> ResourceRegistry IO
-  -> BlockComponent blk b
-  -> ExtLedgerState blk ValuesMK
-  -> Limit
-  -> st
-  -> (st -> b -> IO st)
-  -> IO st
-processAll db rr blockComponent initLedger limit initSt cb =
-  processAllUntil db rr blockComponent initLedger limit initSt callback
-    where
-      callback st b = (Continue, ) <$> cb st b
+        callback blk (ledgerDbCurrent ldb) (ledgerDbCurrent db')
+        -- TODO flush policy: flush less often?
 
-processAll_ ::
-     forall blk b. (HasHeader blk, HasAnnTip blk)
-  => Either (ImmutableDB IO blk) (ChainDB IO blk)
-  -> ResourceRegistry IO
-  -> BlockComponent blk b
-  -> ExtLedgerState blk ValuesMK
-  -> Limit
-  -> (b -> IO ())
-  -> IO ()
-processAll_ db registry blockComponent initLedger limit callback =
-    processAll db registry blockComponent initLedger limit () (const callback)
+        -- It's OK to flush without a lock here, since the `LgrDB` has not
+        -- finishined initializing: only this thread has access to the backing
+        -- store.
+        (db'', sinceLast') <-
+          if sinceLast == 100
+          then do
+            let (toFlush, toKeep) =
+                  ledgerDbFlush DbChangelogFlushAllImmutable db'
+            OnDisk.flush backingStore toFlush
+            pure (toKeep, 0)
+          else pure (db', sinceLast + 1)
 
-processAllChainDB ::
-     forall st blk b. (HasHeader blk, HasAnnTip blk)
-  => ChainDB IO blk
-  -> ResourceRegistry IO
-  -> BlockComponent blk b
-  -> ExtLedgerState blk ValuesMK
-  -> Limit
-  -> st
-  -> (st -> b -> IO (NextStep, st))
-  -> IO st
-processAllChainDB chainDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
-    itr <- case headerStateTip headerState of
-      Origin           -> ChainDB.streamAll
-                             chainDB
-                             registry
-                             blockComponent
-      NotOrigin annTip -> ChainDB.streamFrom
-                             (StreamFromExclusive $ annTipPoint annTip)
-                             chainDB
-                             registry
-                             blockComponent
-    go itr limit initState
+        -- TODO snapshot policy: create snapshots during replay?
+
+        let replayed' :: Word64
+            !replayed' = replayed + 1
+
+        return (db'', replayed', sinceLast')
+
+-- | A check that just counts how many blocks have been applied.
+onlyCheckNumBlocks :: Maybe Int -> IO (b -> IO (NextBlock b))
+onlyCheckNumBlocks = \case
+    Nothing -> return $ return . NextBlock
+    Just l -> do
+      countIORef <- newIORef 0
+      return $ \b -> do
+        c <- readIORef countIORef
+        modifyIORef countIORef (+ 1)
+        if c >= l
+          then return (NextBlock b)
+          else return NoMoreBlocks
+
+consumeStream ::
+     StreamAPI IO blk a
+  -> Point blk -- ^ the starting point
+  -> st -- ^ initial state
+  -> (a -> st -> IO st) -- ^ transition function
+  -> ExceptT (InitFailure blk) IO st
+consumeStream s point = streamAll s point InitFailureTooRecent
+
+mkStream ::
+     HasHeader blk
+  => (a -> IO (NextBlock a)) -- ^ short circuiting monadic condition
+  -> BlockComponent blk a
+  -> Either (ImmutableDB IO blk) (ChainDB IO blk)
+  -> StreamAPI IO blk a
+mkStream c bc = either (streamAPI' c bc) (chainDBStreamAPI' c bc)
+
+-- | A StreamAPI usable by 'streamAll' but traversing the whole ChainDB.
+--
+-- Pretty much similar to `LgrDB.streamAPI`.
+chainDBStreamAPI' ::
+     forall blk a.
+     (HasHeader blk)
+  => (a -> IO (NextBlock a))
+  -> BlockComponent blk a
+  -> ChainDB IO blk
+  -> StreamAPI IO blk a
+chainDBStreamAPI' shouldStop blockComponent chainDB = StreamAPI streamAfter
   where
-    go :: ChainDB.Iterator IO blk b -> Limit -> st -> IO st
-    go itr lt !st = case decreaseLimit lt of
-      Nothing             -> return st
-      Just decreasedLimit -> do
+    streamAfter :: Point blk
+                -> (Either (RealPoint blk) (IO (NextBlock a)) -> IO b)
+                -> IO b
+    streamAfter tip k = withRegistry $ \registry -> do
+        itr <- ChainDB.streamFrom
+                 (StreamFromExclusive tip)
+                 chainDB
+                 registry
+                 blockComponent
+        k $ Right $ streamUsing itr
+
+    streamUsing :: ChainDB.Iterator IO blk a
+                -> IO (NextBlock a)
+    streamUsing itr = do
         itrResult <- ChainDB.iteratorNext itr
         case itrResult of
-          ChainDB.IteratorExhausted    -> return st
-          ChainDB.IteratorResult b     -> callback st b >>= \case
-            (Continue, nst) -> go itr decreasedLimit nst
-            (Stop, nst)     -> return nst
-          ChainDB.IteratorBlockGCed pt -> error $ "block GC'ed " <> show pt
-
-processAllImmutableDB ::
-     forall st blk b. (HasHeader blk, HasAnnTip blk)
-  => ImmutableDB IO blk
-  -> ResourceRegistry IO
-  -> BlockComponent blk b
-  -> ExtLedgerState blk ValuesMK
-  -> Limit
-  -> st
-  -> (st -> b -> IO (NextStep, st))
-  -> IO st
-processAllImmutableDB immutableDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
-    itr <- case headerStateTip headerState of
-      Origin           -> ImmutableDB.streamAll
-                             immutableDB
-                             registry
-                             blockComponent
-      NotOrigin annTip -> ImmutableDB.streamAfterKnownPoint
-                             immutableDB
-                             registry
-                             blockComponent
-                            (annTipPoint annTip)
-    go itr limit initState
-  where
-    go :: ImmutableDB.Iterator IO blk b -> Limit -> st -> IO st
-    go itr lt !st = case decreaseLimit lt of
-      Nothing               -> return st
-      Just decreasedLimit   -> do
-        itrResult <- ImmutableDB.iteratorNext itr
-        case itrResult of
-          ImmutableDB.IteratorExhausted -> return st
-          ImmutableDB.IteratorResult b  -> callback st b >>= \case
-            (Continue, nst) -> go itr decreasedLimit nst
-            (Stop, nst)     -> return nst
+          ChainDB.IteratorExhausted    -> return NoMoreBlocks
+          ChainDB.IteratorResult b     -> shouldStop b
+          ChainDB.IteratorBlockGCed point -> error $ "block GC'ed " <> show point

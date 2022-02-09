@@ -469,8 +469,11 @@ instance TableStuff (LedgerState TestBlock) where
   traverseLedgerTables _                                       NoTestLedgerTables = pure NoTestLedgerTables
   zipLedgerTables      _                    NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
   zipLedgerTables2     _ NoTestLedgerTables NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  zipLedgerTablesA     _                    NoTestLedgerTables NoTestLedgerTables = pure NoTestLedgerTables
+  zipLedgerTables2A    _ NoTestLedgerTables NoTestLedgerTables NoTestLedgerTables = pure NoTestLedgerTables
   foldLedgerTables     _                                       NoTestLedgerTables = mempty
   foldLedgerTables2    _                    NoTestLedgerTables NoTestLedgerTables = mempty
+  namesLedgerTables                                                               = NoTestLedgerTables
 
 instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
     codecLedgerTables = NoTestLedgerTables

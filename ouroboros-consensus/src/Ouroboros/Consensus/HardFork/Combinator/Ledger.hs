@@ -194,7 +194,7 @@ tickOne :: SingleEraBlock blk
         -> SlotNo
         -> Index                                          xs   blk
         -> WrapPartialLedgerConfig                             blk
-        -> (Flip LedgerState DiffMK)                         blk
+        -> (Flip LedgerState DiffMK)                           blk
         -> (     LedgerResult (LedgerState (HardForkBlock xs))
              :.: FlipTickedLedgerState DiffMK
            )                                                   blk
@@ -230,6 +230,11 @@ instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerSta
   zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState x) f
   foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState x) f
   foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState x) f
+  namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState x)
+  zipLedgerTablesA   f (LedgerTablesOne l) (LedgerTablesOne r) =
+      LedgerTablesOne <$> zipLedgerTablesA f l r
+  zipLedgerTables2A  f (LedgerTablesOne l) (LedgerTablesOne c) (LedgerTablesOne r) =
+      LedgerTablesOne <$> zipLedgerTables2A f l c r
 
 deriving instance Eq (LedgerTables (LedgerState x) mk) => Eq (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
 

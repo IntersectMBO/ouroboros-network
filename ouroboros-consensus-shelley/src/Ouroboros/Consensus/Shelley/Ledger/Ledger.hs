@@ -291,7 +291,7 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock proto era)
 
   mapLedgerTables f (ShelleyLedgerTables utxo) = ShelleyLedgerTables (f utxo)
 
-  traverseLedgerTables f (ShelleyLedgerTables utxo) = ShelleyLedgerTables <$> (f utxo)
+  traverseLedgerTables f (ShelleyLedgerTables utxo) = ShelleyLedgerTables <$> f utxo
 
   zipLedgerTables f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
       ShelleyLedgerTables (f utxoL utxoR)
@@ -299,13 +299,25 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock proto era)
   zipLedgerTables2
     f
     (ShelleyLedgerTables utxoL)
-    (ShelleyLedgerTables utxoM)
+    (ShelleyLedgerTables utxoC)
     (ShelleyLedgerTables utxoR) =
-      ShelleyLedgerTables (f utxoL utxoM utxoR)
+      ShelleyLedgerTables (f utxoL utxoC utxoR)
+
+  zipLedgerTablesA f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
+      ShelleyLedgerTables <$> f utxoL utxoR
+
+  zipLedgerTables2A
+    f
+    (ShelleyLedgerTables utxoL)
+    (ShelleyLedgerTables utxoC)
+    (ShelleyLedgerTables utxoR) =
+      ShelleyLedgerTables <$> f utxoL utxoC utxoR
 
   foldLedgerTables f (ShelleyLedgerTables utxo) = f utxo
 
-  foldLedgerTables2 f (ShelleyLedgerTables utxo1) (ShelleyLedgerTables utxo2) = f utxo1 utxo2
+  foldLedgerTables2 f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) = f utxoL utxoR
+
+  namesLedgerTables = ShelleyLedgerTables (NameMK "utxo")
 
 instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock proto era)) where
   projectLedgerTablesTicked        = tickedShelleyLedgerTables
