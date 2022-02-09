@@ -119,6 +119,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
                      ValidationPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+                     (BackingStoreSelector)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
@@ -172,6 +174,9 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
 
       -- | Network P2P Mode switch
     , rnEnableP2P :: NetworkP2PMode p2p
+
+      -- | Whether to use the LMDB or the in-memory backend for UTxO-HD.
+    , rnBackingStoreSelector :: !(BackingStoreSelector m)
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -751,8 +756,7 @@ stdLowLevelRunNodeArgsIO ::
           NodeToClientVersionData
           blk
           p2p)
-stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
-                         StdRunNodeArgs{..} = do
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStoreSelector } StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
     pure LowLevelRunNodeArgs
@@ -761,7 +765,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
       , llrnCustomiseHardForkBlockchainTimeArgs = id
       , llrnKeepAliveRng
       , llrnChainDbArgsDefaults =
-          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy
+          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy rnBackingStoreSelector
       , llrnCustomiseChainDbArgs = id
       , llrnCustomiseNodeKernelArgs
       , llrnRunDataDiffusion =

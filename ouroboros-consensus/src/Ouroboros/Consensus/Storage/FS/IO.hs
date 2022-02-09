@@ -71,6 +71,7 @@ ioHasFS mount = HasFS {
     , renameFile = \fp1 fp2 -> rethrowFsError fp1 $
         Dir.renameFile (root fp1) (root fp2)
     , mkFsErrorPath = fsToFsErrorPath mount
+    , unsafeToFilePath = pure . root
     }
   where
     root :: FsPath -> FilePath

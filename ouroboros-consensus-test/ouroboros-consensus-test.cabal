@@ -71,6 +71,7 @@ library
                        Test.Util.Slots
                        Test.Util.Split
                        Test.Util.Stream
+                       Test.Util.Tasty.Traceable
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
@@ -112,6 +113,7 @@ library
                      , transformers
                      , tree-diff
                      , utf8-string
+                     , tagged
 
                      , io-classes
                      , io-sim
@@ -223,6 +225,8 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ImmutableDB.StateMachine
                        Test.Ouroboros.Storage.LedgerDB
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
+                       Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.LMDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk
                        Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
@@ -281,6 +285,7 @@ test-suite test-storage
                        -Wmissing-export-lists
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+                       -threaded
 
 test-suite test-infra
   type:                exitcode-stdio-1.0

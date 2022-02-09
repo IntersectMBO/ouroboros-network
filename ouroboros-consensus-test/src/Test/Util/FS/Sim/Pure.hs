@@ -44,4 +44,5 @@ pureHasFS = HasFS {
     , removeFile               = Mock.removeFile
     , renameFile               = Mock.renameFile
     , mkFsErrorPath            = fsToFsErrorPathUnmounted
+    , unsafeToFilePath         = \_ -> error "pureHasFS:unsafeToFilePath"
     }
