@@ -97,8 +97,12 @@ data RangeQuery keys = RangeQuery {
       -- will return no results. (This is the steady-state once a looping range
       -- query reaches the end of the table.)
       rqPrev  :: Maybe keys
-      -- | How many values to read. If the query returns fewer values than this
-      -- for a table, then 'rqPrev' included the greatest key in that table.
+      -- | Roughly how many values to read.
+      --
+      -- The query may return a different number of values than this even if it
+      -- has not reached the last key. The only crucial invariant is that the
+      -- query only returns an empty map if there are no more keys to read on
+      -- disk.
     , rqCount :: !Int
     }
 
