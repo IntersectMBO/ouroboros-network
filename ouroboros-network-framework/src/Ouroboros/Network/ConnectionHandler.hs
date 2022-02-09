@@ -189,7 +189,6 @@ makeConnectionHandler
     -> SingMuxMode muxMode
     -- ^ describe whether this is outbound or inbound connection, and bring
     -- evidence that we can use mux with it.
-    -> MiniProtocolBundle muxMode
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode peerAddr ByteString m a b)
@@ -198,7 +197,6 @@ makeConnectionHandler
     -- exception to that thread, when trying to terminate the process.
     -> MuxConnectionHandler muxMode socket peerAddr versionNumber versionData ByteString m a b
 makeConnectionHandler muxTracer singMuxMode
-                      miniProtocolBundle
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -292,7 +290,7 @@ makeConnectionHandler muxTracer singMuxMode
                             connectionId
                             (readTVar <$> controlMessageBundle)
                             app
-                  mux <- newMux miniProtocolBundle
+                  mux <- newMux (mkMiniProtocolBundle muxBundle)
                   let !handle = Handle {
                           hMux            = mux,
                           hMuxBundle      = muxBundle,
@@ -359,7 +357,7 @@ makeConnectionHandler muxTracer singMuxMode
                             connectionId
                             (readTVar <$> controlMessageBundle)
                             app
-                  mux <- newMux miniProtocolBundle
+                  mux <- newMux (mkMiniProtocolBundle muxBundle)
                   let !handle = Handle {
                           hMux            = mux,
                           hMuxBundle      = muxBundle,

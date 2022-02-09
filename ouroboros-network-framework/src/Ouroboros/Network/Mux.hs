@@ -35,6 +35,7 @@ module Ouroboros.Network.Mux
   , runMuxPeer
   , toApplication
   , mkMuxApplicationBundle
+  , mkMiniProtocolBundle
   , ControlMessage (..)
   , ControlMessageSTM
   , continueForever
@@ -61,8 +62,10 @@ import           Network.TypedProtocol.Pipelined
 
 import           Network.Mux (HasInitiator, HasResponder,
                      MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
-                     MuxErrorType (..), MuxMode (..))
-import qualified Network.Mux.Compat as Mux
+                     MuxErrorType (..), MiniProtocolBundle (..),
+                     MiniProtocolInfo, MuxMode (..))
+import qualified Network.Mux.Types as Mux
+import qualified Network.Mux.Compat as Mux.Compat
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId
@@ -321,13 +324,13 @@ toApplication :: (MonadCatch m, MonadAsync m)
               => ConnectionId addr
               -> ControlMessageSTM m
               -> OuroborosApplication mode addr LBS.ByteString m a b
-              -> Mux.MuxApplication mode m a b
+              -> Mux.Compat.MuxApplication mode m a b
 toApplication connectionId controlMessageSTM (OuroborosApplication ptcls) =
-  Mux.MuxApplication
-    [ Mux.MuxMiniProtocol {
-        Mux.miniProtocolNum    = miniProtocolNum ptcl,
-        Mux.miniProtocolLimits = miniProtocolLimits ptcl,
-        Mux.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
+  Mux.Compat.MuxApplication
+    [ Mux.Compat.MuxMiniProtocol {
+        Mux.Compat.miniProtocolNum    = miniProtocolNum ptcl,
+        Mux.Compat.miniProtocolLimits = miniProtocolLimits ptcl,
+        Mux.Compat.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
       }
     | ptcl <- ptcls connectionId controlMessageSTM ]
 
@@ -347,17 +350,42 @@ mkMuxApplicationBundle connectionId controlMessageBundle appBundle =
     mkApplication controlMessageSTM app = app connectionId controlMessageSTM
 
 
+-- | Make 'MiniProtocolBundle', which is used to create a mux interface with
+-- 'newMux'.   The output of 'mkMuxApplicationBundle' can be used as input.
+--
+mkMiniProtocolBundle :: MuxBundle mode bytes m a b
+                     -> MiniProtocolBundle mode
+mkMiniProtocolBundle = MiniProtocolBundle . foldMap fn
+  where
+    fn :: [MiniProtocol mode bytes m a b] -> [MiniProtocolInfo mode]
+    fn ptcls = [ Mux.MiniProtocolInfo
+                   { Mux.miniProtocolNum
+                   , Mux.miniProtocolDir = dir
+                   , Mux.miniProtocolLimits
+                   }
+               | MiniProtocol { miniProtocolNum
+                              , miniProtocolLimits
+                              , miniProtocolRun
+                              }
+                   <- ptcls
+               , dir <- case miniProtocolRun of
+                   InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]
+                   ResponderProtocolOnly{}         -> [ Mux.ResponderDirectionOnly ]
+                   InitiatorAndResponderProtocol{} -> [ Mux.InitiatorDirection
+                                                      , Mux.ResponderDirection ]
+               ]
+
 toMuxRunMiniProtocol :: forall mode m a b.
                         (MonadCatch m, MonadAsync m)
                      => RunMiniProtocol mode LBS.ByteString m a b
-                     -> Mux.RunMiniProtocol mode m a b
+                     -> Mux.Compat.RunMiniProtocol mode m a b
 toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
-  Mux.InitiatorProtocolOnly (runMuxPeer i . fromChannel)
+  Mux.Compat.InitiatorProtocolOnly (runMuxPeer i . fromChannel)
 toMuxRunMiniProtocol (ResponderProtocolOnly r) =
-  Mux.ResponderProtocolOnly (runMuxPeer r . fromChannel)
+  Mux.Compat.ResponderProtocolOnly (runMuxPeer r . fromChannel)
 toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
-  Mux.InitiatorAndResponderProtocol (runMuxPeer i . fromChannel)
-                                    (runMuxPeer r . fromChannel)
+  Mux.Compat.InitiatorAndResponderProtocol (runMuxPeer i . fromChannel)
+                                           (runMuxPeer r . fromChannel)
 
 -- |
 -- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.

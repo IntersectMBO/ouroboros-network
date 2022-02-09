@@ -397,7 +397,6 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket local
       (makeConnectionHandler
         muxTracer
         SingInitiatorMode
-        clientMiniProtocolBundle
         HandshakeArguments {
             -- TraceSendRecv
             haHandshakeTracer = (name,) `contramap` nullTracer,
@@ -416,25 +415,6 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket local
       (\cm ->
         k cm `catch` \(e :: SomeException) -> throwIO e)
   where
-    clientMiniProtocolBundle :: Mux.MiniProtocolBundle InitiatorMode
-    clientMiniProtocolBundle = Mux.MiniProtocolBundle
-        [ Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 1,
-            Mux.miniProtocolDir = Mux.InitiatorDirectionOnly,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 2,
-            Mux.miniProtocolDir = Mux.InitiatorDirectionOnly,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 3,
-            Mux.miniProtocolDir = Mux.InitiatorDirectionOnly,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        ]
-
     clientApplication :: Bundle
                           (ConnectionId peerAddr
                             -> ControlMessageSTM m
@@ -588,7 +568,6 @@ withBidirectionalConnectionManager name timeouts
         (makeConnectionHandler
           muxTracer
           SingInitiatorResponderMode
-          serverMiniProtocolBundle
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -629,42 +608,6 @@ withBidirectionalConnectionManager name timeouts
           `catch` \(e :: SomeException) -> do
             throwIO e
   where
-    -- for a bidirectional mux we need to define 'Mux.MiniProtocolInfo' for each
-    -- protocol for each direction.
-    serverMiniProtocolBundle :: Mux.MiniProtocolBundle InitiatorResponderMode
-    serverMiniProtocolBundle = Mux.MiniProtocolBundle
-        [ Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 1,
-            Mux.miniProtocolDir = Mux.ResponderDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 1,
-            Mux.miniProtocolDir = Mux.InitiatorDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 2,
-            Mux.miniProtocolDir = Mux.ResponderDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 2,
-            Mux.miniProtocolDir = Mux.InitiatorDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 3,
-            Mux.miniProtocolDir = Mux.ResponderDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        , Mux.MiniProtocolInfo {
-            Mux.miniProtocolNum = Mux.MiniProtocolNum 3,
-            Mux.miniProtocolDir = Mux.InitiatorDirection,
-            Mux.miniProtocolLimits = Mux.MiniProtocolLimits maxBound
-          }
-        ]
-
     serverApplication :: Bundle
                           (ConnectionId peerAddr
                             -> ControlMessageSTM m
