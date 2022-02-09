@@ -331,7 +331,6 @@ takeSnapshot ::
      forall m blk.
      ( IOLike m
      , LgrDbSerialiseConstraints blk
-     , HasHeader blk
      , LedgerSupportsProtocol blk
      )
   => LgrDB m blk -> m (Maybe (DiskSnapshot, RealPoint blk))

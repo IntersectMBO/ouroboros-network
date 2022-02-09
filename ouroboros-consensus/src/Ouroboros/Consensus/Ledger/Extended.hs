@@ -257,7 +257,9 @@ instance (LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk) blk whe
   getBlockKeySets = ExtLedgerStateTables . getBlockKeySets
 
 instance
-     StowableLedgerTables (LedgerState blk)
+     ( LedgerSupportsProtocol blk
+     , StowableLedgerTables (LedgerState blk)
+     )
   => StowableLedgerTables (ExtLedgerState blk) where
 
   stowLedgerTables ExtLedgerState{headerState, ledgerState} =
@@ -271,6 +273,8 @@ instance
           headerState
         , ledgerState = unstowLedgerTables ledgerState
         }
+
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 {-------------------------------------------------------------------------------
   Serialisation

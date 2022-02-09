@@ -582,8 +582,9 @@ instance Typeable mk => FromCBOR (LedgerTables (LedgerState TestBlock) mk) where
   fromCBOR = (\() -> NoTestLedgerTables) <$> fromCBOR
 
 instance StowableLedgerTables (LedgerState TestBlock) where
-  stowLedgerTables   = convertMapKind
-  unstowLedgerTables = convertMapKind
+  stowLedgerTables     = convertMapKind
+  unstowLedgerTables   = convertMapKind
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 instance TickedTableStuff (LedgerState TestBlock) where
   projectLedgerTablesTicked _                         = NoTestLedgerTables

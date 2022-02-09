@@ -86,6 +86,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
+  , isCandidateForUnstowDefault
     -- ** Changelog
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
@@ -108,6 +109,8 @@ import qualified Control.Exception as Exn
 import           Control.Monad (when)
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
+import qualified Data.Map as Map
+import           Data.Monoid (All (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
@@ -778,6 +781,20 @@ class StowableLedgerTables (l :: LedgerStateKind) where
   --
   -- This function should check that the UTxO inside the ledger state is not empty.
   isCandidateForUnstow :: l EmptyMK -> Bool
+
+-- | Returns false if and only if all tables are empty
+isCandidateForUnstowDefault ::
+     (TableStuff l, StowableLedgerTables l)
+  => l EmptyMK -> Bool
+isCandidateForUnstowDefault =
+      not
+    . getAll
+    . foldLedgerTables (All . nullValues)
+    . projectLedgerTables
+    . unstowLedgerTables
+  where
+    nullValues :: ApplyMapKind ValuesMK k v -> Bool
+    nullValues (ApplyValuesMK (UtxoValues vs)) = Map.null vs
 
 {-------------------------------------------------------------------------------
   Changelog

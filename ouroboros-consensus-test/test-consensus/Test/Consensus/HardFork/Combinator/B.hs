@@ -202,8 +202,9 @@ instance InMemory (Ticked1 (LedgerState BlockB)) where
   convertMapKind = TickedLedgerStateB . convertMapKind . getTickedLedgerStateB
 
 instance StowableLedgerTables (LedgerState BlockB) where
-  stowLedgerTables   = convertMapKind
-  unstowLedgerTables = convertMapKind
+  stowLedgerTables     = convertMapKind
+  unstowLedgerTables   = convertMapKind
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 instance ToCBOR (LedgerTables (LedgerState BlockB) ValuesMK) where
   toCBOR NoBTables = toCBOR ()

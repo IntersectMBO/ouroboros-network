@@ -564,7 +564,8 @@ instance ( ShowLedgerState (LedgerState m)
         } = st
 
 instance
-     ( StowableLedgerTables (LedgerState m)
+     ( Bridge m a
+     , StowableLedgerTables (LedgerState m)
      , StowableLedgerTables (LedgerState a)
      )
   => StowableLedgerTables (LedgerState (DualBlock m a)) where
@@ -594,6 +595,8 @@ instance
         , dualLedgerStateAux
         , dualLedgerStateBridge
         } = st
+
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 {-------------------------------------------------------------------------------
   Utilities for working with the extended ledger state

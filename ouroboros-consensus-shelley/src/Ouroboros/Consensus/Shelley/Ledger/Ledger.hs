@@ -357,6 +357,8 @@ instance
         , shelleyLedgerTransition
         } = st
 
+  isCandidateForUnstow = isCandidateForUnstowDefault
+
 projectUtxoSL ::
      SL.NewEpochState era
   -> ApplyMapKind ValuesMK (SL.TxIn (EraCrypto era)) (Core.TxOut era)

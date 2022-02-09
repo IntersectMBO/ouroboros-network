@@ -151,8 +151,9 @@ instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
   showsLedgerState _sing = shows
 
 instance StowableLedgerTables (LedgerState ByronSpecBlock) where
-  stowLedgerTables   = convertMapKind
-  unstowLedgerTables = convertMapKind
+  stowLedgerTables     = convertMapKind
+  unstowLedgerTables   = convertMapKind
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 instance Typeable mk => ToCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
   toCBOR NoByronSpecLedgerTables = versionZeroProductToCBOR []
