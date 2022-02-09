@@ -147,6 +147,19 @@ data HasFS m h = HasFS {
 
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
+
+    -- | Create a concrete @`FilePath`@ from an abstract @`FsPath`@.
+    --
+    -- Parts of the storage layer that can not be simulated, such as the
+    -- @`LMDBBackingStore`@, can only run in `IO` (or some `m` for which
+    -- @`MonadIO` m@), since the backing store requires concrete @`FilePath`@s
+    -- to work with. Seeing as we use @`HasFs`@ as the interface to the
+    -- filesystem, we must add the possibility of creating concrete
+    -- @`FilePath`@s to the interface.
+    --
+    -- Postcondition: Should throw an error for any @m@ that is not @IO@
+    -- (or for which we do not have @`MonadIO` m@).
+  , unsafeToFilePath         :: !(FsPath -> m FilePath)
   }
   deriving NoThunks via OnlyCheckWhnfNamed "HasFS" (HasFS m h)
 

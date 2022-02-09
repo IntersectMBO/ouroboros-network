@@ -181,8 +181,11 @@ instance TableStuff (LedgerState BlockB) where
   traverseLedgerTables _f                     NoBTables = pure NoBTables
   zipLedgerTables      _f           NoBTables NoBTables = NoBTables
   zipLedgerTables2     _f NoBTables NoBTables NoBTables = NoBTables
+  zipLedgerTablesA     _f           NoBTables NoBTables = pure NoBTables
+  zipLedgerTables2A    _f NoBTables NoBTables NoBTables = pure NoBTables
   foldLedgerTables     _f                     NoBTables = mempty
   foldLedgerTables2    _f           NoBTables NoBTables = mempty
+  namesLedgerTables                                     = NoBTables
 
 instance SufficientSerializationForAnyBackingStore (LedgerState BlockB) where
     codecLedgerTables = NoBTables
