@@ -416,9 +416,12 @@ instance
   => FromCBOR (LedgerTables (LedgerState (SimpleBlock c ext)) ValuesMK) where
   fromCBOR = NoMockTables <$ CBOR.decodeNull
 
-instance StowableLedgerTables (LedgerState (SimpleBlock c ext)) where
-  stowLedgerTables   = convertMapKind
-  unstowLedgerTables = convertMapKind
+instance
+     (Typeable ext, SimpleCrypto c)
+  => StowableLedgerTables (LedgerState (SimpleBlock c ext)) where
+  stowLedgerTables     = convertMapKind
+  unstowLedgerTables   = convertMapKind
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
