@@ -18,6 +18,7 @@
 module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
   ( newLMDBBackingStore
   , DbErr
+  , LMDBInit(..)
   ) where
 
 import qualified Database.LMDB.Simple as LMDB
@@ -45,7 +46,6 @@ import Control.Monad.Trans.Class
 import qualified Database.LMDB.Simple.Extra as LMDB
 import Data.Foldable (for_)
 import Database.LMDB.Simple (ReadWrite)
-import Cardano.Prelude (isJust)
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 
 {-
@@ -88,6 +88,7 @@ instance Exn.Exception DbErr
 
 data DbState  = DbState
   { dbsSeq :: !(WithOrigin SlotNo)
+  -- TODO a version field
   } deriving (Show, Generic)
 
 instance Serialise (DbState)
@@ -152,6 +153,24 @@ writeLMDBTable_amk :: (Serialise k, Serialise v)
 writeLMDBTable_amk (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyDiffMK diff) =
   writeLMDBTable db diff $> Tables.ApplyEmptyMK 
 
+readDbSettings :: LMDB.DBRef LMDB.ReadWrite DbState -> LMDB.Transaction mode DbState
+readDbSettings dbSettings = liftIO (LMDB.readDBRef dbSettings) >>= \case
+  Just x -> pure x
+  Nothing -> Exn.throw $ DbErrNoSettings
+
+withDbSettingsRW :: LMDB.DBRef LMDB.ReadWrite DbState -> (DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState)) -> LMDB.Transaction LMDB.ReadWrite a
+withDbSettingsRW dbSettings f  =
+  readDbSettings dbSettings >>= f >>= \(r, new_s) ->
+    liftIO $ LMDB.writeDBRef dbSettings (Just new_s) $> r
+
+readDbSettingsMaybeNull :: LMDB.DBRef LMDB.ReadWrite DbState -> LMDB.Transaction mode (Maybe DbState)
+readDbSettingsMaybeNull dbSettings = liftIO (LMDB.readDBRef dbSettings)
+
+withDbSettingsRWMaybeNull :: LMDB.DBRef LMDB.ReadWrite DbState -> (Maybe DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState)) -> LMDB.Transaction LMDB.ReadWrite a
+withDbSettingsRWMaybeNull dbSettings f  =
+  readDbSettingsMaybeNull dbSettings >>= f >>= \(r, new_s) ->
+    liftIO $ LMDB.writeDBRef dbSettings (Just new_s) $> r
+
 data GuardDbDir  = GDDMustExist | GDDMustNotExist
 
 guardDbDir :: IOLike m => GuardDbDir -> FS.SomeHasFS m -> FS.FsPath -> m FilePath
@@ -166,36 +185,72 @@ guardDbDir gdd (FS.SomeHasFS fs) path = do
 defaultLMDBLimits :: LMDB.Limits
 defaultLMDBLimits = LMDB.defaultLimits
   { LMDB.mapSize = 6_000_000_000
-  , LMDB.maxDatabases = 10
+  , LMDB.maxDatabases = 10 -- We use 1 database per field + one for the state (i.e. sidetable)
   , LMDB.maxReaders = 16
   }
 
+initFromVals :: Tables.TableStuff l
+  => WithOrigin SlotNo
+  -> Tables.LedgerTables l Tables.ValuesMK
+  -> Db l
+  -> IO ()
+initFromVals dbsSeq vals Db{..} = LMDB.readWriteTransaction dbEnv $
+   withDbSettingsRWMaybeNull dbSettings $ \case
+     Nothing -> Tables.zip2ALedgerTables initLMDBTable_amk dbBackingTables vals $> ((),DbState{dbsSeq})
+     Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
+
+
+initFromLMDBs :: FS.SomeHasFS IO -> FS.FsPath -> FS.FsPath -> IO ()
+initFromLMDBs _shfs _from _to= do
+  error "unimplemented"
+  -- copy lmdb from _from to _to
+  -- the new dir has been created
+  -- need to validate
+
+
+lmdbCopy :: Db l -> FS.SomeHasFS m -> HD.BackingStorePath -> m ()
+lmdbCopy = error "unimplemented"
+
+-- | How to initialise an LMDB Backing store
+data LMDBInit l
+  = LIInitialiseFromMemory (WithOrigin SlotNo) (Tables.LedgerTables l Tables.ValuesMK) -- ^ Initialise with these values
+  | LIInitialiseFromLMDB FS.FsPath -- ^ Initialise by copying from an LMDB db at this path
+  | LINoInitialise -- ^ The database is already initialised
+
 -- | Initialise a backing store
--- An initial value should be passed if and only if this store is being
--- initialised for the first time
--- This isn't quite right: We also need to be able to take a snapshot to load from
 newLMDBBackingStore :: forall l. (Tables.TableStuff l)
-  => (FS.SomeHasFS IO, FS.FsPath)
-  -> Maybe (WithOrigin SlotNo, Tables.LedgerTables l Tables.ValuesMK)   -- ^ initial seqno and contents. Just iff db is empty
+  => FS.SomeHasFS IO 
+  -> FS.FsPath -- ^ The path for the store we are opening
+  -> LMDBInit l 
   -> IO (LMDBBackingStore l)
-newLMDBBackingStore (sfs, path) mb_init = do
+newLMDBBackingStore sfs path init_db = do
   let
     limits = defaultLMDBLimits
-    needs_init = isJust mb_init
-  dbFilePath <- guardDbDir (if needs_init then GDDMustNotExist else GDDMustExist) sfs path
+    (gdd, copy_db_action, init_action) = case init_db of
+      LIInitialiseFromLMDB fp
+        -- If fp == path then this is the LINoInitialise case
+        | fp /= path -> (GDDMustNotExist, initFromLMDBs sfs fp path, \_ -> pure ())
+      LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), initFromVals slot vals)
+      _ -> (GDDMustExist, pure (), \_ -> pure ())
+  -- get the filepath for this db creates the directory if appropriate
+  dbFilePath <- guardDbDir gdd sfs path
+
+  -- copy from another lmdb path if appropriate
+  copy_db_action
+
+  -- open this database
   dbEnv <- LMDB.openEnvironment dbFilePath limits
 
+  -- the LMDB.Database that holds the DbState (i.e. sequence number)
   dbstate_db <- LMDB.readOnlyTransaction dbEnv $ LMDB.getDatabase (Just "_dbstate")
-
   dbSettings <- LMDB.newDBRef dbEnv dbstate_db (0 :: Int)
+
   dbValueHandles <- IOLike.newTMVarIO Map.empty
+
+  -- Here we get the LMDB.Databases for the tables of the ledger state
   dbBackingTables <- LMDB.readOnlyTransaction dbEnv $
     Tables.traverseLedgerTables getDb_amk Tables.namesLedgerTables
 
-  -- initLMDBTable will fail on trying to init a non-empty table
-  for_ mb_init $ \(seqno, vals) -> LMDB.readWriteTransaction dbEnv $ do
-    void $ Tables.zip2ALedgerTables initLMDBTable_amk dbBackingTables vals
-    liftIO $ LMDB.writeDBRef dbSettings (Just $ DbState seqno)
   let
     db = Db{..}
     bsClose = do
@@ -212,6 +267,9 @@ newLMDBBackingStore (sfs, path) mb_init = do
         when (At slot <= dbsSeq) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
         void $ Tables.zip2ALedgerTables writeLMDBTable_amk dbBackingTables diffs
         pure ((), s {dbsSeq = At slot})
+
+  -- now initialise those tables if appropriate
+  init_action db
 
   pure HD.BackingStore{..}
 
@@ -312,16 +370,3 @@ getLMDBBackingStoreValueHandle Db{..} = do
 
 -- data LMDBField k v where
 --   LMDBField :: (Serialise k, Serialise v, Typeable k, Typeable v) => LMDB.Database k v -> LMDBField k v
-
-lmdbCopy = undefined
-
-readDbSettings :: LMDB.DBRef LMDB.ReadWrite DbState -> LMDB.Transaction mode DbState
-readDbSettings dbSettings = liftIO (LMDB.readDBRef dbSettings) >>= \case
-  Just x -> pure x
-  Nothing -> Exn.throw $ DbErrNoSettings
-
-withDbSettingsRW :: LMDB.DBRef LMDB.ReadWrite DbState -> (DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState)) -> LMDB.Transaction LMDB.ReadWrite a
-withDbSettingsRW dbSettings f  =
-  readDbSettings dbSettings >>= f >>= \(r, new_s) ->
-    liftIO $ LMDB.writeDBRef dbSettings (Just new_s) $> r
-

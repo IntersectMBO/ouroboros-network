@@ -427,7 +427,7 @@ restoreBackingStore someHasFs snapshot bss = do
     -- '_tablesPath'.
 
     store <- case bss of
-      LMDBBackingStore fp -> HD.newLMDBBackingStore (someHasFs, fp) Nothing
+      LMDBBackingStore fp -> HD.newLMDBBackingStore someHasFs fp (HD.LIInitialiseFromLMDB loadPath)
       InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (zipLedgerTables applyDiff_)
@@ -450,7 +450,7 @@ newBackingStore ::
   -> SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
 newBackingStore bss someHasFS tables = do
   store <- case bss of
-    LMDBBackingStore fp -> HD.newLMDBBackingStore (someHasFS, fp) (Just (Origin, tables))
+    LMDBBackingStore fp -> HD.newLMDBBackingStore someHasFS fp (HD.LIInitialiseFromMemory Origin tables)
     InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (zipLedgerTables applyDiff_)
