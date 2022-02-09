@@ -152,6 +152,7 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
                              Left _err -> error "impossible!"
                              Right vs  -> pure vs
                         )
+                        (error "TODO range read")
                         close
                 se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
                 case se of
