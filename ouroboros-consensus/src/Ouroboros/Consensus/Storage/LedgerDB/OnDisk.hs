@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Abstraction over the ledger-state HD interface
   , LedgerBackingStore (..)
   , LedgerBackingStoreValueHandle (..)
+  , BackingStoreSelector(..)
   , flush
   , readKeySets
   , readKeySetsVH
@@ -92,6 +93,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as HD
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -233,6 +235,7 @@ initLedgerDB ::
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk
   -> RunAlsoLegacy
+  -> BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
 initLedgerDB replayTracer
              tracer
@@ -242,7 +245,8 @@ initLedgerDB replayTracer
              cfg
              getGenesisLedger
              streamAPI
-             runAlsoLegacy = do
+             runAlsoLegacy
+             bss = do
     (initLog, initDb, backingStore, replayTracer') <- initFromSnapshotOrGenesis
                                                         replayTracer
                                                         tracer
@@ -251,6 +255,7 @@ initLedgerDB replayTracer
                                                         decLedger
                                                         decHash
                                                         runAlsoLegacy
+                                                        bss
     (replayedDB, replayedBlocks) <- replayStartingWith
                                         replayTracer'
                                         cfg
@@ -279,13 +284,14 @@ initFromSnapshotOrGenesis ::
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> RunAlsoLegacy
+  -> BackingStoreSelector m
   -> m
       ( InitLog blk
       , LedgerDB' blk
       , LedgerBackingStore' m blk
       , Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
       )
-initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS decLedger decHash runAlsoLegacy = do
+initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS decLedger decHash runAlsoLegacy bss = do
     listSnapshots hasFS >>= tryNewestFirst id
   where
     tryNewestFirst :: (InitLog blk -> InitLog blk)
@@ -301,7 +307,7 @@ initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS dec
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
           initDb        = ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
-      backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
+      backingStore <- newBackingStore bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       return ( acc InitFromGenesis
              , initDb
              , backingStore
@@ -330,7 +336,7 @@ initFromSnapshotOrGenesis replayTracer snapshotTracer getGenesisLedger hasFS dec
               traceWith snapshotTracer . InvalidSnapshot s $ InitFailureGenesis
               tryNewestFirst (acc . InitFailure s InitFailureGenesis) []
             NotOrigin tip -> do
-              backingStore <- restoreBackingStore hasFS s -- TODO this needs to go in the resource registry
+              backingStore <- restoreBackingStore hasFS s bss -- TODO this needs to go in the resource registry
               traceWith replayTracer $
                 ReplayFromSnapshot s tip (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
@@ -408,8 +414,9 @@ restoreBackingStore ::
      )
   => SomeHasFS m
   -> DiskSnapshot
+  -> BackingStoreSelector m
   -> m (LedgerBackingStore' m blk)
-restoreBackingStore (SomeHasFS hasFS) snapshot = do
+restoreBackingStore someHasFs snapshot bss = do
     -- TODO a backing store that actually resides on-disk during use should have
     -- a @new*@ function that receives both the location it should load from (ie
     -- 'loadPath') and also the location at which it should maintain itself (ie
@@ -419,12 +426,14 @@ restoreBackingStore (SomeHasFS hasFS) snapshot = do
     -- The in-memory backing store, on the other hand, keeps nothing at
     -- '_tablesPath'.
 
-    store <- HD.newTVarBackingStore
+    store <- case bss of
+      LMDBBackingStore fp -> HD.newLMDBBackingStore (someHasFs, fp) Nothing
+      InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (zipLedgerTables applyDiff_)
                toCBOR
                fromCBOR
-               (Left (SomeHasFS hasFS, HD.BackingStorePath loadPath))
+               (Left (someHasFs, HD.BackingStorePath loadPath))
     pure (LedgerBackingStore store)
   where
     loadPath = snapshotToTablesPath snapshot
@@ -437,15 +446,18 @@ newBackingStore ::
      , FromCBOR (LedgerTables l ValuesMK)
      , ToCBOR   (LedgerTables l ValuesMK)
      )
-  => SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
-newBackingStore _someHasFS tables = do
-    store <- HD.newTVarBackingStore
+  => BackingStoreSelector m
+  -> SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
+newBackingStore bss someHasFS tables = do
+  store <- case bss of
+    LMDBBackingStore fp -> HD.newLMDBBackingStore (someHasFS, fp) (Just (Origin, tables))
+    InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (zipLedgerTables applyDiff_)
                toCBOR
                fromCBOR
                (Right (Origin, tables))
-    pure (LedgerBackingStore store)
+  pure (LedgerBackingStore store)
 
 lookup_ ::
      Ord k
@@ -801,3 +813,7 @@ data TraceReplayEvent blk =
         (ReplayStart blk) -- ^ the block at which this replay started
         (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
   deriving (Generic, Eq, Show)
+
+data BackingStoreSelector m where
+  LMDBBackingStore :: !FsPath -> BackingStoreSelector IO
+  InMemoryBackingStore :: BackingStoreSelector m

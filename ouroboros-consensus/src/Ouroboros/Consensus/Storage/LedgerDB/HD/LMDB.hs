@@ -173,6 +173,7 @@ defaultLMDBLimits = LMDB.defaultLimits
 -- | Initialise a backing store
 -- An initial value should be passed if and only if this store is being
 -- initialised for the first time
+-- This isn't quite right: We also need to be able to take a snapshot to load from
 newLMDBBackingStore :: forall l. (Tables.TableStuff l)
   => (FS.SomeHasFS IO, FS.FsPath)
   -> Maybe (WithOrigin SlotNo, Tables.LedgerTables l Tables.ValuesMK)   -- ^ initial seqno and contents. Just iff db is empty
@@ -199,7 +200,7 @@ newLMDBBackingStore (sfs, path) mb_init = do
     db = Db{..}
     bsClose = do
       mb_vhs <- IOLike.atomically $ IOLike.tryTakeTMVar dbValueHandles
-      for_ mb_vhs $ traverse closeValueHandle
+      for_ mb_vhs $ traverse forceCloseValueHandle
 
     bsCopy = lmdbCopy db
     
@@ -234,6 +235,10 @@ closeValueHandle ValueHandle{..} = do
     pure $ x <= 0
   when should $ IOLike.cancel vhAsync
   pure should
+
+-- TODO we should specify what happens to the ref count
+forceCloseValueHandle :: ValueHandle -> IO ()
+forceCloseValueHandle ValueHandle{..} = IOLike.cancel vhAsync
 
 data SomeDbSubmission where
   SomeDbSubmission :: forall a. LMDB.Transaction LMDB.ReadWrite a -> IOLike.TMVar IO (Maybe a) -> SomeDbSubmission

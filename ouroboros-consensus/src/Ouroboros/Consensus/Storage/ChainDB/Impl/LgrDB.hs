@@ -97,7 +97,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      DiskSnapshot, LedgerDB', NextBlock (..),
                      LedgerBackingStore, ReplayGoal, StreamAPI (..),
-                     TraceEvent (..), TraceReplayEvent (..))
+                     TraceEvent (..), TraceReplayEvent (..), BackingStoreSelector(..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
@@ -161,6 +161,7 @@ type LgrDbSerialiseConstraints blk =
   Initialization
 -------------------------------------------------------------------------------}
 
+
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: DiskPolicy
     , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
@@ -169,6 +170,7 @@ data LgrDbArgs f m blk = LgrDbArgs {
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (TraceEvent blk)
     , lgrRunAlsoLegacy  :: RunAlsoLegacy
+    , lgrBackingStoreSelector :: BackingStoreSelector m
     }
 
 -- | Default arguments
@@ -185,6 +187,7 @@ defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
     , lgrRunAlsoLegacy  = RunBoth
+    , lgrBackingStoreSelector = InMemoryBackingStore
     }
 
 -- | Open the ledger DB
@@ -264,7 +267,6 @@ initFromDisk
      , LgrDbSerialiseConstraints blk
      , InspectLedger blk
      , HasCallStack
-     , m ~ IO
      )
   => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
@@ -282,6 +284,9 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
         lgrGenesis
         (streamAPI immutableDB)
         lgrRunAlsoLegacy
+        lgrBackingStoreSelector
+
+
     return (db, replayed, backingStore)
   where
     LgrDbArgs { lgrHasFS = hasFS, .. } = args
