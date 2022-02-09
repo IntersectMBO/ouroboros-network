@@ -187,7 +187,7 @@ mkServer k chain = do
       DiskLedgerView
         (LgrDB.ledgerDbCurrent ldb)
         (\(ExtLedgerStateTables NoTestLedgerTables) -> pure $ ExtLedgerStateTables NoTestLedgerTables)
-        (error "TODO range read")
+        (\_rq -> pure $ ExtLedgerStateTables NoTestLedgerTables)
         (pure ())
 
 -- | Initialise a 'LgrDB' with the given chain.

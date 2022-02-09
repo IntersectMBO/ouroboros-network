@@ -79,6 +79,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (RangeQuery (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.DepPair
 
@@ -391,11 +392,11 @@ handleWholeQuery dlv query = do
               -> st
               -> m st
             loop !prev !acc = do
-              (prev', ExtLedgerStateTables values) <-
+              extValues@(ExtLedgerStateTables values) <-
                 dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
               if getAll $ foldLedgerTables (All . f) values then pure acc else do
                 loop
-                  (Just prev')
+                  (Just $ mapLedgerTables toKeys extValues)
                   (comb acc $ partial $ ledgerState st `withLedgerTables` values)
           in post <$> loop Nothing empty
   where
@@ -404,6 +405,9 @@ handleWholeQuery dlv query = do
 
     f :: ApplyMapKind ValuesMK k v -> Bool
     f (ApplyValuesMK (HD.UtxoValues vs)) = Map.null vs
+
+    toKeys :: ApplyMapKind ValuesMK k v -> ApplyMapKind KeysMK k v
+    toKeys (ApplyValuesMK (HD.UtxoValues vs)) = ApplyKeysMK $ HD.UtxoKeys $ Map.keysSet vs
 
     batchSize = 100000   -- TODO tune, expose as config, etc
 
