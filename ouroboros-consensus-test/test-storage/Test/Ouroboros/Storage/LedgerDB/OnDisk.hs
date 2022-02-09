@@ -52,6 +52,8 @@ import           Data.TreeDiff.Expr (Expr (App))
 import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
+import qualified System.Directory as Dir
+import qualified System.IO.Temp as Temp
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
@@ -63,7 +65,6 @@ import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -73,11 +74,13 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
+import qualified Ouroboros.Consensus.Storage.FS.IO as FSIO
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 import qualified Test.Util.Classify as C
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
@@ -88,14 +91,19 @@ import           Test.Util.TestBlock hiding (TestBlock, TestBlockCodecConfig,
 -- For the Arbitrary instance of 'MemPolicy'
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
+import qualified Control.Tracer as Trace
 
+import qualified Test.Tasty.Traceable as TTT
 {-------------------------------------------------------------------------------
   Top-level tests
 -------------------------------------------------------------------------------}
 
 tests :: TestTree
-tests = testGroup "OnDisk" [
-      testProperty "LedgerSimple" prop_sequential
+tests = testGroup "OnDisk"
+    [ TTT.traceableProperty "LedgerSimple-InMem" $ \show_trace ->
+        prop_sequential $ inMemDbEnv show_trace
+    , TTT.traceableProperty "LedgerSimple-LMDB"  $ \show_trace ->
+        prop_sequential $ lmdbDbEnv show_trace LMDB.defaultLMDBLimits
     ]
 
 {-------------------------------------------------------------------------------
@@ -243,9 +251,12 @@ instance TableStuff (LedgerState TestBlock) where
   mapLedgerTables      f                                     (TokenToTValue x) = TokenToTValue    (f x)
   traverseLedgerTables f                                     (TokenToTValue x) = TokenToTValue <$> f x
   zipLedgerTables      f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
+  zipLedgerTablesA     f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue <$> f x y
   zipLedgerTables2     f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue    (f x y z)
   foldLedgerTables     f                                     (TokenToTValue x) =                   f x
   foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
+
+  namesLedgerTables = TokenToTValue $ NameMK "testblocktables"
 
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) EmptyMK)
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) DiffMK)
@@ -780,8 +791,11 @@ runMock cmd initMock =
 
 -- | Arguments required by 'StandaloneDB'
 data DbEnv m = DbEnv {
-      dbHasFS    :: SomeHasFS m
-    , dbSecParam :: SecurityParam
+      dbHasFS    :: !(SomeHasFS m)
+    , dbSecParam :: !SecurityParam
+    , dbBackingStoreSelector :: !(BackingStoreSelector m)
+    , dbTracer   :: !(Trace.Tracer m LMDB.TraceDb)
+    , dbCleanup :: !(m ())
     }
 
 -- | Standalone ledger DB
@@ -814,16 +828,21 @@ data StandaloneDB m = DB {
     , dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState TestBlock)
 
     , dbBackingStore :: StrictTVar m (LedgerBackingStore m (ExtLedgerState TestBlock))
+
+      -- | needed for restore TODO does this really belong here?
+    , sdbBackingStoreSelector :: BackingStoreSelector m
     }
 
-initStandaloneDB :: forall m. IOLike m => DbEnv m -> m (StandaloneDB m)
+initStandaloneDB :: forall m. (Trans.MonadIO m, IOLike m) => DbEnv m -> m (StandaloneDB m)
 initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
     dbBackingStore <- uncheckedNewTVarM
                       =<< newBackingStore
-                            (error "New backing store doesn't use HasFS for now")
-                            (ExtLedgerStateTables
+                             dbTracer
+                             dbBackingStoreSelector
+                             dbHasFS
+                             (ExtLedgerStateTables
                                 TokenToTValue {
                                 -- TODO we could consider adapting the test generator to generate an initial ledger with non-empty tables.
                                   testUtxtokTable = ApplyValuesMK (HD.UtxoValues mempty )})
@@ -856,6 +875,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
         , "block in dbChain not in dbBlocks, "
         , "or LedgerDB not re-initialized after chain truncation"
         ]
+    sdbBackingStoreSelector = dbBackingStoreSelector
 
 dbStreamAPI :: forall m. IOLike m => StandaloneDB m -> StreamAPI m TestBlock
 dbStreamAPI DB{..} = StreamAPI {..}
@@ -975,10 +995,14 @@ runDB standalone@DB{..} cmd =
             S.encode
             db
     go hasFS Restore = do
+        LedgerBackingStore old_db <- atomically . readTVar $ dbBackingStore
+        HD.bsClose old_db
         (initLog, db, _replayed, backingStore) <-
           initLedgerDB
             nullTracer
-            nullTracer
+            (Trace.Tracer $ \case
+               LMDBEvent e -> Trace.runTracer (dbTracer dbEnv) e
+               _ -> pure ()) -- TODO gross
             hasFS
             S.decode
             S.decode
@@ -986,6 +1010,8 @@ runDB standalone@DB{..} cmd =
             (return (testInitExtLedgerWithState initialTestLedgerState))
             streamAPI
             RunOnlyNew
+            sdbBackingStoreSelector
+
         atomically $ do
           modifyTVar dbState (\(rs, _) -> (rs, db))
           writeTVar dbBackingStore backingStore
@@ -1313,23 +1339,57 @@ sm secParam db = StateMachine {
     , shrinker      = shrinker
     , semantics     = semantics db
     , mock          = symbolicResp
-    , cleanup       = noCleanup
+    , cleanup       = \_ -> do
+        LedgerBackingStore bs <- atomically . readTVar $ dbBackingStore db
+        HD.bsClose bs
+        dbCleanup $ dbEnv db
     }
 
-prop_sequential :: SecurityParam -> QC.Property
-prop_sequential secParam = QC.withMaxSuccess 100000 $
-    forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
-      QC.monadicIO (propCmds secParam cmds)
+prop_sequential :: (SecurityParam -> IO (DbEnv IO)) -> SecurityParam -> QC.Property
+prop_sequential mk_dbenv secParam = QC.withMaxSuccess 100000 $
+  forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
+    QC.monadicIO $ QC.run (mk_dbenv secParam) >>= \e -> propCmds e cmds
 
+mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
+mkDbTracer (TTT.ShowTrace b)
+  | b = show `Trace.contramap` Trace.stdoutTracer
+  | otherwise = mempty
+
+inMemDbEnv :: Trans.MonadIO m
+  => TTT.ShowTrace
+  -> SecurityParam
+  -> m (DbEnv IO)
+inMemDbEnv show_trace dbSecParam = Trans.liftIO $ do
+  fs <- uncheckedNewTVarM MockFS.empty
+  let
+    dbHasFS = SomeHasFS $ simHasFS fs
+    dbBackingStoreSelector = InMemoryBackingStore
+    dbCleanup = pure ()
+    dbTracer = mkDbTracer show_trace
+  pure DbEnv{..}
+
+lmdbDbEnv :: Trans.MonadIO m
+  => TTT.ShowTrace
+  -> LMDB.LMDBLimits
+  -> SecurityParam
+  -> m (DbEnv IO)
+lmdbDbEnv show_trace limits dbSecParam = do
+  (dbHasFS, dbCleanup) <- Trans.liftIO $ do
+      systmpdir <- Dir.getTemporaryDirectory
+      tmpdir <- Temp.createTempDirectory systmpdir "init_standalone_db"
+      pure (SomeHasFS $ FSIO.ioHasFS $ MountPoint tmpdir, Dir.removeDirectoryRecursive tmpdir)
+  let
+    dbBackingStoreSelector = LMDBBackingStore limits
+    dbTracer = mkDbTracer show_trace
+  pure DbEnv{..}
+  
 -- Ideally we'd like to use @IOSim s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
-propCmds :: SecurityParam
+propCmds :: DbEnv IO
          -> QSM.Commands (At Cmd) (At Resp)
          -> QC.PropertyM IO ()
-propCmds secParam cmds = do
-    fs <- QC.run $ uncheckedNewTVarM MockFS.empty
-    let dbEnv :: DbEnv IO
-        dbEnv = DbEnv (SomeHasFS (simHasFS fs)) secParam
+propCmds dbEnv cmds = do
+    let secParam =  dbSecParam dbEnv
     db <- QC.run $ initStandaloneDB dbEnv
     let sm' = sm secParam db
     (hist, _model, res) <- runCommands sm' cmds

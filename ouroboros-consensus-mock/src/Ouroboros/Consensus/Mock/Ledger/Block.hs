@@ -397,9 +397,11 @@ instance (SimpleCrypto c, Typeable ext) => TableStuff (LedgerState (SimpleBlock 
   mapLedgerTables      _f                           NoMockTables = NoMockTables
   traverseLedgerTables _f                           NoMockTables = pure NoMockTables
   zipLedgerTables      _f              NoMockTables NoMockTables = NoMockTables
+  zipLedgerTablesA     _f              NoMockTables NoMockTables = pure NoMockTables
   zipLedgerTables2     _f NoMockTables NoMockTables NoMockTables = NoMockTables
   foldLedgerTables     _f                           NoMockTables = mempty
   foldLedgerTables2    _f              NoMockTables NoMockTables = mempty
+  namesLedgerTables                             = NoMockTables
 
 instance (SimpleCrypto c, Typeable ext) => TickedTableStuff (LedgerState (SimpleBlock c ext)) where
   projectLedgerTablesTicked _st                                 = NoMockTables

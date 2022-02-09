@@ -121,6 +121,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
+import Ouroboros.Consensus.Storage.LedgerDB.OnDisk (BackingStoreSelector)
 
 
 {-------------------------------------------------------------------------------
@@ -172,6 +173,8 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
 
       -- | Network P2P Mode switch
     , rnEnableP2P :: NetworkP2PMode p2p
+
+    , rnBackingStoreSelector :: !(BackingStoreSelector m)
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -751,7 +754,7 @@ stdLowLevelRunNodeArgsIO ::
           NodeToClientVersionData
           blk
           p2p)
-stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnBackingStoreSelector } StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
     pure LowLevelRunNodeArgs
@@ -760,7 +763,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnCustomiseHardForkBlockchainTimeArgs = id
       , llrnKeepAliveRng
       , llrnChainDbArgsDefaults =
-          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy
+          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy rnBackingStoreSelector
       , llrnCustomiseChainDbArgs = id
       , llrnCustomiseNodeKernelArgs
       , llrnRunDataDiffusion =

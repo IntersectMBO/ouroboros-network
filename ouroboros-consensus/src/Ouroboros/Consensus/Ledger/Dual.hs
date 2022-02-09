@@ -427,6 +427,15 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
         (zipLedgerTables f mainL mainR)
         (zipLedgerTables f auxL  auxR)
 
+  zipLedgerTablesA
+    f
+    (DualBlockLedgerTables mainL auxL)
+    (DualBlockLedgerTables mainR auxR) =
+          DualBlockLedgerTables
+      <$> (zipLedgerTablesA f mainL mainR)
+      <*> (zipLedgerTablesA f auxL  auxR)
+
+
   zipLedgerTables2
     f
     (DualBlockLedgerTables mainL auxL)
@@ -446,6 +455,8 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
     (DualBlockLedgerTables main2 aux2) =
            foldLedgerTables2 f main1 main2
         <> foldLedgerTables2 f aux1 aux2
+
+  namesLedgerTables = DualBlockLedgerTables namesLedgerTables namesLedgerTables
 
 deriving instance
      ( Eq (LedgerTables (LedgerState m) mk)

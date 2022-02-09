@@ -377,9 +377,11 @@ instance TableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   mapLedgerTables      _f                       NoAbTables = NoAbTables
   traverseLedgerTables _f                       NoAbTables = pure NoAbTables
   zipLedgerTables      _f            NoAbTables NoAbTables = NoAbTables
+  zipLedgerTablesA     _f            NoAbTables NoAbTables = pure NoAbTables
   zipLedgerTables2     _f NoAbTables NoAbTables NoAbTables = NoAbTables
   foldLedgerTables     _f                       NoAbTables = mempty
   foldLedgerTables2    _f            NoAbTables NoAbTables = mempty
+  namesLedgerTables                         = NoAbTables
 
 instance SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock '[BlockA, BlockB])) where
     codecLedgerTables = NoAbTables

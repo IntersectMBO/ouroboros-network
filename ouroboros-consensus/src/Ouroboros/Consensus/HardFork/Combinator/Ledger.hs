@@ -227,9 +227,11 @@ instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerSta
   pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState x) f
   mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState x) f
   zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState x) f
+  zipLedgerTablesA  f (LedgerTablesOne l) (LedgerTablesOne r) = LedgerTablesOne <$> zipLedgerTablesA f l r
   zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState x) f
   foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState x) f
   foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState x) f
+  namesLedgerTables = coerce $ namesLedgerTables @(LedgerState x)
 
 deriving instance Eq (LedgerTables (LedgerState x) mk) => Eq (LedgerTables (LedgerState (HardForkBlock '[x])) mk)
 

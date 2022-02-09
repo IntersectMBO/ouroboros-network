@@ -206,6 +206,8 @@ initLgrDB k chain = do
     backingStore <- do
       v <- uncheckedNewTVarM Mock.empty
       TECHDEBT.newBackingStore
+        mempty
+        TECHDEBT.InMemoryBackingStore
         (SomeHasFS (simHasFS v))
         (ExtLedgerStateTables NoTestLedgerTables)
     rawLock <- TECHDEBT.new ()
@@ -242,6 +244,7 @@ initLgrDB k chain = do
       , lgrTracer               = nullTracer
       , lgrTraceLedger          = nullTracer
       , lgrRunAlsoLegacy        = LgrDB.RunBoth
+      , lgrBackingStoreSelector = TECHDEBT.InMemoryBackingStore
       }
 
 testCfg :: SecurityParam -> TopLevelConfig TestBlock

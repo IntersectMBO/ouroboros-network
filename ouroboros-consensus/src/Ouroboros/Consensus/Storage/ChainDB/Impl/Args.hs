@@ -38,6 +38,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
+import Ouroboros.Consensus.Storage.LedgerDB.OnDisk (BackingStoreSelector)
 
 {-------------------------------------------------------------------------------
   Arguments
@@ -76,6 +77,8 @@ data ChainDbArgs f m blk = ChainDbArgs {
       -- is the maximum number of blocks that could be kept in memory at the
       -- same time when the background thread processing the blocks can't keep
       -- up.
+
+    ,cdbBackingStoreSelector    :: !(BackingStoreSelector m)
     }
 
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or
@@ -139,11 +142,12 @@ defaultArgs ::
      Monad m
   => (RelativeMountPoint -> SomeHasFS m)
   -> DiskPolicy
+  -> BackingStoreSelector m
   -> ChainDbArgs Defaults m blk
-defaultArgs mkFS diskPolicy =
+defaultArgs mkFS diskPolicy bss =
   toChainDbArgs (ImmutableDB.defaultArgs immFS)
                 (VolatileDB.defaultArgs  volFS)
-                (LgrDB.defaultArgs       lgrFS diskPolicy)
+                (LgrDB.defaultArgs lgrFS diskPolicy bss)
                 defaultSpecificArgs
   where
     immFS, volFS, lgrFS :: SomeHasFS m
@@ -189,6 +193,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
         , lgrTraceLedger      = cdbTraceLedger
         , lgrRunAlsoLegacy    = cdbLedgerRunAlsoLegacy
+        , lgrBackingStoreSelector = cdbBackingStoreSelector
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -238,6 +243,8 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
     , cdbGcDelay                = cdbsGcDelay
     , cdbGcInterval             = cdbsGcInterval
     , cdbBlocksToAddSize        = cdbsBlocksToAddSize
+
+    , cdbBackingStoreSelector   = lgrBackingStoreSelector
     }
 
 {-------------------------------------------------------------------------------

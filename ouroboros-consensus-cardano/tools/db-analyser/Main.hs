@@ -36,7 +36,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
-                     readSnapshot)
+                     readSnapshot, BackingStoreSelector(..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
@@ -242,7 +242,7 @@ analyse CmdLine {..} args =
           args' =
             Node.mkChainDbArgs
               registry InFuture.dontCheck cfg genesisLedger chunkInfo $
-            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy
+            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy InMemoryBackingStore
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy

@@ -20,8 +20,11 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
 
 import           Codec.Serialise
 import           Control.Monad.Except
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
@@ -32,6 +35,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
+import           Ouroboros.Consensus.Util.CBOR.Simple
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
@@ -132,9 +136,11 @@ instance TableStuff (LedgerState ByronSpecBlock) where
   mapLedgerTables      _f                                                 NoByronSpecLedgerTables = NoByronSpecLedgerTables
   traverseLedgerTables _f                                                 NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
   zipLedgerTables      _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
+  zipLedgerTablesA     _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
   zipLedgerTables2     _f NoByronSpecLedgerTables NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
   foldLedgerTables     _f                                                 NoByronSpecLedgerTables = mempty
   foldLedgerTables2    _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = mempty
+  namesLedgerTables                                                                               = NoByronSpecLedgerTables
 
 instance SufficientSerializationForAnyBackingStore (LedgerState ByronSpecBlock) where
     codecLedgerTables = NoByronSpecLedgerTables
@@ -155,7 +161,15 @@ instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
 instance StowableLedgerTables (LedgerState ByronSpecBlock) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = const True
+  isCandidateForUnstow = isCandidateForUnstowDefault
+
+instance Typeable mk => ToCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
+  toCBOR NoByronSpecLedgerTables = versionZeroProductToCBOR []
+
+instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
+  fromCBOR =
+        versionZeroProductFromCBOR "LedgerTables ByronSpec" 0
+      $ pure NoByronSpecLedgerTables
 
 {-------------------------------------------------------------------------------
   Applying blocks

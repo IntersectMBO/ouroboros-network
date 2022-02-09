@@ -51,6 +51,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Isolating the tables
   , TableStuff (..)
   , TickedTableStuff (..)
+  , LedgerConstraint
   , mapOverLedgerTables
   , mapOverLedgerTablesTicked
   , overLedgerTables
@@ -80,6 +81,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TrackingMK
   , UnApplyMapKind
   , ValuesMK
+  , LMDBMK (..)
+  , NameMK (..)
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
@@ -136,6 +139,7 @@ import qualified Data.Map as Map
 import           Data.Monoid (All (..), Sum (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
+-- import           Data.Coerce(Coercible)
 import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
@@ -158,6 +162,7 @@ import           Ouroboros.Consensus.Util.Singletons
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
+import qualified Database.LMDB.Simple as LMDB
 
 {-------------------------------------------------------------------------------
   Tip
@@ -339,6 +344,9 @@ noNewTickingDiffs :: TickedTableStuff l
                    -> l DiffMK
 noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables
 
+class (Ord k, ToCBOR k, FromCBOR k, ToCBOR v, FromCBOR v) => LedgerConstraint k v
+instance (Ord k, ToCBOR k, FromCBOR k, ToCBOR v, FromCBOR v) => LedgerConstraint k v
+
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
@@ -375,14 +383,14 @@ class ( ShowLedgerState (LedgerTables l)
 
   pureLedgerTables ::
        (forall k v.
-            Ord k
+            LedgerConstraint k v
          => mk k v
        )
     -> LedgerTables l mk
 
   mapLedgerTables ::
        (forall k v.
-            Ord k
+            LedgerConstraint k v
          => mk1 k v
          -> mk2 k v
        )
@@ -391,7 +399,7 @@ class ( ShowLedgerState (LedgerTables l)
 
   traverseLedgerTables ::
        Applicative f
-    => (forall k v . Ord k
+    => (forall k v . LedgerConstraint k v
         =>    mk1 k v
         -> f (mk2 k v)
        )
@@ -400,7 +408,7 @@ class ( ShowLedgerState (LedgerTables l)
 
   zipLedgerTables ::
        (forall k v.
-            Ord k
+            LedgerConstraint k v
          => mk1 k v
          -> mk2 k v
          -> mk3 k v
@@ -409,9 +417,21 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
 
+  zipLedgerTablesA :: Applicative f
+    =>
+       (forall k v.
+            LedgerConstraint k v
+         => mk1 k v
+         -> mk2 k v
+         -> f (mk3 k v)
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> f (LedgerTables l mk3)
+
   zipLedgerTables2 ::
        (forall k v.
-            Ord k
+            LedgerConstraint k v
          => mk1 k v
          -> mk2 k v
          -> mk3 k v
@@ -425,7 +445,7 @@ class ( ShowLedgerState (LedgerTables l)
   foldLedgerTables ::
        Monoid m
     => (forall k v.
-            Ord k
+            LedgerConstraint k v
          => mk k v
          -> m
        )
@@ -434,7 +454,8 @@ class ( ShowLedgerState (LedgerTables l)
 
   foldLedgerTables2 ::
        Monoid m
-    => (forall k v . Ord k
+    => (forall k v.
+           LedgerConstraint k v
         => mk1 k v
         -> mk2 k v
         -> m
@@ -442,6 +463,8 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk1
     -> LedgerTables l mk2
     -> m
+
+  namesLedgerTables :: LedgerTables l NameMK
 
 overLedgerTables ::
      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
@@ -673,6 +696,7 @@ data MapKind' = DiffMK'
               | TrackingMK'
               | ValuesMK'
 
+
 type DiffMK     = ApplyMapKind' DiffMK'
 type EmptyMK    = ApplyMapKind' EmptyMK'
 type KeysMK     = ApplyMapKind' KeysMK'
@@ -689,6 +713,9 @@ data CodecMK k v = CodecMK
                      (v -> CBOR.Encoding)
                      (forall s . CBOR.Decoder s k)
                      (forall s . CBOR.Decoder s v)
+
+data LMDBMK k v = LMDBMK String !(LMDB.Database k v)
+newtype NameMK k v = NameMK String
 
 type ApplyMapKind mk = mk
 
@@ -818,7 +845,6 @@ showsApplyMapKind = \case
     ApplyTrackingMK values diff -> showParen True $ showString "ApplyTrackingMK " . shows values . showString " " . shows diff
     ApplyDiffMK diff            -> showParen True $ showString "ApplyDiffMK " . shows diff
     ApplySeqDiffMK sq           -> showParen True $ showString "ApplySeqDiffMK " . shows sq
-
     ApplyQueryAllMK       -> showParen True $ showString "ApplyQueryAllMK"
     ApplyQuerySomeMK keys -> showParen True $ showString "ApplyQuerySomeMK " . shows keys
 

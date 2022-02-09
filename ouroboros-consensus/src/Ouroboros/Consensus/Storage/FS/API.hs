@@ -147,6 +147,9 @@ data HasFS m h = HasFS {
 
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
+
+    -- | TODO
+  , unsafeToFilePath         :: !(FsPath -> m FilePath)
   }
   deriving NoThunks via OnlyCheckWhnfNamed "HasFS" (HasFS m h)
 

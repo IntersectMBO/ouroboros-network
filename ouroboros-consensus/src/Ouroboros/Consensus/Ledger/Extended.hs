@@ -190,9 +190,11 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
   pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState blk) f
   mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState blk) f
   zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState blk) f
+  zipLedgerTablesA  f (ExtLedgerStateTables l) (ExtLedgerStateTables r) = ExtLedgerStateTables <$> zipLedgerTablesA f l r
   zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState blk) f
   foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState blk) f
   foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState blk) f
+  namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState blk)
 
 instance ( LedgerSupportsProtocol blk
          , SufficientSerializationForAnyBackingStore (LedgerState blk)
