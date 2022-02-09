@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
     BackingStore (..)
   , BackingStorePath (..)
   , BackingStoreValueHandle (..)
+  , RangeQuery (..)
   , bsRead
   , withBsValueHandle
     -- * An in-memory backing store
@@ -78,13 +79,28 @@ data BackingStoreValueHandle m keys values = BackingStoreValueHandle {
     -- | Close the handle
     --
     -- Other methods throw exceptions if called on a closed handle.
-    bsvhClose :: !(m ())
+    bsvhClose      :: !(m ())
+    -- | See 'RangeQuery'
+  , bsvhRangeRead  :: !(RangeQuery keys -> m values)
     -- | Read the given keys from the handle
     --
     -- Absent keys will merely not be present in the result instead of causing a
     -- failure or an exception.
-  , bsvhRead  :: !(keys -> m values)
+  , bsvhRead       :: !(keys -> m values)
   }
+
+data RangeQuery keys = RangeQuery {
+      -- | The result of this range query begin at first key that is strictly
+      -- greater than the greatest key in 'rqPrev'.
+      --
+      -- If the given set of keys is 'Just' but contains no keys, then the query
+      -- will return no results. (This is the steady-state once a looping range
+      -- query reaches the end of the table.)
+      rqPrev  :: Maybe keys
+      -- | How many values to read. If the query returns fewer values than this
+      -- for a table, then 'rqPrev' included the greatest key in that table.
+    , rqCount :: !Int
+    }
 
 -- | TODO Is there a good way to not assume that any function that creates a
 -- 'BackingStoreValueHandle' doesn't hold space leaks in its closure?
@@ -142,6 +158,7 @@ data TVarBackingStoreDeserialiseExn =
 newTVarBackingStore ::
      (IOLike m, NoThunks values)
   => (keys -> values -> values)
+  -> (RangeQuery keys -> values -> values)
   -> (values -> diff -> values)
   -> (values -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s values)
@@ -153,7 +170,7 @@ newTVarBackingStore ::
           values
           diff
        )
-newTVarBackingStore lookup_ forwardValues_ enc dec initialization = do
+newTVarBackingStore lookup_ rangeRead_ forwardValues_ enc dec initialization = do
     ref <- do
       (slot, values) <- case initialization of
         Left (FS.SomeHasFS fs, BackingStorePath path) -> do
@@ -185,9 +202,15 @@ newTVarBackingStore lookup_ forwardValues_ enc dec initialization = do
             TVarBackingStoreContents slot values -> pure $ do
               refHandleClosed <- IOLike.newTVarIO False
               pure $ (,) slot $ BackingStoreValueHandle {
-                  bsvhClose = IOLike.atomically $ do
+                  bsvhClose     = IOLike.atomically $ do
                     IOLike.writeTVar refHandleClosed True
-                , bsvhRead  = \keys -> join $ IOLike.atomically $ do
+                , bsvhRangeRead = \rq -> join $ IOLike.atomically $ do
+                    isClosed <- IOLike.readTVar refHandleClosed
+                    pure $
+                      if isClosed
+                      then Exn.throw TVarBackingStoreValueHandleClosedExn
+                      else pure $ rangeRead_ rq values
+                , bsvhRead      = \keys -> join $ IOLike.atomically $ do
                     isClosed <- IOLike.readTVar refHandleClosed
                     pure $
                       if isClosed

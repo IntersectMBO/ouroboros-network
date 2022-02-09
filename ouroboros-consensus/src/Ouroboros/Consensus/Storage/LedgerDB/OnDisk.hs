@@ -60,6 +60,7 @@ import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.List as List
+import qualified Data.Map as Map
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Ord (Down (..))
 import           Data.Set (Set)
@@ -421,6 +422,10 @@ restoreBackingStore (SomeHasFS hasFS) snapshot = do
 
     store <- HD.newTVarBackingStore
                (zipLedgerTables lookup_)
+               (\rq values -> case HD.rqPrev rq of
+                   Nothing   -> mapLedgerTables (rangeRead0_ (HD.rqCount rq))      values
+                   Just keys -> zipLedgerTables (rangeRead_  (HD.rqCount rq)) keys values
+               )
                (zipLedgerTables applyDiff_)
                toCBOR
                fromCBOR
@@ -441,6 +446,10 @@ newBackingStore ::
 newBackingStore _someHasFS tables = do
     store <- HD.newTVarBackingStore
                (zipLedgerTables lookup_)
+               (\rq values -> case HD.rqPrev rq of
+                   Nothing   -> mapLedgerTables (rangeRead0_ (HD.rqCount rq))      values
+                   Just keys -> zipLedgerTables (rangeRead_  (HD.rqCount rq)) keys values
+               )
                (zipLedgerTables applyDiff_)
                toCBOR
                fromCBOR
@@ -452,8 +461,28 @@ lookup_ ::
   => ApplyMapKind KeysMK   k v
   -> ApplyMapKind ValuesMK k v
   -> ApplyMapKind ValuesMK k v
-lookup_ (ApplyKeysMK keys) (ApplyValuesMK values) =
-  ApplyValuesMK (HD.restrictValues values keys)
+lookup_ (ApplyKeysMK ks) (ApplyValuesMK vs) =
+  ApplyValuesMK (HD.restrictValues vs ks)
+
+rangeRead0_ ::
+     Int
+  -> ApplyMapKind ValuesMK k v
+  -> ApplyMapKind ValuesMK k v
+rangeRead0_ n (ApplyValuesMK (HD.UtxoValues vs)) =
+  ApplyValuesMK $ HD.UtxoValues $ Map.take n vs
+
+rangeRead_ ::
+     Ord k
+  => Int
+  -> ApplyMapKind KeysMK   k v
+  -> ApplyMapKind ValuesMK k v
+  -> ApplyMapKind ValuesMK k v
+rangeRead_ n prev (ApplyValuesMK (HD.UtxoValues vs)) =
+    case Set.lookupMax ks of
+      Nothing -> ApplyValuesMK $ HD.UtxoValues Map.empty
+      Just  k -> ApplyValuesMK $ HD.UtxoValues $ Map.take n $ snd $ Map.split k vs
+  where
+    ApplyKeysMK (HD.UtxoKeys ks) = prev
 
 applyDiff_ ::
      Ord k
