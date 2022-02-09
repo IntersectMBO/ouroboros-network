@@ -37,6 +37,7 @@ import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
+import           Control.Applicative (liftA2)
 import           Data.Bifunctor
 import           Data.Functor.Product
 import           Data.Kind (Type)
@@ -146,6 +147,11 @@ instance
       QueryIfCurrent queryIfCurrent  -> prepareQueryIfCurrent queryIfCurrent
       QueryAnytime queryAnytime _era -> proveNotLargeQuery    queryAnytime
       QueryHardFork queryHardFork    -> proveNotLargeQuery    queryHardFork
+
+  monoidWholeBlockQuery = \case
+      QueryIfCurrent queryIfCurrent  -> monoidQueryIfCurrent queryIfCurrent
+      QueryAnytime queryAnytime _era -> proveNotWholeQuery   queryAnytime
+      QueryHardFork queryHardFork    -> proveNotWholeQuery   queryHardFork
 
 instance All SingleEraBlock xs => IsQuery (BlockQuery (HardForkBlock xs)) where
   classifyQuery = \case
@@ -284,6 +290,29 @@ prepareQueryIfCurrent =
     go (QS qic) (_   :* injs) = go qic injs
     go (QZ bq)  (inj :* _)    =
       applyInjectLedgerTables inj $ prepareBlockQuery bq
+
+monoidQueryIfCurrent' ::
+  forall xs result.
+     All SingleEraBlock xs
+  => QueryIfCurrent xs WholeL result
+  -> (result, result -> result -> result)
+monoidQueryIfCurrent' = \case
+    QZ bq  -> monoidWholeBlockQuery bq
+    QS qic -> monoidQueryIfCurrent' qic
+
+monoidQueryIfCurrent ::
+  forall xs result.
+     All SingleEraBlock xs
+  => QueryIfCurrent xs WholeL result
+  -> ( Either (MismatchEraInfo xs) result
+     ,    Either (MismatchEraInfo xs) result
+       -> Either (MismatchEraInfo xs) result
+       -> Either (MismatchEraInfo xs) result
+     )
+monoidQueryIfCurrent qic =
+    (pure empty, liftA2 comb)
+  where
+    (empty, comb) = monoidQueryIfCurrent' qic
 
 {-------------------------------------------------------------------------------
   Any era queries
