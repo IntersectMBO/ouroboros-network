@@ -27,7 +27,7 @@ import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
-data FootprintL = SmallL | LargeL
+data FootprintL = SmallL | LargeL | WholeL
 
 class EqQuery (query :: FootprintL -> Type -> Type) where
   eqQuery :: query fp1 result1 -> query fp2 result2 -> Maybe ( '(fp1, result1) :~: '(fp2, result2) )
