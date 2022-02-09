@@ -668,7 +668,7 @@ takeSnapshot ::
      forall m blk.
      ( MonadThrow m
      , IsLedger (LedgerState blk)
-     , StandardHash blk
+     , LedgerSupportsProtocol blk
      )
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
