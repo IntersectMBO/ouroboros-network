@@ -73,6 +73,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
+  , RangeQuery (..)
     -- ** Convenience alises
   , TableKeySets
   , TableReadSets
@@ -741,7 +742,10 @@ data DiskLedgerView m l =
     DiskLedgerView
       !(l EmptyMK)
       (LedgerTables l KeysMK -> m (LedgerTables l ValuesMK))
+      (RangeQuery -> m (LedgerTables l ValuesMK))   -- TODO unacceptable once we have multiple tables
       (m ())
+
+data RangeQuery = RangeQuery { rqOffset, rqCount :: !Int }
 
 type TableKeySets l = LedgerTables l KeysMK
 
