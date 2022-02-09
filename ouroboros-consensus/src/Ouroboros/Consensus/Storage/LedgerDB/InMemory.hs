@@ -111,6 +111,7 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
 import           Ouroboros.Consensus.Util.Singletons (SingI)
 import           Ouroboros.Consensus.Util.Versioned
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -893,6 +894,7 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
 data LedgerDbCfg l = LedgerDbCfg {
       ledgerDbCfgSecParam :: !SecurityParam
     , ledgerDbCfg         :: !(LedgerCfg l)
+    , ledgerDbStorePath   :: !HD.BackingStorePath -- TODO don't leave this here
     -- ledgerDbFlushingPolicy :: FP
     --
     -- or

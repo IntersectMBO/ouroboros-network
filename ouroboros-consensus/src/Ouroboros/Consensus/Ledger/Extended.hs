@@ -189,9 +189,13 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
       ExtLedgerState (lstate `withLedgerTables` tables) hstate
 
   pureLedgerTables f = coerce $ pureLedgerTables @(LedgerState blk) f
-  mapLedgerTables  f = coerce $ mapLedgerTables  @(LedgerState blk) f
   zipLedgerTables  f = coerce $ zipLedgerTables  @(LedgerState blk) f
   foldLedgerTables f = coerce $ foldLedgerTables @(LedgerState blk) f
+  traverseLedgerTables f (ExtLedgerStateTables tbls) =
+    ExtLedgerStateTables <$> traverseLedgerTables f tbls
+  zip2ALedgerTables f (ExtLedgerStateTables x) (ExtLedgerStateTables y) =
+    ExtLedgerStateTables <$> zip2ALedgerTables f x y
+  namesLedgerTables = coerce $ namesLedgerTables @(LedgerState blk)
 
 deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedgerState (LedgerTables (ExtLedgerState blk))
 

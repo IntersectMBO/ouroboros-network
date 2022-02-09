@@ -65,6 +65,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
 import           Control.Monad.Except
+import           Control.Applicative(liftA2)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 import           Data.Functor ((<&>))
@@ -426,6 +427,21 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
   foldLedgerTables f (DualBlockLedgerTables main aux) =
        foldLedgerTables f main
     <> foldLedgerTables f aux
+
+  traverseLedgerTables f (DualBlockLedgerTables main aux) =
+    liftA2 DualBlockLedgerTables
+      (traverseLedgerTables f main)
+      (traverseLedgerTables f aux)
+
+  zip2ALedgerTables
+    f
+    (DualBlockLedgerTables mainL auxL)
+    (DualBlockLedgerTables mainR auxR) =
+      liftA2 DualBlockLedgerTables
+        (zip2ALedgerTables f mainL mainR)
+        (zip2ALedgerTables f auxL  auxR)
+
+  namesLedgerTables = error "DualBlock:namesLedgerTable:not sure how to combine these"
 
 deriving instance
      ( Eq (LedgerTables (LedgerState m) mk)

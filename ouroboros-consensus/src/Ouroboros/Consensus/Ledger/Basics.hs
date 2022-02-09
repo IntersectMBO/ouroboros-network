@@ -49,6 +49,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Isolating the tables
   , TableStuff (..)
   , TickedTableStuff (..)
+  , LedgerConstraint
   , mapOverLedgerTables
   , overLedgerTables
   , zipOverLedgerTables
@@ -108,6 +109,7 @@ import qualified Control.Exception as Exn
 import           Control.Monad (when)
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
+import           Data.Functor.Identity(Identity(..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
@@ -131,6 +133,8 @@ import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
+import Codec.Serialise.Class (Serialise)
+import qualified Database.LMDB.Simple as LMDB
 
 {-------------------------------------------------------------------------------
   Tip
@@ -288,6 +292,10 @@ applyChainTick ::
   -> Ticked1 l mk
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
+
+class (Ord k, Serialise k, Serialise v) => LedgerConstraint k v
+instance (Ord k, Serialise k, Serialise v) => LedgerConstraint k v
+
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
@@ -321,23 +329,33 @@ class ( ShowLedgerState (LedgerTables l)
 
   pureLedgerTables ::
        (forall k v.
-            Ord k
+            LedgerConstraint k v
          => ApplyMapKind mk k v
        )
     -> LedgerTables l mk
 
   mapLedgerTables ::
        (forall k v.
-            Ord k
+            LedgerConstraint k v
          => ApplyMapKind mk1 k v
          -> ApplyMapKind mk2 k v
        )
     -> LedgerTables l mk1
     -> LedgerTables l mk2
+  mapLedgerTables f t = runIdentity $ traverseLedgerTables (pure . f) t
+
+  traverseLedgerTables :: (Applicative f)
+    => (forall k v.
+            LedgerConstraint k v
+         => ApplyMapKind mk1 k v
+         -> f (ApplyMapKind mk2 k v)
+       )
+    -> LedgerTables l mk1
+    -> f (LedgerTables l mk2)
 
   zipLedgerTables ::
        (forall k v.
-            Ord k
+            LedgerConstraint k v
          => ApplyMapKind mk1 k v
          -> ApplyMapKind mk2 k v
          -> ApplyMapKind mk3 k v
@@ -346,15 +364,36 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
 
+  zip2ALedgerTables :: Applicative f
+    => (forall k v.
+            LedgerConstraint k v
+         => ApplyMapKind mk1 k v
+         -> ApplyMapKind mk2 k v
+         -> f (ApplyMapKind mk3 k v)
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> f (LedgerTables l mk3)
+
   foldLedgerTables ::
        Monoid m
     => (forall k v.
-            Ord k
+            LedgerConstraint k v
          => ApplyMapKind mk k v
          -> m
        )
     -> LedgerTables l mk
     -> m
+
+  namesLedgerTables :: LedgerTables l NamesMK
+  -- foldNamedLedgerTables ::
+
+  --         => ApplyMapKind mk k v
+  --         -> String
+  --         -> m
+  --      )
+  --   -> LedgerTables l mk
+  --   -> m
 
 overLedgerTables ::
      (TableStuff l, SingI mk1)
@@ -489,6 +528,8 @@ data MapKind = DiffMK
              | SeqDiffMK
              | TrackingMK
              | ValuesMK
+             | LMDBMK
+             | NamesMK
 
 data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyDiffMK     :: !(UtxoDiff    k v)                    -> ApplyMapKind DiffMK       k v
@@ -498,6 +539,8 @@ data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyTrackingMK :: !(UtxoValues  k v) -> !(UtxoDiff k v) -> ApplyMapKind TrackingMK   k v
   ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind ValuesMK     k v
   ApplyRewoundMK  :: !(RewoundKeys k v)                    -> ApplyMapKind RewoundMK    k v
+  ApplyLMDBMK     :: !String -> !(LMDB.Database k v)       -> ApplyMapKind LMDBMK       k v
+  ApplyNamesMK    :: !String                               -> ApplyMapKind NamesMK      k v -- The name of a table, used for mapping to on disk storage
 
 emptyAppliedMK :: Ord k => SMapKind mk -> ApplyMapKind mk k v
 emptyAppliedMK = \case

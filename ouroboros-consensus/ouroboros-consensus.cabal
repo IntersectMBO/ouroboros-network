@@ -232,6 +232,7 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.HD
                        Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.LedgerDB.Types
@@ -333,7 +334,7 @@ library
                      , ouroboros-network-framework
                      , ouroboros-network
                      , strict-stm        >=0.1   && <0.2
-
+                     , lmdb-simple       >=0.4.0.0 && <0.5
 
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0

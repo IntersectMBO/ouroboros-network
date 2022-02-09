@@ -264,6 +264,7 @@ initFromDisk
      , LgrDbSerialiseConstraints blk
      , InspectLedger blk
      , HasCallStack
+     , m ~ IO
      )
   => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
