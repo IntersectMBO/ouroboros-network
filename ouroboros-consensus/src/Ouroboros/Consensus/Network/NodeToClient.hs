@@ -41,6 +41,10 @@ import           Codec.Serialise (Serialise)
 
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.Map as Map
+import           Data.Monoid (Sum (..))
+import           Data.Semigroup (Max (..))
+import qualified Data.Set as Set
 import           Data.Void (Void)
 
 import           Network.TypedProtocol.Codec
@@ -68,7 +72,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView (..))
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -82,6 +86,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
@@ -152,7 +157,26 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
                              Left _err -> error "impossible!"
                              Right vs  -> pure vs
                         )
-                        (error "TODO range read")
+                        (\rq -> do
+                            let chlog = LedgerDB.ledgerDbChangelog ldb
+                                diffs =
+                                    maybe
+                                      id
+                                      (zipLedgerTables doDropLTE)
+                                      (BackingStore.rqPrev rq)
+                                  $ mapLedgerTables prj
+                                  $ changelogDiffs chlog
+                            let -- 1. ensure that we never delete everything read
+                                --    from disk
+                                -- 2. also, read an additional one, which we
+                                --    will not include in the result but need in
+                                --    order to know which in-memory insertions
+                                --    to include
+                                maxDeletes = maybe 0 getMax $ foldLedgerTables (Just . Max . numDeletesDiffMK) diffs
+                                rq'        = rq{BackingStore.rqCount = 1 + max (BackingStore.rqCount rq) (1 + maxDeletes)}
+                            values <- BackingStore.bsvhRangeRead vh rq'
+                            pure $ zipLedgerTables fixup diffs values
+                        )
                         close
                 se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
                 case se of
@@ -164,6 +188,58 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
           localTxMonitorServer
             getMempool
       }
+  where
+    prj ::
+         Ord k
+      => ApplyMapKind SeqDiffMK k v
+      -> ApplyMapKind DiffMK k v
+    prj (ApplySeqDiffMK sq) = ApplyDiffMK (HD.cumulativeDiffSeqUtxoDiff sq)
+
+    numDeletesDiffMK :: ApplyMapKind DiffMK k v -> Int
+    numDeletesDiffMK (ApplyDiffMK (HD.UtxoDiff m)) =
+      getSum $ foldMap (Sum . oneIfDel) m
+
+    oneIfDel (HD.UtxoEntryDiff _v diffstate) = case diffstate of
+      HD.UedsDel       -> 1
+      HD.UedsIns       -> 0
+      HD.UedsInsAndDel -> 0
+
+    -- remove all diff elements that are less than or equal to the greatest
+    -- given key
+    doDropLTE ::
+         Ord k
+      => ApplyMapKind KeysMK k v
+      -> ApplyMapKind DiffMK k v
+      -> ApplyMapKind DiffMK k v
+    doDropLTE (ApplyKeysMK (HD.UtxoKeys ks)) (ApplyDiffMK (HD.UtxoDiff ds)) =
+        ApplyDiffMK
+      $ HD.UtxoDiff
+      $ case Set.lookupMax ks of
+          Nothing -> ds
+          Just k  -> Map.filterWithKey (\dk _dv -> dk > k) ds
+
+    -- 1. remove the greatest read value, if any
+    -- 2. remove all diff elements that are greater than or equal to the
+    --    greatest read value's key, if any
+    -- 3. apply the remaining diff
+    fixup ::
+         Ord k
+      => ApplyMapKind DiffMK   k v
+      -> ApplyMapKind ValuesMK k v
+      -> ApplyMapKind ValuesMK k v
+    fixup (ApplyDiffMK (HD.UtxoDiff ds)) (ApplyValuesMK (HD.UtxoValues vs)) =
+        ApplyValuesMK
+      $ case Map.maxViewWithKey vs of
+          Nothing             -> HD.UtxoValues $ Map.mapMaybe justIfIns ds
+          Just ((k, _v), vs') ->
+            HD.forwardValues
+              (HD.UtxoValues vs')
+              (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
+
+    justIfIns (HD.UtxoEntryDiff v diffstate) = case diffstate of
+      HD.UedsDel       -> Just v
+      HD.UedsIns       -> Nothing
+      HD.UedsInsAndDel -> Nothing
 
 {-------------------------------------------------------------------------------
   Codecs
