@@ -742,10 +742,21 @@ data DiskLedgerView m l =
     DiskLedgerView
       !(l EmptyMK)
       (LedgerTables l KeysMK -> m (LedgerTables l ValuesMK))
-      (RangeQuery -> m (LedgerTables l ValuesMK))   -- TODO unacceptable once we have multiple tables
+      (RangeQuery l -> m (LedgerTables l KeysMK, LedgerTables l ValuesMK))   -- TODO will be unacceptably coarse once we have multiple tables
       (m ())
 
-data RangeQuery = RangeQuery { rqOffset, rqCount :: !Int }
+data RangeQuery l = RangeQuery {
+      -- | The result of this range query begin at first key that is strictly
+      -- greater than the greatest key in 'rqPrev'.
+      --
+      -- If the given set of keys is 'Just' but contains no keys, then the query
+      -- will return no results. (This is the steady-state once a looping range
+      -- query reaches the end of the table.)
+      rqPrev  :: Maybe (LedgerTables l KeysMK)
+      -- | How many values to read. If the query returns fewer values than this
+      -- for a table, then 'rqPrev' included the greatest key in that table.
+    , rqCount :: !Int
+    }
 
 type TableKeySets l = LedgerTables l KeysMK
 
