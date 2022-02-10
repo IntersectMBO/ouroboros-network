@@ -381,7 +381,7 @@ is responsible for:
 \item continuously making progress towards the target number of peers in each
       state; and
 \item adjusting these targets over time to achieve a degree of `churn'.
-      \todo{need cross reference.}
+      \todo[inline]{need cross reference.}
 \end{itemize}
 Taken together, and with appropriate policies, a network of nodes should be
 able to self-organise and achieve the desired properties. We have simulation
@@ -447,12 +447,12 @@ interactions with the the connection manager.
 \item[Hand over a new connection] Once the server component has successfully
   accepted a new connection, it needs to hand over responsibility for it to
   the connection manager.
-  \todo{be clearer in the responsiblities and the conditions that should hold}
+  \todo[inline]{be clearer in the responsiblities and the conditions that should hold}
 \end{description}
 
 
 \section{Inbound side: the inbound governor}
-\todo{this section needs to be clearer about assumed pre-conditions and
+\todo[inline]{this section needs to be clearer about assumed pre-conditions and
       intended post-conditions}
 
 The inbound governor is responsible for starting, restarting and monitoring the
@@ -464,7 +464,7 @@ server side of the mini-protocol should be restarted in its initial state in
 case the client wishes to use the protocol again later. It is the inbound
 governor that is responsible for doing this.
 
-\todo{this mux interaction lifetime may benefit from a seperate (sub-)section}
+\todo[inline]{this mux interaction lifetime may benefit from a seperate (sub-)section}
 The mux component provides a mechanism to start mini-protocol handlers on a
 connection for a specific mini-protocol number in a particular direction. These
 handlers can then be monitored to see when they terminate. The inbound governor
@@ -478,7 +478,7 @@ server side. A later protocol update reversed the initial agency so that they
 are now all consistent.}. This allows all of the server side protocols to be
 started in the mux `on-demand' mode. In the on-demand mode the protocol handler
 thread is not started until the first message arrives from the client.
-\todo{this lack of active processing locally is used as a witness of remote
+\todo[inline]{this lack of active processing locally is used as a witness of remote
       peer idleness - where should we be explicit about that?}
 
 The inbound governor gets informed of new connections that it should monitor
@@ -537,8 +537,8 @@ only interact with the connection manager and not with the inbound governor.
 \end{center}
 \end{designalternative}
 
-The inbound governor \todo{capture interfaces to other services}
-\todo{express intended sequencing more clearly}
+The inbound governor \todo[inline]{capture interfaces to other services}
+\todo[inline]{express intended sequencing more clearly}
 
 \section{Exception Processing}
 \label{sec:exceptions}
