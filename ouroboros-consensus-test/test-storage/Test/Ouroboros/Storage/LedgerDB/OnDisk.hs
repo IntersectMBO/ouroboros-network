@@ -167,8 +167,8 @@ instance PayloadSemantics Tx where
 
       delete :: Maybe Token -> UTxTok -> Either TxErr UTxTok
       delete Nothing    st'                         = Right st'
-      delete (Just tok) st'@UTxTok{utxtok, utxhist} =
-        if tok `Set.member` utxhist
+      delete (Just tok) st'@UTxTok{utxtok} =
+        if tok `Map.member` utxtok
         then Right $ st' { utxtok = Map.delete tok utxtok }
         else Left  $ TokenDoesNotExist tok
 
