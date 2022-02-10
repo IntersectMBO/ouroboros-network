@@ -107,7 +107,7 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
     ledgerEnv :: SL.LedgerEnv (MockShelley h)
     ledgerEnv = SL.LedgerEnv {
         ledgerSlotNo   = slotNo
-      , ledgerIx       = 0 -- TODO Ix
+      , ledgerIx       = minBound
       , ledgerPp       = SL.esPp epochState
       , ledgerAccount  = SL.esAccountState epochState
       }
