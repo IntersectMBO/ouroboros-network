@@ -39,6 +39,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 
+import qualified Control.Exception as Exn
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.Map as Map
@@ -166,16 +167,21 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
                                       (BackingStore.rqPrev rq)
                                   $ mapLedgerTables prj
                                   $ changelogDiffs chlog
-                            let -- 1. ensure that we never delete everything read
-                                --    from disk
-                                -- 2. also, read an additional one, which we
-                                --    will not include in the result but need in
-                                --    order to know which in-memory insertions
-                                --    to include
-                                maxDeletes = maybe 0 getMax $ foldLedgerTables (Just . Max . numDeletesDiffMK) diffs
-                                rq'        = rq{BackingStore.rqCount = 1 + max (BackingStore.rqCount rq) (1 + maxDeletes)}
+                            let -- (1) ensure that we never delete everything
+                                --     read from disk (ie if our result is
+                                --     non-empty then it contains something read
+                                --     from disk)
+                                -- (2) also, read one additional key, which we
+                                --     will not include in the result but need
+                                --     in order to know which in-memory
+                                --     insertions to include
+                                maxDeletes =
+                                    maybe 0 getMax
+                                  $ foldLedgerTables (Just . Max . numDeletesDiffMK) diffs
+                                nrequested = 1 + max (BackingStore.rqCount rq) (1 + maxDeletes)
+                                rq'        = rq{BackingStore.rqCount = nrequested}
                             values <- BackingStore.bsvhRangeRead vh rq'
-                            pure $ zipLedgerTables fixup diffs values
+                            pure $ zipLedgerTables (doFixupReadResult nrequested) diffs values
                         )
                         close
                 se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
@@ -204,8 +210,7 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
       HD.UedsIns       -> 0
       HD.UedsInsAndDel -> 0
 
-    -- remove all diff elements that are less than or equal to the greatest
-    -- given key
+    -- remove all diff elements that are <= to the greatest given key
     doDropLTE ::
          Ord k
       => ApplyMapKind KeysMK k v
@@ -218,28 +223,58 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
           Nothing -> ds
           Just k  -> Map.filterWithKey (\dk _dv -> dk > k) ds
 
-    -- 1. remove the greatest read value, if any
-    -- 2. remove all diff elements that are greater than or equal to the
-    --    greatest read value's key, if any
-    -- 3. apply the remaining diff
-    fixup ::
+    -- INVARIANT: nrequested > 0
+    --
+    -- (1) if we reached the end of the store, then simply yield the given diff
+    --     applied to the given values
+    -- (2) otherwise, the readset must be non-empty, since 'rqCount' is positive
+    -- (3) remove the greatest read key
+    -- (4) remove all diff elements that are >= the greatest read key
+    -- (5) apply the remaining diff
+    -- (6) (the greatest read key will be the first fetched if the yield of this
+    --     result is next passed as 'rqPrev')
+    --
+    -- Note that if the in-memory changelog contains the greatest key, then
+    -- we'll return that in step (1) above, in which case the next passed
+    -- 'rqPrev' will contain it, which will cause 'doDropLTE' to result in an
+    -- empty diff, which will result in an entirely empty range query result,
+    -- which is the termination case.
+    --
+    -- TODO this @definitelyNoMoreToFetch@ logic leads to an extra roundtrip
+    -- when the changelog contains the greatest key. That'll be rare, and should
+    -- be in-expensive since the requisite pages would have been fetched by the
+    -- previous roundtrip (which was fruitful). But it seems sloppy. Switching
+    -- from 'rqPrev' to 'rqStart' would eliminate the extra rountrip and
+    -- simplify this code. However, it would also complicate the return type,
+    -- since the " next " range query wouldn't be defined by the keys of the "
+    -- previous " range query's results: we'd have to explicitly include the "
+    -- new next key " in the result of the range query. So maybe this should
+    -- stay as-is? Maybe some existing general wisdom out there about range
+    -- queries could guide us here.
+    doFixupReadResult ::
          Ord k
-      => ApplyMapKind DiffMK   k v
+      => Int
+      -> ApplyMapKind DiffMK   k v
       -> ApplyMapKind ValuesMK k v
       -> ApplyMapKind ValuesMK k v
-    fixup (ApplyDiffMK (HD.UtxoDiff ds)) (ApplyValuesMK (HD.UtxoValues vs)) =
+    doFixupReadResult
+      nrequested
+      (ApplyDiffMK (HD.UtxoDiff ds))
+      (ApplyValuesMK (HD.UtxoValues vs)) =
+        let definitelyNoMoreToFetch = Map.size vs < nrequested
+            includingAllKeys        =
+              HD.forwardValues (HD.UtxoValues vs) (HD.UtxoDiff ds)
+        in
         ApplyValuesMK
       $ case Map.maxViewWithKey vs of
-          Nothing             -> HD.UtxoValues $ Map.mapMaybe justIfIns ds
+          Nothing             ->
+              Exn.assert definitelyNoMoreToFetch
+            $ includingAllKeys
           Just ((k, _v), vs') ->
+            if definitelyNoMoreToFetch then includingAllKeys else
             HD.forwardValues
               (HD.UtxoValues vs')
               (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
-
-    justIfIns (HD.UtxoEntryDiff v diffstate) = case diffstate of
-      HD.UedsDel       -> Just v
-      HD.UedsIns       -> Nothing
-      HD.UedsInsAndDel -> Nothing
 
 {-------------------------------------------------------------------------------
   Codecs
