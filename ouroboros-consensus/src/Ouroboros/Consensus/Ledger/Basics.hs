@@ -782,14 +782,16 @@ class StowableLedgerTables (l :: LedgerStateKind) where
   -- This function should check that the UTxO inside the ledger state is not empty.
   isCandidateForUnstow :: l EmptyMK -> Bool
 
--- | Returns false if and only if all tables are empty
+-- | True if and only if all tables are non-empty
+--
+-- TODO reconsider each occurrences of this as soon as we add a second table
+-- beyond the UTxO map
 isCandidateForUnstowDefault ::
      (TableStuff l, StowableLedgerTables l)
   => l EmptyMK -> Bool
 isCandidateForUnstowDefault =
-      not
-    . getAll
-    . foldLedgerTables (All . nullValues)
+      getAll
+    . foldLedgerTables (All . not . nullValues)
     . projectLedgerTables
     . unstowLedgerTables
   where
