@@ -52,6 +52,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , TraceEvent (..)
   , TraceReplayEvent (..)
   , decorateReplayTracerWithGoal
+    -- * For testing
+  , newBackingStore
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
