@@ -12,7 +12,6 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE PatternSynonyms            #-}
-{-# LANGUAGE NamedFieldPuns             #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 {-# OPTIONS_GHC -Wno-partial-fields          #-}
@@ -32,11 +31,13 @@ import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadEventlog
-import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
+import           Control.Monad.Class.MonadSTM (MonadSTM, MonadInspectSTM (..),
+                   MonadLabelledSTM (..), MonadTraceSTM (..), TMVarDefault)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow as MonadThrow hiding (getMaskingState)
 import qualified Control.Monad.Class.MonadThrow as MonadThrow
+import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
 
 import qualified Control.Monad.Catch as Exceptions
@@ -56,6 +57,9 @@ import           Text.Printf
 
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
+
+import           Control.Monad.IOSim.STM
+
 
 import qualified System.IO.Error as IO.Error (userError)
 
@@ -127,6 +131,10 @@ data StmA s a where
 
   SayStm       :: String -> StmA s b -> StmA s b
   OutputStm    :: Dynamic -> StmA s b -> StmA s b
+  TraceTVar    :: forall s a b tr. Typeable tr
+               => TVar s a
+               -> (Maybe a -> a -> ST s tr)
+               -> StmA s b -> StmA s b
 
 -- Exported type
 type STMSim = STM
@@ -212,8 +220,8 @@ instance Fail.MonadFail (STM s) where
   fail msg = STM $ \_ -> ThrowStm (toException (ErrorCall msg))
 
 instance Alternative (STM s) where
-    empty = retry
-    (<|>) = orElse
+    empty = MonadSTM.retry
+    (<|>) = MonadSTM.orElse
 
 instance MonadPlus (STM s) where
 
@@ -314,7 +322,7 @@ instance MonadSay (STMSim s) where
 
 instance MonadLabelledSTM (IOSim s) where
   labelTVar tvar label = STM $ \k -> LabelTVar label tvar (k ())
-  labelTMVar   = labelTMVarDefault
+  labelTMVar   = MonadSTM.labelTMVarDefault
   labelTQueue  = labelTQueueDefault
   labelTBQueue = labelTBQueueDefault
 
@@ -333,16 +341,16 @@ instance MonadSTM (IOSim s) where
   retry             = STM $ \_ -> Retry
   orElse        a b = STM $ \k -> OrElse (runSTM a) (runSTM b) k
 
-  newTMVar          = newTMVarDefault
-  newEmptyTMVar     = newEmptyTMVarDefault
-  takeTMVar         = takeTMVarDefault
-  tryTakeTMVar      = tryTakeTMVarDefault
-  putTMVar          = putTMVarDefault
-  tryPutTMVar       = tryPutTMVarDefault
-  readTMVar         = readTMVarDefault
-  tryReadTMVar      = tryReadTMVarDefault
-  swapTMVar         = swapTMVarDefault
-  isEmptyTMVar      = isEmptyTMVarDefault
+  newTMVar          = MonadSTM.newTMVarDefault
+  newEmptyTMVar     = MonadSTM.newEmptyTMVarDefault
+  takeTMVar         = MonadSTM.takeTMVarDefault
+  tryTakeTMVar      = MonadSTM.tryTakeTMVarDefault
+  putTMVar          = MonadSTM.putTMVarDefault
+  tryPutTMVar       = MonadSTM.tryPutTMVarDefault
+  readTMVar         = MonadSTM.readTMVarDefault
+  tryReadTMVar      = MonadSTM.tryReadTMVarDefault
+  swapTMVar         = MonadSTM.swapTMVarDefault
+  isEmptyTMVar      = MonadSTM.isEmptyTMVarDefault
 
   newTQueue         = newTQueueDefault
   readTQueue        = readTQueueDefault
@@ -363,8 +371,21 @@ instance MonadSTM (IOSim s) where
   isEmptyTBQueue    = isEmptyTBQueueDefault
   isFullTBQueue     = isFullTBQueueDefault
 
-  newTMVarIO        = newTMVarIODefault
-  newEmptyTMVarIO   = newEmptyTMVarIODefault
+  newTMVarIO        = MonadSTM.newTMVarIODefault
+  newEmptyTMVarIO   = MonadSTM.newEmptyTMVarIODefault
+
+instance MonadInspectSTM (IOSim s) where
+  type InspectMonad (IOSim s) = ST s
+  inspectTVar  _                 TVar { tvarCurrent }  = readSTRef tvarCurrent
+  inspectTMVar _ (MonadSTM.TMVar TVar { tvarCurrent }) = readSTRef tvarCurrent
+
+-- | This instance adds a trace when a variable was written, just after the
+-- stm transaction was committed.
+--
+instance MonadTraceSTM (IOSim s) where
+  traceTVar _ tvar f = STM $ \k -> TraceTVar tvar f (k ())
+  traceTQueue  = traceTQueueDefault
+  traceTBQueue = traceTBQueueDefault
 
 data Async s a = Async !ThreadId (STM s (Either SomeException a))
 
@@ -381,16 +402,17 @@ instance MonadAsync (IOSim s) where
   type Async (IOSim s) = Async s
 
   async action = do
-    var <- newEmptyTMVarIO
+    var <- MonadSTM.newEmptyTMVarIO
     tid <- mask $ \restore ->
-             forkIO $ try (restore action) >>= atomically . putTMVar var
-    labelTMVarIO var ("async-" ++ show tid)
-    return (Async tid (readTMVar var))
+             forkIO $ try (restore action)
+                  >>= MonadSTM.atomically . MonadSTM.putTMVar var
+    MonadSTM.labelTMVarIO var ("async-" ++ show tid)
+    return (Async tid (MonadSTM.readTMVar var))
 
   asyncThreadId (Async tid _) = tid
 
   waitCatchSTM (Async _ w) = w
-  pollSTM      (Async _ w) = (Just <$> w) `orElse` return Nothing
+  pollSTM      (Async _ w) = (Just <$> w) `MonadSTM.orElse` return Nothing
 
   cancel a@(Async tid _) = throwTo tid AsyncCancelled <* waitCatch a
   cancelWith a@(Async tid _) e = throwTo tid e <* waitCatch a
@@ -432,7 +454,7 @@ instance MonadTimer (IOSim s) where
                          | NegativeTimeout !TimeoutId
                          -- ^ a negative timeout
 
-  readTimeout (Timeout var _bvar _key) = readTVar var
+  readTimeout (Timeout var _bvar _key) = MonadSTM.readTVar var
   readTimeout (NegativeTimeout _key)   = pure TimeoutCancelled
 
   newTimeout      d = IOSim $ \k -> NewTimeout      d k
@@ -453,7 +475,7 @@ instance MonadTimer (IOSim s) where
           bracket
             (forkIO $ do
                 labelThisThread "<<timeout>>"
-                fired <- atomically $ awaitTimeout t
+                fired <- MonadSTM.atomically $ awaitTimeout t
                 when fired $ throwTo pid (TimeoutException tid))
             (\pid' -> do
                   cancelTimeout t
@@ -662,6 +684,11 @@ data Labelled a = Labelled {
 -- Executing STM Transactions
 --
 
+data MkTVarTrace s a where
+    MkTVarTrace :: forall s a tr. Typeable tr => (Maybe a -> a -> ST s tr)
+                -> MkTVarTrace s a
+
+
 data TVar s a = TVar {
 
        -- | The identifier of this var.
@@ -690,7 +717,11 @@ data TVar s a = TVar {
 
        -- | The vector clock of the current value.
        --
-       tvarVClock :: !(STRef s VectorClock)
+       tvarVClock :: !(STRef s VectorClock),
+
+       -- | Callback to construct a trace which will be attached to the dynamic
+       -- trace.
+       tvarTrace  :: !(STRef s (Maybe (MkTVarTrace s a)))
      }
 
 instance Eq (TVar s a) where
@@ -704,9 +735,16 @@ data StmTxResult s a =
        -- It reports the vars that were read, so we can update vector clocks
        -- appropriately.
        --
+       -- The third list of vars is ones that were created during this
+       -- transaction.  This is useful for an implementation of 'traceTVar'.
+       --
        -- It also includes the updated TVarId name supply.
        --
-       StmTxCommitted a [SomeTVar s] [SomeTVar s] TVarId -- updated TVarId name supply
+       StmTxCommitted a [SomeTVar s] -- ^ written tvars
+                        [SomeTVar s] -- ^ read tvars
+                        [SomeTVar s] -- ^ created tvars
+                        [Dynamic]
+                        TVarId -- updated TVarId name supply
 
        -- | A blocked transaction reports the vars that were read so that the
        -- scheduler can block the thread on those vars.
@@ -730,6 +768,7 @@ data StmStack s b a where
                    -> (a -> StmA s b)         -- subsequent continuation
                    -> Map TVarId (SomeTVar s) -- saved written vars set
                    -> [SomeTVar s]            -- saved written vars list
+                   -> [SomeTVar s]            -- created vars list
                    -> StmStack s b c
                    -> StmStack s a c
 
@@ -737,6 +776,7 @@ data StmStack s b a where
   OrElseRightFrame :: (a -> StmA s b)         -- subsequent continuation
                    -> Map TVarId (SomeTVar s) -- saved written vars set
                    -> [SomeTVar s]            -- saved written vars list
+                   -> [SomeTVar s]            -- created vars list
                    -> StmStack s b c
                    -> StmStack s a c
 
