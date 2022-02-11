@@ -37,6 +37,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (StaticEither (..))
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as TECHDEBT
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
@@ -47,12 +48,14 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LgrDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as TECHDEBT
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
+import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 
@@ -188,6 +191,7 @@ mkServer k chain = do
       DiskLedgerView
         (LgrDB.ledgerDbCurrent ldb)
         (\(ExtLedgerStateTables NoTestLedgerTables) -> pure $ ExtLedgerStateTables NoTestLedgerTables)
+        (\_rq -> pure $ ExtLedgerStateTables NoTestLedgerTables)
         (pure ())
 
 -- | Initialise a 'LgrDB' with the given chain.
@@ -199,7 +203,13 @@ initLgrDB
 initLgrDB k chain = do
     varDB          <- newTVarIO genesisLedgerDB
     varPrevApplied <- newTVarIO mempty
-    let lgrDB = mkLgrDB varDB varPrevApplied (error "TODO UTxO HD") (error "TODO UTxO HD") resolve args
+    backingStore <- do
+      v <- uncheckedNewTVarM Mock.empty
+      TECHDEBT.newBackingStore
+        (SomeHasFS (simHasFS v))
+        (ExtLedgerStateTables NoTestLedgerTables)
+    rawLock <- TECHDEBT.new ()
+    let lgrDB = mkLgrDB varDB varPrevApplied backingStore rawLock resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0 noopTrace
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
         LgrDB.ValidateExceededRollBack _ ->

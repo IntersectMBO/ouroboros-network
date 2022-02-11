@@ -87,6 +87,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
+  , isCandidateForUnstowDefault
     -- ** Changelog
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
@@ -110,6 +111,8 @@ import           Control.Monad (when)
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import           Data.Functor.Identity(Identity(..))
+import qualified Data.Map as Map
+import           Data.Monoid (All (..))
 import           Data.Typeable (Typeable)
 import qualified Data.Text as Text
 import           Data.Word (Word8)
@@ -137,6 +140,7 @@ import           Ouroboros.Consensus.Util.Singletons
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import qualified Database.LMDB.Simple as LMDB
 -- import           Codec.Serialise.Class(Serialise)
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (RangeQuery)
 
 {-------------------------------------------------------------------------------
   Tip
@@ -526,6 +530,7 @@ type LedgerStateKind = MapKind -> Type
 data MapKind = DiffMK
              | EmptyMK
              | KeysMK
+             | QueryMK
              | RewoundMK
              | SeqDiffMK
              | TrackingMK
@@ -546,6 +551,9 @@ data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyLMDBMK     :: !String -> !(LMDB.Database k v)       -> ApplyMapKind LMDBMK       k v
   ApplyNameMK     :: !String                               -> ApplyMapKind NameMK       k v -- The name of a table, used for mapping to on disk storage
 
+  ApplyQueryAllMK  ::                    ApplyMapKind QueryMK k v
+  ApplyQuerySomeMK :: !(UtxoKeys k v) -> ApplyMapKind QueryMK k v
+
 emptyAppliedMK :: Ord k => SMapKind mk -> ApplyMapKind mk k v
 emptyAppliedMK = \case
     SEmptyMK    -> ApplyEmptyMK
@@ -555,6 +563,7 @@ emptyAppliedMK = \case
     SDiffMK     -> ApplyDiffMK     emptyUtxoDiff
     SSeqDiffMK  -> ApplySeqDiffMK  emptySeqUtxoDiff
     SRewoundMK  -> ApplyRewoundMK  (RewoundKeys emptyUtxoKeys emptyUtxoValues emptyUtxoKeys)
+    SQueryMK    -> ApplyQuerySomeMK emptyUtxoKeys
     SLMDBMK     -> error "emptyAppliedMK: SLMDBMK"
     SNameMK     -> ApplyNameMK "emptyAppliedMK"
 
@@ -573,7 +582,9 @@ mapValuesAppliedMK f = \case
   ApplyDiffMK diff        -> ApplyDiffMK     (mapUtxoDiff f diff)
   ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
   ApplyRewoundMK rew      -> ApplyRewoundMK  (mapRewoundKeys f rew)
-  ApplyLMDBMK {}        -> error "mapValuesAppliedMK: LMDBMK"
+  ApplyQueryAllMK         -> ApplyQueryAllMK
+  ApplyQuerySomeMK ks     -> ApplyQuerySomeMK (castUtxoKeys ks)
+  ApplyLMDBMK {}          -> error "mapValuesAppliedMK: LMDBMK"
   ApplyNameMK n           -> ApplyNameMK n
 
 diffKeysMK :: ApplyMapKind DiffMK k v -> ApplyMapKind KeysMK k v
@@ -593,8 +604,11 @@ instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
   ApplyDiffMK l         == ApplyDiffMK r         = l == r
   ApplySeqDiffMK l      == ApplySeqDiffMK r      = l == r
   ApplyRewoundMK l      == ApplyRewoundMK r      = l == r
+  ApplyQueryAllMK       == ApplyQueryAllMK       = True
+  ApplyQuerySomeMK l    == ApplyQuerySomeMK r    = l == r
   ApplyLMDBMK n1 _      == ApplyLMDBMK n2 _      = n1 == n2 -- TODO this ignores the db, which could matter if the Databases are from differnt LMDB on-disk environments. We could error here instead
   ApplyNameMK n1        == ApplyNameMK n2        = n1 == n2
+  _                     == _                     = False
 
 instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
   wNoThunks ctxt   = NoThunks.allNoThunks . \case
@@ -605,6 +619,8 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
     ApplyDiffMK diff        -> [noThunks ctxt diff]
     ApplySeqDiffMK diffs    -> [noThunks ctxt diffs]
     ApplyRewoundMK rew      -> [noThunks ctxt rew]
+    ApplyQueryAllMK         -> []
+    ApplyQuerySomeMK ks     -> [noThunks ctxt ks]
     ApplyLMDBMK n _         -> [noThunks ctxt n] -- TODO I guess the Database is allowed to have thunks
     ApplyNameMK n           -> [noThunks ctxt n]
 
@@ -621,8 +637,10 @@ instance
       ApplyDiffMK diff        -> encodeArityAndTag 4 [toCBOR diff]
       ApplySeqDiffMK diffs    -> encodeArityAndTag 5 [toCBOR diffs]
       ApplyRewoundMK rew      -> encodeArityAndTag 6 [toCBOR rew]
+      ApplyQueryAllMK         -> encodeArityAndTag 7 []
+      ApplyQuerySomeMK ks     -> encodeArityAndTag 7 [toCBOR ks]
       ApplyLMDBMK {}          -> error $ "toCBOR: can't serialise ApplyLMDBMK"
-      ApplyNameMK n           -> encodeArityAndTag 7 [toCBOR $ Text.pack n]
+      ApplyNameMK n           -> encodeArityAndTag 8 [toCBOR $ Text.pack n]
     where
       encodeArityAndTag :: Word8 -> [CBOR.Encoding] -> CBOR.Encoding
       encodeArityAndTag tag xs =
@@ -636,11 +654,18 @@ instance
     case smk of
       SEmptyMK    -> decodeArityAndTag 0 0 *> (ApplyEmptyMK    <$  pure ())
       SKeysMK     -> decodeArityAndTag 1 1 *> (ApplyKeysMK     <$> fromCBOR)
-      SValuesMK   -> decodeArityAndTag 2 1 *> (ApplyValuesMK   <$> fromCBOR)
-      STrackingMK -> decodeArityAndTag 3 2 *> (ApplyTrackingMK <$> fromCBOR <*> fromCBOR)
-      SDiffMK     -> decodeArityAndTag 4 1 *> (ApplyDiffMK     <$> fromCBOR)
-      SSeqDiffMK  -> decodeArityAndTag 5 1 *> (ApplySeqDiffMK  <$> fromCBOR)
-      SRewoundMK  -> decodeArityAndTag 6 1 *> (ApplyRewoundMK  <$> fromCBOR)
+      SValuesMK   -> decodeArityAndTag 1 2 *> (ApplyValuesMK   <$> fromCBOR)
+      STrackingMK -> decodeArityAndTag 2 3 *> (ApplyTrackingMK <$> fromCBOR <*> fromCBOR)
+      SDiffMK     -> decodeArityAndTag 1 4 *> (ApplyDiffMK     <$> fromCBOR)
+      SSeqDiffMK  -> decodeArityAndTag 1 5 *> (ApplySeqDiffMK  <$> fromCBOR)
+      SRewoundMK  -> decodeArityAndTag 1 6 *> (ApplyRewoundMK  <$> fromCBOR)
+      SQueryMK    -> do
+        len <- CBOR.decodeListLen
+        tag <- CBOR.decodeWord8
+        case (len, tag) of
+          (2, 7) -> pure ApplyQueryAllMK
+          (3, 7) -> ApplyQuerySomeMK <$> fromCBOR
+          o      -> fail $ "decode @ApplyMapKind SQueryMK, " <> show o
       SLMDBMK     -> error $ "fromCBOR: can't deserialise ApplyLMDBMK"
       SNameMK     -> decodeArityAndTag 7 1 *> (ApplyNameMK  . Text.unpack <$> fromCBOR)
     where
@@ -652,7 +677,7 @@ instance
         tag' <- CBOR.decodeWord8
         when
           (len /= 1 + len' || tag /= tag')
-          (fail $ "decode @ApplyMapKind " <> show smk)
+          (fail $ "decode @ApplyMapKind " <> show (smk, len', tag'))
 
 showsApplyMapKind :: (Show k, Show v) => ApplyMapKind mk k v -> ShowS
 showsApplyMapKind = \case
@@ -666,6 +691,9 @@ showsApplyMapKind = \case
     ApplyLMDBMK n _             -> showParen True $ showString "ApplyLMDBMK " . shows n
     ApplyNameMK n               -> showParen True $ showString "ApplyNameMK " . shows n
 
+    ApplyQueryAllMK       -> showParen True $ showString "ApplyQueryAllMK"
+    ApplyQuerySomeMK keys -> showParen True $ showString "ApplyQuerySomeMK " . shows keys
+
 data instance Sing (mk :: MapKind) :: Type where
   SEmptyMK    :: Sing EmptyMK
   SKeysMK     :: Sing KeysMK
@@ -674,6 +702,7 @@ data instance Sing (mk :: MapKind) :: Type where
   SDiffMK     :: Sing DiffMK
   SSeqDiffMK  :: Sing SeqDiffMK
   SRewoundMK  :: Sing RewoundMK
+  SQueryMK    :: Sing QueryMK
   SLMDBMK     :: Sing LMDBMK
   SNameMK     :: Sing NameMK
 
@@ -686,6 +715,7 @@ instance SingI TrackingMK where sing = STrackingMK
 instance SingI DiffMK     where sing = SDiffMK
 instance SingI SeqDiffMK  where sing = SSeqDiffMK
 instance SingI RewoundMK  where sing = SRewoundMK
+instance SingI QueryMK    where sing = SQueryMK
 instance SingI LMDBMK     where sing = SLMDBMK
 instance SingI NameMK     where sing = SNameMK
 
@@ -707,6 +737,9 @@ toSMapKind = \case
     ApplyLMDBMK{}     -> SLMDBMK
     ApplyNameMK{}     -> SNameMK
 
+    ApplyQueryAllMK{}  -> SQueryMK
+    ApplyQuerySomeMK{} -> SQueryMK
+
 instance Eq (Sing (mk :: MapKind)) where
   _ == _ = True
 
@@ -719,8 +752,10 @@ instance Show (Sing (mk :: MapKind)) where
     SDiffMK     -> "SDiffMK"
     SSeqDiffMK  -> "SSeqDiffMK"
     SRewoundMK  -> "SRewoundMK"
+    SQueryMK    -> "SQueryMK"
     SLMDBMK     -> "SLMDBMK"
     SNameMK     -> "SNameMK"
+
 deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
 
 -- TODO include a tag, for some self-description
@@ -731,6 +766,7 @@ instance ToCBOR (Sing TrackingMK) where toCBOR STrackingMK = CBOR.encodeNull
 instance ToCBOR (Sing DiffMK)     where toCBOR SDiffMK     = CBOR.encodeNull
 instance ToCBOR (Sing SeqDiffMK)  where toCBOR SSeqDiffMK  = CBOR.encodeNull
 instance ToCBOR (Sing RewoundMK)  where toCBOR SRewoundMK  = CBOR.encodeNull
+instance ToCBOR (Sing QueryMK)    where toCBOR SQueryMK    = CBOR.encodeNull
 instance ToCBOR (Sing NameMK)     where toCBOR SNameMK     = CBOR.encodeNull
 -- no instance for LMDBMK
 
@@ -742,6 +778,7 @@ instance FromCBOR (Sing TrackingMK) where fromCBOR = STrackingMK <$ CBOR.decodeN
 instance FromCBOR (Sing DiffMK)     where fromCBOR = SDiffMK     <$ CBOR.decodeNull
 instance FromCBOR (Sing SeqDiffMK)  where fromCBOR = SSeqDiffMK  <$ CBOR.decodeNull
 instance FromCBOR (Sing RewoundMK)  where fromCBOR = SRewoundMK  <$ CBOR.decodeNull
+instance FromCBOR (Sing QueryMK)    where fromCBOR = SQueryMK    <$ CBOR.decodeNull
 instance FromCBOR (Sing NameMK)     where fromCBOR = SNameMK     <$ CBOR.decodeNull
 -- no instance for LMDBMK
 
@@ -780,6 +817,7 @@ data DiskLedgerView m l =
     DiskLedgerView
       !(l EmptyMK)
       (LedgerTables l KeysMK -> m (LedgerTables l ValuesMK))
+      (RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK))   -- TODO will be unacceptably coarse once we have multiple tables
       (m ())
 
 type TableKeySets l = LedgerTables l KeysMK
@@ -815,6 +853,22 @@ class StowableLedgerTables (l :: LedgerStateKind) where
   --
   -- This function should check that the UTxO inside the ledger state is not empty.
   isCandidateForUnstow :: l EmptyMK -> Bool
+
+-- | True if and only if all tables are non-empty
+--
+-- TODO reconsider each occurrences of this as soon as we add a second table
+-- beyond the UTxO map
+isCandidateForUnstowDefault ::
+     (TableStuff l, StowableLedgerTables l)
+  => l EmptyMK -> Bool
+isCandidateForUnstowDefault =
+      getAll
+    . foldLedgerTables (All . not . nullValues)
+    . projectLedgerTables
+    . unstowLedgerTables
+  where
+    nullValues :: ApplyMapKind ValuesMK k v -> Bool
+    nullValues (ApplyValuesMK (UtxoValues vs)) = Map.null vs
 
 {-------------------------------------------------------------------------------
   Changelog

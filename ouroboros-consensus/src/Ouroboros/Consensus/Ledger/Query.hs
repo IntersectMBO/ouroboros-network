@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE EmptyCase             #-}
@@ -17,6 +18,8 @@
 module Ouroboros.Consensus.Ledger.Query (
     BlockQuery
   , ConfigSupportsNode (..)
+  , FootprintQ (..)
+  , IncrementalQueryHandler (..)
   , Query (..)
   , QueryLedger (..)
   , QuerySat
@@ -28,6 +31,7 @@ module Ouroboros.Consensus.Ledger.Query (
   , nodeToClientVersionToQueryVersion
   , prepareQuery
   , proveNotLargeQuery
+  , proveNotWholeQuery
   , queryDecodeNodeToClient
   , queryEncodeNodeToClient
   , withSmallQueryProof
@@ -43,6 +47,8 @@ module Ouroboros.Consensus.Ledger.Query (
 
 import           Control.Exception (Exception, throw)
 import           Data.Kind (Type)
+import qualified Data.Map as Map
+import           Data.Monoid (All (..))
 import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -64,8 +70,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      headerStateBlockNo, headerStatePoint)
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView (..),
-                     LedgerState, TableKeySets, withLedgerTables)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
 import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
@@ -73,6 +78,8 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (BlockNodeToClientVersion)
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (RangeQuery (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.DepPair
 
@@ -306,10 +313,25 @@ class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   prepareBlockQuery :: BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
 
+  answerWholeBlockQuery :: BlockQuery blk WholeL result -> IncrementalQueryHandler blk result
+
   -- This method need not be defined for a @'BlockQuery' blk@ that only contains
   -- 'SmallL' queries.
   default prepareBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
   prepareBlockQuery query = proveNotLargeQuery query
+
+  -- This method need not be defined for a @'BlockQuery' blk@ that only contains
+  -- 'SmallL' queries.
+  default answerWholeBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk WholeL result -> IncrementalQueryHandler blk result
+  answerWholeBlockQuery query = proveNotWholeQuery query
+
+data IncrementalQueryHandler :: Type -> Type -> Type where
+  IncrementalQueryHandler ::
+       (LedgerState blk ValuesMK -> st)
+    -> st
+    -> (st -> st -> st)
+    -> (st -> result)
+    -> IncrementalQueryHandler blk result
 
 -- | Same as 'handleLargeQuery', but can also handle small queries.
 handleQuery ::
@@ -325,10 +347,11 @@ handleQuery ::
   -> Query blk fp result
   -> m result
 handleQuery cfg dlv query = case classifyQuery query of
-    Left  Refl -> pure $ answerQuery cfg query st
-    Right Refl -> handleLargeQuery cfg dlv query
+    SmallQ -> pure $ answerQuery cfg query st
+    LargeQ -> handleLargeQuery cfg dlv query
+    WholeQ -> handleWholeQuery dlv query
   where
-    DiskLedgerView st _dbRead _dbClose = dlv
+    DiskLedgerView st _dbRead _dbRangeRead _dbClose = dlv
 
 handleLargeQuery ::
      forall blk m result.
@@ -342,10 +365,51 @@ handleLargeQuery ::
   -> Query blk LargeL result
   -> m result
 handleLargeQuery cfg dlv query = do
-    let DiskLedgerView st dbRead _dbClose = dlv
-        keys                              = prepareQuery query
+    let DiskLedgerView st dbRead _dbReadRange _dbClose = dlv
+        keys                                           = prepareQuery query
     values <- dbRead (ExtLedgerStateTables keys)
     pure $ answerQuery cfg query (st `withLedgerTables` values)
+
+handleWholeQuery ::
+     forall blk m result.
+     ( QueryLedger blk
+     , Monad m
+     , LedgerSupportsProtocol blk
+     )
+  => DiskLedgerView m (ExtLedgerState blk)
+  -> Query blk WholeL result
+  -> m result
+handleWholeQuery dlv query = do
+    case let BlockQuery bq = query in answerWholeBlockQuery bq of
+      IncrementalQueryHandler
+        partial
+        (empty :: st)
+        comb
+        post ->
+          let
+            loop ::
+                 Maybe (LedgerTables (ExtLedgerState blk) KeysMK)
+              -> st
+              -> m st
+            loop !prev !acc = do
+              extValues@(ExtLedgerStateTables values) <-
+                dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
+              if getAll $ foldLedgerTables (All . f) values then pure acc else do
+                loop
+                  (Just $ mapLedgerTables toKeys extValues)
+                  (comb acc $ partial $ ledgerState st `withLedgerTables` values)
+          in post <$> loop Nothing empty
+  where
+
+    DiskLedgerView st _dbRead dbReadRange _dbClose = dlv
+
+    f :: ApplyMapKind ValuesMK k v -> Bool
+    f (ApplyValuesMK (HD.UtxoValues vs)) = Map.null vs
+
+    toKeys :: ApplyMapKind ValuesMK k v -> ApplyMapKind KeysMK k v
+    toKeys (ApplyValuesMK (HD.UtxoValues vs)) = ApplyKeysMK $ HD.UtxoKeys $ Map.keysSet vs
+
+    batchSize = 100000   -- TODO tune, expose as config, etc
 
 {-------------------------------------------------------------------------------
   Queries that are small
@@ -363,19 +427,30 @@ proveNotLargeQuery q = case mk q of {}
     mk :: forall fp. query fp result -> fp :~: SmallL
     mk q' = withSmallQueryProof q' Refl
 
+proveNotWholeQuery :: forall query result a. SmallQuery query => query WholeL result -> a
+proveNotWholeQuery q = case mk q of {}
+  where
+    mk :: forall fp. query fp result -> fp :~: SmallL
+    mk q' = withSmallQueryProof q' Refl
+
+data FootprintQ :: FootprintL -> Type where
+  SmallQ :: FootprintQ SmallL
+  LargeQ :: FootprintQ LargeL
+  WholeQ :: FootprintQ WholeL
+
 class ( EqQuery query
       , ShowQuery query
       ) => IsQuery query where
-  classifyQuery :: query fp result -> Either (fp :~: SmallL) (fp :~: LargeL)
+  classifyQuery :: query fp result -> FootprintQ fp
 
   -- This method need not be defined for a @query@ that only contains 'SmallL'
   -- queries.
-  default classifyQuery :: SmallQuery query => query fp result -> Either (fp :~: SmallL) (fp :~: LargeL)
-  classifyQuery query = withSmallQueryProof query (Left Refl)
+  default classifyQuery :: SmallQuery query => query fp result -> FootprintQ fp
+  classifyQuery query = withSmallQueryProof query SmallQ
 
 instance (IsQuery (BlockQuery blk), StandardHash blk) => IsQuery (Query blk) where
   classifyQuery = \case
     BlockQuery query -> classifyQuery query
-    GetSystemStart   -> Left Refl
-    GetChainBlockNo  -> Left Refl
-    GetChainPoint    -> Left Refl
+    GetSystemStart   -> SmallQ
+    GetChainBlockNo  -> SmallQ
+    GetChainPoint    -> SmallQ

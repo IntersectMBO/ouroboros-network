@@ -143,9 +143,10 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
       let runDual =
             if LgrDB.lgrRunAlsoLegacy argsLgrDb == RunOnlyNew
             then RunOnlyNew
-            else if maybe False (== "1") $ unsafePerformIO (lookupEnv "DISABLE_DUAL_LEDGER")
-                 then RunBoth
-                 else RunOnlyNew
+            else case unsafePerformIO (lookupEnv "DISABLE_DUAL_LEDGER") of
+                   Nothing     -> RunBoth
+                   Just "True" -> RunOnlyNew
+                   Just o      -> error $ "DISABLE_DUAL_LEDGER is either unset or set to the string \"True\", not " <> o
       (lgrDB, replayed) <- LgrDB.openDB (argsLgrDb { LgrDB.lgrRunAlsoLegacy = runDual })
                             lgrReplayTracer
                             immutableDB

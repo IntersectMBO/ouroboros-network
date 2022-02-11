@@ -37,6 +37,7 @@ import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as Enc
 import           Codec.Serialise (Serialise (..))
+import           Control.Applicative (liftA2)
 import           Data.Bifunctor
 import           Data.Functor.Product
 import           Data.Kind (Type)
@@ -75,6 +76,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
                      (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..), mustMatchNS)
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Tele
 
 instance Typeable xs => ShowProxy (BlockQuery (HardForkBlock xs)) where
 
@@ -146,6 +148,11 @@ instance
       QueryIfCurrent queryIfCurrent  -> prepareQueryIfCurrent queryIfCurrent
       QueryAnytime queryAnytime _era -> proveNotLargeQuery    queryAnytime
       QueryHardFork queryHardFork    -> proveNotLargeQuery    queryHardFork
+
+  answerWholeBlockQuery = \case
+      QueryIfCurrent queryIfCurrent  -> answerWholeBlockQueryIfCurrent queryIfCurrent
+      QueryAnytime queryAnytime _era -> proveNotWholeQuery             queryAnytime
+      QueryHardFork queryHardFork    -> proveNotWholeQuery             queryHardFork
 
 instance All SingleEraBlock xs => IsQuery (BlockQuery (HardForkBlock xs)) where
   classifyQuery = \case
@@ -284,6 +291,55 @@ prepareQueryIfCurrent =
     go (QS qic) (_   :* injs) = go qic injs
     go (QZ bq)  (inj :* _)    =
       applyInjectLedgerTables inj $ prepareBlockQuery bq
+
+answerWholeBlockQueryIfCurrent ::
+     forall result xs. All SingleEraBlock xs
+  => QueryIfCurrent xs WholeL result
+  -> IncrementalQueryHandler
+       (HardForkBlock xs)
+       (Either (MismatchEraInfo xs) result)
+answerWholeBlockQueryIfCurrent =
+    go (\f -> f)
+  where
+    go :: All SingleEraBlock xs'
+       => (forall st.
+              (LedgerState (HardForkBlock xs') ValuesMK -> Either (MismatchEraInfo xs') st)
+           -> (LedgerState (HardForkBlock xs)  ValuesMK -> Either (MismatchEraInfo xs)  st)
+          )
+       -> QueryIfCurrent xs' WholeL result
+       -> IncrementalQueryHandler
+            (HardForkBlock xs)
+            (Either (MismatchEraInfo xs) result)
+    go acc = \case
+      QZ qry  -> case answerWholeBlockQuery qry of
+        IncrementalQueryHandler partial empty comb post ->
+          let partial' st =
+                case hfStateTail st of
+                  Left  st'  -> Right $ partial st'
+                  Right sts' ->
+                      Left
+                    $ MismatchEraInfo
+                    $ ML (queryInfo qry)
+                    $ hcmap proxySingle ledgerInfo
+                    $ hmap currentState
+                    $ Tele.tip
+                    $ State.getHardForkState
+                    $ hardForkLedgerStatePerEra sts'
+          in IncrementalQueryHandler (acc partial') (Right empty) (liftA2 comb) (fmap post)
+      QS qic ->
+        go
+          (\f -> acc $ \sts -> case hfStateTail sts of
+              Left  st   -> Left $ MismatchEraInfo $ MR (hardForkQueryInfo qic) (ledgerInfo (Flip st))
+              Right sts' -> first shiftMismatch $ f sts'
+          )
+          qic
+
+hfStateTail ::
+                                LedgerState (HardForkBlock (x ': xs)) mk
+  -> Either (LedgerState x mk) (LedgerState (HardForkBlock       xs)  mk)
+hfStateTail (HardForkLedgerState (State.HardForkState tele)) = case tele of
+    Tele.TZ f        -> Left $ unFlip $ currentState f
+    Tele.TS _g tele' -> Right $ HardForkLedgerState $ State.HardForkState tele'
 
 {-------------------------------------------------------------------------------
   Any era queries
@@ -432,8 +488,8 @@ decodeQueryHardForkResult = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk mk. SingleEraBlock blk
-           => Flip ExtLedgerState mk blk
+ledgerInfo :: forall blk f (mk :: MapKind). SingleEraBlock blk
+           => Flip f mk blk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
