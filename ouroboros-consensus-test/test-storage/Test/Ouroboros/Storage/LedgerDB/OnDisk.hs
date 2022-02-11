@@ -628,6 +628,7 @@ runDB standalone@DB{..} cmd =
             (return testInitExtLedger)
             streamAPI
             RunBoth
+            InMemoryBackingStore
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
