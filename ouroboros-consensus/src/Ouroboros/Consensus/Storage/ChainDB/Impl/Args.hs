@@ -37,6 +37,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
+import Ouroboros.Consensus.Storage.LedgerDB.OnDisk (BackingStoreSelector(InMemoryBackingStore))
 
 {-------------------------------------------------------------------------------
   Arguments
@@ -188,6 +189,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
         , lgrTraceLedger      = cdbTraceLedger
         , lgrRunAlsoLegacy    = cdbLedgerRunAlsoLegacy
+        , lgrBackingStoreSelector = InMemoryBackingStore
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer

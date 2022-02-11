@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LgrDB
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
@@ -231,6 +232,7 @@ initLgrDB k chain = do
       , lgrTracer               = nullTracer
       , lgrTraceLedger          = nullTracer
       , lgrRunAlsoLegacy        = LgrDB.RunBoth
+      , lgrBackingStoreSelector = LgrDB.InMemoryBackingStore
       }
 
 testCfg :: SecurityParam -> TopLevelConfig TestBlock

@@ -37,7 +37,7 @@ import Control.Monad ( forever, unless, when, void )
 import Data.Functor ( ($>), (<&>) )
 import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
-import Codec.Serialise (Serialise)
+import qualified Codec.Serialise as S(Serialise(..))
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Ouroboros.Consensus.Util (foldlM')
@@ -47,12 +47,15 @@ import qualified Database.LMDB.Simple.Extra as LMDB
 import Data.Foldable (for_)
 import Database.LMDB.Simple (ReadWrite)
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
+import qualified Cardano.Binary as CBOR(ToCBOR(..), FromCBOR(..))
+import Unsafe.Coerce(unsafeCoerce)
 
 {-
 
 TODO Don't use DbRef
 
 -}
+
 {-# HLINT ignore #-}
 
 type LMDBBackingStore l = HD.BackingStore IO
@@ -91,62 +94,77 @@ data DbState  = DbState
   -- TODO a version field
   } deriving (Show, Generic)
 
-instance Serialise (DbState)
+instance S.Serialise (DbState)
 
-readLMDBTable :: (Ord k, Serialise k, Serialise v)
+newtype LmdbBox a = LmdbBox a
+  deriving newtype (Eq, Show, Ord) -- i.e. Shows as if it were a
+
+instance (CBOR.ToCBOR a, CBOR.FromCBOR a) => S.Serialise (LmdbBox a) where
+  encode (LmdbBox a) = CBOR.toCBOR a
+  decode = LmdbBox <$> CBOR.fromCBOR
+
+
+coerceDatabase :: LMDB.Database k v -> LMDB.Database (LmdbBox k) (LmdbBox v)
+coerceDatabase = unsafeCoerce
+  -- the type parameters to Database are phantom
+
+readLMDBTable :: Tables.LedgerConstraint k v
   => LMDB.Database k v
   -> HD.UtxoKeys k v
   -> LMDB.Transaction ReadWrite (HD.UtxoValues k v)
-readLMDBTable db (HD.UtxoKeys keys) =
+readLMDBTable db0 (HD.UtxoKeys keys) =
   HD.UtxoValues <$> foldlM' go Map.empty (Set.toList keys) where
-  go m k = LMDB.get db k <&> \case
+  db = coerceDatabase db0
+  go m k = LMDB.get db (LmdbBox k) <&> \case
     Nothing -> m
-    Just v -> Map.insert k v m
+    Just (LmdbBox v) -> Map.insert k v m
 
-writeLMDBTable :: (Serialise k, Serialise v)
+writeLMDBTable :: Tables.LedgerConstraint k v
   => LMDB.Database k v
   -> HD.UtxoDiff k v
   -> LMDB.Transaction LMDB.ReadWrite ()
-writeLMDBTable db (HD.UtxoDiff m) = void $ Map.traverseWithKey go m where
-  go k (HD.UtxoEntryDiff v reason) = LMDB.put db k new_val where
+writeLMDBTable db0 (HD.UtxoDiff m) = void $ Map.traverseWithKey go m where
+  db = coerceDatabase db0
+  go k (HD.UtxoEntryDiff v reason) = LMDB.put db (LmdbBox k) new_val where
     new_val
       | reason `elem` [HD.UedsDel, HD.UedsInsAndDel]
       = Nothing
-      | otherwise = Just v
+      | otherwise = Just (LmdbBox v)
 
-initLMDBTable :: (Serialise k, Serialise v)
+initLMDBTable :: Tables.LedgerConstraint k v
   => String
   -> LMDB.Database k v
   -> HD.UtxoValues k v
   -> LMDB.Transaction LMDB.ReadWrite ()
-initLMDBTable tbl_name db (HD.UtxoValues m) = do
+initLMDBTable tbl_name db0 (HD.UtxoValues m) = do
+  let db = coerceDatabase db0
   is_empty <- LMDB.null db
   unless is_empty $ Exn.throw $ DbErrInitialisingNonEmpty tbl_name
   void $ let
-    go k v = LMDB.put db k (Just v) 
+    go k v = LMDB.put db (LmdbBox k) (Just (LmdbBox v))
     in Map.traverseWithKey go m
     
 getDb_amk :: ( LMDB.Mode mode)
-  =>Tables.ApplyMapKind Tables.NamesMK k v
+  => Tables.ApplyMapKind Tables.NameMK k v
   -> LMDB.Transaction mode (Tables.ApplyMapKind Tables.LMDBMK k v)
-getDb_amk (Tables.ApplyNamesMK name) = Tables.ApplyLMDBMK name <$>
+getDb_amk (Tables.ApplyNameMK name) = Tables.ApplyLMDBMK name <$>
   LMDB.getDatabase (Just name)
   
-initLMDBTable_amk :: (Serialise k, Serialise v)
+initLMDBTable_amk :: Tables.LedgerConstraint k v
   => Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.ValuesMK k v
   -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.EmptyMK k v)
 initLMDBTable_amk (Tables.ApplyLMDBMK tbl_name db) (Tables.ApplyValuesMK vals) =
   initLMDBTable tbl_name db vals $> Tables.ApplyEmptyMK 
 
-readLMDBTable_amk :: (Ord k, Serialise k, Serialise v)
+readLMDBTable_amk :: Tables.LedgerConstraint k v
   => Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.KeysMK k v
   -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.ValuesMK k v)
 readLMDBTable_amk (Tables.ApplyLMDBMK _ db) (Tables.ApplyKeysMK keys) =
   Tables.ApplyValuesMK <$> readLMDBTable db keys
 
-writeLMDBTable_amk :: (Serialise k, Serialise v)
+writeLMDBTable_amk :: Tables.LedgerConstraint k v
   => Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.DiffMK k v
   -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.EmptyMK k v)

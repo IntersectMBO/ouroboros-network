@@ -113,6 +113,7 @@ import           Data.Functor.Identity(Identity(..))
 import           Data.Typeable (Typeable)
 import qualified Data.Text as Text
 import           Data.Word (Word8)
+-- import           Data.Coerce(Coercible)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           GHC.Show (showCommaSpace, showSpace)
@@ -135,6 +136,7 @@ import           Ouroboros.Consensus.Util.Singletons
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import qualified Database.LMDB.Simple as LMDB
+-- import           Codec.Serialise.Class(Serialise)
 
 {-------------------------------------------------------------------------------
   Tip
@@ -539,6 +541,8 @@ data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyTrackingMK :: !(UtxoValues  k v) -> !(UtxoDiff k v) -> ApplyMapKind TrackingMK   k v
   ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind ValuesMK     k v
   ApplyRewoundMK  :: !(RewoundKeys k v)                    -> ApplyMapKind RewoundMK    k v
+  -- ApplyLMDBMK     :: (Coercible k k', Coercible v v', Serialise k', Serialise v') =>
+  --                    !String -> !(LMDB.Database k' v')     -> ApplyMapKind LMDBMK       k v
   ApplyLMDBMK     :: !String -> !(LMDB.Database k v)       -> ApplyMapKind LMDBMK       k v
   ApplyNameMK     :: !String                               -> ApplyMapKind NameMK       k v -- The name of a table, used for mapping to on disk storage
 

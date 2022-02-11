@@ -170,7 +170,7 @@ data LgrDbArgs f m blk = LgrDbArgs {
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (TraceEvent blk)
     , lgrRunAlsoLegacy  :: RunAlsoLegacy
-    , lgrBackingStoreSelector :: BackingStoreSelector m
+    , lgrBackingStoreSelector :: !(BackingStoreSelector m)
     }
 
 -- | Default arguments
