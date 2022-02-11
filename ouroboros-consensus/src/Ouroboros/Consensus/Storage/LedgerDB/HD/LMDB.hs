@@ -267,7 +267,7 @@ initFromVals :: Tables.TableStuff l
   -> IO ()
 initFromVals dbsSeq vals Db{..} = LMDB.readWriteTransaction dbEnv $
    withDbSettingsRWMaybeNull dbSettings $ \case
-     Nothing -> Tables.zip2ALedgerTables initLMDBTable_amk dbBackingTables vals $> ((),DbState{dbsSeq})
+     Nothing -> Tables.zipLedgerTablesA initLMDBTable_amk dbBackingTables vals $> ((),DbState{dbsSeq})
      Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
 
 
@@ -336,7 +336,7 @@ newLMDBBackingStore sfs path init_db = do
     bsWrite slot diffs = LMDB.readWriteTransaction dbEnv $
       withDbSettingsRW dbSettings $ \s@DbState{dbsSeq} -> do
         when (At slot <= dbsSeq) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
-        void $ Tables.zip2ALedgerTables writeLMDBTable_amk dbBackingTables diffs
+        void $ Tables.zipLedgerTablesA writeLMDBTable_amk dbBackingTables diffs
         pure ((), s {dbsSeq = At slot})
 
   -- now initialise those tables if appropriate
@@ -399,14 +399,14 @@ backingStoreValueHandle tmv slot vh tbls = withValueHandles tmv $ \hs -> do
       is_last_handle <- closeValueHandle h
       when is_last_handle $ withValueHandles tmv $ pure . ((),) . Map.delete slot
     bsvhRead :: Tables.LedgerTables l Tables.KeysMK -> IO (Tables.LedgerTables l Tables.ValuesMK)
-    bsvhRead keys = vhSubmit (Tables.zip2ALedgerTables readLMDBTable_amk tbls keys) >>= \case
+    bsvhRead keys = vhSubmit (Tables.zipLedgerTablesA readLMDBTable_amk tbls keys) >>= \case
       Nothing -> Exn.throw DbErrBadRead
       Just x -> pure x
     bsvhRangeRead :: HD.RangeQuery (Tables.LedgerTables l Tables.KeysMK) -> IO (Tables.LedgerTables l Tables.ValuesMK)
     bsvhRangeRead HD.RangeQuery{rqPrev, rqCount} = let
       transaction = case rqPrev of
         Nothing -> Tables.traverseLedgerTables (initRangeReadLMDBTable_amk rqCount) tbls
-        Just keys -> Tables.zip2ALedgerTables (rangeReadLMDBTable_amk rqCount) tbls keys
+        Just keys -> Tables.zipLedgerTablesA (rangeReadLMDBTable_amk rqCount) tbls keys
       in vhSubmit transaction >>= \case
         Nothing -> Exn.throw DbErrBadRangeRead
         Just x -> pure x
@@ -446,6 +446,3 @@ getLMDBBackingStoreValueHandle Db{..} = do
 
   init_slot <- IOLike.atomically $ IOLike.takeTMVar init_slot_tmv
   (init_slot,) <$> backingStoreValueHandle dbValueHandles init_slot vh dbBackingTables
-
--- data LMDBField k v where
---   LMDBField :: (Serialise k, Serialise v, Typeable k, Typeable v) => LMDB.Database k v -> LMDBField k v

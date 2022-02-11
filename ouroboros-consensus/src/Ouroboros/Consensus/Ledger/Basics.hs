@@ -370,7 +370,7 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
 
-  zip2ALedgerTables :: Applicative f
+  zipLedgerTablesA :: Applicative f
     => (forall k v.
             LedgerConstraint k v
          => ApplyMapKind mk1 k v

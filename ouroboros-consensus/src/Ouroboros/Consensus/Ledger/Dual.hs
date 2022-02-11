@@ -433,13 +433,13 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
       (traverseLedgerTables f main)
       (traverseLedgerTables f aux)
 
-  zip2ALedgerTables
+  zipLedgerTablesA
     f
     (DualBlockLedgerTables mainL auxL)
     (DualBlockLedgerTables mainR auxR) =
       liftA2 DualBlockLedgerTables
-        (zip2ALedgerTables f mainL mainR)
-        (zip2ALedgerTables f auxL  auxR)
+        (zipLedgerTablesA f mainL mainR)
+        (zipLedgerTablesA f auxL  auxR)
 
   namesLedgerTables = error "DualBlock:namesLedgerTable:not sure how to combine these"
 
