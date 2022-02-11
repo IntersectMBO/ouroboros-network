@@ -96,7 +96,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , flushDbChangelog
   , prefixBackToAnchorDbChangelog
   , prefixDbChangelog
-  , pruneDbChangelog
+  , pruneVolatilePartDbChangelog
   , rollbackDbChangelog
   , youngestImmutableSlotDbChangelog
     -- ** Misc
@@ -907,10 +907,10 @@ extendDbChangelog dblog newState =
     ext (ApplySeqDiffMK sq) (ApplyDiffMK diff) =
       ApplySeqDiffMK $ extendSeqUtxoDiff sq slot diff
 
-pruneDbChangelog ::
+pruneVolatilePartDbChangelog ::
      GetTip (l EmptyMK)
   => SecurityParam -> DbChangelog l -> DbChangelog l
-pruneDbChangelog (SecurityParam k) dblog =
+pruneVolatilePartDbChangelog (SecurityParam k) dblog =
     Exn.assert (AS.length imm' + AS.length vol' == AS.length imm + AS.length vol) $
     DbChangelog {
         changelogDiffAnchor
