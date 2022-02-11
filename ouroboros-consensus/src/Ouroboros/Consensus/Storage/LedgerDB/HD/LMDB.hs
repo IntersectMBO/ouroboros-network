@@ -19,6 +19,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
   ( newLMDBBackingStore
   , DbErr
   , LMDBInit(..)
+  , LMDBLimits
+  , defaultLMDBLimits -- TODO this is just for convenience, should remove
   ) where
 
 import qualified Database.LMDB.Simple as LMDB
@@ -103,7 +105,6 @@ newtype LmdbBox a = LmdbBox a
 instance (CBOR.ToCBOR a, CBOR.FromCBOR a) => S.Serialise (LmdbBox a) where
   encode (LmdbBox a) = CBOR.toCBOR a
   decode = LmdbBox <$> CBOR.fromCBOR
-
 
 coerceDatabase :: LMDB.Database k v -> LMDB.Database (LmdbBox k) (LmdbBox v)
 coerceDatabase = unsafeCoerce
@@ -288,15 +289,16 @@ data LMDBInit l
   | LIInitialiseFromLMDB FS.FsPath -- ^ Initialise by copying from an LMDB db at this path
   | LINoInitialise -- ^ The database is already initialised
 
+type LMDBLimits = LMDB.Limits
 -- | Initialise a backing store
 newLMDBBackingStore :: forall l. (Tables.TableStuff l)
-  => FS.SomeHasFS IO 
+  => LMDBLimits
+  -> FS.SomeHasFS IO
   -> FS.FsPath -- ^ The path for the store we are opening
   -> LMDBInit l 
   -> IO (LMDBBackingStore l)
-newLMDBBackingStore sfs path init_db = do
+newLMDBBackingStore limits sfs path init_db = do
   let
-    limits = defaultLMDBLimits
     (gdd, copy_db_action, init_action) = case init_db of
       LIInitialiseFromLMDB fp
         -- If fp == path then this is the LINoInitialise case
