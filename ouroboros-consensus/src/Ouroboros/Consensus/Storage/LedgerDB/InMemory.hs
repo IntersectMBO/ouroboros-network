@@ -685,6 +685,9 @@ ledgerDbAnchor =
 -- | Information about the state of the most recently flushed ledger
 --
 -- This is what will be serialized when snapshotting.
+--
+-- PRECONDITION: if you are running the legacy ledger, then you must flush
+-- before calling this function
 ledgerDbOldest :: forall l.
      ( StandardHash (l EmptyMK)
      , GetTip (l EmptyMK)
@@ -815,7 +818,7 @@ ledgerDbPrune ::
 ledgerDbPrune k db = db {
       ledgerDbCheckpoints =
         AS.anchorNewest (maxRollbacks k) <$> ledgerDbCheckpoints db
-    , ledgerDbChangelog   = pruneDbChangelog k (ledgerDbChangelog db)
+    , ledgerDbChangelog   = pruneVolatileDbChangelog k (ledgerDbChangelog db)
     }
 
  -- NOTE: we must inline 'ledgerDbPrune' otherwise we get unexplained thunks in
