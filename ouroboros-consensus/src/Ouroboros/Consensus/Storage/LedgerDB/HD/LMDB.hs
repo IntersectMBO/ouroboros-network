@@ -85,6 +85,7 @@ data DbErr = DbErrStr !String
   | DbErrBadDynamic !String
   | DbErrInitialisingNonEmpty !String
   | DbErrBadRead
+  | DbErrBadRangeRead
   deriving stock (Show)
 
 instance Exn.Exception DbErr
@@ -131,6 +132,43 @@ writeLMDBTable db0 (HD.UtxoDiff m) = void $ Map.traverseWithKey go m where
       = Nothing
       | otherwise = Just (LmdbBox v)
 
+initRangeReadLMDBTable :: Tables.LedgerConstraint k v
+  => Int
+  -> LMDB.Database k v
+  -> LMDB.Transaction ReadWrite (HD.UtxoValues k v)
+initRangeReadLMDBTable count db0 =
+  -- This is inadequate. We are folding over the whole table, the
+  -- fiddling with either is to short circuit as best we can.
+  -- TODO improve llvm-simple bindings to give better access to cursors
+  wrangle <$> LMDB.foldrWithKey go (Right Map.empty) db where
+  db = coerceDatabase db0
+  wrangle = either HD.UtxoValues HD.UtxoValues
+  go (LmdbBox k) (LmdbBox v) acc = do
+    m <- acc
+    when (Map.size m >= count) $ Left m
+    pure $ Map.insert k v m
+
+rangeReadLMDBTable :: Tables.LedgerConstraint k v
+  => Int
+  -> LMDB.Database k v
+  -> HD.UtxoKeys k v
+  -> LMDB.Transaction ReadWrite (HD.UtxoValues k v)
+rangeReadLMDBTable count db0 (HD.UtxoKeys keys) = case Set.lookupMax keys of
+  -- This is inadequate. We are folding over the whole table, the
+  -- fiddling with either is to short circuit as best we can.
+  -- TODO improve llvm-simple bindings to give better access to cursors
+  Nothing -> pure $ HD.UtxoValues Map.empty
+  Just last_excluded_key -> let
+    db = coerceDatabase db0
+    wrangle = either HD.UtxoValues HD.UtxoValues
+    go (LmdbBox k) (LmdbBox v) acc
+      | k <= last_excluded_key = acc
+      | otherwise = do
+          m <- acc
+          when (Map.size m >= count) $ Left m
+          pure $ Map.insert k v m
+    in wrangle <$> LMDB.foldrWithKey go (Right Map.empty) db
+
 initLMDBTable :: Tables.LedgerConstraint k v
   => String
   -> LMDB.Database k v
@@ -170,6 +208,21 @@ writeLMDBTable_amk :: Tables.LedgerConstraint k v
   -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.EmptyMK k v)
 writeLMDBTable_amk (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyDiffMK diff) =
   writeLMDBTable db diff $> Tables.ApplyEmptyMK 
+
+initRangeReadLMDBTable_amk :: Tables.LedgerConstraint k v
+  => Int -- ^ number of rows to return
+  -> Tables.ApplyMapKind Tables.LMDBMK k v
+  -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.ValuesMK k v)
+initRangeReadLMDBTable_amk count (Tables.ApplyLMDBMK _tbl_name db)  =
+  Tables.ApplyValuesMK <$> initRangeReadLMDBTable count db
+
+rangeReadLMDBTable_amk :: Tables.LedgerConstraint k v
+  => Int -- ^ number of rows to return
+  -> Tables.ApplyMapKind Tables.LMDBMK k v
+  -> Tables.ApplyMapKind Tables.KeysMK k v
+  -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.ValuesMK k v)
+rangeReadLMDBTable_amk count (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyKeysMK keys) =
+  Tables.ApplyValuesMK <$> rangeReadLMDBTable count db keys
 
 readDbSettings :: LMDB.DBRef LMDB.ReadWrite DbState -> LMDB.Transaction mode DbState
 readDbSettings dbSettings = liftIO (LMDB.readDBRef dbSettings) >>= \case
@@ -349,6 +402,14 @@ backingStoreValueHandle tmv slot vh tbls = withValueHandles tmv $ \hs -> do
     bsvhRead keys = vhSubmit (Tables.zip2ALedgerTables readLMDBTable_amk tbls keys) >>= \case
       Nothing -> Exn.throw DbErrBadRead
       Just x -> pure x
+    bsvhRangeRead :: HD.RangeQuery (Tables.LedgerTables l Tables.KeysMK) -> IO (Tables.LedgerTables l Tables.ValuesMK)
+    bsvhRangeRead HD.RangeQuery{rqPrev, rqCount} = let
+      transaction = case rqPrev of
+        Nothing -> Tables.traverseLedgerTables (initRangeReadLMDBTable_amk rqCount) tbls
+        Just keys -> Tables.zip2ALedgerTables (rangeReadLMDBTable_amk rqCount) tbls keys
+      in vhSubmit transaction >>= \case
+        Nothing -> Exn.throw DbErrBadRangeRead
+        Just x -> pure x
 
   r <- IOLike.atomically $ do
     IOLike.modifyTVar vhRefCount (+1)
