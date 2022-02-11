@@ -441,7 +441,7 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
         (zipLedgerTablesA f mainL mainR)
         (zipLedgerTablesA f auxL  auxR)
 
-  namesLedgerTables = error "DualBlock:namesLedgerTable:not sure how to combine these"
+  namesLedgerTables = DualBlockLedgerTables namesLedgerTables namesLedgerTables
 
 deriving instance
      ( Eq (LedgerTables (LedgerState m) mk)

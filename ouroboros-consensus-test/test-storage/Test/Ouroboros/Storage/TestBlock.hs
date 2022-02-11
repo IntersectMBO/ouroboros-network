@@ -574,6 +574,9 @@ instance TableStuff (LedgerState TestBlock) where
   mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
   zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
   foldLedgerTables _ NoTestLedgerTables                    = mempty
+  traverseLedgerTables _ NoTestLedgerTables                = pure NoTestLedgerTables
+  zipLedgerTablesA _ NoTestLedgerTables NoTestLedgerTables = pure NoTestLedgerTables
+  namesLedgerTables                                        = NoTestLedgerTables
 
 instance Typeable mk => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
   toCBOR NoTestLedgerTables = toCBOR ()

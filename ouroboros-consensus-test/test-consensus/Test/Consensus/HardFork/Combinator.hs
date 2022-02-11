@@ -379,6 +379,9 @@ instance TableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   mapLedgerTables  _f            NoAbTables = NoAbTables
   zipLedgerTables  _f NoAbTables NoAbTables = NoAbTables
   foldLedgerTables _f            NoAbTables = mempty
+  traverseLedgerTables _f        NoAbTables = pure NoAbTables
+  zipLedgerTablesA _f NoAbTables NoAbTables = pure NoAbTables
+  namesLedgerTables                         = NoAbTables
 
 instance TickedTableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   projectLedgerTablesTicked _ = NoAbTables

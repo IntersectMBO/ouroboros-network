@@ -136,6 +136,9 @@ instance TableStuff (LedgerState ByronSpecBlock) where
   mapLedgerTables  _f                         NoByronSpecLedgerTables = NoByronSpecLedgerTables
   zipLedgerTables  _f NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
   foldLedgerTables _f                         NoByronSpecLedgerTables = mempty
+  traverseLedgerTables _f                     NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
+  zipLedgerTablesA _f NoByronSpecLedgerTables NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
+  namesLedgerTables                                                   = NoByronSpecLedgerTables
 
 instance TickedTableStuff (LedgerState ByronSpecBlock) where
   projectLedgerTablesTicked _st                     = NoByronSpecLedgerTables
