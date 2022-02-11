@@ -510,7 +510,7 @@ schedule thread@Thread{
 
     Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
-        StmTxCommitted x read written nextVid' -> do
+        StmTxCommitted x written read nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           vClockRead <- leastUpperBoundTVarVClocks read
@@ -1008,8 +1008,9 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
                     ) written
 
           -- Return the vars written, so readers can be unblocked
-          k0 $ StmTxCommitted x (Map.elems read)
-                                (reverse writtenSeq) nextVid
+          k0 $ StmTxCommitted x (reverse writtenSeq)
+                                (Map.elems read)
+                                nextVid
 
         OrElseLeftFrame _b k writtenOuter writtenOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
