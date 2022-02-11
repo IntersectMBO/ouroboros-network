@@ -111,6 +111,7 @@ import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import           Data.Functor.Identity(Identity(..))
 import           Data.Typeable (Typeable)
+import qualified Data.Text as Text
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -133,7 +134,6 @@ import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
-import Codec.Serialise.Class (Serialise)
 import qualified Database.LMDB.Simple as LMDB
 
 {-------------------------------------------------------------------------------
@@ -293,8 +293,8 @@ applyChainTick ::
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 
-class (Ord k, Serialise k, Serialise v) => LedgerConstraint k v
-instance (Ord k, Serialise k, Serialise v) => LedgerConstraint k v
+class (Ord k, ToCBOR k, FromCBOR k, ToCBOR v, FromCBOR v) => LedgerConstraint k v
+instance (Ord k, ToCBOR k, FromCBOR k, ToCBOR v, FromCBOR v) => LedgerConstraint k v
 
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
@@ -385,7 +385,7 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk
     -> m
 
-  namesLedgerTables :: LedgerTables l NamesMK
+  namesLedgerTables :: LedgerTables l NameMK
   -- foldNamedLedgerTables ::
 
   --         => ApplyMapKind mk k v
@@ -529,7 +529,7 @@ data MapKind = DiffMK
              | TrackingMK
              | ValuesMK
              | LMDBMK
-             | NamesMK
+             | NameMK
 
 data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyDiffMK     :: !(UtxoDiff    k v)                    -> ApplyMapKind DiffMK       k v
@@ -540,7 +540,7 @@ data ApplyMapKind :: MapKind -> Type -> Type -> Type where
   ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind ValuesMK     k v
   ApplyRewoundMK  :: !(RewoundKeys k v)                    -> ApplyMapKind RewoundMK    k v
   ApplyLMDBMK     :: !String -> !(LMDB.Database k v)       -> ApplyMapKind LMDBMK       k v
-  ApplyNamesMK    :: !String                               -> ApplyMapKind NamesMK      k v -- The name of a table, used for mapping to on disk storage
+  ApplyNameMK     :: !String                               -> ApplyMapKind NameMK       k v -- The name of a table, used for mapping to on disk storage
 
 emptyAppliedMK :: Ord k => SMapKind mk -> ApplyMapKind mk k v
 emptyAppliedMK = \case
@@ -551,6 +551,8 @@ emptyAppliedMK = \case
     SDiffMK     -> ApplyDiffMK     emptyUtxoDiff
     SSeqDiffMK  -> ApplySeqDiffMK  emptySeqUtxoDiff
     SRewoundMK  -> ApplyRewoundMK  (RewoundKeys emptyUtxoKeys emptyUtxoValues emptyUtxoKeys)
+    SLMDBMK     -> error "emptyAppliedMK: SLMDBMK"
+    SNameMK     -> ApplyNameMK "emptyAppliedMK"
 
 instance Ord k => Semigroup (ApplyMapKind KeysMK k v) where
   ApplyKeysMK l <> ApplyKeysMK r = ApplyKeysMK (l <> r)
@@ -567,6 +569,8 @@ mapValuesAppliedMK f = \case
   ApplyDiffMK diff        -> ApplyDiffMK     (mapUtxoDiff f diff)
   ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
   ApplyRewoundMK rew      -> ApplyRewoundMK  (mapRewoundKeys f rew)
+  ApplyLMDBMK {}        -> error "mapValuesAppliedMK: LMDBMK"
+  ApplyNameMK n           -> ApplyNameMK n
 
 diffKeysMK :: ApplyMapKind DiffMK k v -> ApplyMapKind KeysMK k v
 diffKeysMK (ApplyDiffMK diff) = ApplyKeysMK $ keysUtxoDiff diff
@@ -585,6 +589,8 @@ instance (Ord k, Eq v) => Eq (ApplyMapKind mk k v) where
   ApplyDiffMK l         == ApplyDiffMK r         = l == r
   ApplySeqDiffMK l      == ApplySeqDiffMK r      = l == r
   ApplyRewoundMK l      == ApplyRewoundMK r      = l == r
+  ApplyLMDBMK n1 _      == ApplyLMDBMK n2 _      = n1 == n2 -- TODO this ignores the db, which could matter if the Databases are from differnt LMDB on-disk environments. We could error here instead
+  ApplyNameMK n1        == ApplyNameMK n2        = n1 == n2
 
 instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
   wNoThunks ctxt   = NoThunks.allNoThunks . \case
@@ -595,6 +601,8 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind mk k v) where
     ApplyDiffMK diff        -> [noThunks ctxt diff]
     ApplySeqDiffMK diffs    -> [noThunks ctxt diffs]
     ApplyRewoundMK rew      -> [noThunks ctxt rew]
+    ApplyLMDBMK n _         -> [noThunks ctxt n] -- TODO I guess the Database is allowed to have thunks
+    ApplyNameMK n           -> [noThunks ctxt n]
 
   showTypeOf _ = "ApplyMapKind"
 
@@ -609,6 +617,8 @@ instance
       ApplyDiffMK diff        -> encodeArityAndTag 4 [toCBOR diff]
       ApplySeqDiffMK diffs    -> encodeArityAndTag 5 [toCBOR diffs]
       ApplyRewoundMK rew      -> encodeArityAndTag 6 [toCBOR rew]
+      ApplyLMDBMK {}          -> error $ "toCBOR: can't serialise ApplyLMDBMK"
+      ApplyNameMK n           -> encodeArityAndTag 7 [toCBOR $ Text.pack n]
     where
       encodeArityAndTag :: Word8 -> [CBOR.Encoding] -> CBOR.Encoding
       encodeArityAndTag tag xs =
@@ -627,6 +637,8 @@ instance
       SDiffMK     -> decodeArityAndTag 4 1 *> (ApplyDiffMK     <$> fromCBOR)
       SSeqDiffMK  -> decodeArityAndTag 5 1 *> (ApplySeqDiffMK  <$> fromCBOR)
       SRewoundMK  -> decodeArityAndTag 6 1 *> (ApplyRewoundMK  <$> fromCBOR)
+      SLMDBMK     -> error $ "fromCBOR: can't deserialise ApplyLMDBMK"
+      SNameMK     -> decodeArityAndTag 7 1 *> (ApplyNameMK  . Text.unpack <$> fromCBOR)
     where
       smk = sMapKind @mk
 
@@ -647,6 +659,8 @@ showsApplyMapKind = \case
     ApplyDiffMK diff            -> showParen True $ showString "ApplyDiffMK " . shows diff
     ApplySeqDiffMK sq           -> showParen True $ showString "ApplySeqDiffMK " . shows sq
     ApplyRewoundMK rew          -> showParen True $ showString "ApplyRewoundMK " . shows rew
+    ApplyLMDBMK n _             -> showParen True $ showString "ApplyLMDBMK " . shows n
+    ApplyNameMK n               -> showParen True $ showString "ApplyNameMK " . shows n
 
 data instance Sing (mk :: MapKind) :: Type where
   SEmptyMK    :: Sing EmptyMK
@@ -656,6 +670,8 @@ data instance Sing (mk :: MapKind) :: Type where
   SDiffMK     :: Sing DiffMK
   SSeqDiffMK  :: Sing SeqDiffMK
   SRewoundMK  :: Sing RewoundMK
+  SLMDBMK     :: Sing LMDBMK
+  SNameMK     :: Sing NameMK
 
 type SMapKind = Sing :: MapKind -> Type
 
@@ -666,6 +682,8 @@ instance SingI TrackingMK where sing = STrackingMK
 instance SingI DiffMK     where sing = SDiffMK
 instance SingI SeqDiffMK  where sing = SSeqDiffMK
 instance SingI RewoundMK  where sing = SRewoundMK
+instance SingI LMDBMK     where sing = SLMDBMK
+instance SingI NameMK     where sing = SNameMK
 
 sMapKind :: SingI mk => SMapKind mk
 sMapKind = sing
@@ -682,6 +700,8 @@ toSMapKind = \case
     ApplyDiffMK{}     -> SDiffMK
     ApplySeqDiffMK{}  -> SSeqDiffMK
     ApplyRewoundMK{}  -> SRewoundMK
+    ApplyLMDBMK{}     -> SLMDBMK
+    ApplyNameMK{}     -> SNameMK
 
 instance Eq (Sing (mk :: MapKind)) where
   _ == _ = True
@@ -695,7 +715,8 @@ instance Show (Sing (mk :: MapKind)) where
     SDiffMK     -> "SDiffMK"
     SSeqDiffMK  -> "SSeqDiffMK"
     SRewoundMK  -> "SRewoundMK"
-
+    SLMDBMK     -> "SLMDBMK"
+    SNameMK     -> "SNameMK"
 deriving via OnlyCheckWhnfNamed "Sing @MapKind" (Sing (mk :: MapKind)) instance NoThunks (Sing mk)
 
 -- TODO include a tag, for some self-description
@@ -706,6 +727,8 @@ instance ToCBOR (Sing TrackingMK) where toCBOR STrackingMK = CBOR.encodeNull
 instance ToCBOR (Sing DiffMK)     where toCBOR SDiffMK     = CBOR.encodeNull
 instance ToCBOR (Sing SeqDiffMK)  where toCBOR SSeqDiffMK  = CBOR.encodeNull
 instance ToCBOR (Sing RewoundMK)  where toCBOR SRewoundMK  = CBOR.encodeNull
+instance ToCBOR (Sing NameMK)     where toCBOR SNameMK     = CBOR.encodeNull
+-- no instance for LMDBMK
 
 -- TODO include a tag, for some self-description
 instance FromCBOR (Sing EmptyMK)    where fromCBOR = SEmptyMK    <$ CBOR.decodeNull
@@ -715,6 +738,8 @@ instance FromCBOR (Sing TrackingMK) where fromCBOR = STrackingMK <$ CBOR.decodeN
 instance FromCBOR (Sing DiffMK)     where fromCBOR = SDiffMK     <$ CBOR.decodeNull
 instance FromCBOR (Sing SeqDiffMK)  where fromCBOR = SSeqDiffMK  <$ CBOR.decodeNull
 instance FromCBOR (Sing RewoundMK)  where fromCBOR = SRewoundMK  <$ CBOR.decodeNull
+instance FromCBOR (Sing NameMK)     where fromCBOR = SNameMK     <$ CBOR.decodeNull
+-- no instance for LMDBMK
 
 calculateDifference ::
      Ord k
