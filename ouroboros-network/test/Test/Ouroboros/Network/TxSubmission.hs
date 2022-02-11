@@ -342,6 +342,7 @@ evaluateTrace = go []
         Right (TraceMainReturn _ a _)           -> pure $ SimReturn a (reverse as)
         Right (TraceMainException _ e _)        -> pure $ SimException e (reverse as)
         Right (TraceDeadlock _ _)               -> pure $ SimDeadLock (reverse as)
+        Right TraceLoop                         -> error "IOSimPOR step time limit exceeded"
         Left  (SomeException e)                 -> pure $ SimException (SomeException e) (reverse as)
 
 data WithThreadAndTime a = WithThreadAndTime {

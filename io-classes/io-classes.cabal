@@ -43,6 +43,7 @@ library
                        Control.Monad.Class.MonadThrow
                        Control.Monad.Class.MonadTime
                        Control.Monad.Class.MonadTimer
+                       Control.Monad.Class.MonadTest
   default-language:    Haskell2010
   other-extensions:    CPP
                        TypeFamilies

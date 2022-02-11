@@ -4,7 +4,7 @@
 
 module Ouroboros.Network.PeerSelection.LocalRootPeers
   ( -- * Types
-    LocalRootPeers
+    LocalRootPeers (..)        -- Export constructors for defining tests.
   , invariant
     -- * Basic operations
   , empty
