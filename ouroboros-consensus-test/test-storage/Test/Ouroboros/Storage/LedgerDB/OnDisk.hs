@@ -282,9 +282,9 @@ fromInitLog  InitFromGenesis          = MockFromGenesis
 fromInitLog (InitFromSnapshot ss tip) = MockFromSnapshot ss tip
 fromInitLog (InitFailure ss err log') =
     case err of
-      InitFailureRead _err -> MockReadFailure     ss     (fromInitLog log')
---      InitFailureTooRecent tip -> MockTooRecent       ss tip (fromInitLog log')   -- TODO Javier's PR removed InitFailureTooRecent
-      InitFailureGenesis   -> MockGenesisSnapshot ss     (fromInitLog log')
+      InitFailureRead _err     -> MockReadFailure     ss     (fromInitLog log')
+      InitFailureTooRecent tip -> MockTooRecent       ss tip (fromInitLog log')
+      InitFailureGenesis       -> MockGenesisSnapshot ss     (fromInitLog log')
 
 mockInitLog :: Mock -> MockInitLog MockSnap
 mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
@@ -478,13 +478,17 @@ data StandaloneDB m = DB {
 
       -- | LedgerDB config
     , dbLedgerDbCfg :: LedgerDbCfg (ExtLedgerState TestBlock)
+
+    , dbBackingStore :: StrictTVar m (LedgerBackingStore m (ExtLedgerState TestBlock))
     }
 
 initStandaloneDB :: forall m. IOLike m => DbEnv m -> m (StandaloneDB m)
 initStandaloneDB dbEnv@DbEnv{..} = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
-
+    dbBackingStore <- uncheckedNewTVarM =<< newBackingStore
+                                              (error "New backing store doesn't use HasFS for now")
+                                              (ExtLedgerStateTables NoTestLedgerTables)
     let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
 
@@ -608,16 +612,30 @@ runDB standalone@DB{..} cmd =
                 (map ApplyVal bs)
                 db
     go hasFS Snap = do
-        (_, db) <- atomically $ readTVar dbState
+        -- TODO: Maybe @Flush@ should be its own command but that would require
+        -- the implementation to change so that 'ledgerDbOldest' doesn't require
+        -- a 'flush' to happen just before it is called.
+
+        -- TODO: This duplicates too much logic of the flushing mechanisms. The
+        -- right thing to do would be to factor out the functions and here just
+        -- call one function that does all the job.
+        (toFlush, bs, db') <- atomically $ do
+          (_, db) <- readTVar dbState
+          bs <- readTVar dbBackingStore
+          let (toFlush, db') = ledgerDbFlush DbChangelogFlushAllImmutable db
+          modifyTVar dbState (\(rs, _) -> (rs, db'))
+          pure (toFlush, bs, db')
+        flush bs toFlush
+
         Snapped <$>
           takeSnapshot
             nullTracer
             hasFS
-            (error "UTxO HD backing store")
+            bs
             S.encode
-            db
+            db'
     go hasFS Restore = do
-        (initLog, db, _replayed, _backingStore) <-
+        (initLog, db, _replayed, backingStore) <-
           initLedgerDB
             nullTracer
             nullTracer
@@ -628,7 +646,9 @@ runDB standalone@DB{..} cmd =
             (return testInitExtLedger)
             streamAPI
             RunBoth
-        atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
+        atomically $ do
+          modifyTVar dbState (\(rs, _) -> (rs, db))
+          writeTVar dbBackingStore backingStore
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
         catch
@@ -681,8 +701,10 @@ runDB standalone@DB{..} cmd =
                           return $ MaybeErr (Right ())
 
     truncateSnapshot :: SomeHasFS m -> DiskSnapshot -> m ()
-    truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss =
-        withFile hasFS (snapshotToDirPath ss) (AppendMode AllowExisting) $ \h ->
+    truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss = do
+        withFile hasFS (snapshotToStatePath ss) (AppendMode AllowExisting) $ \h ->
+          hTruncate h 0
+        withFile hasFS (snapshotToTablesPath ss) (AppendMode AllowExisting) $ \h ->
           hTruncate h 0
 
     refValPair :: TestBlock -> (RealPoint TestBlock, TestBlock)
