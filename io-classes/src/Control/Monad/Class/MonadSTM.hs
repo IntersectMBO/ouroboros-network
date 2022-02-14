@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
@@ -14,11 +15,14 @@
 module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadLabelledSTM (..)
+  , MonadInspectSTM (..)
+  , MonadTraceSTM (..)
   , LazyTVar
   , LazyTMVar
     -- * Default 'TMVar' implementation
   , TMVarDefault (..)
   , labelTMVarDefault
+  , traceTMVarDefault
   , newTMVarDefault
   , newTMVarIODefault
   , newEmptyTMVarDefault
@@ -90,6 +94,7 @@ import           Control.Applicative (Alternative (..))
 import           Control.Exception
 import           Data.Function (on)
 import           Data.Kind (Type)
+import           Data.Typeable (Typeable)
 import           GHC.Stack
 import           Numeric.Natural (Natural)
 
@@ -238,6 +243,130 @@ class MonadSTM m
   default labelTBQueueIO :: TBQueue m a -> String -> m ()
   labelTBQueueIO = \v l -> atomically (labelTBQueue v l)
 
+
+-- | This type class is indented for 'io-sim', where one might want to access
+-- 'TVar' in the underlying 'ST' monad.
+--
+class ( MonadSTM m
+      , Monad (InspectMonad m)
+      )
+    => MonadInspectSTM m where
+    type InspectMonad m :: Type -> Type
+    inspectTVar  :: proxy m -> TVar  m a -> InspectMonad m a
+    inspectTMVar :: proxy m -> TMVar m a -> InspectMonad m (Maybe a)
+    -- TODO: inspectTQueue, inspectTBQueue
+
+instance MonadInspectSTM IO where
+    type InspectMonad IO = IO
+    inspectTVar  _ = readTVarIO
+    -- issue #3198: tryReadTMVarIO
+    inspectTMVar _ = atomically . tryReadTMVar
+
+
+-- | 'MonadTraceSTM' allows to trace values of stm variables when stm
+-- transaction is commited.  This allows to verify invariants when a variable
+-- is commited.
+--
+class MonadInspectSTM m
+   => MonadTraceSTM m where
+  -- | Construct a trace out of previous & new value of a 'TVar'.  The callback
+  -- is called whenever an stm transaction which modifies the 'TVar' is
+  -- commited.
+  --
+  -- This is supported by 'IOSim' and 'IOSimPOR'; 'IO' has a trivial instance.
+  --
+  {-# MINIMAL traceTVar, traceTQueue, traceTBQueue #-}
+
+  traceTVar    :: Typeable tr
+               => proxy m
+               -> TVar m a
+               -> (Maybe a -> a -> InspectMonad m tr)
+               -- ^ callback which receives initial value or 'Nothing' (if it
+               -- is a newly created 'TVar'), and the commited value.
+               -> STM m ()
+
+
+  traceTMVar   :: Typeable tr
+               => proxy m
+               -> TMVar m a
+               -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+               -> STM m ()
+
+  traceTQueue  :: Typeable tr
+               => proxy m
+               -> TQueue m a
+               -> (Maybe [a] -> [a] -> InspectMonad m tr)
+               -> STM m ()
+
+  traceTBQueue :: Typeable tr
+               => proxy m
+               -> TBQueue m a
+               -> (Maybe [a] -> [a] -> InspectMonad m tr)
+               -> STM m ()
+
+  default traceTMVar :: ( TMVar m a ~ TMVarDefault m a
+                        , Typeable tr
+                        )
+                     => proxy m
+                     -> TMVar m a
+                     -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+                     -> STM m ()
+  traceTMVar = traceTMVarDefault
+
+
+  traceTVarIO    :: Typeable tr
+                 => proxy m
+                 -> TVar m a
+                 -> (Maybe a -> a -> InspectMonad m tr)
+                 -> m ()
+
+  traceTMVarIO   :: Typeable tr
+                 => proxy m
+                 -> TMVar m a
+                 -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+                 -> m ()
+
+  traceTQueueIO  :: Typeable tr
+                 => proxy m
+                 -> TQueue m a
+                 -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                 -> m ()
+
+  traceTBQueueIO :: Typeable tr
+                 => proxy m
+                 -> TBQueue m a
+                 -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                 -> m ()
+
+  default traceTVarIO :: Typeable tr
+                      => proxy m
+                      -> TVar m a
+                      -> (Maybe a -> a -> InspectMonad m tr)
+                      -> m ()
+  traceTVarIO = \p v f -> atomically (traceTVar p v f)
+
+  default traceTMVarIO :: Typeable tr
+                       => proxy m
+                       -> TMVar m a
+                       -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+                       -> m ()
+  traceTMVarIO = \p v f -> atomically (traceTMVar p v f)
+
+  default traceTQueueIO :: Typeable tr
+                        => proxy m
+                        -> TQueue m a
+                        -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                        -> m ()
+  traceTQueueIO = \p v f -> atomically (traceTQueue p v f)
+
+  default traceTBQueueIO :: Typeable tr
+                         => proxy m
+                         -> TBQueue m a
+                         -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                         -> m ()
+  traceTBQueueIO = \p v f -> atomically (traceTBQueue p v f)
+
+
 --
 -- Instance for IO uses the existing STM library implementations
 --
@@ -310,6 +439,19 @@ instance MonadLabelledSTM IO where
   labelTQueueIO  = \_  _ -> return ()
   labelTBQueueIO = \_  _ -> return ()
 
+-- | noop instance
+--
+instance MonadTraceSTM IO where
+  traceTVar    = \_ _ _ -> return ()
+  traceTMVar   = \_ _ _ -> return ()
+  traceTQueue  = \_ _ _ -> return ()
+  traceTBQueue = \_ _ _ -> return ()
+
+  traceTVarIO    = \_ _ _ -> return ()
+  traceTMVarIO   = \_ _ _ -> return ()
+  traceTQueueIO  = \_ _ _ -> return ()
+  traceTBQueueIO = \_ _ _ -> return ()
+
 -- | Wrapper around 'BlockedIndefinitelyOnSTM' that stores a call stack
 data BlockedIndefinitely = BlockedIndefinitely {
       blockedIndefinitelyCallStack :: CallStack
@@ -327,7 +469,7 @@ wrapBlockedIndefinitely :: HasCallStack => IO a -> IO a
 wrapBlockedIndefinitely = handle (throwIO . BlockedIndefinitely callStack)
 
 --
--- Default TMVar implementation in terms of TVars (used by sim)
+-- Default TMVar implementation in terms of TVars
 --
 
 newtype TMVarDefault m a = TMVar (TVar m (Maybe a))
@@ -336,6 +478,14 @@ labelTMVarDefault
   :: MonadLabelledSTM m
   => TMVarDefault m a -> String -> STM m ()
 labelTMVarDefault (TMVar tvar) = labelTVar tvar
+
+traceTMVarDefault
+  :: (MonadTraceSTM m, Typeable tr)
+  => proxy m
+  -> TMVarDefault m a
+  -> (Maybe (Maybe a) -> Maybe a -> InspectMonad m tr)
+  -> STM m ()
+traceTMVarDefault p (TMVar t) f = traceTVar p t f
 
 newTMVarDefault :: MonadSTM m => a -> STM m (TMVarDefault m a)
 newTMVarDefault a = do
@@ -486,7 +636,7 @@ tryPeekTQueueDefault (TQueue read _write) = do
       _     -> return Nothing
 
 --
--- Default TBQueue implementation in terms of TVars (used by sim)
+-- Default TBQueue implementation in terms of TVars
 --
 
 data TBQueueDefault m a = TBQueue

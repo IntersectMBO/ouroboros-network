@@ -27,6 +27,7 @@ import           Data.Bifoldable (bitraverse_)
 import           Data.Function (on)
 import qualified Data.IP as IP
 import           Data.List (groupBy, foldl', intercalate)
+import           Data.Foldable (traverse_)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isNothing, listToMaybe)
@@ -134,9 +135,10 @@ tests =
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
   
-  , nightlyTest $ testProperty "governor no livelock (racing)"       $ prop_explore_governor_nolivelock
-  -- TODO: issue #3601
-  -- , nightlyTest $ testProperty "governor connection status (racing)" $ prop_explore_governor_connstatus
+  , testGroup "races"
+    [ nightlyTest $ testProperty "governor no livelock"       $ prop_explore_governor_nolivelock
+    ,               testProperty "governor connection status" $ prop_explore_governor_connstatus
+    ]
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others
@@ -528,6 +530,11 @@ envEventCredits  TraceEnvRootsResult{}          = 0
 envEventCredits  TraceEnvGossipRequest{}        = 0
 envEventCredits  TraceEnvGossipResult{}         = 0
 
+envEventCredits  TraceEnvEstablishConn {}       = 0
+envEventCredits  TraceEnvActivatePeer {}        = 0
+envEventCredits  TraceEnvDeactivatePeer {}      = 0
+envEventCredits  TraceEnvCloseConn {}           = 0
+
 
 
 -- | A coverage property, much like 'prop_governor_nofail' but we look to see
@@ -722,7 +729,7 @@ check_governor_connstatus _ trace0 =
               . selectPeerSelectionTraceEvents $ trace0
         --TODO: check any actually get a true status output and try some deliberate bugs
      in
-     whenFail (pPrint trace) $
+     whenFail (traverse_ print trace) $
      conjoin $ map ok (groupBy ((==) `on` fst) trace)
   where
     -- We look at events when the environment's view of the state of all the

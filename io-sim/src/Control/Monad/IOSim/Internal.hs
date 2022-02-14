@@ -56,6 +56,7 @@ import           Prelude hiding (read)
 import           Data.Foldable (traverse_)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
+import           Data.Maybe (catMaybes)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.OrdPSQ (OrdPSQ)
@@ -63,6 +64,7 @@ import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
+import           Data.Dynamic
 
 import           Control.Exception (assert)
 import           Control.Monad (join)
@@ -395,7 +397,7 @@ schedule thread@Thread{
 
     Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
-        StmTxCommitted x written _read nextVid' -> do
+        StmTxCommitted x written _read _created tvarTraces  nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           let thread'     = thread { threadControl = ThreadControl (k x) ctl }
@@ -416,7 +418,11 @@ schedule thread@Thread{
               [ (time, tid', tlbl', EventTxWakeup vids')
               | tid' <- unblocked
               , let tlbl' = lookupThreadLabel tid' threads
-              , let Just vids' = Set.toList <$> Map.lookup tid' wokeby ]
+              , let Just vids' = Set.toList <$> Map.lookup tid' wokeby ] $
+            traceMany
+              [ (time, tid, tlbl, EventLog tr)
+              | tr <- tvarTraces
+              ]
               trace
 
         StmTxAborted _read e -> do
@@ -758,33 +764,42 @@ execAtomically :: forall s a c.
                -> (StmTxResult s a -> ST s (SimTrace c))
                -> ST s (SimTrace c)
 execAtomically time tid tlbl nextVid0 action0 k0 =
-    go AtomicallyFrame Map.empty Map.empty [] nextVid0 action0
+    go AtomicallyFrame Map.empty Map.empty [] [] nextVid0 action0
   where
     go :: forall b.
           StmStack s b a
        -> Map TVarId (SomeTVar s)  -- set of vars read
        -> Map TVarId (SomeTVar s)  -- set of vars written
        -> [SomeTVar s]             -- vars written in order (no dups)
+       -> [SomeTVar s]             -- vars created in order
        -> TVarId                   -- var fresh name supply
        -> StmA s b
        -> ST s (SimTrace c)
-    go ctl !read !written writtenSeq !nextVid action = assert localInvariant $
+    go ctl !read !written writtenSeq createdSeq !nextVid action = assert localInvariant $
                                                        case action of
       ReturnStm x -> case ctl of
         AtomicallyFrame -> do
-          -- Commit each TVar
-          traverse_ (\(SomeTVar tvar) -> do
+          -- Trace each created TVar
+          ds  <- traverse (\(SomeTVar tvar) -> traceTVarST tvar True) createdSeq
+          -- Trace & commit each TVar
+          ds' <- Map.elems <$> traverse
+                    (\(SomeTVar tvar) -> do
+                        tr <- traceTVarST tvar False
                         commitTVar tvar
                         -- Also assert the data invariant that outside a tx
                         -- the undo stack is empty:
                         undos <- readTVarUndos tvar
-                        assert (null undos) $ return ()
+                        assert (null undos) $ return tr
                     ) written
 
           -- Return the vars written, so readers can be unblocked
-          k0 $ StmTxCommitted x (reverse writtenSeq) [] nextVid
+          k0 $ StmTxCommitted x (reverse writtenSeq)
+                                []
+                                (reverse createdSeq)
+                                (catMaybes $ ds ++ ds')
+                                nextVid
 
-        OrElseLeftFrame _b k writtenOuter writtenOuterSeq ctl' -> do
+        OrElseLeftFrame _b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
           -- in the written set of the outer transaction
           traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
@@ -796,9 +811,9 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
                                     writtenSeq
                          ++ writtenOuterSeq
           -- Skip the orElse right hand and continue with the k continuation
-          go ctl' read written' writtenSeq' nextVid (k x)
+          go ctl' read written' writtenSeq' createdOuterSeq nextVid (k x)
 
-        OrElseRightFrame k writtenOuter writtenOuterSeq ctl' -> do
+        OrElseRightFrame k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
           -- in the written set of the outer transaction
           traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
@@ -809,8 +824,9 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
                                       tvarId tvar `Map.notMember` writtenOuter)
                                     writtenSeq
                          ++ writtenOuterSeq
+              createdSeq' = createdSeq ++ createdOuterSeq
           -- Continue with the k continuation
-          go ctl' read written' writtenSeq' nextVid (k x)
+          go ctl' read written' writtenSeq' createdSeq' nextVid (k x)
 
       ThrowStm e -> do
         -- Revert all the TVar writes
@@ -824,58 +840,62 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
           -- Return vars read, so the thread can block on them
           k0 $ StmTxBlocked (Map.elems read)
 
-        OrElseLeftFrame b k writtenOuter writtenOuterSeq ctl' -> do
+        OrElseLeftFrame b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Revert all the TVar writes within this orElse
           traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Execute the orElse right hand with an empty written set
-          let ctl'' = OrElseRightFrame k writtenOuter writtenOuterSeq ctl'
-          go ctl'' read Map.empty [] nextVid b
+          let ctl'' = OrElseRightFrame k writtenOuter writtenOuterSeq createdOuterSeq ctl'
+          go ctl'' read Map.empty [] [] nextVid b
 
-        OrElseRightFrame _k writtenOuter writtenOuterSeq ctl' -> do
+        OrElseRightFrame _k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Revert all the TVar writes within this orElse branch
           traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Skip the continuation and propagate the retry into the outer frame
           -- using the written set for the outer frame
-          go ctl' read writtenOuter writtenOuterSeq nextVid Retry
+          go ctl' read writtenOuter writtenOuterSeq createdOuterSeq nextVid Retry
 
       OrElse a b k -> do
         -- Execute the left side in a new frame with an empty written set
-        let ctl' = OrElseLeftFrame b k written writtenSeq ctl
-        go ctl' read Map.empty [] nextVid a
+        let ctl' = OrElseLeftFrame b k written writtenSeq createdSeq ctl
+        go ctl' read Map.empty [] [] nextVid a
 
       NewTVar !mbLabel x k -> do
         v <- execNewTVar nextVid mbLabel x
-        go ctl read written writtenSeq (succ nextVid) (k v)
+        go ctl read written writtenSeq (SomeTVar v : createdSeq) (succ nextVid) (k v)
 
       LabelTVar !label tvar k -> do
         writeSTRef (tvarLabel tvar) $! (Just label)
-        go ctl read written writtenSeq nextVid k
+        go ctl read written writtenSeq createdSeq nextVid k
+
+      TraceTVar tvar f k -> do
+        writeSTRef (tvarTrace tvar) (Just $ MkTVarTrace f)
+        go ctl read written writtenSeq createdSeq nextVid k
 
       ReadTVar v k
         | tvarId v `Map.member` read -> do
             x <- execReadTVar v
-            go ctl read written writtenSeq nextVid (k x)
+            go ctl read written writtenSeq createdSeq nextVid (k x)
         | otherwise -> do
             x <- execReadTVar v
             let read' = Map.insert (tvarId v) (SomeTVar v) read
-            go ctl read' written writtenSeq nextVid (k x)
+            go ctl read' written writtenSeq createdSeq nextVid (k x)
 
       WriteTVar v x k
         | tvarId v `Map.member` written -> do
             execWriteTVar v x
-            go ctl read written writtenSeq nextVid k
+            go ctl read written writtenSeq createdSeq nextVid k
         | otherwise -> do
             saveTVar v
             execWriteTVar v x
             let written' = Map.insert (tvarId v) (SomeTVar v) written
-            go ctl read written' (SomeTVar v : writtenSeq) nextVid k
+            go ctl read written' (SomeTVar v : writtenSeq) createdSeq nextVid k
 
       SayStm msg k -> do
-        trace <- go ctl read written writtenSeq nextVid k
+        trace <- go ctl read written writtenSeq createdSeq nextVid k
         return $ SimTrace time tid tlbl (EventSay msg) trace
 
       OutputStm x k -> do
-        trace <- go ctl read written writtenSeq nextVid k
+        trace <- go ctl read written writtenSeq createdSeq nextVid k
         return $ SimTrace time tid tlbl (EventLog x) trace
 
       where
@@ -918,8 +938,10 @@ execNewTVar nextVid !mbLabel x = do
     tvarUndo    <- newSTRef []
     tvarBlocked <- newSTRef ([], Set.empty)
     tvarVClock  <- newSTRef (VectorClock Map.empty)
+    tvarTrace   <- newSTRef Nothing
     return TVar {tvarId = nextVid, tvarLabel,
-                 tvarCurrent, tvarUndo, tvarBlocked, tvarVClock}
+                 tvarCurrent, tvarUndo, tvarBlocked, tvarVClock,
+                 tvarTrace}
 
 execReadTVar :: TVar s a -> ST s a
 execReadTVar TVar{tvarCurrent} = readSTRef tvarCurrent
@@ -949,6 +971,26 @@ commitTVar TVar{tvarUndo} = do
 
 readTVarUndos :: TVar s a -> ST s [a]
 readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
+
+-- | Trace a 'TVar'.  It must be called only on 'TVar's that were new or
+-- 'written.
+traceTVarST :: TVar s a
+            -> Bool -- true if it's a new 'TVar'
+            -> ST s (Maybe Dynamic)
+traceTVarST TVar{tvarCurrent, tvarUndo, tvarTrace} new = do
+    mf <- readSTRef tvarTrace
+    case mf of
+      Nothing -> return Nothing
+      Just (MkTVarTrace f)  -> do
+        vs <- readSTRef tvarUndo
+        v <- readSTRef tvarCurrent
+        case (new, vs) of
+          (True, _) ->
+            Just . toDyn <$> f Nothing v
+          (_, _:_)  ->
+            Just . toDyn <$> f (Just $ last vs) v
+          _ -> error "traceTVarST: unexpected tvar state"
+
 
 
 --
