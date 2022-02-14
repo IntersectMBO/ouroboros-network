@@ -135,9 +135,10 @@ tests =
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
   
-  , nightlyTest $ testProperty "governor no livelock (racing)"       $ prop_explore_governor_nolivelock
-  -- TODO: issue #3601
-  -- , nightlyTest $ testProperty "governor connection status (racing)" $ prop_explore_governor_connstatus
+  , testGroup "races"
+    [ nightlyTest $ testProperty "governor no livelock"       $ prop_explore_governor_nolivelock
+    ,               testProperty "governor connection status" $ prop_explore_governor_connstatus
+    ]
   ]
   --TODO: We should add separate properties to check that we do not overshoot
   -- our targets: known peers from below can overshoot, but all the others

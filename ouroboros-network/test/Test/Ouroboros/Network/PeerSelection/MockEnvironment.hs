@@ -30,6 +30,7 @@ import           Data.Dynamic (fromDynamic)
 import           Data.List (nub)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
@@ -37,7 +38,6 @@ import           Data.Void (Void)
 import           System.Random (mkStdGen)
 
 import           Control.Exception (throw)
-import           Control.Monad (forM_)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
@@ -216,8 +216,9 @@ data TraceMockEnv = TraceEnvAddPeers       PeerGraph
                   | TraceEnvPeersStatus    (Map PeerAddr PeerStatus)
   deriving Show
 
-mockPeerSelectionActions :: (MonadAsync m, MonadTimer m, Fail.MonadFail m,
-                             MonadThrow (STM m))
+mockPeerSelectionActions :: forall m.
+                            (MonadAsync m, MonadTimer m, Fail.MonadFail m,
+                             MonadThrow (STM m), MonadTraceSTM m)
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
                          -> PeerSelectionPolicy PeerAddr m
@@ -242,15 +243,20 @@ mockPeerSelectionActions tracer
                                }) <- adjacency
                    ]
     targetsVar <- playTimedScript (contramap TraceEnvSetTargets tracer) targets
-    peerConns  <- newTVarIO Map.empty
+    peerConns  <- atomically $ do
+      v <- newTVar Map.empty
+      traceTVar proxy
+                v (\_ a -> TraceEnvPeersStatus <$> snapshotPeersStatus proxy a)
+      return v
     traceWith tracer (TraceEnvAddPeers peerGraph)
     traceWith tracer (TraceEnvSetLocalRoots localRootPeers)   --TODO: make dynamic
     traceWith tracer (TraceEnvSetPublicRoots publicRootPeers) --TODO: make dynamic
-    snapshot <- atomically (snapshotPeersStatus peerConns)
-    traceWith tracer (TraceEnvPeersStatus snapshot)
     return $ mockPeerSelectionActions'
                tracer env policy
                scripts targetsVar peerConns
+  where
+    proxy :: Proxy m
+    proxy = Proxy
 
 
 data TransitionError
@@ -329,14 +335,12 @@ mockPeerSelectionActions' tracer
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
-      (conn@(PeerConn _ v), snapshot) <- atomically $ do
+      conn@(PeerConn _ v) <- atomically $ do
         conn  <- newTVar PeerWarm
         conns <- readTVar connsVar
         let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
-        snapshot <- snapshotPeersStatus connsVar
-        return (PeerConn peeraddr conn, snapshot)
-      traceWith tracer (TraceEnvPeersStatus snapshot)
+        return (PeerConn peeraddr conn)
       let Just (_, connectScript) = Map.lookup peeraddr scripts
       _ <- async $
         -- monitoring loop which does asynchronous demotions. It will terminate
@@ -350,32 +354,28 @@ mockPeerSelectionActions' tracer
               let interpretScriptDelay NoDelay    = 1
                   interpretScriptDelay ShortDelay = 60
                   interpretScriptDelay LongDelay  = 600
-              (done, msnapshot) <-
+              done <-
                 case demotion of
-                  Noop   -> return (True, Nothing)
+                  Noop   -> return True
                   ToWarm -> do
                     threadDelay (interpretScriptDelay delay)
                     atomically $ do
                       s <- readTVar v
                       case s of
-                        PeerHot -> do writeTVar v PeerWarm
-                                      snapshot' <- snapshotPeersStatus connsVar
-                                      return (False, Just snapshot')
-                        PeerWarm -> return (False, Nothing)
-                        PeerCold -> return (True,  Nothing)
+                        PeerHot  -> writeTVar v PeerWarm
+                                 >> return False
+                        PeerWarm -> return False
+                        PeerCold -> return True
                   ToCold -> do
                     threadDelay (interpretScriptDelay delay)
                     atomically $ do
                       s <- readTVar v
                       case s of
-                        PeerCold -> return (True, Nothing)
-                        _        -> do writeTVar v PeerCold
-                                       snapshot' <- snapshotPeersStatus connsVar
-                                       return (True, Just snapshot')
+                        PeerCold -> return True
+                        _        -> writeTVar v PeerCold
+                                 >> return True
 
               traceWith tracer (TraceEnvPeersDemote demotion peeraddr)
-              forM_ msnapshot $ \snapshot' ->
-                traceWith tracer (TraceEnvPeersStatus snapshot')
 
               if done
                 then return ()
@@ -387,7 +387,7 @@ mockPeerSelectionActions' tracer
     activatePeerConnection (PeerConn peeraddr conn) = do
       traceWith tracer (TraceEnvActivatePeer peeraddr)
       threadDelay 1
-      snapshot <- atomically $ do
+      atomically $ do
         status <- readTVar conn
         case status of
           PeerHot  -> error "activatePeerConnection of hot peer"
@@ -402,12 +402,11 @@ mockPeerSelectionActions' tracer
           -- state as if the transition went fine which will violate
           -- 'invariantPeerSelectionState'.
           PeerCold -> throwIO ActivationError
-        snapshotPeersStatus connsVar
-      traceWith tracer (TraceEnvPeersStatus snapshot)
 
     deactivatePeerConnection :: PeerConn m -> m ()
     deactivatePeerConnection (PeerConn peeraddr conn) = do
       traceWith tracer (TraceEnvDeactivatePeer peeraddr)
+      atomically $ do
         status <- readTVar conn
         case status of
           PeerHot  -> writeTVar conn PeerWarm
@@ -416,13 +415,11 @@ mockPeerSelectionActions' tracer
           -- See the note in 'activatePeerConnection' why we throw an exception
           -- here.
           PeerCold -> throwIO DeactivationError
-        snapshotPeersStatus connsVar
-      traceWith tracer (TraceEnvPeersStatus snapshot)
 
     closePeerConnection :: PeerConn m -> m ()
     closePeerConnection (PeerConn peeraddr conn) = do
       traceWith tracer (TraceEnvCloseConn peeraddr)
-      snapshot <- atomically $ do
+      atomically $ do
         status <- readTVar conn
         case status of
           PeerHot  -> writeTVar conn PeerCold
@@ -432,19 +429,16 @@ mockPeerSelectionActions' tracer
         conns <- readTVar connsVar
         let !conns' = Map.delete peeraddr conns
         writeTVar connsVar conns'
-        snapshotPeersStatus connsVar
-      traceWith tracer (TraceEnvPeersStatus snapshot)
 
     monitorPeerConnection :: PeerConn m -> STM m PeerStatus
     monitorPeerConnection (PeerConn _peeraddr conn) = readTVar conn
 
 
-snapshotPeersStatus :: MonadSTM m
-                    => TVar m (Map PeerAddr (TVar m PeerStatus))
-                    -> STM m (Map PeerAddr PeerStatus)
-snapshotPeersStatus connsVar = do
-    conns <- readTVar connsVar
-    traverse readTVar conns
+snapshotPeersStatus :: MonadInspectSTM m
+                    => proxy m
+                    -> Map PeerAddr (TVar m PeerStatus)
+                    -> InspectMonad m (Map PeerAddr PeerStatus)
+snapshotPeersStatus p conns = traverse (inspectTVar p) conns
 
 
 mockPeerSelectionPolicy  :: MonadSTM m
