@@ -182,6 +182,9 @@ instance TableStuff (LedgerState BlockB) where
   mapLedgerTables  _f           NoBTables = NoBTables
   zipLedgerTables  _f NoBTables NoBTables = NoBTables
   foldLedgerTables _f           NoBTables = mempty
+  traverseLedgerTables _f       NoBTables = pure NoBTables
+  zipLedgerTablesA _f NoBTables NoBTables = pure NoBTables
+  namesLedgerTables                       = NoBTables
 
 instance TickedTableStuff (LedgerState BlockB) where
   projectLedgerTablesTicked _ = NoBTables
