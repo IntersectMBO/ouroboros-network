@@ -205,6 +205,10 @@ data TraceMockEnv = TraceEnvAddPeers       PeerGraph
                   | TraceEnvGossipTTL      PeerAddr
                   | TraceEnvSetTargets     PeerSelectionTargets
                   | TraceEnvPeersDemote    AsyncDemotion PeerAddr
+                  | TraceEnvEstablishConn  PeerAddr
+                  | TraceEnvActivatePeer   PeerAddr
+                  | TraceEnvDeactivatePeer PeerAddr
+                  | TraceEnvCloseConn      PeerAddr
 
                   | TraceEnvRootsResult    [PeerAddr]
                   | TraceEnvGossipRequest  PeerAddr (Maybe ([PeerAddr], GossipTime))
@@ -323,6 +327,7 @@ mockPeerSelectionActions' tracer
     establishPeerConnection :: PeerAddr -> m (PeerConn m)
     establishPeerConnection peeraddr = do
       --TODO: add support for variable delays and synchronous failure
+      traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
       (conn@(PeerConn _ v), snapshot) <- atomically $ do
         conn  <- newTVar PeerWarm
@@ -379,7 +384,8 @@ mockPeerSelectionActions' tracer
       return conn
 
     activatePeerConnection :: PeerConn m -> m ()
-    activatePeerConnection (PeerConn _peeraddr conn) = do
+    activatePeerConnection (PeerConn peeraddr conn) = do
+      traceWith tracer (TraceEnvActivatePeer peeraddr)
       threadDelay 1
       snapshot <- atomically $ do
         status <- readTVar conn
@@ -400,8 +406,8 @@ mockPeerSelectionActions' tracer
       traceWith tracer (TraceEnvPeersStatus snapshot)
 
     deactivatePeerConnection :: PeerConn m -> m ()
-    deactivatePeerConnection (PeerConn _peeraddr conn) = do
-      snapshot <- atomically $ do
+    deactivatePeerConnection (PeerConn peeraddr conn) = do
+      traceWith tracer (TraceEnvDeactivatePeer peeraddr)
         status <- readTVar conn
         case status of
           PeerHot  -> writeTVar conn PeerWarm
@@ -415,6 +421,7 @@ mockPeerSelectionActions' tracer
 
     closePeerConnection :: PeerConn m -> m ()
     closePeerConnection (PeerConn peeraddr conn) = do
+      traceWith tracer (TraceEnvCloseConn peeraddr)
       snapshot <- atomically $ do
         status <- readTVar conn
         case status of

@@ -528,6 +528,11 @@ envEventCredits  TraceEnvRootsResult{}          = 0
 envEventCredits  TraceEnvGossipRequest{}        = 0
 envEventCredits  TraceEnvGossipResult{}         = 0
 
+envEventCredits  TraceEnvEstablishConn {}       = 0
+envEventCredits  TraceEnvActivatePeer {}        = 0
+envEventCredits  TraceEnvDeactivatePeer {}      = 0
+envEventCredits  TraceEnvCloseConn {}           = 0
+
 
 
 -- | A coverage property, much like 'prop_governor_nofail' but we look to see
