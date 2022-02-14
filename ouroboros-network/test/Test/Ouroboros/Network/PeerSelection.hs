@@ -27,6 +27,7 @@ import           Data.Bifoldable (bitraverse_)
 import           Data.Function (on)
 import qualified Data.IP as IP
 import           Data.List (groupBy, foldl', intercalate)
+import           Data.Foldable (traverse_)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isNothing, listToMaybe)
@@ -727,7 +728,7 @@ check_governor_connstatus _ trace0 =
               . selectPeerSelectionTraceEvents $ trace0
         --TODO: check any actually get a true status output and try some deliberate bugs
      in
-     whenFail (pPrint trace) $
+     whenFail (traverse_ print trace) $
      conjoin $ map ok (groupBy ((==) `on` fst) trace)
   where
     -- We look at events when the environment's view of the state of all the
