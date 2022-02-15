@@ -105,6 +105,7 @@ instance GlobalAddressScheme NtNAddr_ where
 type NtNAddr        = TestAddress NtNAddr_
 type NtNVersion     = UnversionedProtocol
 data NtNVersionData = NtNVersionData { ntnDiffusionMode :: DiffusionMode }
+  deriving Show
 type NtCAddr        = TestAddress Int
 type NtCVersion     = UnversionedProtocol
 type NtCVersionData = UnversionedProtocolData
