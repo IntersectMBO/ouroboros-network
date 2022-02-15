@@ -64,7 +64,7 @@ import           Simulation.Network.Snocket (AddressType (..),
                      GlobalAddressScheme (..))
 
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, oneof)
+import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, oneof, frequency)
 
 
 -- | Node-to-node address type.
@@ -81,10 +81,10 @@ instance Arbitrary NtNAddr_ where
     a <- oneof [ IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
                , IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
                ]
-    oneof
-      [ EphemeralIPv4Addr <$> (fromInteger <$> arbitrary)
-      , EphemeralIPv6Addr <$> (fromInteger <$> arbitrary)
-      , IPAddr a          <$> (read . show <$> chooseInt (0, 9999))
+    frequency
+      [ (1 , EphemeralIPv4Addr <$> (fromInteger <$> arbitrary))
+      , (1 , EphemeralIPv6Addr <$> (fromInteger <$> arbitrary))
+      , (3 , IPAddr a          <$> (read . show <$> chooseInt (0, 9999)))
       ]
 
 instance Show NtNAddr_ where
