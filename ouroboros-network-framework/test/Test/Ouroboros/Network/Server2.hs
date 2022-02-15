@@ -132,56 +132,46 @@ import           Test.Simulation.Network.Snocket hiding (tests)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Server2"
-  [ testProperty "unidirectional_IO"  prop_unidirectional_IO
-  , testProperty "unidirectional_Sim" prop_unidirectional_Sim
-  , testProperty "bidirectional_IO"   prop_bidirectional_IO
-  , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
-  , testProperty "connection_manager_pruning"
-                 prop_connection_manager_pruning
-  , testProperty "inbound_governor_pruning"
-                 prop_inbound_governor_pruning
-  , testProperty "never_above_hardlimit"
-                 prop_never_above_hardlimit
-  , testProperty "connection_manager_valid_transitions"
-                 prop_connection_manager_valid_transitions
-  , testProperty "connection_manager_no_invalid_traces"
-                 prop_connection_manager_no_invalid_traces
-  , testProperty "connection_manager_transitions_coverage"
-                 prop_connection_manager_transitions_coverage
-  , testProperty "inbound_governor_no_invalid_traces"
-                 prop_inbound_governor_no_invalid_traces
-  , testProperty "inbound_governor_transitions_coverage"
-                 prop_inbound_governor_transitions_coverage
-  , testProperty "inbound_governor_valid_transitions"
-              prop_inbound_governor_valid_transitions
-  , testProperty "inbound_governor_no_unsupported_state"
-                 prop_inbound_governor_no_unsupported_state
-  , testProperty "connection_manager_valid_transition_order"
-                 prop_connection_manager_valid_transition_order
-  , testProperty "inbound_governor_valid_transition_order"
-                 prop_inbound_governor_valid_transition_order
-  , testProperty "connection_manager_counters"
-                 prop_connection_manager_counters
-  , testProperty "inbound_governor_counters"
-                 prop_inbound_governor_counters
-  , testProperty "timeouts_enforced"
-                 prop_timeouts_enforced
-  , testGroup    "unit_server_accept_error"
-    [ testProperty "throw ConnectionAborted"
-                  (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
-    , testProperty "throw ResourceExhausted"
-                  (unit_server_accept_error IOErrResourceExhausted IOErrThrow)
-    , testProperty "return ConnectionAborted"
-                  (unit_server_accept_error IOErrConnectionAborted IOErrReturn)
-    , testProperty "return ResourceExhausted"
-                  (unit_server_accept_error IOErrResourceExhausted IOErrReturn)
+  testGroup "Ouroboros.Network"
+  [ testGroup "ConnectionManager"
+    [ testProperty "valid transitions"      prop_connection_manager_valid_transitions
+    , testProperty "valid transition order" prop_connection_manager_valid_transition_order
+    , testProperty "transitions coverage"   prop_connection_manager_transitions_coverage
+    , testProperty "no invalid traces"      prop_connection_manager_no_invalid_traces
+    , testProperty "counters"               prop_connection_manager_counters
+    , testProperty "pruning"                prop_connection_manager_pruning
     ]
-  , testProperty "unit_connection_terminated_when_negotiating"
+  , testGroup "InboundGovernor"
+    [ testProperty "valid transitions"      prop_inbound_governor_valid_transitions
+    , testProperty "valid transition order" prop_inbound_governor_valid_transition_order
+    , testProperty "transitions coverage"   prop_inbound_governor_transitions_coverage
+    , testProperty "no invalid traces"      prop_inbound_governor_no_invalid_traces
+    , testProperty "no unsupported state"   prop_inbound_governor_no_unsupported_state
+    , testProperty "pruning"                prop_inbound_governor_pruning
+    , testProperty "counters"               prop_inbound_governor_counters
+    , testProperty "timeouts enforced"      prop_timeouts_enforced
+    ]
+  , testGroup "Server2"
+    [ testProperty "unidirectional IO"      prop_unidirectional_IO
+    , testProperty "unidirectional Sim"     prop_unidirectional_Sim
+    , testProperty "bidirectional IO"       prop_bidirectional_IO
+    , testProperty "bidirectional Sim"      prop_bidirectional_Sim
+    , testProperty "never above hardlimit"  prop_never_above_hardlimit
+    , testGroup      "accept errors"
+      [ testProperty "throw ConnectionAborted"
+                    (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
+      , testProperty "throw ResourceExhausted"
+                    (unit_server_accept_error IOErrResourceExhausted IOErrThrow)
+      , testProperty "return ConnectionAborted"
+                    (unit_server_accept_error IOErrConnectionAborted IOErrReturn)
+      , testProperty "return ResourceExhausted"
+                    (unit_server_accept_error IOErrResourceExhausted IOErrReturn)
+      ]
+    ]
+  , testProperty "connection terminated when negotiating"
                  unit_connection_terminated_when_negotiating
   , testGroup "generators"
-    [ testProperty "MultiNodeScript"
-                   prop_generator_MultiNodeScript
+    [ testProperty "MultiNodeScript" prop_generator_MultiNodeScript
     ]
   ]
 
