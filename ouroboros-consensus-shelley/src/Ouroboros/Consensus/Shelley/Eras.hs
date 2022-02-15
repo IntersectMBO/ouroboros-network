@@ -1,11 +1,13 @@
 {-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE PatternSynonyms         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
@@ -24,6 +26,7 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardShelley
     -- * Shelley-based era
   , ShelleyBasedEra (..)
+  , TxOutWrapper (..)
   , WrapTx (..)
     -- * Type synonyms for convenience
   , EraCrypto
@@ -36,8 +39,11 @@ module Ouroboros.Consensus.Shelley.Eras (
 import           Control.Exception (Exception, throw)
 import           Control.Monad.Except
 import           Data.Default.Class (Default)
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
+import           Data.Void (Void)
+import           GHC.Generics (Generic)
 import           GHC.Records
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
@@ -156,6 +162,15 @@ class ( SL.ShelleyBasedEra era
       , Eq (TxSeq era)
       , Show (TxSeq era)
       , FromCBOR (Annotator (TxSeq era))
+      , Eq       (Core.TxOut era)
+      , NoThunks (Core.TxOut era)
+      , Show     (Core.TxOut era)
+
+        -- for snapshotting the in-memory backing store
+      , FromCBOR (SL.TxIn (EraCrypto era))
+      , ToCBOR   (SL.TxIn (EraCrypto era))
+      , FromCBOR (Core.TxOut era)
+      , ToCBOR   (Core.TxOut era)
 
       ) => ShelleyBasedEra era where
 
@@ -174,6 +189,8 @@ class ( SL.ShelleyBasedEra era
          ( SL.MempoolState era
          , SL.Validated (Core.Tx era)
          )
+
+  getShelleyTxInputs :: Core.Tx era -> Set (SL.TxIn (EraCrypto era))
 
 -- | The default implementation of 'applyShelleyBasedTx', a thin wrapper around
 -- 'SL.applyTx'
@@ -196,20 +213,30 @@ defaultApplyShelleyBasedTx globals ledgerEnv mempoolState _wti tx =
       mempoolState
       tx
 
+defaultGetShelleyTxInputs ::
+     ( HasField "body"    (Core.Tx era)     (Core.TxBody era)
+     , HasField "inputs" (Core.TxBody era) (Set (SL.TxIn (EraCrypto era)))
+     )
+  => Core.Tx era -> Set (SL.TxIn (EraCrypto era))
+defaultGetShelleyTxInputs tx = getField @"inputs" $ getField @"body" tx
+
 instance SL.PraosCrypto c => ShelleyBasedEra (ShelleyEra c) where
   shelleyBasedEraName _ = "Shelley"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
+  getShelleyTxInputs  = defaultGetShelleyTxInputs
 
 instance SL.PraosCrypto c => ShelleyBasedEra (AllegraEra c) where
   shelleyBasedEraName _ = "Allegra"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
+  getShelleyTxInputs  = defaultGetShelleyTxInputs
 
 instance SL.PraosCrypto c => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
+  getShelleyTxInputs  = defaultGetShelleyTxInputs
 
 instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
   shelleyBasedEraName _ = "Alonzo"
@@ -251,6 +278,13 @@ instance SL.PraosCrypto c => ShelleyBasedEra (AlonzoEra c) where
               tx{Alonzo.isValid = Alonzo.IsValid (not flag)}
         _ -> throwError e
                -- reject the transaction, protecting the local wallet
+
+  getShelleyTxInputs tx =
+        getField @"collateral" body
+      `Set.union`
+        getField @"inputs" body
+    where
+      body = getField @"body" tx
 
 -- not exported
 --
@@ -307,3 +341,34 @@ instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) WrapTx
         fmap (WrapTx . Alonzo.unTx)
       . Core.translateEra @(AlonzoEra c) ctxt
       . Alonzo.Tx . unwrapTx
+
+{-------------------------------------------------------------------------------
+  Tx family wrapper
+-------------------------------------------------------------------------------}
+
+-- | Wrapper for partially applying the 'Core.TxOut' type family
+--
+-- For generality, Consensus uses that type family as eg the index of
+-- 'Core.TranslateEra'. We thus need to partially apply it.
+newtype TxOutWrapper era = TxOutWrapper {unTxOutWrapper :: Core.TxOut era}
+  deriving (Generic)
+
+deriving instance Eq       (Core.TxOut era) => Eq       (TxOutWrapper era)
+deriving instance NoThunks (Core.TxOut era) => NoThunks (TxOutWrapper era)
+deriving instance Show     (Core.TxOut era) => Show     (TxOutWrapper era)
+
+instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) TxOutWrapper where
+  type TranslationError (AllegraEra c) TxOutWrapper = Void
+  translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
+
+instance ShelleyBasedEra (MaryEra c) => Core.TranslateEra (MaryEra c) TxOutWrapper where
+  type TranslationError (MaryEra c) TxOutWrapper = Void
+  translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
+
+instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) TxOutWrapper where
+  type TranslationError (AlonzoEra c) TxOutWrapper = Void
+  translateEra _ctxt =
+        pure
+      . TxOutWrapper
+      . Alonzo.translateTxOut
+      . unTxOutWrapper

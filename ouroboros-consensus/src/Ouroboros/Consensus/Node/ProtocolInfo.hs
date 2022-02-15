@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -37,7 +38,7 @@ enumCoreNodes (NumCoreNodes numNodes) =
 -- | Data required to run the specified protocol.
 data ProtocolInfo m b = ProtocolInfo {
         pInfoConfig       :: TopLevelConfig b
-      , pInfoInitLedger   :: ExtLedgerState b -- ^ At genesis
+      , pInfoInitLedger   :: ExtLedgerState b ValuesMK   -- ^ At genesis
       , pInfoBlockForging :: m [BlockForging m b]
       }
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -35,6 +36,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
 
 {-------------------------------------------------------------------------------
   Arguments
@@ -57,13 +59,14 @@ data ChainDbArgs f m blk = ChainDbArgs {
     , cdbTopLevelConfig         :: HKD f (TopLevelConfig blk)
     , cdbChunkInfo              :: HKD f ChunkInfo
     , cdbCheckIntegrity         :: HKD f (blk -> Bool)
-    , cdbGenesis                :: HKD f (m (ExtLedgerState blk))
+    , cdbGenesis                :: HKD f (m (ExtLedgerState blk ValuesMK))
     , cdbCheckInFuture          :: HKD f (CheckInFuture m blk)
     , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
 
       -- Misc
     , cdbTracer                 :: Tracer m (TraceEvent blk)
     , cdbTraceLedger            :: Tracer m (LedgerDB' blk)
+    , cdbLedgerRunAlsoLegacy    :: RunAlsoLegacy
     , cdbRegistry               :: HKD f (ResourceRegistry m)
     , cdbGcDelay                :: DiffTime
     , cdbGcInterval             :: DiffTime
@@ -144,9 +147,9 @@ defaultArgs mkFS diskPolicy =
   where
     immFS, volFS, lgrFS :: SomeHasFS m
 
-    immFS = mkFS $ RelativeMountPoint "immutable"
-    volFS = mkFS $ RelativeMountPoint "volatile"
-    lgrFS = mkFS $ RelativeMountPoint "ledger"
+    immFS         = mkFS $ RelativeMountPoint "immutable"
+    volFS         = mkFS $ RelativeMountPoint "volatile"
+    lgrFS         = mkFS $ RelativeMountPoint "ledger"
 
 -- | Internal: split 'ChainDbArgs' into 'ImmutableDbArgs', 'VolatileDbArgs,
 -- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
@@ -184,6 +187,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
         , lgrTraceLedger      = cdbTraceLedger
+        , lgrRunAlsoLegacy    = cdbLedgerRunAlsoLegacy
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -228,6 +232,7 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
       -- Misc
     , cdbTracer                 = cdbsTracer
     , cdbTraceLedger            = lgrTraceLedger
+    , cdbLedgerRunAlsoLegacy    = lgrRunAlsoLegacy
     , cdbRegistry               = cdbsRegistry
     , cdbGcDelay                = cdbsGcDelay
     , cdbGcInterval             = cdbsGcInterval

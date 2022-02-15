@@ -29,7 +29,9 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..),
+                     MapKind (..))
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
@@ -38,6 +40,8 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 {-------------------------------------------------------------------------------
@@ -77,10 +81,10 @@ injectNestedCtxt_ idx nc = case idx of
     IS idx' -> NCS (injectNestedCtxt_ idx' nc)
 
 injectQuery ::
-     forall x xs result.
+     forall x xs fp result.
      Index xs x
-  -> BlockQuery x result
-  -> QueryIfCurrent xs result
+  -> BlockQuery x      fp result
+  -> QueryIfCurrent xs fp result
 injectQuery idx q = case idx of
     IZ      -> QZ q
     IS idx' -> QS (injectQuery idx' q)
@@ -145,15 +149,15 @@ instance Inject WrapApplyTxErr where
       (WrapApplyTxErr . HardForkApplyTxErrFromEra)
         .: injectNS' (Proxy @WrapApplyTxErr)
 
-instance Inject (SomeSecond BlockQuery) where
-  inject _ idx (SomeSecond q) = SomeSecond (QueryIfCurrent (injectQuery idx q))
+instance Inject (SomeQuery :.: BlockQuery) where
+  inject _ idx (Comp (SomeQuery q)) = Comp $ SomeQuery $ QueryIfCurrent (injectQuery idx q)
 
 instance Inject AnnTip where
   inject _ = undistribAnnTip .: injectNS' (Proxy @AnnTip)
 
-instance Inject LedgerState where
+instance Inject (Flip LedgerState mk) where
   inject startBounds idx =
-      HardForkLedgerState . injectHardForkState startBounds idx
+      Flip . HardForkLedgerState . injectHardForkState startBounds idx
 
 instance Inject WrapChainDepState where
   inject startBounds idx =
@@ -167,9 +171,9 @@ instance Inject HeaderState where
                             $ WrapChainDepState headerStateChainDep
       }
 
-instance Inject ExtLedgerState where
-  inject startBounds idx ExtLedgerState {..} = ExtLedgerState {
-        ledgerState = inject startBounds idx ledgerState
+instance Inject (Flip ExtLedgerState mk) where
+  inject startBounds idx (Flip ExtLedgerState {..}) = Flip $ ExtLedgerState {
+        ledgerState = unFlip $ inject startBounds idx (Flip ledgerState)
       , headerState = inject startBounds idx headerState
       }
 
@@ -190,8 +194,8 @@ instance Inject ExtLedgerState where
 injectInitialExtLedgerState ::
      forall x xs. CanHardFork (x ': xs)
   => TopLevelConfig (HardForkBlock (x ': xs))
-  -> ExtLedgerState x
-  -> ExtLedgerState (HardForkBlock (x ': xs))
+  -> ExtLedgerState x ValuesMK
+  -> ExtLedgerState (HardForkBlock (x ': xs)) ValuesMK
 injectInitialExtLedgerState cfg extLedgerState0 =
     ExtLedgerState {
         ledgerState = targetEraLedgerState
@@ -206,7 +210,7 @@ injectInitialExtLedgerState cfg extLedgerState0 =
              (hardForkLedgerStatePerEra targetEraLedgerState))
           cfg
 
-    targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs))
+    targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs)) ValuesMK
     targetEraLedgerState =
         HardForkLedgerState $
           -- We can immediately extend it to the right slot, executing any
@@ -214,7 +218,7 @@ injectInitialExtLedgerState cfg extLedgerState0 =
           State.extendToSlot
             (configLedger cfg)
             (SlotNo 0)
-            (initHardForkState (ledgerState extLedgerState0))
+            (initHardForkState $ Flip $ ledgerState extLedgerState0)
 
     firstEraChainDepState :: HardForkChainDepState (x ': xs)
     firstEraChainDepState =

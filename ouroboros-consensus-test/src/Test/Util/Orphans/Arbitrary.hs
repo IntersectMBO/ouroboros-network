@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE NumericUnderscores   #-}
+{-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
@@ -49,6 +50,8 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock,
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..))
 import           Ouroboros.Consensus.HardFork.History.EraParams
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
@@ -281,6 +284,9 @@ instance Arbitrary SafeZone where
   Telescope & HardForkState
 -------------------------------------------------------------------------------}
 
+instance Arbitrary (f y x) => Arbitrary (Flip f (x :: kx) (y :: ky)) where
+  arbitrary = Flip <$> arbitrary
+
 instance Arbitrary Bound where
   arbitrary =
       Bound
@@ -307,25 +313,25 @@ instance ( IsNonEmpty xs
           ]
   shrink = hctraverse' (Proxy @(Arbitrary `Compose` f)) shrink
 
-instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` LedgerState) xs)
-      => Arbitrary (LedgerState (HardForkBlock xs)) where
+instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` Flip LedgerState mk) xs)
+      => Arbitrary (LedgerState (HardForkBlock xs) mk) where
   arbitrary = case (dictKPast, dictCurrentLedgerState) of
       (Dict, Dict) -> inj <$> arbitrary
     where
       inj ::
-           Telescope (K Past) (Current LedgerState) xs
-        -> LedgerState (HardForkBlock xs)
+           Telescope (K Past) (Current (Flip LedgerState mk)) xs
+        -> LedgerState (HardForkBlock xs) mk
       inj = coerce
 
       dictKPast :: Dict (All (Arbitrary `Compose` (K Past))) xs
       dictKPast = all_NP $ hpure Dict
 
       dictCurrentLedgerState ::
-           Dict (All (Arbitrary `Compose` (Current LedgerState))) xs
+           Dict (All (Arbitrary `Compose` (Current (Flip LedgerState mk)))) xs
       dictCurrentLedgerState =
           mapAll
-            @(Arbitrary `Compose` LedgerState)
-            @(Arbitrary `Compose` Current LedgerState)
+            @(Arbitrary `Compose` Flip LedgerState mk)
+            @(Arbitrary `Compose` Current (Flip LedgerState mk))
             (\Dict -> Dict)
             Dict
 
@@ -403,8 +409,8 @@ instance Arbitrary QueryVersion where
   arbitrary = arbitraryBoundedEnum
   shrink v = if v == minBound then [] else [pred v]
 
-instance Arbitrary (SomeSecond BlockQuery blk)
-      => Arbitrary (SomeSecond Query blk) where
+instance Arbitrary (SomeQuery (BlockQuery blk))
+      => Arbitrary (SomeQuery (Query blk)) where
   arbitrary = do
-    SomeSecond someBlockQuery <- arbitrary
-    return (SomeSecond (BlockQuery someBlockQuery))
+    SomeQuery someBlockQuery <- arbitrary
+    return (SomeQuery (BlockQuery someBlockQuery))

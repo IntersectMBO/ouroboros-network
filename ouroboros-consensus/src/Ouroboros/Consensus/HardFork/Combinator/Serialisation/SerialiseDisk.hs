@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -16,7 +17,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics (MapKind (EmptyMK))
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
@@ -117,17 +121,17 @@ instance SerialiseHFC xs
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
 instance SerialiseHFC xs
-      => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) )where
+      => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) EmptyMK) where
   encodeDisk cfg =
-        encodeTelescope (hcmap pSHFC (fn . (K .: encodeDisk)) cfgs)
+        encodeTelescope (hcmap pSHFC (\cfg' -> fn (K . encodeDisk cfg' . unFlip)) cfgs)
       . hardForkLedgerStatePerEra
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
 instance SerialiseHFC xs
-      => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs)) where
+      => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) EmptyMK) where
   decodeDisk cfg =
         fmap HardForkLedgerState
-      $ decodeTelescope (hcmap pSHFC (Comp . decodeDisk) cfgs)
+      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip . decodeDisk) cfgs)
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)

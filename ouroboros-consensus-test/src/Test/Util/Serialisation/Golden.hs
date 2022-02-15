@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DefaultSignatures   #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -56,13 +57,13 @@ import           Cardano.Prelude (forceElemsToWHNF)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
-                     HeaderHash, SlotNo, SomeSecond)
+                     HeaderHash, SlotNo)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
-                     encodeExtLedgerState)
+                     MapKind (..), encodeExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
-                     nodeToClientVersionToQueryVersion)
+                     SomeQuery, nodeToClientVersionToQueryVersion)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -232,13 +233,13 @@ data Examples blk = Examples {
     , exampleGenTx            :: Labelled (GenTx blk)
     , exampleGenTxId          :: Labelled (GenTxId blk)
     , exampleApplyTxErr       :: Labelled (ApplyTxErr blk)
-    , exampleQuery            :: Labelled (SomeSecond BlockQuery blk)
+    , exampleQuery            :: Labelled (SomeQuery (BlockQuery blk))
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
     , exampleLedgerConfig     :: Labelled (LedgerConfig blk)
-    , exampleLedgerState      :: Labelled (LedgerState blk)
+    , exampleLedgerState      :: Labelled (LedgerState blk EmptyMK)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
-    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk)
+    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk EmptyMK)
     , exampleSlotNo           :: Labelled SlotNo
     }
 

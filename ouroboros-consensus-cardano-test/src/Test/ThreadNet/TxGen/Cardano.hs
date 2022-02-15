@@ -21,12 +21,12 @@ import qualified Data.Set as Set
 import           Ouroboros.Consensus.Block (SlotNo (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
-                     (tickedHardForkLedgerStatePerEra)
+                     (getFlipTickedLedgerState, tickedHardForkLedgerStatePerEra)
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
                      (currentState, getHardForkState)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Tele
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig, LedgerState,
-                     applyChainTick)
+                     MapKind (ValuesMK), TickedLedgerState, applyChainTick)
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
 import           Cardano.Crypto (toVerification)
@@ -47,8 +47,8 @@ import           Cardano.Ledger.Val ((<->))
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
                      mkShelleyTx)
-import           Ouroboros.Consensus.Shelley.Ledger.Ledger (Ticked,
-                     tickedShelleyLedgerState)
+import           Ouroboros.Consensus.Shelley.Ledger.Ledger
+                     (tickedShelleyLedgerState)
 
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block (CardanoEras, GenTx (..),
@@ -134,7 +134,7 @@ migrateUTxO ::
   => MigrationInfo c
   -> SlotNo
   -> LedgerConfig (CardanoBlock c)
-  -> LedgerState (CardanoBlock c)
+  -> LedgerState (CardanoBlock c) ValuesMK
   -> Maybe (GenTx (CardanoBlock c))
 migrateUTxO migrationInfo curSlot lcfg lst
     | Just utxo <- mbUTxO =
@@ -225,8 +225,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
     mbUTxO =
         fmap getUTxOShelley $
         ejectShelleyTickedLedgerState $
-        applyChainTick lcfg curSlot $
-        lst
+        applyChainTick lcfg curSlot lst
 
     MigrationInfo
       { byronMagic
@@ -273,7 +272,7 @@ ejectShelleyNS = \case
     S (Z x) -> Just x
     _       -> Nothing
 
-getUTxOShelley :: Ticked (LedgerState (ShelleyBlock era))
+getUTxOShelley :: TickedLedgerState (ShelleyBlock era) mk
                -> SL.UTxO era
 getUTxOShelley tls =
     SL._utxo $
@@ -283,10 +282,10 @@ getUTxOShelley tls =
     tickedShelleyLedgerState tls
 
 ejectShelleyTickedLedgerState ::
-     Ticked (LedgerState (CardanoBlock c))
-  -> Maybe (Ticked (LedgerState (ShelleyBlock (ShelleyEra c))))
+     TickedLedgerState (CardanoBlock c) mk
+  -> Maybe (TickedLedgerState (ShelleyBlock (ShelleyEra c)) mk)
 ejectShelleyTickedLedgerState ls =
-    fmap (unComp . currentState) $
+    fmap (getFlipTickedLedgerState . currentState) $
     ejectShelleyNS $
     Tele.tip $
     getHardForkState $

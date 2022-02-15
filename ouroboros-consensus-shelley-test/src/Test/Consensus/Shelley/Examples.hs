@@ -31,7 +31,9 @@ import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics (ApplyMapKind (ApplyEmptyMK))
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
@@ -99,13 +101,13 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     serialisedHeader =
       SerialisedHeaderFromDepPair $ GenDepPair (NestedCtxt CtxtShelley) (Serialised "<HEADER>")
     queries = labelled [
-          ("GetLedgerTip",              SomeSecond GetLedgerTip)
-        , ("GetEpochNo",                SomeSecond GetEpochNo)
-        , ("GetCurrentPParams",         SomeSecond GetCurrentPParams)
-        , ("GetProposedPParamsUpdates", SomeSecond GetProposedPParamsUpdates)
-        , ("GetStakeDistribution",      SomeSecond GetStakeDistribution)
-        , ("GetNonMyopicMemberRewards", SomeSecond $ GetNonMyopicMemberRewards sleRewardsCredentials)
-        , ("GetGenesisConfig",          SomeSecond GetGenesisConfig)
+          ("GetLedgerTip",              SomeQuery GetLedgerTip)
+        , ("GetEpochNo",                SomeQuery GetEpochNo)
+        , ("GetCurrentPParams",         SomeQuery GetCurrentPParams)
+        , ("GetProposedPParamsUpdates", SomeQuery GetProposedPParamsUpdates)
+        , ("GetStakeDistribution",      SomeQuery GetStakeDistribution)
+        , ("GetNonMyopicMemberRewards", SomeQuery $ GetNonMyopicMemberRewards sleRewardsCredentials)
+        , ("GetGenesisConfig",          SomeQuery GetGenesisConfig)
       ]
     results = labelled [
           ("LedgerTip",              SomeResult GetLedgerTip (blockPoint blk))
@@ -130,6 +132,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                                   }
     , shelleyLedgerState      = sleNewEpochState
     , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+    , shelleyLedgerTables     = ShelleyLedgerTables ApplyEmptyMK
     }
     chainDepState = TPraosState (NotOrigin 1) sleChainDepState
     extLedgerState = ExtLedgerState

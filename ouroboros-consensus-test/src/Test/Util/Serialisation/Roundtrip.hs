@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DerivingVia          #-}
@@ -51,6 +52,8 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, LedgerState)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerState,
+                     MapKind (EmptyMK))
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..),
                      QueryVersion)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
@@ -163,7 +166,7 @@ roundtrip_all
      , Arbitrary' blk
      , Arbitrary' (Header blk)
      , Arbitrary' (HeaderHash blk)
-     , Arbitrary' (LedgerState blk)
+     , Arbitrary' (LedgerState blk EmptyMK)
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ChainDepState (BlockProtocol blk))
 
@@ -177,10 +180,10 @@ roundtrip_all
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeQuery (BlockQuery blk))
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      , Arbitrary (WithVersion (BlockNodeToClientVersion blk) (LedgerConfig blk))
-     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeSecond Query blk)
+     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeQuery (Query blk))
      )
   => CodecConfig blk
   -> (forall a. NestedCtxt_ blk Header a -> Dict (Eq a, Show a))
@@ -204,7 +207,7 @@ roundtrip_SerialiseDisk
 
      , Arbitrary' blk
      , Arbitrary' (Header blk)
-     , Arbitrary' (LedgerState blk)
+     , Arbitrary' (LedgerState blk EmptyMK)
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ChainDepState (BlockProtocol blk))
      )
@@ -225,7 +228,7 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
       -- Since the 'LedgerState' is a large data structure, we lower the
       -- number of tests to avoid slowing down the testsuite too much
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
-      rt (Proxy @(LedgerState blk)) "LedgerState"
+      rt (Proxy @(LedgerState blk EmptyMK)) "LedgerState"
     , rt (Proxy @(AnnTip blk)) "AnnTip"
     , rt (Proxy @(ChainDepState (BlockProtocol blk))) "ChainDepState"
     ]
@@ -253,9 +256,9 @@ type ArbitraryWithVersion v a = (Arbitrary (WithVersion v a), Eq a, Show a)
 
 instance ( blockVersion ~ BlockNodeToClientVersion blk
          , Arbitrary blockVersion
-         , Arbitrary (WithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk))
+         , Arbitrary (WithVersion (BlockNodeToClientVersion blk) (SomeQuery (BlockQuery blk)))
          )
-      => Arbitrary (WithVersion (QueryVersion, blockVersion) (SomeSecond Query blk)) where
+      => Arbitrary (WithVersion (QueryVersion, blockVersion) (SomeQuery (Query blk))) where
   arbitrary = do
     queryVersion <- arbitrary
     case queryVersion of
@@ -267,12 +270,12 @@ instance ( blockVersion ~ BlockNodeToClientVersion blk
       Query.QueryVersion2         -> genTopLevelQuery2
     where
       mkEntry :: QueryVersion
-        -> Query blk query
+        -> Query blk fp query
         -> Gen
-            (WithVersion (QueryVersion, blockVersion) (SomeSecond Query blk))
+            (WithVersion (QueryVersion, blockVersion) (SomeQuery (Query blk)))
       mkEntry qv q = do
         blockV <- arbitrary
-        return (WithVersion (qv, blockV) (SomeSecond q))
+        return (WithVersion (qv, blockV) (SomeQuery q))
 
       genTopLevelQuery1 =
         let version = Query.QueryVersion1
@@ -293,11 +296,11 @@ instance ( blockVersion ~ BlockNodeToClientVersion blk
 
       arbitraryBlockQuery :: QueryVersion
                           -> Gen (WithVersion (QueryVersion, blockVersion)
-                                              (SomeSecond Query blk))
+                                              (SomeQuery (Query blk)))
       arbitraryBlockQuery queryVersion = do
-        WithVersion blockV (SomeSecond someBlockQuery) <- arbitrary
+        WithVersion blockV (SomeQuery someBlockQuery) <- arbitrary
         return (WithVersion (queryVersion, blockV)
-                            (SomeSecond (BlockQuery someBlockQuery)))
+                            (SomeQuery (BlockQuery someBlockQuery)))
 
 -- | This is @OVERLAPPABLE@ because we have to override the default behaviour
 -- for e.g. 'Query's.
@@ -420,10 +423,10 @@ roundtrip_SerialiseNodeToClient
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) blk
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (GenTx blk)
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (ApplyTxErr blk)
-     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeSecond BlockQuery blk)
+     , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeQuery (BlockQuery blk))
      , ArbitraryWithVersion (BlockNodeToClientVersion blk) (SomeResult blk)
      , Arbitrary (WithVersion (BlockNodeToClientVersion blk) (LedgerConfig blk))
-     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeSecond Query blk)
+     , ArbitraryWithVersion (QueryVersion, BlockNodeToClientVersion blk) (SomeQuery (Query blk))
 
        -- Needed for testing the @Serialised blk@
      , EncodeDisk blk blk
@@ -432,10 +435,10 @@ roundtrip_SerialiseNodeToClient
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToClient ccfg =
-    [ rt (Proxy @blk)                         "blk"
-    , rt (Proxy @(GenTx blk))                 "GenTx"
-    , rt (Proxy @(ApplyTxErr blk))            "ApplyTxErr"
-    , rt (Proxy @(SomeSecond BlockQuery blk)) "BlockQuery"
+    [ rt (Proxy @blk)                        "blk"
+    , rt (Proxy @(GenTx blk))                "GenTx"
+    , rt (Proxy @(ApplyTxErr blk))           "ApplyTxErr"
+    , rt (Proxy @(SomeQuery BlockQuery blk)) "BlockQuery"
     -- Note: Ideally we'd just use 'rt' to test Ledger config, but that would
     -- require an 'Eq' and 'Show' instance for all ledger config types which
     -- we'd
@@ -443,7 +446,7 @@ roundtrip_SerialiseNodeToClient ccfg =
     , testProperty ("roundtrip (comparing encoding) LedgerConfig") $ \(Blind (WithVersion version a)) ->
           roundtripComparingEncoding @(LedgerConfig blk) (enc version) (dec version) a
     , rtWith
-        @(SomeSecond Query blk)
+        @(SomeQuery (Query blk))
         @(QueryVersion, BlockNodeToClientVersion blk)
         (\(queryVersion, blockVersion) query -> Query.queryEncodeNodeToClient
                           ccfg
@@ -649,8 +652,8 @@ decodeThroughSerialised dec decSerialised = do
 -- evidence. We also capture 'Eq', 'Show', and 'Typeable' constraints, as we
 -- need them in the tests.
 data SomeResult blk where
-  SomeResult :: (Eq result, Show result, Typeable result)
-             => BlockQuery blk result -> result -> SomeResult blk
+  SomeResult :: (Typeable fp, Eq result, Show result, Typeable result)
+             => BlockQuery blk fp result -> result -> SomeResult blk
 
 instance Show (SomeResult blk) where
   show (SomeResult _ result) = show result

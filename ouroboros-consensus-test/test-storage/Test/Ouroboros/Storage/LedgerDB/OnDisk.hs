@@ -34,6 +34,7 @@ import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
+import qualified Control.Monad.Trans as Trans
 import           Control.Tracer (nullTracer)
 import           Data.Bifunctor
 import           Data.Foldable (toList)
@@ -94,16 +95,20 @@ tests = testGroup "OnDisk" [
 genBlocks ::
      ExtLedgerCfg TestBlock
   -> Word64
-  -> ExtLedgerState TestBlock
+  -> ExtLedgerState TestBlock EmptyMK
   -> [TestBlock]
 genBlocks _   0 _ = []
 genBlocks cfg n l = b:bs
   where
     b  = genBlock l
-    l' = tickThenReapply cfg b l
-    bs = genBlocks cfg (n - 1) l'
+    l' = tickThenReapply cfg b (convertMapKind l)
+    -- TODO I don't like this proliferation of 'convertMapKind': we easily lose
+    -- track of which map kinds we're working with at each stage. For an
+    -- in-memory we should not care since everything is, well, in-memory, but I
+    -- still get an uneasy feeling when I see this.
+    bs = genBlocks cfg (n - 1) (convertMapKind  l')
 
-genBlock :: ExtLedgerState TestBlock -> TestBlock
+genBlock :: ExtLedgerState TestBlock EmptyMK -> TestBlock
 genBlock l = case lastAppliedBlock (ledgerState l) of
                Nothing -> firstBlock 0
                Just b  -> successorBlock b
@@ -168,9 +173,9 @@ data Cmd ss =
 data Success ss =
     Unit ()
   | MaybeErr (Either (ExtValidationError TestBlock) ())
-  | Ledger (ExtLedgerState TestBlock)
+  | Ledger (ExtLedgerState TestBlock EmptyMK)
   | Snapped (Maybe (ss, RealPoint TestBlock))
-  | Restored (MockInitLog ss, ExtLedgerState TestBlock)
+  | Restored (MockInitLog ss, ExtLedgerState TestBlock EmptyMK)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 -- | Currently we don't have any error responses
@@ -182,7 +187,7 @@ newtype Resp ss = Resp (Success ss)
 -------------------------------------------------------------------------------}
 
 -- | The mock ledger records the blocks and ledger values (new to old)
-type MockLedger = [(TestBlock, ExtLedgerState TestBlock)]
+type MockLedger = [(TestBlock, ExtLedgerState TestBlock EmptyMK)]
 
 -- | We use the slot number of the ledger state as the snapshot number
 --
@@ -230,10 +235,10 @@ data SnapState = SnapOk | SnapCorrupted
 mockInit :: SecurityParam -> Mock
 mockInit = Mock [] Map.empty GenesisPoint
 
-mockCurrent :: Mock -> ExtLedgerState TestBlock
+mockCurrent :: Mock -> ExtLedgerState TestBlock EmptyMK
 mockCurrent Mock{..} =
     case mockLedger of
-      []       -> testInitExtLedger
+      []       -> convertMapKind testInitExtLedger
       (_, l):_ -> l
 
 mockChainLength :: Mock -> Word64
@@ -278,7 +283,7 @@ fromInitLog (InitFromSnapshot ss tip) = MockFromSnapshot ss tip
 fromInitLog (InitFailure ss err log') =
     case err of
       InitFailureRead _err     -> MockReadFailure     ss     (fromInitLog log')
-      InitFailureTooRecent tip -> MockTooRecent       ss tip (fromInitLog log')
+--      InitFailureTooRecent tip -> MockTooRecent       ss tip (fromInitLog log')   -- TODO Javier's PR removed InitFailureTooRecent
       InitFailureGenesis       -> MockGenesisSnapshot ss     (fromInitLog log')
 
 mockInitLog :: Mock -> MockInitLog MockSnap
@@ -396,7 +401,7 @@ runMock cmd initMock =
             k = fromIntegral $ maxRollbacks $ mockSecParam mock
 
             -- The snapshots from new to old until 'mockRestore' (inclusive)
-            untilRestore :: [(TestBlock, ExtLedgerState TestBlock)]
+            untilRestore :: [(TestBlock, ExtLedgerState TestBlock EmptyMK)]
             untilRestore =
               takeWhile
                 ((/= (mockRestore mock)) . blockPoint . fst)
@@ -421,8 +426,8 @@ runMock cmd initMock =
     push :: TestBlock -> StateT MockLedger (Except (ExtValidationError TestBlock)) ()
     push b = do
         ls <- State.get
-        l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (cur ls)
-        State.put ((b, l'):ls)
+        l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (convertMapKind $ cur ls)
+        State.put ((b, convertMapKind l'):ls)
 
     switch :: Word64
            -> [TestBlock]
@@ -431,8 +436,8 @@ runMock cmd initMock =
         State.modify $ drop (fromIntegral n)
         mapM_ push bs
 
-    cur :: MockLedger -> ExtLedgerState TestBlock
-    cur []         = testInitExtLedger
+    cur :: MockLedger -> ExtLedgerState TestBlock EmptyMK
+    cur []         = convertMapKind testInitExtLedger
     cur ((_, l):_) = l
 
 {-------------------------------------------------------------------------------
@@ -492,7 +497,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain = []
 
     initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbWithAnchor testInitExtLedger
+    initDB = ledgerDbWithAnchor RunBoth (convertMapKind testInitExtLedger)
 
     getBlock ::
          RealPoint TestBlock
@@ -571,6 +576,10 @@ runDB standalone@DB{..} cmd =
       -> ExtValidationError TestBlock
     annLedgerErr' = annLedgerErr
 
+    reader :: TypeOf_readDB m (ExtLedgerState TestBlock)
+    reader (RewoundTableKeySets seqNo _tables) =
+      pure $ UnforwardedReadSets seqNo (convertMapKind emptyLedgerTables)
+
     go :: SomeHasFS m -> Cmd DiskSnapshot -> m (Success DiskSnapshot)
     go _ Current =
         atomically $ (Ledger . ledgerDbCurrent . snd) <$> readTVar dbState
@@ -579,6 +588,7 @@ runDB standalone@DB{..} cmd =
           uncurry Map.insert (refValPair b)
         upd (push b) $ \db ->
           fmap (first annLedgerErr') $
+            defaultReadKeySets reader $
             defaultThrowLedgerErrors $
               ledgerDbPush
                 dbLedgerDbCfg
@@ -589,7 +599,8 @@ runDB standalone@DB{..} cmd =
           repeatedly (uncurry Map.insert) (map refValPair bs)
         upd (switch n bs) $ \db ->
           fmap (bimap annLedgerErr' ignoreExceedRollback) $
-            defaultResolveWithErrors dbResolve $
+            defaultReadKeySets reader $
+            defaultResolveWithErrors (DbReader . Trans.lift . dbResolve) $
               ledgerDbSwitch
                 dbLedgerDbCfg
                 n
@@ -602,10 +613,11 @@ runDB standalone@DB{..} cmd =
           takeSnapshot
             nullTracer
             hasFS
+            (error "UTxO HD backing store")
             S.encode
             db
     go hasFS Restore = do
-        (initLog, db, _replayed) <-
+        (initLog, db, _replayed, _backingStore) <-
           initLedgerDB
             nullTracer
             nullTracer
@@ -615,6 +627,7 @@ runDB standalone@DB{..} cmd =
             dbLedgerDbCfg
             (return testInitExtLedger)
             streamAPI
+            RunBoth
         atomically $ modifyTVar dbState (\(rs, _) -> (rs, db))
         return $ Restored (fromInitLog initLog, ledgerDbCurrent db)
     go hasFS (Corrupt c ss) =
@@ -669,7 +682,7 @@ runDB standalone@DB{..} cmd =
 
     truncateSnapshot :: SomeHasFS m -> DiskSnapshot -> m ()
     truncateSnapshot (SomeHasFS hasFS@HasFS{..}) ss =
-        withFile hasFS (snapshotToPath ss) (AppendMode AllowExisting) $ \h ->
+        withFile hasFS (snapshotToDirPath ss) (AppendMode AllowExisting) $ \h ->
           hTruncate h 0
 
     refValPair :: TestBlock -> (RealPoint TestBlock, TestBlock)

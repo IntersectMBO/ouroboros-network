@@ -77,6 +77,7 @@ library
   build-depends:       base              >=4.9 && <4.15
                      , base16-bytestring
                      , bytestring        >=0.10  && <0.11
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-prelude
                      , cardano-slotting
@@ -125,6 +126,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
 test-suite test-consensus
@@ -191,6 +193,7 @@ test-suite test-consensus
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
@@ -231,6 +234,7 @@ test-suite test-storage
                      , bifunctors
                      , binary
                      , bytestring
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-slotting
                      , cborg
@@ -272,6 +276,7 @@ test-suite test-storage
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
 test-suite test-infra
@@ -299,4 +304,5 @@ test-suite test-infra
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts

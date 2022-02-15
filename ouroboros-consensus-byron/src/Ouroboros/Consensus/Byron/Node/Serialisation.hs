@@ -54,9 +54,9 @@ instance EncodeDisk ByronBlock ByronBlock where
 instance DecodeDisk ByronBlock (Lazy.ByteString -> ByronBlock) where
   decodeDisk ccfg = decodeByronBlock (getByronEpochSlots ccfg)
 
-instance EncodeDisk ByronBlock (LedgerState ByronBlock) where
+instance EncodeDisk ByronBlock (LedgerState ByronBlock mk) where
   encodeDisk _ = encodeByronLedgerState
-instance DecodeDisk ByronBlock (LedgerState ByronBlock) where
+instance DecodeDisk ByronBlock (LedgerState ByronBlock mk) where
   decodeDisk _ = decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@
@@ -187,8 +187,8 @@ instance SerialiseNodeToClient ByronBlock CC.ApplyMempoolPayloadErr where
   encodeNodeToClient _ _ = encodeByronApplyTxError
   decodeNodeToClient _ _ = decodeByronApplyTxError
 
-instance SerialiseNodeToClient ByronBlock (SomeSecond BlockQuery ByronBlock) where
-  encodeNodeToClient _ _ (SomeSecond q) = encodeByronQuery q
+instance SerialiseNodeToClient ByronBlock (SomeQuery (BlockQuery ByronBlock)) where
+  encodeNodeToClient _ _ (SomeQuery q) = encodeByronQuery q
   decodeNodeToClient _ _               = decodeByronQuery
 
 instance SerialiseResult ByronBlock (BlockQuery ByronBlock) where

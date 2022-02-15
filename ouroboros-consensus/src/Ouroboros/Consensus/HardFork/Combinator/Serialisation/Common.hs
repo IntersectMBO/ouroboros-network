@@ -81,11 +81,14 @@ import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Word
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR, ToCBOR, enforceSize)
 
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Basics (LedgerTables,
+                     MapKind (ValuesMK))
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToClient,
@@ -275,6 +278,9 @@ class ( CanHardFork xs
       , All (DecodeDiskDepIx (NestedCtxt Header)) xs
         -- Required for 'getHfcBinaryBlockInfo'
       , All HasBinaryBlockInfo xs
+        -- Required for snapshotting the in-memory backing store
+      , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+      , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
       ) => SerialiseHFC xs where
 
   encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)
@@ -648,26 +654,26 @@ undistribSerialisedHeader =
         depPairFirst (mapNestedCtxt NCS) $ go bs
 
 distribQueryIfCurrent ::
-     Some (QueryIfCurrent xs)
-  -> NS (SomeSecond BlockQuery) xs
-distribQueryIfCurrent = \(Some qry) -> go qry
+     SomeQuery (QueryIfCurrent xs)
+  -> NS (SomeQuery :.: BlockQuery) xs
+distribQueryIfCurrent = go
   where
-    go :: QueryIfCurrent xs result -> NS (SomeSecond BlockQuery) xs
-    go (QZ qry) = Z (SomeSecond qry)
-    go (QS qry) = S (go qry)
+    go :: SomeQuery (QueryIfCurrent xs) -> NS (SomeQuery :.: BlockQuery) xs
+    go (SomeQuery (QZ qry)) = Z (Comp (SomeQuery qry))
+    go (SomeQuery (QS qry)) = S (go (SomeQuery qry))
 
 undistribQueryIfCurrent ::
-     NS (SomeSecond BlockQuery) xs
-  -> Some (QueryIfCurrent xs)
+     NS (SomeQuery :.: BlockQuery) xs
+  -> SomeQuery (QueryIfCurrent xs)
 undistribQueryIfCurrent = go
   where
-    go :: NS (SomeSecond BlockQuery) xs -> Some (QueryIfCurrent xs)
+    go :: NS (SomeQuery :.: BlockQuery) xs -> SomeQuery (QueryIfCurrent xs)
     go (Z qry) = case qry of
-                   SomeSecond qry' ->
-                     Some (QZ qry')
+                   Comp (SomeQuery qry') ->
+                     SomeQuery (QZ qry')
     go (S qry) = case go qry of
-                   Some qry' ->
-                     Some (QS qry')
+                   SomeQuery qry' ->
+                     SomeQuery (QS qry')
 
 {-------------------------------------------------------------------------------
   Deriving-via support

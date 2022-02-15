@@ -1,4 +1,6 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -38,9 +40,10 @@ module Ouroboros.Consensus.Ledger.Dual (
   , GenTx (..)
   , Header (..)
   , LedgerState (..)
+  , LedgerTables (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
-  , Ticked (..)
+  , Ticked1 (..)
   , TxId (..)
   , Validated (..)
     -- * Serialisation
@@ -70,10 +73,11 @@ import           Data.Functor ((<&>))
 import           Data.Kind (Type)
 import           Data.Typeable
 import           GHC.Generics (Generic)
+import           GHC.Show (showCommaSpace, showSpace)
 import           GHC.Stack
 import           NoThunks.Class (AllowThunk (..), NoThunks (..))
 
-import           Cardano.Binary (enforceSize)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -92,6 +96,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.CBOR.Simple
 
 {-------------------------------------------------------------------------------
   Block
@@ -332,15 +337,15 @@ type instance LedgerCfg (LedgerState (DualBlock m a)) = DualLedgerConfig m a
 
 instance Bridge m a => HasPartialLedgerConfig (DualBlock m a)
 
-instance Bridge m a => GetTip (LedgerState (DualBlock m a)) where
+instance Bridge m a => GetTip (LedgerState (DualBlock m a) mk) where
   getTip = castPoint . getTip . dualLedgerStateMain
 
-instance Bridge m a => GetTip (Ticked (LedgerState (DualBlock m a))) where
+instance Bridge m a => GetTip (Ticked1 (LedgerState (DualBlock m a)) mk) where
   getTip = castPoint . getTip . tickedDualLedgerStateMain
 
-data instance Ticked (LedgerState (DualBlock m a)) = TickedDualLedgerState {
-      tickedDualLedgerStateMain    :: Ticked (LedgerState m)
-    , tickedDualLedgerStateAux     :: Ticked (LedgerState a)
+data instance Ticked1 (LedgerState (DualBlock m a)) mk = TickedDualLedgerState {
+      tickedDualLedgerStateMain    :: Ticked1 (LedgerState m) mk
+    , tickedDualLedgerStateAux     :: Ticked1 (LedgerState a) mk
     , tickedDualLedgerStateBridge  :: BridgeLedger m a
 
       -- | The original, unticked ledger for the auxiliary block
@@ -348,9 +353,9 @@ data instance Ticked (LedgerState (DualBlock m a)) = TickedDualLedgerState {
       -- The reason we keep this in addition to the ticked ledger state is that
       -- not every main block is paired with an auxiliary block. When there is
       -- no auxiliary block, the auxiliary ledger state remains unchanged.
-    , tickedDualLedgerStateAuxOrig :: LedgerState a
+    , tickedDualLedgerStateAuxOrig :: LedgerState a EmptyMK
     }
-  deriving NoThunks via AllowThunk (Ticked (LedgerState (DualBlock m a)))
+  deriving NoThunks via AllowThunk (Ticked1 (LedgerState (DualBlock m a)) mk)
 
 instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
   type LedgerErr (LedgerState (DualBlock m a)) = DualLedgerError   m a
@@ -373,7 +378,8 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                                            dualLedgerConfigAux
                                            slot
                                           dualLedgerStateAux
-        , tickedDualLedgerStateAuxOrig = dualLedgerStateAux
+        , tickedDualLedgerStateAuxOrig =
+            forgetLedgerStateTables dualLedgerStateAux
         , tickedDualLedgerStateBridge  = dualLedgerStateBridge
         }
     where
@@ -381,6 +387,100 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                        dualLedgerConfigMain
                        slot
                        dualLedgerStateMain
+
+instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
+
+  data LedgerTables (LedgerState (DualBlock m a)) mk =
+      DualBlockLedgerTables
+        (LedgerTables (LedgerState m) mk)
+        (LedgerTables (LedgerState a) mk)
+    deriving (Generic)
+    deriving NoThunks via AllowThunk (LedgerTables (LedgerState (DualBlock m a)) mk)
+
+  projectLedgerTables DualLedgerState{..} =
+      DualBlockLedgerTables
+        (projectLedgerTables dualLedgerStateMain)
+        (projectLedgerTables dualLedgerStateAux)
+
+  withLedgerTables DualLedgerState{..} (DualBlockLedgerTables main aux) =
+      DualLedgerState {
+          dualLedgerStateMain   = withLedgerTables dualLedgerStateMain main
+        , dualLedgerStateAux    = withLedgerTables dualLedgerStateAux  aux
+        , dualLedgerStateBridge = dualLedgerStateBridge
+        }
+
+  pureLedgerTables f =
+      DualBlockLedgerTables
+        (pureLedgerTables f)
+        (pureLedgerTables f)
+
+  mapLedgerTables f (DualBlockLedgerTables main aux) =
+      DualBlockLedgerTables
+        (mapLedgerTables f main)
+        (mapLedgerTables f aux)
+
+  zipLedgerTables
+    f
+    (DualBlockLedgerTables mainL auxL)
+    (DualBlockLedgerTables mainR auxR) =
+      DualBlockLedgerTables
+        (zipLedgerTables f mainL mainR)
+        (zipLedgerTables f auxL  auxR)
+
+  foldLedgerTables f (DualBlockLedgerTables main aux) =
+       foldLedgerTables f main
+    <> foldLedgerTables f aux
+
+deriving instance
+     ( Eq (LedgerTables (LedgerState m) mk)
+     , Eq (LedgerTables (LedgerState a) mk)
+     )
+  => Eq (LedgerTables (LedgerState (DualBlock m a)) mk)
+
+-- TODO only for in-memory backing store
+instance
+     ( Typeable mk, Typeable m, Typeable a
+     , ToCBOR (LedgerTables (LedgerState m) mk)
+     , ToCBOR (LedgerTables (LedgerState a) mk)
+     )
+  => ToCBOR (LedgerTables (LedgerState (DualBlock m a)) mk) where
+  toCBOR (DualBlockLedgerTables m a) =
+      versionZeroProductToCBOR [toCBOR m, toCBOR a]
+
+instance
+     ( Typeable mk, Typeable m, Typeable a
+     , FromCBOR (LedgerTables (LedgerState m) mk)
+     , FromCBOR (LedgerTables (LedgerState a) mk)
+     )
+  => FromCBOR (LedgerTables (LedgerState (DualBlock m a)) mk) where
+  fromCBOR =
+        versionZeroProductFromCBOR "DualBlockLedgerTables" 2
+      $ DualBlockLedgerTables <$> fromCBOR <*> fromCBOR
+
+instance Bridge m a => TickedTableStuff (LedgerState (DualBlock m a)) where
+
+  projectLedgerTablesTicked TickedDualLedgerState{..} =
+      DualBlockLedgerTables
+        (projectLedgerTablesTicked tickedDualLedgerStateMain)
+        (projectLedgerTablesTicked tickedDualLedgerStateAux)
+
+  withLedgerTablesTicked
+    TickedDualLedgerState{..}
+    (DualBlockLedgerTables main aux) =
+      TickedDualLedgerState {
+          tickedDualLedgerStateMain   =
+            withLedgerTablesTicked tickedDualLedgerStateMain main
+        , tickedDualLedgerStateAux    =
+            withLedgerTablesTicked tickedDualLedgerStateAux  aux
+        , tickedDualLedgerStateBridge
+        , tickedDualLedgerStateAuxOrig
+        }
+
+instance ShowLedgerState (LedgerTables (LedgerState (DualBlock m a))) where
+  showsLedgerState = error "showsLedgerState @LedgerTables DualBlock"
+
+instance ShowLedgerState (LedgerTables (Ticked1 (LedgerState (DualBlock m a)))) where
+  showsLedgerState = error "showsLedgerState @Ticked1 LedgerTables DualBlock"
 
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
 
@@ -427,23 +527,80 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                        dualBlockMain
                        tickedDualLedgerStateMain
 
-data instance LedgerState (DualBlock m a) = DualLedgerState {
-      dualLedgerStateMain   :: LedgerState m
-    , dualLedgerStateAux    :: LedgerState a
+  getBlockKeySets DualBlock{dualBlockMain, dualBlockAux} =
+      DualBlockLedgerTables m a
+    where
+      m = getBlockKeySets                             dualBlockMain
+      a = maybe polyEmptyLedgerTables getBlockKeySets dualBlockAux
+
+data instance LedgerState (DualBlock m a) mk = DualLedgerState {
+      dualLedgerStateMain   :: LedgerState m mk
+    , dualLedgerStateAux    :: LedgerState a mk
     , dualLedgerStateBridge :: BridgeLedger m a
     }
-  deriving NoThunks via AllowThunk (LedgerState (DualBlock m a))
+  deriving NoThunks via AllowThunk (LedgerState (DualBlock m a) mk)
 
 instance Bridge m a => UpdateLedger (DualBlock m a)
 
-deriving instance ( Show (LedgerState m)
-                  , Show (LedgerState a)
+deriving instance ( Eq (LedgerState m mk)
+                  , Eq (LedgerState a mk)
                   , Bridge m a
-                  ) => Show (LedgerState (DualBlock m a))
-deriving instance ( Eq (LedgerState m)
-                  , Eq (LedgerState a)
-                  , Bridge m a
-                  ) => Eq (LedgerState (DualBlock m a))
+                  ) => Eq (LedgerState (DualBlock m a) mk)
+
+instance ( ShowLedgerState (LedgerState m)
+         , ShowLedgerState (LedgerState a)
+         , Bridge m a
+         ) => ShowLedgerState (LedgerState (DualBlock m a)) where
+  showsLedgerState mk st =
+      showString "DualLedgerState" . showSpace . showString "{" .
+                             showsLedgerState mk dualLedgerStateMain
+          . showCommaSpace . showsLedgerState mk dualLedgerStateAux
+          . showCommaSpace . shows dualLedgerStateBridge
+          . showString "}"
+    where
+      -- these patterns together ensure we're printing all the fields; the
+      -- record pattern should have the same arity as the plain pattern
+      DualLedgerState _dummy _ _ = st
+      DualLedgerState {
+          dualLedgerStateMain
+        , dualLedgerStateAux
+        , dualLedgerStateBridge
+        } = st
+
+instance
+     ( Bridge m a
+     , StowableLedgerTables (LedgerState m)
+     , StowableLedgerTables (LedgerState a)
+     )
+  => StowableLedgerTables (LedgerState (DualBlock m a)) where
+
+  stowLedgerTables st =
+      DualLedgerState {
+          dualLedgerStateMain   = stowLedgerTables dualLedgerStateMain
+        , dualLedgerStateAux    = stowLedgerTables dualLedgerStateAux
+        , dualLedgerStateBridge
+        }
+    where
+      DualLedgerState {
+          dualLedgerStateMain
+        , dualLedgerStateAux
+        , dualLedgerStateBridge
+        } = st
+
+  unstowLedgerTables st =
+      DualLedgerState {
+          dualLedgerStateMain   = unstowLedgerTables dualLedgerStateMain
+        , dualLedgerStateAux    = unstowLedgerTables dualLedgerStateAux
+        , dualLedgerStateBridge
+        }
+    where
+      DualLedgerState {
+          dualLedgerStateMain
+        , dualLedgerStateAux
+        , dualLedgerStateBridge
+        } = st
+
+  isCandidateForUnstow = isCandidateForUnstowDefault
 
 {-------------------------------------------------------------------------------
   Utilities for working with the extended ledger state
@@ -505,8 +662,11 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   Querying the ledger
 -------------------------------------------------------------------------------}
 
-data instance BlockQuery (DualBlock m a) result
+data instance BlockQuery (DualBlock m a) fp result
   deriving (Show)
+
+instance SmallQuery (BlockQuery (DualBlock m a)) where
+  proveSmallQuery _k = \case {}
 
 instance (Typeable m, Typeable a)
     => ShowProxy (BlockQuery (DualBlock m a)) where
@@ -515,11 +675,13 @@ instance (Typeable m, Typeable a)
 instance Bridge m a => QueryLedger (DualBlock m a) where
   answerBlockQuery _ = \case {}
 
-instance SameDepIndex (BlockQuery (DualBlock m a)) where
-  sameDepIndex = \case {}
+instance EqQuery (BlockQuery (DualBlock m a)) where
+  eqQuery = \case {}
 
 instance ShowQuery (BlockQuery (DualBlock m a)) where
   showResult = \case {}
+
+instance IsQuery (BlockQuery (DualBlock m a))
 
 -- | Forward to the main ledger
 instance Bridge m a => CommonProtocolParams (DualBlock m a) where
@@ -633,6 +795,16 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
           , vDualGenTxAux
           , vDualGenTxBridge
           } = vtx
+
+  getTransactionKeySets tx =
+      DualBlockLedgerTables
+        (getTransactionKeySets dualGenTxMain)
+        (getTransactionKeySets dualGenTxAux)
+    where
+      DualGenTx {
+          dualGenTxMain
+        , dualGenTxAux
+        } = tx
 
 -- We don't need a pair of IDs, as long as we can unique ID the transaction
 newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {
@@ -768,11 +940,14 @@ type instance ForgeStateUpdateError (DualBlock m a) = ForgeStateUpdateError m
 applyMaybeBlock :: UpdateLedger blk
                 => LedgerConfig blk
                 -> Maybe blk
-                -> TickedLedgerState blk
-                -> LedgerState blk
-                -> Except (LedgerError blk) (LedgerState blk)
-applyMaybeBlock _   Nothing      _   st = return st
-applyMaybeBlock cfg (Just block) tst _  = applyLedgerBlock cfg block tst
+                -> TickedLedgerState blk ValuesMK
+                -> LedgerState blk EmptyMK
+                -> Except (LedgerError blk) (LedgerState blk TrackingMK)
+applyMaybeBlock _   Nothing      _   st =
+    -- if there is no block, then are no changes to track
+    return $ st `withLedgerTables` polyEmptyLedgerTables
+applyMaybeBlock cfg (Just block) tst _  =
+    applyLedgerBlock cfg block tst
 
 -- | Lift 'reapplyLedgerBlock' to @Maybe blk@
 --
@@ -780,11 +955,14 @@ applyMaybeBlock cfg (Just block) tst _  = applyLedgerBlock cfg block tst
 reapplyMaybeBlock :: UpdateLedger blk
                   => LedgerConfig blk
                   -> Maybe blk
-                  -> TickedLedgerState blk
-                  -> LedgerState blk
-                  -> LedgerState blk
-reapplyMaybeBlock _   Nothing      _   st = st
-reapplyMaybeBlock cfg (Just block) tst _  = reapplyLedgerBlock cfg block tst
+                  -> TickedLedgerState blk ValuesMK
+                  -> LedgerState blk EmptyMK
+                  -> LedgerState blk TrackingMK
+reapplyMaybeBlock _   Nothing      _   st =
+    -- if there is no block, then are no changes to track
+    st `withLedgerTables` polyEmptyLedgerTables
+reapplyMaybeBlock cfg (Just block) tst _  =
+    reapplyLedgerBlock cfg block tst
 
 -- | Used when the concrete and abstract implementation should agree on errors
 --
@@ -915,9 +1093,9 @@ decodeDualGenTxErr decodeMain = do
       <$> decodeMain
       <*> decode
 
-encodeDualLedgerState :: (Bridge m a, Serialise (LedgerState a))
-                      => (LedgerState m -> Encoding)
-                      -> LedgerState (DualBlock m a) -> Encoding
+encodeDualLedgerState :: (Bridge m a, Serialise (LedgerState a mk))
+                      => (LedgerState m mk -> Encoding)
+                      -> LedgerState (DualBlock m a) mk -> Encoding
 encodeDualLedgerState encodeMain DualLedgerState{..} = mconcat [
       encodeListLen 3
     , encodeMain dualLedgerStateMain
@@ -925,9 +1103,9 @@ encodeDualLedgerState encodeMain DualLedgerState{..} = mconcat [
     , encode     dualLedgerStateBridge
     ]
 
-decodeDualLedgerState :: (Bridge m a, Serialise (LedgerState a))
-                      => Decoder s (LedgerState m)
-                      -> Decoder s (LedgerState (DualBlock m a))
+decodeDualLedgerState :: (Bridge m a, Serialise (LedgerState a mk))
+                      => Decoder s (LedgerState m mk)
+                      -> Decoder s (LedgerState (DualBlock m a) mk)
 decodeDualLedgerState decodeMain = do
     enforceSize "DualLedgerState" 3
     DualLedgerState

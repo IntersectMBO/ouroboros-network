@@ -4,9 +4,12 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
@@ -24,6 +27,7 @@ module Test.Util.TestBlock (
   , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
+  , LedgerTables (..)
   , StorageConfig (..)
   , TestBlock (..)
   , TestBlockError (..)
@@ -55,6 +59,9 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
+import           Data.Functor.Identity (Identity (..))
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
@@ -70,12 +77,14 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import qualified System.Random as R
 import           Test.QuickCheck hiding (Result)
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
@@ -100,6 +109,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as InMemory
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -167,6 +177,10 @@ instance Show TestHash where
 
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
+
+instance InMemory.ReadsKeySets Identity (LedgerState TestBlock) where
+  readDb (InMemory.RewoundTableKeySets seqNo NoTestLedgerTables) =
+      pure $ InMemory.UnforwardedReadSets seqNo NoTestLedgerTables
 
 data TestBlock = TestBlock {
       tbHash  :: TestHash
@@ -318,10 +332,10 @@ instance BlockSupportsProtocol TestBlock where
 
 type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
 
-instance GetTip (LedgerState TestBlock) where
+instance GetTip (LedgerState TestBlock mk) where
   getTip = castPoint . lastAppliedPoint
 
-instance GetTip (Ticked (LedgerState TestBlock)) where
+instance GetTip (Ticked1 (LedgerState TestBlock) mk) where
   getTip = castPoint . lastAppliedPoint . getTickedTestLedger
 
 instance IsLedger (LedgerState TestBlock) where
@@ -330,7 +344,42 @@ instance IsLedger (LedgerState TestBlock) where
   type AuxLedgerEvent (LedgerState TestBlock) =
     VoidLedgerEvent (LedgerState TestBlock)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
+  applyChainTickLedgerResult _ _ (TestLedger l) = pureLedgerResult $ TickedTestLedger $ TestLedger l
+
+instance ShowLedgerState (LedgerState TestBlock) where
+  showsLedgerState _sing = shows
+
+instance TableStuff (LedgerState TestBlock) where
+  data LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables
+    deriving stock    (Generic, Eq, Show)
+    deriving anyclass (NoThunks)
+
+  projectLedgerTables _                              = NoTestLedgerTables
+  withLedgerTables (TestLedger p) NoTestLedgerTables = TestLedger p
+
+  pureLedgerTables _                                       = NoTestLedgerTables
+  mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
+  zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  foldLedgerTables _ NoTestLedgerTables                    = mempty
+
+instance Typeable mk => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
+  toCBOR NoTestLedgerTables = CBOR.encodeNull
+
+instance Typeable mk => FromCBOR (LedgerTables (LedgerState TestBlock) mk) where
+  fromCBOR = NoTestLedgerTables <$ CBOR.decodeNull
+
+instance TickedTableStuff (LedgerState TestBlock) where
+  projectLedgerTablesTicked _                         = NoTestLedgerTables
+  withLedgerTablesTicked (TickedTestLedger st) tables =
+      TickedTestLedger $ withLedgerTables st tables
+
+instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
+  showsLedgerState _sing = shows
+
+instance StowableLedgerTables (LedgerState TestBlock) where
+  stowLedgerTables   (TestLedger p) = TestLedger p
+  unstowLedgerTables (TestLedger p) = TestLedger p
+  isCandidateForUnstow              = isCandidateForUnstowDefault
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
@@ -344,7 +393,9 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
   reapplyBlockLedgerResult _ tb _ =
                    pureLedgerResult $ TestLedger (Chain.blockPoint tb)
 
-newtype instance LedgerState TestBlock =
+  getBlockKeySets _ = NoTestLedgerTables
+
+newtype instance LedgerState TestBlock mk =
     TestLedger {
         -- The ledger state simply consists of the last applied block
         lastAppliedPoint :: Point TestBlock
@@ -352,10 +403,17 @@ newtype instance LedgerState TestBlock =
   deriving stock   (Show, Eq, Generic)
   deriving newtype (Serialise, NoThunks, ToExpr)
 
+instance InMemory (LedgerState TestBlock) where
+  convertMapKind TestLedger {..} = TestLedger {..}
+
+instance InMemory (LedgerTables (LedgerState TestBlock)) where
+  convertMapKind NoTestLedgerTables = NoTestLedgerTables
+
 -- Ticking has no effect
-newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {
-      getTickedTestLedger :: LedgerState TestBlock
+newtype instance Ticked1 (LedgerState TestBlock) mk = TickedTestLedger {
+      getTickedTestLedger :: LedgerState TestBlock mk
     }
+  deriving stock   (Eq)
 
 instance UpdateLedger TestBlock
 
@@ -365,7 +423,7 @@ instance InspectLedger TestBlock where
 -- | Last applied block
 --
 -- Returns 'Nothing' if the ledger is empty.
-lastAppliedBlock :: LedgerState TestBlock -> Maybe TestBlock
+lastAppliedBlock :: LedgerState TestBlock mk -> Maybe TestBlock
 lastAppliedBlock (TestLedger p) = go p
   where
     -- We can only have applied valid blocks
@@ -391,26 +449,31 @@ instance HasHardForkHistory TestBlock where
   type HardForkIndices TestBlock = '[TestBlock]
   hardForkSummary = neverForksHardForkSummary id
 
-data instance BlockQuery TestBlock result where
-  QueryLedgerTip :: BlockQuery TestBlock (Point TestBlock)
+data instance BlockQuery TestBlock fp result where
+  QueryLedgerTip :: BlockQuery TestBlock SmallL (Point TestBlock)
+
+instance SmallQuery (BlockQuery TestBlock) where
+  proveSmallQuery k = \case
+    QueryLedgerTip -> k
 
 instance QueryLedger TestBlock where
   answerBlockQuery _cfg QueryLedgerTip (ExtLedgerState TestLedger { lastAppliedPoint } _) =
     lastAppliedPoint
 
-instance SameDepIndex (BlockQuery TestBlock) where
-  sameDepIndex QueryLedgerTip QueryLedgerTip = Just Refl
+instance EqQuery (BlockQuery TestBlock) where
+  eqQuery QueryLedgerTip QueryLedgerTip = Just Refl
 
-deriving instance Eq (BlockQuery TestBlock result)
-deriving instance Show (BlockQuery TestBlock result)
+deriving instance Show (BlockQuery TestBlock fp result)
 
 instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
 
-testInitLedger :: LedgerState TestBlock
+instance IsQuery (BlockQuery TestBlock) where
+
+testInitLedger :: LedgerState TestBlock ValuesMK
 testInitLedger = TestLedger GenesisPoint
 
-testInitExtLedger :: ExtLedgerState TestBlock
+testInitExtLedger :: ExtLedgerState TestBlock ValuesMK
 testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
@@ -617,7 +680,7 @@ instance Serialise (AnnTip TestBlock) where
   encode = defaultEncodeAnnTip encode
   decode = defaultDecodeAnnTip decode
 
-instance Serialise (ExtLedgerState TestBlock) where
+instance Serialise (ExtLedgerState TestBlock EmptyMK) where
   encode = encodeExtLedgerState encode encode encode
   decode = decodeExtLedgerState decode decode decode
 

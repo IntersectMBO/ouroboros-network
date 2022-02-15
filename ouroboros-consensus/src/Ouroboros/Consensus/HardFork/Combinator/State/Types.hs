@@ -1,6 +1,8 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -14,6 +16,7 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Types (
   , TransitionInfo (..)
   , Translate (..)
   , TranslateForecast (..)
+  , TranslateLedgerState (..)
   ) where
 
 import           Prelude
@@ -26,7 +29,9 @@ import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState, MapKind (..))
 import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope)
@@ -93,8 +98,16 @@ newtype TranslateForecast f g x y = TranslateForecast {
       translateForecastWith ::
            Bound    -- 'Bound' of the transition (start of the new era)
         -> SlotNo   -- 'SlotNo' we're constructing a forecast for
-        -> f x
+        -> f x EmptyMK
         -> Except OutsideForecastRange (Ticked (g y))
+    }
+
+newtype TranslateLedgerState x y = TranslateLedgerState {
+      translateLedgerStateWith :: forall mk .
+           SingI mk
+        => EpochNo
+        -> LedgerState x mk
+        -> LedgerState y mk
     }
 
 -- | Knowledge in a particular era of the transition to the next era

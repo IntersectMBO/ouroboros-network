@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -69,9 +70,9 @@ instance DecodeDiskDep (NestedCtxt Header) DualByronBlock where
                 (NestedCtxt (CtxtDual ctxt)) =
       decodeDiskDep ccfg (NestedCtxt ctxt)
 
-instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
+instance EncodeDisk DualByronBlock (LedgerState DualByronBlock EmptyMK) where
   encodeDisk _ = encodeDualLedgerState encodeByronLedgerState
-instance DecodeDisk DualByronBlock (LedgerState DualByronBlock) where
+instance DecodeDisk DualByronBlock (LedgerState DualByronBlock EmptyMK) where
   decodeDisk _ = decodeDualLedgerState decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@
@@ -172,7 +173,7 @@ instance SerialiseNodeToClient DualByronBlock (DualGenTxErr ByronBlock ByronSpec
   encodeNodeToClient _ _ = encodeDualGenTxErr encodeByronApplyTxError
   decodeNodeToClient _ _ = decodeDualGenTxErr decodeByronApplyTxError
 
-instance SerialiseNodeToClient DualByronBlock (SomeSecond BlockQuery DualByronBlock) where
+instance SerialiseNodeToClient DualByronBlock (SomeQuery (BlockQuery DualByronBlock)) where
   encodeNodeToClient _ _ = \case {}
   decodeNodeToClient _ _ = error "DualByron: no query to decode"
 
