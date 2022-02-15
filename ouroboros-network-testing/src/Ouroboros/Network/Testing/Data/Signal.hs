@@ -335,6 +335,16 @@ keyedLinger d activity =
             else                   go lingerSet' lingerPSQ' txs
 
 
+-- | Make a signal that says if a given event longed at least a certain time
+-- (timeout), based on observing an underlying signal.
+--
+-- The underlying signal is scrutinised with the provided \"timeout arming\"
+-- function that tells us if the signal value is interesting to track.
+-- If it is, we arm it with a timeout and see, if until the timeout goes off
+-- there's no other event to arm. If any activity occurs again before the
+-- previous timeout, then the timeout is reset with the new event and the other
+-- one is discarded.
+--
 keyedTimeout :: forall a b. Ord b
              => DiffTime
              -> (a -> Set b)  -- ^ The timeout arming set signal
