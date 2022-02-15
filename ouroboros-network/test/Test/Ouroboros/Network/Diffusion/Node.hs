@@ -85,7 +85,8 @@ import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..), singletonScript)
-import           Simulation.Network.Snocket (AddressType (IPv4Address), FD)
+
+import           Simulation.Network.Snocket (AddressType (..), FD)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NtCAddr,
@@ -180,7 +181,7 @@ run blockGeneratorArgs limits ni na =
                     , haAcceptVersion        = iAcceptVersion ni
                     , haTimeLimits           = timeLimitsHandshake
                     }
-              , Diff.P2P.diNtnAddressType    = const (Just IPv4Address)
+              , Diff.P2P.diNtnAddressType    = ntnAddressType
               , Diff.P2P.diNtnDataFlow       = \_ NtNVersionData { ntnDiffusionMode } ->
                   case ntnDiffusionMode of
                     InitiatorOnlyDiffusionMode         -> Unidirectional
@@ -237,6 +238,12 @@ run blockGeneratorArgs limits ni na =
                wait diffusionThread
             <> wait nodeKernelThread
   where
+    ntnAddressType :: NtNAddr -> Maybe AddressType
+    ntnAddressType (TestAddress (Node.EphemeralIPv4Addr _)) = Just IPv4Address
+    ntnAddressType (TestAddress (Node.EphemeralIPv6Addr _)) = Just IPv6Address
+    ntnAddressType (TestAddress (Node.IPAddr (IPv4 _) _))   = Just IPv4Address
+    ntnAddressType (TestAddress (Node.IPAddr (IPv6 _) _))   = Just IPv6Address
+
     -- various pseudo random generators
     (diffStgGen, keepAliveStdGen) = split (iRng ni)
 
@@ -285,9 +292,11 @@ run blockGeneratorArgs limits ni na =
 --- Utils
 
 ntnToIPv4 :: NtNAddr -> Maybe NtNAddr
-ntnToIPv4 ntnAddr@(TestAddress (Node.IPAddr (IPv4 _) _)) = Just ntnAddr
-ntnToIPv4 (TestAddress _)                                = Nothing
+ntnToIPv4 ntnAddr@(TestAddress (Node.EphemeralIPv4Addr _)) = Just ntnAddr
+ntnToIPv4 ntnAddr@(TestAddress (Node.IPAddr (IPv4 _) _))   = Just ntnAddr
+ntnToIPv4 (TestAddress _)                                  = Nothing
 
 ntnToIPv6 :: NtNAddr -> Maybe NtNAddr
-ntnToIPv6 ntnAddr@(TestAddress (Node.IPAddr (IPv6 _) _)) = Just ntnAddr
-ntnToIPv6 (TestAddress _)                                = Nothing
+ntnToIPv6 ntnAddr@(TestAddress (Node.EphemeralIPv6Addr _)) = Just ntnAddr
+ntnToIPv6 ntnAddr@(TestAddress (Node.IPAddr (IPv6 _) _))   = Just ntnAddr
+ntnToIPv6 (TestAddress _)                                  = Nothing
