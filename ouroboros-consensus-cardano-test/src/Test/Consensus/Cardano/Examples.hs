@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE PolyKinds      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -25,18 +26,20 @@ module Test.Consensus.Cardano.Examples (
   , examples
   ) where
 
-import           Data.Coerce (coerce)
+import           Data.Coerce (Coercible, coerce)
 import           Data.SOP.Strict
 
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Basics (MapKind)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (SomeQuery (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
+import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (Exactly (..))
 import           Ouroboros.Consensus.Util.SOP (Index (..), himap)
@@ -91,12 +94,12 @@ mkCardanoExamples perEraExamples = Golden.Examples {
       , exampleGenTx            =          viaInject                            Golden.exampleGenTx
       , exampleGenTxId          = coerce $ viaInject @WrapGenTxId       (coerce Golden.exampleGenTxId)
       , exampleApplyTxErr       = coerce $ viaInject @WrapApplyTxErr    (coerce Golden.exampleApplyTxErr)
-      , exampleQuery            =          viaInject                            Golden.exampleQuery
+      , exampleQuery            = coerce $ viaInject @(SomeQuery :.: BlockQuery) (coerce Golden.exampleQuery)
       , exampleResult           =          viaInject                            Golden.exampleResult
       , exampleAnnTip           =          viaInject                            Golden.exampleAnnTip
-      , exampleLedgerState      =          viaInject                            Golden.exampleLedgerState
+      , exampleLedgerState      = coerce $ viaInject @(Flip LedgerState EmptyMK)   (coerce Golden.exampleLedgerState)
       , exampleChainDepState    = coerce $ viaInject @WrapChainDepState (coerce Golden.exampleChainDepState)
-      , exampleExtLedgerState   =          viaInject                            Golden.exampleExtLedgerState
+      , exampleExtLedgerState   = coerce $ viaInject @(Flip ExtLedgerState EmptyMK)    (coerce Golden.exampleExtLedgerState)
       , exampleSlotNo           = coerce $ viaInject @(K SlotNo)        (coerce Golden.exampleSlotNo)
       , exampleLedgerConfig     = exampleLedgerConfigCardano
       }
@@ -112,6 +115,12 @@ mkCardanoExamples perEraExamples = Golden.Examples {
       where
         inj :: forall blk. Index (CardanoEras Crypto) blk -> Labelled (f blk) -> Labelled (f (CardanoBlock Crypto))
         inj idx = fmap (fmap (inject exampleStartBounds idx))
+
+    -- viaInject2 ::
+    --      forall k (f :: k -> Type) (g :: Type -> k). Inject f
+    --   => (forall blk. Examples blk -> Labelled (f (g blk)))
+    --   -> Labelled (f (g (CardanoBlock Crypto)))
+    -- viaInject2 getExamples = undefined
 
     perEraExamplesPrefixed :: NP Examples (CardanoEras Crypto)
     perEraExamplesPrefixed = hzipWith (\(K eraName) es -> Golden.prefixExamples eraName es) perEraNames perEraExamples
@@ -165,34 +174,6 @@ instance Inject SomeResult where
       SomeResult (QueryIfCurrent (injectQuery idx q)) (Right r)
 
 type SomeCardanoQuery = SomeQuery :.: BlockQuery
-
-instance Inject Examples where
-  inject startBounds (idx :: Index xs x) Golden.Examples {..} = Golden.Examples {
-        exampleBlock            = inj (Proxy @I)                             exampleBlock
-      , exampleSerialisedBlock  = inj (Proxy @Serialised)                    exampleSerialisedBlock
-      , exampleHeader           = inj (Proxy @Header)                        exampleHeader
-      , exampleSerialisedHeader = inj (Proxy @SerialisedHeader)              exampleSerialisedHeader
-      , exampleHeaderHash       = inj (Proxy @WrapHeaderHash)                exampleHeaderHash
-      , exampleGenTx            = inj (Proxy @GenTx)                         exampleGenTx
-      , exampleGenTxId          = inj (Proxy @WrapGenTxId)                   exampleGenTxId
-      , exampleApplyTxErr       = inj (Proxy @WrapApplyTxErr)                exampleApplyTxErr
-      , exampleQuery            = inj (Proxy @SomeCardanoQuery)              exampleQuery
-      , exampleResult           = inj (Proxy @SomeResult)                    exampleResult
-      , exampleAnnTip           = inj (Proxy @AnnTip)                        exampleAnnTip
-      , exampleLedgerState      = inj (Proxy @(Flip LedgerState EmptyMK))    exampleLedgerState
-      , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
-      , exampleSlotNo           =                                            exampleSlotNo
-      }
-    where
-      inj ::
-           forall f a b.
-           ( Inject f
-           , Coercible a (f x)
-           , Coercible b (f (HardForkBlock xs))
-           )
-        => Proxy f -> Labelled a -> Labelled b
-      inj p = fmap (fmap (inject' p startBounds idx))
 
 {-------------------------------------------------------------------------------
   Setup

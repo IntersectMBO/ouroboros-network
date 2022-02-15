@@ -435,10 +435,10 @@ roundtrip_SerialiseNodeToClient
   => CodecConfig blk
   -> [TestTree]
 roundtrip_SerialiseNodeToClient ccfg =
-    [ rt (Proxy @blk)                        "blk"
-    , rt (Proxy @(GenTx blk))                "GenTx"
-    , rt (Proxy @(ApplyTxErr blk))           "ApplyTxErr"
-    , rt (Proxy @(SomeQuery BlockQuery blk)) "BlockQuery"
+    [ rt (Proxy @blk)                          "blk"
+    , rt (Proxy @(GenTx blk))                  "GenTx"
+    , rt (Proxy @(ApplyTxErr blk))             "ApplyTxErr"
+    , rt (Proxy @(SomeQuery (BlockQuery blk))) "BlockQuery"
     -- Note: Ideally we'd just use 'rt' to test Ledger config, but that would
     -- require an 'Eq' and 'Show' instance for all ledger config types which
     -- we'd

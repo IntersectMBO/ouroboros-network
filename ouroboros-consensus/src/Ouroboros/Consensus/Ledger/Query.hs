@@ -125,7 +125,7 @@ data Query blk (fp :: FootprintL) result where
   -- This constructor is supported by 'QueryVersion' >= 'QueryVersion2'.
   -- Serialisation of the @LedgerConfig blk@ result is versioned by the
   -- @BlockNodeToClientVersion blk@.
-  GetLedgerConfig :: Query blk (LedgerConfig blk)
+  GetLedgerConfig :: Query blk LargeL (LedgerConfig blk)
 
 instance (ShowProxy (BlockQuery blk)) => ShowProxy (Query blk) where
   showProxy (Proxy :: Proxy (Query blk)) = "Query (" ++ showProxy (Proxy @(BlockQuery blk)) ++ ")"
@@ -137,29 +137,29 @@ instance (ShowQuery (BlockQuery blk), StandardHash blk) => ShowQuery (Query blk)
   showResult GetChainPoint           = show
   showResult GetLedgerConfig         = const "LedgerConfig{..}"
 
-instance Eq (SomeSecond BlockQuery blk) => Eq (SomeSecond Query blk) where
-  SomeSecond (BlockQuery blockQueryA) == SomeSecond (BlockQuery blockQueryB)
-    = SomeSecond blockQueryA == SomeSecond blockQueryB
-  SomeSecond (BlockQuery _) == _ = False
+-- instance Eq (SomeQuery (BlockQuery blk)) => Eq (SomeQuery (Query blk)) where
+--   SomeQuery (BlockQuery blockQueryA) == SomeQuery (BlockQuery blockQueryB)
+--     = SomeQuery blockQueryA == SomeQuery blockQueryB
+--   SomeQuery (BlockQuery _) == _ = False
 
-  SomeSecond GetSystemStart == SomeSecond GetSystemStart = True
-  SomeSecond GetSystemStart == _                         = False
+--   SomeQuery GetSystemStart == SomeQuery GetSystemStart = True
+--   SomeQuery GetSystemStart == _                         = False
 
-  SomeSecond GetChainBlockNo == SomeSecond GetChainBlockNo  = True
-  SomeSecond GetChainBlockNo == _                           = False
+--   SomeQuery GetChainBlockNo == SomeQuery GetChainBlockNo  = True
+--   SomeQuery GetChainBlockNo == _                           = False
 
-  SomeSecond GetChainPoint == SomeSecond GetChainPoint  = True
-  SomeSecond GetChainPoint == _                         = False
+--   SomeQuery GetChainPoint == SomeQuery GetChainPoint  = True
+--   SomeQuery GetChainPoint == _                         = False
 
-  SomeSecond GetLedgerConfig == SomeSecond GetLedgerConfig = True
-  SomeSecond GetLedgerConfig == _                          = False
+--   SomeQuery GetLedgerConfig == SomeQuery GetLedgerConfig = True
+--   SomeQuery GetLedgerConfig == _                          = False
 
-instance Show (SomeSecond BlockQuery blk) => Show (SomeSecond Query blk) where
-  show (SomeSecond (BlockQuery blockQueryA))  = "Query " ++ show (SomeSecond blockQueryA)
-  show (SomeSecond GetSystemStart)            = "Query GetSystemStart"
-  show (SomeSecond GetChainBlockNo)           = "Query GetChainBlockNo"
-  show (SomeSecond GetChainPoint)             = "Query GetChainPoint"
-  show (SomeSecond GetLedgerConfig)           = "Query GetLedgerConfig"
+-- instance Show (SomeQuery (BlockQuery blk)) => Show (SomeQuery (Query blk)) where
+--   show (SomeQuery (BlockQuery blockQueryA))  = "Query " ++ show (SomeQuery blockQueryA)
+--   show (SomeQuery GetSystemStart)            = "Query GetSystemStart"
+--   show (SomeQuery GetChainBlockNo)           = "Query GetChainBlockNo"
+--   show (SomeQuery GetChainPoint)             = "Query GetChainPoint"
+--   show (SomeQuery GetLedgerConfig)           = "Query GetLedgerConfig"
 
 -- | Exception thrown in the encoders
 data QueryEncoderException blk =
@@ -307,21 +307,15 @@ instance ( SerialiseResult blk (BlockQuery blk)
   decodeResult codecConfig blockVersion GetLedgerConfig
     = decodeNodeToClient @blk @(LedgerConfig blk) codecConfig blockVersion
 
-instance SameDepIndex (BlockQuery blk) => SameDepIndex (Query blk) where
+instance SameDepIndex (BlockQuery blk fp) => SameDepIndex (Query blk fp) where
   sameDepIndex (BlockQuery blockQueryA) (BlockQuery blockQueryB)
     = sameDepIndex blockQueryA blockQueryB
   sameDepIndex (BlockQuery _) _
-  encodeResult codecConfig blockVersion qry result = case qry of
-    BlockQuery blockQuery -> encodeResult codecConfig blockVersion blockQuery result
-    GetSystemStart        -> toCBOR result
-    GetChainBlockNo       -> toCBOR result
-    GetChainPoint         -> encodePoint encode result
-
-  decodeResult codecConfig blockVersion qry = case qry of
-    BlockQuery blockQuery -> decodeResult codecConfig blockVersion blockQuery
-    GetSystemStart        -> fromCBOR
-    GetChainBlockNo       -> fromCBOR
-    GetChainPoint         -> decodePoint decode
+    = Nothing
+  sameDepIndex GetLedgerConfig GetLedgerConfig
+    = Just Refl
+  sameDepIndex GetLedgerConfig _
+    = Nothing
 
 instance EqQuery (BlockQuery blk) => EqQuery (Query blk) where
   eqQuery (BlockQuery blockQueryA) (BlockQuery blockQueryB)
@@ -339,10 +333,6 @@ instance EqQuery (BlockQuery blk) => EqQuery (Query blk) where
   eqQuery GetChainPoint GetChainPoint
     = Just Refl
   eqQuery GetChainPoint _
-    = Nothing
-  sameDepIndex GetLedgerConfig GetLedgerConfig
-    = Just Refl
-  sameDepIndex GetLedgerConfig _
     = Nothing
 
 deriving instance Show (BlockQuery blk fp result) => Show (Query blk fp result)

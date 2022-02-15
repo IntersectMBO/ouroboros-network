@@ -91,8 +91,7 @@ import           Ouroboros.Consensus.Ledger.Basics (LedgerTables,
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToClient,
-                     Some (..))
+import           Ouroboros.Consensus.Node.Serialisation (SerialiseNodeToClient)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.SOP
 

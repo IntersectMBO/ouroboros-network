@@ -46,7 +46,7 @@ import           Data.Void
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary
 
 import           Test.Util.Time (dawnOfTime)
 

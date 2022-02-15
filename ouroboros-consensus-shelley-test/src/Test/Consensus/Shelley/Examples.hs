@@ -138,7 +138,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
-    ledgerConfig = exampleShelleyLedgerConfig sleTranslationContext
+    ledgerConfig = exampleShelleyLedgerConfig (error "sleTranslationContext requires a dependency bump")
 
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
 examplesShelley = fromShelleyLedgerExamples ledgerExamplesShelley
