@@ -1,14 +1,22 @@
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.Testing.Utils where
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer (Tracer (..))
+import           Control.Tracer (Contravariant (contramap), Tracer (..),
+                     contramapM)
 
+import           Data.Bitraversable (bimapAccumR)
+import           Data.List.Trace (Trace)
+import qualified Data.List.Trace as Trace
+import qualified Data.Map as Map
+import           Data.Maybe (fromJust, isJust)
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -18,7 +26,6 @@ import           Test.Tasty (TestTree)
 #ifndef NIGHTLY
 import           Test.Tasty.ExpectedFailure
 #endif
-
 import           Debug.Trace (traceShowM)
 
 
@@ -112,6 +119,64 @@ renderRanges r n = show lower ++ " -- " ++ show upper
   where
     lower = n - n `mod` r
     upper = lower + (r-1)
+
+--
+-- Tracing tools
+--
+
+data WithName name event = WithName {
+    wnName  :: name,
+    wnEvent :: event
+  }
+  deriving (Show, Functor)
+
+data WithTime event = WithTime {
+    wtTime  :: Time,
+    wtEvent :: event
+  }
+  deriving (Show, Functor)
+
+tracerWithName :: name -> Tracer m (WithName name a) -> Tracer m a
+tracerWithName name = contramap (WithName name)
+
+tracerWithTime :: MonadMonotonicTime m => Tracer m (WithTime a) -> Tracer m a
+tracerWithTime = contramapM $ \a -> flip WithTime a <$> getMonotonicTime
+
+tracerWithTimeName :: MonadMonotonicTime m
+                   => name
+                   -> Tracer m (WithTime (WithName name a))
+                   -> Tracer m a
+tracerWithTimeName name =
+  contramapM $ \a -> flip WithTime (WithName name a) <$> getMonotonicTime
+
+swapNameWithTime :: WithName name (WithTime b) -> WithTime (WithName name b)
+swapNameWithTime (WithName name (WithTime t b)) = WithTime t (WithName name b)
+
+swapTimeWithName :: WithTime (WithName name b) -> WithName name (WithTime b)
+swapTimeWithName (WithTime t (WithName name b)) = WithName name (WithTime t b)
+
+-- | Split Trace events into separate traces indexed by a given name.
+--
+splitWithNameTrace :: Ord name
+                   => Trace r (WithName name b)
+                   -> Trace r [WithName name b]
+splitWithNameTrace =
+    fmap fromJust
+  . Trace.filter isJust
+  -- there might be some connections in the state, push them onto the 'Trace'
+  . (\(s, o) -> foldr (\a as -> Trace.Cons (Just a) as) o (Map.elems s))
+  . bimapAccumR
+      ( \ s a -> (s, a))
+      ( \ s wn@(WithName name _) ->
+        ( Map.alter
+            ( \ case
+                 Nothing  -> Just [wn]
+                 Just wns -> Just (wn : wns)
+            ) name s
+        , Nothing
+        )
+      )
+      Map.empty
 
 --
 -- Debugging tools
