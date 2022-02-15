@@ -66,6 +66,10 @@ tests =
                    prop_diffusionScript_commandScript_valid
     , testProperty "diffusion target established local"
                    prop_diffusion_target_established_local
+    , testProperty "diffusion target active below"
+                   prop_diffusion_target_active_below
+    , testProperty "diffusion target active local above"
+                   prop_diffusion_target_active_local_above
     ]
   ]
 
@@ -310,6 +314,287 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                       <*> promotionOpportunities
                       <*> promotionOpportunitiesIgnoredTooLong
               )
+
+-- | A variant of
+-- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_below'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+-- We do not need separate above and below variants of this property since it
+-- is not possible to exceed the target.
+--
+prop_diffusion_target_active_below :: AbsBearerInfo
+                                   -> DiffusionScript
+                                   -> Property
+prop_diffusion_target_active_below defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 1000000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_below ev
+        )
+      <$> events
+
+  where
+    verify_target_active_below :: Events DiffusionTestTrace -> Property
+    verify_target_active_below events =
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+          govLocalRootPeersSig =
+            selectDiffusionPeerSelectionState Governor.localRootPeers events
+
+          govEstablishedPeersSig :: Signal (Set NtNAddr)
+          govEstablishedPeersSig =
+            selectDiffusionPeerSelectionState
+              (EstablishedPeers.toSet . Governor.establishedPeers)
+              events
+
+          govActivePeersSig :: Signal (Set NtNAddr)
+          govActivePeersSig =
+            selectDiffusionPeerSelectionState Governor.activePeers events
+
+          govActiveFailuresSig :: Signal (Set NtNAddr)
+          govActiveFailuresSig =
+              Signal.keyedLinger
+                180 -- 3 minutes  -- TODO: too eager to reconnect?
+                (fromMaybe Set.empty)
+            . Signal.fromEvents
+            . Signal.selectEvents
+                (\case TracePromoteWarmFailed _ _ peer _ ->
+                         --TODO: the environment does not yet cause this to happen
+                         -- it requires synchronous failure in the establish
+                         -- action
+                         Just (Set.singleton peer)
+                       --TODO
+                       TraceDemoteAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                       _ -> Nothing
+                )
+            . selectDiffusionPeerSelectionEvents
+            $ events
+
+          trJoinKillSig :: Signal JoinedOrKilled
+          trJoinKillSig =
+              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+            . Signal.selectEvents
+                (\case TrJoiningNetwork -> Just Joined
+                       TrKillingNode    -> Just Killed
+                       _                -> Nothing
+                )
+            . selectDiffusionSimulationTrace
+            $ events
+
+          -- Signal.keyedUntil receives 2 functions one that sets start of the
+          -- set signal, one that ends it and another that stops all.
+          --
+          -- In this particular case we want a signal that is keyed beginning
+          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
+          -- with the periods when a node was alive.
+          trIsNodeAlive :: Signal Bool
+          trIsNodeAlive =
+                not . Set.null
+            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
+                                                      Set.empty)
+                                  (fromJoinedOrKilled Set.empty
+                                                      (Set.singleton()))
+                                  (const False)
+                                  trJoinKillSig
+
+          promotionOpportunities :: Signal (Set NtNAddr)
+          promotionOpportunities =
+            (\local established active recentFailures isAlive ->
+              if isAlive
+              then Set.unions
+                    [ -- There are no opportunities if we're at or above target
+                      if Set.size groupActive >= target
+                         then Set.empty
+                         else groupEstablished Set.\\ active
+                                               Set.\\ recentFailures
+                    | (target, group) <- LocalRootPeers.toGroupSets local
+                    , let groupActive      = group `Set.intersection` active
+                          groupEstablished = group `Set.intersection` established
+                    ]
+              else Set.empty
+            ) <$> govLocalRootPeersSig
+              <*> govEstablishedPeersSig
+              <*> govActivePeersSig
+              <*> govActiveFailuresSig
+              <*> trIsNodeAlive
+
+          promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
+          promotionOpportunitiesIgnoredTooLong =
+            Signal.keyedTimeout
+              10 -- seconds
+              id
+              promotionOpportunities
+
+       in counterexample
+            ("\nSignal key: (local, established peers, active peers, " ++
+             "recent failures, opportunities, ignored too long)") $
+
+          signalProperty 20 show
+            (\toolong -> Set.null toolong)
+            promotionOpportunitiesIgnoredTooLong
+
+-- | A variant of
+-- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_local_above'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+-- We do not need separate above and below variants of this property since it
+-- is not possible to exceed the target.
+--
+prop_diffusion_target_active_local_above :: AbsBearerInfo
+                                         -> DiffusionScript
+                                         -> Property
+prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 1000000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_above ev
+        )
+      <$> events
+
+  where
+    verify_target_active_above :: Events DiffusionTestTrace -> Property
+    verify_target_active_above events =
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+          govLocalRootPeersSig =
+            selectDiffusionPeerSelectionState Governor.localRootPeers events
+
+          govActivePeersSig :: Signal (Set NtNAddr)
+          govActivePeersSig =
+            selectDiffusionPeerSelectionState Governor.activePeers events
+
+          trJoinKillSig :: Signal JoinedOrKilled
+          trJoinKillSig =
+              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+            . Signal.selectEvents
+                (\case TrJoiningNetwork -> Just Joined
+                       TrKillingNode    -> Just Killed
+                       _                -> Nothing
+                )
+            . selectDiffusionSimulationTrace
+            $ events
+
+          -- Signal.keyedUntil receives 2 functions one that sets start of the
+          -- set signal, one that ends it and another that stops all.
+          --
+          -- In this particular case we want a signal that is keyed beginning
+          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
+          -- with the periods when a node was alive.
+          trIsNodeAlive :: Signal Bool
+          trIsNodeAlive =
+                not . Set.null
+            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
+                                                      Set.empty)
+                                  (fromJoinedOrKilled Set.empty
+                                                      (Set.singleton ()))
+                                  (const False)
+                                  trJoinKillSig
+
+          demotionOpportunities :: Signal (Set NtNAddr)
+          demotionOpportunities =
+            (\local active isAlive ->
+              if isAlive
+              then Set.unions
+                    [ -- There are no opportunities if we're at or below target
+                      if Set.size groupActive <= target
+                         then Set.empty
+                         else groupActive
+                    | (target, group) <- LocalRootPeers.toGroupSets local
+                    , let groupActive = group `Set.intersection` active
+                    ]
+              else Set.empty
+            ) <$> govLocalRootPeersSig
+              <*> govActivePeersSig
+              <*> trIsNodeAlive
+
+          demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
+          demotionOpportunitiesIgnoredTooLong =
+            Signal.keyedTimeout
+              10 -- seconds
+              id
+              demotionOpportunities
+
+       in counterexample
+            ("\nSignal key: (local peers, active peers, " ++
+             "demotion opportunities, ignored too long)") $
+
+          signalProperty 20 show
+            (\(_,_,_,_,toolong) -> Set.null toolong)
+            ((,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                   <*> govActivePeersSig
+                   <*> trIsNodeAlive
+                   <*> demotionOpportunities
+                   <*> demotionOpportunitiesIgnoredTooLong)
 
 -- Utils
 --
