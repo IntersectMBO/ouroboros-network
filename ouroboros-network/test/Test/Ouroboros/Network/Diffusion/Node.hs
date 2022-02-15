@@ -155,8 +155,11 @@ run :: forall resolver m.
     -> Node.LimitsAndTimeouts Block
     -> Interfaces m
     -> Arguments m
+    -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
+                             NtCAddr NtCVersion NtCVersionData
+                             ResolverException m
     -> m Void
-run blockGeneratorArgs limits ni na =
+run blockGeneratorArgs limits ni na tracersExtra =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
         dnsMapScriptVar <- LazySTM.newTVarIO
@@ -205,11 +208,6 @@ run blockGeneratorArgs limits ni na =
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
               }
-
-            tracersExtra :: Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
-                                                  NtCAddr NtCVersion NtCVersionData
-                                                  ResolverException m
-            tracersExtra = Diff.P2P.nullTracers
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m
             appsExtra = Diff.P2P.ApplicationsExtra
