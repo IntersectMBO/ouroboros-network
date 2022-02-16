@@ -17,6 +17,8 @@
 
 module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
   ( newLMDBBackingStore
+  , LMDBBackingStore
+  , LMDBValueHandle
   , DbErr
   , LMDBInit(..)
   , LMDBLimits
@@ -51,6 +53,9 @@ import Database.LMDB.Simple (ReadWrite)
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Cardano.Binary as CBOR(ToCBOR(..), FromCBOR(..))
 import Unsafe.Coerce(unsafeCoerce)
+import qualified System.Directory as Dir
+import qualified Control.Tracer as Trace
+import qualified Control.Monad.Trans.Writer.CPS as Writer
 
 {-
 
@@ -60,24 +65,45 @@ TODO Don't use DbRef
 
 {-# HLINT ignore #-}
 
-type LMDBBackingStore l = HD.BackingStore IO
+type LMDBBackingStore l m = HD.BackingStore m
   (Tables.LedgerTables l Tables.KeysMK)
   (Tables.LedgerTables l Tables.ValuesMK)
   (Tables.LedgerTables l Tables.DiffMK)
 -- type LMDBBackingStore k v = HD.BackingStore IO (UtxoKeys k v) (UtxoValues k v) (UtxoDiff k v)
 
-type LMDBValueHandle l = HD.BackingStoreValueHandle IO
+type LMDBValueHandle l m = HD.BackingStoreValueHandle m
   (Tables.LedgerTables l Tables.KeysMK)
   (Tables.LedgerTables l Tables.ValuesMK)
   
 
+data TraceDb
+  = TDBOpening
+  | TDBOpened
+  | TDBClosing
+  | TDBClosed
+  | TDBCopying
+  | TDBCopied
+  | TDBWrite !(WithOrigin SlotNo) !(SlotNo)
+  | TDBValueHandle Int TraceValueHandle
+  | TBDTableOp TraceTableOp
+  deriving (Show)
+
+data TraceTableOp = TTO
+  deriving (Show)
+
+data TDBTableOp
+  = TTORead
+  | TTOInit
+  | TTOWrite
+  deriving (Show)
 
 data Db l = Db
   { dbEnv :: !(LMDB.Environment LMDB.ReadWrite)
   , dbSettings :: !(LMDB.DBRef LMDB.ReadWrite DbState)
-  , dbValueHandles :: !(IOLike.TMVar IO (Map (WithOrigin SlotNo) ValueHandle))
   , dbBackingTables :: !(Tables.LedgerTables l Tables.LMDBMK)
   , dbFilePath :: !FilePath
+  , dbTracer :: !(Trace.Tracer IO TraceDb)
+  , dbOpenHandles :: !(IOLike.TVar IO (Map Int ValueHandle))
   }
 
 data DbErr = DbErrStr !String
@@ -110,10 +136,17 @@ coerceDatabase :: LMDB.Database k v -> LMDB.Database (LmdbBox k) (LmdbBox v)
 coerceDatabase = unsafeCoerce
   -- the type parameters to Database are phantom
 
-readLMDBTable :: Tables.LedgerConstraint k v
+-- | ValueHandles hold an Async which is holding a transaction open.
+data ValueHandle = ValueHandle
+  { vhClose :: !(IO ())
+  , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadOnly a -> IO (Maybe a))
+  -- , vhRefCount :: !(IOLike.TVar IO Int)
+  }
+
+readLMDBTable :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
   => LMDB.Database k v
   -> HD.UtxoKeys k v
-  -> LMDB.Transaction ReadWrite (HD.UtxoValues k v)
+  -> LMDB.Transaction mode (HD.UtxoValues k v)
 readLMDBTable db0 (HD.UtxoKeys keys) =
   HD.UtxoValues <$> foldlM' go Map.empty (Set.toList keys) where
   db = coerceDatabase db0
@@ -133,10 +166,10 @@ writeLMDBTable db0 (HD.UtxoDiff m) = void $ Map.traverseWithKey go m where
       = Nothing
       | otherwise = Just (LmdbBox v)
 
-initRangeReadLMDBTable :: Tables.LedgerConstraint k v
+initRangeReadLMDBTable :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
   => Int
   -> LMDB.Database k v
-  -> LMDB.Transaction ReadWrite (HD.UtxoValues k v)
+  -> LMDB.Transaction mode (HD.UtxoValues k v)
 initRangeReadLMDBTable count db0 =
   -- This is inadequate. We are folding over the whole table, the
   -- fiddling with either is to short circuit as best we can.
@@ -149,11 +182,11 @@ initRangeReadLMDBTable count db0 =
     when (Map.size m >= count) $ Left m
     pure $ Map.insert k v m
 
-rangeReadLMDBTable :: Tables.LedgerConstraint k v
+rangeReadLMDBTable :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
   => Int
   -> LMDB.Database k v
   -> HD.UtxoKeys k v
-  -> LMDB.Transaction ReadWrite (HD.UtxoValues k v)
+  -> LMDB.Transaction mode (HD.UtxoValues k v)
 rangeReadLMDBTable count db0 (HD.UtxoKeys keys) = case Set.lookupMax keys of
   -- This is inadequate. We are folding over the whole table, the
   -- fiddling with either is to short circuit as best we can.
@@ -196,10 +229,10 @@ initLMDBTable_amk :: Tables.LedgerConstraint k v
 initLMDBTable_amk (Tables.ApplyLMDBMK tbl_name db) (Tables.ApplyValuesMK vals) =
   initLMDBTable tbl_name db vals $> Tables.ApplyEmptyMK 
 
-readLMDBTable_amk :: Tables.LedgerConstraint k v
+readLMDBTable_amk :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
   => Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.KeysMK k v
-  -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.ValuesMK k v)
+  -> LMDB.Transaction mode (Tables.ApplyMapKind Tables.ValuesMK k v)
 readLMDBTable_amk (Tables.ApplyLMDBMK _ db) (Tables.ApplyKeysMK keys) =
   Tables.ApplyValuesMK <$> readLMDBTable db keys
 
@@ -210,18 +243,18 @@ writeLMDBTable_amk :: Tables.LedgerConstraint k v
 writeLMDBTable_amk (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyDiffMK diff) =
   writeLMDBTable db diff $> Tables.ApplyEmptyMK 
 
-initRangeReadLMDBTable_amk :: Tables.LedgerConstraint k v
+initRangeReadLMDBTable_amk :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
   => Int -- ^ number of rows to return
   -> Tables.ApplyMapKind Tables.LMDBMK k v
-  -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.ValuesMK k v)
+  -> LMDB.Transaction mode (Tables.ApplyMapKind Tables.ValuesMK k v)
 initRangeReadLMDBTable_amk count (Tables.ApplyLMDBMK _tbl_name db)  =
   Tables.ApplyValuesMK <$> initRangeReadLMDBTable count db
 
-rangeReadLMDBTable_amk :: Tables.LedgerConstraint k v
+rangeReadLMDBTable_amk :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
   => Int -- ^ number of rows to return
   -> Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.KeysMK k v
-  -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.ValuesMK k v)
+  -> LMDB.Transaction mode (Tables.ApplyMapKind Tables.ValuesMK k v)
 rangeReadLMDBTable_amk count (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyKeysMK keys) =
   Tables.ApplyValuesMK <$> rangeReadLMDBTable count db keys
 
@@ -266,13 +299,18 @@ initFromVals :: Tables.TableStuff l
   -> Tables.LedgerTables l Tables.ValuesMK
   -> Db l
   -> IO ()
-initFromVals dbsSeq vals Db{..} = LMDB.readWriteTransaction dbEnv $
-   withDbSettingsRWMaybeNull dbSettings $ \case
-     Nothing -> Tables.zipLedgerTablesA initLMDBTable_amk dbBackingTables vals $> ((),DbState{dbsSeq})
-     Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
+initFromVals dbsSeq vals Db{..} = do
+  putStrLn "initFromVals:1"
+  LMDB.readWriteTransaction dbEnv $ do
+    liftIO $ putStrLn "initFromVals:3"
+    withDbSettingsRWMaybeNull dbSettings $ \case
+      Nothing -> Tables.zipLedgerTablesA initLMDBTable_amk dbBackingTables vals $> ((),DbState{dbsSeq})
+      Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
+    liftIO $ putStrLn "initFromVals:4"
+  putStrLn "initFromVals:2"
 
 
-initFromLMDBs :: FS.SomeHasFS IO -> FS.FsPath -> FS.FsPath -> IO ()
+initFromLMDBs :: MonadIO m => FS.SomeHasFS m -> FS.FsPath -> FS.FsPath -> m ()
 initFromLMDBs _shfs _from _to= do
   error "unimplemented"
   -- copy lmdb from _from to _to
@@ -291,160 +329,163 @@ data LMDBInit l
 
 type LMDBLimits = LMDB.Limits
 -- | Initialise a backing store
-newLMDBBackingStore :: forall l. (Tables.TableStuff l)
-  => LMDBLimits
-  -> FS.SomeHasFS IO
+
+data TraceLMDBBackingStore
+  = Trace
+
+newLMDBBackingStore :: forall m l. (Tables.TableStuff l, MonadIO m, IOLike m)
+  => Trace.Tracer IO TraceDb
+  -> LMDBLimits
+  -> FS.SomeHasFS m
   -> FS.FsPath -- ^ The path for the store we are opening
   -> LMDBInit l 
-  -> IO (LMDBBackingStore l)
-newLMDBBackingStore limits sfs path init_db = do
+  -> m (LMDBBackingStore l m)
+newLMDBBackingStore dbTracer limits sfs path init_db = do
+  liftIO $ Trace.traceWith dbTracer TDBOpening
+  dbOpenHandles <- liftIO $ IOLike.newTVarIO Map.empty
   let
-    (gdd, copy_db_action, init_action) = case init_db of
+    (gdd, copy_db_action :: m (), init_action :: Db l -> m ()) = case init_db of
       LIInitialiseFromLMDB fp
         -- If fp == path then this is the LINoInitialise case
         | fp /= path -> (GDDMustNotExist, initFromLMDBs sfs fp path, \_ -> pure ())
-      LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), initFromVals slot vals)
+      LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), liftIO . initFromVals slot vals)
       _ -> (GDDMustExist, pure (), \_ -> pure ())
   -- get the filepath for this db creates the directory if appropriate
   dbFilePath <- guardDbDir gdd sfs path
 
+  -- putStrLn $ "lmdb path:" <> show dbFilePath
+
   -- copy from another lmdb path if appropriate
   copy_db_action
 
-  -- open this database
-  dbEnv <- LMDB.openEnvironment dbFilePath limits
+    -- putStrLn "opening db"
+    -- x <- Dir.doesDirectoryExist dbFilePath
+      -- putStrLn $ "does path exist? " <> show x
+    -- open this database
+  dbEnv <- liftIO $ LMDB.openEnvironment dbFilePath limits
 
+  -- putStrLn "initting db1"
   -- the LMDB.Database that holds the DbState (i.e. sequence number)
-  dbstate_db <- LMDB.readOnlyTransaction dbEnv $ LMDB.getDatabase (Just "_dbstate")
-  dbSettings <- LMDB.newDBRef dbEnv dbstate_db (0 :: Int)
+  -- This transaction must be read-write because on initialisation it creates the database
+  dbstate_db <- liftIO $ LMDB.readWriteTransaction  dbEnv $ LMDB.getDatabase (Just "_dbstate")
+  liftIO $ putStrLn "initting db2"
+  dbSettings <- liftIO $ LMDB.newDBRef dbEnv dbstate_db (0 :: Int)
+  liftIO $ putStrLn "initting db3"
 
-  dbValueHandles <- IOLike.newTMVarIO Map.empty
-
-  -- Here we get the LMDB.Databases for the tables of the ledger state
-  dbBackingTables <- LMDB.readOnlyTransaction dbEnv $
+    -- Here we get the LMDB.Databases for the tables of the ledger state
+    -- Must be read-write transaction because tables may need to be created
+  dbBackingTables <- liftIO $ LMDB.readWriteTransaction dbEnv $
     Tables.traverseLedgerTables getDb_amk Tables.namesLedgerTables
 
+  liftIO $ putStrLn "initting db5"
   let
     db = Db{..}
-    bsClose = do
-      mb_vhs <- IOLike.atomically $ IOLike.tryTakeTMVar dbValueHandles
-      for_ mb_vhs $ traverse forceCloseValueHandle
+    bsClose :: m ()
+    bsClose = liftIO $ do
+      Trace.traceWith dbTracer TDBClosing
+      open_handles <- IOLike.atomically $ IOLike.readTVar dbOpenHandles
+      for_ open_handles vhClose
+      Trace.traceWith dbTracer TDBClosed
 
+    -- bsCopy :: LMDBBackingStore l m -> m ()
     bsCopy = lmdbCopy db
-    
-    bsValueHandle = getLMDBBackingStoreValueHandle db
 
-    bsWrite :: SlotNo -> Tables.LedgerTables l Tables.DiffMK -> IO ()
-    bsWrite slot diffs = LMDB.readWriteTransaction dbEnv $
-      withDbSettingsRW dbSettings $ \s@DbState{dbsSeq} -> do
+    bsValueHandle = mkLMDBBackingStoreValueHandle db
+
+    bsWrite :: SlotNo -> Tables.LedgerTables l Tables.DiffMK -> m ()
+    bsWrite slot diffs = liftIO $ do
+      old_slot <- LMDB.readWriteTransaction dbEnv $ withDbSettingsRW dbSettings $ \s@DbState{dbsSeq} -> do
         when (At slot <= dbsSeq) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
         void $ Tables.zipLedgerTablesA writeLMDBTable_amk dbBackingTables diffs
-        pure ((), s {dbsSeq = At slot})
+        pure (dbsSeq, s {dbsSeq = At slot})
+      Trace.traceWith dbTracer $ TDBWrite old_slot slot
 
   -- now initialise those tables if appropriate
   init_action db
 
+  -- putStrLn "finished newLMDBBackingSktore"
+  liftIO $ Trace.traceWith dbTracer TDBOpened
   pure HD.BackingStore{..}
 
 
--- | ValueHandles hold an Async which is holding a transaction open.
--- We maintain a map of them in the Db, (keyed on their Seq No) and
--- they have a reference counting TVar.
--- This means that multiple BackingStoreValueHandles will reference the
--- same ValueHandle and thus we keep only one transaction per seq no alive.
-data ValueHandle = ValueHandle
-  { vhAsync :: !(IOLike.Async IO ())
-  , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadWrite a -> IO (Maybe a))
-  , vhRefCount :: !(IOLike.TVar IO Int)
-  }
-
-closeValueHandle :: ValueHandle -> IO Bool
-closeValueHandle ValueHandle{..} = do
-  should <- IOLike.atomically $ do
-    IOLike.modifyTVar vhRefCount (\x -> x - 1)
-    x <- IOLike.readTVar vhRefCount
-    pure $ x <= 0
-  when should $ IOLike.cancel vhAsync
-  pure should
-
--- TODO we should specify what happens to the ref count
-forceCloseValueHandle :: ValueHandle -> IO ()
-forceCloseValueHandle ValueHandle{..} = IOLike.cancel vhAsync
-
 data SomeDbSubmission where
-  SomeDbSubmission :: forall a. LMDB.Transaction LMDB.ReadWrite a -> IOLike.TMVar IO (Maybe a) -> SomeDbSubmission
+  SomeDbSubmission :: forall a. LMDB.Transaction LMDB.ReadOnly a -> IOLike.TMVar IO (Maybe a) -> SomeDbSubmission
 
-withValueHandles :: IOLike.TMVar IO (Map (WithOrigin SlotNo) ValueHandle)
-  -> (Map (WithOrigin SlotNo) ValueHandle
-  -> IO (a, Map (WithOrigin SlotNo) ValueHandle))
-  -> IO a
-withValueHandles tmv op = Exn.bracketOnError
-  (IOLike.atomically $ IOLike.takeTMVar tmv)
-  (IOLike.atomically . IOLike.tryPutTMVar tmv) $ \x -> do
-    (r, s) <- op x
-    IOLike.atomically $ IOLike.putTMVar tmv s $> r
+data TraceValueHandle
+  = TVHOpened
+  | TVHClosing
+  | TVHClosed
+  | TVHSubmissionStarted
+  | TVHSubmissionEnded
+  deriving stock(Show)
 
-backingStoreValueHandle :: forall l. (Tables.TableStuff l)
-  => IOLike.TMVar IO (Map (WithOrigin SlotNo) ValueHandle)
-  -> WithOrigin SlotNo
-  -> ValueHandle
-  -> Tables.LedgerTables l Tables.LMDBMK
-  -> IO (LMDBValueHandle l)
-backingStoreValueHandle tmv slot vh tbls = withValueHandles tmv $ \hs -> do
-  let
-    (h@ValueHandle{..}, new_hs) = case slot `Map.lookup` hs of
-      Nothing -> let
-        in (vh, Map.insert slot vh hs)
-      Just vh' -> do
-        (vh', hs)
-    bsvhClose = do
-      is_last_handle <- closeValueHandle h
-      when is_last_handle $ withValueHandles tmv $ pure . ((),) . Map.delete slot
-    bsvhRead :: Tables.LedgerTables l Tables.KeysMK -> IO (Tables.LedgerTables l Tables.ValuesMK)
-    bsvhRead keys = vhSubmit (Tables.zipLedgerTablesA readLMDBTable_amk tbls keys) >>= \case
-      Nothing -> Exn.throw DbErrBadRead
-      Just x -> pure x
-    bsvhRangeRead :: HD.RangeQuery (Tables.LedgerTables l Tables.KeysMK) -> IO (Tables.LedgerTables l Tables.ValuesMK)
-    bsvhRangeRead HD.RangeQuery{rqPrev, rqCount} = let
-      transaction = case rqPrev of
-        Nothing -> Tables.traverseLedgerTables (initRangeReadLMDBTable_amk rqCount) tbls
-        Just keys -> Tables.zipLedgerTablesA (rangeReadLMDBTable_amk rqCount) tbls keys
-      in vhSubmit transaction >>= \case
-        Nothing -> Exn.throw DbErrBadRangeRead
-        Just x -> pure x
-
-  r <- IOLike.atomically $ do
-    IOLike.modifyTVar vhRefCount (+1)
-    pure $ HD.BackingStoreValueHandle {..}
-  pure (r, new_hs)
-
-getLMDBBackingStoreValueHandle :: forall l. Tables.TableStuff l
-  => Db l
-  -> IO (WithOrigin SlotNo, LMDBValueHandle l)
-getLMDBBackingStoreValueHandle Db{..} = do
-  q <- IOLike.newTBQueueIO 1
-  init_slot_tmv <- IOLike.newEmptyTMVarIO
-  vhAsync <- IOLike.async $ LMDB.readWriteTransaction dbEnv $ do
-    this_state <- readDbSettings dbSettings
-    liftIO $ IOLike.atomically $ IOLike.putTMVar init_slot_tmv (dbsSeq this_state)
+mkValueHandle :: (MonadIO m)
+  => Trace.Tracer IO TraceDb
+  -> LMDB.Environment LMDB.ReadOnly
+  -> IOLike.TVar IO (Map Int ValueHandle)
+  -> m ValueHandle
+mkValueHandle tracer0 dbEnv dbOpenHandles = liftIO $ do
+  q <- IOLike.newTBQueueIO 1 -- TODO 1?
+  the_async <- IOLike.async $ LMDB.readOnlyTransaction dbEnv $ do
     let
-      loop :: MaybeT (LMDB.Transaction LMDB.ReadWrite) ()
+      loop :: MaybeT (LMDB.Transaction LMDB.ReadOnly) ()
       loop = do
         SomeDbSubmission t ret_tmvar <- MaybeT . liftIO $ IOLike.atomically (IOLike.readTBQueue q)
-        mb_r <- lift $ LMDB.nestTransaction t
-        liftIO . IOLike.atomically $ IOLike.putTMVar ret_tmvar mb_r
+        r <- lift t
+        liftIO . IOLike.atomically $ IOLike.putTMVar ret_tmvar (Just r)
     void . runMaybeT $ forever loop
     LMDB.abort
 
-  let
-    vhSubmit :: forall a. LMDB.Transaction LMDB.ReadWrite a -> IO (Maybe a)
+  (r, traces) <- IOLike.atomically $ IOLike.stateTVar dbOpenHandles $ \x0 -> let
+
+    vh_id = maybe 0 ((+1) . fst) $ Map.lookupMax x0
+    tracer = Trace.contramap (\x -> TDBValueHandle vh_id x) tracer0
+
+    vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly a -> IO (Maybe a)
     vhSubmit t = do
+      Trace.traceWith tracer TVHSubmissionStarted
       ret_tmvar <- IOLike.newEmptyTMVarIO
       IOLike.atomically . IOLike.writeTBQueue q . Just $ SomeDbSubmission t ret_tmvar
-      IOLike.atomically $ IOLike.takeTMVar ret_tmvar
-  vh <- do
-    vhRefCount <- IOLike.newTVarIO 1
-    pure ValueHandle{..}
+      r <- IOLike.atomically $ IOLike.takeTMVar ret_tmvar
+      Trace.traceWith tracer TVHSubmissionEnded
+      pure r
 
-  init_slot <- IOLike.atomically $ IOLike.takeTMVar init_slot_tmv
-  (init_slot,) <$> backingStoreValueHandle dbValueHandles init_slot vh dbBackingTables
+    vhClose = do
+      Trace.traceWith tracer TVHClosing
+      IOLike.cancel the_async
+      IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vh_id)
+      Trace.traceWith tracer TVHClosed
+    vh = ValueHandle{..}
+    in ((vh, [TDBValueHandle vh_id TVHOpened] ), Map.insert vh_id vh x0)
+  for_ traces $ Trace.traceWith tracer0
+  pure r
+
+mkLMDBBackingStoreValueHandle :: forall l m. (MonadIO m, Tables.TableStuff l)
+  => Db l
+  -> m (WithOrigin SlotNo, LMDBValueHandle l m)
+mkLMDBBackingStoreValueHandle Db{..} = do
+  let
+    dbe = LMDB.readOnlyEnvironment dbEnv
+  vh <- mkValueHandle dbTracer dbe dbOpenHandles
+  mb_init_slot <- liftIO $ vhSubmit vh $ do
+    DbState{dbsSeq} <- readDbSettings dbSettings
+    pure dbsSeq
+  init_slot <- liftIO $ maybe (Exn.throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") pure mb_init_slot
+  let
+    bsvhClose :: m ()
+    bsvhClose = liftIO $ vhClose vh
+
+    bsvhRead :: Tables.LedgerTables l Tables.KeysMK -> m (Tables.LedgerTables l Tables.ValuesMK)
+    bsvhRead keys = liftIO $ vhSubmit vh (Tables.zipLedgerTablesA readLMDBTable_amk dbBackingTables keys) >>= \case
+      Nothing -> Exn.throw DbErrBadRead
+      Just x -> pure x
+
+    bsvhRangeRead :: HD.RangeQuery (Tables.LedgerTables l Tables.KeysMK) -> m (Tables.LedgerTables l Tables.ValuesMK)
+    bsvhRangeRead HD.RangeQuery{rqPrev, rqCount} = let
+      transaction = case rqPrev of
+        Nothing -> Tables.traverseLedgerTables (initRangeReadLMDBTable_amk rqCount) dbBackingTables
+        Just keys -> Tables.zipLedgerTablesA (rangeReadLMDBTable_amk rqCount) dbBackingTables keys
+      in liftIO $ vhSubmit vh transaction >>= \case
+        Nothing -> Exn.throw DbErrBadRangeRead
+        Just x -> pure x
+  pure (init_slot, HD.BackingStoreValueHandle{..})

@@ -102,6 +102,8 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import Ouroboros.Consensus.Ledger.Abstract (TableStuff(namesLedgerTables))
+import Ouroboros.Consensus.Ledger.Abstract (TableStuff(zipLedgerTablesA))
 
 {-------------------------------------------------------------------------------
   Definition of a block

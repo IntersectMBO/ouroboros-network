@@ -524,7 +524,7 @@ restoreBackingStore someHasFs snapshot bss = do
     -- '_tablesPath'.
 
     store <- case bss of
-      LMDBBackingStore limits fp -> HD.newLMDBBackingStore limits someHasFs fp (HD.LIInitialiseFromLMDB loadPath)
+      LMDBBackingStore limits fp -> HD.newLMDBBackingStore mempty limits someHasFs fp (HD.LIInitialiseFromLMDB loadPath)
       InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (\rq values -> case HD.rqPrev rq of
@@ -551,7 +551,7 @@ newBackingStore ::
   -> SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
 newBackingStore bss someHasFS tables = do
   store <- case bss of
-    LMDBBackingStore limits fp -> HD.newLMDBBackingStore limits someHasFS fp (HD.LIInitialiseFromMemory Origin tables)
+    LMDBBackingStore limits fp -> HD.newLMDBBackingStore mempty limits someHasFS fp (HD.LIInitialiseFromMemory Origin tables)
     InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (\rq values -> case HD.rqPrev rq of
@@ -940,5 +940,5 @@ data TraceReplayEvent blk =
   deriving (Generic, Eq, Show)
 
 data BackingStoreSelector m where
-  LMDBBackingStore :: !HD.LMDBLimits -> !FsPath -> BackingStoreSelector IO
+  LMDBBackingStore :: MonadIO m => !HD.LMDBLimits -> !FsPath -> BackingStoreSelector m
   InMemoryBackingStore :: BackingStoreSelector m
