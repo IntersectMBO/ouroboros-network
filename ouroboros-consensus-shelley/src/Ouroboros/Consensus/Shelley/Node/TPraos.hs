@@ -1,22 +1,19 @@
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE DeriveGeneric            #-}
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE DuplicateRecordFields    #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE GADTs                    #-}
-{-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE OverloadedStrings        #-}
-{-# LANGUAGE PolyKinds                #-}
-{-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
-{-# LANGUAGE TypeOperators            #-}
-{-# LANGUAGE UndecidableInstances     #-}
-{-# LANGUAGE UndecidableSuperClasses  #-}
+{-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE DuplicateRecordFields   #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE GADTs                   #-}
+{-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE NamedFieldPuns          #-}
+{-# LANGUAGE OverloadedStrings       #-}
+{-# LANGUAGE PolyKinds               #-}
+{-# LANGUAGE RecordWildCards         #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE TypeOperators           #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -88,7 +85,7 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Common
-                     (ProtocolParamsShelleyBased (..),
+                     (ProtocolParamsShelleyBased (..), ShelleyEraWithCrypto,
                      ShelleyLeaderCredentials (..), shelleyBlockIssuerVKey)
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
@@ -124,13 +121,6 @@ shelleyBlockForging tpraosParams maxTxCapacityOverrides credentials =
          NP (BlockForging m :.: ShelleyBlock (TPraos c)) '[era]
       -> BlockForging m (ShelleyBlock (TPraos c) era)
     aux = unComp . hd
-
--- | Needed in 'shelleySharedBlockForging' because we can't partially apply
--- equality constraints.
-class    (ShelleyCompatible proto era, TxLimits (ShelleyBlock proto era), EraCrypto era ~ c)
-  => ShelleyEraWithCrypto c proto era
-instance (ShelleyCompatible proto era, TxLimits (ShelleyBlock proto era), EraCrypto era ~ c)
-  => ShelleyEraWithCrypto c proto era
 
 -- | Create a 'BlockForging' record for each of the given Shelley-based eras,
 -- safely sharing the same set of credentials for all of them.

@@ -1,14 +1,20 @@
-{-# LANGUAGE DataKinds     #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE GADTs         #-}
-{-# LANGUAGE PolyKinds     #-}
-{-# LANGUAGE TypeFamilies  #-}
+{-# LANGUAGE DataKinds               #-}
+{-# LANGUAGE DeriveGeneric           #-}
+{-# LANGUAGE FlexibleContexts        #-}
+{-# LANGUAGE FlexibleInstances       #-}
+{-# LANGUAGE GADTs                   #-}
+{-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE PolyKinds               #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Node configuration common to all (era, protocol) combinations deriving from
 -- Shelley.
 module Ouroboros.Consensus.Shelley.Node.Common (
     ProtocolParamsShelleyBased (..)
+  , ShelleyEraWithCrypto
   , ShelleyLeaderCredentials (..)
   , shelleyBlockIssuerVKey
   ) where
@@ -21,6 +27,7 @@ import           Ouroboros.Consensus.Block (CannotForge, ForgeStateInfo,
                      ForgeStateUpdateError)
 import           Ouroboros.Consensus.Config (maxRollbacks)
 import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
 import           Ouroboros.Consensus.Node.InitStorage
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Praos.Common
@@ -66,6 +73,16 @@ type instance CannotForge (ShelleyBlock proto era) = CannotForgeError proto
 type instance ForgeStateInfo (ShelleyBlock proto era) = HotKey.KESInfo
 
 type instance ForgeStateUpdateError (ShelleyBlock proto era) = HotKey.KESEvolutionError
+
+-- | Needed in '*SharedBlockForging' because we can't partially apply
+-- equality constraints.
+class
+  (ShelleyCompatible proto era, TxLimits (ShelleyBlock proto era), EraCrypto era ~ c) =>
+  ShelleyEraWithCrypto c proto era
+
+instance
+  (ShelleyCompatible proto era, TxLimits (ShelleyBlock proto era), EraCrypto era ~ c) =>
+  ShelleyEraWithCrypto c proto era
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode instance
