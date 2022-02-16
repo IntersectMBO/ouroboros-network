@@ -50,16 +50,16 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TableStuff (..)
   , TickedTableStuff (..)
   , mapOverLedgerTables
-  , overLedgerTables
-  , zipOverLedgerTables
   , mapOverLedgerTablesTicked
+  , overLedgerTables
   , overLedgerTablesTicked
+  , zipOverLedgerTables
   , zipOverLedgerTablesTicked
     -- ** Tables values
+  , ApplyMapKind (..)
   , MapKind (..)
   , SMapKind
   , Sing (..)
-  , ApplyMapKind (..)
   , calculateDifference
   , diffKeysMK
   , diffTrackingMK
@@ -114,8 +114,8 @@ import           Data.Monoid (All (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 import           GHC.Show (showCommaSpace, showSpace)
+import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
 
@@ -134,7 +134,8 @@ import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (RangeQuery)
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+                     (RangeQuery)
 
 {-------------------------------------------------------------------------------
   Tip
@@ -663,13 +664,13 @@ sMapKind' _ = sMapKind
 
 toSMapKind :: ApplyMapKind mk k v -> SMapKind mk
 toSMapKind = \case
-    ApplyEmptyMK{}    -> SEmptyMK
-    ApplyKeysMK{}     -> SKeysMK
-    ApplyValuesMK{}   -> SValuesMK
-    ApplyTrackingMK{} -> STrackingMK
-    ApplyDiffMK{}     -> SDiffMK
-    ApplySeqDiffMK{}  -> SSeqDiffMK
-    ApplyRewoundMK{}  -> SRewoundMK
+    ApplyEmptyMK{}     -> SEmptyMK
+    ApplyKeysMK{}      -> SKeysMK
+    ApplyValuesMK{}    -> SValuesMK
+    ApplyTrackingMK{}  -> STrackingMK
+    ApplyDiffMK{}      -> SDiffMK
+    ApplySeqDiffMK{}   -> SSeqDiffMK
+    ApplyRewoundMK{}   -> SRewoundMK
 
     ApplyQueryAllMK{}  -> SQueryMK
     ApplyQuerySomeMK{} -> SQueryMK
@@ -758,7 +759,7 @@ type TableKeySets l = LedgerTables l KeysMK
 -------------------------------------------------------------------------------}
 
 class InMemory (l :: LedgerStateKind) where
-  
+
   -- | If the ledger state is always in memory, then l mk will be isomorphic to
   -- l mk' for all mk, mk'. As a result, we can convert between ledgers states
   -- indexed by different map kinds.

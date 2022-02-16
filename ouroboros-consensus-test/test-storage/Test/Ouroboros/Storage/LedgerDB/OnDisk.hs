@@ -282,9 +282,9 @@ fromInitLog  InitFromGenesis          = MockFromGenesis
 fromInitLog (InitFromSnapshot ss tip) = MockFromSnapshot ss tip
 fromInitLog (InitFailure ss err log') =
     case err of
-      InitFailureRead _err     -> MockReadFailure     ss     (fromInitLog log')
+      InitFailureRead _err -> MockReadFailure     ss     (fromInitLog log')
 --      InitFailureTooRecent tip -> MockTooRecent       ss tip (fromInitLog log')   -- TODO Javier's PR removed InitFailureTooRecent
-      InitFailureGenesis       -> MockGenesisSnapshot ss     (fromInitLog log')
+      InitFailureGenesis   -> MockGenesisSnapshot ss     (fromInitLog log')
 
 mockInitLog :: Mock -> MockInitLog MockSnap
 mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
