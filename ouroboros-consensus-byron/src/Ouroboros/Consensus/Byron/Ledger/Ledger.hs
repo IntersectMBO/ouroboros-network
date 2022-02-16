@@ -197,9 +197,10 @@ instance TableStuff (LedgerState ByronBlock) where
   withLedgerTables st NoByronLedgerTables = convertMapKind st
 
   pureLedgerTables _f                                         = NoByronLedgerTables
-  mapLedgerTables  _f                     NoByronLedgerTables = NoByronLedgerTables
-  zipLedgerTables  _f NoByronLedgerTables NoByronLedgerTables = NoByronLedgerTables
-  foldLedgerTables _f                     NoByronLedgerTables = mempty
+  traverseLedgerTables _f                 NoByronLedgerTables = pure NoByronLedgerTables
+  zipLedgerTablesA _f NoByronLedgerTables NoByronLedgerTables = pure NoByronLedgerTables
+  namesLedgerTables                                           = NoByronLedgerTables
+
 
 instance InMemory (LedgerState ByronBlock) where
   convertMapKind ByronLedgerState{..} = ByronLedgerState{..}

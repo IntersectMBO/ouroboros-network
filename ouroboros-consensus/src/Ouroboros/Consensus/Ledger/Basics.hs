@@ -141,6 +141,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import qualified Database.LMDB.Simple as LMDB
 -- import           Codec.Serialise.Class(Serialise)
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (RangeQuery)
+import           Data.Functor.Const (Const(getConst, Const))
 
 {-------------------------------------------------------------------------------
   Tip
@@ -369,6 +370,7 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk1
     -> LedgerTables l mk2
     -> LedgerTables l mk3
+  zipLedgerTables f l r = runIdentity $ zipLedgerTablesA (\x y -> pure $ f x y) l r
 
   zipLedgerTablesA :: Applicative f
     => (forall k v.
@@ -390,6 +392,7 @@ class ( ShowLedgerState (LedgerTables l)
        )
     -> LedgerTables l mk
     -> m
+  foldLedgerTables f tbls = getConst $ traverseLedgerTables (Const . f) tbls
 
   namesLedgerTables :: LedgerTables l NameMK
   -- foldNamedLedgerTables ::
