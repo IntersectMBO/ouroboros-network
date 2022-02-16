@@ -385,7 +385,7 @@ instance SOP.All ShelleyBasedEra eras => NoThunks (ShelleyTxOut eras) where
 -- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
 -- inlined it
 instance SOP.All ShelleyBasedEra eras => Show (ShelleyTxOut eras) where
-  showsPrec = 
+  showsPrec =
       \p (ShelleyTxOut ns) -> showParen (p > 10) $ showString "ShelleyTxOut " . go ns
     where
       go :: SOP.All ShelleyBasedEra eras' => NS TxOutWrapper eras' -> ShowS
