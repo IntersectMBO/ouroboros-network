@@ -25,7 +25,7 @@ import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto)
-import Ouroboros.Consensus.Util.NP2
+import           Ouroboros.Consensus.Util.NP2
 
 {-------------------------------------------------------------------------------
   Injection from Shelley-based eras into consensus mode eras
@@ -49,19 +49,6 @@ injectShelleyNP2 ::
   -> NP2 f shelleyEras -> NP g consensusModeEras
 injectShelleyNP2 _ Nil2         = Nil
 injectShelleyNP2 f (Cons2 x xs) = f x :* injectShelleyNP2 f xs
-
--- injectShelleyOptNP ::
---      AllZip InjectShelley shelleyEras consensusModeEras
---   => (   forall era proto protoAndEra consensusModeEra.
---          ( InjectShelley protoAndEra consensusModeEra
---          , protoAndEra ~ '(proto, era)
---          )
---       => f (Fst protoAndEra) (Snd protoAndEra) -> g consensusModeEra
---      )
---   -> OptNP2 empty f shelleyEras -> OptNP empty g consensusModeEras
--- injectShelleyOptNP _ OptNil2         = OptNil
--- injectShelleyOptNP f (OptSkip2   xs) = OptSkip (injectShelleyOptNP f xs)
--- injectShelleyOptNP f (OptCons2 x xs) = OptCons (f x) (injectShelleyOptNP f xs)
 
 class    consensusModeEra ~ ShelleyBlock proto shelleyEra => InjectShelley proto shelleyEra consensusModeEra
 instance consensusModeEra ~ ShelleyBlock proto shelleyEra => InjectShelley proto shelleyEra consensusModeEra
