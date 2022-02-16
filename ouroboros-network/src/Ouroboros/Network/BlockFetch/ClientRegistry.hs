@@ -145,7 +145,8 @@ bracketFetchClient (FetchClientRegistry ctxVar
 -- registration and deregistration.
 --
 bracketSyncWithFetchClient :: forall m a peer header block.
-                              (MonadThrow m, MonadSTM m, MonadFork m, Ord peer)
+                              (MonadThrow m, MonadSTM m, MonadFork m, MonadMask m,
+                               Ord peer)
                            => FetchClientRegistry peer header block m
                            -> peer
                            -> m a
@@ -174,7 +175,7 @@ bracketSyncWithFetchClient (FetchClientRegistry _ctxVar
           Map.insert peer (tid, doneVar) m
 
     unregister :: StrictTMVar m () -> m ()
-    unregister doneVar =
+    unregister doneVar = uninterruptibleMask_ $
       atomically $ do
         putTMVar doneVar ()
         modifyTVar syncRegistry $ \m ->
