@@ -518,28 +518,26 @@ instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
 instance
      CanHardFork' xs
   => StowableLedgerTables (LedgerState (HardForkBlock xs)) where
-  stowLedgerTables st =
-      HardForkLedgerState $ HardForkState tele'
-    where
-      HardForkLedgerState (HardForkState tele) = st
-
-      tele' =
-        hcmap
+  stowLedgerTables =
+        HardForkLedgerState
+      . hcmap
           proxySingle
-          (\current -> current{currentState = Flip $ stowLedgerTables $ unFlip $ currentState current})
-          tele
-  unstowLedgerTables st =
-      HardForkLedgerState $ HardForkState tele'
-    where
-      HardForkLedgerState (HardForkState tele) = st
-
-      tele' =
-        hcmap
+          (Flip . stowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
+  unstowLedgerTables =
+        HardForkLedgerState
+      . hcmap
           proxySingle
-          (\current -> current{currentState = Flip $ unstowLedgerTables $ unFlip $ currentState current})
-          tele
-
-  isCandidateForUnstow = isCandidateForUnstowDefault
+          (Flip . unstowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
+  -- Cannot be 'isCandidateForUnstowDefault' because CardanoBlock has tables
+  -- even in the Byron era, so they'll all be empty.
+  isCandidateForUnstow =
+        hcollapse
+      . hcmap
+          proxySingle
+          (K . isCandidateForUnstow . unFlip)
+      . hardForkLedgerStatePerEra
 
 {-------------------------------------------------------------------------------
   Annotated forecasts
