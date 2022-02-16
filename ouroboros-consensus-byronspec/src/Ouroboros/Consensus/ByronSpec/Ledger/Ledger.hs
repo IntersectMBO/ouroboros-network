@@ -153,7 +153,7 @@ instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
 instance StowableLedgerTables (LedgerState ByronSpecBlock) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = isCandidateForUnstowDefault
+  isCandidateForUnstow = const True
 
 instance Typeable mk => ToCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
   toCBOR NoByronSpecLedgerTables = versionZeroProductToCBOR []
