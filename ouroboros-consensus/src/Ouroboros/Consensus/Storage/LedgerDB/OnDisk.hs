@@ -154,16 +154,17 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , flush
   , readKeySets
   , readKeySetsVH
-    -- * Snapshots: Read from disk
+    -- * Snapshots
+    -- ** Read from disk
   , readSnapshot
-    -- * Snapshots: Write to disk
+    -- ** Write to disk
   , takeSnapshot
   , trimSnapshots
   , writeSnapshot
-    -- * Low-level API (primarily exposed for testing)
+    -- ** Low-level API (primarily exposed for testing)
   , deleteSnapshot
-  , snapshotToFileName
-  , snapshotToDirPath
+  , snapshotToStatePath
+  , snapshotToTablesPath
     -- ** Opaque
   , DiskSnapshot
     -- * Trace events
@@ -440,6 +441,7 @@ initLedgerDB replayTracer
               case eDB of
                 Left err -> do
                   traceWith tracer . InvalidSnapshot s $ err
+                  when (diskSnapshotIsTemporary s) $ deleteSnapshot hasFS s
                   tryNewestFirst (acc . InitFailure s err) ss
                 Right (db, replayed) ->
                   return (acc (InitFromSnapshot s tip), db, replayed, backingStore)
@@ -710,8 +712,8 @@ diskSnapshotIsPermanent = isJust . dsSuffix
 diskSnapshotIsTemporary :: DiskSnapshot -> Bool
 diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
 
-snapshotToFileName :: DiskSnapshot -> String
-snapshotToFileName DiskSnapshot { dsNumber, dsSuffix } =
+snapshotToDirName :: DiskSnapshot -> String
+snapshotToDirName DiskSnapshot { dsNumber, dsSuffix } =
     show dsNumber <> suffix
   where
     suffix = case dsSuffix of
@@ -720,17 +722,17 @@ snapshotToFileName DiskSnapshot { dsNumber, dsSuffix } =
 
 -- | The path within the LgrDB's filesystem to the snapshot's directory
 snapshotToDirPath :: DiskSnapshot -> FsPath
-snapshotToDirPath = mkFsPath . (:[]) . snapshotToFileName
+snapshotToDirPath = mkFsPath . (:[]) . snapshotToDirName
 
 -- | The path within the LgrDB's filesystem to the file that contains the
 -- snapshot's serialized ledger state
 snapshotToStatePath :: DiskSnapshot -> FsPath
-snapshotToStatePath = mkFsPath . (\x -> [x, "state"]) . snapshotToFileName
+snapshotToStatePath = mkFsPath . (\x -> [x, "state"]) . snapshotToDirName
 
 -- | The path within the LgrDB's filesystem to the directory that contains a
 -- snapshot's backing store
 snapshotToTablesPath :: DiskSnapshot -> FsPath
-snapshotToTablesPath = mkFsPath . (\x -> [x, "tables"]) . snapshotToFileName
+snapshotToTablesPath = mkFsPath . (\x -> [x, "tables"]) . snapshotToDirName
 
 -- | The path within the LgrDB's filesystem to the directory that contains the
 -- backing store
