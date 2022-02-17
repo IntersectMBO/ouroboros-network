@@ -268,7 +268,7 @@ instance
         , ledgerState = unstowLedgerTables ledgerState
         }
 
-  isCandidateForUnstow = isCandidateForUnstowDefault
+  isCandidateForUnstow = isCandidateForUnstow . ledgerState
 
 {-------------------------------------------------------------------------------
   Serialisation
