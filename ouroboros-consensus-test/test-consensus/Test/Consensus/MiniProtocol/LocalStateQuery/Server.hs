@@ -37,8 +37,8 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Util (StaticEither (..))
-import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as TECHDEBT
 import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as TECHDEBT
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,

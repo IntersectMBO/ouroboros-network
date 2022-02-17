@@ -59,12 +59,12 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
-import           Data.Functor.Identity (Identity (..))
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
+import           Data.Functor.Identity (Identity (..))
 import           Data.Int
 import           Data.List (transpose)
 import           Data.List.NonEmpty (NonEmpty (..))

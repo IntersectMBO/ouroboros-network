@@ -280,7 +280,7 @@ prop_simple_shelleyAllegra_convergence TestSetup
                           , transitionTrigger            =
                               TriggerHardForkAtVersion majorVersion2
                           }
-                  in 
+                  in
                     (if 0 /= nid then id else Debug.Trace.traceShow (pInfoInitLedger pinfo))
                   $ pinfo
               }

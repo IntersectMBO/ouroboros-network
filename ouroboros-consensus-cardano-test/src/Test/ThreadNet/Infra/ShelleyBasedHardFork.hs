@@ -84,12 +84,9 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.ShelleyHFC (ShelleyTxOut (..))
 
-import           Ouroboros.Consensus.Cardano.CanHardFork
-                     ( ShelleyPartialLedgerConfig (..)
-                     , IsShelleyTele (..)
-                     , forecastAcrossShelley
-                     , translateChainDepStateAcrossShelley
-                     )
+import           Ouroboros.Consensus.Cardano.CanHardFork (IsShelleyTele (..),
+                     ShelleyPartialLedgerConfig (..), forecastAcrossShelley,
+                     translateChainDepStateAcrossShelley)
 import           Ouroboros.Consensus.Cardano.Node
                      (ProtocolTransitionParamsShelleyBased (..),
                      TriggerHardFork (..))

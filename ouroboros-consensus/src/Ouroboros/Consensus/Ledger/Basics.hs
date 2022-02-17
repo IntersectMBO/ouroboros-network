@@ -51,16 +51,16 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TickedTableStuff (..)
   , LedgerConstraint
   , mapOverLedgerTables
-  , overLedgerTables
-  , zipOverLedgerTables
   , mapOverLedgerTablesTicked
+  , overLedgerTables
   , overLedgerTablesTicked
+  , zipOverLedgerTables
   , zipOverLedgerTablesTicked
     -- ** Tables values
+  , ApplyMapKind (..)
   , MapKind (..)
   , SMapKind
   , Sing (..)
-  , ApplyMapKind (..)
   , calculateDifference
   , diffKeysMK
   , diffTrackingMK
@@ -118,8 +118,8 @@ import qualified Data.Text as Text
 import           Data.Word (Word8)
 -- import           Data.Coerce(Coercible)
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 import           GHC.Show (showCommaSpace, showSpace)
+import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
 
@@ -833,7 +833,7 @@ type TableKeySets l = LedgerTables l KeysMK
 -------------------------------------------------------------------------------}
 
 class InMemory (l :: LedgerStateKind) where
-  
+
   -- | If the ledger state is always in memory, then l mk will be isomorphic to
   -- l mk' for all mk, mk'. As a result, we can convert between ledgers states
   -- indexed by different map kinds.
