@@ -281,3 +281,9 @@ source-repository-package
   location: https://github.com/duog/haskell-lmdb
   tag: 774fee77940591108a7142f8f1d3d41a1afd6e06
   --sha256: sha256-JRqYxbHZbOHXF4PqAairfQD7T00sTN+YtjOO6oKojH0=
+
+source-repository-package
+  type: git
+  location: https://github.com/duog/lmdb-simple
+  tag: 9df475d5f213ab896fd9fcb691de336552f5623d
+  --sha256: sha256-6DtYMDNT6IeKi71NIjlYo+GPffkY1TvKRj+u9UleHlo=

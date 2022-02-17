@@ -26,6 +26,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
   ) where
 
 import qualified Database.LMDB.Simple as LMDB
+import qualified Database.LMDB.Simple.Internal as LMDB(Environment(Env))
+import qualified Database.LMDB.Raw as LMDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Ledger.Basics as Tables
@@ -48,7 +50,6 @@ import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.Class
 import qualified Database.LMDB.Simple.Extra as LMDB
 import Data.Foldable (for_)
-import Database.LMDB.Simple (ReadWrite)
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Cardano.Binary as CBOR(ToCBOR(..), FromCBOR(..))
 import Unsafe.Coerce(unsafeCoerce)
@@ -73,8 +74,8 @@ data TraceDb
   | TDBOpened
   | TDBClosing
   | TDBClosed
-  | TDBCopying
-  | TDBCopied
+  | TDBCopying !FilePath !FilePath
+  | TDBCopied !FilePath !FilePath
   | TDBWrite !(WithOrigin SlotNo) !(SlotNo)
   | TDBValueHandle Int TraceValueHandle
   | TBDTableOp TraceTableOp
@@ -217,7 +218,7 @@ getDb_amk (Tables.ApplyNameMK name) = Tables.ApplyLMDBMK name <$>
 initLMDBTable_amk :: Tables.LedgerConstraint k v
   => Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.ValuesMK k v
-  -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.EmptyMK k v)
+  -> LMDB.Transaction LMDB.ReadWrite (Tables.ApplyMapKind Tables.EmptyMK k v)
 initLMDBTable_amk (Tables.ApplyLMDBMK tbl_name db) (Tables.ApplyValuesMK vals) =
   initLMDBTable tbl_name db vals $> Tables.ApplyEmptyMK 
 
@@ -231,7 +232,7 @@ readLMDBTable_amk (Tables.ApplyLMDBMK _ db) (Tables.ApplyKeysMK keys) =
 writeLMDBTable_amk :: Tables.LedgerConstraint k v
   => Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.DiffMK k v
-  -> LMDB.Transaction ReadWrite (Tables.ApplyMapKind Tables.EmptyMK k v)
+  -> LMDB.Transaction LMDB.ReadWrite (Tables.ApplyMapKind Tables.EmptyMK k v)
 writeLMDBTable_amk (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyDiffMK diff) =
   writeLMDBTable db diff $> Tables.ApplyEmptyMK 
 
@@ -288,27 +289,36 @@ initFromVals :: Tables.TableStuff l
   -> Tables.LedgerTables l Tables.ValuesMK
   -> Db l
   -> IO ()
-initFromVals dbsSeq vals Db{..} = do
-  putStrLn "initFromVals:1"
-  LMDB.readWriteTransaction dbEnv $ do
-    liftIO $ putStrLn "initFromVals:3"
-    withDbSettingsRWMaybeNull dbSettings $ \case
-      Nothing -> Tables.zipLedgerTablesA initLMDBTable_amk dbBackingTables vals $> ((),DbState{dbsSeq})
-      Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
-    liftIO $ putStrLn "initFromVals:4"
-  putStrLn "initFromVals:2"
+initFromVals dbsSeq vals Db{..} = LMDB.readWriteTransaction dbEnv $
+  withDbSettingsRWMaybeNull dbSettings $ \case
+    Nothing -> Tables.zipLedgerTablesA initLMDBTable_amk dbBackingTables vals $> ((),DbState{dbsSeq})
+    Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
 
 
-initFromLMDBs :: MonadIO m => FS.SomeHasFS m -> FS.FsPath -> FS.FsPath -> m ()
-initFromLMDBs _shfs _from _to= do
-  error "unimplemented"
-  -- copy lmdb from _from to _to
-  -- the new dir has been created
-  -- need to validate
+initFromLMDBs :: (IOLike m, MonadIO m)
+  => Trace.Tracer IO TraceDb
+  -> FS.SomeHasFS m
+  -> FS.FsPath
+  -> FS.FsPath
+  -> m ()
+initFromLMDBs tracer shfs from0 to0 = do
+  from <- guardDbDir GDDMustExist shfs from0
+  to <- guardDbDir GDDMustNotExist shfs to0
+  liftIO $ Exn.bracket
+    (LMDB.openEnvironment from defaultLMDBLimits) -- TODO assess limits, in particular this could fail if the db is too big
+    (LMDB.closeEnvironment) $ \e -> lmdbCopy tracer e to
 
-
-lmdbCopy :: Db l -> FS.SomeHasFS m -> HD.BackingStorePath -> m ()
-lmdbCopy _ _ _ = error "unimplemented"
+lmdbCopy :: MonadIO m
+  => Trace.Tracer IO TraceDb
+  -> LMDB.Environment LMDB.ReadWrite
+  -> FilePath
+  -> m ()
+lmdbCopy tracer dbEnv copy_to = liftIO $ do
+    let LMDB.Env e = dbEnv
+    from <- LMDB.mdb_env_get_path e
+    Trace.traceWith tracer $ TDBCopying from copy_to
+    LMDB.mdb_env_copy e copy_to
+    Trace.traceWith tracer $ TDBCopied from copy_to
 
 -- | How to initialise an LMDB Backing store
 data LMDBInit l
@@ -317,11 +327,11 @@ data LMDBInit l
   | LINoInitialise -- ^ The database is already initialised
 
 type LMDBLimits = LMDB.Limits
--- | Initialise a backing store
 
 data TraceLMDBBackingStore
   = Trace
 
+-- | Initialise a backing store
 newLMDBBackingStore :: forall m l. (Tables.TableStuff l, MonadIO m, IOLike m)
   => Trace.Tracer IO TraceDb
   -> LMDBLimits
@@ -336,7 +346,7 @@ newLMDBBackingStore dbTracer limits sfs path init_db = do
     (gdd, copy_db_action :: m (), init_action :: Db l -> m ()) = case init_db of
       LIInitialiseFromLMDB fp
         -- If fp == path then this is the LINoInitialise case
-        | fp /= path -> (GDDMustNotExist, initFromLMDBs sfs fp path, \_ -> pure ())
+        | fp /= path -> (GDDMustNotExist, initFromLMDBs dbTracer sfs fp path, \_ -> pure ())
       LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), liftIO . initFromVals slot vals)
       _ -> (GDDMustExist, pure (), \_ -> pure ())
   -- get the filepath for this db creates the directory if appropriate
@@ -357,14 +367,12 @@ newLMDBBackingStore dbTracer limits sfs path init_db = do
   -- the LMDB.Database that holds the DbState (i.e. sequence number)
   -- This transaction must be read-write because on initialisation it creates the database
   dbSettings <- liftIO $ LMDB.readWriteTransaction  dbEnv $ LMDB.getDatabase (Just "_dbstate")
-  liftIO $ putStrLn "initting db2"
 
     -- Here we get the LMDB.Databases for the tables of the ledger state
     -- Must be read-write transaction because tables may need to be created
   dbBackingTables <- liftIO $ LMDB.readWriteTransaction dbEnv $
     Tables.traverseLedgerTables getDb_amk Tables.namesLedgerTables
 
-  liftIO $ putStrLn "initting db5"
   let
     db = Db{..}
     bsClose :: m ()
@@ -374,8 +382,9 @@ newLMDBBackingStore dbTracer limits sfs path init_db = do
       for_ open_handles vhClose
       Trace.traceWith dbTracer TDBClosed
 
-    -- bsCopy :: LMDBBackingStore l m -> m ()
-    bsCopy = lmdbCopy db
+    bsCopy shfs (HD.BackingStorePath to0) = do
+      to <- guardDbDir GDDMustNotExist shfs to0
+      lmdbCopy dbTracer dbEnv to
 
     bsValueHandle = mkLMDBBackingStoreValueHandle db
 

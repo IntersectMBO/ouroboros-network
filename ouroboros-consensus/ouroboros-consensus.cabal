@@ -335,6 +335,7 @@ library
                      , ouroboros-network
                      , strict-stm        >=0.1   && <0.2
                      , lmdb-simple       >=0.4.0.0 && <0.5
+                     , lmdb              >= 0.2.5
 
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0
