@@ -26,7 +26,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
   ) where
 
 import qualified Database.LMDB.Simple as LMDB
-import qualified Database.LMDB.Simple.DBRef as LMDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Ledger.Basics as Tables
@@ -55,13 +54,6 @@ import qualified Cardano.Binary as CBOR(ToCBOR(..), FromCBOR(..))
 import Unsafe.Coerce(unsafeCoerce)
 import qualified System.Directory as Dir
 import qualified Control.Tracer as Trace
-import qualified Control.Monad.Trans.Writer.CPS as Writer
-
-{-
-
-TODO Don't use DbRef
-
--}
 
 {-# HLINT ignore #-}
 
@@ -99,7 +91,7 @@ data TDBTableOp
 
 data Db l = Db
   { dbEnv :: !(LMDB.Environment LMDB.ReadWrite)
-  , dbSettings :: !(LMDB.DBRef LMDB.ReadWrite DbState)
+  , dbSettings :: !(LMDB.Database () DbState)
   , dbBackingTables :: !(Tables.LedgerTables l Tables.LMDBMK)
   , dbFilePath :: !FilePath
   , dbTracer :: !(Trace.Tracer IO TraceDb)
@@ -143,7 +135,7 @@ data ValueHandle = ValueHandle
   -- , vhRefCount :: !(IOLike.TVar IO Int)
   }
 
-readLMDBTable :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
+readLMDBTable :: Tables.LedgerConstraint k v
   => LMDB.Database k v
   -> HD.UtxoKeys k v
   -> LMDB.Transaction mode (HD.UtxoValues k v)
@@ -166,7 +158,7 @@ writeLMDBTable db0 (HD.UtxoDiff m) = void $ Map.traverseWithKey go m where
       = Nothing
       | otherwise = Just (LmdbBox v)
 
-initRangeReadLMDBTable :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
+initRangeReadLMDBTable :: Tables.LedgerConstraint k v
   => Int
   -> LMDB.Database k v
   -> LMDB.Transaction mode (HD.UtxoValues k v)
@@ -182,7 +174,7 @@ initRangeReadLMDBTable count db0 =
     when (Map.size m >= count) $ Left m
     pure $ Map.insert k v m
 
-rangeReadLMDBTable :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
+rangeReadLMDBTable :: Tables.LedgerConstraint k v
   => Int
   -> LMDB.Database k v
   -> HD.UtxoKeys k v
@@ -229,7 +221,7 @@ initLMDBTable_amk :: Tables.LedgerConstraint k v
 initLMDBTable_amk (Tables.ApplyLMDBMK tbl_name db) (Tables.ApplyValuesMK vals) =
   initLMDBTable tbl_name db vals $> Tables.ApplyEmptyMK 
 
-readLMDBTable_amk :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
+readLMDBTable_amk :: Tables.LedgerConstraint k v
   => Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.KeysMK k v
   -> LMDB.Transaction mode (Tables.ApplyMapKind Tables.ValuesMK k v)
@@ -243,14 +235,14 @@ writeLMDBTable_amk :: Tables.LedgerConstraint k v
 writeLMDBTable_amk (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyDiffMK diff) =
   writeLMDBTable db diff $> Tables.ApplyEmptyMK 
 
-initRangeReadLMDBTable_amk :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
+initRangeReadLMDBTable_amk :: Tables.LedgerConstraint k v
   => Int -- ^ number of rows to return
   -> Tables.ApplyMapKind Tables.LMDBMK k v
   -> LMDB.Transaction mode (Tables.ApplyMapKind Tables.ValuesMK k v)
 initRangeReadLMDBTable_amk count (Tables.ApplyLMDBMK _tbl_name db)  =
   Tables.ApplyValuesMK <$> initRangeReadLMDBTable count db
 
-rangeReadLMDBTable_amk :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
+rangeReadLMDBTable_amk :: Tables.LedgerConstraint k v
   => Int -- ^ number of rows to return
   -> Tables.ApplyMapKind Tables.LMDBMK k v
   -> Tables.ApplyMapKind Tables.KeysMK k v
@@ -258,23 +250,20 @@ rangeReadLMDBTable_amk :: (LMDB.Mode mode, Tables.LedgerConstraint k v)
 rangeReadLMDBTable_amk count (Tables.ApplyLMDBMK _tbl_name db) (Tables.ApplyKeysMK keys) =
   Tables.ApplyValuesMK <$> rangeReadLMDBTable count db keys
 
-readDbSettings :: LMDB.DBRef LMDB.ReadWrite DbState -> LMDB.Transaction mode DbState
-readDbSettings dbSettings = liftIO (LMDB.readDBRef dbSettings) >>= \case
+readDbSettings :: LMDB.Database () DbState -> LMDB.Transaction mode DbState
+readDbSettings db = readDbSettingsMaybeNull db >>= \case
   Just x -> pure x
   Nothing -> Exn.throw $ DbErrNoSettings
 
-withDbSettingsRW :: LMDB.DBRef LMDB.ReadWrite DbState -> (DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState)) -> LMDB.Transaction LMDB.ReadWrite a
-withDbSettingsRW dbSettings f  =
-  readDbSettings dbSettings >>= f >>= \(r, new_s) ->
-    liftIO $ LMDB.writeDBRef dbSettings (Just new_s) $> r
+readDbSettingsMaybeNull :: LMDB.Database () DbState -> LMDB.Transaction mode (Maybe DbState)
+readDbSettingsMaybeNull db = LMDB.get db ()
 
-readDbSettingsMaybeNull :: LMDB.DBRef LMDB.ReadWrite DbState -> LMDB.Transaction mode (Maybe DbState)
-readDbSettingsMaybeNull dbSettings = liftIO (LMDB.readDBRef dbSettings)
+withDbSettingsRW :: LMDB.Database () DbState -> (DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState)) -> LMDB.Transaction LMDB.ReadWrite a
+withDbSettingsRW db f  = withDbSettingsRWMaybeNull db $ maybe (Exn.throw DbErrNoSettings) f
 
-withDbSettingsRWMaybeNull :: LMDB.DBRef LMDB.ReadWrite DbState -> (Maybe DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState)) -> LMDB.Transaction LMDB.ReadWrite a
-withDbSettingsRWMaybeNull dbSettings f  =
-  readDbSettingsMaybeNull dbSettings >>= f >>= \(r, new_s) ->
-    liftIO $ LMDB.writeDBRef dbSettings (Just new_s) $> r
+withDbSettingsRWMaybeNull :: LMDB.Database () DbState -> (Maybe DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState)) -> LMDB.Transaction LMDB.ReadWrite a
+withDbSettingsRWMaybeNull db f  =
+  readDbSettingsMaybeNull db >>= f >>= \(r, new_s) -> LMDB.put db () (Just new_s) $> r
 
 data GuardDbDir  = GDDMustExist | GDDMustNotExist
 
@@ -319,7 +308,7 @@ initFromLMDBs _shfs _from _to= do
 
 
 lmdbCopy :: Db l -> FS.SomeHasFS m -> HD.BackingStorePath -> m ()
-lmdbCopy = error "unimplemented"
+lmdbCopy _ _ _ = error "unimplemented"
 
 -- | How to initialise an LMDB Backing store
 data LMDBInit l
@@ -367,10 +356,8 @@ newLMDBBackingStore dbTracer limits sfs path init_db = do
   -- putStrLn "initting db1"
   -- the LMDB.Database that holds the DbState (i.e. sequence number)
   -- This transaction must be read-write because on initialisation it creates the database
-  dbstate_db <- liftIO $ LMDB.readWriteTransaction  dbEnv $ LMDB.getDatabase (Just "_dbstate")
+  dbSettings <- liftIO $ LMDB.readWriteTransaction  dbEnv $ LMDB.getDatabase (Just "_dbstate")
   liftIO $ putStrLn "initting db2"
-  dbSettings <- liftIO $ LMDB.newDBRef dbEnv dbstate_db (0 :: Int)
-  liftIO $ putStrLn "initting db3"
 
     -- Here we get the LMDB.Databases for the tables of the ledger state
     -- Must be read-write transaction because tables may need to be created
