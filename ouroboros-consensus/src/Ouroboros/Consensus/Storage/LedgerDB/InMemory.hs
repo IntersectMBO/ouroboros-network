@@ -685,6 +685,22 @@ ledgerDbAnchor =
 -- | Information about the state of the most recently flushed ledger
 --
 -- This is what will be serialized when snapshotting.
+--
+--
+-- When we take a snapshot, we do it for both the modern and the legacy ledger.
+-- Conversely, when we read a snapshot, we assume the snapshot has what we need
+-- for both the legacy and modern ledger. So the read/written modern and legacy
+-- ledgers must always be coherent pairs, i.e. they're the ledger state as of
+-- the same block.
+--
+-- The legacy snapshot is always written from the immutable tip. If we flush
+-- first, then the modern snapshot also is. If we don't flush first, then the
+-- modern snapshot might be written from something older than the immutable tip.
+-- Therefore we guard this condition with an 'assert' and this imposes the
+-- following PRECONDITION:
+--
+-- PRECONDITION: if you are running the legacy ledger, then you must flush
+-- before calling this function
 ledgerDbOldest :: forall l.
      ( StandardHash (l EmptyMK)
      , GetTip (l EmptyMK)
@@ -815,7 +831,7 @@ ledgerDbPrune ::
 ledgerDbPrune k db = db {
       ledgerDbCheckpoints =
         AS.anchorNewest (maxRollbacks k) <$> ledgerDbCheckpoints db
-    , ledgerDbChangelog   = pruneDbChangelog k (ledgerDbChangelog db)
+    , ledgerDbChangelog   = pruneVolatilePartDbChangelog k (ledgerDbChangelog db)
     }
 
  -- NOTE: we must inline 'ledgerDbPrune' otherwise we get unexplained thunks in
