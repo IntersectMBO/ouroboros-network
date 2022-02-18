@@ -649,6 +649,7 @@ instance
       encodeArityAndTag tag xs =
            CBOR.encodeListLen (1 + toEnum (length xs))
         <> CBOR.encodeWord8 tag
+        <> mconcat xs
 
 instance
      (Typeable mk, Ord k, FromCBOR k, FromCBOR v, SingI mk)
@@ -679,8 +680,8 @@ instance
         len' <- CBOR.decodeListLen
         tag' <- CBOR.decodeWord8
         when
-          (len /= 1 + len' || tag /= tag')
-          (fail $ "decode @ApplyMapKind " <> show (smk, len', tag'))
+          (1 + len /= len' || tag /= tag')
+          (fail $ "decode @ApplyMapKind " <> show (smk, len, tag, len', tag'))
 
 showsApplyMapKind :: (Show k, Show v) => ApplyMapKind mk k v -> ShowS
 showsApplyMapKind = \case

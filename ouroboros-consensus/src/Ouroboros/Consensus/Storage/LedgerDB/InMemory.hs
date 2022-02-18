@@ -251,6 +251,7 @@ ledgerDbWithAnchor ::
      , GetTip (l EmptyMK)
      , GetTip (l ValuesMK)
      , StowableLedgerTables l
+     , HasCallStack
      )
   => RunAlsoLegacy -> l EmptyMK -> LedgerDB l
 ledgerDbWithAnchor runAlsoLegacy anchor = LedgerDB {

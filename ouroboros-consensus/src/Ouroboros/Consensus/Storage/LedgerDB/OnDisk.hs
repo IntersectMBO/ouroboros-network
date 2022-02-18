@@ -218,6 +218,8 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 
+import Debug.Trace
+
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
 -------------------------------------------------------------------------------}

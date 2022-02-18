@@ -202,6 +202,9 @@ tickOne ei slot index pcfg (Flip st) = Comp $ fmap FlipTickedLedgerState $
       embedLedgerResult (injectLedgerEvent index)
     $ applyChainTickLedgerResult (completeLedgerConfig' ei pcfg) slot st
 
+instance LedgerTablesCanHardFork '[x] where
+  hardForkInjectLedgerTablesKeysMK = InjectLedgerTables LedgerTablesOne :* Nil
+
 instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerState (HardForkBlock '[x])) where
   newtype LedgerTables (LedgerState (HardForkBlock '[x])) mk = LedgerTablesOne (LedgerTables (LedgerState x) mk)
     deriving (Generic)
@@ -528,28 +531,26 @@ instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
 instance
      CanHardFork' xs
   => StowableLedgerTables (LedgerState (HardForkBlock xs)) where
-  stowLedgerTables st =
-      HardForkLedgerState $ HardForkState tele'
-    where
-      HardForkLedgerState (HardForkState tele) = st
-
-      tele' =
-        hcmap
+  stowLedgerTables =
+        HardForkLedgerState
+      . hcmap
           proxySingle
-          (\current -> current{currentState = Flip $ stowLedgerTables $ unFlip $ currentState current})
-          tele
-  unstowLedgerTables st =
-      HardForkLedgerState $ HardForkState tele'
-    where
-      HardForkLedgerState (HardForkState tele) = st
-
-      tele' =
-        hcmap
+          (Flip . stowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
+  unstowLedgerTables =
+        HardForkLedgerState
+      . hcmap
           proxySingle
-          (\current -> current{currentState = Flip $ unstowLedgerTables $ unFlip $ currentState current})
-          tele
-
-  isCandidateForUnstow = isCandidateForUnstowDefault
+          (Flip . unstowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
+  -- Cannot be 'isCandidateForUnstowDefault' because CardanoBlock has tables
+  -- even in the Byron era, so they'll all be empty.
+  isCandidateForUnstow =
+        hcollapse
+      . hcmap
+          proxySingle
+          (K . isCandidateForUnstow . unFlip)
+      . hardForkLedgerStatePerEra
 
 {-------------------------------------------------------------------------------
   Annotated forecasts
