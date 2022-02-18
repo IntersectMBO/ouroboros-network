@@ -216,7 +216,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -388,7 +388,8 @@ initLedgerDB replayTracer
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
           initDb        = ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
-      backingStore <- newBackingStore bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
+          lmdbTracer    = LMDBEvent `contramap` tracer
+      backingStore <- newBackingStore lmdbTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
                             cfg
@@ -526,7 +527,7 @@ restoreBackingStore someHasFs snapshot bss = do
     -- '_tablesPath'.
 
     store <- case bss of
-      LMDBBackingStore limits fp -> HD.newLMDBBackingStore mempty limits someHasFs fp (HD.LIInitialiseFromLMDB loadPath)
+      LMDBBackingStore limits -> LMDB.newLMDBBackingStore mempty limits someHasFs (LMDB.LIInitialiseFromLMDB loadPath)
       InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (\rq values -> case HD.rqPrev rq of
@@ -549,11 +550,19 @@ newBackingStore ::
      , FromCBOR (LedgerTables l ValuesMK)
      , ToCBOR   (LedgerTables l ValuesMK)
      )
-  => BackingStoreSelector m
-  -> SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
-newBackingStore bss someHasFS tables = do
+  => Tracer m LMDB.TraceDb
+  -> BackingStoreSelector m
+  -> SomeHasFS m
+  -> LedgerTables l ValuesMK
+  -> m (LedgerBackingStore m l)
+newBackingStore tracer bss someHasFS tables = do
   store <- case bss of
-    LMDBBackingStore limits fp -> HD.newLMDBBackingStore mempty limits someHasFS fp (HD.LIInitialiseFromMemory Origin tables)
+    LMDBBackingStore limits ->
+      LMDB.newLMDBBackingStore
+      tracer
+      limits
+      someHasFS
+      (LMDB.LIInitialiseFromMemory Origin tables)
     InMemoryBackingStore -> HD.newTVarBackingStore
                (zipLedgerTables lookup_)
                (\rq values -> case HD.rqPrev rq of
@@ -889,6 +898,7 @@ data TraceEvent blk
     -- ^ A snapshot was written to disk.
   | DeletedSnapshot DiskSnapshot
     -- ^ An old or invalid on-disk snapshot was deleted
+  | LMDBEvent LMDB.TraceDb
   deriving (Generic, Eq, Show)
 
 -- | Add the tip of the Immutable DB to the trace event
@@ -942,5 +952,5 @@ data TraceReplayEvent blk =
   deriving (Generic, Eq, Show)
 
 data BackingStoreSelector m where
-  LMDBBackingStore :: MonadIO m => !HD.LMDBLimits -> !FsPath -> BackingStoreSelector m
+  LMDBBackingStore :: MonadIO m => !LMDB.LMDBLimits -> BackingStoreSelector m
   InMemoryBackingStore :: BackingStoreSelector m

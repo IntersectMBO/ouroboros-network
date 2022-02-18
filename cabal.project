@@ -285,5 +285,5 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/duog/lmdb-simple
-  tag: 9df475d5f213ab896fd9fcb691de336552f5623d
-  --sha256: sha256-6DtYMDNT6IeKi71NIjlYo+GPffkY1TvKRj+u9UleHlo=
+  tag: 9ffca8a30489e7f0aafd77cf73374979c27eb97d
+  --sha256: sha256-xb/YBlhc4M3UZSV08fr9YioBTskYAw1uCI3a06s3d3w=

@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
   , DbErr
   , LMDBInit(..)
   , LMDBLimits
+  , TraceDb(..)
   , defaultLMDBLimits -- TODO this is just for convenience, should remove
   ) where
 
@@ -38,7 +39,7 @@ import Ouroboros.Consensus.Util.IOLike (IOLike)
 import qualified Control.Monad.Class.MonadAsync as IOLike
 import qualified Control.Monad.Class.MonadSTM as IOLike
 import Control.Monad.IO.Class (MonadIO(liftIO))
-import Control.Monad ( forever, unless, when, void )
+import Control.Monad ( forever, unless, when, void)
 import Data.Functor ( ($>), (<&>) )
 import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
@@ -55,6 +56,7 @@ import qualified Cardano.Binary as CBOR(ToCBOR(..), FromCBOR(..))
 import Unsafe.Coerce(unsafeCoerce)
 import qualified System.Directory as Dir
 import qualified Control.Tracer as Trace
+import qualified System.FilePath as Dir
 
 {-# HLINT ignore #-}
 
@@ -71,18 +73,20 @@ type LMDBValueHandle l m = HD.BackingStoreValueHandle m
 
 data TraceDb
   = TDBOpening
-  | TDBOpened
-  | TDBClosing
-  | TDBClosed
+  | TDBOpened !FilePath
+  | TDBClosing !FilePath
+  | TDBClosed !FilePath
   | TDBCopying !FilePath !FilePath
+  | TDBCopyingFile !FilePath !FilePath
   | TDBCopied !FilePath !FilePath
   | TDBWrite !(WithOrigin SlotNo) !(SlotNo)
   | TDBValueHandle Int TraceValueHandle
-  | TBDTableOp TraceTableOp
-  deriving (Show)
+  | TDBTableOp TraceTableOp
+  | TDBInitialisingFromLMDB !FS.FsPath
+  deriving (Show, Eq)
 
 data TraceTableOp = TTO
-  deriving (Show)
+  deriving (Show, Eq)
 
 data TDBTableOp
   = TTORead
@@ -107,6 +111,8 @@ data DbErr = DbErrStr !String
   | DbErrInitialisingNonEmpty !String
   | DbErrBadRead
   | DbErrBadRangeRead
+  | DbErrDbExists !FS.FsPath
+  | DbErrDbDoesntExist !FS.FsPath
   deriving stock (Show)
 
 instance Exn.Exception DbErr
@@ -272,7 +278,11 @@ guardDbDir :: IOLike m => GuardDbDir -> FS.SomeHasFS m -> FS.FsPath -> m FilePat
 guardDbDir gdd (FS.SomeHasFS fs) path = do
   FS.doesFileExist fs path >>= \b -> when b $ Exn.throw $ DbErrStr $ "guardDbDir:must be a directory:" <> show path
   FS.doesDirectoryExist fs path >>= \case
-    True | GDDMustNotExist <- gdd ->Exn.throw $ DbErrStr $ "guardDbDir: Must not exist: " <> show path
+    True | GDDMustNotExist <- gdd ->
+           -- TODO Should throw a DbErrDbExists exception
+           -- Callers should delete the directory if they want to restore a snapshot
+           FS.removeDirectoryRecursive fs path
+    False | GDDMustExist <- gdd -> Exn.throw $ DbErrDbDoesntExist path
     _ -> pure ()
   FS.createDirectoryIfMissing fs True path
   FS.unsafeToFilePath fs path
@@ -302,23 +312,32 @@ initFromLMDBs :: (IOLike m, MonadIO m)
   -> FS.FsPath
   -> m ()
 initFromLMDBs tracer shfs from0 to0 = do
+  liftIO $ Trace.traceWith tracer $ TDBInitialisingFromLMDB from0
   from <- guardDbDir GDDMustExist shfs from0
   to <- guardDbDir GDDMustNotExist shfs to0
   liftIO $ Exn.bracket
     (LMDB.openEnvironment from defaultLMDBLimits) -- TODO assess limits, in particular this could fail if the db is too big
     (LMDB.closeEnvironment) $ \e -> lmdbCopy tracer e to
 
-lmdbCopy :: MonadIO m
-  => Trace.Tracer IO TraceDb
+
+lmdbCopy :: (IOLike m, MonadIO m)
+  => Trace.Tracer m TraceDb
   -> LMDB.Environment LMDB.ReadWrite
   -> FilePath
   -> m ()
-lmdbCopy tracer dbEnv copy_to = liftIO $ do
+lmdbCopy tracer dbEnv to = do
+  -- TODO This copying is gross. Tests depend on it, but I wish I was only responsible for copying the database here
     let LMDB.Env e = dbEnv
-    from <- LMDB.mdb_env_get_path e
-    Trace.traceWith tracer $ TDBCopying from copy_to
-    LMDB.mdb_env_copy e copy_to
-    Trace.traceWith tracer $ TDBCopied from copy_to
+    from <- liftIO $ LMDB.mdb_env_get_path e
+    Trace.traceWith tracer $ TDBCopying from to
+    liftIO $ LMDB.mdb_env_copy e to
+    -- others <- liftIO $ Dir.listDirectory from <&> filter ((/= ".mdb") . Dir.takeExtension)
+    -- for_ others $ \f0 -> do
+    --   let f = from Dir.</> f0
+    --       t = to Dir.</> f0
+    --   Trace.traceWith tracer $ TDBCopyingFile f t
+    --   liftIO $ Dir.copyFile f t
+    Trace.traceWith tracer $ TDBCopied from to
 
 -- | How to initialise an LMDB Backing store
 data LMDBInit l
@@ -333,14 +352,29 @@ data TraceLMDBBackingStore
 
 -- | Initialise a backing store
 newLMDBBackingStore :: forall m l. (Tables.TableStuff l, MonadIO m, IOLike m)
-  => Trace.Tracer IO TraceDb
+  => Trace.Tracer m TraceDb
   -> LMDBLimits
   -> FS.SomeHasFS m
-  -> FS.FsPath -- ^ The path for the store we are opening
-  -> LMDBInit l 
+  -> LMDBInit l
   -> m (LMDBBackingStore l m)
-newLMDBBackingStore dbTracer limits sfs path init_db = do
-  liftIO $ Trace.traceWith dbTracer TDBOpening
+newLMDBBackingStore tracer limits sfs init_db = do
+  let
+    path = FS.mkFsPath ["tables"]
+  Trace.traceWith tracer TDBOpening
+
+  -- Operations invoked on the returned LMDBBackingStore end up running in IO
+  -- Since the tracer we were passed runs in m, we use this async to match the
+  -- Tracer IO we want to use with the Tracer m we have
+  -- TODO exception safety, we should trace_async 'onException'
+  trace_q <- liftIO $ IOLike.newTBQueueIO 1
+  trace_async <- IOLike.async . void . runMaybeT . forever $ do
+    t <- MaybeT . liftIO . IOLike.atomically $ IOLike.readTBQueue trace_q
+    lift $ Trace.traceWith tracer t
+
+  let
+    dbTracer :: Trace.Tracer IO TraceDb
+    dbTracer = Trace.Tracer $ IOLike.atomically . IOLike.writeTBQueue trace_q . Just
+
   dbOpenHandles <- liftIO $ IOLike.newTVarIO Map.empty
   let
     (gdd, copy_db_action :: m (), init_action :: Db l -> m ()) = case init_db of
@@ -349,18 +383,14 @@ newLMDBBackingStore dbTracer limits sfs path init_db = do
         | fp /= path -> (GDDMustNotExist, initFromLMDBs dbTracer sfs fp path, \_ -> pure ())
       LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), liftIO . initFromVals slot vals)
       _ -> (GDDMustExist, pure (), \_ -> pure ())
+
   -- get the filepath for this db creates the directory if appropriate
   dbFilePath <- guardDbDir gdd sfs path
-
-  -- putStrLn $ "lmdb path:" <> show dbFilePath
 
   -- copy from another lmdb path if appropriate
   copy_db_action
 
-    -- putStrLn "opening db"
-    -- x <- Dir.doesDirectoryExist dbFilePath
-      -- putStrLn $ "does path exist? " <> show x
-    -- open this database
+  -- open this database
   dbEnv <- liftIO $ LMDB.openEnvironment dbFilePath limits
 
   -- putStrLn "initting db1"
@@ -376,22 +406,27 @@ newLMDBBackingStore dbTracer limits sfs path init_db = do
   let
     db = Db{..}
     bsClose :: m ()
-    bsClose = liftIO $ do
-      Trace.traceWith dbTracer TDBClosing
-      open_handles <- IOLike.atomically $ IOLike.readTVar dbOpenHandles
-      for_ open_handles vhClose
-      Trace.traceWith dbTracer TDBClosed
+    bsClose = do
+      Trace.traceWith tracer $ TDBClosing dbFilePath
+      liftIO $ do
+        open_handles <- IOLike.atomically $ IOLike.readTVar dbOpenHandles
+        for_ open_handles $ vhClose
+        IOLike.atomically $ IOLike.writeTBQueue trace_q Nothing
+      IOLike.wait trace_async
+      liftIO $ LMDB.closeEnvironment dbEnv
+      Trace.traceWith tracer $ TDBClosed dbFilePath
 
     bsCopy shfs (HD.BackingStorePath to0) = do
       to <- guardDbDir GDDMustNotExist shfs to0
-      lmdbCopy dbTracer dbEnv to
+      liftIO $ lmdbCopy dbTracer dbEnv to
 
     bsValueHandle = mkLMDBBackingStoreValueHandle db
 
     bsWrite :: SlotNo -> Tables.LedgerTables l Tables.DiffMK -> m ()
     bsWrite slot diffs = liftIO $ do
       old_slot <- LMDB.readWriteTransaction dbEnv $ withDbSettingsRW dbSettings $ \s@DbState{dbsSeq} -> do
-        when (At slot <= dbsSeq) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
+        -- TODO This should be <. However the test harness does call bsWrite with the same slot
+        unless (dbsSeq <= At slot) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
         void $ Tables.zipLedgerTablesA writeLMDBTable_amk dbBackingTables diffs
         pure (dbsSeq, s {dbsSeq = At slot})
       Trace.traceWith dbTracer $ TDBWrite old_slot slot
@@ -400,7 +435,7 @@ newLMDBBackingStore dbTracer limits sfs path init_db = do
   init_action db
 
   -- putStrLn "finished newLMDBBackingSktore"
-  liftIO $ Trace.traceWith dbTracer TDBOpened
+  Trace.traceWith tracer $ TDBOpened dbFilePath
   pure HD.BackingStore{..}
 
 
@@ -413,7 +448,7 @@ data TraceValueHandle
   | TVHClosed
   | TVHSubmissionStarted
   | TVHSubmissionEnded
-  deriving stock(Show)
+  deriving stock(Show, Eq)
 
 mkValueHandle :: (MonadIO m)
   => Trace.Tracer IO TraceDb

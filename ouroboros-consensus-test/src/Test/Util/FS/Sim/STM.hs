@@ -58,6 +58,7 @@ simHasFS var = HasFS {
     , removeFile               = sim  .  Mock.removeFile
     , renameFile               = sim  .: Mock.renameFile
     , mkFsErrorPath            = fsToFsErrorPathUnmounted
+    , unsafeToFilePath         = \_ -> error "simHasFS:unsafeToFilePath"
     }
   where
     sim :: PureSimFS a -> m a

@@ -149,7 +149,7 @@ data HasFS m h = HasFS {
   , mkFsErrorPath            :: FsPath -> FsErrorPath
 
     -- | TODO
-  , unsafeToFilePath         :: FsPath -> m FilePath
+  , unsafeToFilePath         :: !(FsPath -> m FilePath)
   }
   deriving NoThunks via OnlyCheckWhnfNamed "HasFS" (HasFS m h)
 

@@ -223,9 +223,11 @@ instance TableStuff (LedgerState BlockA) where
   withLedgerTables    st  NoATables = convertMapKind st
 
   pureLedgerTables _f                     = NoATables
-  mapLedgerTables  _f           NoATables = NoATables
-  zipLedgerTables  _f NoATables NoATables = NoATables
-  foldLedgerTables _f           NoATables = mempty
+  traverseLedgerTables _f NoATables       = pure NoATables
+  zipLedgerTablesA _f NoATables NoATables = pure NoATables
+  namesLedgerTables                       = NoATables
+
+
 
 instance (ShowLedgerState (LedgerTables (LedgerState BlockA))) where
   showsLedgerState _sing = shows
