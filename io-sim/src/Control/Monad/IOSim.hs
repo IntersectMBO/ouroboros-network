@@ -16,6 +16,7 @@ module Control.Monad.IOSim
   , runSimTrace
   , controlSimTrace
   , exploreSimTrace
+  , ScheduleMod (..)
   , ScheduleControl (..)
   , runSimTraceST
   , liftST

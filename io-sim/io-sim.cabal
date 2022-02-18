@@ -28,10 +28,12 @@ library
   exposed-modules:     Data.List.Trace,
                        Control.Monad.IOSim,
                        Control.Monad.IOSim.Types
-  other-modules:       Control.Monad.IOSim.Internal,
+  other-modules:       Control.Monad.IOSim.CommonTypes,
+                       Control.Monad.IOSim.Internal,
                        Control.Monad.IOSim.InternalTypes,
                        Control.Monad.IOSim.STM,
                        Control.Monad.IOSimPOR.Internal,
+                       Control.Monad.IOSimPOR.Types,
                        Control.Monad.IOSimPOR.QuickCheckUtils,
                        Control.Monad.IOSimPOR.Timeout
   default-language:    Haskell2010
@@ -53,6 +55,7 @@ library
                        parallel,
                        pretty-simple,
                        psqueues          >=0.2 && <0.3,
+                       text,
                        time              >=1.9.1 && <1.11,
                        quiet,
                        QuickCheck,

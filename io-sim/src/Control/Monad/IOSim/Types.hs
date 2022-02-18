@@ -16,7 +16,55 @@
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 {-# OPTIONS_GHC -Wno-partial-fields          #-}
 
-module Control.Monad.IOSim.Types where
+module Control.Monad.IOSim.Types
+  ( IOSim (..)
+  , runIOSim
+  , traceM
+  , traceSTM
+  , liftST
+  , SimA (..)
+  , StepId
+  , STMSim
+  , STM (..)
+  , runSTM
+  , StmA (..)
+  , StmTxResult (..)
+  , StmStack (..)
+  , Timeout (..)
+  , TimeoutException (..)
+
+  , setCurrentTime
+  , unshareClock
+
+  , ScheduleControl (..)
+  , ScheduleMod (..)
+  , ExplorationOptions (..)
+  , ExplorationSpec
+  , withScheduleBound
+  , withBranching
+  , withStepTimelimit
+  , withReplay
+  , stdExplorationOptions
+
+  , EventlogEvent (..)
+  , EventlogMarker (..)
+
+  , SimEventType (..)
+  , SimEvent (..)
+  , SimResult (..)
+  , SimTrace
+  , Trace.Trace (Trace, SimTrace, TraceMainReturn, TraceMainException,
+                 TraceDeadlock, TraceRacesFound, TraceLoop)
+  , ppTrace
+  , ppTrace_
+  , ppSimEvent
+  , TraceEvent
+  , Labelled (..)
+
+  , module Control.Monad.IOSim.CommonTypes
+  , SimM
+  , SimSTM
+  ) where
 
 import           Control.Exception (ErrorCall (..), asyncExceptionFromException, asyncExceptionToException)
 import           Control.Applicative
@@ -47,18 +95,20 @@ import           Data.Bifoldable
 import           Data.Bifunctor (bimap)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
-import           Data.Set (Set)
+import           Data.Monoid (Endo (..))
 import           Data.Dynamic (Dynamic, toDyn)
-import           Data.Function (on)
 import           Data.Typeable
 import           Data.STRef.Lazy
 import qualified Data.List.Trace as Trace
+import qualified Debug.Trace as Debug
 import           Text.Printf
 
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
 
+import           Control.Monad.IOSim.CommonTypes
 import           Control.Monad.IOSim.STM
+import           Control.Monad.IOSimPOR.Types
 
 
 import qualified System.IO.Error as IO.Error (userError)
@@ -630,8 +680,10 @@ data SimEventType
 
   | EventTxCommitted   [Labelled TVarId] -- tx wrote to these
                        [TVarId]          -- and created these
-  | EventTxAborted
+                       (Maybe Effect)    -- effect performed (only for `IOSimPOR`)
+  | EventTxAborted     (Maybe Effect)    -- effect performed (only for `IOSimPOR`)
   | EventTxBlocked     [Labelled TVarId] -- tx blocked reading these
+                       (Maybe Effect)    -- effect performed (only for `IOSimPOR`)
   | EventTxWakeup      [Labelled TVarId] -- changed vars causing retry
 
   | EventTimerCreated   TimeoutId TVarId Time
@@ -644,34 +696,15 @@ data SimEventType
   | EventThreadSleep                      -- the labelling thread was runnable,
                                           -- but its execution was delayed
   | EventThreadWake                       -- until this point
+  | EventDeschedule    Deschedule
+  | EventFollowControl        ScheduleControl
+  | EventAwaitControl  StepId ScheduleControl
+  | EventPerformAction StepId
+  | EventReschedule           ScheduleControl
   deriving Show
 
 type TraceEvent = SimEventType
 {-# DEPRECATED TraceEvent "Use 'SimEventType' instead." #-}
-
-data ThreadId = RacyThreadId [Int]
-              | ThreadId     [Int]    -- non racy threads have higher priority
-  deriving (Eq, Ord, Show)
-
-childThreadId :: ThreadId -> Int -> ThreadId
-childThreadId (RacyThreadId is) i = RacyThreadId (is ++ [i])
-childThreadId (ThreadId     is) i = ThreadId     (is ++ [i])
-
-setRacyThread :: ThreadId -> ThreadId
-setRacyThread (ThreadId is)      = RacyThreadId is
-setRacyThread tid@RacyThreadId{} = tid
-
-newtype TVarId      = TVarId    Int   deriving (Eq, Ord, Enum, Show)
-newtype TimeoutId   = TimeoutId Int   deriving (Eq, Ord, Enum, Show)
-newtype ClockId     = ClockId   [Int] deriving (Eq, Ord, Show)
-newtype VectorClock = VectorClock { getVectorClock :: Map ThreadId Int }
-  deriving Show
-
-unTimeoutId :: TimeoutId -> Int
-unTimeoutId (TimeoutId a) = a
-
-type ThreadLabel = String
-type TVarLabel   = String
 
 data Labelled a = Labelled {
     l_labelled :: !a,
@@ -683,49 +716,6 @@ data Labelled a = Labelled {
 --
 -- Executing STM Transactions
 --
-
-data MkTVarTrace s a where
-    MkTVarTrace :: forall s a tr. Typeable tr => (Maybe a -> a -> ST s tr)
-                -> MkTVarTrace s a
-
-
-data TVar s a = TVar {
-
-       -- | The identifier of this var.
-       --
-       tvarId      :: !TVarId,
-
-       -- | Label.
-       tvarLabel   :: !(STRef s (Maybe TVarLabel)),
-
-       -- | The var's current value
-       --
-       tvarCurrent :: !(STRef s a),
-
-       -- | A stack of undo values. This is only used while executing a
-       -- transaction.
-       --
-       tvarUndo    :: !(STRef s [a]),
-
-       -- | Thread Ids of threads blocked on a read of this var. It is
-       -- represented in reverse order of thread wakeup, without duplicates.
-       --
-       -- To avoid duplicates efficiently, the operations rely on a copy of the
-       -- thread Ids represented as a set.
-       --
-       tvarBlocked :: !(STRef s ([ThreadId], Set ThreadId)),
-
-       -- | The vector clock of the current value.
-       --
-       tvarVClock :: !(STRef s VectorClock),
-
-       -- | Callback to construct a trace which will be attached to the dynamic
-       -- trace.
-       tvarTrace  :: !(STRef s (Maybe (MkTVarTrace s a)))
-     }
-
-instance Eq (TVar s a) where
-    (==) = on (==) tvarId
 
 data StmTxResult s a =
        -- | A committed transaction reports the vars that were written (in order
@@ -755,9 +745,6 @@ data StmTxResult s a =
        -- vector clock can be updated.
        --
      | StmTxAborted  [SomeTVar s] SomeException
-
-data SomeTVar s where
-  SomeTVar :: !(TVar s a) -> SomeTVar s
 
 data StmStack s b a where
   -- | Executing in the context of a top level 'atomically'.

@@ -79,7 +79,7 @@ import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Control.Monad.IOSim.Types
+import           Control.Monad.IOSim.Types hiding (Deschedule (..))
 import           Control.Monad.IOSim.InternalTypes
 
 --
@@ -413,7 +413,8 @@ schedule thread@Thread{
               -- as it is a fair policy (all runnable threads eventually run).
           trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $
-            SimTrace time tid tlbl (EventTxCommitted vids [nextVid..pred nextVid']) $
+            SimTrace time tid tlbl (EventTxCommitted vids [nextVid..pred nextVid']
+                                                     Nothing) $
             traceMany
               [ (time, tid', tlbl', EventTxWakeup vids')
               | tid' <- unblocked
@@ -429,13 +430,13 @@ schedule thread@Thread{
           -- schedule this thread to immediately raise the exception
           let thread' = thread { threadControl = ThreadControl (Throw e) ctl }
           trace <- schedule thread' simstate
-          return $ SimTrace time tid tlbl EventTxAborted trace
+          return $ SimTrace time tid tlbl (EventTxAborted Nothing) trace
 
         StmTxBlocked read -> do
           mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
           vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) read
           trace <- deschedule Blocked thread simstate
-          return $ SimTrace time tid tlbl (EventTxBlocked vids) trace
+          return $ SimTrace time tid tlbl (EventTxBlocked vids Nothing) trace
 
     GetThreadId k -> do
       let thread' = thread { threadControl = ThreadControl (k tid) ctl }
