@@ -39,6 +39,7 @@ module Control.Monad.IOSim
   , ppTrace_
   , ppEvents
   , ppSimEvent
+  , ppDebug
     -- ** Selectors
   , traceEvents
   , traceResult

@@ -58,6 +58,7 @@ module Control.Monad.IOSim.Types
   , ppTrace
   , ppTrace_
   , ppSimEvent
+  , ppDebug
   , TraceEvent
   , Labelled (..)
 
@@ -623,6 +624,14 @@ ppTrace_ tr = Trace.ppTrace
                 (const "")
                 (ppSimEvent (bimaximum (bimap (const 0) (maybe 0 length . seThreadLabel') tr)))
                 tr
+
+-- | Trace each event using 'Debug.trace'; this is useful when a trace ends with
+-- a pure error, e.g. an assertion.
+--
+ppDebug :: SimTrace a -> x -> x
+ppDebug = appEndo
+        . foldMap (Endo . Debug.trace . show)
+        . Trace.toList
 
 pattern Trace :: Time -> ThreadId -> Maybe ThreadLabel -> SimEventType -> SimTrace a
               -> SimTrace a
