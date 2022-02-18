@@ -26,8 +26,8 @@
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
     LedgerDbCfg (..)
-  , ledgerDbWithAnchor
   , RunAlsoLegacy (..)
+  , ledgerDbWithAnchor
     -- ** opaque
   , LedgerDB
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
@@ -71,9 +71,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbSwitch
     -- * Exports for the benefit of tests
     -- ** Additional queries
+  , ledgerDbCurrentValues
   , ledgerDbIsSaturated
   , ledgerDbMaxRollback
-  , ledgerDbCurrentValues
     -- ** Pure API
   , ledgerDbPush'
   , ledgerDbPushMany'
@@ -625,7 +625,6 @@ ledgerDbFlush policy db = do
     (l, r) = flushDbChangelog policy (ledgerDbChangelog db)
 
 class ReadsKeySets m l where
-
   readDb :: TypeOf_readDB m l
 
 type TypeOf_readDB m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
@@ -686,6 +685,19 @@ ledgerDbAnchor =
 --
 -- This is what will be serialized when snapshotting.
 --
+--
+-- When we take a snapshot, we do it for both the modern and the legacy ledger.
+-- Conversely, when we read a snapshot, we assume the snapshot has what we need
+-- for both the legacy and modern ledger. So the read/written modern and legacy
+-- ledgers must always be coherent pairs, i.e. they're the ledger state as of
+-- the same block.
+--
+-- The legacy snapshot is always written from the immutable tip. If we flush
+-- first, then the modern snapshot also is. If we don't flush first, then the
+-- modern snapshot might be written from something older than the immutable tip.
+-- Therefore we guard this condition with an 'assert' and this imposes the
+-- following PRECONDITION:
+--
 -- PRECONDITION: if you are running the legacy ledger, then you must flush
 -- before calling this function
 ledgerDbOldest :: forall l.
@@ -696,7 +708,7 @@ ledgerDbOldest :: forall l.
   => LedgerDB l -> l EmptyMK
 ledgerDbOldest db =
     case stuffedLegacyAnchor of
-      Nothing -> immAnchor
+      Nothing  -> immAnchor
       Just sla -> Exn.assert (isFlushed sla) sla
   where
     immAnchor :: l EmptyMK
@@ -818,14 +830,13 @@ ledgerDbPrune ::
 ledgerDbPrune k db = db {
       ledgerDbCheckpoints =
         AS.anchorNewest (maxRollbacks k) <$> ledgerDbCheckpoints db
-    , ledgerDbChangelog   = pruneVolatileDbChangelog k (ledgerDbChangelog db)
+    , ledgerDbChangelog   = pruneVolatilePartDbChangelog k (ledgerDbChangelog db)
     }
 
  -- NOTE: we must inline 'ledgerDbPrune' otherwise we get unexplained thunks in
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
 {-# INLINE ledgerDbPrune #-}
-{-# LANGUAGE DerivingStrategies         #-}
 
 {-------------------------------------------------------------------------------
   Internal updates

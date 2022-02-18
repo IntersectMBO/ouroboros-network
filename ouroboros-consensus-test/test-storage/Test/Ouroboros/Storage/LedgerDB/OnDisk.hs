@@ -628,9 +628,9 @@ runDB standalone@DB{..} cmd =
                 (map ApplyVal bs)
                 db
     go hasFS Snap = do
-        -- TODO: Maybe @Flush@ should be its own command but that would require
-        -- the implementation to change so that 'ledgerDbOldest' doesn't require
-        -- a 'flush' to happen just before it is called.
+        -- TODO: This duplicates too much logic of the flushing mechanisms. The
+        -- right thing to do would be to factor out the functions and here just
+        -- call one function that does all the job.
         (toFlush, bs, db') <- atomically $ do
           (_, db) <- readTVar dbState
           bs <- readTVar dbBackingStore
