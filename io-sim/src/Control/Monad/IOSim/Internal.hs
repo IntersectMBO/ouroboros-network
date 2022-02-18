@@ -79,7 +79,7 @@ import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Control.Monad.IOSim.Types hiding (Deschedule (..))
+import           Control.Monad.IOSim.Types
 import           Control.Monad.IOSim.InternalTypes
 
 --
@@ -201,7 +201,9 @@ schedule thread@Thread{
       ForkFrame -> do
         -- this thread is done
         trace <- deschedule Terminated thread simstate
-        return $ SimTrace time tid tlbl EventThreadFinished trace
+        return $ SimTrace time tid tlbl EventThreadFinished
+               $ SimTrace time tid tlbl (EventDeschedule Terminated)
+               $ trace
 
       MaskFrame k maskst' ctl' -> do
         -- pop the control stack, restore thread-local state
@@ -209,7 +211,9 @@ schedule thread@Thread{
                              , threadMasking = maskst' }
         -- but if we're now unmasked, check for any pending async exceptions
         trace <- deschedule Interruptable thread' simstate
-        return (SimTrace time tid tlbl (EventMask maskst') trace)
+        return $ SimTrace time tid tlbl (EventMask maskst')
+               $ SimTrace time tid tlbl (EventDeschedule Interruptable)
+               $ trace
 
       CatchFrame _handler k ctl' -> do
         -- pop the control stack and continue
@@ -235,8 +239,10 @@ schedule thread@Thread{
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
           trace <- deschedule Terminated thread simstate
-          return (SimTrace time tid tlbl (EventThrow e) $
-                  SimTrace time tid tlbl (EventThreadUnhandled e) trace)
+          return $ SimTrace time tid tlbl (EventThrow e)
+                 $ SimTrace time tid tlbl (EventThreadUnhandled e)
+                 $ SimTrace time tid tlbl (EventDeschedule Terminated)
+                 $ trace
 
     Catch action' handler k -> do
       -- push the failure and success continuations onto the control stack
@@ -412,19 +418,18 @@ schedule thread@Thread{
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
           trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
-          return $
-            SimTrace time tid tlbl (EventTxCommitted vids [nextVid..pred nextVid']
-                                                     Nothing) $
-            traceMany
-              [ (time, tid', tlbl', EventTxWakeup vids')
-              | tid' <- unblocked
-              , let tlbl' = lookupThreadLabel tid' threads
-              , let Just vids' = Set.toList <$> Map.lookup tid' wokeby ] $
-            traceMany
-              [ (time, tid, tlbl, EventLog tr)
-              | tr <- tvarTraces
-              ]
-              trace
+          return $ SimTrace time tid tlbl (EventTxCommitted
+                                             vids [nextVid..pred nextVid'] Nothing)
+                 $ traceMany
+                     [ (time, tid', tlbl', EventTxWakeup vids')
+                     | tid' <- unblocked
+                     , let tlbl' = lookupThreadLabel tid' threads
+                     , let Just vids' = Set.toList <$> Map.lookup tid' wokeby ]
+                 $ traceMany
+                     [ (time, tid, tlbl, EventLog tr)
+                     | tr <- tvarTraces ]
+                 $ SimTrace time tid tlbl (EventDeschedule Yield)
+                 $ trace
 
         StmTxAborted _read e -> do
           -- schedule this thread to immediately raise the exception
@@ -436,7 +441,9 @@ schedule thread@Thread{
           mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
           vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) read
           trace <- deschedule Blocked thread simstate
-          return $ SimTrace time tid tlbl (EventTxBlocked vids Nothing) trace
+          return $ SimTrace time tid tlbl (EventTxBlocked vids Nothing)
+                 $ SimTrace time tid tlbl (EventDeschedule Blocked)
+                 $ trace
 
     GetThreadId k -> do
       let thread' = thread { threadControl = ThreadControl (k tid) ctl }
@@ -464,9 +471,11 @@ schedule thread@Thread{
       trace <-
         case maskst' of
           -- If we're now unmasked then check for any pending async exceptions
-          Unmasked -> deschedule Interruptable thread' simstate
+          Unmasked -> SimTrace time tid tlbl (EventDeschedule Interruptable)
+                  <$> deschedule Interruptable thread' simstate
           _        -> schedule                 thread' simstate
-      return (SimTrace time tid tlbl (EventMask maskst') trace)
+      return $ SimTrace time tid tlbl (EventMask maskst')
+             $ trace
 
     ThrowTo e tid' _ | tid' == tid -> do
       -- Throw to ourself is equivalent to a synchronous throw,
@@ -489,6 +498,7 @@ schedule thread@Thread{
           trace <- deschedule Blocked thread' simstate { threads = threads' }
           return $ SimTrace time tid tlbl (EventThrowTo e tid')
                  $ SimTrace time tid tlbl EventThrowToBlocked
+                 $ SimTrace time tid tlbl (EventDeschedule Blocked)
                  $ trace
         else do
           -- The target thread has async exceptions unmasked, or is masked but
@@ -524,8 +534,6 @@ threadInterruptible thread =
         | threadBlocked thread -> True  -- blocking operations are interruptible
         | otherwise            -> False
       MaskedUninterruptible    -> False
-
-data Deschedule = Yield | Interruptable | Blocked | Terminated
 
 deschedule :: Deschedule -> Thread s a -> SimState s a -> ST s (SimTrace a)
 deschedule Yield thread simstate@SimState{runqueue, threads} =
@@ -597,6 +605,9 @@ deschedule Terminated thread simstate@SimState{ curTime = time, threads } = do
                | tid' <- unblocked
                , let tlbl' = lookupThreadLabel tid' threads ]
                trace
+
+deschedule Sleep _thread _simstate =
+    error "IOSim: impossible happend"
 
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
