@@ -349,7 +349,7 @@ implTryAddTxs istate cfg txSize trcr wti =
              -- has changed but Mempool is not yet aware of it. It means that we
              -- have to wait till the Mempool will be modified and to rerun the
              -- process for the given transaction tx
-             Nothing -> pure $ do
+             (Left _) -> pure $ do
                atomically $ do
                  is' <- readTVar istate
                  check $ diskAnchorHasChanged is is'
@@ -357,7 +357,7 @@ implTryAddTxs istate cfg txSize trcr wti =
              -- we've successfully managed to get a LedgerTables ValuesMk
              -- that holds required values for the transaction validation. We now
              -- must append those values to the TickedLedgerState
-             Just ledgerTables -> do
+             (Right ledgerTables) -> do
                let is' = is {
                  isMempoolChangelog =
                    memChlog `appendLedgerTablesOnMempoolChangelog` ledgerTables

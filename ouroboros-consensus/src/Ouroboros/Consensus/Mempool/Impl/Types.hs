@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
@@ -55,8 +56,8 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..))
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (DbChangelog,
-                     RewoundTableKeySets, UnforwardedReadSets)
-import           Ouroboros.Consensus.Ticked (Ticked1 (..))
+                     RewoundTableKeySets, UnforwardedReadSets,
+                     forwardTableKeySets, rewindTableKeySets)
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Singletons (SingI)
@@ -78,17 +79,38 @@ deriving instance ( NoThunks (LedgerTables (LedgerState blk) DiffMK)
                   , NoThunks (TickedLedgerState blk ValuesMK)
                   ) => NoThunks (MempoolChangelog blk)
 
+withTransactionDiffs ::
+     TableStuff (LedgerState blk)
+  => MempoolChangelog blk
+  -> DbChangelog (LedgerState blk)
+withTransactionDiffs MempoolChangelog {mcChangelog, mcDiffs} =
+  let
+    diffs = changelogDiffs mcChangelog
+    appendDiffs ::
+         ApplyMapKind 'SeqDiffMK k v
+      -> ApplyMapKind 'DiffMK k v
+      -> ApplyMapKind 'SeqDiffMK k v
+    appendDiffs (ApplySeqDiffMK diffSeq) (ApplyDiffMK diff) = undefined -- MTODO implement
+   in mcChangelog {
+      changelogDiffs = zipLedgerTables appendDiffs diffs mcDiffs
+    }
+
 rewindTableKeySetsOnMempool ::
-     MempoolChangelog blk
+     TableStuff (LedgerState blk)
+  => MempoolChangelog blk
   -> TableKeySets (LedgerState blk)
   -> RewoundTableKeySets (LedgerState blk)
-rewindTableKeySetsOnMempool = undefined -- MTODO implement
+rewindTableKeySetsOnMempool mempoolChangelog tks =
+  (withTransactionDiffs mempoolChangelog) `rewindTableKeySets` tks
 
 forwardTableKeySetsOnMempool ::
-     MempoolChangelog blk
+     TableStuff (LedgerState blk)
+  => MempoolChangelog blk
   -> UnforwardedReadSets (LedgerState blk)
-  -> Maybe (TableReadSets (LedgerState blk))
-forwardTableKeySetsOnMempool = undefined -- MTODO implement
+  -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
+            (TableReadSets (LedgerState blk))
+forwardTableKeySetsOnMempool mempoolChangelog urs =
+  (withTransactionDiffs mempoolChangelog) `forwardTableKeySets` urs
 
 appendLedgerTablesOnMempoolChangelog ::
      MempoolChangelog blk
