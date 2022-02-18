@@ -79,6 +79,11 @@ openMempool
      , TableStuff (LedgerState blk)
      , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
+     , NoThunks (TickedLedgerState blk ValuesMK)
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
+     , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
+     , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
+     , NoThunks (LedgerState blk EmptyMK)
      )
   => ResourceRegistry m
   -> LedgerInterface m blk
@@ -104,6 +109,11 @@ openMempoolWithoutSyncThread
      , TableStuff (LedgerState blk)
      , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
+     , NoThunks (TickedLedgerState blk ValuesMK)
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
+     , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
+     , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
+     , NoThunks (LedgerState blk EmptyMK)
      )
   => LedgerInterface m blk
   -> LedgerConfig blk
@@ -134,7 +144,7 @@ mkMempool mpEnv = Mempool
             runRemoveTxs istate p
           whenJust mTrace (traceWith trcr)
     , syncWithLedger = implSyncWithLedger mpEnv
-    , getSnapshot    = implSnapshotFromIS <$> readTMVar istate
+    , getSnapshot    = implSnapshotFromIS <$> readTVar istate
     , getLedgerAndSnapshotFor = \p slot -> do
         o <- getStatePair mpEnv (StaticRight p) [] []
         let StaticRight mbPair = o
@@ -147,9 +157,9 @@ mkMempool mpEnv = Mempool
                     (ForgeInKnownSlot slot $ applyChainTick cfg slot $ ledgerState ls')
                     capacityOverride
                     is
-            atomically $ putTMVar istate is
+            atomically $ writeTVar istate is
             pure $ Just (forgetLedgerStateTables ls', snapshot)
-    , getCapacity    = isCapacity <$> readTMVar istate
+    , getCapacity    = isCapacity <$> readTVar istate
     , getTxSize      = txSize
     , zeroIdx        = zeroTicketNo
     }
@@ -214,14 +224,19 @@ chainDBLedgerInterface chainDB = LedgerInterface
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger           :: LedgerInterface m blk
     , mpEnvLedgerCfg        :: LedgerConfig blk
-    , mpEnvStateVar         :: StrictTMVar m (InternalState blk)
+    , mpEnvStateVar         :: StrictTVar m (InternalState blk)
     , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
     , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
     , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
     }
 
 initMempoolEnv :: ( IOLike m
---                  , NoThunks (GenTxId blk)   -- MTODO how to use this with the TMVar?
+                  , NoThunks (GenTxId blk)
+                  , NoThunks (TickedLedgerState blk ValuesMK)
+                  , NoThunks (LedgerTables (LedgerState blk) DiffMK)
+                  , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
+                  , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
+                  , NoThunks (LedgerState blk EmptyMK)
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
                   )
@@ -235,7 +250,7 @@ initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ ledgerState <$> getCurrentLedgerState ledgerInterface
     let (slot, _st')          = tickLedgerState cfg (ForgeInUnknownSlot st)
         initMempoolChangelog = undefined -- MTODO initialize mempool, this should be simple
-    isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot initMempoolChangelog
+    isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot initMempoolChangelog
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
@@ -307,7 +322,7 @@ implTryAddTxs
      , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      )
-  => StrictTMVar m (InternalState blk)
+  => StrictTVar m (InternalState blk)
      -- ^ The InternalState TVar.
   -> LedgerConfig blk
      -- ^ The configuration of the ledger.
@@ -327,7 +342,7 @@ implTryAddTxs istate cfg txSize trcr wti =
       tx:txs -> do
         -- fetch latest 'InternalState' to obtain the MempoolChangelog in order
         -- to read the necessary key sets
-        tempIs <- atomically $ readTMVar istate
+        tempIs <- atomically $ readTVar istate
         let tempMemChlog = isMempoolChangelog tempIs
             ks = getTransactionKeySets tx
             aks = rewindTableKeySetsOnMempool tempMemChlog ks
@@ -335,7 +350,7 @@ implTryAddTxs istate cfg txSize trcr wti =
         join $ atomically $ do
           -- re-fetch the 'InternalState' as its content might have changed
           -- while we were fetching key sets from the disk
-          is <- readTMVar istate
+          is <- readTVar istate
           -- check if disk anchor has changed
           -- if it did, retry the whole computation for tx
           if diskAnchorHasChanged is tempIs then pure $ go acc (tx:txs)
@@ -348,7 +363,7 @@ implTryAddTxs istate cfg txSize trcr wti =
              -- process for the given transaction tx
              Nothing -> pure $ do
                atomically $ do
-                 is' <- readTMVar istate
+                 is' <- readTVar istate
                  check $ diskAnchorHasChanged is is'
                go acc (tx:txs)
              -- we've successfully managed to get a LedgerTables ValuesMk
@@ -362,7 +377,7 @@ implTryAddTxs istate cfg txSize trcr wti =
                case pureTryAddTxs cfg txSize wti tx is' of
                   NoSpaceLeft              -> pure $ pure (reverse acc, tx:txs)
                   TryAddTxs is'' result ev -> do
-                    whenJust is'' (putTMVar istate)
+                    whenJust is'' (writeTVar istate)
                     pure $ do
                       traceWith trcr ev
                       go (result:acc) txs
@@ -426,7 +441,7 @@ getStatePair :: forall m blk b.
 getStatePair mpEnv seP removals txs =
     wrap $ \ls -> atomically $ do
       let tip = getTip ls
-      is0 <- takeTMVar istate
+      is0 <- readTVar istate
       let nothingToDo =
                isTip is0 == castHash (pointHash tip)
             && null removals

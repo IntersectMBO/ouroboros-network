@@ -64,6 +64,7 @@ import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import qualified Ouroboros.Network.Diffusion as Diffusion
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
@@ -269,6 +270,9 @@ deriving instance Show (NetworkP2PMode p2p)
 run :: forall blk p2p.
      ( RunNode blk
      , ReadsKeySets IO (LedgerState blk)
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
+     , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
+     , NoThunks (LedgerState blk EmptyMK)
      )
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
   -> StdRunNodeArgs IO blk p2p
@@ -284,6 +288,9 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      ( RunNode blk
      , ReadsKeySets m (LedgerState blk)
+     , NoThunks (LedgerTables (LedgerState blk) DiffMK)
+     , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
+     , NoThunks (LedgerState blk EmptyMK)
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
      )

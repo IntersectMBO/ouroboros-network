@@ -71,10 +71,12 @@ data MempoolChangelog blk = MempoolChangelog {
   , mcDiffs       :: !(LedgerTables (LedgerState blk) DiffMK)
   } deriving (Generic)
 
--- MTODO bring this back
--- deriving instance ( NoThunks (LedgerTables (LedgerState blk) DiffMK)
---                   , NoThunks (TickedLedgerState blk ValuesMK)
---                   ) => NoThunks (MempoolChangelog blk)
+deriving instance ( NoThunks (LedgerTables (LedgerState blk) DiffMK)
+                  , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
+                  , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
+                  , NoThunks (LedgerState blk EmptyMK)
+                  , NoThunks (TickedLedgerState blk ValuesMK)
+                  ) => NoThunks (MempoolChangelog blk)
 
 rewindTableKeySetsOnMempool ::
      MempoolChangelog blk
@@ -163,13 +165,16 @@ data InternalState blk = IS {
     }
   deriving (Generic)
 
--- MTODO bring it back
--- deriving instance ( NoThunks (Validated (GenTx blk))
---                   , NoThunks (GenTxId blk)
---                   , NoThunks (TickedLedgerState blk ValuesMK)
---                   , StandardHash blk
---                   , Typeable blk
---                   ) => NoThunks (InternalState blk)
+deriving instance ( NoThunks (Validated (GenTx blk))
+                  , NoThunks (GenTxId blk)
+                  , NoThunks (TickedLedgerState blk ValuesMK)
+                  , NoThunks (LedgerTables (LedgerState blk) DiffMK)
+                  , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
+                  , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
+                  , NoThunks (LedgerState blk EmptyMK)
+                  , StandardHash blk
+                  , Typeable blk
+                  ) => NoThunks (InternalState blk)
 
 -- | \( O(1) \). Return the number of transactions in the internal state of
 -- the Mempool paired with their total size in bytes.
