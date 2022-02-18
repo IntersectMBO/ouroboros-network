@@ -91,8 +91,8 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..))
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.CBOR.Simple
+import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.Serialisation
 

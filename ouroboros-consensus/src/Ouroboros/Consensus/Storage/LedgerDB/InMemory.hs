@@ -26,8 +26,8 @@
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
     LedgerDbCfg (..)
-  , ledgerDbWithAnchor
   , RunAlsoLegacy (..)
+  , ledgerDbWithAnchor
     -- ** opaque
   , LedgerDB
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
@@ -71,9 +71,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbSwitch
     -- * Exports for the benefit of tests
     -- ** Additional queries
+  , ledgerDbCurrentValues
   , ledgerDbIsSaturated
   , ledgerDbMaxRollback
-  , ledgerDbCurrentValues
     -- ** Pure API
   , ledgerDbPush'
   , ledgerDbPushMany'
@@ -625,7 +625,6 @@ ledgerDbFlush policy db = do
     (l, r) = flushDbChangelog policy (ledgerDbChangelog db)
 
 class ReadsKeySets m l where
-
   readDb :: TypeOf_readDB m l
 
 type TypeOf_readDB m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
@@ -709,7 +708,7 @@ ledgerDbOldest :: forall l.
   => LedgerDB l -> l EmptyMK
 ledgerDbOldest db =
     case stuffedLegacyAnchor of
-      Nothing -> immAnchor
+      Nothing  -> immAnchor
       Just sla -> Exn.assert (isFlushed sla) sla
   where
     immAnchor :: l EmptyMK
@@ -838,7 +837,6 @@ ledgerDbPrune k db = db {
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
 {-# INLINE ledgerDbPrune #-}
-{-# LANGUAGE DerivingStrategies         #-}
 
 {-------------------------------------------------------------------------------
   Internal updates
