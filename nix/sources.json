@@ -5,23 +5,23 @@
         "homepage": "https://input-output-hk.github.io/haskell.nix",
         "owner": "input-output-hk",
         "repo": "haskell.nix",
-        "rev": "a3c9d33f301715b162b12afe926b4968f2fe573d",
-        "sha256": "0735pbqyagmyclzs16q7hfmq5zmssl278bmpqjhpyrglbpxzbqd3",
+        "rev": "659b73698e06c02cc0f3029383bd383c8acdbe98",
+        "sha256": "0i91iwa11sq0v82v0zl82npnb4qqfm71y7gn3giyaixslm73kspk",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/a3c9d33f301715b162b12afe926b4968f2fe573d.tar.gz",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/659b73698e06c02cc0f3029383bd383c8acdbe98.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "hls-released": {
-        "branch": "1.5.1",
+        "branch": "master",
         "builtin": false,
         "description": "Successor of ghcide & haskell-ide-engine. One IDE to rule them all.",
         "homepage": "",
         "owner": "haskell",
         "repo": "haskell-language-server",
-        "rev": "745ef26f406dbdd5e4a538585f8519af9f1ccb09",
-        "sha256": "10vj4wb0gdvfnrg1d7r3dqjnkw34ryh7v4fvxsby6fvn1l2kvsj5",
+        "rev": "1.6.1.1",
+        "sha256": "1rbdcl89y85cz31k4qk48zg8qdyywrzzjvh28q36bpm215qhgd74",
         "type": "tarball",
-        "url": "https://github.com/haskell/haskell-language-server/archive/745ef26f406dbdd5e4a538585f8519af9f1ccb09.tar.gz",
+        "url": "https://github.com/haskell/haskell-language-server/archive/1.6.1.1.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "iohk-nix": {
@@ -30,10 +30,10 @@
         "homepage": null,
         "owner": "input-output-hk",
         "repo": "iohk-nix",
-        "rev": "a878d7fe8607c762f2a961bc87f8882e0485d37a",
-        "sha256": "0bhjr7rwvxib0jmq31hxmisgmb3di2ml9p8s6lfg2j7x57c3c7fw",
+        "rev": "9d6ee3dcb3482f791e40ed991ad6fc649b343ad4",
+        "sha256": "1czln6yq11xq7lah230n58r4y2zsl5gg3dghcm909l30v7mxsdhb",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/iohk-nix/archive/a878d7fe8607c762f2a961bc87f8882e0485d37a.tar.gz",
+        "url": "https://github.com/input-output-hk/iohk-nix/archive/9d6ee3dcb3482f791e40ed991ad6fc649b343ad4.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }
