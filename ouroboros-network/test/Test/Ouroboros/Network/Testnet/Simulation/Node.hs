@@ -61,13 +61,13 @@ import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Snocket (TestAddress (..))
+import           Ouroboros.Network.Snocket (TestAddress (..), Snocket)
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
-import           Simulation.Network.Snocket (BearerInfo (..), withSnocket)
+import           Simulation.Network.Snocket (BearerInfo (..), withSnocket, FD)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -378,9 +378,15 @@ diffusionSimulation
   (DiffusionScript args)
   tracersExtraWithTimeName
   diffSimTracerWithTimName =
-    withAsyncAll (map (uncurry (runCommand Nothing)) args) $ \nodes -> do
-      (_, x) <- waitAny nodes
-      return x
+    withSnocket nullTracer defaultBearerInfo Map.empty
+      $ \ntnSnocket _ ->
+        withSnocket nullTracer defaultBearerInfo Map.empty
+      $ \ntcSnocket _ ->
+        withAsyncAll
+          (map (uncurry (runCommand Nothing ntnSnocket ntcSnocket)) args)
+          $ \nodes -> do
+            (_, x) <- waitAny nodes
+            return x
   where
     -- | Runs a single node according to a list of commands.
     runCommand
@@ -388,44 +394,52 @@ diffusionSimulation
                , StrictTVar m [(Int, Map RelayAccessPoint PeerAdvertise)])
          -- ^ If the node is running and corresponding local root configuration
          -- TVar.
+      -> Snocket m (FD m NtNAddr) NtNAddr
+        -- ^ Node to node Snocket
+      -> Snocket m (FD m NtCAddr) NtCAddr
+        -- ^ Node to client Snocket
       -> SimArgs -- ^ Simulation arguments needed in order to run a single node
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
-    runCommand Nothing simArgs [] = do
+    runCommand Nothing ntnSnocket ntcSnocket simArgs [] = do
       threadDelay 3600
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrRunning
-      runCommand Nothing simArgs []
-    runCommand (Just (_, _)) simArgs [] = do
+      runCommand Nothing ntnSnocket ntcSnocket simArgs []
+    runCommand (Just (_, _)) ntnSnocket ntcSnocket simArgs [] = do
       -- We shouldn't block this thread waiting
       -- on the async since this will lead to a deadlock
       -- as thread returns 'Void'.
       threadDelay 3600
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrRunning
-      runCommand Nothing simArgs []
-    runCommand Nothing simArgs (JoinNetwork delay:cs) = do
+      runCommand Nothing ntnSnocket ntcSnocket simArgs []
+    runCommand Nothing ntnSnocket ntcSnocket simArgs (JoinNetwork delay:cs) = do
       threadDelay delay
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrJoiningNetwork
       lrpVar <- newTVarIO $ saLocalRootPeers simArgs
-      withAsync (runNode simArgs lrpVar) $ \nodeAsync ->
-        runCommand (Just (nodeAsync, lrpVar)) simArgs cs
-    runCommand _ _ (JoinNetwork _:_) =
+      withAsync (runNode simArgs ntnSnocket ntcSnocket lrpVar) $ \nodeAsync ->
+        runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket simArgs cs
+    runCommand _ _ _ _ (JoinNetwork _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, _)) simArgs (Kill delay:cs) = do
+    runCommand (Just (async, _)) ntnSnocket ntcSnocket simArgs
+               (Kill delay:cs) = do
       threadDelay delay
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrKillingNode
       cancel async
-      runCommand Nothing simArgs cs
-    runCommand _ _ (Kill _:_) = do
+      runCommand Nothing ntnSnocket ntcSnocket simArgs cs
+    runCommand _ _ _ _ (Kill _:_) = do
       error "runCommand: Impossible happened"
-    runCommand Nothing _ (Reconfigure _ _:_) =
+    runCommand Nothing _ _ _ (Reconfigure _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, lrpVar)) simArgs (Reconfigure delay newLrp:cs) = do
+    runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket simArgs
+               (Reconfigure delay newLrp:cs) = do
       threadDelay delay
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrReconfigurionNode
       _ <- atomically $ writeTVar lrpVar newLrp
-      runCommand (Just (async, lrpVar)) simArgs cs
+      runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket simArgs cs
 
     runNode :: SimArgs
+            -> Snocket m (FD m NtNAddr) NtNAddr
+            -> Snocket m (FD m NtCAddr) NtCAddr
             -> StrictTVar m [(Int, Map RelayAccessPoint PeerAdvertise)]
             -> m Void
     runNode SimArgs
@@ -441,99 +455,97 @@ diffusionSimulation
             , saDNSTimeoutScript      = dnsTimeout
             , saDNSLookupDelayScript  = dnsLookupDelay
             }
+            ntnSnocket
+            ntcSnocket
             lrpVar =
-      withSnocket nullTracer defaultBearerInfo Map.empty
-        $ \ntnSnocket _ ->
-          withSnocket nullTracer defaultBearerInfo Map.empty
-        $ \ntcSnocket _ ->
-          let acceptedConnectionsLimit =
-                AcceptedConnectionsLimit maxBound maxBound 0
-              diffusionMode = InitiatorAndResponderDiffusionMode
-              readLocalRootPeers  = readTVar lrpVar
-              readPublicRootPeers = return raps
-              readUseLedgerAfter  = return (UseLedgerAfter 0)
+      let acceptedConnectionsLimit =
+            AcceptedConnectionsLimit maxBound maxBound 0
+          diffusionMode = InitiatorAndResponderDiffusionMode
+          readLocalRootPeers  = readTVar lrpVar
+          readPublicRootPeers = return raps
+          readUseLedgerAfter  = return (UseLedgerAfter 0)
 
-              acceptVersion = \_ v -> Accept v
+          acceptVersion = \_ v -> Accept v
 
-              defaultMiniProtocolsLimit :: MiniProtocolLimits
-              defaultMiniProtocolsLimit =
-                MiniProtocolLimits { maximumIngressQueue = 64000 }
+          defaultMiniProtocolsLimit :: MiniProtocolLimits
+          defaultMiniProtocolsLimit =
+            MiniProtocolLimits { maximumIngressQueue = 64000 }
 
-              blockGeneratorArgs :: BlockGeneratorArgs Block StdGen
-              blockGeneratorArgs =
-                randomBlockGenerationArgs bgaSlotDuration
-                                          bgaSeed
-                                          quota
+          blockGeneratorArgs :: BlockGeneratorArgs Block StdGen
+          blockGeneratorArgs =
+            randomBlockGenerationArgs bgaSlotDuration
+                                      bgaSeed
+                                      quota
 
-              stdChainSyncTimeout :: ChainSyncTimeout
-              stdChainSyncTimeout = do
-                  ChainSyncTimeout
-                    { canAwaitTimeout  = shortWait
-                    , intersectTimeout = shortWait
-                    , mustReplyTimeout
-                    }
+          stdChainSyncTimeout :: ChainSyncTimeout
+          stdChainSyncTimeout = do
+              ChainSyncTimeout
+                { canAwaitTimeout  = shortWait
+                , intersectTimeout = shortWait
+                , mustReplyTimeout
+                }
 
-              limitsAndTimeouts :: Node.LimitsAndTimeouts Block
-              limitsAndTimeouts
-                = Node.LimitsAndTimeouts
-                    { Node.chainSyncLimits     = defaultMiniProtocolsLimit
-                    , Node.chainSyncSizeLimits = byteLimitsChainSync (const 0)
-                    , Node.chainSyncTimeLimits =
-                        timeLimitsChainSync stdChainSyncTimeout
-                    , Node.keepAliveLimits     = defaultMiniProtocolsLimit
-                    , Node.keepAliveSizeLimits = byteLimitsKeepAlive (const 0)
-                    , Node.keepAliveTimeLimits = timeLimitsKeepAlive
-                    , Node.pingPongLimits      = defaultMiniProtocolsLimit
-                    , Node.pingPongSizeLimits  =
-                        ProtocolSizeLimits (const smallByteLimit) (const 0)
-                    , Node.pingPongTimeLimits  =
-                        ProtocolTimeLimits (const (Just 60))
-                    , Node.handshakeLimits     = defaultMiniProtocolsLimit
-                    , Node.handshakeTimeLimits =
-                        ProtocolSizeLimits (const (4 * 1440))
-                                           (fromIntegral . BL.length)
-                    , Node.handhsakeSizeLimits =
-                        ProtocolTimeLimits (const shortWait)
-                    }
+          limitsAndTimeouts :: Node.LimitsAndTimeouts Block
+          limitsAndTimeouts
+            = Node.LimitsAndTimeouts
+                { Node.chainSyncLimits     = defaultMiniProtocolsLimit
+                , Node.chainSyncSizeLimits = byteLimitsChainSync (const 0)
+                , Node.chainSyncTimeLimits =
+                    timeLimitsChainSync stdChainSyncTimeout
+                , Node.keepAliveLimits     = defaultMiniProtocolsLimit
+                , Node.keepAliveSizeLimits = byteLimitsKeepAlive (const 0)
+                , Node.keepAliveTimeLimits = timeLimitsKeepAlive
+                , Node.pingPongLimits      = defaultMiniProtocolsLimit
+                , Node.pingPongSizeLimits  =
+                    ProtocolSizeLimits (const smallByteLimit) (const 0)
+                , Node.pingPongTimeLimits  =
+                    ProtocolTimeLimits (const (Just 60))
+                , Node.handshakeLimits     = defaultMiniProtocolsLimit
+                , Node.handshakeTimeLimits =
+                    ProtocolSizeLimits (const (4 * 1440))
+                                       (fromIntegral . BL.length)
+                , Node.handhsakeSizeLimits =
+                    ProtocolTimeLimits (const shortWait)
+                }
 
-              interfaces :: Node.Interfaces m
-              interfaces =
-                Node.Interfaces
-                  { Node.iNtnSnocket        = ntnSnocket
-                  , Node.iAcceptVersion     = acceptVersion
-                  , Node.iNtnDomainResolver = (return .)
-                                            <$> domainResolver raps dMap
-                  , Node.iNtcSnocket        = ntcSnocket
-                  , Node.iRng               = stdGen
-                  , Node.iDomainMap         = dMap
-                  , Node.iLedgerPeersConsensusInterface
-                                            = LedgerPeersConsensusInterface
-                                            $ \_ -> return Nothing
-                  }
+          interfaces :: Node.Interfaces m
+          interfaces =
+            Node.Interfaces
+              { Node.iNtnSnocket        = ntnSnocket
+              , Node.iAcceptVersion     = acceptVersion
+              , Node.iNtnDomainResolver = (return .)
+                                        <$> domainResolver raps dMap
+              , Node.iNtcSnocket        = ntcSnocket
+              , Node.iRng               = stdGen
+              , Node.iDomainMap         = dMap
+              , Node.iLedgerPeersConsensusInterface
+                                        = LedgerPeersConsensusInterface
+                                        $ \_ -> return Nothing
+              }
 
-              arguments :: Node.Arguments m
-              arguments =
-                Node.Arguments
-                  { Node.aIPAddress            = rap
-                  , Node.aAcceptedLimits       = acceptedConnectionsLimit
-                  , Node.aDiffusionMode        = diffusionMode
-                  , Node.aKeepAliveInterval    = 0
-                  , Node.aPingPongInterval     = 0
-                  , Node.aPeerSelectionTargets = peerSelectionTargets
-                  , Node.aReadLocalRootPeers   = readLocalRootPeers
-                  , Node.aReadPublicRootPeers  = readPublicRootPeers
-                  , Node.aReadUseLedgerAfter   = readUseLedgerAfter
-                  , Node.aProtocolIdleTimeout  = 5
-                  , Node.aTimeWaitTimeout      = 30
-                  , Node.aDNSTimeoutScript     = dnsTimeout
-                  , Node.aDNSLookupDelayScript = dnsLookupDelay
-                  }
+          arguments :: Node.Arguments m
+          arguments =
+            Node.Arguments
+              { Node.aIPAddress            = rap
+              , Node.aAcceptedLimits       = acceptedConnectionsLimit
+              , Node.aDiffusionMode        = diffusionMode
+              , Node.aKeepAliveInterval    = 0
+              , Node.aPingPongInterval     = 0
+              , Node.aPeerSelectionTargets = peerSelectionTargets
+              , Node.aReadLocalRootPeers   = readLocalRootPeers
+              , Node.aReadPublicRootPeers  = readPublicRootPeers
+              , Node.aReadUseLedgerAfter   = readUseLedgerAfter
+              , Node.aProtocolIdleTimeout  = 5
+              , Node.aTimeWaitTimeout      = 30
+              , Node.aDNSTimeoutScript     = dnsTimeout
+              , Node.aDNSLookupDelayScript = dnsLookupDelay
+              }
 
-           in Node.run blockGeneratorArgs
-                       limitsAndTimeouts
-                       interfaces
-                       arguments
-                       (tracersExtraWithTimeName rap)
+       in Node.run blockGeneratorArgs
+                   limitsAndTimeouts
+                   interfaces
+                   arguments
+                   (tracersExtraWithTimeName rap)
 
     domainResolver :: [RelayAccessPoint]
                    -> Map Domain [IP]
