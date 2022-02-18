@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -110,6 +111,9 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
 
+import           Ouroboros.Consensus.Ledger.Basics (IsLedger, LedgerState,
+                     TickedTableStuff)
+import           Ouroboros.Consensus.Ledger.Dual (Ticked1)
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
@@ -119,6 +123,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
                      ValidationPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (ReadsKeySets)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
 
@@ -262,7 +267,9 @@ deriving instance Show (NetworkP2PMode p2p)
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
 run :: forall blk p2p.
-     RunNode blk
+     ( RunNode blk
+     , ReadsKeySets IO (LedgerState blk)
+     )
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
@@ -276,6 +283,7 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 -- This function runs forever unless an exception is thrown.
 runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      ( RunNode blk
+     , ReadsKeySets m (LedgerState blk)
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
      )

@@ -29,9 +29,8 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import qualified Control.Exception as Exn
-import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)  -- TODO invariant checking?
+import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)
 import           Control.Monad.Except
-import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import           Data.Typeable
 
@@ -45,12 +44,21 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
+                     (InternalState (isCapacity, isMempoolChangelog, isTip, isTxs),
+                     MempoolChangelog (MempoolChangelog, mcChangelog),
+                     appendLedgerTablesOnMempoolChangelog,
+                     forwardTableKeySetsOnMempool, getTransactionKeySets,
+                     initInternalState, rewindTableKeySetsOnMempool,
+                     tickLedgerState)
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ReadsKeySets (..))
 import           Ouroboros.Consensus.Util (StaticEither (..), whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -67,6 +75,9 @@ openMempool
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , ReadsKeySets m (LedgerState blk)
+     , TableStuff (LedgerState blk)
+     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      )
   => ResourceRegistry m
@@ -89,6 +100,9 @@ openMempoolWithoutSyncThread
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , ReadsKeySets m (LedgerState blk)
+     , TableStuff (LedgerState blk)
+     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      )
   => LedgerInterface m blk
@@ -104,11 +118,14 @@ mkMempool ::
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , ReadsKeySets m (LedgerState blk)
+     , TableStuff (LedgerState blk)
+     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      )
   => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool mpEnv = Mempool
-    { tryAddTxs      = implTryAddTxs mpEnv
+    { tryAddTxs      = implTryAddTxs istate cfg txSize trcr
     , removeTxs      = \txids -> getStatePair mpEnv (StaticLeft ()) txids [] >>= \case
         StaticLeft (_is, Nothing) -> pure ()
         StaticLeft (is,  Just ls) -> do
@@ -204,7 +221,7 @@ data MempoolEnv m blk = MempoolEnv {
     }
 
 initMempoolEnv :: ( IOLike m
---                  , NoThunks (GenTxId blk)   -- TODO how to use this with the TMVar?
+--                  , NoThunks (GenTxId blk)   -- MTODO how to use this with the TMVar?
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
                   )
@@ -216,8 +233,9 @@ initMempoolEnv :: ( IOLike m
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ ledgerState <$> getCurrentLedgerState ledgerInterface
-    let (slot, st') = tickLedgerState cfg $ ForgeInUnknownSlot $ unstowLedgerTables st
-    isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
+    let (slot, _st')          = tickLedgerState cfg (ForgeInUnknownSlot st)
+        initMempoolChangelog = undefined -- MTODO initialize mempool, this should be simple
+    isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot initMempoolChangelog
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
@@ -282,46 +300,76 @@ forkSyncStateOnTipPointChange registry menv =
 -- short, each iteration of the helper function is a separate STM transaction.
 implTryAddTxs
   :: forall m blk.
-     ( IOLike m
+     ( MonadSTM m
      , LedgerSupportsMempool blk
-     , LedgerSupportsProtocol blk
+     , ReadsKeySets m (LedgerState blk)
+     , TableStuff (LedgerState blk)
+     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      )
-  => MempoolEnv m blk
+  => StrictTMVar m (InternalState blk)
+     -- ^ The InternalState TVar.
+  -> LedgerConfig blk
+     -- ^ The configuration of the ledger.
+  -> (GenTx blk -> TxSizeInBytes)
+     -- ^ The function to calculate the size of a
+     -- transaction.
+  -> Tracer m (TraceEventMempool blk)
+     -- ^ The tracer.
   -> WhetherToIntervene
   -> [GenTx blk]
+     -- ^ The list of transactions to add to the mempool.
   -> m ([MempoolAddTxResult blk], [GenTx blk])
-implTryAddTxs mpEnv wti =
-    go []
-  where
-    MempoolEnv {
-        mpEnvCapacityOverride = capacityOverride
-      , mpEnvLedgerCfg        = cfg
-      , mpEnvStateVar         = istate
-      , mpEnvTracer           = trcr
-      , mpEnvTxSize           = txSize
-      } = mpEnv
-
-    -- TODO batch the txs
+implTryAddTxs istate cfg txSize trcr wti =
+    go []  where
     go acc = \case
       []     -> pure (reverse acc, [])
       tx:txs -> do
-        getStatePair mpEnv (StaticLeft ()) [] [tx] >>= \case
-          StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
-          StaticLeft (is0,  Just ls) -> do
-            let p@(NewSyncedState is1 _snapshot mTrace) =
-                  -- this is approximately a noop if the state is already in
-                  -- sync
-                  pureSyncWithLedger is0 ls cfg capacityOverride
-            whenJust mTrace (traceWith trcr)
-            case pureTryAddTxs cfg txSize wti tx is1 of
-              NoSpaceLeft               -> do
-                void $ atomically $ runSyncWithLedger istate p
-                pure (reverse acc, tx:txs)
-              TryAddTxs mbIs2 result ev -> do
-                atomically $ putTMVar istate $ fromMaybe is1 mbIs2
-                traceWith trcr ev
-                go (result:acc) txs
+        -- fetch latest 'InternalState' to obtain the MempoolChangelog in order
+        -- to read the necessary key sets
+        tempIs <- atomically $ readTMVar istate
+        let tempMemChlog = isMempoolChangelog tempIs
+            ks = getTransactionKeySets tx
+            aks = rewindTableKeySetsOnMempool tempMemChlog ks
+        urs <- readDb aks
+        join $ atomically $ do
+          -- re-fetch the 'InternalState' as its content might have changed
+          -- while we were fetching key sets from the disk
+          is <- readTMVar istate
+          -- check if disk anchor has changed
+          -- if it did, retry the whole computation for tx
+          if diskAnchorHasChanged is tempIs then pure $ go acc (tx:txs)
+          else do
+           let memChlog = isMempoolChangelog is
+           case forwardTableKeySetsOnMempool memChlog urs of
+             -- The forwarding was unsuccessful, this means that content on disk
+             -- has changed but Mempool is not yet aware of it. It means that we
+             -- have to wait till the Mempool will be modified and to rerun the
+             -- process for the given transaction tx
+             Nothing -> pure $ do
+               atomically $ do
+                 is' <- readTMVar istate
+                 check $ diskAnchorHasChanged is is'
+               go acc (tx:txs)
+             -- we've successfully managed to get a LedgerTables ValuesMk
+             -- that holds required values for the transaction validation. We now
+             -- must append those values to the TickedLedgerState
+             Just ledgerTables -> do
+               let is' = is {
+                 isMempoolChangelog =
+                   memChlog `appendLedgerTablesOnMempoolChangelog` ledgerTables
+               }
+               case pureTryAddTxs cfg txSize wti tx is' of
+                  NoSpaceLeft              -> pure $ pure (reverse acc, tx:txs)
+                  TryAddTxs is'' result ev -> do
+                    whenJust is'' (putTMVar istate)
+                    pure $ do
+                      traceWith trcr ev
+                      go (result:acc) txs
+
+    diskAnchorHasChanged is1 is2 =
+      let diskAnchor = changelogDiffAnchor . mcChangelog . isMempoolChangelog
+      in diskAnchor is1 /= diskAnchor is2
 
 implSyncWithLedger ::
      forall m blk. (
@@ -424,7 +472,7 @@ getStatePair mpEnv seP removals txs =
       StaticRight (Just ((ls, is), tables)) -> StaticRight $ Just (is, ls `withLedgerTables` ExtLedgerStateTables tables)
 
 data ShortCircuitGetStatePairExn b blk =
-    ShortCircuitGetStatePairExn 
+    ShortCircuitGetStatePairExn
       (StaticEither
          b
          (InternalState blk, Maybe (LedgerState blk ValuesMK))

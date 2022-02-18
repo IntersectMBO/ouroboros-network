@@ -41,6 +41,8 @@ import           System.Random (StdGen)
 
 import           Control.Tracer
 
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (ReadsKeySets (..))
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -136,6 +138,9 @@ initNodeKernel
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
+       , ReadsKeySets m (LedgerState blk)
+       , TableStuff (LedgerState blk)
+       , TickedTableStuff (LedgerState blk)
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
@@ -196,6 +201,9 @@ initInternalState
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk
+       , ReadsKeySets m (LedgerState blk)
+       , TableStuff (LedgerState blk)
+       , TickedTableStuff (LedgerState blk)
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (InternalState m remotePeer localPeer blk)

@@ -14,7 +14,16 @@ module Ouroboros.Consensus.Mempool.Impl.Types (
     -- * Internal State
     InternalState (..)
   , initInternalState
+  , isLedgerState
   , isMempoolSize
+    -- will be removed
+  , isMempoolSize
+    -- ** MempoolChangelog
+  , MempoolChangelog (..)
+  , appendLedgerTablesOnMempoolChangelog
+  , forwardTableKeySetsOnMempool
+  , getTransactionKeySets
+  , rewindTableKeySetsOnMempool
     -- * Validation result
   , ValidationResult (..)
   , extendVRNew
@@ -45,6 +54,9 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..))
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (DbChangelog,
+                     RewoundTableKeySets, UnforwardedReadSets)
+import           Ouroboros.Consensus.Ticked (Ticked1 (..))
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Singletons (SingI)
@@ -52,6 +64,49 @@ import           Ouroboros.Consensus.Util.Singletons (SingI)
 {-------------------------------------------------------------------------------
   Internal State
 -------------------------------------------------------------------------------}
+
+data MempoolChangelog blk = MempoolChangelog {
+    mcChangelog   :: !(DbChangelog (LedgerState blk))
+  , mcLedgerState :: !(TickedLedgerState blk ValuesMK)
+  , mcDiffs       :: !(LedgerTables (LedgerState blk) DiffMK)
+  } deriving (Generic)
+
+-- MTODO bring this back
+-- deriving instance ( NoThunks (LedgerTables (LedgerState blk) DiffMK)
+--                   , NoThunks (TickedLedgerState blk ValuesMK)
+--                   ) => NoThunks (MempoolChangelog blk)
+
+rewindTableKeySetsOnMempool ::
+     MempoolChangelog blk
+  -> TableKeySets (LedgerState blk)
+  -> RewoundTableKeySets (LedgerState blk)
+rewindTableKeySetsOnMempool = undefined -- MTODO implement
+
+forwardTableKeySetsOnMempool ::
+     MempoolChangelog blk
+  -> UnforwardedReadSets (LedgerState blk)
+  -> Maybe (TableReadSets (LedgerState blk))
+forwardTableKeySetsOnMempool = undefined -- MTODO implement
+
+appendLedgerTablesOnMempoolChangelog ::
+     MempoolChangelog blk
+  -> LedgerTables (LedgerState blk) ValuesMK
+  -> MempoolChangelog blk
+appendLedgerTablesOnMempoolChangelog mempoolChangelog lt =
+  mempoolChangelog {
+    mcLedgerState = mcLedgerState mempoolChangelog `appendLedgerTablesTicked` lt
+  }
+
+-- | The cached ledger state after applying the transactions in the
+-- Mempool against the chain's ledger state. New transactions will be
+-- validated against this ledger.
+--
+-- INVARIANT: 'isLedgerState' is the ledger resulting from applying the
+-- transactions in 'isTxs' against the ledger identified 'isTip' as tip.
+isLedgerState  :: InternalState blk -> TickedLedgerState blk ValuesMK
+isLedgerState = mcLedgerState . isMempoolChangelog
+
+--------------------------------------------------------------------------------
 
 -- | Internal state in the mempool
 data InternalState blk = IS {
@@ -64,7 +119,7 @@ data InternalState blk = IS {
       -- the normal way: by becoming invalid w.r.t. the updated ledger state.
       -- We treat a Mempool /over/ capacity in the same way as a Mempool /at/
       -- capacity.
-      isTxs          :: !(TxSeq (Validated (GenTx blk)))
+      isTxs              :: !(TxSeq (Validated (GenTx blk)))
 
       -- | The cached IDs of transactions currently in the mempool.
       --
@@ -72,30 +127,24 @@ data InternalState blk = IS {
       -- 'MempoolSnapshot' (see 'snapshotHasTx').
       --
       -- This should always be in-sync with the transactions in 'isTxs'.
-    , isTxIds        :: !(Set (GenTxId blk))
+    , isTxIds            :: !(Set (GenTxId blk))
 
-      -- | The cached ledger state after applying the transactions in the
-      -- Mempool against the chain's ledger state. New transactions will be
-      -- validated against this ledger.
-      --
-      -- INVARIANT: 'isLedgerState' is the ledger resulting from applying the
-      -- transactions in 'isTxs' against the ledger identified 'isTip' as tip.
-    , isLedgerState  :: !(TickedLedgerState blk ValuesMK)
+    , isMempoolChangelog :: !(MempoolChangelog blk)
 
       -- | The tip of the chain that 'isTxs' was validated against
       --
       -- This comes from the underlying ledger state ('tickedLedgerState')
-    , isTip          :: !(ChainHash blk)
+    , isTip              :: !(ChainHash blk)
 
       -- | The most recent 'SlotNo' that 'isTxs' was validated against
       --
       -- This comes from 'applyChainTick' ('tickedSlotNo').
-    , isSlotNo       :: !SlotNo
+    , isSlotNo           :: !SlotNo
 
       -- | The mempool 'TicketNo' counter.
       --
       -- See 'vrLastTicketNo' for more information.
-    , isLastTicketNo :: !TicketNo
+    , isLastTicketNo     :: !TicketNo
 
       -- | Current maximum capacity of the Mempool. Result of
       -- 'computeMempoolCapacity' using the current chain's
@@ -110,16 +159,17 @@ data InternalState blk = IS {
       -- transactions will be in the next block. So any changes caused by that
       -- block will take effect after applying it and will only affect the
       -- next block.
-    , isCapacity     :: !MempoolCapacityBytes
+    , isCapacity         :: !MempoolCapacityBytes
     }
   deriving (Generic)
 
-deriving instance ( NoThunks (Validated (GenTx blk))
-                  , NoThunks (GenTxId blk)
-                  , NoThunks (TickedLedgerState blk ValuesMK)
-                  , StandardHash blk
-                  , Typeable blk
-                  ) => NoThunks (InternalState blk)
+-- MTODO bring it back
+-- deriving instance ( NoThunks (Validated (GenTx blk))
+--                   , NoThunks (GenTxId blk)
+--                   , NoThunks (TickedLedgerState blk ValuesMK)
+--                   , StandardHash blk
+--                   , Typeable blk
+--                   ) => NoThunks (InternalState blk)
 
 -- | \( O(1) \). Return the number of transactions in the internal state of
 -- the Mempool paired with their total size in bytes.
@@ -131,17 +181,19 @@ initInternalState
   => MempoolCapacityBytesOverride
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
   -> SlotNo
-  -> TickedLedgerState blk ValuesMK
+  -> MempoolChangelog blk
   -> InternalState blk
-initInternalState capacityOverride lastTicketNo slot st = IS {
+initInternalState capacityOverride lastTicketNo slot memChangelog = IS {
       isTxs          = TxSeq.Empty
     , isTxIds        = Set.empty
-    , isLedgerState  = st
+    , isMempoolChangelog = memChangelog
     , isTip          = castHash (getTipHash st)
     , isSlotNo       = slot
     , isLastTicketNo = lastTicketNo
     , isCapacity     = computeMempoolCapacity st capacityOverride
     }
+  where
+    st = mcLedgerState memChangelog -- MTODO
 
 {-------------------------------------------------------------------------------
   Validation
@@ -149,36 +201,35 @@ initInternalState capacityOverride lastTicketNo slot st = IS {
 
 data ValidationResult invalidTx blk = ValidationResult {
       -- | The tip of the chain before applying these transactions
-      vrBeforeTip      :: ChainHash blk
+      vrBeforeTip        :: ChainHash blk
 
       -- | The slot number of the (imaginary) block the txs will be placed in
-    , vrSlotNo         :: SlotNo
+    , vrSlotNo           :: SlotNo
 
       -- | Capacity of the Mempool. Corresponds to 'vrBeforeTip' and
       -- 'vrBeforeSlotNo', /not/ 'vrAfter'.
-    , vrBeforeCapacity :: MempoolCapacityBytes
+    , vrBeforeCapacity   :: MempoolCapacityBytes
 
       -- | The transactions that were found to be valid (oldest to newest)
-    , vrValid          :: TxSeq (Validated (GenTx blk))
+    , vrValid            :: TxSeq (Validated (GenTx blk))
 
       -- | The cached IDs of transactions that were found to be valid (oldest to
       -- newest)
-    , vrValidTxIds     :: Set (GenTxId blk)
+    , vrValidTxIds       :: Set (GenTxId blk)
 
       -- | A new transaction (not previously known) which was found to be valid.
       --
       -- n.b. This will only contain a valid transaction that was /newly/ added
       -- to the mempool (not a previously known valid transaction).
-    , vrNewValid       :: Maybe (Validated (GenTx blk))
+    , vrNewValid         :: Maybe (Validated (GenTx blk))
 
-      -- | The state of the ledger after applying 'vrValid' against the ledger
-      -- state identifeid by 'vrBeforeTip'.
-    , vrAfter          :: TickedLedgerState blk ValuesMK
+      -- | TODO: add comment
+    , vrMempoolChangelog :: !(MempoolChangelog blk)
 
       -- | The transactions that were invalid, along with their errors
       --
       -- From oldest to newest.
-    , vrInvalid        :: [(invalidTx, ApplyTxErr blk)]
+    , vrInvalid          :: [(invalidTx, ApplyTxErr blk)]
 
       -- | The mempool 'TicketNo' counter.
       --
@@ -186,7 +237,7 @@ data ValidationResult invalidTx blk = ValidationResult {
       -- from 'isLastTicketNo' of the 'InternalState'.
       -- When validating previously applied transactions, this field should not
       -- be affected.
-    , vrLastTicketNo   :: TicketNo
+    , vrLastTicketNo     :: TicketNo
   }
 
 -- | Extend 'ValidationResult' with a previously validated transaction that
@@ -208,11 +259,14 @@ extendVRPrevApplied cfg txTicket vr =
                       }
       Right st' -> vr { vrValid      = vrValid :> txTicket
                       , vrValidTxIds = Set.insert (txId (txForgetValidated tx)) vrValidTxIds
-                      , vrAfter      = forgetTickedLedgerStateTracking st'
+                      , vrMempoolChangelog = extendMempoolChangelog st'
                       }
   where
     TxTicket { txTicketTx = tx } = txTicket
-    ValidationResult { vrValid, vrSlotNo, vrValidTxIds, vrAfter, vrInvalid } = vr
+    ValidationResult { vrValid, vrSlotNo, vrValidTxIds, vrMempoolChangelog, vrInvalid } = vr
+    vrAfter = mcLedgerState vrMempoolChangelog
+    -- ^ MTODO rename vrAfter to something meaningful
+    extendMempoolChangelog = undefined -- MTODO
 
 -- | Extend 'ValidationResult' with a new transaction (one which we have not
 -- previously validated) that may or may not be valid in this ledger state.
@@ -241,7 +295,7 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
         , vr { vrValid        = vrValid :> TxTicket vtx nextTicketNo (txSize tx)
              , vrValidTxIds   = Set.insert (txId tx) vrValidTxIds
              , vrNewValid     = Just vtx
-             , vrAfter        = forgetTickedLedgerStateTracking st'
+             , vrMempoolChangelog = extendMempoolChangelog st'
              , vrLastTicketNo = nextTicketNo
              }
         )
@@ -249,7 +303,7 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
     ValidationResult {
         vrValid
       , vrValidTxIds
-      , vrAfter
+      , vrMempoolChangelog
       , vrInvalid
       , vrLastTicketNo
       , vrNewValid
@@ -257,6 +311,8 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
       } = vr
 
     nextTicketNo = succ vrLastTicketNo
+    extendMempoolChangelog = undefined -- MTODO implement this
+    vrAfter = mcLedgerState vrMempoolChangelog
 
 -- | Validate the internal state against the current ledger state and the
 -- given 'BlockSlot', revalidating if necessary.
@@ -295,12 +351,13 @@ validateStateFor capacityOverride cfg blockLedgerState is
         capacityOverride
         cfg
         slot
-        st'
+        (newMemChangelog st')
         isLastTicketNo
         (TxSeq.toList isTxs)
   where
     IS { isTxs, isTip, isSlotNo, isLastTicketNo } = is
     (slot, st') = tickLedgerState cfg blockLedgerState
+    newMemChangelog = undefined -- MTODO
 
 -- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@), which
 -- are /all/ the transactions in the Mempool against the given ticked ledger
@@ -310,18 +367,18 @@ revalidateTxsFor
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
   -> SlotNo
-  -> TickedLedgerState blk ValuesMK
+  -> MempoolChangelog blk
   -> TicketNo
      -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
   -> [TxTicket (Validated (GenTx blk))]
   -> ValidationResult (Validated (GenTx blk)) blk
-revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
+revalidateTxsFor capacityOverride cfg slot memChangelog lastTicketNo txTickets =
     repeatedly
       (extendVRPrevApplied cfg)
       txTickets
       (validationResultFromIS is)
   where
-    is = initInternalState capacityOverride lastTicketNo slot st
+    is = initInternalState capacityOverride lastTicketNo slot memChangelog
 
 {-------------------------------------------------------------------------------
   Ticking the ledger state
@@ -359,7 +416,7 @@ internalStateFromVR :: ValidationResult invalidTx blk -> InternalState blk
 internalStateFromVR vr = IS {
       isTxs          = vrValid
     , isTxIds        = vrValidTxIds
-    , isLedgerState  = vrAfter
+    , isMempoolChangelog = vrMempoolChangelog
     , isTip          = vrBeforeTip
     , isSlotNo       = vrSlotNo
     , isLastTicketNo = vrLastTicketNo
@@ -372,7 +429,7 @@ internalStateFromVR vr = IS {
       , vrBeforeCapacity
       , vrValid
       , vrValidTxIds
-      , vrAfter
+      , vrMempoolChangelog
       , vrLastTicketNo
       } = vr
 
@@ -385,7 +442,7 @@ validationResultFromIS is = ValidationResult {
     , vrValid          = isTxs
     , vrValidTxIds     = isTxIds
     , vrNewValid       = Nothing
-    , vrAfter          = isLedgerState
+    , vrMempoolChangelog = isMempoolChangelog
     , vrInvalid        = []
     , vrLastTicketNo   = isLastTicketNo
     }
@@ -393,7 +450,7 @@ validationResultFromIS is = ValidationResult {
     IS {
         isTxs
       , isTxIds
-      , isLedgerState
+      , isMempoolChangelog
       , isTip
       , isSlotNo
       , isLastTicketNo

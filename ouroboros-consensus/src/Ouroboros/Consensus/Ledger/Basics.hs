@@ -60,6 +60,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , MapKind (..)
   , SMapKind
   , Sing (..)
+  , appendLedgerTablesTicked
   , calculateDifference
   , diffKeysMK
   , diffTrackingMK
@@ -438,6 +439,14 @@ zipOverLedgerTablesTicked f l tables2 =
       (\tables1 -> zipLedgerTables f tables1 tables2)
       l
 
+-- | Given l with some tables in it, append tables to it. Where withLedgerTables
+-- overrides existing tables, the appendLedgerTables will append them
+-- TODO implement using projectLedgerTables zipLedgerTables and withLedgerTables
+-- or better just us zipOverLedgerTables
+-- BUT this should be really using zipOverLedgerTablesTicked
+appendLedgerTablesTicked :: HasCallStack => Ticked1 l mk -> LedgerTables l mk -> Ticked1 l mk
+appendLedgerTablesTicked = undefined -- MTODO
+
 {-------------------------------------------------------------------------------
   Convenience aliases
 -------------------------------------------------------------------------------}
@@ -802,7 +811,6 @@ isCandidateForUnstowDefault =
 {-------------------------------------------------------------------------------
   Changelog
 -------------------------------------------------------------------------------}
-
 -- |
 --
 -- INVARIANT: the head of 'changelogImmutableStates' is the anchor of

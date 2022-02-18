@@ -150,12 +150,12 @@ pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
                              . txTicketTx
                            )
                            (TxSeq.toList isTxs)
-        (slot, ticked) = tickLedgerState cfg (ForgeInUnknownSlot lstate)
+        (slot, _ticked) = tickLedgerState cfg (ForgeInUnknownSlot lstate)
         vr             = revalidateTxsFor
                            capacityOverride
                            cfg
                            slot
-                           ticked
+                           undefined -- MTODO, was ticked, but now it should be ?
                            isLastTicketNo
                            txTickets'
         is'            = internalStateFromVR vr
