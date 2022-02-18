@@ -205,22 +205,22 @@ initialState =
   where
     epoch1970 = UTCTime (fromGregorian 1970 1 1) 0
 
-invariant :: Maybe (Thread s a) -> SimState s a -> Bool
+invariant :: Maybe (Thread s a) -> SimState s a -> x -> x
 
 invariant (Just running) simstate@SimState{runqueue,threads,clocks} =
-    not (threadBlocked running)
- && threadId running `Map.notMember` threads
- && threadId running `List.notElem` runqueue
- && threadClockId running `Map.member` clocks
- && invariant Nothing simstate
+    assert (not (threadBlocked running))
+  . assert (threadId running `Map.notMember` threads)
+  . assert (threadId running `List.notElem` runqueue)
+  . assert (threadClockId running `Map.member` clocks)
+  . invariant Nothing simstate
 
 invariant Nothing SimState{runqueue,threads,clocks} =
-    all (`Map.member` threads) runqueue
- && and [ (threadBlocked t || threadDone t) == (threadId t `notElem` runqueue)
-        | t <- Map.elems threads ]
- && and (zipWith (>) runqueue (drop 1 runqueue))
- && and [ threadClockId t `Map.member` clocks
-        | t <- Map.elems threads ]
+    assert (all (`Map.member` threads) runqueue)
+  . assert (and [ (threadBlocked t || threadDone t) == (threadId t `notElem` runqueue)
+                | t <- Map.elems threads ])
+  . assert (and (zipWith (>) runqueue (drop 1 runqueue)))
+  . assert (and [ threadClockId t `Map.member` clocks
+                | t <- Map.elems threads ])
 
 -- | Interpret the simulation monotonic time as a 'NominalDiffTime' since
 -- the start.
@@ -274,7 +274,7 @@ schedule thread@Thread{
       deschedule Sleep thread simstate
 
   | otherwise =
-  assert (invariant (Just thread) simstate) $
+  invariant (Just thread) simstate $
   case control of
     ControlFollow (s:_) _ ->
       id --Debug.trace ("Performing action in step "++show s++"\n")
@@ -777,7 +777,7 @@ reschedule simstate@SimState{ runqueue, threads,
                               } =
     assert (tid `elem` runqueue) $
     assert (tid `Map.member` threads) $
-    assert (invariant Nothing simstate) $
+    invariant Nothing simstate $
     let thread = threads Map.! tid in
     assert (threadId thread == tid) $
     --assert (threadStep thread == tstep) $
@@ -794,7 +794,7 @@ reschedule simstate@SimState{ runqueue, threads,
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
 reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
-    assert (invariant Nothing simstate) $
+    invariant Nothing simstate $
 
     let thread = threads Map.! tid in
     schedule thread simstate { runqueue = runqueue'
@@ -803,7 +803,7 @@ reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
 -- But when there are no runnable threads, we advance the time to the next
 -- timer event, or stop.
 reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time, races } =
-    assert (invariant Nothing simstate) $
+    invariant Nothing simstate $
 
     -- time is moving on
     --Debug.trace ("Rescheduling at "++show time++", "++
