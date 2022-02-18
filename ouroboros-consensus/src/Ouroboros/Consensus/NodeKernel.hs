@@ -139,11 +139,8 @@ initNodeKernel
        , Ord remotePeer
        , Hashable remotePeer
        , ReadsKeySets m (LedgerState blk)
-       , TableStuff (LedgerState blk)
        , TickedTableStuff (LedgerState blk)
-       , NoThunks (TickedLedgerState blk ValuesMK)
        , NoThunks (LedgerTables (LedgerState blk) DiffMK)
-       , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
        , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
        , NoThunks (LedgerState blk EmptyMK)
        )
@@ -207,7 +204,6 @@ initInternalState
        , NoThunks remotePeer
        , RunNode blk
        , ReadsKeySets m (LedgerState blk)
-       , TableStuff (LedgerState blk)
        , TickedTableStuff (LedgerState blk)
        , NoThunks (TickedLedgerState blk ValuesMK)
        , NoThunks (LedgerTables (LedgerState blk) DiffMK)

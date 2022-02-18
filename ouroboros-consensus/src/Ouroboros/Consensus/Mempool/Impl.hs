@@ -29,7 +29,6 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import qualified Control.Exception as Exn
-import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)
 import           Control.Monad.Except
 import qualified Data.Set as Set
 import           Data.Typeable
@@ -76,12 +75,9 @@ openMempool
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , ReadsKeySets m (LedgerState blk)
-     , TableStuff (LedgerState blk)
-     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      , NoThunks (TickedLedgerState blk ValuesMK)
      , NoThunks (LedgerTables (LedgerState blk) DiffMK)
-     , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
      , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
      , NoThunks (LedgerState blk EmptyMK)
      )
@@ -106,12 +102,9 @@ openMempoolWithoutSyncThread
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , ReadsKeySets m (LedgerState blk)
-     , TableStuff (LedgerState blk)
-     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      , NoThunks (TickedLedgerState blk ValuesMK)
      , NoThunks (LedgerTables (LedgerState blk) DiffMK)
-     , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
      , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
      , NoThunks (LedgerState blk EmptyMK)
      )
@@ -129,8 +122,6 @@ mkMempool ::
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , ReadsKeySets m (LedgerState blk)
-     , TableStuff (LedgerState blk)
-     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      )
   => MempoolEnv m blk -> Mempool m blk TicketNo
@@ -234,7 +225,6 @@ initMempoolEnv :: ( IOLike m
                   , NoThunks (GenTxId blk)
                   , NoThunks (TickedLedgerState blk ValuesMK)
                   , NoThunks (LedgerTables (LedgerState blk) DiffMK)
-                  , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
                   , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
                   , NoThunks (LedgerState blk EmptyMK)
                   , LedgerSupportsMempool blk
@@ -318,8 +308,6 @@ implTryAddTxs
      ( MonadSTM m
      , LedgerSupportsMempool blk
      , ReadsKeySets m (LedgerState blk)
-     , TableStuff (LedgerState blk)
-     , TickedTableStuff (LedgerState blk)
      , HasTxId (GenTx blk)
      )
   => StrictTVar m (InternalState blk)
