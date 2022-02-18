@@ -513,7 +513,7 @@ schedule thread@Thread{
 
     Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
-        StmTxCommitted x read written created tvarTraces nextVid' -> do
+        StmTxCommitted x written read created tvarTraces nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           vClockRead <- leastUpperBoundTVarVClocks read
