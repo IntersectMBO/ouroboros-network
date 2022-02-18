@@ -1337,13 +1337,20 @@ racingEffects :: Effect -> Effect -> Bool
 racingEffects e e' =
       (effectLiftST e  && racesWithLiftST e')
    || (effectLiftST e' && racesWithLiftST e )
-   || (not $ null $ effectThrows e `List.intersect` effectThrows e')
-   || (not $ effectReads  e `Set.disjoint` effectWrites e'
-          && effectWrites e `Set.disjoint` effectReads  e'
-          && effectWrites e `Set.disjoint` effectWrites e')
-  where racesWithLiftST eff =
-             effectLiftST eff
-          || not (Set.null (effectReads eff) && Set.null (effectWrites eff))
+   || effectThrows e `intersectsL` effectThrows e'
+   || effectReads  e `intersects`  effectWrites e'
+   || effectWrites e `intersects`  effectReads  e'
+   || effectWrites e `intersects`  effectWrites e'
+  where
+    intersects :: Ord a => Set a -> Set a -> Bool
+    intersects a b = not $ a `Set.disjoint` b
+
+    intersectsL :: Eq a => [a] -> [a] -> Bool
+    intersectsL a b = not $ null $ a `List.intersect` b
+
+    racesWithLiftST eff =
+         effectLiftST eff
+      || not (Set.null (effectReads eff) && Set.null (effectWrites eff))
 
 --
 -- Steps
