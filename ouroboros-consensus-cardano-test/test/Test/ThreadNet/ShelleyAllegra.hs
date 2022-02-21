@@ -47,6 +47,7 @@ import qualified Cardano.Ledger.Shelley.PParams as SL
 import qualified Cardano.Protocol.TPraos.OCert as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node
                      (ProtocolParamsShelleyBased (..), ShelleyGenesis (..))
 
@@ -76,13 +77,14 @@ import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.TxGen.Allegra ()
 import           Test.ThreadNet.TxGen.Shelley
 
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Test.ThreadNet.Infra.TwoEras
 
 -- | No Byron era, so our crypto can be trivial.
 type Crypto = MockCrypto ShortHash
 
 type ShelleyAllegraBlock =
-  ShelleyBasedHardForkBlock (ShelleyEra Crypto) (AllegraEra Crypto)
+  ShelleyBasedHardForkBlock (TPraos Crypto) (ShelleyEra Crypto) (TPraos Crypto) (AllegraEra Crypto)
 
 -- | The varying data of this test
 --

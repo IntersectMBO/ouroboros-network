@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block (CardanoEras, GenTx (..),
                      ShelleyEra)
 import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 
 import qualified Data.Compact.SplitMap as SplitMap
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
@@ -269,7 +270,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
 
 ejectShelleyNS ::
      NS f (CardanoEras c)
-  -> Maybe (f (ShelleyBlock (ShelleyEra c)))
+  -> Maybe (f (ShelleyBlock (TPraos c) (ShelleyEra c)))
 ejectShelleyNS = \case
     S (Z x) -> Just x
     _       -> Nothing
@@ -285,7 +286,7 @@ getUTxOShelley tls =
 
 ejectShelleyTickedLedgerState ::
      Ticked (LedgerState (CardanoBlock c))
-  -> Maybe (Ticked (LedgerState (ShelleyBlock (ShelleyEra c))))
+  -> Maybe (Ticked (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))))
 ejectShelleyTickedLedgerState ls =
     fmap (unComp . currentState) $
     ejectShelleyNS $

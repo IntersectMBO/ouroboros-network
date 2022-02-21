@@ -56,6 +56,8 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 import qualified Test.Consensus.Byron.Examples as Byron
 
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import qualified Test.Consensus.Shelley.Examples as Shelley
 
 type Crypto = StandardCrypto
@@ -222,8 +224,8 @@ summary =
 eraInfoByron :: SingleEraInfo ByronBlock
 eraInfoByron = singleEraInfo (Proxy @ByronBlock)
 
-eraInfoShelley :: SingleEraInfo (ShelleyBlock StandardShelley)
-eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock StandardShelley))
+eraInfoShelley :: SingleEraInfo (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
+eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock (TPraos StandardCrypto) StandardShelley))
 
 codecConfig :: CardanoCodecConfig Crypto
 codecConfig =
