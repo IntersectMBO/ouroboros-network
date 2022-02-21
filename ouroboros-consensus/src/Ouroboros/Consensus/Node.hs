@@ -273,6 +273,7 @@ run :: forall blk p2p.
      , NoThunks (LedgerTables (LedgerState blk) DiffMK)
      , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
      , NoThunks (LedgerState blk EmptyMK)
+     , Monoid (LedgerTables (LedgerState blk) DiffMK)
      )
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
   -> StdRunNodeArgs IO blk p2p
@@ -291,6 +292,7 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      , NoThunks (LedgerTables (LedgerState blk) DiffMK)
      , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
      , NoThunks (LedgerState blk EmptyMK)
+     , Monoid (LedgerTables (LedgerState blk) DiffMK)
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
      )

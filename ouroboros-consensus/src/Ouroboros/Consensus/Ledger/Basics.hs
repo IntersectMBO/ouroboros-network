@@ -79,6 +79,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TableReadSets
   , applyDiffsLedgerTables
   , emptyLedgerTables
+  , emptyValuesLedgerTables
   , forgetLedgerStateTables
   , forgetLedgerStateTracking
   , forgetTickedLedgerStateTracking
@@ -453,6 +454,9 @@ appendLedgerTablesTicked = undefined -- MTODO
 
 emptyLedgerTables :: TableStuff l => LedgerTables l EmptyMK
 emptyLedgerTables = polyEmptyLedgerTables
+
+emptyValuesLedgerTables :: TableStuff l => LedgerTables l ValuesMK
+emptyValuesLedgerTables = polyEmptyLedgerTables
 
 -- | Empty values for every table
 polyEmptyLedgerTables :: forall mk l.

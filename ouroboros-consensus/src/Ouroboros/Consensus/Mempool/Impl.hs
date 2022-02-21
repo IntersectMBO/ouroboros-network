@@ -49,14 +49,14 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
                      (InternalState (isCapacity, isMempoolChangelog, isTip, isTxs),
-                     MempoolChangelog (mcChangelog),
+                     MempoolChangelog (..),
                      appendLedgerTablesOnMempoolChangelog,
                      forwardTableKeySetsOnMempool, initInternalState,
                      rewindTableKeySetsOnMempool, tickLedgerState)
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-                     (ReadsKeySets (..))
+                     (LedgerDB (ledgerDbChangelog), ReadsKeySets (..))
 import           Ouroboros.Consensus.Util (StaticEither (..), whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -79,6 +79,7 @@ openMempool
      , NoThunks (LedgerTables (LedgerState blk) DiffMK)
      , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
      , NoThunks (LedgerState blk EmptyMK)
+     , Monoid (LedgerTables (LedgerState blk) DiffMK)
      )
   => ResourceRegistry m
   -> LedgerInterface m blk
@@ -106,6 +107,7 @@ openMempoolWithoutSyncThread
      , NoThunks (LedgerTables (LedgerState blk) DiffMK)
      , NoThunks (LedgerTables (LedgerState blk) EmptyMK)
      , NoThunks (LedgerState blk EmptyMK)
+     , Monoid (LedgerTables (LedgerState blk) DiffMK)
      )
   => LedgerInterface m blk
   -> LedgerConfig blk
@@ -165,6 +167,7 @@ mkMempool mpEnv = Mempool
 -- | Abstract interface needed to run a Mempool.
 data LedgerInterface m blk = LedgerInterface
     { getCurrentLedgerState :: STM m (ExtLedgerState blk EmptyMK)
+    , getLedgerDB           :: STM m (LedgerDB (ExtLedgerState blk))
     , getLedgerStateForTxs  :: forall b a.
            StaticEither b () (Point blk)
         -> (ExtLedgerState blk EmptyMK -> m (a, [GenTx blk]))
@@ -183,6 +186,7 @@ chainDBLedgerInterface ::
   => ChainDB m blk -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState = ChainDB.getCurrentLedger chainDB
+    , getLedgerDB           = ChainDB.getLedgerDB chainDB
     , getLedgerStateForTxs  = \seP m -> do
         let m' ls = do
               (a, txs) <- m ls
@@ -228,6 +232,7 @@ initMempoolEnv :: ( IOLike m
                   , NoThunks (LedgerState blk EmptyMK)
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
+                  , Monoid (LedgerTables (LedgerState blk) DiffMK)
                   )
                => LedgerInterface m blk
                -> LedgerConfig blk
@@ -236,9 +241,15 @@ initMempoolEnv :: ( IOLike m
                -> (GenTx blk -> TxSizeInBytes)
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
-    st <- atomically $ ledgerState <$> getCurrentLedgerState ledgerInterface
-    let (slot, _st')          = tickLedgerState cfg (ForgeInUnknownSlot st)
-        initMempoolChangelog = undefined -- MTODO initialize mempool, this should be simple
+    (st, ledgerDB) <- atomically $ do
+      st       <- ledgerState <$> getCurrentLedgerState ledgerInterface
+      ledgerDB <- dropExt <$> getLedgerDB ledgerInterface
+      pure (st, ledgerDB)
+    let (slot, st')           = tickLedgerState cfg (ForgeInUnknownSlot st)
+        initMcChangelog       = ledgerDbChangelog ledgerDB
+        initMcLedgerState     = withLedgerTablesTicked st' emptyValuesLedgerTables
+        initMempoolChangelog  =
+          MempoolChangelog initMcChangelog initMcLedgerState mempty
     isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot initMempoolChangelog
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
@@ -248,6 +259,9 @@ initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
       , mpEnvTxSize           = txSize
       , mpEnvCapacityOverride = capacityOverride
       }
+    where
+      dropExt :: LedgerDB (ExtLedgerState blk) -> LedgerDB (LedgerState blk)
+      dropExt = undefined -- MTODO
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
 -- changes.
