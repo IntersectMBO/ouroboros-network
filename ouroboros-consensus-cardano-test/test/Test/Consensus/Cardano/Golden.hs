@@ -12,6 +12,8 @@ import           Ouroboros.Consensus.Ledger.Query (QueryVersion)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.Shelley.HFEras ()
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 
 import           Test.Tasty
 

@@ -48,6 +48,7 @@ import           Ouroboros.Consensus.Byron.Node
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff)
 import qualified Cardano.Ledger.Shelley.API as SL
 
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node
 
 import           Ouroboros.Consensus.Cardano.Block
@@ -549,7 +550,7 @@ mkProtocolCardanoAndHardForkTxs
 
     -- Shelley
 
-    leaderCredentialsShelley :: TPraosLeaderCredentials c
+    leaderCredentialsShelley :: ShelleyLeaderCredentials c
     leaderCredentialsShelley = Shelley.mkLeaderCredentials coreNodeShelley
 
 {-------------------------------------------------------------------------------

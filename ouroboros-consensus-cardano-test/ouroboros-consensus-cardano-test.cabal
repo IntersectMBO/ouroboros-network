@@ -108,6 +108,7 @@ test-suite test
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-byron-test
+                     , ouroboros-consensus-protocol
                      , ouroboros-consensus-shelley
                      , ouroboros-consensus-shelley-test
                      , ouroboros-consensus-cardano

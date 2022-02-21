@@ -35,6 +35,8 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
                      nonEmptyFromList, nonEmptyToList)
@@ -112,7 +114,7 @@ instance Arbitrary (Coherent (CardanoBlock MockCryptoCompatByron)) where
 instance Arbitrary (CardanoHeader MockCryptoCompatByron) where
   arbitrary = getHeader <$> arbitrary
 
-instance (CanMock (ShelleyEra c), CardanoHardForkConstraints c)
+instance (CanMock (ShelleyEra c) (TPraos c), CardanoHardForkConstraints c)
       => Arbitrary (OneEraHash (CardanoEras c)) where
   arbitrary = inj <$> arbitrary
     where
