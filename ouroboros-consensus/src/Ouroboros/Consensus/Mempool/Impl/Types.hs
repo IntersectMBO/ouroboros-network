@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..))
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.HD (extendSeqUtxoDiff)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (DbChangelog,
                      RewoundTableKeySets, UnforwardedReadSets,
                      forwardTableKeySets, rewindTableKeySets)
@@ -70,6 +71,7 @@ data MempoolChangelog blk = MempoolChangelog {
     mcChangelog   :: !(DbChangelog (LedgerState blk))
   , mcLedgerState :: !(TickedLedgerState blk ValuesMK)
   , mcDiffs       :: !(LedgerTables (LedgerState blk) DiffMK)
+  -- TODO store slot number here the moment MempoolChangelog is initialized
   } deriving (Generic)
 
 deriving instance ( NoThunks (LedgerTables (LedgerState blk) DiffMK)
@@ -80,37 +82,48 @@ deriving instance ( NoThunks (LedgerTables (LedgerState blk) DiffMK)
                   ) => NoThunks (MempoolChangelog blk)
 
 withTransactionDiffs ::
-     TableStuff (LedgerState blk)
+     ( TableStuff (LedgerState blk)
+     , GetTip (TickedLedgerState blk ValuesMK)
+     )
   => MempoolChangelog blk
   -> DbChangelog (LedgerState blk)
-withTransactionDiffs MempoolChangelog {mcChangelog, mcDiffs} =
+withTransactionDiffs MempoolChangelog {mcChangelog, mcLedgerState, mcDiffs} =
   let
     diffs = changelogDiffs mcChangelog
+    slotNo = case getTipSlot mcLedgerState of
+      Origin       -> error "this should not happen because ledger is ticked"
+      NotOrigin sn -> sn
     appendDiffs ::
-         ApplyMapKind 'SeqDiffMK k v
+         Ord k
+      => ApplyMapKind 'SeqDiffMK k v
       -> ApplyMapKind 'DiffMK k v
       -> ApplyMapKind 'SeqDiffMK k v
-    appendDiffs (ApplySeqDiffMK diffSeq) (ApplyDiffMK diff) = undefined -- MTODO implement
+    appendDiffs (ApplySeqDiffMK diffSeq) (ApplyDiffMK diff) =
+      ApplySeqDiffMK $ extendSeqUtxoDiff diffSeq slotNo diff
    in mcChangelog {
       changelogDiffs = zipLedgerTables appendDiffs diffs mcDiffs
     }
 
 rewindTableKeySetsOnMempool ::
-     TableStuff (LedgerState blk)
+     ( TableStuff (LedgerState blk)
+     , GetTip (TickedLedgerState blk ValuesMK)
+     )
   => MempoolChangelog blk
   -> TableKeySets (LedgerState blk)
   -> RewoundTableKeySets (LedgerState blk)
 rewindTableKeySetsOnMempool mempoolChangelog tks =
-  (withTransactionDiffs mempoolChangelog) `rewindTableKeySets` tks
+  withTransactionDiffs mempoolChangelog `rewindTableKeySets` tks
 
 forwardTableKeySetsOnMempool ::
-     TableStuff (LedgerState blk)
+     ( TableStuff (LedgerState blk)
+     , GetTip (TickedLedgerState blk ValuesMK)
+     )
   => MempoolChangelog blk
   -> UnforwardedReadSets (LedgerState blk)
   -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
             (TableReadSets (LedgerState blk))
 forwardTableKeySetsOnMempool mempoolChangelog urs =
-  (withTransactionDiffs mempoolChangelog) `forwardTableKeySets` urs
+  withTransactionDiffs mempoolChangelog `forwardTableKeySets` urs
 
 appendLedgerTablesOnMempoolChangelog ::
      MempoolChangelog blk

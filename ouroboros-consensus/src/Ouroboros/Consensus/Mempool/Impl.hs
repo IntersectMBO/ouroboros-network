@@ -49,11 +49,10 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
                      (InternalState (isCapacity, isMempoolChangelog, isTip, isTxs),
-                     MempoolChangelog (MempoolChangelog, mcChangelog),
+                     MempoolChangelog (mcChangelog),
                      appendLedgerTablesOnMempoolChangelog,
-                     forwardTableKeySetsOnMempool, getTransactionKeySets,
-                     initInternalState, rewindTableKeySetsOnMempool,
-                     tickLedgerState)
+                     forwardTableKeySetsOnMempool, initInternalState,
+                     rewindTableKeySetsOnMempool, tickLedgerState)
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
