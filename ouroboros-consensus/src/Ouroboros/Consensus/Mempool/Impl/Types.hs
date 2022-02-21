@@ -233,7 +233,7 @@ initInternalState capacityOverride lastTicketNo slot memChangelog = IS {
     , isCapacity     = computeMempoolCapacity st capacityOverride
     }
   where
-    st = mcLedgerState memChangelog -- MTODO
+    st = mcLedgerState memChangelog
 
 {-------------------------------------------------------------------------------
   Validation
