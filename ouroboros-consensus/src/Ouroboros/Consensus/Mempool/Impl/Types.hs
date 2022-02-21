@@ -294,7 +294,7 @@ extendVRPrevApplied :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
                     -> ValidationResult (Validated (GenTx blk)) blk
                     -> ValidationResult (Validated (GenTx blk)) blk
 extendVRPrevApplied cfg txTicket vr =
-    case runExcept (reapplyTx cfg vrSlotNo tx vrAfter) of
+    case runExcept (reapplyTx cfg vrSlotNo tx vrLedgerState) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
       Right st' -> vr { vrValid      = vrValid :> txTicket
@@ -304,8 +304,7 @@ extendVRPrevApplied cfg txTicket vr =
   where
     TxTicket { txTicketTx = tx } = txTicket
     ValidationResult { vrValid, vrSlotNo, vrValidTxIds, vrMempoolChangelog, vrInvalid } = vr
-    vrAfter = mcLedgerState vrMempoolChangelog
-    -- ^ MTODO rename vrAfter to something meaningful
+    vrLedgerState = mcLedgerState vrMempoolChangelog
     extendMempoolChangelog = undefined -- MTODO
 
 -- | Extend 'ValidationResult' with a new transaction (one which we have not
