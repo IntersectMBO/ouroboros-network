@@ -35,6 +35,7 @@ import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible)
+import Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
 
 -- | A mock replacement for 'StandardCrypto'
 --
@@ -60,6 +61,7 @@ type Block h = ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)
 -- | Cryptography that can easily be mocked
 type CanMock era proto =
   ( ShelleyCompatible proto era
+  , LedgerSupportsProtocol (ShelleyBlock proto era)
   , SL.EraGen era
   , SL.Mock (EraCrypto era)
   , SL.ValidateScript era
