@@ -34,8 +34,6 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Time (dawnOfTime)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
-
 import qualified Ouroboros.Network.MockChain.Chain as Mock
 
 import           Ouroboros.Consensus.Block
@@ -375,10 +373,15 @@ instance TableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   projectLedgerTables _st            = NoAbTables
   withLedgerTables    st  NoAbTables = convertMapKind st
 
-  pureLedgerTables _f                       = NoAbTables
-  mapLedgerTables  _f            NoAbTables = NoAbTables
-  zipLedgerTables  _f NoAbTables NoAbTables = NoAbTables
-  foldLedgerTables _f            NoAbTables = mempty
+  pureLedgerTables     _f                       = NoAbTables
+  mapLedgerTables      _f            NoAbTables = NoAbTables
+  traverseLedgerTables _f            NoAbTables = pure NoAbTables
+  zipLedgerTables      _f NoAbTables NoAbTables = NoAbTables
+  foldLedgerTables     _f            NoAbTables = mempty
+  foldLedgerTables2    _f NoAbTables NoAbTables = mempty
+
+instance SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock '[BlockA, BlockB])) where
+    codecLedgerTables = NoAbTables
 
 instance TickedTableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   projectLedgerTablesTicked _ = NoAbTables
@@ -406,12 +409,6 @@ instance InMemory (Ticked1 (LedgerState (HardForkBlock '[BlockA, BlockB]))) wher
           (Proxy @(Compose (Compose InMemory Ticked1) LedgerState))
           (FlipTickedLedgerState . convertMapKind . getFlipTickedLedgerState)
           hfstate
-
-instance ToCBOR (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB])) ValuesMK) where
-  toCBOR NoAbTables = toCBOR ()
-
-instance FromCBOR (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB])) ValuesMK) where
-  fromCBOR = (\() -> NoAbTables) <$> fromCBOR
 
 instance ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB]))) where
   showsLedgerState _mk = shows
