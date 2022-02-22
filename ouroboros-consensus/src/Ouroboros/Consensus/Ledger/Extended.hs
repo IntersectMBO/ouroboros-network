@@ -40,8 +40,6 @@ import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
@@ -49,7 +47,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util.CBOR.Simple
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -187,10 +184,20 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
   withLedgerTables (ExtLedgerState lstate hstate) (ExtLedgerStateTables tables) =
       ExtLedgerState (lstate `withLedgerTables` tables) hstate
 
-  pureLedgerTables f = coerce $ pureLedgerTables @(LedgerState blk) f
-  mapLedgerTables  f = coerce $ mapLedgerTables  @(LedgerState blk) f
-  zipLedgerTables  f = coerce $ zipLedgerTables  @(LedgerState blk) f
-  foldLedgerTables f = coerce $ foldLedgerTables @(LedgerState blk) f
+  traverseLedgerTables f (ExtLedgerStateTables l) =
+    ExtLedgerStateTables <$> traverseLedgerTables f l
+
+  pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState blk) f
+  mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState blk) f
+  zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState blk) f
+  foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState blk) f
+  foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState blk) f
+
+instance ( LedgerSupportsProtocol blk
+         , SufficientSerializationForAnyBackingStore (LedgerState blk)
+         )
+      => SufficientSerializationForAnyBackingStore (ExtLedgerState blk) where
+  codecLedgerTables = ExtLedgerStateTables codecLedgerTables
 
 deriving instance ShowLedgerState (LedgerTables (LedgerState blk)) => ShowLedgerState (LedgerTables (ExtLedgerState blk))
 
@@ -200,18 +207,6 @@ instance (NoThunks (LedgerTables (LedgerState blk) mk), Typeable mk) => NoThunks
 instance InMemory (LedgerTables (LedgerState blk)) => InMemory (LedgerTables (ExtLedgerState blk)) where
   convertMapKind (ExtLedgerStateTables st) =
       ExtLedgerStateTables $ convertMapKind st
-
-instance
-     (Typeable blk, Typeable mk, ToCBOR (LedgerTables (LedgerState blk) mk))
-  => ToCBOR (LedgerTables (ExtLedgerState blk) mk) where
-  toCBOR (ExtLedgerStateTables tables) = versionZeroProductToCBOR [toCBOR tables]
-
-instance
-     (Typeable blk, Typeable mk, FromCBOR (LedgerTables (LedgerState blk) mk))
-  => FromCBOR (LedgerTables (ExtLedgerState blk) mk) where
-  fromCBOR =
-        versionZeroProductFromCBOR "LedgerTables ExtLedgerState" 1
-      $ ExtLedgerStateTables <$> fromCBOR
 
 instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk)) => TickedTableStuff (ExtLedgerState blk) where
   projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =

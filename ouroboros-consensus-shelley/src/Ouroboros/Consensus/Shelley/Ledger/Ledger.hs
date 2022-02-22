@@ -59,7 +59,6 @@ import qualified Control.Exception as Exception
 import           Control.Monad.Except
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity
-import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Records
@@ -279,10 +278,14 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock era)) wher
 
   mapLedgerTables f (ShelleyLedgerTables utxo) = ShelleyLedgerTables (f utxo)
 
+  traverseLedgerTables f (ShelleyLedgerTables utxo) = ShelleyLedgerTables <$> (f utxo)
+
   zipLedgerTables f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
       ShelleyLedgerTables (f utxoL utxoR)
 
   foldLedgerTables f (ShelleyLedgerTables utxo) = f utxo
+
+  foldLedgerTables2 f (ShelleyLedgerTables utxo1) (ShelleyLedgerTables utxo2) = f utxo1 utxo2
 
 instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock era)) where
   projectLedgerTablesTicked        = tickedShelleyLedgerTables
@@ -303,20 +306,8 @@ instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock era)
 deriving newtype  instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerTables (LedgerState (ShelleyBlock era)) mk)
 deriving anyclass instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerTables (LedgerState (ShelleyBlock era)) mk)
 
-instance
-     (ShelleyBasedEra era, Typeable mk, SingI mk)
-  => ToCBOR (LedgerTables (LedgerState (ShelleyBlock era)) (ApplyMapKind' mk)) where
-  toCBOR (ShelleyLedgerTables utxoTable) =
-      CBOR.encodeListLen 2 <> CBOR.encodeTag 0 <> toCBOR utxoTable
-
-instance
-     (ShelleyBasedEra era, Typeable mk, SingI mk)
-  => FromCBOR (LedgerTables (LedgerState (ShelleyBlock era)) (ApplyMapKind' mk)) where
-  fromCBOR = do
-      CBOR.decodeListLenOf 2
-      tag <- CBOR.decodeTag
-      unless (0 == tag) $ fail "ShelleyLedgerTables"
-      ShelleyLedgerTables <$> fromCBOR
+instance ShelleyBasedEra era => SufficientSerializationForAnyBackingStore (LedgerState (ShelleyBlock era)) where
+    codecLedgerTables = ShelleyLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
 
 instance ShelleyBasedEra era => ShowLedgerState (LedgerTables (LedgerState (ShelleyBlock era))) where
   showsLedgerState _mk (ShelleyLedgerTables utxo) =

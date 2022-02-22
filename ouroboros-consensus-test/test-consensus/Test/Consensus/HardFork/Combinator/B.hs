@@ -45,8 +45,6 @@ import           Data.Void
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
-
 import           Test.Util.Time (dawnOfTime)
 
 import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
@@ -178,10 +176,15 @@ instance TableStuff (LedgerState BlockB) where
   projectLedgerTables _st           = NoBTables
   withLedgerTables    st  NoBTables = convertMapKind st
 
-  pureLedgerTables _f                     = NoBTables
-  mapLedgerTables  _f           NoBTables = NoBTables
-  zipLedgerTables  _f NoBTables NoBTables = NoBTables
-  foldLedgerTables _f           NoBTables = mempty
+  pureLedgerTables     _f                     = NoBTables
+  mapLedgerTables      _f           NoBTables = NoBTables
+  traverseLedgerTables _f           NoBTables = pure NoBTables
+  zipLedgerTables      _f NoBTables NoBTables = NoBTables
+  foldLedgerTables     _f           NoBTables = mempty
+  foldLedgerTables2    _f NoBTables NoBTables = mempty
+
+instance SufficientSerializationForAnyBackingStore (LedgerState BlockB) where
+    codecLedgerTables = NoBTables
 
 instance TickedTableStuff (LedgerState BlockB) where
   projectLedgerTablesTicked _ = NoBTables
@@ -205,12 +208,6 @@ instance StowableLedgerTables (LedgerState BlockB) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
   isCandidateForUnstow = isCandidateForUnstowDefault
-
-instance ToCBOR (LedgerTables (LedgerState BlockB) ValuesMK) where
-  toCBOR NoBTables = toCBOR ()
-
-instance FromCBOR (LedgerTables (LedgerState BlockB) ValuesMK) where
-  fromCBOR = (\() -> NoBTables) <$> fromCBOR
 
 -- | Ticking has no state on the B ledger state
 newtype instance Ticked1 (LedgerState BlockB) mk = TickedLedgerStateB {

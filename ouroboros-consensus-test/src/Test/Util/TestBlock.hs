@@ -59,8 +59,6 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 import           Control.DeepSeq (force)
 import           Control.Monad.Except (throwError)
@@ -77,14 +75,12 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
-import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import qualified System.Random as R
 import           Test.QuickCheck hiding (Result)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
@@ -357,16 +353,15 @@ instance TableStuff (LedgerState TestBlock) where
   projectLedgerTables _                              = NoTestLedgerTables
   withLedgerTables (TestLedger p) NoTestLedgerTables = TestLedger p
 
-  pureLedgerTables _                                       = NoTestLedgerTables
-  mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
-  zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
-  foldLedgerTables _ NoTestLedgerTables                    = mempty
+  pureLedgerTables     _                                       = NoTestLedgerTables
+  mapLedgerTables      _ NoTestLedgerTables                    = NoTestLedgerTables
+  traverseLedgerTables _ NoTestLedgerTables                    = pure NoTestLedgerTables
+  zipLedgerTables      _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  foldLedgerTables     _ NoTestLedgerTables                    = mempty
+  foldLedgerTables2    _ NoTestLedgerTables NoTestLedgerTables = mempty
 
-instance Typeable mk => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
-  toCBOR NoTestLedgerTables = CBOR.encodeNull
-
-instance Typeable mk => FromCBOR (LedgerTables (LedgerState TestBlock) mk) where
-  fromCBOR = NoTestLedgerTables <$ CBOR.decodeNull
+instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
+    codecLedgerTables = NoTestLedgerTables
 
 instance TickedTableStuff (LedgerState TestBlock) where
   projectLedgerTablesTicked _                         = NoTestLedgerTables

@@ -75,7 +75,7 @@ import           GHC.Show (showCommaSpace, showSpace)
 import           GHC.Stack
 import           NoThunks.Class (AllowThunk (..), NoThunks (..))
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
+import           Cardano.Binary (enforceSize)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -91,7 +91,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (ShowProxy (..))
-import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.Serialisation
@@ -415,6 +414,11 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
         (mapLedgerTables f main)
         (mapLedgerTables f aux)
 
+  traverseLedgerTables f (DualBlockLedgerTables main aux) =
+          DualBlockLedgerTables
+      <$> traverseLedgerTables f main
+      <*> traverseLedgerTables f aux
+
   zipLedgerTables
     f
     (DualBlockLedgerTables mainL auxL)
@@ -427,31 +431,18 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
        foldLedgerTables f main
     <> foldLedgerTables f aux
 
+  foldLedgerTables2
+    f
+    (DualBlockLedgerTables main1 aux1)
+    (DualBlockLedgerTables main2 aux2) =
+           foldLedgerTables2 f main1 main2
+        <> foldLedgerTables2 f aux1 aux2
+
 deriving instance
      ( Eq (LedgerTables (LedgerState m) mk)
      , Eq (LedgerTables (LedgerState a) mk)
      )
   => Eq (LedgerTables (LedgerState (DualBlock m a)) mk)
-
--- TODO only for in-memory backing store
-instance
-     ( Typeable mk, Typeable m, Typeable a
-     , ToCBOR (LedgerTables (LedgerState m) mk)
-     , ToCBOR (LedgerTables (LedgerState a) mk)
-     )
-  => ToCBOR (LedgerTables (LedgerState (DualBlock m a)) mk) where
-  toCBOR (DualBlockLedgerTables m a) =
-      versionZeroProductToCBOR [toCBOR m, toCBOR a]
-
-instance
-     ( Typeable mk, Typeable m, Typeable a
-     , FromCBOR (LedgerTables (LedgerState m) mk)
-     , FromCBOR (LedgerTables (LedgerState a) mk)
-     )
-  => FromCBOR (LedgerTables (LedgerState (DualBlock m a)) mk) where
-  fromCBOR =
-        versionZeroProductFromCBOR "DualBlockLedgerTables" 2
-      $ DualBlockLedgerTables <$> fromCBOR <*> fromCBOR
 
 instance Bridge m a => TickedTableStuff (LedgerState (DualBlock m a)) where
 

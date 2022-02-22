@@ -48,7 +48,7 @@ import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (fromCBOR, toCBOR)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node
@@ -56,7 +56,6 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
-import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import qualified Ouroboros.Consensus.Util.SOP as SOP
 
@@ -372,10 +371,16 @@ instance ShelleyBasedHardForkConstraints era1 era2
           hfstate
           tables
 
-  pureLedgerTables f                                                                           = ShelleyBasedHardForkLedgerTables f
-  mapLedgerTables  f                                      (ShelleyBasedHardForkLedgerTables x) = ShelleyBasedHardForkLedgerTables (f x)
-  zipLedgerTables  f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables (f l r)
-  foldLedgerTables f                                      (ShelleyBasedHardForkLedgerTables x) = f x
+  pureLedgerTables     f                                                                           = ShelleyBasedHardForkLedgerTables f
+  mapLedgerTables      f                                      (ShelleyBasedHardForkLedgerTables x) = ShelleyBasedHardForkLedgerTables (f x)
+  traverseLedgerTables f                                      (ShelleyBasedHardForkLedgerTables x) = ShelleyBasedHardForkLedgerTables <$> f x
+  zipLedgerTables      f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables (f l r)
+  foldLedgerTables     f                                      (ShelleyBasedHardForkLedgerTables x) = f x
+  foldLedgerTables2    f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = f l r
+
+instance ShelleyBasedHardForkConstraints era1 era2
+      => SufficientSerializationForAnyBackingStore (LedgerState (ShelleyBasedHardForkBlock era1 era2)) where
+    codecLedgerTables = ShelleyBasedHardForkLedgerTables $ CodecMK toCBOR toCBOR fromCBOR fromCBOR
 
 deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) EmptyMK)
 deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK)
@@ -413,18 +418,6 @@ instance ShelleyBasedHardForkConstraints era1 era2
 -- | Auxiliary alias for convenenience
 class    (ShelleyBasedEra era, SL.Crypto era ~ c) => ShelleyBasedEra' c era
 instance (ShelleyBasedEra era, SL.Crypto era ~ c) => ShelleyBasedEra' c era
-
-instance
-     ShelleyBasedHardForkConstraints era1 era2
-  => ToCBOR (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK) where
-  toCBOR (ShelleyBasedHardForkLedgerTables utxo) = versionZeroProductToCBOR [toCBOR utxo]
-
-instance
-     ShelleyBasedHardForkConstraints era1 era2
-  => FromCBOR (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK) where
-  fromCBOR =
-        versionZeroProductFromCBOR "ShelleyBasedHardForkLedgerTables" 1
-      $ ShelleyBasedHardForkLedgerTables <$> fromCBOR
 
 instance
      ShelleyBasedHardForkConstraints era1 era2

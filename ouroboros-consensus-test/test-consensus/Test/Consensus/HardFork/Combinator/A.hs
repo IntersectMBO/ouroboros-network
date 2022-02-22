@@ -54,7 +54,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.EpochInfo
 
 import           Test.Util.Time (dawnOfTime)
@@ -199,12 +198,6 @@ instance StowableLedgerTables (LedgerState BlockA) where
   unstowLedgerTables   = convertMapKind
   isCandidateForUnstow = isCandidateForUnstowDefault
 
-instance ToCBOR (LedgerTables (LedgerState BlockA) ValuesMK) where
-  toCBOR NoATables = toCBOR ()
-
-instance FromCBOR (LedgerTables (LedgerState BlockA) ValuesMK) where
-  fromCBOR = (\() -> NoATables) <$> fromCBOR
-
 -- | Ticking has no state on the A ledger state
 newtype instance Ticked1 (LedgerState BlockA) mk = TickedLedgerStateA {
       getTickedLedgerStateA :: LedgerState BlockA mk
@@ -222,10 +215,15 @@ instance TableStuff (LedgerState BlockA) where
   projectLedgerTables _st           = NoATables
   withLedgerTables    st  NoATables = convertMapKind st
 
-  pureLedgerTables _f                     = NoATables
-  mapLedgerTables  _f           NoATables = NoATables
-  zipLedgerTables  _f NoATables NoATables = NoATables
-  foldLedgerTables _f           NoATables = mempty
+  pureLedgerTables     _f                     = NoATables
+  mapLedgerTables      _f           NoATables = NoATables
+  traverseLedgerTables _f           NoATables = pure NoATables
+  zipLedgerTables      _f NoATables NoATables = NoATables
+  foldLedgerTables     _f           NoATables = mempty
+  foldLedgerTables2    _f NoATables NoATables = mempty
+
+instance SufficientSerializationForAnyBackingStore (LedgerState BlockA) where
+    codecLedgerTables = NoATables
 
 instance (ShowLedgerState (LedgerTables (LedgerState BlockA))) where
   showsLedgerState _sing = shows

@@ -83,7 +83,6 @@ import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadThrow
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 
 import qualified Ouroboros.Network.MockChain.Chain as Chain
@@ -570,16 +569,15 @@ instance TableStuff (LedgerState TestBlock) where
   projectLedgerTables _st                    = NoTestLedgerTables
   withLedgerTables    st  NoTestLedgerTables = convertMapKind st
 
-  pureLedgerTables _                                       = NoTestLedgerTables
-  mapLedgerTables  _ NoTestLedgerTables                    = NoTestLedgerTables
-  zipLedgerTables  _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
-  foldLedgerTables _ NoTestLedgerTables                    = mempty
+  pureLedgerTables     _                                       = NoTestLedgerTables
+  mapLedgerTables      _                    NoTestLedgerTables = NoTestLedgerTables
+  traverseLedgerTables _                    NoTestLedgerTables = pure NoTestLedgerTables
+  zipLedgerTables      _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  foldLedgerTables     _                    NoTestLedgerTables = mempty
+  foldLedgerTables2    _ NoTestLedgerTables NoTestLedgerTables = mempty
 
-instance Typeable mk => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
-  toCBOR NoTestLedgerTables = toCBOR ()
-
-instance Typeable mk => FromCBOR (LedgerTables (LedgerState TestBlock) mk) where
-  fromCBOR = (\() -> NoTestLedgerTables) <$> fromCBOR
+instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
+    codecLedgerTables = NoTestLedgerTables
 
 instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables     = convertMapKind
