@@ -2698,7 +2698,7 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
            MainReturn {} -> mempty
            _             -> AllProperty (property False)
        )
-       verifyRemoteTransitionOrder
+       (verifyRemoteTransitionOrder True)
     . fmap (map ttTransition)
     . groupConns id remoteStrIsFinalTransition
     $ remoteTransitionTraceEvents

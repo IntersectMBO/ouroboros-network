@@ -36,7 +36,8 @@ import           Ouroboros.Network.Testing.Data.Signal
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                       (TraceLocalRootPeers, TracePublicRootPeers)
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus(..))
-import           Ouroboros.Network.Diffusion.P2P (TracersExtra(..), RemoteTransitionTrace)
+import           Ouroboros.Network.Diffusion.P2P
+                      (TracersExtra(..), RemoteTransitionTrace)
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
@@ -66,7 +67,9 @@ import           TestLib.Utils (TestProperty(..), mkProperty, ppTransition,
                      classifyActivityType, classifyPrunings, groupConns)
 import           TestLib.ConnectionManager
                      (verifyAbstractTransition, abstractStateIsFinalTransition, verifyAbstractTransitionOrder)
-import TestLib.InboundGovernor (verifyRemoteTransition)
+import           TestLib.InboundGovernor
+                     (verifyRemoteTransition, verifyRemoteTransitionOrder,
+                     remoteStrIsFinalTransition)
 
 tests :: TestTree
 tests =
@@ -90,6 +93,8 @@ tests =
                    prop_diffusion_cm_valid_transition_order
     , testProperty "diffusion inbound governor valid transitions"
                    prop_diffusion_ig_valid_transitions
+    , testProperty "diffusion inbound governor valid transition order"
+                   prop_diffusion_ig_valid_transition_order
     ]
   ]
 
@@ -932,6 +937,72 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                 $ tr
             )
          $ remoteTransitionTraceEvents
+
+-- | A variant of ouroboros-network-framework
+-- 'Test.Ouroboros.Network.Server2.prop_inbound_governor_valid_transition_order'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+prop_diffusion_ig_valid_transition_order :: AbsBearerInfo
+                                         -> DiffusionScript
+                                         -> Property
+prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+        events = fmap (Trace.fromList ())
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 1000000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_ig_valid_transition_order
+          $ (\(WithName _ (WithTime _ b)) -> b)
+          <$> ev
+        )
+      <$> events
+
+  where
+    verify_ig_valid_transition_order :: Trace () DiffusionTestTrace -> Property
+    verify_ig_valid_transition_order events =
+
+      let remoteTransitionTraceEvents :: Trace () (RemoteTransitionTrace NtNAddr)
+          remoteTransitionTraceEvents =
+            selectDiffusionInboundGovernorTransitionEvents events
+
+       in getAllProperty
+        . bifoldMap
+           (const mempty)
+           (verifyRemoteTransitionOrder False)
+        . fmap (map ttTransition)
+        . groupConns id remoteStrIsFinalTransition
+        $ remoteTransitionTraceEvents
 
 -- Utils
 --
