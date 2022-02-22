@@ -57,6 +57,9 @@ instance SupportedNetworkProtocolVersion DualByronBlock where
 
 instance SerialiseDiskConstraints DualByronBlock
 
+instance SufficientSerializationForAnyBackingStore (LedgerState DualByronBlock) where
+    codecLedgerTables = DualBlockLedgerTables codecLedgerTables codecLedgerTables
+
 instance EncodeDisk DualByronBlock DualByronBlock where
   encodeDisk _ = encodeDualBlock encodeByronBlock
 instance DecodeDisk DualByronBlock (Lazy.ByteString -> DualByronBlock) where
