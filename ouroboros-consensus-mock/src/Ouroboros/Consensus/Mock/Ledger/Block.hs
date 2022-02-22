@@ -77,7 +77,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
@@ -393,28 +393,23 @@ instance (SimpleCrypto c, Typeable ext) => TableStuff (LedgerState (SimpleBlock 
   projectLedgerTables _st                                = NoMockTables
   withLedgerTables    (SimpleLedgerState x) NoMockTables = SimpleLedgerState x
 
-  pureLedgerTables _f                           = NoMockTables
-  mapLedgerTables  _f              NoMockTables = NoMockTables
-  zipLedgerTables  _f NoMockTables NoMockTables = NoMockTables
-  foldLedgerTables _f              NoMockTables = mempty
+  pureLedgerTables     _f                           = NoMockTables
+  mapLedgerTables      _f              NoMockTables = NoMockTables
+  traverseLedgerTables _f              NoMockTables = pure NoMockTables
+  zipLedgerTables      _f NoMockTables NoMockTables = NoMockTables
+  foldLedgerTables     _f              NoMockTables = mempty
+  foldLedgerTables2    _f NoMockTables NoMockTables = mempty
 
 instance (SimpleCrypto c, Typeable ext) => TickedTableStuff (LedgerState (SimpleBlock c ext)) where
   projectLedgerTablesTicked _st                                 = NoMockTables
   withLedgerTablesTicked    (TickedSimpleLedgerState st) tables =
       TickedSimpleLedgerState $ withLedgerTables st tables
 
+instance SufficientSerializationForAnyBackingStore (LedgerState (SimpleBlock c ext)) where
+    codecLedgerTables = NoMockTables
+
 instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
   showsLedgerState _sing = shows
-
-instance
-     (Typeable c, Typeable ext)
-  => ToCBOR (LedgerTables (LedgerState (SimpleBlock c ext)) ValuesMK) where
-  toCBOR NoMockTables = CBOR.encodeNull
-
-instance
-     (Typeable c, Typeable ext)
-  => FromCBOR (LedgerTables (LedgerState (SimpleBlock c ext)) ValuesMK) where
-  fromCBOR = NoMockTables <$ CBOR.decodeNull
 
 instance
      (Typeable ext, SimpleCrypto c)

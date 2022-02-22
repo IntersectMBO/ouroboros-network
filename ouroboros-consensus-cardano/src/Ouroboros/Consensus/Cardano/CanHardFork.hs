@@ -67,7 +67,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 
@@ -84,7 +84,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
-import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import qualified Ouroboros.Consensus.Util.SOP as SOP
 
@@ -501,10 +500,16 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
           hfstate
           tables
 
-  pureLedgerTables f                                                 = CardanoLedgerTables f
-  mapLedgerTables  f                         (CardanoLedgerTables x) = CardanoLedgerTables (f x)
-  zipLedgerTables  f (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
-  foldLedgerTables f                         (CardanoLedgerTables x) = f x
+  pureLedgerTables     f                                                 = CardanoLedgerTables f
+  mapLedgerTables      f                         (CardanoLedgerTables x) = CardanoLedgerTables (f x)
+  traverseLedgerTables f                         (CardanoLedgerTables x) = CardanoLedgerTables <$> f x
+  zipLedgerTables      f (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
+  foldLedgerTables     f                         (CardanoLedgerTables x) = f x
+  foldLedgerTables2    f (CardanoLedgerTables l) (CardanoLedgerTables r) = f l r
+
+instance CardanoHardForkConstraints c
+      => SufficientSerializationForAnyBackingStore (LedgerState (CardanoBlock c)) where
+    codecLedgerTables = CardanoLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
 
 deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
 deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
@@ -633,18 +638,6 @@ instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoB
               tickedHardForkLedgerStatePerEra
               tables
         }
-
-instance
-     CardanoHardForkConstraints c
-  => ToCBOR (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK) where
-  toCBOR (CardanoLedgerTables utxo) = versionZeroProductToCBOR [toCBOR utxo]
-
-instance
-     CardanoHardForkConstraints c
-  => FromCBOR (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK) where
-  fromCBOR =
-        versionZeroProductFromCBOR "CardanoLedgerTables" 1
-      $ CardanoLedgerTables <$> fromCBOR
 
 instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c) where
   hardForkInjectLedgerTablesKeysMK =
