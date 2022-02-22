@@ -88,8 +88,6 @@ import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
-import Ouroboros.Consensus.Ledger.Abstract (TableStuff(namesLedgerTables))
-import Ouroboros.Consensus.Ledger.Abstract (TableStuff(zipLedgerTablesA))
 
 {-------------------------------------------------------------------------------
   LedgerState

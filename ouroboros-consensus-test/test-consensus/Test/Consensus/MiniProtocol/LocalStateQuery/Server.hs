@@ -206,6 +206,7 @@ initLgrDB k chain = do
     backingStore <- do
       v <- uncheckedNewTVarM Mock.empty
       TECHDEBT.newBackingStore
+        mempty
         TECHDEBT.InMemoryBackingStore
         (SomeHasFS (simHasFS v))
         (ExtLedgerStateTables NoTestLedgerTables)

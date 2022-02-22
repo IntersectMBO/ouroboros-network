@@ -16,7 +16,7 @@ import qualified Test.Tasty.HUnit as Tasty
 
 import Ouroboros.Consensus.Storage.FS.API (SomeHasFS (SomeHasFS))
 import Ouroboros.Consensus.Block (WithOrigin(Origin), SlotNo)
-import Ouroboros.Consensus.Storage.FS.API.Types (mkFsPath, MountPoint (MountPoint))
+import Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (MountPoint))
 import Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import Ouroboros.Consensus.Ledger.Basics
 import Data.Text (Text)
@@ -49,10 +49,9 @@ withLMDB mb_limits mb_init_vals act = let
         limits = fromMaybe LMDB.defaultLMDBLimits mb_limits
         empty_init :: LMDB.LMDBInit l
         empty_init = LMDB.LIInitialiseFromMemory Origin polyEmptyLedgerTables
-        db_path = mkFsPath ["_tables"]
       bs <- LMDB.newLMDBBackingStore
         (show `Trace.contramap` Trace.stdoutTracer)
-        limits fs db_path empty_init
+        limits fs empty_init
       pure (tmpdir, bs)
     cleanup_lmdb (tmpdir, _) = do
       Dir.removeDirectoryRecursive tmpdir
