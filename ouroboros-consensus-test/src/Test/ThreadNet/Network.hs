@@ -111,7 +111,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
                      (RunAlsoLegacy (RunBoth), ledgerDbCurrentValues)
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB')
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (LedgerDB', BackingStoreSelector(..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Test.ThreadNet.TxGen
@@ -716,6 +716,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbGcDelay                = 0
         , cdbGcInterval             = 1
         , cdbBlocksToAddSize        = 2
+
+        , cdbBackingStoreSelector   = InMemoryBackingStore
         }
       where
         prj af = case AF.headBlockNo af of
