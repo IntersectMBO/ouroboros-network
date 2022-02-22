@@ -178,8 +178,9 @@ defaultArgs ::
      Applicative m
   => SomeHasFS m
   -> DiskPolicy
+  -> BackingStoreSelector m
   -> LgrDbArgs Defaults m blk
-defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
+defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
       lgrDiskPolicy     = diskPolicy
     , lgrGenesis        = NoDefault
     , lgrHasFS
@@ -187,7 +188,7 @@ defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
     , lgrRunAlsoLegacy  = RunBoth
-    , lgrBackingStoreSelector = InMemoryBackingStore
+    , lgrBackingStoreSelector = bss
     }
 
 -- | Open the ledger DB

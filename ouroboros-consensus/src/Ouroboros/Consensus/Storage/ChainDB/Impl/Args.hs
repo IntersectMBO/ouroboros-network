@@ -141,11 +141,12 @@ defaultArgs ::
      Monad m
   => (RelativeMountPoint -> SomeHasFS m)
   -> DiskPolicy
+  -> BackingStoreSelector m
   -> ChainDbArgs Defaults m blk
-defaultArgs mkFS diskPolicy =
+defaultArgs mkFS diskPolicy bss =
   toChainDbArgs (ImmutableDB.defaultArgs immFS)
                 (VolatileDB.defaultArgs  volFS)
-                (LgrDB.defaultArgs       lgrFS diskPolicy)
+                (LgrDB.defaultArgs lgrFS diskPolicy bss)
                 defaultSpecificArgs
   where
     immFS, volFS, lgrFS :: SomeHasFS m

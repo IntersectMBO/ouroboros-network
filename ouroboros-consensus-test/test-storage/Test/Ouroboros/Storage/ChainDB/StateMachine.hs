@@ -1658,6 +1658,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
 
       -- UTxO HD scaffolding
     , cdbLedgerRunAlsoLegacy    = RunBoth
+    , cdbBackingStoreSelector   = LedgerDB.InMemoryBackingStore
     }
 
 tests :: TestTree
