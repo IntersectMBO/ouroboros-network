@@ -1494,10 +1494,6 @@ normalizeRaces Races{ activeRaces, completeRaces } =
 -- are assuming here that all work is completed before a timer
 -- triggers.
 
-quiescentRacesInSimState :: SimState s a -> SimState s a
-quiescentRacesInSimState simstate@SimState{ races } =
-  simstate{ races = quiescentRaces races }
-
 quiescentRaces :: Races -> Races
 quiescentRaces Races{ activeRaces, completeRaces } =
   Races{ activeRaces = [],
@@ -1590,12 +1586,15 @@ stepInfoToScheduleMods
   | step' <- races ]
 
 traceFinalRacesFound :: SimState s a -> SimTrace a -> SimTrace a
-traceFinalRacesFound simstate@SimState{ control0 = control } =
-  TraceRacesFound [extendScheduleControl control m | m <- scheduleMods]
-  where SimState{ races } =
-          quiescentRacesInSimState simstate
-        scheduleMods =
-          concatMap stepInfoToScheduleMods $ completeRaces races
+traceFinalRacesFound SimState{ control0 = control, races } =
+    TraceRacesFound [extendScheduleControl control m | m <- scheduleMods]
+  where
+    scheduleMods :: [ScheduleMod]
+    scheduleMods =
+        concatMap stepInfoToScheduleMods
+      . completeRaces
+      . quiescentRaces
+      $ races
 
 -- Extend an existing schedule control with a newly discovered schedule mod
 extendScheduleControl' :: ScheduleControl -> ScheduleMod -> ScheduleControl
