@@ -102,12 +102,8 @@ run :: forall (p2p :: P2P).
 run tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)
             apps (P2PApplications appsExtra) = do
-  OUT.putStrLn ">>> Diffusion.run 1a"
-  void $ P2P.run tracers tracersExtra args argsExtra apps appsExtra
-  OUT.putStrLn ">>> Diffusion.run 1b"
+  OUT.bracket "diffusion 1" $ void $ P2P.run tracers tracersExtra args argsExtra apps appsExtra
 run tracers (NonP2PTracers tracersExtra)
             args (NonP2PArguments argsExtra)
             apps (NonP2PApplications appsExtra) = do
-  OUT.putStrLn ">>> Diffusion.run 2a"
-  NonP2P.run tracers tracersExtra args argsExtra apps appsExtra
-  OUT.putStrLn ">>> Diffusion.run 2b"
+  OUT.bracket "diffusion 2" $ NonP2P.run tracers tracersExtra args argsExtra apps appsExtra
