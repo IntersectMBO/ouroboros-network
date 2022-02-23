@@ -525,8 +525,6 @@ deriving anyclass instance PayloadSemantics ptype =>
 deriving anyclass instance NoThunks (PayloadDependentState ptype mk) =>
   NoThunks  (LedgerState (TestBlockWith ptype) mk)
 
--- deriving anyclass instance PayloadSemantics ptype => ToExpr    (LedgerState (TestBlockWith ptype) mk)
-
 instance InMemory (LedgerState (TestBlockWith ())) where
   convertMapKind TestLedger {lastAppliedPoint} = TestLedger lastAppliedPoint EmptyPLDS
 

@@ -138,7 +138,7 @@
 -}
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
-    InitFailure(..)
+    InitFailure (..)
   , InitLog (..)
   , initLedgerDB
     -- ** Instantiate in-memory to @blk@
@@ -212,9 +212,9 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -383,7 +383,10 @@ initLedgerDB replayTracer
       traceWith replayTracer ReplayFromGenesis
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-          initDb        = ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
+          initDb        =
+            case runAlsoLegacy of
+              RunBoth    -> ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
+              RunOnlyNew -> ledgerDbWithAnchor runAlsoLegacy (forgetLedgerStateTables genesisLedger)
       backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'

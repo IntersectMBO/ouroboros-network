@@ -321,10 +321,6 @@ class ( ShowLedgerState (LedgerTables l)
   -- tables argument should not contain any data from eras that succeed the
   -- current era of the ledger state argument.
   --
-  --
-  -- TODO: we should explain what /younger/ means in this context. What is the
-  -- age of the content? The era associated to said content?
-  --
   -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
   withLedgerTables :: l any -> LedgerTables l mk -> l mk
 

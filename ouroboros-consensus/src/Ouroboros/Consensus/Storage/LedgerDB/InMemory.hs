@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -22,12 +21,15 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+-- TODO stylish haskell insists on deleting this pragma if placed in the group above.
+{-# LANGUAGE DerivingStrategies       #-}
+
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
     LedgerDbCfg (..)
-  , ledgerDbWithAnchor
   , RunAlsoLegacy (..)
+  , ledgerDbWithAnchor
     -- ** opaque
   , LedgerDB
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
@@ -71,9 +73,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbSwitch
     -- * Exports for the benefit of tests
     -- ** Additional queries
+  , ledgerDbCurrentValues
   , ledgerDbIsSaturated
   , ledgerDbMaxRollback
-  , ledgerDbCurrentValues
     -- ** Pure API
   , ledgerDbPush'
   , ledgerDbPushMany'
@@ -254,10 +256,10 @@ ledgerDbWithAnchor ::
      )
   => RunAlsoLegacy -> l EmptyMK -> LedgerDB l
 ledgerDbWithAnchor runAlsoLegacy anchor = LedgerDB {
-      ledgerDbCheckpoints = case (isCandidateForUnstow anchor, runAlsoLegacy) of
-          (True, RunBoth) -> Just (Empty (Checkpoint (unstowLedgerTables anchor)))
-          (False, RunBoth) -> error "Requested to run with legacy DB but anchor loaded from disk has no in-mem UTxO"
-          _ -> Nothing
+    ledgerDbCheckpoints = case (isCandidateForUnstow anchor, runAlsoLegacy) of
+        (True , RunBoth) -> Just (Empty (Checkpoint (unstowLedgerTables anchor)))
+        (False, RunBoth) -> error "Requested to run with legacy DB but anchor loaded from disk has no in-mem UTxO"
+        _                -> Nothing
     , ledgerDbChangelog   = emptyDbChangeLog anchor
     }
 
@@ -709,7 +711,7 @@ ledgerDbOldest :: forall l.
   => LedgerDB l -> l EmptyMK
 ledgerDbOldest db =
     case stuffedLegacyAnchor of
-      Nothing -> immAnchor
+      Nothing  -> immAnchor
       Just sla -> Exn.assert (isFlushed sla) sla
   where
     immAnchor :: l EmptyMK
