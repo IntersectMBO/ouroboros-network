@@ -1387,12 +1387,17 @@ noRaces = Races [] []
 
 updateRacesInSimState :: Thread s a -> SimState s a -> Races
 updateRacesInSimState thread SimState{ control, threads, races } =
-  traceRaces $
-  updateRaces (currentStep thread)
-              (threadBlocked thread)
-              control
-              (Map.keysSet (Map.filter (not . threadDone) threads))
-              races
+    traceRaces $
+    updateRaces step
+                (threadBlocked thread)
+                control
+                (Map.keysSet (Map.filter (\t -> not (threadDone t)
+                                             && threadId t `Set.notMember`
+                                                effectForks (stepEffect step)
+                                         ) threads))
+                races
+  where
+    step = currentStep thread
 
 -- | 'updateRaces' turns a current 'Step' into 'StepInfo', and updates all
 -- 'activeRaces'.
