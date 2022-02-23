@@ -3,6 +3,7 @@ module Ouroboros.Network.Out
   , bracket
   ) where
 
+import qualified Control.Exception as IO
 import qualified System.Environment as IO
 import qualified System.IO as IO
 import qualified System.IO.Unsafe as IO
@@ -22,7 +23,7 @@ putStrLn s = do
   IO.hFlush hOut
 
 bracket :: String -> IO () -> IO ()
-bracket s f = do
-  putStrLn $ "BEGIN " <> s
-  f
-  putStrLn $ "END " <> s
+bracket s =
+  IO.bracket_
+    (putStrLn $ "BEGIN " <> s)
+    (putStrLn $ "END " <> s)
