@@ -425,9 +425,11 @@ schedule thread@Thread{
       tvar  <- execNewTVar nextVid
                            (Just $ "<<timeout-state " ++ show (unTimeoutId nextTmid) ++ ">>")
                            TimeoutPending
+      modifySTRef (tvarVClock tvar) (leastUpperBoundVClock vClock)
       tvar' <- execNewTVar (succ nextVid)
                            (Just $ "<<timeout " ++ show (unTimeoutId nextTmid) ++ ">>")
                            False
+      modifySTRef (tvarVClock tvar') (leastUpperBoundVClock vClock)
       let expiry  = d `addTime` time
           t       = Timeout tvar tvar' nextTmid
           timers' = PSQ.insert nextTmid expiry (TimerVars tvar tvar') timers
@@ -461,7 +463,7 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl k ctl }
       schedule thread' simstate
 
-    CancelTimeout (Timeout tvar _tvar' tmid) k -> do
+    CancelTimeout (Timeout tvar tvar' tmid) k -> do
       let timers' = PSQ.delete tmid timers
       written <- execAtomically' (runSTM $ writeTVar tvar TimeoutCancelled)
       (wakeup, wokeby) <- threadsUnblockedByWrites written
@@ -474,6 +476,8 @@ schedule thread@Thread{
                            }
           (unblocked,
            simstate') = unblockThreads vClock wakeup simstate
+      modifySTRef (tvarVClock tvar)  (leastUpperBoundVClock vClock)
+      modifySTRef (tvarVClock tvar') (leastUpperBoundVClock vClock)
       trace <- deschedule Yield thread' simstate' { timers = timers' }
       return $ SimTrace time tid tlbl (EventTimerCancelled tmid)
              $ traceMany
