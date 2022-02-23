@@ -473,9 +473,9 @@ compareTraces (Just passing) trace = unsafePerformIO $ do
             return $ SimTrace tpass tidpass tlpass EventThreadSleep $
                        wakeup sleeper tidpass fail
         go _ _ fail = fail
-        wakeup sleeper tidpass (SimTrace tfail tidfail tlfail evfail fail')
+        wakeup sleeper tidpass fail@(SimTrace tfail tidfail tlfail evfail fail')
           | tidpass == tidfail =
-              SimTrace tfail tidfail tlfail EventThreadWake fail'
+              SimTrace tfail tidfail tlfail EventThreadWake fail
           | otherwise = unsafePerformIO $ do
               Just (slp,racing) <- readIORef sleeper
               writeIORef sleeper $ Just (slp,Set.insert (tidfail,tlfail) racing)
