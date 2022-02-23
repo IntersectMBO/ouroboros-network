@@ -1,5 +1,6 @@
 module Ouroboros.Network.Out
   ( putStrLn
+  , bracket
   ) where
 
 import qualified System.Environment as IO
@@ -19,3 +20,9 @@ putStrLn :: String -> IO ()
 putStrLn s = do
   IO.hPutStrLn hOut s
   IO.hFlush hOut
+
+bracket :: String -> IO () -> IO ()
+bracket s f = do
+  putStrLn $ "BEGIN " <> s
+  f
+  putStrLn $ "END " <> s

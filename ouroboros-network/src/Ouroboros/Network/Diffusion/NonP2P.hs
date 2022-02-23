@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | This module is expected to be imported qualified (it will clash
 -- with the "Ouroboros.Network.Diffusion.P2P").
@@ -50,6 +51,9 @@ import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
 import           Ouroboros.Network.Tracers
+
+import qualified Data.List as L
+import qualified Ouroboros.Network.Out as OUT
 
 -- | NonP2P DiffusionTracers Extras
 --
@@ -209,31 +213,41 @@ run Tracers
     lias <- getInitiatorLocalAddresses snocket
 
     let
+        dnsSubActions :: [IO ()]
         dnsSubActions = runDnsSubscriptionWorker snocket networkState lias
           <$> daDnsProducers
 
+        dnsSubActionsLogged :: [IO ()]
+        dnsSubActionsLogged = (\(i, f) -> OUT.bracket ("dns " <> show @Int i) f) <$> L.zip [1..] dnsSubActions
+
+        serverActions :: [IO ()]
         serverActions = case diffusionMode of
           InitiatorAndResponderDiffusionMode ->
             runServer snocket networkState <$> addresses
           InitiatorOnlyDiffusionMode -> []
+        
+        serverActionsLogged = (\(i, f) -> OUT.bracket ("server " <> show @Int i) f) <$> L.zip [1..] serverActions
 
+        localServerAction :: [IO ()]
         localServerAction = runLocalServer localSnocket networkLocalState
           <$> maybeToList daLocalAddress
 
+        localServerActionLogged = (\(i, f) -> OUT.bracket ("local server " <> show @Int i) f) <$> L.zip [1..] localServerAction
+
         actions =
           [ -- clean state thread
-            cleanNetworkMutableState networkState
+            OUT.bracket "clean network mutable state" (cleanNetworkMutableState networkState)
           , -- clean local state thread
-            cleanNetworkMutableState networkLocalState
+            OUT.bracket "clean network local mutable state" (cleanNetworkMutableState networkLocalState)
           , -- fork ip subscription
-            runIpSubscriptionWorker snocket networkState lias
+            OUT.bracket "ip subcription worker" (runIpSubscriptionWorker snocket networkState lias)
           ]
           -- fork dns subscriptions
-          ++ dnsSubActions
+          ++ dnsSubActionsLogged
           -- fork servers for remote peers
-          ++ serverActions
+          ++ serverActionsLogged
           -- fork server for local clients
-          ++ localServerAction
+          ++ localServerActionLogged
 
     -- Runs all threads in parallel, using Async.Concurrently's Alternative instance
     Async.runConcurrently $ asum $ Async.Concurrently <$> actions
