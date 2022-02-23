@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE EmptyDataDeriving          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -21,6 +20,9 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+
+-- TODO stylish haskell insists on deleting this pragma if placed in the group above.
+{-# LANGUAGE DerivingStrategies       #-}
 
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
@@ -254,10 +256,10 @@ ledgerDbWithAnchor ::
      )
   => RunAlsoLegacy -> l EmptyMK -> LedgerDB l
 ledgerDbWithAnchor runAlsoLegacy anchor = LedgerDB {
-      ledgerDbCheckpoints = case (isCandidateForUnstow anchor, runAlsoLegacy) of
-          (True, RunBoth) -> Just (Empty (Checkpoint (unstowLedgerTables anchor)))
-          (False, RunBoth) -> error "Requested to run with legacy DB but anchor loaded from disk has no in-mem UTxO"
-          _ -> Nothing
+    ledgerDbCheckpoints = case (isCandidateForUnstow anchor, runAlsoLegacy) of
+        (True , RunBoth) -> Just (Empty (Checkpoint (unstowLedgerTables anchor)))
+        (False, RunBoth) -> error "Requested to run with legacy DB but anchor loaded from disk has no in-mem UTxO"
+        _                -> Nothing
     , ledgerDbChangelog   = emptyDbChangeLog anchor
     }
 
