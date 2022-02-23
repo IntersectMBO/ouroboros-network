@@ -974,10 +974,15 @@ runSimTraceST mainAction = controlSimTraceST Nothing ControlDefault mainAction
 
 controlSimTraceST :: Maybe Int -> ScheduleControl -> IOSim s a -> ST s (SimTrace a)
 controlSimTraceST limit control mainAction =
-  schedule mainThread initialState { control  = control,
-                                     control0 = control,
-                                     perStepTimeLimit = limit
-                                   }
+  SimTrace (curTime initialState)
+        (threadId mainThread)
+        0
+        (threadLabel mainThread)
+        (EventSimStart control)
+  <$> schedule mainThread initialState { control  = control,
+                                         control0 = control,
+                                         perStepTimeLimit = limit
+                                       }
   where
     mainThread =
       Thread {

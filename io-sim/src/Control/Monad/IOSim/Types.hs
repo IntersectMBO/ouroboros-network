@@ -673,7 +673,8 @@ pattern TraceLoop = Trace.Nil Loop
 
 
 data SimEventType
-  = EventSay  String
+  = EventSimStart      ScheduleControl
+  | EventSay  String
   | EventLog  Dynamic
   | EventMask MaskingState
 
