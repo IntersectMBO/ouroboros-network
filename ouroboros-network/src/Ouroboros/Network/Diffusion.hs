@@ -35,6 +35,7 @@ import           Ouroboros.Network.NodeToNode (NodeToNodeVersion,
 import           Ouroboros.Network.Diffusion.Common as Common
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
 import qualified Ouroboros.Network.Diffusion.P2P as P2P
+import qualified Ouroboros.Network.Out as OUT
 
 -- | Promoted data types.
 --
@@ -100,14 +101,13 @@ run :: forall (p2p :: P2P).
     -> IO ()
 run tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)
-            apps (P2PApplications appsExtra) =
-    void $
-    P2P.run tracers tracersExtra
-            args argsExtra
-            apps appsExtra
+            apps (P2PApplications appsExtra) = do
+  OUT.putStrLn ">>> Diffusion.run 1a"
+  void $ P2P.run tracers tracersExtra args argsExtra apps appsExtra
+  OUT.putStrLn ">>> Diffusion.run 1b"
 run tracers (NonP2PTracers tracersExtra)
             args (NonP2PArguments argsExtra)
-            apps (NonP2PApplications appsExtra) =
-    NonP2P.run tracers tracersExtra
-               args argsExtra
-               apps appsExtra
+            apps (NonP2PApplications appsExtra) = do
+  OUT.putStrLn ">>> Diffusion.run 2a"
+  NonP2P.run tracers tracersExtra args argsExtra apps appsExtra
+  OUT.putStrLn ">>> Diffusion.run 2b"

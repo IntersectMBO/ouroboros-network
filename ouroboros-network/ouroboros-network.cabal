@@ -63,17 +63,18 @@ library
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Diffusion
-                       Ouroboros.Network.Diffusion.P2P
                        Ouroboros.Network.Diffusion.NonP2P
+                       Ouroboros.Network.Diffusion.P2P
                        Ouroboros.Network.Diffusion.Policies
                        Ouroboros.Network.KeepAlive
                        Ouroboros.Network.Magic
-                       Ouroboros.Network.NodeToNode
-                       Ouroboros.Network.NodeToNode.Version
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.NodeToClient.Version
-                       Ouroboros.Network.Tracers
+                       Ouroboros.Network.NodeToNode
+                       Ouroboros.Network.NodeToNode.Version
+                       Ouroboros.Network.Out
                        Ouroboros.Network.Point
+                       Ouroboros.Network.Tracers
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.EstablishedPeers
                        Ouroboros.Network.PeerSelection.KnownPeers
