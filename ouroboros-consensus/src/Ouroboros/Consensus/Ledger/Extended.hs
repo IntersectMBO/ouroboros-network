@@ -27,8 +27,6 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Type family instances
   , LedgerTables (..)
   , Ticked1 (..)
-    -- * MapKind
-  , MapKind (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -104,11 +102,12 @@ instance LedgerSupportsProtocol blk => ShowLedgerState (ExtLedgerState blk) wher
 --
 -- This makes debugging a bit easier, as the block gets used to resolve all
 -- kinds of type families.
-instance (Typeable mk, LedgerSupportsProtocol blk) => NoThunks (ExtLedgerState blk mk) where
+instance (Typeable mk, LedgerSupportsProtocol blk, NoThunks (LedgerState blk mk)) => NoThunks (ExtLedgerState blk mk) where
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk mk))
 
 deriving instance ( LedgerSupportsProtocol blk
                   , Eq (ChainDepState (BlockProtocol blk))
+                  , Eq (LedgerState blk mk)
                   ) => Eq (ExtLedgerState blk mk)
 
 {-------------------------------------------------------------------------------

@@ -64,7 +64,6 @@ import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 import           Ouroboros.Consensus.Util.SOP
-import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -130,12 +129,20 @@ data instance Ticked1 (LedgerState (HardForkBlock xs)) mk =
   deriving (Generic)
 
 deriving anyclass instance
-     (CanHardFork xs, Typeable mk)
-  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) mk)
+     CanHardFork xs
+  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) EmptyMK)
+
+deriving anyclass instance
+     CanHardFork xs
+  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) ValuesMK)
+
+deriving anyclass instance
+     CanHardFork xs
+  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) SeqDiffMK)
 
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)
-         , NoThunks          (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+         , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
          , LedgerTablesCanHardFork xs
@@ -147,7 +154,7 @@ instance ( CanHardFork xs
   type AuxLedgerEvent (LedgerState (HardForkBlock xs)) = OneEraLedgerEvent xs
 
   applyChainTickLedgerResult :: forall mk .
-                                       SingI mk
+                                       IsApplyMapKind mk
                                     => LedgerCfg (LedgerState (HardForkBlock xs))
                                     -> SlotNo
                                     -> LedgerState (HardForkBlock xs) mk
@@ -189,7 +196,7 @@ instance ( CanHardFork xs
       extended :: HardForkState (Flip LedgerState mk) xs
       extended = State.extendToSlot cfg slot st
 
-tickOne :: (SingleEraBlock blk, SingI mk)
+tickOne :: (SingleEraBlock blk, IsApplyMapKind mk)
         => EpochInfo (Except PastHorizonException)
         -> SlotNo
         -> Index xs                                           blk

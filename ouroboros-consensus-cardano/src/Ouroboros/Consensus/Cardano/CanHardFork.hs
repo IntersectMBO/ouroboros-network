@@ -1,29 +1,31 @@
-{-# LANGUAGE ConstraintKinds          #-}
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE DeriveAnyClass           #-}
-{-# LANGUAGE DeriveGeneric            #-}
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE EmptyCase                #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE GADTs                    #-}
-{-# LANGUAGE InstanceSigs             #-}
-{-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE OverloadedStrings        #-}
-{-# LANGUAGE Rank2Types               #-}
-{-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneDeriving       #-}
-{-# LANGUAGE TupleSections            #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
-{-# LANGUAGE TypeFamilyDependencies   #-}
-{-# LANGUAGE TypeOperators            #-}
-{-# LANGUAGE UndecidableInstances     #-}
-{-# LANGUAGE UndecidableSuperClasses  #-}
-{-# LANGUAGE ViewPatterns             #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DisambiguateRecordFields   #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeFamilyDependencies     #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -85,7 +87,6 @@ import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.CBOR.Simple
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import qualified Ouroboros.Consensus.Util.SOP as SOP
-import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
@@ -365,7 +366,7 @@ type CardanoTxOut c = ShelleyTxOut (ShelleyBasedEras c)
 -- TickedTableStuff for every x, so hardcoding the stronger constraint is
 -- easier than parameterizing this helper over the constraint.
 projectLedgerTablesHelper :: forall c fmk mk.
-     (CardanoHardForkConstraints c, SingI mk)
+     (CardanoHardForkConstraints c, IsApplyMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fmk x -> LedgerTables (LedgerState x) mk
@@ -409,7 +410,7 @@ projectLedgerTablesHelper prjLT (HardForkState st) =
 -- 'projectLedgerTablesHelper'
 withLedgerTablesHelper ::
   forall c mk fany fmk.
-     CardanoHardForkConstraints c
+     (CardanoHardForkConstraints c, IsApplyMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fany x -> LedgerTables (LedgerState x) mk -> fmk x
@@ -481,7 +482,7 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
   newtype LedgerTables (LedgerState (CardanoBlock c)) mk = CardanoLedgerTables {
         cardanoUTxOTable :: ApplyMapKind mk (SL.TxIn c) (CardanoTxOut c)
       }
-    deriving (Eq, Generic, NoThunks)
+    deriving (Generic)
 
   projectLedgerTables (HardForkLedgerState hfstate) =
       projectLedgerTablesHelper
@@ -499,6 +500,14 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
   mapLedgerTables  f                         (CardanoLedgerTables x) = CardanoLedgerTables (f x)
   zipLedgerTables  f (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
   foldLedgerTables f                         (CardanoLedgerTables x) = f x
+
+deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
+deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
+deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) DiffMK)
+
+deriving newtype instance PraosCrypto c => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
+deriving newtype instance PraosCrypto c => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
+deriving newtype instance PraosCrypto c => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) SeqDiffMK)
 
 instance PraosCrypto c => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
   showsLedgerState _mk (CardanoLedgerTables utxo) =

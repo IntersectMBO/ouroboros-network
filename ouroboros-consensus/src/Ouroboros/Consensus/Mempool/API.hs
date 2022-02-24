@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Mempool.API (
@@ -318,7 +319,7 @@ data ForgeLedgerState blk mk =
   | ForgeInUnknownSlot (LedgerState blk mk)
 
 withLedgerTablesFLS ::
-     TickedTableStuff (LedgerState blk)
+     (TickedTableStuff (LedgerState blk), IsApplyMapKind mk)
   => ForgeLedgerState blk any
   -> LedgerTables (LedgerState blk) mk
   -> ForgeLedgerState blk mk
