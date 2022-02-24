@@ -513,27 +513,35 @@ selectPeerSelectionTraceEvents :: SimTrace a -> [(Time, TestTraceEvent)]
 selectPeerSelectionTraceEvents = go
   where
     go (SimTrace t _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e    = (t,x) : go trace
-    go (SimTrace _ _ _ _ trace)   =         go trace
-    go (TraceRacesFound _ trace)  =         go trace
-    go (TraceMainException _ e _) = throw e
-    go (TraceDeadlock      _   _) = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _) = []
-    go TraceLoop                  = error "Step time limit exceeded"
+     | Just x <- fromDynamic e       = (t,x) : go trace
+    go (SimPORTrace t _ _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e       = (t,x) : go trace
+    go (SimTrace _ _ _ _ trace)      =         go trace
+    go (SimPORTrace _ _ _ _ _ trace) =         go trace
+    go (TraceRacesFound _ trace)     =         go trace
+    go (TraceMainException _ e _)    = throw e
+    go (TraceDeadlock      _   _)    = [] -- expected result in many cases
+    go (TraceMainReturn    _ _ _)    = []
+    go TraceLoop                     = error "Step time limit exceeded"
 
 selectPeerSelectionTraceEventsUntil :: Time -> SimTrace a -> [(Time, TestTraceEvent)]
 selectPeerSelectionTraceEventsUntil tmax = go
   where
     go (SimTrace t _ _ _ _)
-     | t > tmax                   = []
+     | t > tmax                      = []
     go (SimTrace t _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e    = (t,x) : go trace
-    go (SimTrace _ _ _ _ trace)   =         go trace
-    go (TraceRacesFound _ trace)  =         go trace
-    go (TraceMainException _ e _) = throw e
-    go (TraceDeadlock      _   _) = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _) = []
-    go TraceLoop                  = error "Step time limit exceeded"
+     | Just x <- fromDynamic e       = (t,x) : go trace
+    go (SimPORTrace t _ _ _ _ _)
+     | t > tmax                      = []
+    go (SimPORTrace t _ _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e       = (t,x) : go trace
+    go (SimTrace _ _ _ _ trace)      =         go trace
+    go (SimPORTrace _ _ _ _ _ trace) =         go trace
+    go (TraceRacesFound _ trace)     =         go trace
+    go (TraceMainException _ e _)    = throw e
+    go (TraceDeadlock      _   _)    = [] -- expected result in many cases
+    go (TraceMainReturn    _ _ _)    = []
+    go TraceLoop                     = error "Step time limit exceeded"
 
 selectGovernorEvents :: [(Time, TestTraceEvent)]
                      -> [(Time, TracePeerSelection PeerAddr)]

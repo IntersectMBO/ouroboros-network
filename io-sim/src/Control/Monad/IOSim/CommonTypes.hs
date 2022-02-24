@@ -7,8 +7,6 @@
 --
 module Control.Monad.IOSim.CommonTypes where
 
-import           Control.Exception (Exception)
-import           Control.Monad.Class.MonadThrow (MaskingState (..))
 import           Control.Monad.ST.Lazy
 
 import           Data.Function (on)

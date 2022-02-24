@@ -399,12 +399,15 @@ selectRootPeerDNSTraceEvents :: SimTrace a -> [(Time, TestTraceEvent Failure)]
 selectRootPeerDNSTraceEvents = go
   where
     go (SimTrace t _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e    = (t,x) : go trace
-    go (SimTrace _ _ _ _ trace)   =         go trace
-    go (TraceMainException _ e _) = throw e
-    go (TraceDeadlock      _   _) = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _) = []
-    go TraceLoop                  = error "IOSimPOR step time limit exceeded"
+     | Just x <- fromDynamic e       = (t,x) : go trace
+    go (SimPORTrace t _ _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e       = (t,x) : go trace
+    go (SimTrace _ _ _ _ trace)      =         go trace
+    go (SimPORTrace _ _ _ _ _ trace) =         go trace
+    go (TraceMainException _ e _)    = throw e
+    go (TraceDeadlock      _   _)    = [] -- expected result in many cases
+    go (TraceMainReturn    _ _ _)    = []
+    go TraceLoop                     = error "IOSimPOR step time limit exceeded"
 
 selectLocalRootPeersEvents :: [(Time, TestTraceEvent Failure)]
                            -> [(Time, TraceLocalRootPeers SockAddr Failure)]

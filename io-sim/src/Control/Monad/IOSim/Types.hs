@@ -53,7 +53,7 @@ module Control.Monad.IOSim.Types
   , SimEvent (..)
   , SimResult (..)
   , SimTrace
-  , Trace.Trace (Trace, SimTrace, TraceMainReturn, TraceMainException,
+  , Trace.Trace (Trace, SimTrace, SimPORTrace, TraceMainReturn, TraceMainException,
                  TraceDeadlock, TraceRacesFound, TraceLoop)
   , ppTrace
   , ppTrace_
@@ -576,13 +576,21 @@ data SimEvent
       seThreadLabel :: !(Maybe ThreadLabel),
       seType        :: !SimEventType
     }
+  | SimPOREvent {
+      seTime        :: !Time,
+      seThreadId    :: !ThreadId,
+      seStep        :: !Int,
+      seThreadLabel :: !(Maybe ThreadLabel),
+      seType        :: !SimEventType
+    }
   | SimRacesFound [ScheduleControl]
   deriving Generic
   deriving Show via Quiet SimEvent
 
 seThreadLabel' :: SimEvent -> Maybe ThreadLabel
-seThreadLabel' SimEvent {seThreadLabel} = seThreadLabel
-seThreadLabel' SimRacesFound {}         = Nothing
+seThreadLabel' SimEvent      {seThreadLabel} = seThreadLabel
+seThreadLabel' SimPOREvent   {seThreadLabel} = seThreadLabel
+seThreadLabel' SimRacesFound {}              = Nothing
 
 ppSimEvent :: Int -- ^ width of thread label
            -> SimEvent
@@ -591,6 +599,15 @@ ppSimEvent d SimEvent {seTime, seThreadId, seThreadLabel, seType} =
     printf "%-24s - %-13s %-*s - %s"
            (show seTime)
            (show seThreadId)
+           d
+           threadLabel
+           (show seType)
+  where
+    threadLabel = fromMaybe "" seThreadLabel
+ppSimEvent d SimPOREvent {seTime, seThreadId, seStep, seThreadLabel, seType} =
+    printf "%-24s - %-13s %-*s - %s"
+           (show seTime)
+           (show (seThreadId, seStep))
            d
            threadLabel
            (show seType)
@@ -647,6 +664,12 @@ pattern SimTrace time threadId threadLabel traceEvent trace =
     Trace.Cons (SimEvent time threadId threadLabel traceEvent)
                trace
 
+pattern SimPORTrace :: Time -> ThreadId -> Int -> Maybe ThreadLabel -> SimEventType -> SimTrace a
+                    -> SimTrace a
+pattern SimPORTrace time threadId step threadLabel traceEvent trace =
+    Trace.Cons (SimPOREvent time threadId step threadLabel traceEvent)
+               trace
+
 pattern TraceRacesFound :: [ScheduleControl] -> SimTrace a
                         -> SimTrace a
 pattern TraceRacesFound controls trace =
@@ -668,8 +691,8 @@ pattern TraceDeadlock time threads = Trace.Nil (Deadlock time threads)
 pattern TraceLoop :: SimTrace a
 pattern TraceLoop = Trace.Nil Loop
 
-{-# COMPLETE SimTrace, TraceMainReturn, TraceMainException, TraceDeadlock, TraceLoop #-}
-{-# COMPLETE Trace,    TraceMainReturn, TraceMainException, TraceDeadlock, TraceLoop #-}
+{-# COMPLETE SimTrace, SimPORTrace, TraceMainReturn, TraceMainException, TraceDeadlock, TraceLoop #-}
+{-# COMPLETE Trace,                 TraceMainReturn, TraceMainException, TraceDeadlock, TraceLoop #-}
 
 
 data SimEventType

@@ -79,7 +79,9 @@ import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Control.Monad.IOSim.Types
+import           Control.Monad.IOSim.Types (SimEvent)
+import           Control.Monad.IOSim.Types hiding (SimEvent (SimPOREvent),
+                   Trace(SimPORTrace))
 import           Control.Monad.IOSim.InternalTypes
 
 --
