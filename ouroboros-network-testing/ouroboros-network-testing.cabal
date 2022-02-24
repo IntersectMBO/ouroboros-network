@@ -17,6 +17,11 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+flag nightly
+  Description: Enable nightly tests
+  Manual:      False
+  Default:     False
+
 library
   hs-source-dirs:      src
 
@@ -59,6 +64,8 @@ library
                        io-classes,
                        io-sim,
                        psqueues          >=0.2.3 && <0.3,
+                       tasty,
+                       tasty-expected-failure,
 
                        cborg             >=0.2.1 && <0.3,
                        serialise         >=0.2 && <0.3,
@@ -74,6 +81,9 @@ library
                        -Wpartial-fields
                        -Widentities
                        -Wredundant-constraints
+
+  if flag(nightly)
+    cpp-options:       -DNIGHTLY
 
 test-suite test
   type:                exitcode-stdio-1.0

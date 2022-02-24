@@ -42,11 +42,6 @@ flag cddl
   -- These tests need the cddl and the cbor-diag Ruby-package
   Default: True
 
-flag nightly
-  Description: Enable nightly tests
-  Manual:      False
-  Default:     False
-
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
@@ -349,7 +344,6 @@ test-suite test
                        tasty,
                        tasty-hunit,
                        tasty-quickcheck,
-                       tasty-expected-failure,
                        text,
                        time,
 
@@ -382,8 +376,6 @@ test-suite test
                        +RTS -T -RTS
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
-  if flag(nightly)
-    cpp-options:       -DNIGHTLY
 
 
 test-suite cddl
