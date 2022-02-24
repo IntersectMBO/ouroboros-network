@@ -671,6 +671,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       (UnnegotiatedSt Outbound, OutboundUniSt)  -> True
       -- @Negotiated^{Duplex}_{Outbound}@
       (UnnegotiatedSt Outbound, OutboundDupSt Ticking) -> True
+      (UnnegotiatedSt Outbound, TerminatingSt) -> True
 
       -- @DemotedToCold^{Unidirectional}_{Local}@
       (OutboundUniSt, OutboundIdleSt Unidirectional) -> True
