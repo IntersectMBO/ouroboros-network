@@ -132,6 +132,8 @@ library testlib
                    , QuickCheck
 
                    , io-sim
+                   , io-classes
+                   , typed-protocols
                    , ouroboros-network-framework
 
   default-language:  Haskell2010

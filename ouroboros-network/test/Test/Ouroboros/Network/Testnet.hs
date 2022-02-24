@@ -7,7 +7,7 @@ module Test.Ouroboros.Network.Testnet (tests) where
 
 import           Control.Monad.IOSim
 import           Control.Monad.IOSim.Types (ThreadId)
-import           Control.Monad.Class.MonadTime (Time (Time), diffTime, DiffTime)
+import           Control.Monad.Class.MonadTime (Time (Time), DiffTime, diffTime)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
 import           Data.Bifoldable (bifoldMap)
@@ -49,6 +49,7 @@ import           Ouroboros.Network.Testing.Utils
                       (WithTime(..), WithName(..), tracerWithTime,
                       tracerWithName, sayTracer, splitWithNameTrace)
 
+
 import           Simulation.Network.Snocket (BearerInfo (..))
 
 import           Test.Ouroboros.Network.Testnet.Simulation.Node
@@ -57,14 +58,15 @@ import           Test.Ouroboros.Network.Testnet.Simulation.Node
                      prop_diffusionScript_fixupCommands,
                      DiffusionSimulationTrace (..))
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import           Test.QuickCheck (Property, counterexample, conjoin, classify, property)
+import           Test.QuickCheck
+                     (Property, counterexample, conjoin, property, classify)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           TestLib.Utils (TestProperty(..), mkProperty, ppTransition,
                      AllProperty (..), classifyNegotiatedDataFlow,
                      classifyEffectiveDataFlow, classifyTermination,
-                     classifyActivityType, classifyPrunings, groupConns)
+                     classifyActivityType, classifyPrunings, groupConns, verifyAllTimeouts)
 import           TestLib.ConnectionManager
                      (verifyAbstractTransition, abstractStateIsFinalTransition, verifyAbstractTransitionOrder)
 import           TestLib.InboundGovernor
@@ -95,6 +97,8 @@ tests =
                    prop_diffusion_ig_valid_transitions
     , testProperty "diffusion inbound governor valid transition order"
                    prop_diffusion_ig_valid_transition_order
+    , testProperty "diffusion cm & ig timeouts enforced"
+                   prop_diffusion_timeouts_enforced
     ]
   ]
 
@@ -1004,6 +1008,72 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
         . groupConns id remoteStrIsFinalTransition
         $ remoteTransitionTraceEvents
 
+-- | A variant of ouroboros-network-framework
+-- 'Test.Ouroboros.Network.Server2.prop_timeouts_enforced'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+-- This test tests simultaneously the ConnectionManager and InboundGovernor's
+-- timeouts.
+--
+prop_diffusion_timeouts_enforced :: AbsBearerInfo
+                                 -> DiffusionScript
+                                 -> Property
+prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Trace () (Time, DiffusionTestTrace)]
+        events = fmap ( Trace.fromList ()
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b)))
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 1000000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_timeouts
+          $ ev
+        )
+      <$> events
+
+  where
+    verify_timeouts :: Trace () (Time, DiffusionTestTrace) -> Property
+    verify_timeouts events =
+      let transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace NtNAddr)]
+          transitionSignal = Trace.fromList (MainReturn (Time 0) () [])
+                           . Trace.toList
+                           . groupConns snd abstractStateIsFinalTransition
+                           . selectDiffusionConnectionManagerTransitionEventsTime
+                           $ events
+
+       in getAllProperty
+        $ verifyAllTimeouts True transitionSignal
+
 -- Utils
 --
 
@@ -1089,6 +1159,16 @@ selectDiffusionConnectionManagerTransitionEvents =
   . mapMaybe
      (\case DiffusionConnectionManagerTransitionTrace e -> Just e
             _                                           -> Nothing)
+  . Trace.toList
+
+selectDiffusionConnectionManagerTransitionEventsTime
+  :: Trace () (Time, DiffusionTestTrace)
+  -> Trace () (Time, AbstractTransitionTrace NtNAddr)
+selectDiffusionConnectionManagerTransitionEventsTime =
+  Trace.fromList ()
+  . mapMaybe
+     (\case (t, DiffusionConnectionManagerTransitionTrace e) -> Just (t, e)
+            _                                                -> Nothing)
   . Trace.toList
 
 selectDiffusionInboundGovernorTransitionEvents

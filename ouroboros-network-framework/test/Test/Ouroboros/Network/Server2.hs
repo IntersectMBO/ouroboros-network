@@ -48,7 +48,7 @@ import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, isNothing)
+import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Sum (..))
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import qualified Data.Set as Set
@@ -96,8 +96,7 @@ import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec, noTimeLimitsHandshake,
                      timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Type
-                     (ClientHasAgency (TokPropose), Handshake,
-                     ServerHasAgency (TokConfirm))
+                     (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
@@ -292,32 +291,6 @@ oneshotNextRequests ClientAndServerData {
         reqs : rest -> writeTVar requestsVar rest $> reqs
         []          -> pure []
 
-
--- | Configurable timeouts.  We use different timeouts for 'IO' and 'IOSim' property tests.
---
-data Timeouts = Timeouts {
-    tProtocolIdleTimeout :: DiffTime,
-    tOutboundIdleTimeout :: DiffTime,
-    tTimeWaitTimeout     :: DiffTime
-  }
-
--- | Timeouts for 'IO' tests.
---
-ioTimeouts :: Timeouts
-ioTimeouts = Timeouts {
-    tProtocolIdleTimeout = 0.1,
-    tOutboundIdleTimeout = 0.1,
-    tTimeWaitTimeout     = 0.1
-  }
-
--- | Timeouts for 'IOSim' tests.
---
-simTimeouts :: Timeouts
-simTimeouts = Timeouts {
-    tProtocolIdleTimeout = 5,
-    tOutboundIdleTimeout = 5,
-    tTimeWaitTimeout     = 30
-  }
 
 --
 -- Various ConnectionManagers
@@ -2242,231 +2215,8 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
 
   in counterexample (ppTrace trace)
    $ getAllProperty
-   $ verifyAllTimeouts transitionSignal
+   $ verifyAllTimeouts False transitionSignal
   where
-    verifyAllTimeouts :: Trace (SimResult ()) [(Time, AbstractTransitionTrace SimAddr)]
-                      -> AllProperty
-    verifyAllTimeouts =
-      bifoldMap
-       ( \ case
-           MainReturn {} -> mempty
-           v             -> AllProperty
-                         $ counterexample (show v) (property False)
-       )
-       (\ tr ->
-         AllProperty
-         $ counterexample ("\nConnection transition trace:\n"
-                         ++ intercalate "\n" (map show tr)
-                         )
-         $ verifyTimeouts Nothing tr)
-
-    -- verifyTimeouts checks that in all \tau transition states the timeout is
-    -- respected. It does so by checking the stream of abstract transitions
-    -- paired with the time they happened, for a given connection; and checking
-    -- that transitions from \tau states to any other happens within the correct
-    -- timeout bounds. One note is that for the example
-    -- InboundIdleState^\tau -> OutboundState^\tau -> OutboundState sequence
-    -- The first transition would be fine, but for the second we need the time
-    -- when we transitioned into InboundIdleState and not OutboundState.
-    --
-    verifyTimeouts :: Maybe (AbstractState, Time)
-                   -- ^ Map of first occurrence of a given \tau state
-                   -> [(Time , AbstractTransitionTrace SimAddr)]
-                   -- ^ Stream of abstract transitions for a given connection
-                   -- paired with the time it occurred
-                   -> Property
-    verifyTimeouts state [] =
-      counterexample
-        ("This state didn't timeout:\n"
-        ++ show state
-        )
-      $ isNothing state
-    -- If we already seen a \tau transition state
-    verifyTimeouts st@(Just (state, t')) ((t, TransitionTrace _ tt@(Transition _ to)):xs) =
-        let newState  = Just (to, t)
-            idleTimeout  =
-                tProtocolIdleTimeout simTimeouts
-              + (0.1 * tProtocolIdleTimeout simTimeouts)
-            outboundTimeout =
-                tOutboundIdleTimeout simTimeouts
-              + (0.1 * tOutboundIdleTimeout simTimeouts)
-            timeWaitTimeout =
-                tTimeWaitTimeout simTimeouts
-              + (0.1 * tTimeWaitTimeout simTimeouts)
-            handshakeTimeout = case timeLimitsHandshake of
-              (ProtocolTimeLimits stLimit) ->
-                -- Should be the same but we bias to the shorter one
-                let time = min (fromMaybe 0 (stLimit (ClientAgency TokPropose)))
-                               (fromMaybe 0 (stLimit (ServerAgency TokConfirm)))
-                 in time + (0.1 * time)
-
-         in case state of
-           UnnegotiatedSt _ -> case to of
-             -- Timeout terminating states
-             OutboundUniSt ->
-               counterexample (errorMsg tt t' t handshakeTimeout)
-               $ diffTime t t' <= handshakeTimeout
-               .&&. verifyTimeouts Nothing xs
-             InboundIdleSt Unidirectional ->
-               counterexample (errorMsg tt t' t handshakeTimeout)
-               $ diffTime t t' <= handshakeTimeout
-               .&&. verifyTimeouts Nothing xs
-             TerminatedSt ->
-               counterexample (errorMsg tt t' t handshakeTimeout)
-               $ diffTime t t' <= handshakeTimeout
-               .&&. verifyTimeouts Nothing xs
-
-             -- These states terminate the current timeout
-             -- and starts a new one
-             OutboundDupSt Ticking ->
-               counterexample (errorMsg tt t' t handshakeTimeout)
-               $ diffTime t t' <= handshakeTimeout
-               .&&. verifyTimeouts newState xs
-             InboundIdleSt Duplex ->
-               counterexample (errorMsg tt t' t handshakeTimeout)
-               $ diffTime t t' <= handshakeTimeout
-               .&&. verifyTimeouts newState xs
-
-             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
-
-           InboundIdleSt Duplex         -> case to of
-             -- Should preserve the timeout
-             OutboundDupSt Ticking -> verifyTimeouts st xs
-             InboundIdleSt Duplex -> verifyTimeouts st xs
-
-             -- Timeout terminating states
-             OutboundDupSt Expired ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts Nothing xs
-             InboundSt Duplex ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts Nothing xs
-             DuplexSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts Nothing xs
-             TerminatedSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts Nothing xs
-
-             -- This state terminates the current timeout
-             -- and starts a new one
-             TerminatingSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts newState xs
-
-             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
-
-           InboundIdleSt Unidirectional -> case to of
-             -- Timeout terminating states
-             InboundSt Unidirectional ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts Nothing xs
-             TerminatedSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts Nothing xs
-
-             -- This state terminates the current timeout
-             -- and starts a new one
-             TerminatingSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= idleTimeout
-               .&&. verifyTimeouts newState xs
-
-             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
-
-           OutboundDupSt Ticking        -> case to of
-             -- Should preserve the timeout
-             InboundIdleSt Duplex -> verifyTimeouts st xs
-             OutboundDupSt Ticking -> verifyTimeouts st xs
-
-             -- Timeout terminating states
-             OutboundDupSt Expired ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts Nothing xs
-             DuplexSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts Nothing xs
-             InboundSt Duplex ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts Nothing xs
-             TerminatedSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts Nothing xs
-
-             -- This state terminates the current timeout
-             -- and starts a new one
-             TerminatingSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts newState xs
-
-             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
-
-           OutboundIdleSt _             -> case to of
-             -- Timeout terminating states
-             InboundSt Duplex ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts Nothing xs
-             TerminatedSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts Nothing xs
-
-             -- This state terminates the current timeout
-             -- and starts a new one
-             TerminatingSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= outboundTimeout
-               .&&. verifyTimeouts newState xs
-
-             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
-
-           TerminatingSt                -> case to of
-             -- Timeout terminating states
-             UnnegotiatedSt Inbound ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= timeWaitTimeout
-               .&&. verifyTimeouts Nothing xs
-
-             TerminatedSt ->
-               counterexample (errorMsg tt t' t idleTimeout)
-               $ diffTime t t' <= timeWaitTimeout
-               .&&. verifyTimeouts Nothing xs
-
-             _ -> error ("Unexpected invalid transition: " ++ show (st, tt))
-
-           _ -> error ("Should be a \tau state: " ++ show st)
-      where
-        errorMsg trans time' time maxDiffTime =
-          "\nAt transition: " ++ show trans ++ "\n"
-          ++ "First happened at: " ++ show time' ++ "\n"
-          ++ "Second happened at: " ++ show time ++ "\n"
-          ++ "Should only take: "
-          ++ show maxDiffTime
-          ++ ", but took:" ++ show (diffTime time time')
-    -- If we haven't seen a \tau transition state
-    verifyTimeouts Nothing ((t, TransitionTrace _ (Transition _ to)):xs) =
-        let newState = Just (to, t)
-         in case to of
-           InboundIdleSt _       -> verifyTimeouts newState xs
-           OutboundDupSt Ticking -> verifyTimeouts newState xs
-           OutboundIdleSt _      -> verifyTimeouts newState xs
-           TerminatingSt         -> verifyTimeouts newState xs
-           _                     -> verifyTimeouts Nothing xs
-
-
     sim :: IOSim s ()
     sim = multiNodeSimTracer serverAcc dataFlow
                              absNoAttenuation
