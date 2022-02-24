@@ -165,7 +165,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , snapshotToStatePath
   , snapshotToTablesPath
     -- ** Opaque
-  , DiskSnapshot
+  , DiskSnapshot (..)
     -- * Trace events
   , ReplayGoal (..)
   , ReplayStart (..)

@@ -109,7 +109,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
                      UpdateLedgerDbTraceEvent (..))
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
-import           Ouroboros.Consensus.Util.Singletons (SingI)
 import           Ouroboros.Consensus.Util.Versioned
 
 {-------------------------------------------------------------------------------
@@ -407,7 +406,7 @@ applyBlock cfg ap db = case ap of
 
           -- Ensure the given tables are empty if the old legacy state has no
           -- tables
-          idViaLegacy :: SingI mk => l mk -> Maybe (LedgerTables l mk)
+          idViaLegacy :: IsApplyMapKind mk => l mk -> Maybe (LedgerTables l mk)
           idViaLegacy = case legacyLs of
             Nothing -> const Nothing
             Just leg ->

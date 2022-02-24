@@ -68,6 +68,7 @@ import           Ouroboros.Consensus.HeaderStateHistory
                      (HeaderStateHistory (..), validateHeader)
 import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion

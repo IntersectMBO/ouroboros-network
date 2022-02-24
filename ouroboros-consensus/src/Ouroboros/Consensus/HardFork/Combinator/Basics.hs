@@ -58,7 +58,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
-import           Ouroboros.Consensus.Util.Singletons (SingI (..))
+import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -88,11 +88,16 @@ newtype instance LedgerState (HardForkBlock xs) mk = HardForkLedgerState {
       hardForkLedgerStatePerEra :: HardForkState (Flip LedgerState mk) xs
     }
 
-deriving stock   instance CanHardFork xs                => Eq       (LedgerState (HardForkBlock xs) mk)
-deriving newtype instance (CanHardFork xs, Typeable mk) => NoThunks (LedgerState (HardForkBlock xs) mk)
+deriving stock   instance CanHardFork xs => Eq       (LedgerState (HardForkBlock xs) EmptyMK)
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) EmptyMK)
 
-instance (SingI mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) mk) where
-  showsPrec p = showParen (p >= 11) . showsLedgerState sing
+deriving stock   instance CanHardFork xs => Eq       (LedgerState (HardForkBlock xs) ValuesMK)
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) ValuesMK)
+
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) SeqDiffMK)
+
+instance (SingI mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) (ApplyMapKind' mk)) where
+  showsPrec p = showParen (p >= 11) . showsLedgerState sMapKind
 
 instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
   showsLedgerState = \mk (HardForkLedgerState hfstate) ->
@@ -104,7 +109,7 @@ instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) wher
        showInner ::
             SingleEraBlock x
          => SMapKind mk
-         -> Flip LedgerState mk x
+         -> Flip LedgerState (ApplyMapKind' mk) x
          -> AlreadyShown        x
        showInner mk (Flip st) =
            AlreadyShown

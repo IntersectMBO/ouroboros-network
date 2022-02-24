@@ -29,8 +29,8 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..),
-                     MapKind (..))
+import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers

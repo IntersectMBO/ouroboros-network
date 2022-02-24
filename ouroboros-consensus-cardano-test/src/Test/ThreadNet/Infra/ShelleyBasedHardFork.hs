@@ -255,7 +255,7 @@ instance ShelleyBasedHardForkConstraints era1 era2
 -------------------------------------------------------------------------------}
 
 projectLedgerTablesHelper :: forall era1 era2 fmk mk.
-     ShelleyBasedHardForkConstraints era1 era2
+     (ShelleyBasedHardForkConstraints era1 era2, IsApplyMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fmk x -> LedgerTables (LedgerState x) mk
@@ -291,7 +291,7 @@ projectLedgerTablesHelper prj (HardForkState tele) =
 -- 'projectLedgerTablesHelper'
 withLedgerTablesHelper ::
   forall era1 era2 mk fany fmk.
-     ShelleyBasedHardForkConstraints era1 era2
+     (ShelleyBasedHardForkConstraints era1 era2, IsApplyMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fany x -> LedgerTables (LedgerState x) mk -> fmk x
@@ -358,7 +358,7 @@ instance ShelleyBasedHardForkConstraints era1 era2
               (SL.TxIn (EraCrypto era1))
               (ShelleyTxOut '[era1, era2])
       }
-    deriving (Generic, NoThunks)
+    deriving (Generic)
 
   projectLedgerTables (HardForkLedgerState hfstate) =
       projectLedgerTablesHelper
@@ -377,7 +377,13 @@ instance ShelleyBasedHardForkConstraints era1 era2
   zipLedgerTables  f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables (f l r)
   foldLedgerTables f                                      (ShelleyBasedHardForkLedgerTables x) = f x
 
-deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) mk)
+deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) EmptyMK)
+deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK)
+deriving instance ShelleyBasedHardForkConstraints era1 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) DiffMK)
+
+deriving instance ShelleyBasedHardForkConstraints era1 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) EmptyMK)
+deriving instance ShelleyBasedHardForkConstraints era1 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) ValuesMK)
+deriving instance ShelleyBasedHardForkConstraints era1 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2)) SeqDiffMK)
 
 instance ShelleyBasedHardForkConstraints era1 era2
       => ShowLedgerState (LedgerTables (LedgerState (ShelleyBasedHardForkBlock era1 era2))) where

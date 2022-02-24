@@ -16,6 +16,7 @@ import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId
 

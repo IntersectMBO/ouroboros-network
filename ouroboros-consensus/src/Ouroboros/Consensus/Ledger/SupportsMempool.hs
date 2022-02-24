@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Ledger.SupportsMempool (
@@ -17,7 +16,6 @@ module Ouroboros.Consensus.Ledger.SupportsMempool (
 
 import           Control.Monad.Except
 import           Data.Kind (Type)
-import           Data.Typeable (Typeable)
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
 
@@ -61,7 +59,9 @@ data WhetherToIntervene
 class ( UpdateLedger blk
       , NoThunks (GenTx blk)
       , NoThunks (Validated (GenTx blk))
-      , forall mk. Typeable mk => NoThunks (TickedLedgerState blk mk)
+      , NoThunks (TickedLedgerState blk EmptyMK)
+      , NoThunks (TickedLedgerState blk ValuesMK)
+      , NoThunks (TickedLedgerState blk SeqDiffMK)
       , Show (GenTx blk)
       , Show (Validated (GenTx blk))
       , Show (ApplyTxErr blk)

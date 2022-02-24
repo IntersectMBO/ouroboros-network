@@ -58,8 +58,9 @@ import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SlotNo)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
-                     MapKind (..), encodeExtLedgerState)
+                     encodeExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
                      SomeQuery, nodeToClientVersionToQueryVersion)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
