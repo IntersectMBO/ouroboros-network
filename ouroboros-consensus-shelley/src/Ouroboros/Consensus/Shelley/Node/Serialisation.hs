@@ -18,7 +18,7 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (MapKind (EmptyMK))
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation

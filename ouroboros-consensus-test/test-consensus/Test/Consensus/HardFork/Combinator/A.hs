@@ -269,10 +269,10 @@ instance ApplyBlock (LedgerState BlockA) BlockA where
       setTip (TickedLedgerStateA st) = st { lgrA_tip = blockPoint blk }
 
       applyTx' :: GenTx BlockA
-               -> TickedLedgerState BlockA 'ValuesMK
+               -> TickedLedgerState BlockA ValuesMK
                -> Except
                     (ApplyTxErr BlockA)
-                    (TickedLedgerState BlockA 'ValuesMK)
+                    (TickedLedgerState BlockA ValuesMK)
       applyTx' b =
           fmap (TickedLedgerStateA . convertMapKind . getTickedLedgerStateA . fst)
         . applyTx cfg DoNotIntervene (blockSlot blk) b
