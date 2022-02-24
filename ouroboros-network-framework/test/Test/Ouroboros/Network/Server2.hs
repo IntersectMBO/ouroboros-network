@@ -30,6 +30,7 @@ import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -122,7 +123,7 @@ import           Ouroboros.Network.Testing.Data.AbsBearerInfo
                      AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
                      AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
                      absNoAttenuation, toNonFailingAbsBearerInfoScript)
-import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
+import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision, nightlyTest)
 
 import           Test.Ouroboros.Network.ConnectionManager
                      (allValidTransitionsNames, validTransitionMap,
@@ -135,6 +136,8 @@ tests =
   testGroup "Ouroboros.Network"
   [ testGroup "ConnectionManager"
     [ testProperty "valid transitions"      prop_connection_manager_valid_transitions
+    , nightlyTest $ testProperty "valid transitions (racy)"
+                  $ prop_connection_manager_valid_transitions_racy
     , testProperty "valid transition order" prop_connection_manager_valid_transition_order
     , testProperty "transitions coverage"   prop_connection_manager_transitions_coverage
     , testProperty "no invalid traces"      prop_connection_manager_no_invalid_traces
@@ -2059,34 +2062,12 @@ verifyRemoteTransitionOrder (h:t) = go t h
               (property (currToState == nextFromState)))
          <> go ts next
 
--- | Property wrapping `multinodeExperiment`.
---
--- Note: this test validates connection manager state changes.
---
-prop_connection_manager_valid_transitions :: Int
-                                          -> ArbDataFlow
-                                          -> AbsBearerInfo
-                                          -> MultiNodeScript Int TestAddr
-                                          -> Property
-prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
-                                          defaultBearerInfo
-                                          mns@(MultiNodeScript
-                                                    events
-                                                    attenuationMap) =
-  let trace = runSimTrace sim
 
-      abstractTransitionEvents :: Trace (SimResult ())
-                                        (AbstractTransitionTrace SimAddr)
-      abstractTransitionEvents = traceWithNameTraceEvents trace
-
-      connectionManagerEvents :: [ConnectionManagerTrace
-                                    SimAddr
-                                    (ConnectionHandlerTrace
-                                      UnversionedProtocol
-                                      DataFlowProtocolData)]
-      connectionManagerEvents = withNameTraceEvents trace
-
-  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+validate_transitions :: MultiNodeScript Int TestAddr
+                     -> SimTrace ()
+                     -> Property
+validate_transitions mns@(MultiNodeScript events _) trace =
+      tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . mkProperty
@@ -2127,12 +2108,64 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
     . splitConns id
     $ abstractTransitionEvents
   where
+    abstractTransitionEvents :: Trace (SimResult ())
+                                      (AbstractTransitionTrace SimAddr)
+    abstractTransitionEvents = traceWithNameTraceEvents trace
+
+    connectionManagerEvents :: [ConnectionManagerTrace
+                                  SimAddr
+                                  (ConnectionHandlerTrace
+                                    UnversionedProtocol
+                                    DataFlowProtocolData)]
+    connectionManagerEvents = withNameTraceEvents trace
+
+
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates connection manager state changes.
+--
+prop_connection_manager_valid_transitions
+  :: Int
+  -> ArbDataFlow
+  -> AbsBearerInfo
+  -> MultiNodeScript Int TestAddr
+  -> Property
+prop_connection_manager_valid_transitions
+  serverAcc (ArbDataFlow dataFlow) defaultBearerInfo
+  mns@(MultiNodeScript events attenuationMap) =
+    validate_transitions mns trace
+  where
+    trace = runSimTrace sim
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
                        attenuationMap
+
+
+prop_connection_manager_valid_transitions_racy
+  :: Int
+  -> ArbDataFlow
+  -> AbsBearerInfo
+  -> MultiNodeScript Int TestAddr
+  -> Property
+prop_connection_manager_valid_transitions_racy
+  serverAcc (ArbDataFlow dataFlow)
+  defaultBearerInfo mns@(MultiNodeScript events attenuationMap) =
+    exploreSimTrace id sim $ \_ trace ->
+                             -- ppDebug trace $
+                             validate_transitions mns trace
+  where
+    sim :: IOSim s ()
+    sim = exploreRaces
+       >> multiNodeSim serverAcc dataFlow
+                       defaultBearerInfo
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
+
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -3420,31 +3453,32 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
 
 
 
-multiNodeSimTracer :: (Serialise req, Show req, Eq req, Typeable req)
+multiNodeSimTracer :: ( Monad m, MonadTimer m, MonadLabelledSTM m
+                      , MonadMask m, MonadTime m, MonadThrow (STM m)
+                      , MonadSay m, MonadAsync m, MonadEvaluate m
+                      , MonadFork m, MonadST m
+                      , Serialise req, Show req, Eq req, Typeable req
+                      )
                    => req
                    -> DataFlow
                    -> AbsBearerInfo
                    -> AcceptedConnectionsLimit
                    -> [ConnectionEvent req TestAddr]
                    -> Map TestAddr (Script AbsBearerInfo)
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr))
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName
                        (Name SimAddr)
                         (ConnectionManagerTrace
                          SimAddr
                           (ConnectionHandlerTrace
                             UnversionedProtocol DataFlowProtocolData)))
-                   -> IOSim s ()
+                   -> m ()
 multiNodeSimTracer serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap
                    remoteTrTracer abstractTrTracer
