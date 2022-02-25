@@ -154,7 +154,7 @@ localRootPeersProvider tracer
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
       domainsGroups' <-
-        withAsyncAll (monitorDomain rr rootPeersGroups `map` domains) $ \as -> do
+        withAsyncAll (monitorDomain rr `map` domains) $ \as -> do
           res <- atomically $
                   -- wait until any of the monitoring threads errors
                   ((\(a, res) ->
@@ -205,18 +205,15 @@ localRootPeersProvider tracer
 
     monitorDomain
       :: Resource m (DNSorIOError exception) resolver
-      -> Seq (Int, Map peerAddr PeerAdvertise)
-      -- ^ local group peers
       -> (Int, DomainAccessPoint, PeerAdvertise)
       -> m Void
-    monitorDomain rr0 rootPeersGroups0 (index, domain, advertisePeer) =
-        go rr0 rootPeersGroups0 0
+    monitorDomain rr0 (index, domain, advertisePeer) =
+        go rr0 0
       where
         go :: Resource m (DNSorIOError exception) resolver
-           -> Seq (Int, Map peerAddr PeerAdvertise)
            -> DiffTime
            -> m Void
-        go !rr !rootPeersGroups !ttl = do
+        go !rr !ttl = do
           when (ttl > 0) $ do
             traceWith tracer (TraceLocalRootWaiting domain ttl)
             threadDelay ttl
@@ -228,10 +225,11 @@ localRootPeersProvider tracer
 
           reply <- resolveDomain resolver domain advertisePeer
           case reply of
-            Left errs -> go rrNext rootPeersGroups
+            Left errs -> go rrNext
                            (minimum $ map (\err -> ttlForDnsError err ttl) errs)
             Right results -> do
-              rootPeersGroups' <- atomically $ do
+              rootPeersGroups <- atomically $ do
+                rootPeersGroups <- readTVar rootPeersGroupsVar
                 let (target, entry)  = rootPeersGroups `Seq.index` index
                     resultsMap       = Map.fromList (map fst results)
                     entry'           = resultsMap <> entry
@@ -246,8 +244,8 @@ localRootPeersProvider tracer
 
                 return rootPeersGroups'
 
-              traceWith tracer (TraceLocalRootGroups rootPeersGroups')
-              go rrNext rootPeersGroups' (ttlForResults (map snd results))
+              traceWith tracer (TraceLocalRootGroups rootPeersGroups)
+              go rrNext (ttlForResults (map snd results))
 
 ---------------------------------------------
 -- Public root peer set provider using DNS
