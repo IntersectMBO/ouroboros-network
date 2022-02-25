@@ -67,7 +67,7 @@ module Control.Monad.Class.MonadSTM
   , newTMVarMDefault
   , newEmptyTMVarM
   , newEmptyTMVarMDefault
-    -- 
+    --
   , WrappedSTM (..)
   ) where
 
@@ -80,12 +80,12 @@ import qualified Control.Concurrent.STM.TVar as STM
 import           Control.Monad (MonadPlus (..))
 import qualified Control.Monad.STM as STM
 
-import           Control.Monad.Trans (lift)
-import           Control.Monad.Cont   (ContT (..))
+import           Control.Monad.Cont (ContT (..))
 import           Control.Monad.Except (ExceptT (..))
-import           Control.Monad.RWS    (RWST (..))
+import           Control.Monad.RWS (RWST (..))
 import           Control.Monad.Reader (ReaderT (..))
-import           Control.Monad.State  (StateT (..))
+import           Control.Monad.State (StateT (..))
+import           Control.Monad.Trans (lift)
 import           Control.Monad.Writer (WriterT (..))
 
 import qualified Control.Monad.Class.MonadThrow as MonadThrow
@@ -826,7 +826,7 @@ instance MonadSTM m => MonadSTM (ContT r m) where
     writeTVar      = WrappedSTM .: writeTVar
     retry          = WrappedSTM    retry
     orElse         = WrappedSTM .: on orElse runWrappedSTM
-                               
+
     modifyTVar     = WrappedSTM .: modifyTVar
     modifyTVar'    = WrappedSTM .: modifyTVar'
     stateTVar      = WrappedSTM .: stateTVar
@@ -877,7 +877,7 @@ instance MonadSTM m => MonadSTM (ReaderT r m) where
     writeTVar      = WrappedSTM .: writeTVar
     retry          = WrappedSTM    retry
     orElse         = WrappedSTM .: on orElse runWrappedSTM
-                               
+
     modifyTVar     = WrappedSTM .: modifyTVar
     modifyTVar'    = WrappedSTM .: modifyTVar'
     stateTVar      = WrappedSTM .: stateTVar
@@ -928,7 +928,7 @@ instance (Monoid w, MonadSTM m) => MonadSTM (WriterT w m) where
     writeTVar      = WrappedSTM .: writeTVar
     retry          = WrappedSTM    retry
     orElse         = WrappedSTM .: on orElse runWrappedSTM
-                               
+
     modifyTVar     = WrappedSTM .: modifyTVar
     modifyTVar'    = WrappedSTM .: modifyTVar'
     stateTVar      = WrappedSTM .: stateTVar
@@ -979,7 +979,7 @@ instance MonadSTM m => MonadSTM (StateT s m) where
     writeTVar      = WrappedSTM .: writeTVar
     retry          = WrappedSTM    retry
     orElse         = WrappedSTM .: on orElse runWrappedSTM
-                               
+
     modifyTVar     = WrappedSTM .: modifyTVar
     modifyTVar'    = WrappedSTM .: modifyTVar'
     stateTVar      = WrappedSTM .: stateTVar
@@ -1030,7 +1030,7 @@ instance MonadSTM m => MonadSTM (ExceptT e m) where
     writeTVar      = WrappedSTM .: writeTVar
     retry          = WrappedSTM    retry
     orElse         = WrappedSTM .: on orElse runWrappedSTM
-                               
+
     modifyTVar     = WrappedSTM .: modifyTVar
     modifyTVar'    = WrappedSTM .: modifyTVar'
     stateTVar      = WrappedSTM .: stateTVar

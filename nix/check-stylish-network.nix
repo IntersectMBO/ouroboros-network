@@ -1,8 +1,8 @@
-{ runCommand, fd, lib, stylish-haskell }:
+{ runCommand, fd, lib, stylish-haskell, git }:
 
 runCommand "check-stylish-network" {
   meta.platforms = with lib.platforms; [ linux ];
-  buildInputs = [ fd stylish-haskell ];
+  buildInputs = [ fd stylish-haskell git ];
   src = ./..;
 } ''
   unpackPhase
@@ -15,5 +15,6 @@ runCommand "check-stylish-network" {
   fd -p network-mux -e hs -E Setup.hs -E network-mux/src/Network/Mux/Bearer/Pipe.hs -E network-mux/src/Network/Mux/Channel.hs -X stylish-haskell -c .stylish-haskell-network.yaml -i
   fd -p ouroboros-network* -e hs -E Setup.hs -X stylish-haskell -c .stylish-haskell-network.yaml -i
   fd -p cardano-client -e hs -E Setup.hs -X stylish-haskell -c .stylish-haskell-network.yaml -i
-  echo $? >> $out
+
+  git diff >> $out
 ''

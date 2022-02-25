@@ -11,8 +11,8 @@ import           Control.Monad.ST.Lazy
 
 import           Data.Function (on)
 import           Data.Map (Map)
-import           Data.Set (Set)
 import           Data.STRef.Lazy
+import           Data.Set (Set)
 import           Data.Typeable (Typeable)
 
 data ThreadId = RacyThreadId [Int]
@@ -68,11 +68,11 @@ data TVar s a = TVar {
 
        -- | The vector clock of the current value.
        --
-       tvarVClock :: !(STRef s VectorClock),
+       tvarVClock  :: !(STRef s VectorClock),
 
        -- | Callback to construct a trace which will be attached to the dynamic
        -- trace.
-       tvarTrace  :: !(STRef s (Maybe (MkTVarTrace s a)))
+       tvarTrace   :: !(STRef s (Maybe (MkTVarTrace s a)))
      }
 
 instance Eq (TVar s a) where

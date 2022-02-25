@@ -7,9 +7,8 @@
 --
 module Control.Monad.IOSim.STM where
 
-import           Control.Monad.Class.MonadSTM (MonadSTM (..),
-                   MonadInspectSTM (..), MonadLabelledSTM (..),
-                   MonadTraceSTM (..))
+import           Control.Monad.Class.MonadSTM (MonadInspectSTM (..),
+                     MonadLabelledSTM (..), MonadSTM (..), MonadTraceSTM (..))
 
 import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
@@ -19,7 +18,7 @@ import           Numeric.Natural (Natural)
 --
 
 newtype TQueueDefault m a = TQueue (TVar m ([a], [a]))
- 
+
 labelTQueueDefault
   :: MonadLabelledSTM m
   => TQueueDefault m a -> String -> STM m ()
@@ -175,7 +174,7 @@ isEmptyTBQueueDefault (TBQueue queue _size) = do
 isFullTBQueueDefault :: MonadSTM m => TBQueueDefault m a -> STM m Bool
 isFullTBQueueDefault (TBQueue queue _size) = do
   (_, r, _, w) <- readTVar queue
-  return $ 
+  return $
     if (w > 0)
     then False
     else if (r > 0)

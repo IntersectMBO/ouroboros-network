@@ -123,7 +123,8 @@ import           Ouroboros.Network.Testing.Data.AbsBearerInfo
                      AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
                      AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
                      absNoAttenuation, toNonFailingAbsBearerInfoScript)
-import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision, nightlyTest)
+import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision,
+                     nightlyTest)
 
 import           Test.Ouroboros.Network.ConnectionManager
                      (allValidTransitionsNames, validTransitionMap,

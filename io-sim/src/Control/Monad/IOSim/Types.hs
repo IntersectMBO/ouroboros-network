@@ -11,7 +11,6 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE PatternSynonyms            #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 {-# OPTIONS_GHC -Wno-partial-fields          #-}
@@ -32,10 +31,8 @@ module Control.Monad.IOSim.Types
   , StmStack (..)
   , Timeout (..)
   , TimeoutException (..)
-
   , setCurrentTime
   , unshareClock
-
   , ScheduleControl (..)
   , ScheduleMod (..)
   , ExplorationOptions (..)
@@ -45,47 +42,46 @@ module Control.Monad.IOSim.Types
   , withStepTimelimit
   , withReplay
   , stdExplorationOptions
-
   , EventlogEvent (..)
   , EventlogMarker (..)
-
   , SimEventType (..)
   , SimEvent (..)
   , SimResult (..)
   , SimTrace
-  , Trace.Trace (Trace, SimTrace, SimPORTrace, TraceMainReturn, TraceMainException,
-                 TraceDeadlock, TraceRacesFound, TraceLoop)
+  , Trace.Trace (Trace, SimTrace, SimPORTrace, TraceMainReturn, TraceMainException, TraceDeadlock, TraceRacesFound, TraceLoop)
   , ppTrace
   , ppTrace_
   , ppSimEvent
   , ppDebug
   , TraceEvent
   , Labelled (..)
-
   , module Control.Monad.IOSim.CommonTypes
   , SimM
   , SimSTM
   ) where
 
-import           Control.Exception (ErrorCall (..), asyncExceptionFromException, asyncExceptionToException)
 import           Control.Applicative
+import           Control.Exception (ErrorCall (..), asyncExceptionFromException,
+                     asyncExceptionToException)
 import           Control.Monad
 
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
+import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import qualified Control.Monad.Class.MonadFork as MonadFork
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadSTM (MonadInspectSTM (..),
+                     MonadLabelledSTM (..), MonadSTM, MonadTraceSTM (..),
+                     TMVarDefault)
+import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTest
+import           Control.Monad.Class.MonadThrow as MonadThrow hiding
+                     (getMaskingState)
+import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
-import           Control.Monad.Class.MonadEventlog
-import           Control.Monad.Class.MonadSTM (MonadSTM, MonadInspectSTM (..),
-                   MonadLabelledSTM (..), MonadTraceSTM (..), TMVarDefault)
-import qualified Control.Monad.Class.MonadSTM as MonadSTM
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow as MonadThrow hiding (getMaskingState)
-import qualified Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.ST.Lazy
 import qualified Control.Monad.ST.Strict as StrictST
 
@@ -94,13 +90,13 @@ import qualified Control.Monad.Fail as Fail
 
 import           Data.Bifoldable
 import           Data.Bifunctor (bimap)
+import           Data.Dynamic (Dynamic, toDyn)
+import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Endo (..))
-import           Data.Dynamic (Dynamic, toDyn)
-import           Data.Typeable
 import           Data.STRef.Lazy
-import qualified Data.List.Trace as Trace
+import           Data.Typeable
 import qualified Debug.Trace as Debug
 import           Text.Printf
 

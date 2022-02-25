@@ -37,8 +37,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
-import           Control.Monad.Trans (lift)
 import           Control.Monad.Reader (ReaderT (..))
+import           Control.Monad.Trans (lift)
 
 import           Control.Concurrent.Async (AsyncCancelled (..))
 import qualified Control.Concurrent.Async as Async
