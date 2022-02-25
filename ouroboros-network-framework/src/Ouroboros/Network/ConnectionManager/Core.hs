@@ -817,12 +817,10 @@ withConnectionManager ConnectionManagerArguments {
 
             case mConnVar of
               Left Unknown -> do
-                traceWith tracer (CM.TrUnexpectedlyFalseAssertion
-                                    (ForkConnectionHandlerCleanup
-                                      (Just connId)
-                                      UnknownConnectionSt)
-                                 )
-                _ <- evaluate (assert False)
+                -- TODO: this only happens because we read 'mConnVar' from
+                -- 'stateVar', if we have 'MonadFix' instance we could access it
+                -- directly which would reduce this case.
+                traceWith tracer (TrUnknownConnection connId)
                 traceCounters stateVar
 
               Left connState@Known {} -> do

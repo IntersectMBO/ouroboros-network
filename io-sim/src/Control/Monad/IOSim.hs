@@ -16,6 +16,7 @@ module Control.Monad.IOSim
   , runSimTrace
   , controlSimTrace
   , exploreSimTrace
+  , ScheduleMod (..)
   , ScheduleControl (..)
   , runSimTraceST
   , liftST
@@ -26,7 +27,7 @@ module Control.Monad.IOSim
   , unshareClock
     -- * Simulation trace
   , type SimTrace
-  , Trace (Cons, Nil, Trace, SimTrace, TraceDeadlock, TraceLoop,
+  , Trace (Cons, Nil, Trace, SimTrace, SimPORTrace, TraceDeadlock, TraceLoop,
            TraceMainReturn, TraceMainException, TraceRacesFound)
   , SimResult (..)
   , SimEvent (..)
@@ -38,6 +39,7 @@ module Control.Monad.IOSim
   , ppTrace_
   , ppEvents
   , ppSimEvent
+  , ppDebug
     -- ** Selectors
   , traceEvents
   , traceResult
@@ -57,7 +59,7 @@ module Control.Monad.IOSim
   , printTraceEventsSay
     -- * Exploration options
   , ExplorationSpec
-  , ExplorationOptions
+  , ExplorationOptions (..)
   , stdExplorationOptions
   , withScheduleBound
   , withBranching
@@ -133,6 +135,7 @@ selectTraceRaces :: SimTrace a -> [ScheduleControl]
 selectTraceRaces = go
   where
     go (SimTrace _ _ _ _ trace)      = go trace
+    go (SimPORTrace _ _ _ _ _ trace) = go trace
     go (TraceRacesFound races trace) =
       races ++ go trace
     go _                             = []
@@ -158,9 +161,10 @@ detachTraceRaces trace = unsafePerformIO $ do
       saveRaces r t = unsafePerformIO $ do
                         modifyIORef races (r:)
                         return t
-  let go (SimTrace a b c d trace)  = SimTrace a b c d $ go trace
-      go (TraceRacesFound r trace) = saveRaces r   $ go trace
-      go t                         = t
+  let go (SimTrace a b c d trace)      = SimTrace a b c d $ go trace
+      go (SimPORTrace a b c d e trace) = SimPORTrace a b c d e $ go trace
+      go (TraceRacesFound r trace)     = saveRaces r $ go trace
+      go t                             = t
   return (readRaces,go trace)
 
 -- | Select all the traced values matching the expected type. This relies on
@@ -225,6 +229,10 @@ traceSelectTraceEvents fn = bifoldr ( \ v _acc -> Nil v )
                                      -> case eventCtx of
                                           SimRacesFound _ -> acc
                                           SimEvent{} ->
+                                            case fn (seType eventCtx) of
+                                              Nothing -> acc
+                                              Just b  -> Cons b acc
+                                          SimPOREvent{} ->
                                             case fn (seType eventCtx) of
                                               Nothing -> acc
                                               Just b  -> Cons b acc
@@ -304,6 +312,7 @@ traceResult :: Bool -> SimTrace a -> Either Failure a
 traceResult strict = go
   where
     go (SimTrace _ _ _ _ t)             = go t
+    go (SimPORTrace _ _ _ _ _ t)        = go t
     go (TraceRacesFound _ t)            = go t
     go (TraceMainReturn _ _ tids@(_:_))
                                | strict = Left (FailureSloppyShutdown tids)
@@ -313,9 +322,11 @@ traceResult strict = go
     go TraceLoop{}                      = error "Impossible: traceResult TraceLoop{}"
 
 traceEvents :: SimTrace a -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
-traceEvents (SimTrace time tid tlbl event t) = (time, tid, tlbl, event)
-                                             : traceEvents t
-traceEvents _                                = []
+traceEvents (SimTrace time tid tlbl event t)      = (time, tid, tlbl, event)
+                                                  : traceEvents t
+traceEvents (SimPORTrace time tid _ tlbl event t) = (time, tid, tlbl, event)
+                                                  : traceEvents t
+traceEvents _                                     = []
 
 
 ppEvents :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
@@ -460,23 +471,28 @@ compareTraces (Just passing) trace = unsafePerformIO $ do
   sleeper <- newIORef Nothing
   return (unsafePerformIO $ readIORef sleeper,
           go sleeper passing trace)
-  where go sleeper (SimTrace tpass tidpass _ _ pass')
-           (SimTrace tfail tidfail tlfail evfail fail')
+  where go sleeper (SimPORTrace tpass tidpass _ _ _ pass')
+                   (SimPORTrace tfail tidfail tstepfail tlfail evfail fail')
           | (tpass,tidpass) == (tfail,tidfail) =
-              SimTrace tfail tidfail tlfail evfail $
-                go sleeper pass' fail'
-        go sleeper (SimTrace tpass tidpass tlpass _ _) fail =
+              SimPORTrace tfail tidfail tstepfail tlfail evfail
+                $ go sleeper pass' fail'
+        go sleeper (SimPORTrace tpass tidpass tsteppass tlpass _ _) fail =
           unsafePerformIO $ do
             writeIORef sleeper $ Just ((tpass, tidpass, tlpass),Set.empty)
-            return $ SimTrace tpass tidpass tlpass EventThreadSleep $
-                       wakeup sleeper tidpass fail
+            return $ SimPORTrace tpass tidpass tsteppass tlpass EventThreadSleep
+                   $ wakeup sleeper tidpass fail
+        go _ SimTrace {} _ = error "compareTraces: invariant violation"
+        go _ _ SimTrace {} = error "compareTraces: invariant violation"
         go _ _ fail = fail
-        wakeup sleeper tidpass (SimTrace tfail tidfail tlfail evfail fail')
+
+        wakeup sleeper tidpass
+               fail@(SimPORTrace tfail tidfail tstepfail tlfail evfail fail')
           | tidpass == tidfail =
-              SimTrace tfail tidfail tlfail EventThreadWake fail'
+              SimPORTrace tfail tidfail tstepfail tlfail EventThreadWake fail
           | otherwise = unsafePerformIO $ do
               Just (slp,racing) <- readIORef sleeper
               writeIORef sleeper $ Just (slp,Set.insert (tidfail,tlfail) racing)
-              return $ SimTrace tfail tidfail tlfail evfail
+              return $ SimPORTrace tfail tidfail tstepfail tlfail evfail
                      $ wakeup sleeper tidpass fail'
+        wakeup _ _ SimTrace {} = error "compareTraces: invariant violation"
         wakeup _ _ fail = fail

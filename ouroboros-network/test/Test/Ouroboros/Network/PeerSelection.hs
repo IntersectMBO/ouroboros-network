@@ -60,17 +60,14 @@ import           Ouroboros.Network.Testing.Data.Script
 import           Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal,
                      TS (TS), signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
+import           Ouroboros.Network.Testing.Utils (nightlyTest)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
-
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
-#ifndef NIGHTLY
-import           Test.Tasty.ExpectedFailure
-#endif
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Pretty.Simple
 
@@ -145,15 +142,6 @@ tests =
   -- should be precise and not overshoot. The public root target from below
   -- is a one-sided target and we can and will overshoot, but we should not
   -- overshoot by too much.
-
-
-nightlyTest :: TestTree -> TestTree
-nightlyTest =
-#ifndef NIGHTLY
-  ignoreTest
-#else
-  id
-#endif
 
 --
 -- QuickCheck properties

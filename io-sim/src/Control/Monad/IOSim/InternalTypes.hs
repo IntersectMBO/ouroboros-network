@@ -13,7 +13,6 @@ import           Control.Monad.Class.MonadThrow (MaskingState (..))
 
 import           Control.Monad.IOSim.Types (SimA)
 
-
 -- We hide the type @b@ here, so it's useful to bundle these two parts
 -- together, rather than having Thread have an extential type, which
 -- makes record updates awkward.

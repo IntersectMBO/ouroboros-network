@@ -806,8 +806,7 @@ connectionManagerErrorFromException x = do
 -- one can be sure where the assertion came from as well as the all relevant information.
 --
 data AssertionLocation peerAddr
-  = ForkConnectionHandlerCleanup !(Maybe (ConnectionId peerAddr)) !AbstractState
-  | UnregisterInboundConnection  !(Maybe (ConnectionId peerAddr)) !AbstractState
+  = UnregisterInboundConnection  !(Maybe (ConnectionId peerAddr)) !AbstractState
   | RequestOutboundConnection    !(Maybe (ConnectionId peerAddr)) !AbstractState
   | UnregisterOutboundConnection !(Maybe (ConnectionId peerAddr)) !AbstractState
   | PromotedToWarmRemote         !(Maybe (ConnectionId peerAddr)) !AbstractState
@@ -844,6 +843,7 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionManagerCounters    ConnectionManagerCounters
   | TrState                        (Map peerAddr AbstractState)
   -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
+  | TrUnknownConnection            (ConnectionId peerAddr)
   | TrUnexpectedlyFalseAssertion   (AssertionLocation peerAddr)
   -- ^ This case is unexpected at call site.
   deriving Show

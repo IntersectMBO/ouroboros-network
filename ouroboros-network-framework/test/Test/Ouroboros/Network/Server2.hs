@@ -30,6 +30,7 @@ import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -122,7 +123,7 @@ import           Ouroboros.Network.Testing.Data.AbsBearerInfo
                      AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
                      AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
                      absNoAttenuation, toNonFailingAbsBearerInfoScript)
-import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
+import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision, nightlyTest)
 
 import           Test.Ouroboros.Network.ConnectionManager
                      (allValidTransitionsNames, validTransitionMap,
@@ -132,56 +133,48 @@ import           Test.Simulation.Network.Snocket hiding (tests)
 
 tests :: TestTree
 tests =
-  testGroup "Ouroboros.Network.Server2"
-  [ testProperty "unidirectional_IO"  prop_unidirectional_IO
-  , testProperty "unidirectional_Sim" prop_unidirectional_Sim
-  , testProperty "bidirectional_IO"   prop_bidirectional_IO
-  , testProperty "bidirectional_Sim"  prop_bidirectional_Sim
-  , testProperty "connection_manager_pruning"
-                 prop_connection_manager_pruning
-  , testProperty "inbound_governor_pruning"
-                 prop_inbound_governor_pruning
-  , testProperty "never_above_hardlimit"
-                 prop_never_above_hardlimit
-  , testProperty "connection_manager_valid_transitions"
-                 prop_connection_manager_valid_transitions
-  , testProperty "connection_manager_no_invalid_traces"
-                 prop_connection_manager_no_invalid_traces
-  , testProperty "connection_manager_transitions_coverage"
-                 prop_connection_manager_transitions_coverage
-  , testProperty "inbound_governor_no_invalid_traces"
-                 prop_inbound_governor_no_invalid_traces
-  , testProperty "inbound_governor_transitions_coverage"
-                 prop_inbound_governor_transitions_coverage
-  , testProperty "inbound_governor_valid_transitions"
-              prop_inbound_governor_valid_transitions
-  , testProperty "inbound_governor_no_unsupported_state"
-                 prop_inbound_governor_no_unsupported_state
-  , testProperty "connection_manager_valid_transition_order"
-                 prop_connection_manager_valid_transition_order
-  , testProperty "inbound_governor_valid_transition_order"
-                 prop_inbound_governor_valid_transition_order
-  , testProperty "connection_manager_counters"
-                 prop_connection_manager_counters
-  , testProperty "inbound_governor_counters"
-                 prop_inbound_governor_counters
-  , testProperty "timeouts_enforced"
-                 prop_timeouts_enforced
-  , testGroup    "unit_server_accept_error"
-    [ testProperty "throw ConnectionAborted"
-                  (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
-    , testProperty "throw ResourceExhausted"
-                  (unit_server_accept_error IOErrResourceExhausted IOErrThrow)
-    , testProperty "return ConnectionAborted"
-                  (unit_server_accept_error IOErrConnectionAborted IOErrReturn)
-    , testProperty "return ResourceExhausted"
-                  (unit_server_accept_error IOErrResourceExhausted IOErrReturn)
+  testGroup "Ouroboros.Network"
+  [ testGroup "ConnectionManager"
+    [ testProperty "valid transitions"      prop_connection_manager_valid_transitions
+    , nightlyTest $ testProperty "valid transitions (racy)"
+                  $ prop_connection_manager_valid_transitions_racy
+    , testProperty "valid transition order" prop_connection_manager_valid_transition_order
+    , testProperty "transitions coverage"   prop_connection_manager_transitions_coverage
+    , testProperty "no invalid traces"      prop_connection_manager_no_invalid_traces
+    , testProperty "counters"               prop_connection_manager_counters
+    , testProperty "pruning"                prop_connection_manager_pruning
     ]
-  , testProperty "unit_connection_terminated_when_negotiating"
+  , testGroup "InboundGovernor"
+    [ testProperty "valid transitions"      prop_inbound_governor_valid_transitions
+    , testProperty "valid transition order" prop_inbound_governor_valid_transition_order
+    , testProperty "transitions coverage"   prop_inbound_governor_transitions_coverage
+    , testProperty "no invalid traces"      prop_inbound_governor_no_invalid_traces
+    , testProperty "no unsupported state"   prop_inbound_governor_no_unsupported_state
+    , testProperty "pruning"                prop_inbound_governor_pruning
+    , testProperty "counters"               prop_inbound_governor_counters
+    , testProperty "timeouts enforced"      prop_timeouts_enforced
+    ]
+  , testGroup "Server2"
+    [ testProperty "unidirectional IO"      prop_unidirectional_IO
+    , testProperty "unidirectional Sim"     prop_unidirectional_Sim
+    , testProperty "bidirectional IO"       prop_bidirectional_IO
+    , testProperty "bidirectional Sim"      prop_bidirectional_Sim
+    , testProperty "never above hardlimit"  prop_never_above_hardlimit
+    , testGroup      "accept errors"
+      [ testProperty "throw ConnectionAborted"
+                    (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
+      , testProperty "throw ResourceExhausted"
+                    (unit_server_accept_error IOErrResourceExhausted IOErrThrow)
+      , testProperty "return ConnectionAborted"
+                    (unit_server_accept_error IOErrConnectionAborted IOErrReturn)
+      , testProperty "return ResourceExhausted"
+                    (unit_server_accept_error IOErrResourceExhausted IOErrReturn)
+      ]
+    ]
+  , testProperty "connection terminated when negotiating"
                  unit_connection_terminated_when_negotiating
   , testGroup "generators"
-    [ testProperty "MultiNodeScript"
-                   prop_generator_MultiNodeScript
+    [ testProperty "MultiNodeScript" prop_generator_MultiNodeScript
     ]
   ]
 
@@ -2069,34 +2062,12 @@ verifyRemoteTransitionOrder (h:t) = go t h
               (property (currToState == nextFromState)))
          <> go ts next
 
--- | Property wrapping `multinodeExperiment`.
---
--- Note: this test validates connection manager state changes.
---
-prop_connection_manager_valid_transitions :: Int
-                                          -> ArbDataFlow
-                                          -> AbsBearerInfo
-                                          -> MultiNodeScript Int TestAddr
-                                          -> Property
-prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
-                                          defaultBearerInfo
-                                          mns@(MultiNodeScript
-                                                    events
-                                                    attenuationMap) =
-  let trace = runSimTrace sim
 
-      abstractTransitionEvents :: Trace (SimResult ())
-                                        (AbstractTransitionTrace SimAddr)
-      abstractTransitionEvents = traceWithNameTraceEvents trace
-
-      connectionManagerEvents :: [ConnectionManagerTrace
-                                    SimAddr
-                                    (ConnectionHandlerTrace
-                                      UnversionedProtocol
-                                      DataFlowProtocolData)]
-      connectionManagerEvents = withNameTraceEvents trace
-
-  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+validate_transitions :: MultiNodeScript Int TestAddr
+                     -> SimTrace ()
+                     -> Property
+validate_transitions mns@(MultiNodeScript events _) trace =
+      tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . mkProperty
@@ -2137,12 +2108,64 @@ prop_connection_manager_valid_transitions serverAcc (ArbDataFlow dataFlow)
     . splitConns id
     $ abstractTransitionEvents
   where
+    abstractTransitionEvents :: Trace (SimResult ())
+                                      (AbstractTransitionTrace SimAddr)
+    abstractTransitionEvents = traceWithNameTraceEvents trace
+
+    connectionManagerEvents :: [ConnectionManagerTrace
+                                  SimAddr
+                                  (ConnectionHandlerTrace
+                                    UnversionedProtocol
+                                    DataFlowProtocolData)]
+    connectionManagerEvents = withNameTraceEvents trace
+
+
+
+-- | Property wrapping `multinodeExperiment`.
+--
+-- Note: this test validates connection manager state changes.
+--
+prop_connection_manager_valid_transitions
+  :: Int
+  -> ArbDataFlow
+  -> AbsBearerInfo
+  -> MultiNodeScript Int TestAddr
+  -> Property
+prop_connection_manager_valid_transitions
+  serverAcc (ArbDataFlow dataFlow) defaultBearerInfo
+  mns@(MultiNodeScript events attenuationMap) =
+    validate_transitions mns trace
+  where
+    trace = runSimTrace sim
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
                        attenuationMap
+
+
+prop_connection_manager_valid_transitions_racy
+  :: Int
+  -> ArbDataFlow
+  -> AbsBearerInfo
+  -> MultiNodeScript Int TestAddr
+  -> Property
+prop_connection_manager_valid_transitions_racy
+  serverAcc (ArbDataFlow dataFlow)
+  defaultBearerInfo mns@(MultiNodeScript events attenuationMap) =
+    exploreSimTrace id sim $ \_ trace ->
+                             -- ppDebug trace $
+                             validate_transitions mns trace
+  where
+    sim :: IOSim s ()
+    sim = exploreRaces
+       >> multiNodeSim serverAcc dataFlow
+                       defaultBearerInfo
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
+
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -3430,31 +3453,32 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
 
 
 
-multiNodeSimTracer :: (Serialise req, Show req, Eq req, Typeable req)
+multiNodeSimTracer :: ( Monad m, MonadTimer m, MonadLabelledSTM m
+                      , MonadMask m, MonadTime m, MonadThrow (STM m)
+                      , MonadSay m, MonadAsync m, MonadEvaluate m
+                      , MonadFork m, MonadST m
+                      , Serialise req, Show req, Eq req, Typeable req
+                      )
                    => req
                    -> DataFlow
                    -> AbsBearerInfo
                    -> AcceptedConnectionsLimit
                    -> [ConnectionEvent req TestAddr]
                    -> Map TestAddr (Script AbsBearerInfo)
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr))
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
-                   -> Tracer
-                      (IOSim s)
+                   -> Tracer m
                       (WithName
                        (Name SimAddr)
                         (ConnectionManagerTrace
                          SimAddr
                           (ConnectionHandlerTrace
                             UnversionedProtocol DataFlowProtocolData)))
-                   -> IOSim s ()
+                   -> m ()
 multiNodeSimTracer serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap
                    remoteTrTracer abstractTrTracer

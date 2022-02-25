@@ -225,13 +225,15 @@ evaluateTrace = go []
     go as tr = do
       r <- try (evaluate tr)
       case r of
-        Right (SimTrace _ _ _ (EventSay s) tr') -> go (s : as) tr'
-        Right (SimTrace _ _ _ _ tr' )           -> go as tr'
-        Right (TraceMainReturn _ a _)           -> pure $ SimReturn a (reverse as)
-        Right (TraceMainException _ e _)        -> pure $ SimException e (reverse as)
-        Right (TraceDeadlock _ _)               -> pure $ SimDeadLock (reverse as)
-        Right TraceLoop                         -> error "IOSimPOR step time limit exceeded"
-        Left  (SomeException e)                 -> pure $ SimException (SomeException e) (reverse as)
+        Right (SimTrace _ _ _ (EventSay s) tr')      -> go (s : as) tr'
+        Right (SimTrace _ _ _ _ tr' )                -> go as tr'
+        Right (SimPORTrace _ _ _ _ (EventSay s) tr') -> go (s : as) tr'
+        Right (SimPORTrace _ _ _ _ _ tr' )           -> go as tr'
+        Right (TraceMainReturn _ a _)                -> pure $ SimReturn a (reverse as)
+        Right (TraceMainException _ e _)             -> pure $ SimException e (reverse as)
+        Right (TraceDeadlock _ _)                    -> pure $ SimDeadLock (reverse as)
+        Right TraceLoop                              -> error "IOSimPOR step time limit exceeded"
+        Left  (SomeException e)                      -> pure $ SimException (SomeException e) (reverse as)
 
 data WithThreadAndTime a = WithThreadAndTime {
       wtatOccuredAt    :: !Time

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -13,6 +14,10 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           Test.QuickCheck
+import           Test.Tasty (TestTree)
+#ifndef NIGHTLY
+import           Test.Tasty.ExpectedFailure
+#endif
 
 import           Debug.Trace (traceShowM)
 
@@ -118,3 +123,15 @@ debugTracer = Tracer traceShowM
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
 sayTracer = Tracer (say . show)
 
+
+--
+-- Nightly tests
+--
+
+nightlyTest :: TestTree -> TestTree
+nightlyTest =
+#ifndef NIGHTLY
+  ignoreTest
+#else
+  id
+#endif
