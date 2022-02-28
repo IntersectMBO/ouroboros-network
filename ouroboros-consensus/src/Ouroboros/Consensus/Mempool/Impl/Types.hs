@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Types required for implementing the Mempool.
@@ -47,7 +48,6 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 {-------------------------------------------------------------------------------
   Internal State
@@ -329,7 +329,7 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
 
 -- | Tick the 'LedgerState' using the given 'BlockSlot'.
 tickLedgerState
-  :: forall blk mk. (UpdateLedger blk, ValidateEnvelope blk, SingI mk)
+  :: forall blk mk. (UpdateLedger blk, ValidateEnvelope blk, IsApplyMapKind mk)
   => LedgerConfig     blk
   -> ForgeLedgerState blk mk
   -> (SlotNo, TickedLedgerState blk mk)

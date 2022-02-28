@@ -200,10 +200,10 @@ data instance LedgerState (ShelleyBlock era) mk = ShelleyLedgerState {
     }
   deriving (Generic)
 
-deriving instance ShelleyBasedEra era => Eq       (LedgerState (ShelleyBlock era) mk)
-deriving instance ShelleyBasedEra era => NoThunks (LedgerState (ShelleyBlock era) mk)
+deriving instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerState (ShelleyBlock era) mk)
+deriving instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerState (ShelleyBlock era) mk)
 
-instance (ShelleyBasedEra era, SingI mk) => Show (LedgerState (ShelleyBlock era) mk) where
+instance (ShelleyBasedEra era, SingI mk) => Show (LedgerState (ShelleyBlock era) (ApplyMapKind' mk)) where
   showsPrec _prec = showsLedgerState sMapKind
 
 instance ShelleyBasedEra era => ShowLedgerState (LedgerState (ShelleyBlock era)) where
@@ -299,18 +299,18 @@ instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock era)
         , tickedShelleyLedgerState
         } = st
 
-deriving newtype  instance ShelleyBasedEra era => Eq       (LedgerTables (LedgerState (ShelleyBlock era)) mk)
-deriving anyclass instance ShelleyBasedEra era => NoThunks (LedgerTables (LedgerState (ShelleyBlock era)) mk)
+deriving newtype  instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerTables (LedgerState (ShelleyBlock era)) mk)
+deriving anyclass instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerTables (LedgerState (ShelleyBlock era)) mk)
 
 instance
      (ShelleyBasedEra era, Typeable mk, SingI mk)
-  => ToCBOR (LedgerTables (LedgerState (ShelleyBlock era)) mk) where
+  => ToCBOR (LedgerTables (LedgerState (ShelleyBlock era)) (ApplyMapKind' mk)) where
   toCBOR (ShelleyLedgerTables utxoTable) =
       CBOR.encodeListLen 2 <> CBOR.encodeTag 0 <> toCBOR utxoTable
 
 instance
      (ShelleyBasedEra era, Typeable mk, SingI mk)
-  => FromCBOR (LedgerTables (LedgerState (ShelleyBlock era)) mk) where
+  => FromCBOR (LedgerTables (LedgerState (ShelleyBlock era)) (ApplyMapKind' mk)) where
   fromCBOR = do
       CBOR.decodeListLenOf 2
       tag <- CBOR.decodeTag
@@ -418,8 +418,7 @@ data instance Ticked1 (LedgerState (ShelleyBlock era)) mk = TickedShelleyLedgerS
     }
   deriving (Generic)
 
-deriving instance ShelleyBasedEra era
-               => NoThunks (Ticked1 (LedgerState (ShelleyBlock era)) mk)
+deriving instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (Ticked1 (LedgerState (ShelleyBlock era)) mk)
 
 untickedShelleyLedgerTipPoint ::
      TickedLedgerState (ShelleyBlock era) mk

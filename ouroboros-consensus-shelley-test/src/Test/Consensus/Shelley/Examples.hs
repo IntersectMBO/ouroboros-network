@@ -25,7 +25,7 @@ import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (ApplyMapKind (ApplyEmptyMK))
+import           Ouroboros.Consensus.Ledger.Basics (ApplyMapKind' (ApplyEmptyMK))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool

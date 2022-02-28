@@ -86,8 +86,7 @@ import           Cardano.Binary (FromCBOR, ToCBOR, enforceSize)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Basics (LedgerTables,
-                     MapKind (ValuesMK))
+import           Ouroboros.Consensus.Ledger.Basics (LedgerTables, ValuesMK)
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run

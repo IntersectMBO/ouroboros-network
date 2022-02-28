@@ -21,6 +21,7 @@ import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
+import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
