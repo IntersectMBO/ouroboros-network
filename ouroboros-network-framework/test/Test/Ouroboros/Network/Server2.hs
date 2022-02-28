@@ -2168,7 +2168,6 @@ prop_connection_manager_valid_transitions_racy
   serverAcc (ArbDataFlow dataFlow)
   defaultBearerInfo mns@(MultiNodeScript events attenuationMap) =
     exploreSimTrace id sim $ \_ trace ->
-                             -- ppDebug trace $
                              validate_transitions mns trace
   where
     sim :: IOSim s ()
@@ -2361,9 +2360,9 @@ prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataF
 -- aren't an issue.
 --
 prop_connection_manager_counters :: Int
-                               -> ArbDataFlow
-                               -> MultiNodeScript Int TestAddr
-                               -> Property
+                                 -> ArbDataFlow
+                                 -> MultiNodeScript Int TestAddr
+                                 -> Property
 prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
                                  (MultiNodeScript events
                                                   attenuationMap) =
