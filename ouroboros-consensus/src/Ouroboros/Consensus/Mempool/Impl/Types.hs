@@ -71,7 +71,7 @@ data MempoolChangelog blk = MempoolChangelog {
     mcChangelog   :: !(DbChangelog (LedgerState blk))
   , mcLedgerState :: !(TickedLedgerState blk ValuesMK)
   , mcDiffs       :: !(LedgerTables (LedgerState blk) DiffMK)
-  -- TODO store slot number here the moment MempoolChangelog is initialized
+  -- MTODO store slot number here the moment MempoolChangelog is initialized
   } deriving (Generic)
 
 deriving instance ( NoThunks (LedgerTables (LedgerState blk) DiffMK)
@@ -351,7 +351,7 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 
     nextTicketNo = succ vrLastTicketNo
     extendMempoolChangelog = undefined -- MTODO implement this
-    vrAfter = mcLedgerState vrMempoolChangelog
+    vrAfter = mcLedgerState vrMempoolChangelog -- MTODO rename this
 
 -- | Validate the internal state against the current ledger state and the
 -- given 'BlockSlot', revalidating if necessary.
