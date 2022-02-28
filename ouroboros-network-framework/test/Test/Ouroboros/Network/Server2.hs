@@ -140,6 +140,8 @@ tests =
     , nightlyTest $ testProperty "valid transitions (racy)"
                   $ prop_connection_manager_valid_transitions_racy
     , testProperty "valid transition order" prop_connection_manager_valid_transition_order
+    , nightlyTest $ testProperty "valid transition order (racy)"
+                  $ prop_connection_manager_valid_transition_order_racy
     , testProperty "transitions coverage"   prop_connection_manager_transitions_coverage
     , testProperty "no invalid traces"      prop_connection_manager_no_invalid_traces
     , testProperty "counters"               prop_connection_manager_counters
@@ -2303,6 +2305,48 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
                        maxAcceptedConnectionsLimit
                        events
                        attenuationMap
+
+
+prop_connection_manager_valid_transition_order_racy :: Int
+                                                    -> ArbDataFlow
+                                                    -> AbsBearerInfo
+                                                    -> MultiNodeScript Int TestAddr
+                                                    -> Property
+prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataFlow)
+                                                    defaultBearerInfo
+                                                    mns@(MultiNodeScript
+                                                             events
+                                                             attenuationMap) =
+    exploreSimTrace
+          (\a -> a { explorationReplay = Just ControlDefault })
+          sim $ \_ trace ->
+      let abstractTransitionEvents :: Trace (SimResult ())
+                                            (AbstractTransitionTrace SimAddr)
+          abstractTransitionEvents = traceWithNameTraceEvents trace
+
+      in  -- ppDebug trace
+          tabulate "ConnectionEvents" (map showConnectionEvents events)
+        . counterexample (ppScript mns)
+        . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+        . getAllProperty
+        . bifoldMap
+           ( \ case
+               MainReturn {} -> mempty
+               _             -> AllProperty (property False)
+           )
+           verifyAbstractTransitionOrder
+        . fmap (map ttTransition)
+        . splitConns id
+        $ abstractTransitionEvents
+  where
+    sim :: IOSim s ()
+    sim = exploreRaces
+       >> multiNodeSim serverAcc dataFlow
+                       defaultBearerInfo
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
+
 
 -- | Check connection manager counters in `multinodeExperiment`.
 --
