@@ -58,7 +58,8 @@ import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SlotNo)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, LedgerTables,
+                     TableStuff, ValuesMK, valuesMKEncoder)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
@@ -227,6 +228,7 @@ data Examples blk = Examples {
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
     , exampleExtLedgerState   :: Labelled (ExtLedgerState blk EmptyMK)
     , exampleSlotNo           :: Labelled SlotNo
+    , examplesLedgerTables    :: Labelled (LedgerTables (LedgerState blk) ValuesMK)
     }
 
 emptyExamples :: Examples blk
@@ -246,6 +248,7 @@ emptyExamples = Examples {
     , exampleChainDepState    = mempty
     , exampleExtLedgerState   = mempty
     , exampleSlotNo           = mempty
+    , examplesLedgerTables    = mempty
     }
 
 combineExamples ::
@@ -270,6 +273,7 @@ combineExamples f e1 e2 = Examples {
     , exampleChainDepState    = combine exampleChainDepState
     , exampleExtLedgerState   = combine exampleExtLedgerState
     , exampleSlotNo           = combine exampleSlotNo
+    , examplesLedgerTables    = combine examplesLedgerTables
     }
   where
     combine :: (Examples blk -> Labelled a) -> Labelled a
@@ -336,6 +340,7 @@ goldenTest_all ::
      ( SerialiseDiskConstraints         blk
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
+     , TableStuff          (LedgerState blk)
      , SupportedNetworkProtocolVersion  blk
 
      , ToGoldenDirectory (BlockNodeToNodeVersion   blk)
@@ -359,7 +364,11 @@ goldenTest_all codecConfig goldenDir examples =
 -- TODO how can we ensure that we have a test for each constraint listed in
 -- 'SerialiseDiskConstraints'?
 goldenTest_SerialiseDisk ::
-     forall blk. (SerialiseDiskConstraints blk, HasCallStack)
+     forall blk.
+     ( TableStuff (LedgerState blk)
+     , SerialiseDiskConstraints blk
+     , HasCallStack
+     )
   => CodecConfig blk
   -> FilePath
   -> Examples blk
@@ -372,6 +381,7 @@ goldenTest_SerialiseDisk codecConfig goldenDir Examples {..} =
       , test "AnnTip"         exampleAnnTip        (encodeDisk codecConfig)
       , test "ChainDepState"  exampleChainDepState (encodeDisk codecConfig)
       , test "ExtLedgerState" exampleExtLedgerState encodeExt
+      , test "LedgerTables"   examplesLedgerTables  valuesMKEncoder
       ]
   where
     test :: TestName -> Labelled a -> (a -> Encoding) -> TestTree
