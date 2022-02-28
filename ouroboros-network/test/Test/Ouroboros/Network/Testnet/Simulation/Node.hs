@@ -449,9 +449,9 @@ diffusionSimulation
           let acceptedConnectionsLimit =
                 AcceptedConnectionsLimit maxBound maxBound 0
               diffusionMode = InitiatorAndResponderDiffusionMode
-              readLRP = readTVar lrpVar
-              readPRP = return raps
-              readULA = return (UseLedgerAfter 0)
+              readLocalRootPeers  = readTVar lrpVar
+              readPublicRootPeers = return raps
+              readUseLedgerAfter  = return (UseLedgerAfter 0)
 
               acceptVersion = \_ v -> Accept v
 
@@ -520,9 +520,9 @@ diffusionSimulation
                   , Node.aKeepAliveInterval    = 0
                   , Node.aPingPongInterval     = 0
                   , Node.aPeerSelectionTargets = peerSelectionTargets
-                  , Node.aReadLocalRootPeers   = readLRP
-                  , Node.aReadPublicRootPeers  = readPRP
-                  , Node.aReadUseLedgerAfter   = readULA
+                  , Node.aReadLocalRootPeers   = readLocalRootPeers
+                  , Node.aReadPublicRootPeers  = readPublicRootPeers
+                  , Node.aReadUseLedgerAfter   = readUseLedgerAfter
                   , Node.aProtocolIdleTimeout  = 5
                   , Node.aTimeWaitTimeout      = 30
                   , Node.aDNSTimeoutScript     = dnsTimeout
