@@ -83,6 +83,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , SeqDiffMK
   , TrackingMK
   , ValuesMK
+  , CodecMK(..)
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
@@ -100,6 +101,10 @@ module Ouroboros.Consensus.Ledger.Basics (
   , InMemory (..)
   , StowableLedgerTables (..)
   , isCandidateForUnstowDefault
+    -- ** Serialization
+  , SufficientSerializationForAnyBackingStore(..)
+  , valuesMKEncoder
+  , valuesMKDecoder
     -- ** Changelog
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
@@ -123,7 +128,7 @@ import           Control.Monad (when)
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import qualified Data.Map as Map
-import           Data.Monoid (All (..))
+import           Data.Monoid (All (..), Sum (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
@@ -247,9 +252,7 @@ class ( -- Requirements on the ledger state itself
       , HeaderHash (l DiffMK) ~ HeaderHash l
       , HeaderHash (l TrackingMK) ~ HeaderHash l
       , NoThunks (LedgerTables l SeqDiffMK)
-      , NoThunks          (LedgerTables l ValuesMK)   -- for in-memory store
-      , ToCBOR   (LedgerTables l ValuesMK)
-      , FromCBOR (LedgerTables l ValuesMK)
+      , NoThunks (LedgerTables l ValuesMK) -- for TVars in in-memory backing store and LegacyLedgerDB
       , StowableLedgerTables l
       ) => IsLedger (l :: LedgerStateKind) where
   -- | Errors that can arise when updating the ledger
@@ -361,6 +364,15 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk1
     -> LedgerTables l mk2
 
+  traverseLedgerTables ::
+       Applicative f
+    => (forall k v . Ord k
+        =>    mk1 k v
+        -> f (mk2 k v)
+       )
+    ->    LedgerTables l mk1
+    -> f (LedgerTables l mk2)
+
   zipLedgerTables ::
        (forall k v.
             Ord k
@@ -380,6 +392,17 @@ class ( ShowLedgerState (LedgerTables l)
          -> m
        )
     -> LedgerTables l mk
+    -> m
+
+  foldLedgerTables2 ::
+       Monoid m
+    => (forall k v . Ord k
+        => mk1 k v
+        -> mk2 k v
+        -> m
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
     -> m
 
 overLedgerTables ::
@@ -461,6 +484,54 @@ zipOverLedgerTablesTicked f l tables2 =
       (\tables1 -> zipLedgerTables f tables1 tables2)
       l
 
+-- | This class provides a 'CodecMK' that can be used to encode/decode keys and
+-- values on @'LedgerTables' l mk@
+class SufficientSerializationForAnyBackingStore (l :: LedgerStateKind) where
+  codecLedgerTables :: LedgerTables l CodecMK
+
+-- | Default encoder of @'LedgerTables' l ''ValuesMK'@ to be used by the
+-- in-memory backing store.
+valuesMKEncoder ::
+     ( TableStuff l
+     , SufficientSerializationForAnyBackingStore l
+     )
+  => LedgerTables l ValuesMK
+  -> CBOR.Encoding
+valuesMKEncoder tables =
+       CBOR.encodeListLen (getSum (foldLedgerTables (\_ -> Sum 1) tables))
+    <> foldLedgerTables2 go codecLedgerTables tables
+  where
+    go :: CodecMK k v -> ApplyMapKind ValuesMK k v -> CBOR.Encoding
+    go (CodecMK encK encV _decK _decV) (ApplyValuesMK (UtxoValues m)) =
+         CBOR.encodeMapLen (fromIntegral $ Map.size m)
+      <> Map.foldMapWithKey (\k v -> CBOR.encodeListLen 2 <> encK k <> encV v) m
+
+-- | Default encoder of @'LedgerTables' l ''ValuesMK'@ to be used by the
+-- in-memory backing store.
+valuesMKDecoder ::
+     ( TableStuff l
+     , SufficientSerializationForAnyBackingStore l
+     )
+  => CBOR.Decoder s (LedgerTables l ValuesMK)
+valuesMKDecoder = do
+    numTables <- CBOR.decodeListLen
+    if numTables == 0
+      then
+        return polyEmptyLedgerTables
+      else do
+        mapLen <- CBOR.decodeMapLen
+        ret    <- traverseLedgerTables (go mapLen) codecLedgerTables
+        Exn.assert ((getSum (foldLedgerTables (\_ -> Sum 1) ret)) == numTables)
+          $ return ret
+ where
+  go :: Ord k
+     => Int
+     -> CodecMK k v
+     -> CBOR.Decoder s (ApplyMapKind ValuesMK k v)
+  go len (CodecMK _encK _encV decK decV) =
+        ApplyValuesMK . UtxoValues . Map.fromList
+    <$> sequence (replicate len (CBOR.decodeListLenOf 2 *> ((,) <$> decK <*> decV)))
+
 {-------------------------------------------------------------------------------
   Convenience aliases
 -------------------------------------------------------------------------------}
@@ -528,6 +599,15 @@ type RewoundMK  = ApplyMapKind' RewoundMK'
 type SeqDiffMK  = ApplyMapKind' SeqDiffMK'
 type TrackingMK = ApplyMapKind' TrackingMK'
 type ValuesMK   = ApplyMapKind' ValuesMK'
+
+-- | A codec 'MapKind' that will be used to refer to @'LedgerTables' l CodecMK@
+-- as the codecs that can encode every key and value in the @'LedgerTables' l
+-- mk@.
+data CodecMK k v = CodecMK
+                     (k -> CBOR.Encoding)
+                     (v -> CBOR.Encoding)
+                     (forall s . CBOR.Decoder s k)
+                     (forall s . CBOR.Decoder s v)
 
 type ApplyMapKind mk = mk
 

@@ -81,12 +81,12 @@ import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Word
 
-import           Cardano.Binary (FromCBOR, ToCBOR, enforceSize)
+import           Cardano.Binary (enforceSize)
 
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Basics (LedgerTables, ValuesMK)
+import           Ouroboros.Consensus.Ledger.Basics (SufficientSerializationForAnyBackingStore)
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
@@ -273,9 +273,10 @@ class ( CanHardFork xs
       , All (DecodeDiskDepIx (NestedCtxt Header)) xs
         -- Required for 'getHfcBinaryBlockInfo'
       , All HasBinaryBlockInfo xs
-        -- Required for snapshotting the in-memory backing store
-      , FromCBOR (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
-      , ToCBOR   (LedgerTables (LedgerState (HardForkBlock xs)) ValuesMK)
+        -- Tables on the HardForkCombinator are not compositionally defined,
+        -- therefore this constraint is needed and will have to be satisfied by
+        -- each instantiation of 'HardForkBlock'.
+      , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs))
       ) => SerialiseHFC xs where
 
   encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)

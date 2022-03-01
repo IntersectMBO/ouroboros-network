@@ -165,7 +165,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , snapshotToStatePath
   , snapshotToTablesPath
     -- ** Opaque
-  , DiskSnapshot (..)
+  , DiskSnapshot (..) -- the constructor is exported only for db-analyser
     -- * Trace events
   , ReplayGoal (..)
   , ReplayStart (..)
@@ -192,7 +192,6 @@ import           GHC.Generics (Generic)
 import           GHC.Stack
 import           Text.Read (readMaybe)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.Block (Point (Point))
@@ -346,10 +345,8 @@ initLedgerDB ::
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
-       , FromCBOR (LedgerTables (ExtLedgerState blk) ValuesMK)
-       , ToCBOR   (LedgerTables (ExtLedgerState blk) ValuesMK)
        , HasCallStack
-       )
+       , SufficientSerializationForAnyBackingStore (ExtLedgerState blk))
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
@@ -503,13 +500,12 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
      ( IOLike m
-     , LedgerSupportsProtocol blk
-     , FromCBOR (LedgerTables (ExtLedgerState blk) ValuesMK)
-     , ToCBOR   (LedgerTables (ExtLedgerState blk) ValuesMK)
-     )
+     , NoThunks (LedgerTables l ValuesMK)
+     , TableStuff l
+     , SufficientSerializationForAnyBackingStore l)
   => SomeHasFS m
   -> DiskSnapshot
-  -> m (LedgerBackingStore' m blk)
+  -> m (LedgerBackingStore m l)
 restoreBackingStore (SomeHasFS hasFS) snapshot = do
     -- TODO a backing store that actually resides on-disk during use should have
     -- a @new*@ function that receives both the location it should load from (ie
@@ -527,8 +523,8 @@ restoreBackingStore (SomeHasFS hasFS) snapshot = do
                    Just keys -> zipLedgerTables (rangeRead_  (HD.rqCount rq)) keys values
                )
                (zipLedgerTables applyDiff_)
-               toCBOR
-               fromCBOR
+               valuesMKEncoder
+               valuesMKDecoder
                (Left (SomeHasFS hasFS, HD.BackingStorePath loadPath))
     pure (LedgerBackingStore store)
   where
@@ -537,12 +533,12 @@ restoreBackingStore (SomeHasFS hasFS) snapshot = do
 -- | Create a backing store from the given genesis ledger state
 newBackingStore ::
      ( IOLike m
-     , TableStuff l
      , NoThunks (LedgerTables l ValuesMK)
-     , FromCBOR (LedgerTables l ValuesMK)
-     , ToCBOR   (LedgerTables l ValuesMK)
-     )
-  => SomeHasFS m -> LedgerTables l ValuesMK -> m (LedgerBackingStore m l)
+     , TableStuff l
+     , SufficientSerializationForAnyBackingStore l)
+  => SomeHasFS m
+  -> LedgerTables l ValuesMK
+  -> m (LedgerBackingStore m l)
 newBackingStore _someHasFS tables = do
     store <- HD.newTVarBackingStore
                (zipLedgerTables lookup_)
@@ -551,8 +547,8 @@ newBackingStore _someHasFS tables = do
                    Just keys -> zipLedgerTables (rangeRead_  (HD.rqCount rq)) keys values
                )
                (zipLedgerTables applyDiff_)
-               toCBOR
-               fromCBOR
+               valuesMKEncoder
+               valuesMKDecoder
                (Right (Origin, tables))
     pure (LedgerBackingStore store)
 
