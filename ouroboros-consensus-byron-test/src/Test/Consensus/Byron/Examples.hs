@@ -117,6 +117,7 @@ examples = Golden.Examples {
     , exampleChainDepState    = unlabelled exampleChainDepState
     , exampleExtLedgerState   = unlabelled $ forgetLedgerStateTables exampleExtLedgerState
     , exampleSlotNo           = unlabelled exampleSlotNo
+    , examplesLedgerTables    = unlabelled NoByronLedgerTables
     }
   where
     regularAndEBB :: a -> a -> Labelled a
