@@ -19,8 +19,10 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , randomBlockGenerationArgs
   , NodeKernel (..)
   , newNodeKernel
-  , registerClient
-  , unregisterClient
+  , registerClientChains
+  , unregisterClientChains
+  , registerClientKeepAlive
+  , unregisterClientKeepAlive
   , withNodeKernelThread
   , NodeKernelError (..)
   ) where
@@ -179,11 +181,11 @@ newNodeKernel = NodeKernel
 
 -- | Register a new upstream chain-sync client.
 --
-registerClient :: MonadSTM m
-               => NodeKernel block m
-               -> NtNAddr
-               -> m (StrictTVar m (Chain block))
-registerClient NodeKernel { nkClientChains } peerAddr = atomically $ do
+registerClientChains :: MonadSTM m
+                     => NodeKernel block m
+                     -> NtNAddr
+                     -> m (StrictTVar m (Chain block))
+registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
     chainVar <- newTVar Chain.Genesis
     modifyTVar nkClientChains (Map.insert peerAddr chainVar)
     return chainVar
@@ -191,12 +193,32 @@ registerClient NodeKernel { nkClientChains } peerAddr = atomically $ do
 
 -- | Unregister an upstream chain-sync client.
 --
-unregisterClient :: MonadSTM m
-                 => NodeKernel block m
-                 -> NtNAddr
-                 -> m ()
-unregisterClient NodeKernel { nkClientChains } peerAddr = atomically $
+unregisterClientChains :: MonadSTM m
+                       => NodeKernel block m
+                       -> NtNAddr
+                       -> m ()
+unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
     modifyTVar nkClientChains (Map.delete peerAddr)
+
+-- | Register a new keep alive state.
+--
+registerClientKeepAlive :: MonadSTM m
+                        => NodeKernel block m
+                        -> NtNAddr
+                        -> m (StrictTVar m (Map NtNAddr PeerGSV))
+registerClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $ do
+    modifyTVar nkKeepAliveCtx (Map.insert peerAddr defaultGSV)
+    return nkKeepAliveCtx
+
+
+-- | Unregister a keep alive state
+--
+unregisterClientKeepAlive :: MonadSTM m
+                          => NodeKernel block m
+                          -> NtNAddr
+                          -> m ()
+unregisterClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $
+    modifyTVar nkKeepAliveCtx (Map.delete peerAddr)
 
 
 withSlotTime :: forall m a.
