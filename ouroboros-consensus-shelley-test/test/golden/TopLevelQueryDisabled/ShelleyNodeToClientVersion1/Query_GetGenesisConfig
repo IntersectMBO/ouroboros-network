@@ -1,1 +1,1 @@
-ShelleyEncoderUnsupportedQuery (SomeSecond GetGenesisConfig) ShelleyNodeToClientVersion1
+ShelleyEncoderUnsupportedQuery (SomeQuery GetGenesisConfig) ShelleyNodeToClientVersion1
