@@ -19,13 +19,22 @@ module Test.Consensus.Shelley.Examples (
   , examplesShelley
   ) where
 
+import           Data.Foldable (toList)
+import qualified Data.Map as Map
+import           Data.Set (Set)
 import qualified Data.Set as Set
+import           GHC.Records (HasField (getField))
+
+import qualified Cardano.Ledger.Core as LC
+import           Cardano.Ledger.Era (Crypto)
+import           Cardano.Ledger.Shelley.Tx (TxIn)
 
 import           Ouroboros.Network.Block (Serialised (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (ApplyMapKind' (ApplyEmptyMK))
+import           Ouroboros.Consensus.Ledger.Basics
+                     (ApplyMapKind' (ApplyEmptyMK))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -33,8 +42,10 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Test.Cardano.Ledger.Shelley.Orphans ()
 
+import qualified Ouroboros.Consensus.Ledger.Basics as Basics
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Golden (labelled, unlabelled)
@@ -61,7 +72,10 @@ codecConfig :: CodecConfig (ShelleyBlock Ouroboros.Consensus.Shelley.Eras.Standa
 codecConfig = ShelleyCodecConfig
 
 fromShelleyLedgerExamples
-  :: ShelleyBasedEra era
+  :: forall era.
+     ( ShelleyBasedEra era
+     , HasField "inputs" (LC.TxBody era) (Set (TxIn (Crypto era)))
+     )
   => ShelleyLedgerExamples era
   -> Golden.Examples (ShelleyBlock era)
 fromShelleyLedgerExamples ShelleyLedgerExamples {
@@ -83,6 +97,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
     , exampleSlotNo           = unlabelled slotNo
+    , examplesLedgerTables    = unlabelled ledgerTables
     }
   where
     blk = mkShelleyBlock sleBlock
@@ -130,6 +145,27 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
+    ledgerTables = ShelleyLedgerTables
+                 $ Basics.ApplyValuesMK
+                 $ HD.UtxoValues
+                 $ Map.fromList
+                 $ zip exampleTxIns exampleTxOuts
+      where
+        exampleTxIns :: [TxIn (Crypto era)]
+        exampleTxIns  =
+          case toList $ getField @"inputs" $ getField @"body" sleTx of
+            [] -> error "No transaction inputs were provided to construct the ledger tables"
+                  -- We require at least one transaction input (and one
+                  -- transaction output) in the example provided by
+                  -- cardano-ledger to make sure that we test the serialization
+                  -- of ledger tables with at least one non-trivial example.
+            xs -> xs
+
+        exampleTxOuts :: [LC.TxOut era]
+        exampleTxOuts =
+          case toList $ getField @"outputs" $ getField @"body" sleTx of
+            [] -> error "No transaction outputs were provided to construct the ledger tables"
+            xs -> xs
 
 examplesShelley :: Golden.Examples (ShelleyBlock StandardShelley)
 examplesShelley = fromShelleyLedgerExamples ledgerExamplesShelley
