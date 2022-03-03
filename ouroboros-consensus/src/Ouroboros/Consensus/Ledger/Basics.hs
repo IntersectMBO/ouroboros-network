@@ -73,17 +73,17 @@ module Ouroboros.Consensus.Ledger.Basics (
   , toSMapKind
   , valuesTrackingMK
     -- *** Mediators
-  , IsApplyMapKind
-  , UnApplyMapKind
+  , CodecMK (..)
   , DiffMK
   , EmptyMK
+  , IsApplyMapKind
   , KeysMK
   , QueryMK
   , RewoundMK
   , SeqDiffMK
   , TrackingMK
+  , UnApplyMapKind
   , ValuesMK
-  , CodecMK(..)
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
@@ -102,9 +102,9 @@ module Ouroboros.Consensus.Ledger.Basics (
   , StowableLedgerTables (..)
   , isCandidateForUnstowDefault
     -- ** Serialization
-  , SufficientSerializationForAnyBackingStore(..)
-  , valuesMKEncoder
+  , SufficientSerializationForAnyBackingStore (..)
   , valuesMKDecoder
+  , valuesMKEncoder
     -- ** Changelog
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
@@ -504,10 +504,12 @@ valuesMKEncoder tables =
     go :: CodecMK k v -> ApplyMapKind ValuesMK k v -> CBOR.Encoding
     go (CodecMK encK encV _decK _decV) (ApplyValuesMK (UtxoValues m)) =
          CBOR.encodeMapLen (fromIntegral $ Map.size m)
-      <> Map.foldMapWithKey (\k v -> CBOR.encodeListLen 2 <> encK k <> encV v) m
+      <> Map.foldMapWithKey (\k v -> encK k <> encV v) m
 
 -- | Default encoder of @'LedgerTables' l ''ValuesMK'@ to be used by the
 -- in-memory backing store.
+--
+-- TODO: we need to make sure there are tests that exercise this function.
 valuesMKDecoder ::
      ( TableStuff l
      , SufficientSerializationForAnyBackingStore l
@@ -530,7 +532,7 @@ valuesMKDecoder = do
      -> CBOR.Decoder s (ApplyMapKind ValuesMK k v)
   go len (CodecMK _encK _encV decK decV) =
         ApplyValuesMK . UtxoValues . Map.fromList
-    <$> sequence (replicate len (CBOR.decodeListLenOf 2 *> ((,) <$> decK <*> decV)))
+    <$> sequence (replicate len ((,) <$> decK <*> decV))
 
 {-------------------------------------------------------------------------------
   Convenience aliases

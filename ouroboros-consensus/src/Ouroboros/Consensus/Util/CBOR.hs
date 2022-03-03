@@ -149,8 +149,8 @@ decodeAsFlatTerm bs0 =
     collectOutput (CBOR.R.Fail _ _ err) = throwError err
     collectOutput (CBOR.R.Partial    k) = lift (ST.Lazy.strictToLazyST (k Nothing)) >>=
                                           collectOutput
-    collectOutput (CBOR.R.Done bs' _ x) = do xs <- provideInput bs'
-                                             return (x : xs)
+    collectOutput (CBOR.R.Done bs' _ x) = (x :) <$> provideInput bs'
+
 
 {-------------------------------------------------------------------------------
   HasFS interaction

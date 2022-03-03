@@ -21,8 +21,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , HardForkProtocol
   , LedgerState (..)
     -- * UTxO HD
-  , LedgerTablesCanHardFork (..)
   , InjectLedgerTables (..)
+  , LedgerTablesCanHardFork (..)
     -- * Config
   , BlockConfig (..)
   , CodecConfig (..)
@@ -130,9 +130,9 @@ class LedgerTablesCanHardFork xs where
 -- TODO this could probably work for all map kinds, but we only need it now for
 -- keys
 newtype InjectLedgerTables xs x = InjectLedgerTables {
-      applyInjectLedgerTables ::
-           LedgerTables (LedgerState                  x) KeysMK
-        -> LedgerTables (LedgerState (HardForkBlock xs)) KeysMK
+      applyInjectLedgerTables :: forall mk. IsApplyMapKind mk =>
+           LedgerTables (LedgerState                  x) mk
+        -> LedgerTables (LedgerState (HardForkBlock xs)) mk
     }
 
 {-------------------------------------------------------------------------------
