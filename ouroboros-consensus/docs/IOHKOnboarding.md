@@ -13,7 +13,6 @@ Welcome, we are thrilled to have you here :)!
 Currently the team consists of:
 
 * [Nicolas Frisby](https://github.com/nfrisby)
-* [Pawel Szulc](https://github.com/EncodePanda)
 * [Javier Sagredo](https://github.com/Jasagredo)
 * [Damian Nadales](https://github.com/dnadales)
 * [Alexander Esgen](https://github.com/amesgen)
