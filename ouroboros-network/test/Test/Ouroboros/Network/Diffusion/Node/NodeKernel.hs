@@ -348,9 +348,10 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
                       let candidateChain = getSelectedChain
                                          $ foldMap SelectChain chains
                                         <> SelectChain (chainState cps)
+                          cps' = switchFork candidateChain cps
                       check $ Chain.headPoint (chainState cps)
                            /= Chain.headPoint candidateChain
-                      writeTVar nkChainProducerState cps { chainState = candidateChain }
+                      writeTVar nkChainProducerState cps'
                       -- do not update 'nextSlot'; This stm branch might run
                       -- multiple times within the current slot.
                       return (nextSlot, seed)
