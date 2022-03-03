@@ -29,7 +29,9 @@ import qualified Network.Mux.Timeout as Mx
 import qualified Network.Mux.Trace as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
-
+#if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
+import           Network.Mux.TCPInfo (SocketOption(TCPInfoSocketOption))
+#endif
 
 -- |
 -- Create @'MuxBearer'@ from a socket.
@@ -135,5 +137,13 @@ socketAsMuxBearer sduTimeout tracer sd =
                     throwIO $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout"
                Just _ -> do
                    traceWith tracer $ Mx.MuxTraceSendEnd
+#if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
+                   -- If it was possible to detect if the MuxTraceTCPInfo was
+                   -- enable we woulnd't have to hide the getSockOpt
+                   -- syscall in this ifdef. Instead we would only call it if
+                   -- we knew that the information would be traced.
+                   tcpi <- Socket.getSockOpt sd TCPInfoSocketOption
+                   traceWith tracer $ Mx.MuxTraceTCPInfo tcpi (Mx.mhLength $ Mx.msHeader sdu)
+#endif
                    return ts
 
