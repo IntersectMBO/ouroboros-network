@@ -166,10 +166,12 @@ goldenTestCBOR testName example enc goldenFile =
               , diffToExpr (CBORBytes golden) (CBORBytes actual)
               ]
 
-          (Right actualFlatTerm, Left _) -> Just $ unlines [
+          (Right actualFlatTerm, Left e) -> Just $ unlines [
                 "Golden output /= actual term:"
               , "Golden output is not valid CBOR:"
               , BS.UTF8.toString golden
+              , "Exception: "
+              , show e
               , "Actual term:"
               , condense actualFlatTerm
               ]

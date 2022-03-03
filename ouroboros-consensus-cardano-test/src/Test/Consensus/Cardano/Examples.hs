@@ -1,5 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE InstanceSigs        #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -31,14 +35,15 @@ import           Ouroboros.Network.Block (Serialised (..))
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, IsApplyMapKind,
+                     ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (SomeQuery (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (Exactly (..))
-import           Ouroboros.Consensus.Util.SOP (Index (..))
+import           Ouroboros.Consensus.Util.SOP (Index (..), projectNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
@@ -132,6 +137,7 @@ instance Inject Examples where
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
       , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
       , exampleSlotNo           =                                            exampleSlotNo
+      , examplesLedgerTables    = inj (Proxy @WrapLedgerTables)              examplesLedgerTables -- TODO Consider using Flip with :.: (compose) instead. I prefer using the newtype since it involves less SOP operators (compose, Flip).
       }
     where
       inj ::
@@ -142,6 +148,30 @@ instance Inject Examples where
            )
         => Proxy f -> Labelled a -> Labelled b
       inj p = fmap (fmap (inject' p startBounds idx))
+
+newtype WrapLedgerTables blk = WrapLedgerTables ( LedgerTables (ExtLedgerState blk) ValuesMK )
+
+instance Inject WrapLedgerTables where
+   -- TODO: here the only options I see are either to remove the signature of
+   -- the local binding in the where clause, or ignore the compiler warning
+   -- about 'CanHardFork xs' being a redundant constraint.
+   inject ::
+       forall x xs. (CanHardFork xs, LedgerTablesCanHardFork xs)
+      => Exactly xs History.Bound
+         -- ^ Start bound of each era
+      -> Index xs x
+      -> WrapLedgerTables x
+      -> WrapLedgerTables (HardForkBlock xs)
+   inject _startBounds idx (WrapLedgerTables (ExtLedgerStateTables lt)) =
+     WrapLedgerTables $ ExtLedgerStateTables $ injectLedgerTables lt
+     where
+       injectLedgerTables ::
+            (IsApplyMapKind mk)
+         => LedgerTables (LedgerState                  x) mk
+         -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+       injectLedgerTables = applyInjectLedgerTables
+                          $ projectNP idx hardForkInjectLedgerTablesKeysMK
+
 
 {-------------------------------------------------------------------------------
   Setup

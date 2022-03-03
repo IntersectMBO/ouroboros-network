@@ -25,8 +25,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , keysUtxoDiff
   , mapUtxoDiff
     -- ** Internals
-  , UtxoEntryDiffState (..)
   , UtxoEntryDiff (..)
+  , UtxoEntryDiffState (..)
     -- * Combinators
   , RewoundKeys (..)
   , forwardValues
@@ -54,8 +54,8 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
 import           Data.Foldable (toList)
 import           Data.Map (Map)
-import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as MapMerge
+import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
@@ -88,7 +88,7 @@ newtype UtxoValues k v = UtxoValues (Map k v)
 
 instance Ord k => Monoid (UtxoValues k v) where
   mempty = UtxoValues Map.empty
-  
+
 -- | Note that this fails via 'error' on collisions
 instance Ord k => Semigroup (UtxoValues k v) where
   UtxoValues m1 <> UtxoValues m2 =
@@ -141,14 +141,14 @@ data UtxoEntryDiffState = UedsDel | UedsIns | UedsInsAndDel
 
 instance ToCBOR UtxoEntryDiffState where
   toCBOR = (CBOR.encodeListLen 1 <>) . \case
-    UedsDel       -> CBOR.encodeTag 0
-    UedsIns       -> CBOR.encodeTag 1
-    UedsInsAndDel -> CBOR.encodeTag 2
+    UedsDel       -> CBOR.encodeWord 0
+    UedsIns       -> CBOR.encodeWord 1
+    UedsInsAndDel -> CBOR.encodeWord 2
 
 instance FromCBOR UtxoEntryDiffState where
   fromCBOR = do
       CBOR.decodeListLenOf 1
-      CBOR.decodeTag >>= \case
+      CBOR.decodeWord >>= \case
         0 -> pure UedsDel
         1 -> pure UedsIns
         2 -> pure UedsInsAndDel
@@ -295,7 +295,7 @@ rewindKeys (UtxoKeys query) (UtxoDiff diffs) =
   where
     misses :: Set k
     misses = query `Set.difference` Map.keysSet diffs
-    
+
     hits :: Map k (UtxoEntryDiff v)
     hits = diffs `Map.restrictKeys` query
 
@@ -378,19 +378,22 @@ data SudMeasure k v =
 
 instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SudMeasure k v) where
   toCBOR = \case
-    SudMeasureNothing             -> CBOR.encodeListLen 1 <> CBOR.encodeTag 0
+    SudMeasureNothing             -> CBOR.encodeListLen 1 <> CBOR.encodeWord 0
     SudMeasureJust size slot diff ->
-         CBOR.encodeListLen 4 <> CBOR.encodeTag 1
-      <> toCBOR size <> toCBOR slot <> toCBOR diff
+         CBOR.encodeListLen 4
+      <> CBOR.encodeWord 1
+      <> toCBOR size
+      <> toCBOR slot
+      <> toCBOR diff
 
 instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SudMeasure k v) where
   fromCBOR = do
       len <- CBOR.decodeListLen
-      tag <- CBOR.decodeTag
-      case (len, tag) of
+      i   <- CBOR.decodeWord
+      case (len, i) of
         (1, 0) -> pure SudMeasureNothing
         (4, 1) -> SudMeasureJust <$> fromCBOR <*> fromCBOR <*> fromCBOR
-        o -> fail $ "SudMeasure unknown len and tag: " <> show o
+        o      -> fail $ "SudMeasure unknown len and constructor index: " <> show o
 
 sizeSudMeasure :: SudMeasure k v -> Int
 sizeSudMeasure = \case
