@@ -586,7 +586,7 @@ runPure cfg = \case
     GetBlockComponent pt     -> err MbAllComponents     $ query   (Model.getBlockComponentByPoint allComponents pt)
     GetGCedBlockComponent pt -> err mbGCedAllComponents $ query   (Model.getBlockComponentByPoint allComponents pt)
     GetMaxSlotNo             -> ok  MaxSlot             $ query    Model.getMaxSlotNo
-    GetIsValid pt            -> ok  isValidResult       $ query   (Model.isValid cfg pt)
+    GetIsValid pt            -> ok  isValidResult       $ query   (Model.isValid pt)
     Stream from to           -> err iter                $ updateE (Model.stream k from to)
     IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext it allComponents)
     IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext it allComponents)
@@ -1081,7 +1081,7 @@ invariant ::
   -> Model blk m Concrete
   -> Logic
 invariant cfg Model {..} =
-    forall ptsOnCurChain (Boolean . fromMaybe False . isValid)
+    forall ptsOnCurChain (Boolean . fromMaybe False . Model.getIsValid dbModel)
   where
     -- | The blocks occurring on the current volatile chain fragment
     ptsOnCurChain :: [RealPoint blk]
@@ -1090,9 +1090,6 @@ invariant cfg Model {..} =
         . AF.toOldestFirst
         . Model.volatileChain (configSecurityParam cfg) id
         $ dbModel
-
-    isValid :: RealPoint blk -> Maybe Bool
-    isValid = Model.getIsValid cfg dbModel
 
 postcondition :: TestConstraints blk
               => Model   blk m Concrete
