@@ -85,6 +85,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.RedundantConstraints
+import           Ouroboros.Consensus.Util.SOP (Index (IS, IZ))
 import qualified Ouroboros.Consensus.Util.SOP as SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -637,22 +638,25 @@ instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoB
 instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c) where
   hardForkInjectLedgerTablesKeysMK =
          byron
-      :* shelley
-      :* shelley
-      :* shelley
-      :* shelley
+      :* shelley IZ
+      :* shelley (IS IZ)
+      :* shelley (IS (IS IZ))
+      :* shelley (IS (IS (IS IZ)))
       :* Nil
     where
       byron :: InjectLedgerTables (CardanoEras c) ByronBlock
       byron = InjectLedgerTables $ \NoByronLedgerTables -> polyEmptyLedgerTables
 
       shelley ::
-           CardanoShelleyBasedEra c era
-        => InjectLedgerTables (CardanoEras c) (ShelleyBlock era)
-      shelley =
+           forall era. CardanoShelleyBasedEra c era
+        => SOP.Index (ShelleyBasedEras c) era
+        -> InjectLedgerTables (CardanoEras c) (ShelleyBlock era)
+      shelley idx =
           InjectLedgerTables
-        $ \(ShelleyLedgerTables (ApplyKeysMK keys)) ->
-            CardanoLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
+        $ \(ShelleyLedgerTables lt) -> CardanoLedgerTables $ mapValuesAppliedMK f lt
+        where
+          f :: Core.TxOut era -> CardanoTxOut c
+          f = ShelleyTxOut . SOP.injectNS idx . TxOutWrapper
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley
