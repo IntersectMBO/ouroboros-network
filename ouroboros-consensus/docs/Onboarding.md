@@ -35,15 +35,18 @@ nix-env (Nix) 2.3.10
 > you will have to "compile the whole world" (including few GHC versions) before
 > you will be able to build, test and run our project.
 > If configured correctly, your fresh build (that means build from completely new
-> machine) should take ~15 minutes
+> machine) should take ~15 minutes, otherwise, it can take several hours.
 
-Open your `~/.config/nix/nix.conf` and add/modify following entries
+If you are using a single-user installation of Nix, open your
+`~/.config/nix/nix.conf` and add/modify following entries
 
 ```
 substituters = https://cache.nixos.org/ https://hydra.iohk.io/
 trusted-substituters = https://cache.nixos.org/ https://hydra.iohk.io/
 trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
 ```
+
+If instead you are using a multi-user installation, add/modify said entries in `/etc/nix/nix.conf`.
 
 #### Build & test it
 
@@ -52,6 +55,39 @@ Enter nix shell from project's root folder
 ```
 $> nix-shell -j4
 ```
+
+> *Note*: There are a number of hints that happen during compilation and can show quickly that this is misconfigured:
+>
+> - you find yourself just building lots of code locally when trying to spin up a `nix-shell`
+> - the build process seem to build very basic stuff locally (for example `coreutils` or `gcc`)
+> - the build process starts with a message saying `warning: ignoring untrusted substituter 'https://hydra.iohk.io/'`
+>
+> when in any of these cases, probably the best advice is to stop the build and
+> ask for help in `#crossteam-ci` or `#dx-haskell-nix` in Slack.
+>
+> A normal build process with the cache properly configured should show near the
+> beginning a small list of items that will be `built` and a big list of items
+> that will be `fetched` and you should see that the build process pulls items
+> from either caches:
+>
+> ```
+> $> nix-shell
+> ...
+> copying path '/nix/store/q22vza4rf0a3ch91ycmlmk8vcivl95d2-mirrors-list' from 'https://cache.nixos.org'...
+> copying path '/nix/store/nsgg55q1kh1ala68pas78hzfxsb3bnjk-bzip2-1.0.6.0.2' from 'https://hydra.iohk.io'...
+> ...
+> these 7 derivations will be built:
+>   /nix/store/4p2wk5965f5palbirv3g403cy8g7x1r7-build-and-serve-docs.drv
+> ...
+>   /nix/store/xxab40v4w0g4nzcbfa74zhdxc1dqcisr-fix-stylish-haskell.drv
+> these 820 paths will be fetched (1350.32 MiB download, 7611.24 MiB unpacked):
+>   /nix/store/01ssq598a4lvlz2vprjrhjhn55z3li1w-libdaemon-0.14
+>   /nix/store/04bwx0k7f3a7wsvs9ylvz7gaaym63f31-indexed-traversable-lib-indexed-traversable-0.1.2
+> ...
+> copying path '/nix/store/z0bq5zlxjf22dsyl52dczr3d7v4fpz83-Agda-exe-agda-mode-2.6.2.1' from 'https://hydra.iohk.io'...
+> copying path '/nix/store/qkl6ddmaxf88bygh5y77kj0xgi9k7gzz-Agda-lib-Agda-2.6.2.1-data' from 'https://hydra.iohk.io'...
+> ...
+> ```
 
 Build all
 
@@ -117,7 +153,7 @@ connected pair of nodes exchange messages according to the various _mini
 protocols_ (cf `typed-protocols` package).
 
 The ledger rules are defined in
-https://github.com/input-output-hk/cardano-ledger-specs. The Consensus Layer
+https://github.com/input-output-hk/cardano-ledger. The Consensus Layer
 uses the ledger to validate blocks and transactions and apply them in order to
 maintain _the ledger state_. The Consensus Layer in turn needs the ledger state
 in order to determine when a node is allowed to mint a block, ie the _leader
@@ -146,7 +182,7 @@ The following artifacts influence and/or describe the Consensus implementation.
 
       * Internal notes, on the IOHK Google Docs
 
-  * The ledger specifications, cf https://github.com/input-output-hk/cardano-ledger-specs/blob/master/README.md, especially:
+  * The ledger specifications, cf https://github.com/input-output-hk/cardano-ledger/blob/master/README.md , especially:
 
       * "Shelley design specification" -> "Design Specification for Delegation
         and Incentives in Cardano" (as of this line's latest commit)
