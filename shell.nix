@@ -55,6 +55,13 @@ let
       hp2pretty = "0.10";
     };
 
+    shellHook = ''
+      export LANG="en_US.UTF-8"
+    '' + lib.optionalString
+      (pkgs.glibcLocales != null && stdenv.hostPlatform.libc == "glibc") ''
+        export LOCALE_ARCHIVE="${pkgs.glibcLocales}/lib/locale/locale-archive"
+      '';
+
     inherit withHoogle;
   };
 
