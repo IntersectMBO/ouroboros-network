@@ -734,6 +734,13 @@ instance
       decodeArityAndTag len tag = do
         len' <- CBOR.decodeListLen
         tag' <- CBOR.decodeWord8
+        -- @len@ here ought to match the @length xs@ in @encodeArityAndTag@ in
+        -- the corresponding 'ToCBOR' instance, so we need to add one in order
+        -- to match the length recorded in the CBOR stream (ie @len'@)
+        --
+        -- This use of 'when' corresponds to the use of 'decodeListLenOf'
+        -- throughout most of our CBOR decoders: it catches encoder/decoder
+        -- mismatches.
         when
           (1 + len /= len' || tag /= tag')
           (fail $ "decode @ApplyMapKind " <> show (smk, len, tag, len', tag'))
