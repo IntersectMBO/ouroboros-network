@@ -706,6 +706,7 @@ instance
       encodeArityAndTag tag xs =
            CBOR.encodeListLen (1 + toEnum (length xs))
         <> CBOR.encodeWord8 tag
+        <> mconcat xs
 
 instance
      (Typeable mk, Ord k, FromCBOR k, FromCBOR v, SingI mk)
@@ -733,9 +734,16 @@ instance
       decodeArityAndTag len tag = do
         len' <- CBOR.decodeListLen
         tag' <- CBOR.decodeWord8
+        -- @len@ here ought to match the @length xs@ in @encodeArityAndTag@ in
+        -- the corresponding 'ToCBOR' instance, so we need to add one in order
+        -- to match the length recorded in the CBOR stream (ie @len'@)
+        --
+        -- This use of 'when' corresponds to the use of 'decodeListLenOf'
+        -- throughout most of our CBOR decoders: it catches encoder/decoder
+        -- mismatches.
         when
-          (len /= 1 + len' || tag /= tag')
-          (fail $ "decode @ApplyMapKind " <> show (smk, len', tag'))
+          (1 + len /= len' || tag /= tag')
+          (fail $ "decode @ApplyMapKind " <> show (smk, len, tag, len', tag'))
 
 showsApplyMapKind :: (Show k, Show v) => ApplyMapKind' mk k v -> ShowS
 showsApplyMapKind = \case
