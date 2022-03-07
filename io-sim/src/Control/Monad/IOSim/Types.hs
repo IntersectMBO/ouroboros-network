@@ -868,12 +868,15 @@ data ScheduleControl = ControlDefault
   deriving (Eq, Ord, Show)
 
 data ScheduleMod = ScheduleMod{
-    scheduleModTarget    :: StepId,   -- when we reach this step
+    -- | Step at which the 'ScheduleMod' is activated.
+    scheduleModTarget    :: StepId,
+    -- | 'ScheduleControl' at the activation step.  It is needed by
+    -- 'extendScheduleControl' when combining the discovered schedule with the
+    -- initial one.
     scheduleModControl   :: ScheduleControl,
-                                      -- which happens with this control
-    scheduleModInsertion :: [StepId]  -- we should instead perform this sequence
-                                      -- this *includes* the target step,
-                                      -- not necessarily as the last step.
+    -- | Series of steps which are executed at the target step.  This *includes*
+    -- the target step, not necessarily as the last step.
+    scheduleModInsertion :: [StepId]
   }
   deriving (Eq, Ord)
 
