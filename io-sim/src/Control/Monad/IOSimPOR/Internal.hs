@@ -1463,16 +1463,23 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
           -- then any threads that it wakes up become non-concurrent also.
           let lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
           if tid `elem` concurrent then
-            let theseStepsRace = isRacyThreadId tid && racingSteps step newStep
+            let theseStepsRace = isRacyThreadId tid
+                              && step `racingSteps` newStep
                 happensBefore  = step `happensBeforeStep` newStep
                 nondep' | happensBefore = nondep
                         | otherwise     = newStep : nondep
-                -- We will only record the first race with each thread---reversing
-                -- the first race makes the next race detectable. Thus we remove a
-                -- thread from the concurrent set after the first race.
-                concurrent' | happensBefore  = Set.delete tid lessConcurrent
-                            | theseStepsRace = Set.delete tid concurrent
-                            | otherwise      = concurrent
+                -- We cannot remove the 'tid' thread from the set of concurrent
+                -- threads if 'theseStepsRace'.  This was done previously in
+                -- order to record only the first race with each thread.  But
+                -- it can happen that the frist race will block a thread that
+                -- is scheduled to run until another later step unblock it
+                -- (e.g. 'modifyTMVar`).  If we remove the 'tid' from the set
+                -- of concurrent threads we can end up in a situation where
+                -- a schedule is not runnable, because the next thread to run
+                -- is still blocked (e.g. 'TMVar' is taken but not yet
+                -- released).
+                concurrent' | happensBefore = Set.delete tid lessConcurrent
+                            | otherwise     = concurrent
                 -- Here we record discovered races.
                 -- We only record a new race if we are following the default schedule,
                 -- to avoid finding the same race in different parts of the search space.
