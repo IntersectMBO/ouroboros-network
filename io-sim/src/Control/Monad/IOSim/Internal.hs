@@ -432,6 +432,7 @@ schedule thread@Thread{
                  $ traceMany
                      [ (time, tid, tlbl, EventLog tr)
                      | tr <- tvarTraces ]
+                 $ SimTrace time tid tlbl (EventUnblocked unblocked)
                  $ SimTrace time tid tlbl (EventDeschedule Yield)
                  $ trace
 

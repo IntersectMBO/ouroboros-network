@@ -782,6 +782,7 @@ data SimEventType
   | EventAwaitControl  StepId ScheduleControl
   | EventPerformAction StepId
   | EventReschedule           ScheduleControl
+  | EventUnblocked     [ThreadId]
   deriving Show
 
 type TraceEvent = SimEventType

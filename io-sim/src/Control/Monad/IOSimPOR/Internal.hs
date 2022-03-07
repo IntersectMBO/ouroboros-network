@@ -564,6 +564,7 @@ schedule thread@Thread{
               [ (time, tid, (-1), tlbl, EventLog tr)
               | tr <- tvarTraces
               ] $
+            SimPORTrace time tid tstep tlbl (EventUnblocked unblocked) $
             SimPORTrace time tid tstep tlbl (EventDeschedule Yield) $
               trace
 
