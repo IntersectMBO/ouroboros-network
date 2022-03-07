@@ -13,13 +13,14 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   ) where
 
 import           Control.Monad (replicateM, (>=>))
+import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, cancel, wait, waitAny, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM), StrictTVar, atomically, modifyTVar,
-                     newTVarIO, readTVar)
+                     MonadTraceSTM, MonadSTM (STM), StrictTVar, atomically,
+                     modifyTVar, newTVarIO, readTVar)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
                      MonadMask, MonadThrow)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -309,19 +310,21 @@ prop_diffusionScript_commandScript_valid (DiffusionScript ((_, cmds): t)) =
 
 -- | Run an arbitrary topology
 diffusion_simulation
-  :: forall m. ( MonadAsync m
-              , MonadFork m
-              , MonadST m
-              , MonadEvaluate m
-              , MonadLabelledSTM m
-              , MonadCatch       m
-              , MonadMask        m
-              , MonadTime        m
-              , MonadTimer       m
-              , MonadThrow  (STM m)
-              , Eq (Async m Void)
-              , forall a. Semigroup a => Semigroup (m a)
-              )
+  :: forall m. ( MonadAsync       m
+               , MonadFix         m
+               , MonadFork        m
+               , MonadST          m
+               , MonadEvaluate    m
+               , MonadLabelledSTM m
+               , MonadTraceSTM    m
+               , MonadCatch       m
+               , MonadMask        m
+               , MonadTime        m
+               , MonadTimer       m
+               , MonadThrow  (STM m)
+               , Eq (Async m Void)
+               , forall a. Semigroup a => Semigroup (m a)
+               )
   => BearerInfo
   -> DiffusionScript
   -> m Void

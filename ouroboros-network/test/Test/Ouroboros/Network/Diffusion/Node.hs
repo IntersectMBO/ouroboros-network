@@ -28,13 +28,14 @@ module Test.Ouroboros.Network.Diffusion.Node
   , UseLedgerAfter (..)
   ) where
 
+import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, wait, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM, atomically), newTVar)
+                     MonadTraceSTM, MonadSTM (STM, atomically), newTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -134,8 +135,10 @@ type ResolverException = SomeException
 run :: forall resolver m.
        ( MonadAsync       m
        , MonadEvaluate    m
+       , MonadFix         m
        , MonadFork        m
        , MonadLabelledSTM m
+       , MonadTraceSTM    m
        , MonadMask        m
        , MonadST          m
        , MonadTime        m
