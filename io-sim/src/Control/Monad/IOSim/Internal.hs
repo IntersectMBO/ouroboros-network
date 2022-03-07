@@ -66,12 +66,13 @@ import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Dynamic
 
-import           Control.Exception (assert)
+import           Control.Exception (NonTermination (..),
+                   assert, throw)
 import           Control.Monad (join)
 
 import           Control.Monad (when)
 import           Control.Monad.ST.Lazy
-import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
+import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST, unsafeInterleaveST)
 import           Data.STRef.Lazy
 
 import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
@@ -526,6 +527,14 @@ schedule thread@Thread{
 
     -- ExploreRaces is ignored by this simulator
     ExploreRaces k -> schedule thread{ threadControl = ThreadControl k ctl } simstate
+
+    Fix f k -> do
+      r <- newSTRef (throw NonTermination)
+      x <- unsafeInterleaveST $ readSTRef r
+      let k' = unIOSim (f x) $ \x' ->
+                  LiftST (lazyToStrictST (writeSTRef r x')) (\() -> k x')
+          thread' = thread { threadControl = ThreadControl k' ctl }
+      schedule thread' simstate
 
 
 threadInterruptible :: Thread s a -> Bool

@@ -70,6 +70,7 @@ module Control.Monad.IOSim.Types
 import           Control.Exception (ErrorCall (..), asyncExceptionFromException, asyncExceptionToException)
 import           Control.Applicative
 import           Control.Monad
+import           Control.Monad.Fix (MonadFix (..))
 
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
@@ -163,6 +164,8 @@ data SimA s a where
 
   ExploreRaces :: SimA s b -> SimA s b
 
+  Fix          :: (x -> IOSim s x) -> (x -> SimA s r) -> SimA s r
+
 
 newtype STM s a = STM { unSTM :: forall r. (a -> StmA s r) -> StmA s r }
 
@@ -237,6 +240,9 @@ instance Monoid a => Monoid (IOSim s a) where
 
 instance Fail.MonadFail (IOSim s) where
   fail msg = IOSim $ \_ -> Throw (toException (IO.Error.userError msg))
+
+instance MonadFix (IOSim s) where  
+    mfix f = IOSim $ \k -> Fix f k 
 
 
 instance Functor (STM s) where
