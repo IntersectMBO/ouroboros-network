@@ -576,6 +576,7 @@ data SnocketTrace m addr
     | STClosedQueue  Bool
     | STClosedWhenReading
     | STAcceptFailure SockType SomeException
+    | STAccepting
     | STAccepted      addr
     | STBearer       (FD_ m addr)
     | STAttenuatedChannelTrace (ConnectionId addr) AttenuatedChannelTrace
@@ -1129,7 +1130,9 @@ mkSnocket state tr = Snocket { getLocalAddr
                                            (STAcceptFailure fdType err))
                     return (AcceptFailure err, accept_ time deltaAndIOErrType)
 
-                  Right (chann, connId@ConnectionId { remoteAddress }) -> do
+                  Right (chann, connId@ConnectionId { localAddress, remoteAddress }) -> do
+                    traceWith tr (WithAddr (Just localAddress) (Just remoteAddress)
+                                           STAccepting)
                     let ChannelWithInfo
                           { cwiSDUSize       = sduSize
                           , cwiChannelLocal  = channelLocal
@@ -1152,7 +1155,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                                             , connProvider      = remoteAddress
                                             })
 
-                    traceWith tr (WithAddr (Just (localAddress connId)) Nothing
+                    traceWith tr (WithAddr (Just localAddress) Nothing
                                            (STAccepted remoteAddress))
 
                     return (Accepted fdRemote remoteAddress, accept_ time deltaAndIOErrType)
