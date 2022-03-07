@@ -60,7 +60,7 @@ import           Data.Ord
 import           Data.Foldable (traverse_)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
-import           Data.Maybe (catMaybes)
+import           Data.Maybe (mapMaybe)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.OrdPSQ (OrdPSQ)
@@ -69,12 +69,12 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 
-import           Control.Exception (assert)
+import           Control.Exception (NonTermination (..), assert, throw)
 import           Control.Monad (join)
 
 import           Control.Monad (when)
 import           Control.Monad.ST.Lazy
-import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
+import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST, unsafeInterleaveST)
 import           Data.STRef.Lazy
 
 import           Control.Monad.Class.MonadSTM hiding (STM, TVar)
@@ -531,7 +531,8 @@ schedule thread@Thread{
 
     Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
-        StmTxCommitted x written read created tvarTraces nextVid' -> do
+        StmTxCommitted x written read created
+                         tvarDynamicTraces tvarStringTraces nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           vClockRead <- leastUpperBoundTVarVClocks read
@@ -547,22 +548,26 @@ schedule thread@Thread{
                simstate') = unblockThreads vClock' wakeup simstate
           sequence_ [ modifySTRef (tvarVClock r) (leastUpperBoundVClock vClock')
                     | SomeTVar r <- created ++ written ]
-          vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
+          written' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
+          created' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) created
           -- We deschedule a thread after a transaction... another may have woken up.
           trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $
-            SimPORTrace time tid tstep tlbl (EventTxCommitted vids [nextVid..pred nextVid'] (Just effect')) $
+            SimPORTrace time tid tstep tlbl (EventTxCommitted written' created' (Just effect')) $
             traceMany
-              -- TODO: step
-              [ (time, tid', (-1), tlbl', EventTxWakeup vids')
+              [ (time, tid', tstep, tlbl', EventTxWakeup vids')
               | tid' <- unblocked
               , let tlbl' = lookupThreadLabel tid' threads
               , let Just vids' = Set.toList <$> Map.lookup tid' wokeby ] $
             traceMany
-              -- TODO: step
-              [ (time, tid, (-1), tlbl, EventLog tr)
-              | tr <- tvarTraces
+              [ (time, tid, tstep, tlbl, EventLog tr)
+              | tr <- tvarDynamicTraces
               ] $
+            traceMany
+              [ (time, tid, tstep, tlbl, EventSay str)
+              | str <- tvarStringTraces
+              ] $
+            SimPORTrace time tid tstep tlbl (EventUnblocked unblocked) $
             SimPORTrace time tid tstep tlbl (EventDeschedule Yield) $
               trace
 
@@ -606,6 +611,14 @@ schedule thread@Thread{
     ExploreRaces k -> do
       let thread'  = thread { threadControl = ThreadControl k ctl
                             , threadRacy    = True }
+      schedule thread' simstate
+
+    Fix f k -> do
+      r <- newSTRef (throw NonTermination)
+      x <- unsafeInterleaveST $ readSTRef r
+      let k' = unIOSim (f x) $ \x' ->
+                  LiftST (lazyToStrictST (writeSTRef r x')) (\() -> k x')
+          thread' = thread { threadControl = ThreadControl k' ctl }
       schedule thread' simstate
 
     GetMaskState k -> do
@@ -1061,7 +1074,10 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
           k0 $ StmTxCommitted x (reverse writtenSeq)
                                 (Map.elems read)
                                 (reverse createdSeq)
-                                (catMaybes $ ds ++ ds')
+                                (mapMaybe (\TraceValue { traceDynamic }
+                                            -> toDyn <$> traceDynamic)
+                                          $ ds ++ ds')
+                                (mapMaybe traceString $ ds ++ ds')
                                 nextVid
 
         OrElseLeftFrame _b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
@@ -1137,7 +1153,7 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
         go ctl read written writtenSeq createdSeq nextVid k
 
       TraceTVar tvar f k -> do
-        writeSTRef (tvarTrace tvar) (Just $ MkTVarTrace f)
+        writeSTRef (tvarTrace tvar) (Just f)
         go ctl read written writtenSeq createdSeq nextVid k
 
       ReadTVar v k
@@ -1248,19 +1264,17 @@ readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
 -- 'written.
 traceTVarST :: TVar s a
             -> Bool -- true if it's a new 'TVar'
-            -> ST s (Maybe Dynamic)
+            -> ST s TraceValue
 traceTVarST TVar{tvarCurrent, tvarUndo, tvarTrace} new = do
     mf <- readSTRef tvarTrace
     case mf of
-      Nothing -> return Nothing
-      Just (MkTVarTrace f)  -> do
+      Nothing -> return TraceValue { traceDynamic = (Nothing :: Maybe ()), traceString = Nothing }
+      Just f  -> do
         vs <- readSTRef tvarUndo
         v <-  readSTRef tvarCurrent
         case (new, vs) of
-          (True, _) ->
-            Just . toDyn <$> f Nothing v
-          (_, _:_)  ->
-            Just . toDyn <$> f (Just $ last vs) v
+          (True, _) -> f Nothing v
+          (_, _:_)  -> f (Just $ last vs) v
           _ -> error "traceTVarST: unexpected tvar state"
 
 
@@ -1449,16 +1463,23 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
           -- then any threads that it wakes up become non-concurrent also.
           let lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
           if tid `elem` concurrent then
-            let theseStepsRace = isRacyThreadId tid && racingSteps step newStep
+            let theseStepsRace = isRacyThreadId tid
+                              && step `racingSteps` newStep
                 happensBefore  = step `happensBeforeStep` newStep
                 nondep' | happensBefore = nondep
                         | otherwise     = newStep : nondep
-                -- We will only record the first race with each thread---reversing
-                -- the first race makes the next race detectable. Thus we remove a
-                -- thread from the concurrent set after the first race.
-                concurrent' | happensBefore  = Set.delete tid lessConcurrent
-                            | theseStepsRace = Set.delete tid concurrent
-                            | otherwise      = concurrent
+                -- We cannot remove the 'tid' thread from the set of concurrent
+                -- threads if 'theseStepsRace'.  This was done previously in
+                -- order to record only the first race with each thread.  But
+                -- it can happen that the frist race will block a thread that
+                -- is scheduled to run until another later step unblock it
+                -- (e.g. 'modifyTMVar`).  If we remove the 'tid' from the set
+                -- of concurrent threads we can end up in a situation where
+                -- a schedule is not runnable, because the next thread to run
+                -- is still blocked (e.g. 'TMVar' is taken but not yet
+                -- released).
+                concurrent' | happensBefore = Set.delete tid lessConcurrent
+                            | otherwise     = concurrent
                 -- Here we record discovered races.
                 -- We only record a new race if we are following the default schedule,
                 -- to avoid finding the same race in different parts of the search space.

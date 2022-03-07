@@ -20,6 +20,7 @@
 module Main (main) where
 
 import           Control.Exception (IOException)
+import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST (MonadST)
@@ -172,8 +173,10 @@ withBidirectionalConnectionManager
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
 
        -- debugging
+       , MonadFix m
        , MonadAsync m
        , MonadLabelledSTM m
+       , MonadTraceSTM m
        , MonadSay m
        )
     => Snocket m socket peerAddr

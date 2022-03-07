@@ -18,6 +18,7 @@ module Control.Monad.Class.MonadSTM.Strict
   , labelTVarIO
   , castStrictTVar
   , toLazyTVar
+  , fromLazyTVar
   , newTVar
   , newTVarIO
   , newTVarWithInvariantIO
@@ -32,6 +33,8 @@ module Control.Monad.Class.MonadSTM.Strict
   , labelTMVar
   , labelTMVarIO
   , castStrictTMVar
+  , toLazyTMVar
+  , fromLazyTMVar
   , newTMVar
   , newTMVarIO
   , newEmptyTMVar
@@ -106,6 +109,16 @@ castStrictTVar v@StrictTVar {tvar} =
 toLazyTVar :: StrictTVar m a -> LazyTVar m a
 toLazyTVar StrictTVar { tvar } = tvar
 
+fromLazyTVar :: LazyTVar m a -> StrictTVar m a
+fromLazyTVar tvar =
+#if CHECK_TVAR_INVARIANT
+  StrictTVar { invariant = const Nothing
+             , tvar
+             }
+#else
+  StrictTVar { tvar }
+#endif
+
 newTVar :: MonadSTM m => a -> STM m (StrictTVar m a)
 newTVar !a = (\tvar -> mkStrictTVar (const Nothing) tvar)
          <$> Lazy.newTVar a
@@ -174,7 +187,10 @@ updateTVar = stateTVar
 -- Does not support an invariant: if the invariant would not be satisfied,
 -- we would not be able to put a value into an empty TMVar, which would lead
 -- to very hard to debug bugs where code is blocked indefinitely.
-newtype StrictTMVar m a = StrictTMVar (LazyTMVar m a)
+newtype StrictTMVar m a = StrictTMVar { toLazyTMVar :: LazyTMVar m a }
+
+fromLazyTMVar :: LazyTMVar m a -> StrictTMVar m a
+fromLazyTMVar = StrictTMVar
 
 labelTMVar :: MonadLabelledSTM m => StrictTMVar m a -> String -> STM m ()
 labelTMVar (StrictTMVar tvar) = Lazy.labelTMVar tvar

@@ -260,7 +260,7 @@ prop_governor_nofail env =
         True  -> return $ property True
         False -> do 
           bitraverse_ (putStrLn . show)
-                      (putStrLn . ppSimEvent 20)
+                      (putStrLn . ppSimEvent 20 20 20)
                       ioSimTrace
           -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
           error "impossible!"
@@ -638,7 +638,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
         reachable  = firstGossipReachablePeers peerGraph
                        (LocalRootPeers.keysSet localRootPeers <> publicRootPeers)
      in counterexample ( intercalate "\n"
-                       . map (ppSimEvent 20)
+                       . map (ppSimEvent 20 20 20)
                        . takeWhile (\e -> seTime e <= Time (60*60))
                        . Trace.toList
                        $ ioSimTrace) $

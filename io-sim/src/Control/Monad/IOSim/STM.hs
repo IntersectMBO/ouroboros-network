@@ -9,9 +9,8 @@ module Control.Monad.IOSim.STM where
 
 import           Control.Monad.Class.MonadSTM (MonadSTM (..),
                    MonadInspectSTM (..), MonadLabelledSTM (..),
-                   MonadTraceSTM (..))
+                   MonadTraceSTM (..), TraceValue (..))
 
-import           Data.Typeable (Typeable)
 import           Numeric.Natural (Natural)
 
 --
@@ -26,12 +25,10 @@ labelTQueueDefault
 labelTQueueDefault (TQueue queue) label =  labelTVar queue label
 
 traceTQueueDefault
-  :: ( MonadTraceSTM m
-     , Typeable tr
-     )
+  :: MonadTraceSTM m
   => proxy m
   -> TQueueDefault m a
-  -> (Maybe [a] -> [a] -> InspectMonad m tr)
+  -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
   -> STM m ()
 traceTQueueDefault p (TQueue queue) f =
     traceTVar p queue
@@ -101,12 +98,10 @@ labelTBQueueDefault
 labelTBQueueDefault (TBQueue queue _size) label = labelTVar queue label
 
 traceTBQueueDefault
-  :: ( MonadTraceSTM m
-     , Typeable tr
-     )
+  :: MonadTraceSTM m
   => proxy m
   -> TBQueueDefault m a
-  -> (Maybe [a] -> [a] -> InspectMonad m tr)
+  -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
   -> STM m ()
 traceTBQueueDefault p (TBQueue queue _size) f =
     traceTVar p queue (\mas as -> f (g <$> mas) (g as))

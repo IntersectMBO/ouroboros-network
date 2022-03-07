@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,20 +12,25 @@ module Test.IOSim
 import           Data.Array
 import           Data.Either (isLeft)
 import           Data.Fixed (Fixed (..), Micro)
+import           Data.Foldable (foldl')
 import           Data.Function (on)
+import           Data.Functor (($>))
 import           Data.Graph
 import           Data.List (sortBy)
 import           Data.Time.Clock (picosecondsToDiffTime)
 
 import           Control.Exception (ArithException (..))
 import           Control.Monad
+import           Control.Monad.Fix
 import           System.IO.Error (ioeGetErrorString, isUserError)
 
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
+import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
 
 import           Test.STM
@@ -130,6 +136,13 @@ tests =
   , testGroup "STM reference semantics"
     [ testProperty "Reference vs IO"    prop_stm_referenceIO
     , testProperty "Reference vs Sim"   prop_stm_referenceSim
+    ]
+  , testGroup "MonadFix instance"
+    [ testProperty "purity"     prop_mfix_purity
+    , testProperty "purity2"    prop_mfix_purity_2
+    , testProperty "tightening" prop_mfix_left_shrinking
+    , testProperty "lazy"       prop_mfix_lazy
+    , testProperty "recdata"    prop_mfix_recdata
     ]
   ]
 
@@ -399,6 +412,155 @@ test_wakeup_order = do
         atomically $ writeTVar v True
         threadDelay 0.1
     return (wakupOrder === [0..9]) --FIFO order
+
+
+--
+-- MonadFix properties
+--
+
+-- | Purity demands that @mfix (return . f) = return (fix f)@.
+--
+prop_mfix_purity :: Positive Int -> Bool
+prop_mfix_purity (Positive n) =
+       runSimOrThrow
+         (mfix (return . factorial)) n
+    == fix factorial n
+  where
+    factorial :: (Int -> Int) -> Int -> Int
+    factorial = \rec_ k -> if k <= 1 then 1 else k * rec_ (k - 1)
+
+
+prop_mfix_purity_2 :: [Positive Int] -> Bool
+prop_mfix_purity_2 as =
+    -- note: both 'IOSim' expressions are equivalent using 'Monad' and
+    -- 'Applicative' laws only.
+      runSimOrThrow (join $  mfix (return . recDelay)
+                         <*> return as')
+      == expected
+    &&
+      runSimOrThrow (mfix (return . recDelay) >>= ($ as'))
+      == expected
+  where
+    as' :: [Int]
+    as' = getPositive `map` as
+
+    -- recursive sum using 'threadDelay'
+    recDelay :: ( MonadMonotonicTime m
+                , MonadDelay m
+                )
+             => ([Int] -> m Time)
+             ->  [Int] -> m Time
+    recDelay = \rec_ bs ->
+                 case bs of
+                  []        -> getMonotonicTime
+                  (b : bs') -> threadDelay (realToFrac b)
+                            >> rec_ bs'
+
+    expected :: Time
+    expected = foldl' (flip addTime)
+                      (Time 0)
+                      (realToFrac `map` as')
+
+
+prop_mfix_left_shrinking
+    :: Int
+    -> NonNegative Int
+    -> Positive Int
+    -> Bool
+prop_mfix_left_shrinking n (NonNegative d) (Positive i) =
+   let mn :: IOSim s Int
+       mn = do say ""
+               threadDelay (realToFrac d)
+               return n
+   in
+        take i
+        (runSimOrThrow $
+          mfix (\rec_ -> mn >>= \a -> do
+                  threadDelay (realToFrac d) $> a : rec_))
+      ==
+        take i
+        (runSimOrThrow $
+          mn >>= \a ->
+            (mfix (\rec_ -> do
+              threadDelay (realToFrac d) $> a : rec_)))
+
+
+
+-- | 'Example 8.2.1' in 'Value Recursion in Monadic Computations'
+-- <https://leventerkok.github.io/papers/erkok-thesis.pdf>
+--
+prop_mfix_lazy :: NonEmptyList Char
+               -> Bool
+prop_mfix_lazy (NonEmpty env) =
+         take samples
+           (runSimOrThrow (withEnv (mfix . replicateHeadM)))
+      == replicate samples (head env)
+    where
+      samples :: Int
+      samples = 10
+
+      replicateHeadM ::
+                        (
+#if MIN_VERSION_base(4,13,0)
+                          MonadFail m,
+                          MonadFail (STM m),
+#endif
+                          MonadSTM  m
+                        )
+                     => m Char
+                     -> [Char] -> m [Char]
+      replicateHeadM getChar_ as = do
+        -- Note: 'getChar' will be executed only once! This follows from 'fixIO`
+        -- semantics.
+        a <- getChar_
+        return (a : as)
+
+      -- construct 'getChar' using the simulated environment
+      withEnv :: (
+#if MIN_VERSION_base(4,13,0)
+                   MonadFail m,
+#endif
+                   MonadSTM  m
+                 )
+              => (m Char -> m a) -> m a
+      withEnv k = do
+        v <- newTVarIO env
+        let getChar_ =
+              atomically $ do
+                as <- readTVar v
+                case as of
+                  [] -> error "withEnv: runtime error"
+                  (a : as') -> writeTVar v as'
+                            $> a
+        k getChar_
+
+
+-- | 'Example 8.2.3' in 'Value Recursion in Monadic Computations'
+-- <https://leventerkok.github.io/papers/erkok-thesis.pdf>
+--
+prop_mfix_recdata :: Property
+prop_mfix_recdata = ioProperty $ do
+    expected <- experiment
+    let res = runSimOrThrow experiment
+    return $
+      take samples res
+      ==
+      take samples expected
+  where
+    samples :: Int
+    samples = 10
+
+    experiment :: ( MonadSTM m
+                  , MonadFix m
+                  )
+               => m [Int]
+    experiment = do
+      (_, y) <-
+        mfix (\ ~(x, _) -> do
+                y <- LazySTM.newTVarIO x
+                return (1:x, y)
+             )
+      atomically (LazySTM.readTVar y)
 
 
 --

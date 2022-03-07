@@ -25,6 +25,7 @@ module Ouroboros.Network.ConnectionManager.Core
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when)
+import           Control.Monad.Fix
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork, ThreadId, throwTo)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
@@ -179,7 +180,7 @@ newMutableConnState :: MonadSTM m
 newMutableConnState freshIdSupply connState = do
       connStateId <- getFreshId freshIdSupply
       connVar <- newTVar connState
-      return $! MutableConnState { connStateId, connVar }
+      return $ MutableConnState { connStateId, connVar }
 
 
 -- | 'ConnectionManager' state: for each peer we keep a 'ConnectionState' in
@@ -207,9 +208,11 @@ data ConnectionState peerAddr handle handleError version m =
 
     -- | Each inbound connection starts in this state, outbound connection
     -- reach this state once `connect` call returns.
+    --
+    -- note: the async handle is lazy, because it's passed with 'mfix'.
   | UnnegotiatedState   !Provenance
                         !(ConnectionId peerAddr)
-                        !(Async m ())
+                         (Async m ())
 
     -- | @OutboundState Unidirectional@ state.
   | OutboundUniState    !(ConnectionId peerAddr) !(Async m ()) !handle
@@ -518,10 +521,12 @@ withConnectionManager
     :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version m a.
        ( Monad              m
        , MonadLabelledSTM   m
+       , MonadTraceSTM      m
        -- 'MonadFork' is only to get access to 'throwTo'
        , MonadFork          m
        , MonadAsync         m
        , MonadEvaluate      m
+       , MonadFix           m
        , MonadMask          m
        , MonadMonotonicTime m
        , MonadThrow    (STM m)
@@ -572,6 +577,16 @@ withConnectionManager ConnectionManagerArguments {
       <- atomically $  do
           v  <- newTMVar Map.empty
           labelTMVar v "cm-state"
+          traceTMVar (Proxy :: Proxy m) (toLazyTMVar v)
+                   $ \old new ->
+                     case (old, new) of
+                       (Nothing, _)             -> pure DontTrace
+                       -- taken
+                       (Just (Just _), Nothing) -> pure (TraceString "cm-state: taken")
+                       -- released
+                       (Just Nothing,  Just _)  -> pure (TraceString "cm-state: released")
+                       (_, _)                   -> pure DontTrace
+
           freshIdSupply <- newFreshIdSupply (Proxy :: Proxy m)
           return (freshIdSupply, v)
 
@@ -723,12 +738,14 @@ withConnectionManager ConnectionManagerArguments {
     -- eliminate 'PromiseWriter'.
     forkConnectionHandler
       :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+      -> MutableConnState peerAddr handle handleError version m
       -> socket
       -> ConnectionId peerAddr
       -> PromiseWriter m (Either handleError (handle, version))
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
       -> m (Async m ())
     forkConnectionHandler stateVar
+                          mutableConnState@MutableConnState { connVar }
                           socket
                           connId@ConnectionId { remoteAddress = peerAddr }
                           writer
@@ -758,64 +775,56 @@ withConnectionManager ConnectionManagerArguments {
           -- hits there we will update `connVar`.
           uninterruptibleMask $ \unmask -> do
             traceWith tracer (TrConnectionCleanup connId)
-            mConnVar <- modifyTMVar stateVar $ \state -> do
-              wConnVar <- atomically $ do
-                case Map.lookup peerAddr state of
-                  Nothing      -> return Nowhere
-                  Just mutableConnState@MutableConnState { connVar } -> do
-                      connState <- readTVar connVar
-                      let connState' = TerminatedState Nothing
-                          transition = mkTransition connState connState'
-                          transitionTrace = TransitionTrace peerAddr transition
-                      case connState of
-                        ReservedOutboundState -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        UnnegotiatedState {} -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        OutboundUniState {} -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        OutboundDupState {} -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        OutboundIdleState {} -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        InboundIdleState {} -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        InboundState {} -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        DuplexState {} -> do
-                          writeTVar connVar connState'
-                          return $ There (Just transitionTrace)
-                        TerminatingState {} -> do
-                          return $ Here (mutableConnState, transition)
-                        TerminatedState {} ->
-                          return $ There Nothing
+            eTransition <- modifyTMVar stateVar $ \state -> do
+              eTransition <- atomically $ do
+                connState <- readTVar connVar
+                let connState' = TerminatedState Nothing
+                    transition = mkTransition connState connState'
+                    transitionTrace = TransitionTrace peerAddr transition
+                case connState of
+                  ReservedOutboundState -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  UnnegotiatedState {} -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  OutboundUniState {} -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  OutboundDupState {} -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  OutboundIdleState {} -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  InboundIdleState {} -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  InboundState {} -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  DuplexState {} -> do
+                    writeTVar connVar connState'
+                    return $ Left (Just transitionTrace)
+                  TerminatingState {} -> do
+                    return $ Right transition
+                  TerminatedState {} ->
+                    return $ Left Nothing
 
-              case wConnVar of
-                Nowhere -> do
-                  close cmSnocket socket
-                  return ( state
-                         , Left Unknown
-                         )
-                There mbTransition -> do
+              case eTransition of
+                Left mbTransition -> do
                   traverse_ (traceWith trTracer) mbTransition
                   close cmSnocket socket
                   return ( Map.delete peerAddr state
                          , Left (Known (TerminatedState Nothing))
                          )
-                Here mutableConnStateAndTransition -> do
+                Right transition -> do
                   close cmSnocket socket
                   return ( state
-                         , Right mutableConnStateAndTransition
+                         , Right transition
                          )
 
-            case mConnVar of
+            case eTransition of
               Left Unknown -> do
                 -- TODO: this only happens because we read 'mConnVar' from
                 -- 'stateVar', if we have 'MonadFix' instance we could access it
@@ -834,7 +843,7 @@ withConnectionManager ConnectionManagerArguments {
               -- does not return the 'Race' constructor.
               -- TODO: Make this pattern match impossible.
               Left _ -> error "connection cleanup handler: impossible happened"
-              Right (mutableConnState@MutableConnState { connVar }, transition) ->
+              Right transition ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    when (cmTimeWaitTimeout > 0) $
                      let -- make sure we wait at least 'cmTimeWaitTimeout', we
@@ -1004,36 +1013,37 @@ withConnectionManager ConnectionManagerArguments {
             let provenance = Inbound
             traceWith tracer (TrIncludeConnection provenance peerAddr)
             (reader, writer) <- newEmptyPromiseIO
-            connThread <-
-              forkConnectionHandler
-                stateVar socket connId writer handler
+            (connThread, connVar, connState0, connState) <-
+              mfix $ \ ~(connThread, _mutableConnVar, _connState0, _connState) -> do
+                -- Either
+                -- @
+                --   Accepted    : ● → UnnegotiatedState Inbound
+                --   Overwritten : ● → UnnegotiatedState Inbound
+                -- @
+                --
+                -- This is subtle part, which needs to handle a near simultaneous
+                -- open.  We cannot rely on 'ReservedOutboundState' state as
+                -- a lock.  It may happen that the `requestOutboundConnection`
+                -- will put 'ReservedOutboundState', but before it will call `connect`
+                -- the `accept` call will return.  We overwrite the state and
+                -- replace the connection state 'TVar' with a fresh one.  Nothing
+                -- is blocked on the replaced 'TVar'.
+                let connState' = UnnegotiatedState provenance connId connThread
+                (mutableConnVar', connState0') <-
+                  atomically $ do
+                    v <- newMutableConnState freshIdSupply connState'
+                    labelTVar (connVar v) ("conn-state-" ++ show connId)
+                    connState0' <- traverse (readTVar . connVar)
+                                            (Map.lookup peerAddr state)
+                    return (v, connState0')
+                connThread' <-
+                  forkConnectionHandler
+                     stateVar mutableConnVar' socket connId writer handler
+                return (connThread', mutableConnVar', connState0', connState')
 
-            -- Either
-            -- @
-            --   Accepted    : ● → UnnegotiatedState Inbound
-            --   Overwritten : ● → UnnegotiatedState Inbound
-            -- @
-            --
-            -- This is subtle part, which needs to handle a near simultaneous
-            -- open.  We cannot rely on 'ReservedOutboundState' state as
-            -- a lock.  It may happen that the `requestOutboundConnection`
-            -- will put 'ReservedOutboundState', but before it will call `connect`
-            -- the `accept` call will return.  We overwrite the state and
-            -- replace the connection state 'TVar' with a fresh one.  Nothing
-            -- is blocked on the replaced 'TVar'.
-            let connState' = UnnegotiatedState provenance connId connThread
-            (connVar, connState) <-
-              atomically $ do
-                v <- newMutableConnState freshIdSupply connState'
-                labelTVar (connVar v) ("conn-state-" ++ show connId)
-                connState <- traverse (readTVar . connVar)
-                                      (Map.lookup peerAddr state)
-                return ( v
-                       , maybe Unknown Known connState
-                       )
             traceWith trTracer (TransitionTrace peerAddr
-                                 Transition { fromState = connState
-                                            , toState   = Known connState'
+                                 Transition { fromState = maybe Unknown Known connState0
+                                            , toState   = Known connState
                                             })
             return ( Map.insert peerAddr connVar state
                    , (Just (connVar, connThread, reader), connId)
@@ -1647,7 +1657,7 @@ withConnectionManager ConnectionManagerArguments {
 
                 connThread <-
                   forkConnectionHandler
-                    stateVar socket connId writer handler
+                    stateVar mutableConnState socket connId writer handler
                 return (connId, connThread)
 
             (trans, mbAssertion) <- atomically $ do

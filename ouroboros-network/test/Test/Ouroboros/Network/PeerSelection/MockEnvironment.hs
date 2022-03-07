@@ -246,7 +246,8 @@ mockPeerSelectionActions tracer
     peerConns  <- atomically $ do
       v <- newTVar Map.empty
       traceTVar proxy
-                v (\_ a -> TraceEnvPeersStatus <$> snapshotPeersStatus proxy a)
+                v (\_ a -> TraceDynamic . TraceEnvPeersStatus
+                       <$> snapshotPeersStatus proxy a)
       return v
     traceWith tracer (TraceEnvAddPeers peerGraph)
     traceWith tracer (TraceEnvSetLocalRoots localRootPeers)   --TODO: make dynamic

@@ -36,6 +36,7 @@ module Ouroboros.Network.Diffusion.P2P
 
 
 import           Control.Exception (IOException)
+import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
@@ -521,8 +522,10 @@ runM
                 resolver resolverError.
        ( MonadAsync       m
        , MonadEvaluate    m
+       , MonadFix         m
        , MonadFork        m
        , MonadLabelledSTM m
+       , MonadTraceSTM    m
        , MonadMask        m
        , MonadThrow  (STM m)
        , MonadTime        m

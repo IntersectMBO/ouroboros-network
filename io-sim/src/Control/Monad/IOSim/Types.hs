@@ -70,6 +70,7 @@ module Control.Monad.IOSim.Types
 import           Control.Exception (ErrorCall (..), asyncExceptionFromException, asyncExceptionToException)
 import           Control.Applicative
 import           Control.Monad
+import           Control.Monad.Fix (MonadFix (..))
 
 import           Control.Monad.Class.MonadAsync hiding (Async)
 import qualified Control.Monad.Class.MonadAsync as MonadAsync
@@ -81,7 +82,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadSTM (MonadSTM, MonadInspectSTM (..),
-                   MonadLabelledSTM (..), MonadTraceSTM (..), TMVarDefault)
+                   MonadLabelledSTM (..), MonadTraceSTM (..), TMVarDefault, TraceValue)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow as MonadThrow hiding (getMaskingState)
@@ -98,6 +99,7 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Endo (..))
 import           Data.Dynamic (Dynamic, toDyn)
+import           Data.Semigroup (Max (..))
 import           Data.Typeable
 import           Data.STRef.Lazy
 import qualified Data.List.Trace as Trace
@@ -163,6 +165,8 @@ data SimA s a where
 
   ExploreRaces :: SimA s b -> SimA s b
 
+  Fix          :: (x -> IOSim s x) -> (x -> SimA s r) -> SimA s r
+
 
 newtype STM s a = STM { unSTM :: forall r. (a -> StmA s r) -> StmA s r }
 
@@ -182,9 +186,9 @@ data StmA s a where
 
   SayStm       :: String -> StmA s b -> StmA s b
   OutputStm    :: Dynamic -> StmA s b -> StmA s b
-  TraceTVar    :: forall s a b tr. Typeable tr
-               => TVar s a
-               -> (Maybe a -> a -> ST s tr)
+  TraceTVar    :: forall s a b.
+                  TVar s a
+               -> (Maybe a -> a -> ST s TraceValue)
                -> StmA s b -> StmA s b
 
 -- Exported type
@@ -237,6 +241,9 @@ instance Monoid a => Monoid (IOSim s a) where
 
 instance Fail.MonadFail (IOSim s) where
   fail msg = IOSim $ \_ -> Throw (toException (IO.Error.userError msg))
+
+instance MonadFix (IOSim s) where  
+    mfix f = IOSim $ \k -> Fix f k 
 
 
 instance Functor (STM s) where
@@ -433,6 +440,9 @@ instance MonadInspectSTM (IOSim s) where
 -- | This instance adds a trace when a variable was written, just after the
 -- stm transaction was committed.
 --
+-- Traces the first value using dynamic tracing, like 'traceM' does, i.e.  with
+-- 'EventDynamic'; the string is traced using 'EventSay'.
+--
 instance MonadTraceSTM (IOSim s) where
   traceTVar _ tvar f = STM $ \k -> TraceTVar tvar f (k ())
   traceTQueue  = traceTQueueDefault
@@ -587,33 +597,35 @@ data SimEvent
   deriving Generic
   deriving Show via Quiet SimEvent
 
-seThreadLabel' :: SimEvent -> Maybe ThreadLabel
-seThreadLabel' SimEvent      {seThreadLabel} = seThreadLabel
-seThreadLabel' SimPOREvent   {seThreadLabel} = seThreadLabel
-seThreadLabel' SimRacesFound {}              = Nothing
 
-ppSimEvent :: Int -- ^ width of thread label
+ppSimEvent :: Int -- ^ width of the time
+           -> Int -- ^ width of thread id
+           -> Int -- ^ width of thread label
            -> SimEvent
            -> String
-ppSimEvent d SimEvent {seTime, seThreadId, seThreadLabel, seType} =
-    printf "%-24s - %-13s %-*s - %s"
+ppSimEvent timeWidth tidWidth tLabelWidth SimEvent {seTime, seThreadId, seThreadLabel, seType} =
+    printf "%-*s - %-*s %-*s - %s"
+           timeWidth
            (show seTime)
+           tidWidth
            (show seThreadId)
-           d
+           tLabelWidth
            threadLabel
            (show seType)
   where
     threadLabel = fromMaybe "" seThreadLabel
-ppSimEvent d SimPOREvent {seTime, seThreadId, seStep, seThreadLabel, seType} =
-    printf "%-24s - %-13s %-*s - %s"
+ppSimEvent timeWidth tidWidth tLableWidth SimPOREvent {seTime, seThreadId, seStep, seThreadLabel, seType} =
+    printf "%-*s - %-*s %-*s - %s"
+           timeWidth
            (show seTime)
+           tidWidth
            (show (seThreadId, seStep))
-           d
+           tLableWidth
            threadLabel
            (show seType)
   where
     threadLabel = fromMaybe "" seThreadLabel
-ppSimEvent _ (SimRacesFound controls) =
+ppSimEvent _ _ _ (SimRacesFound controls) =
     "RacesFound "++show controls
 
 data SimResult a
@@ -631,16 +643,55 @@ type SimTrace a = Trace.Trace (SimResult a) SimEvent
 ppTrace :: Show a => SimTrace a -> String
 ppTrace tr = Trace.ppTrace
                show
-               (ppSimEvent (bimaximum (bimap (const 0) (maybe 0 length . seThreadLabel') tr)))
+               (ppSimEvent timeWidth tidWith labelWidth)
                tr
+  where
+    (Max timeWidth, Max tidWith, Max labelWidth) =
+        bimaximum
+      . bimap (const (Max 0, Max 0, Max 0))
+              (\a -> case a of
+                SimEvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimPOREvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimRacesFound {} ->
+                  (Max 0, Max 0, Max 0)
+              )
+      $ tr
+
 
 -- | Like 'ppTrace' but does not show the result value.
 --
 ppTrace_ :: SimTrace a -> String
 ppTrace_ tr = Trace.ppTrace
                 (const "")
-                (ppSimEvent (bimaximum (bimap (const 0) (maybe 0 length . seThreadLabel') tr)))
+                (ppSimEvent timeWidth tidWith labelWidth)
                 tr
+  where
+    (Max timeWidth, Max tidWith, Max labelWidth) =
+        bimaximum
+      . bimap (const (Max 0, Max 0, Max 0))
+              (\a -> case a of
+                SimEvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimPOREvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimRacesFound {} ->
+                  (Max 0, Max 0, Max 0)
+              )
+      $ tr
 
 -- | Trace each event using 'Debug.trace'; this is useful when a trace ends with
 -- a pure error, e.g. an assertion.
@@ -712,7 +763,7 @@ data SimEventType
   | EventThreadUnhandled SomeException   -- terminated due to unhandled exception
 
   | EventTxCommitted   [Labelled TVarId] -- tx wrote to these
-                       [TVarId]          -- and created these
+                       [Labelled TVarId] -- and created these
                        (Maybe Effect)    -- effect performed (only for `IOSimPOR`)
   | EventTxAborted     (Maybe Effect)    -- effect performed (only for `IOSimPOR`)
   | EventTxBlocked     [Labelled TVarId] -- tx blocked reading these
@@ -734,6 +785,7 @@ data SimEventType
   | EventAwaitControl  StepId ScheduleControl
   | EventPerformAction StepId
   | EventReschedule           ScheduleControl
+  | EventUnblocked     [ThreadId]
   deriving Show
 
 type TraceEvent = SimEventType
@@ -767,6 +819,7 @@ data StmTxResult s a =
                         [SomeTVar s] -- ^ read tvars
                         [SomeTVar s] -- ^ created tvars
                         [Dynamic]
+                        [String]
                         TVarId -- updated TVarId name supply
 
        -- | A blocked transaction reports the vars that were read so that the
@@ -819,12 +872,15 @@ data ScheduleControl = ControlDefault
   deriving (Eq, Ord, Show)
 
 data ScheduleMod = ScheduleMod{
-    scheduleModTarget    :: StepId,   -- when we reach this step
+    -- | Step at which the 'ScheduleMod' is activated.
+    scheduleModTarget    :: StepId,
+    -- | 'ScheduleControl' at the activation step.  It is needed by
+    -- 'extendScheduleControl' when combining the discovered schedule with the
+    -- initial one.
     scheduleModControl   :: ScheduleControl,
-                                      -- which happens with this control
-    scheduleModInsertion :: [StepId]  -- we should instead perform this sequence
-                                      -- this *includes* the target step,
-                                      -- not necessarily as the last step.
+    -- | Series of steps which are executed at the target step.  This *includes*
+    -- the target step, not necessarily as the last step.
+    scheduleModInsertion :: [StepId]
   }
   deriving (Eq, Ord)
 
