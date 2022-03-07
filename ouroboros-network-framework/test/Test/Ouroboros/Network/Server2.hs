@@ -24,6 +24,7 @@ module Test.Ouroboros.Network.Server2 (tests) where
 
 import           Control.Exception (AssertionFailed, SomeAsyncException (..))
 import           Control.Monad (replicateM, when, (>=>))
+import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST (MonadST)
@@ -338,6 +339,7 @@ withInitiatorOnlyConnectionManager
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
        , Serialise req, Typeable req
        , MonadAsync m
+       , MonadFix m
        , MonadLabelledSTM m
        , MonadSay m, Show req
        , Show name
@@ -492,6 +494,7 @@ withBidirectionalConnectionManager
 
        -- debugging
        , MonadAsync m
+       , MonadFix m
        , MonadLabelledSTM m
        , MonadSay m, Show req
        , Show name
@@ -743,6 +746,7 @@ unidirectionalExperiment
     :: forall peerAddr socket acc req resp m.
        ( ConnectionManagerMonad m
        , MonadAsync m
+       , MonadFix m
        , MonadLabelledSTM m
        , MonadSay m
 
@@ -843,6 +847,7 @@ bidirectionalExperiment
     :: forall peerAddr socket acc req resp m.
        ( ConnectionManagerMonad m
        , MonadAsync m
+       , MonadFix m
        , MonadLabelledSTM m
        , MonadSay m
 
@@ -1453,6 +1458,7 @@ multinodeExperiment
     :: forall peerAddr socket acc req resp m.
        ( ConnectionManagerMonad m
        , MonadAsync m
+       , MonadFix m
        , MonadLabelledSTM m
        , MonadSay m
        , acc ~ [req], resp ~ [req]
@@ -3453,7 +3459,7 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
 
 
 
-multiNodeSimTracer :: ( Monad m, MonadTimer m, MonadLabelledSTM m
+multiNodeSimTracer :: ( Monad m, MonadFix m, MonadTimer m, MonadLabelledSTM m
                       , MonadMask m, MonadTime m, MonadThrow (STM m)
                       , MonadSay m, MonadAsync m, MonadEvaluate m
                       , MonadFork m, MonadST m
