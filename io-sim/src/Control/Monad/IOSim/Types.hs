@@ -82,7 +82,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadSTM (MonadSTM, MonadInspectSTM (..),
-                   MonadLabelledSTM (..), MonadTraceSTM (..), TMVarDefault)
+                   MonadLabelledSTM (..), MonadTraceSTM (..), TMVarDefault, TraceValue)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow as MonadThrow hiding (getMaskingState)
@@ -186,9 +186,9 @@ data StmA s a where
 
   SayStm       :: String -> StmA s b -> StmA s b
   OutputStm    :: Dynamic -> StmA s b -> StmA s b
-  TraceTVar    :: forall s a b tr. Typeable tr
-               => TVar s a
-               -> (Maybe a -> a -> ST s tr)
+  TraceTVar    :: forall s a b.
+                  TVar s a
+               -> (Maybe a -> a -> ST s TraceValue)
                -> StmA s b -> StmA s b
 
 -- Exported type
@@ -439,6 +439,9 @@ instance MonadInspectSTM (IOSim s) where
 
 -- | This instance adds a trace when a variable was written, just after the
 -- stm transaction was committed.
+--
+-- Traces the first value using dynamic tracing, like 'traceM' does, i.e.  with
+-- 'EventDynamic'; the string is traced using 'EventSay'.
 --
 instance MonadTraceSTM (IOSim s) where
   traceTVar _ tvar f = STM $ \k -> TraceTVar tvar f (k ())
@@ -816,6 +819,7 @@ data StmTxResult s a =
                         [SomeTVar s] -- ^ read tvars
                         [SomeTVar s] -- ^ created tvars
                         [Dynamic]
+                        [String]
                         TVarId -- updated TVarId name supply
 
        -- | A blocked transaction reports the vars that were read so that the

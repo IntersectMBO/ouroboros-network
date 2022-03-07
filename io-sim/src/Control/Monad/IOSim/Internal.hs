@@ -56,7 +56,7 @@ import           Prelude hiding (read)
 import           Data.Foldable (traverse_)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
-import           Data.Maybe (catMaybes)
+import           Data.Maybe (mapMaybe)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.OrdPSQ (OrdPSQ)
@@ -406,7 +406,8 @@ schedule thread@Thread{
 
     Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
-        StmTxCommitted x written _read created tvarTraces  nextVid' -> do
+        StmTxCommitted x written _read created
+                         tvarDynamicTraces tvarStringTraces nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           let thread'     = thread { threadControl = ThreadControl (k x) ctl }
@@ -431,7 +432,10 @@ schedule thread@Thread{
                      , let Just vids' = Set.toList <$> Map.lookup tid' wokeby ]
                  $ traceMany
                      [ (time, tid, tlbl, EventLog tr)
-                     | tr <- tvarTraces ]
+                     | tr <- tvarDynamicTraces ]
+                 $ traceMany
+                     [ (time, tid, tlbl, EventSay str)
+                     | str <- tvarStringTraces ]
                  $ SimTrace time tid tlbl (EventUnblocked unblocked)
                  $ SimTrace time tid tlbl (EventDeschedule Yield)
                  $ trace
@@ -821,7 +825,10 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
           k0 $ StmTxCommitted x (reverse writtenSeq)
                                 []
                                 (reverse createdSeq)
-                                (catMaybes $ ds ++ ds')
+                                (mapMaybe (\TraceValue { traceDynamic }
+                                            -> toDyn <$> traceDynamic)
+                                          $ ds ++ ds')
+                                (mapMaybe traceString $ ds ++ ds')
                                 nextVid
 
         OrElseLeftFrame _b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
@@ -893,7 +900,7 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
         go ctl read written writtenSeq createdSeq nextVid k
 
       TraceTVar tvar f k -> do
-        writeSTRef (tvarTrace tvar) (Just $ MkTVarTrace f)
+        writeSTRef (tvarTrace tvar) (Just f)
         go ctl read written writtenSeq createdSeq nextVid k
 
       ReadTVar v k
@@ -1001,19 +1008,18 @@ readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
 -- 'written.
 traceTVarST :: TVar s a
             -> Bool -- true if it's a new 'TVar'
-            -> ST s (Maybe Dynamic)
+            -> ST s TraceValue
 traceTVarST TVar{tvarCurrent, tvarUndo, tvarTrace} new = do
     mf <- readSTRef tvarTrace
     case mf of
-      Nothing -> return Nothing
-      Just (MkTVarTrace f)  -> do
+      Nothing -> return TraceValue { traceDynamic = (Nothing :: Maybe ())
+                                   , traceString = Nothing }
+      Just f  -> do
         vs <- readSTRef tvarUndo
         v <- readSTRef tvarCurrent
         case (new, vs) of
-          (True, _) ->
-            Just . toDyn <$> f Nothing v
-          (_, _:_)  ->
-            Just . toDyn <$> f (Just $ last vs) v
+          (True, _) -> f Nothing v
+          (_, _:_)  -> f (Just $ last vs) v
           _ -> error "traceTVarST: unexpected tvar state"
 
 

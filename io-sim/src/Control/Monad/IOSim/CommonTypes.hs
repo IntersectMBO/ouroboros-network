@@ -7,13 +7,13 @@
 --
 module Control.Monad.IOSim.CommonTypes where
 
+import           Control.Monad.Class.MonadSTM (TraceValue)
 import           Control.Monad.ST.Lazy
 
 import           Data.Function (on)
 import           Data.Map (Map)
 import           Data.Set (Set)
 import           Data.STRef.Lazy
-import           Data.Typeable (Typeable)
 
 data ThreadId = RacyThreadId [Int]
               | ThreadId     [Int]    -- non racy threads have higher priority
@@ -72,15 +72,11 @@ data TVar s a = TVar {
 
        -- | Callback to construct a trace which will be attached to the dynamic
        -- trace.
-       tvarTrace  :: !(STRef s (Maybe (MkTVarTrace s a)))
+       tvarTrace  :: !(STRef s (Maybe (Maybe a -> a -> ST s TraceValue)))
      }
 
 instance Eq (TVar s a) where
     (==) = on (==) tvarId
-
-data MkTVarTrace s a where
-    MkTVarTrace :: forall s a tr. Typeable tr => (Maybe a -> a -> ST s tr)
-                -> MkTVarTrace s a
 
 data SomeTVar s where
   SomeTVar :: !(TVar s a) -> SomeTVar s

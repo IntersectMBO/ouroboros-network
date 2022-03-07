@@ -5,7 +5,10 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
@@ -16,6 +19,8 @@ module Control.Monad.Class.MonadSTM
   ( MonadSTM (..)
   , MonadLabelledSTM (..)
   , MonadInspectSTM (..)
+  , TraceValue (TraceValue, TraceDynamic, TraceString, DontTrace, traceDynamic,
+                traceString)
   , MonadTraceSTM (..)
   , LazyTVar
   , LazyTMVar
@@ -263,6 +268,41 @@ instance MonadInspectSTM IO where
     inspectTMVar _ = atomically . tryReadTMVar
 
 
+-- | A GADT which instructs how to trace the value.  The 'traceDynamic' will
+-- use dynamic tracing, e.g. 'Control.Monad.IOSim.traceM'; while 'traceString'
+-- will be traced with 'EventSay'.
+--
+data TraceValue where
+    TraceValue :: forall tr. Typeable tr
+               => { traceDynamic :: Maybe tr
+                  , traceString  :: Maybe String
+                  }
+               -> TraceValue
+
+
+-- | Use only dynamic tracer.
+--
+pattern TraceDynamic :: () => forall tr. Typeable tr => tr -> TraceValue
+pattern TraceDynamic tr <- TraceValue { traceDynamic = Just tr }
+  where
+    TraceDynamic tr = TraceValue { traceDynamic = Just tr, traceString = Nothing }
+
+-- | Use only string tracing.
+--
+pattern TraceString :: String -> TraceValue
+pattern TraceString tr <- TraceValue { traceString = Just tr }
+  where
+    TraceString tr = TraceValue { traceDynamic = (Nothing :: Maybe ())
+                                , traceString  = Just tr
+                                }
+
+-- | Do not trace the value.
+--
+pattern DontTrace :: TraceValue
+pattern DontTrace <- TraceValue Nothing Nothing
+  where
+    DontTrace = TraceValue (Nothing :: Maybe ()) Nothing
+
 -- | 'MonadTraceSTM' allows to trace values of stm variables when stm
 -- transaction is commited.  This allows to verify invariants when a variable
 -- is commited.
@@ -277,92 +317,79 @@ class MonadInspectSTM m
   --
   {-# MINIMAL traceTVar, traceTQueue, traceTBQueue #-}
 
-  traceTVar    :: Typeable tr
-               => proxy m
+  traceTVar    :: proxy m
                -> TVar m a
-               -> (Maybe a -> a -> InspectMonad m tr)
+               -> (Maybe a -> a -> InspectMonad m TraceValue)
                -- ^ callback which receives initial value or 'Nothing' (if it
                -- is a newly created 'TVar'), and the commited value.
                -> STM m ()
 
 
-  traceTMVar   :: Typeable tr
-               => proxy m
+  traceTMVar   :: proxy m
                -> TMVar m a
-               -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+               -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m TraceValue)
                -> STM m ()
 
-  traceTQueue  :: Typeable tr
-               => proxy m
+  traceTQueue  :: proxy m
                -> TQueue m a
-               -> (Maybe [a] -> [a] -> InspectMonad m tr)
+               -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
                -> STM m ()
 
-  traceTBQueue :: Typeable tr
-               => proxy m
+  traceTBQueue :: proxy m
                -> TBQueue m a
-               -> (Maybe [a] -> [a] -> InspectMonad m tr)
+               -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
                -> STM m ()
 
   default traceTMVar :: ( TMVar m a ~ TMVarDefault m a
-                        , Typeable tr
                         )
                      => proxy m
                      -> TMVar m a
-                     -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+                     -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m TraceValue)
                      -> STM m ()
   traceTMVar = traceTMVarDefault
 
 
-  traceTVarIO    :: Typeable tr
-                 => proxy m
+  traceTVarIO    :: proxy m
                  -> TVar m a
-                 -> (Maybe a -> a -> InspectMonad m tr)
+                 -> (Maybe a -> a -> InspectMonad m TraceValue)
                  -> m ()
 
-  traceTMVarIO   :: Typeable tr
-                 => proxy m
+  traceTMVarIO   :: proxy m
                  -> TMVar m a
-                 -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+                 -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m TraceValue)
                  -> m ()
 
-  traceTQueueIO  :: Typeable tr
-                 => proxy m
+  traceTQueueIO  :: proxy m
                  -> TQueue m a
-                 -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                 -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
                  -> m ()
 
-  traceTBQueueIO :: Typeable tr
-                 => proxy m
+  traceTBQueueIO :: proxy m
                  -> TBQueue m a
-                 -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                 -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
                  -> m ()
 
-  default traceTVarIO :: Typeable tr
-                      => proxy m
+  default traceTVarIO :: proxy m
                       -> TVar m a
-                      -> (Maybe a -> a -> InspectMonad m tr)
+                      -> (Maybe a -> a -> InspectMonad m TraceValue)
                       -> m ()
   traceTVarIO = \p v f -> atomically (traceTVar p v f)
 
-  default traceTMVarIO :: Typeable tr
-                       => proxy m
+  default traceTMVarIO :: proxy m
                        -> TMVar m a
-                       -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m tr)
+                       -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m TraceValue)
                        -> m ()
   traceTMVarIO = \p v f -> atomically (traceTMVar p v f)
 
-  default traceTQueueIO :: Typeable tr
-                        => proxy m
+  default traceTQueueIO :: proxy m
                         -> TQueue m a
-                        -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                        -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
                         -> m ()
   traceTQueueIO = \p v f -> atomically (traceTQueue p v f)
 
-  default traceTBQueueIO :: Typeable tr
-                         => proxy m
+  default traceTBQueueIO :: proxy m
                          -> TBQueue m a
-                         -> (Maybe [a] -> [a] -> InspectMonad m tr)
+                         -> (Maybe [a] -> [a] -> InspectMonad m TraceValue)
                          -> m ()
   traceTBQueueIO = \p v f -> atomically (traceTBQueue p v f)
 
@@ -480,10 +507,10 @@ labelTMVarDefault
 labelTMVarDefault (TMVar tvar) = labelTVar tvar
 
 traceTMVarDefault
-  :: (MonadTraceSTM m, Typeable tr)
+  :: MonadTraceSTM m
   => proxy m
   -> TMVarDefault m a
-  -> (Maybe (Maybe a) -> Maybe a -> InspectMonad m tr)
+  -> (Maybe (Maybe a) -> Maybe a -> InspectMonad m TraceValue)
   -> STM m ()
 traceTMVarDefault p (TMVar t) f = traceTVar p t f
 
