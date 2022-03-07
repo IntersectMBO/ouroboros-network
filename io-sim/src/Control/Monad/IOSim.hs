@@ -333,15 +333,23 @@ ppEvents :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
          -> String
 ppEvents events =
     intercalate "\n"
-      [ ppSimEvent width
+      [ ppSimEvent timeWidth tidWidth width
                    SimEvent {seTime, seThreadId, seThreadLabel, seType }
       | (seTime, seThreadId, seThreadLabel, seType) <- events
       ]
   where
-    width = maximum
-              [ maybe 0 length threadLabel
-              | (_, _, threadLabel, _) <- events
-              ]
+    timeWidth = maximum
+                [ length (show t)
+                | (t, _, _, _) <- events
+                ]
+    tidWidth  = maximum
+                [ length (show tid)
+                | (_, tid, _, _) <- events
+                ]
+    width     = maximum
+                [ maybe 0 length threadLabel
+                | (_, _, threadLabel, _) <- events
+                ]
 
 
 -- | See 'runSimTraceST' below.

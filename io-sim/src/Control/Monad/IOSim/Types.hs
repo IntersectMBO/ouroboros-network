@@ -99,6 +99,7 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Endo (..))
 import           Data.Dynamic (Dynamic, toDyn)
+import           Data.Semigroup (Max (..))
 import           Data.Typeable
 import           Data.STRef.Lazy
 import qualified Data.List.Trace as Trace
@@ -593,33 +594,35 @@ data SimEvent
   deriving Generic
   deriving Show via Quiet SimEvent
 
-seThreadLabel' :: SimEvent -> Maybe ThreadLabel
-seThreadLabel' SimEvent      {seThreadLabel} = seThreadLabel
-seThreadLabel' SimPOREvent   {seThreadLabel} = seThreadLabel
-seThreadLabel' SimRacesFound {}              = Nothing
 
-ppSimEvent :: Int -- ^ width of thread label
+ppSimEvent :: Int -- ^ width of the time
+           -> Int -- ^ width of thread id
+           -> Int -- ^ width of thread label
            -> SimEvent
            -> String
-ppSimEvent d SimEvent {seTime, seThreadId, seThreadLabel, seType} =
-    printf "%-24s - %-13s %-*s - %s"
+ppSimEvent timeWidth tidWidth tLabelWidth SimEvent {seTime, seThreadId, seThreadLabel, seType} =
+    printf "%-*s - %-*s %-*s - %s"
+           timeWidth
            (show seTime)
+           tidWidth
            (show seThreadId)
-           d
+           tLabelWidth
            threadLabel
            (show seType)
   where
     threadLabel = fromMaybe "" seThreadLabel
-ppSimEvent d SimPOREvent {seTime, seThreadId, seStep, seThreadLabel, seType} =
-    printf "%-24s - %-13s %-*s - %s"
+ppSimEvent timeWidth tidWidth tLableWidth SimPOREvent {seTime, seThreadId, seStep, seThreadLabel, seType} =
+    printf "%-*s - %-*s %-*s - %s"
+           timeWidth
            (show seTime)
+           tidWidth
            (show (seThreadId, seStep))
-           d
+           tLableWidth
            threadLabel
            (show seType)
   where
     threadLabel = fromMaybe "" seThreadLabel
-ppSimEvent _ (SimRacesFound controls) =
+ppSimEvent _ _ _ (SimRacesFound controls) =
     "RacesFound "++show controls
 
 data SimResult a
@@ -637,16 +640,55 @@ type SimTrace a = Trace.Trace (SimResult a) SimEvent
 ppTrace :: Show a => SimTrace a -> String
 ppTrace tr = Trace.ppTrace
                show
-               (ppSimEvent (bimaximum (bimap (const 0) (maybe 0 length . seThreadLabel') tr)))
+               (ppSimEvent timeWidth tidWith labelWidth)
                tr
+  where
+    (Max timeWidth, Max tidWith, Max labelWidth) =
+        bimaximum
+      . bimap (const (Max 0, Max 0, Max 0))
+              (\a -> case a of
+                SimEvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimPOREvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimRacesFound {} ->
+                  (Max 0, Max 0, Max 0)
+              )
+      $ tr
+
 
 -- | Like 'ppTrace' but does not show the result value.
 --
 ppTrace_ :: SimTrace a -> String
 ppTrace_ tr = Trace.ppTrace
                 (const "")
-                (ppSimEvent (bimaximum (bimap (const 0) (maybe 0 length . seThreadLabel') tr)))
+                (ppSimEvent timeWidth tidWith labelWidth)
                 tr
+  where
+    (Max timeWidth, Max tidWith, Max labelWidth) =
+        bimaximum
+      . bimap (const (Max 0, Max 0, Max 0))
+              (\a -> case a of
+                SimEvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimPOREvent {seTime, seThreadId, seThreadLabel} ->
+                  ( Max (length (show seTime))
+                  , Max (length (show (seThreadId)))
+                  , Max (length seThreadLabel)
+                  )
+                SimRacesFound {} ->
+                  (Max 0, Max 0, Max 0)
+              )
+      $ tr
 
 -- | Trace each event using 'Debug.trace'; this is useful when a trace ends with
 -- a pure error, e.g. an assertion.
