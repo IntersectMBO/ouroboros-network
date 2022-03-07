@@ -133,7 +133,8 @@ run ServerArguments {
       serverTrTracer,
       serverTracer = tracer,
       serverInboundGovernorTracer = inboundGovernorTracer,
-      serverConnectionLimits,
+      serverConnectionLimits =
+        serverLimits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       serverInboundIdleTimeout,
       serverConnectionManager,
       serverControlChannel,
@@ -224,7 +225,7 @@ run ServerArguments {
             runConnectionRateLimits
               (TrAcceptPolicyTrace `contramap` tracer)
               (numberOfConnections serverConnectionManager)
-              serverConnectionLimits
+              serverLimits
             runAccept acceptOne
 
           case result of
@@ -244,9 +245,6 @@ run ServerArguments {
 
             (Accepted socket peerAddr, acceptNext) ->
               (do
-                  let hardLimit =
-                        acceptedConnectionsHardLimit serverConnectionLimits
-
                   traceWith tracer (TrAcceptConnection peerAddr)
                   async $
                     do a <-
