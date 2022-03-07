@@ -341,6 +341,7 @@ withInitiatorOnlyConnectionManager
        , MonadAsync m
        , MonadFix m
        , MonadLabelledSTM m
+       , MonadTraceSTM m
        , MonadSay m, Show req
        , Show name
        )
@@ -496,6 +497,7 @@ withBidirectionalConnectionManager
        , MonadAsync m
        , MonadFix m
        , MonadLabelledSTM m
+       , MonadTraceSTM m
        , MonadSay m, Show req
        , Show name
        )
@@ -748,6 +750,7 @@ unidirectionalExperiment
        , MonadAsync m
        , MonadFix m
        , MonadLabelledSTM m
+       , MonadTraceSTM m
        , MonadSay m
 
        , acc ~ [req], resp ~ [req]
@@ -849,6 +852,7 @@ bidirectionalExperiment
        , MonadAsync m
        , MonadFix m
        , MonadLabelledSTM m
+       , MonadTraceSTM m
        , MonadSay m
 
        , acc ~ [req], resp ~ [req]
@@ -1460,6 +1464,7 @@ multinodeExperiment
        , MonadAsync m
        , MonadFix m
        , MonadLabelledSTM m
+       , MonadTraceSTM m
        , MonadSay m
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
@@ -3460,9 +3465,9 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
 
 
 multiNodeSimTracer :: ( Monad m, MonadFix m, MonadTimer m, MonadLabelledSTM m
-                      , MonadMask m, MonadTime m, MonadThrow (STM m)
-                      , MonadSay m, MonadAsync m, MonadEvaluate m
-                      , MonadFork m, MonadST m
+                      , MonadTraceSTM m, MonadMask m, MonadTime m
+                      , MonadThrow (STM m), MonadSay m, MonadAsync m
+                      , MonadEvaluate m, MonadFork m, MonadST m
                       , Serialise req, Show req, Eq req, Typeable req
                       )
                    => req

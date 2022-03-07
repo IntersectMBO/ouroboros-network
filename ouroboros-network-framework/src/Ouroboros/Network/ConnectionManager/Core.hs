@@ -521,6 +521,7 @@ withConnectionManager
     :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version m a.
        ( Monad              m
        , MonadLabelledSTM   m
+       , MonadTraceSTM      m
        -- 'MonadFork' is only to get access to 'throwTo'
        , MonadFork          m
        , MonadAsync         m
@@ -576,6 +577,16 @@ withConnectionManager ConnectionManagerArguments {
       <- atomically $  do
           v  <- newTMVar Map.empty
           labelTMVar v "cm-state"
+          traceTMVar (Proxy :: Proxy m) (toLazyTMVar v)
+                   $ \old new ->
+                     case (old, new) of
+                       (Nothing, _)             -> pure DontTrace
+                       -- taken
+                       (Just (Just _), Nothing) -> pure (TraceString "cm-state: taken")
+                       -- released
+                       (Just Nothing,  Just _)  -> pure (TraceString "cm-state: released")
+                       (_, _)                   -> pure DontTrace
+
           freshIdSupply <- newFreshIdSupply (Proxy :: Proxy m)
           return (freshIdSupply, v)
 
