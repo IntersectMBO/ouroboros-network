@@ -760,7 +760,7 @@ data SimEventType
   | EventThreadUnhandled SomeException   -- terminated due to unhandled exception
 
   | EventTxCommitted   [Labelled TVarId] -- tx wrote to these
-                       [TVarId]          -- and created these
+                       [Labelled TVarId] -- and created these
                        (Maybe Effect)    -- effect performed (only for `IOSimPOR`)
   | EventTxAborted     (Maybe Effect)    -- effect performed (only for `IOSimPOR`)
   | EventTxBlocked     [Labelled TVarId] -- tx blocked reading these

@@ -406,13 +406,14 @@ schedule thread@Thread{
 
     Atomically a k -> execAtomically time tid tlbl nextVid (runSTM a) $ \res ->
       case res of
-        StmTxCommitted x written _read _created tvarTraces  nextVid' -> do
+        StmTxCommitted x written _read created tvarTraces  nextVid' -> do
           (wakeup, wokeby) <- threadsUnblockedByWrites written
           mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           let thread'     = thread { threadControl = ThreadControl (k x) ctl }
               (unblocked,
                simstate') = unblockThreads wakeup simstate
-          vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
+          written' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
+          created' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) created
               -- We don't interrupt runnable threads to provide fairness
               -- anywhere else. We do it here by putting the tx that committed
               -- a transaction to the back of the runqueue, behind all other
@@ -422,7 +423,7 @@ schedule thread@Thread{
               -- as it is a fair policy (all runnable threads eventually run).
           trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $ SimTrace time tid tlbl (EventTxCommitted
-                                             vids [nextVid..pred nextVid'] Nothing)
+                                             written' created' Nothing)
                  $ traceMany
                      [ (time, tid', tlbl', EventTxWakeup vids')
                      | tid' <- unblocked

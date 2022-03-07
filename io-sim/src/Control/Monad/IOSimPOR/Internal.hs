@@ -547,11 +547,12 @@ schedule thread@Thread{
                simstate') = unblockThreads vClock' wakeup simstate
           sequence_ [ modifySTRef (tvarVClock r) (leastUpperBoundVClock vClock')
                     | SomeTVar r <- created ++ written ]
-          vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
+          written' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
+          created' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) created
           -- We deschedule a thread after a transaction... another may have woken up.
           trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $
-            SimPORTrace time tid tstep tlbl (EventTxCommitted vids [nextVid..pred nextVid'] (Just effect')) $
+            SimPORTrace time tid tstep tlbl (EventTxCommitted written' created' (Just effect')) $
             traceMany
               -- TODO: step
               [ (time, tid', (-1), tlbl', EventTxWakeup vids')
