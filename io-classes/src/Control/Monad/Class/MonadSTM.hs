@@ -304,14 +304,14 @@ pattern DontTrace <- TraceValue Nothing Nothing
     DontTrace = TraceValue (Nothing :: Maybe ()) Nothing
 
 -- | 'MonadTraceSTM' allows to trace values of stm variables when stm
--- transaction is commited.  This allows to verify invariants when a variable
--- is commited.
+-- transaction is committed.  This allows to verify invariants when a variable
+-- is committed.
 --
 class MonadInspectSTM m
    => MonadTraceSTM m where
   -- | Construct a trace out of previous & new value of a 'TVar'.  The callback
   -- is called whenever an stm transaction which modifies the 'TVar' is
-  -- commited.
+  -- committed.
   --
   -- This is supported by 'IOSim' and 'IOSimPOR'; 'IO' has a trivial instance.
   --
@@ -321,7 +321,7 @@ class MonadInspectSTM m
                -> TVar m a
                -> (Maybe a -> a -> InspectMonad m TraceValue)
                -- ^ callback which receives initial value or 'Nothing' (if it
-               -- is a newly created 'TVar'), and the commited value.
+               -- is a newly created 'TVar'), and the committed value.
                -> STM m ()
 
 
@@ -791,7 +791,7 @@ throwSTM :: (MonadSTM m, MonadThrow.MonadThrow (STM m), Exception e)
 throwSTM = MonadThrow.throwIO
 
 
--- | 'catch' speclialized for an @stm@ monad.
+-- | 'catch' specialized for an @stm@ monad.
 --
 catchSTM :: (MonadSTM m, MonadThrow.MonadCatch (STM m), Exception e)
          => STM m a -> (e -> STM m a) -> STM m a
@@ -824,8 +824,8 @@ deriving instance MonadSTM m => MonadPlus   (WrappedSTM t r m)
 -- extension because it violates 3rd Paterson condition, however `STM m` will
 -- resolve to a concrete type of kind (Type -> Type), and thus no larger than
 -- `m` itself, e.g. for `m ~ ReaderT r f`, `STM m ~ WrappedSTM Reader r f`.
--- Instance resolution will termniate as soon as the monad transformer stack
--- depth is exhousted.
+-- Instance resolution will terminate as soon as the monad transformer stack
+-- depth is exhausted.
 instance ( MonadSTM m
          , MonadThrow.MonadThrow (STM m)
          , MonadThrow.MonadCatch (STM m)
