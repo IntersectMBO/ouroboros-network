@@ -16,6 +16,8 @@ module Control.Monad.Class.MonadSTM.Strict
   , StrictTVar
   , labelTVar
   , labelTVarIO
+  , traceTVar
+  , traceTVarIO
   , castStrictTVar
   , toLazyTVar
   , fromLazyTVar
@@ -32,6 +34,8 @@ module Control.Monad.Class.MonadSTM.Strict
   , StrictTMVar
   , labelTMVar
   , labelTMVarIO
+  , traceTMVar
+  , traceTMVarIO
   , castStrictTMVar
   , toLazyTMVar
   , fromLazyTMVar
@@ -59,7 +63,8 @@ module Control.Monad.Class.MonadSTM.Strict
 
 import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
                      TMVar, TVar, isEmptyTMVar, labelTMVar, labelTMVarIO,
-                     labelTVar, labelTVarIO, modifyTVar, newEmptyTMVar,
+                     traceTMVar, traceTMVarIO, labelTVar, labelTVarIO,
+                     traceTVar, traceTVarIO, modifyTVar, newEmptyTMVar,
                      newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
                      newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
                      readTMVar, readTVar, readTVarIO, stateTVar, swapTMVar,
@@ -96,6 +101,20 @@ labelTVar StrictTVar { tvar } = Lazy.labelTVar tvar
 
 labelTVarIO :: MonadLabelledSTM m => StrictTVar m a -> String -> m ()
 labelTVarIO v = atomically . labelTVar v
+
+traceTVar :: MonadTraceSTM m
+          => proxy m
+          -> StrictTVar m a 
+          -> (Maybe a -> a -> InspectMonad m TraceValue)
+          -> STM m ()
+traceTVar p StrictTVar {tvar} = Lazy.traceTVar p tvar
+
+traceTVarIO :: MonadTraceSTM m
+            => proxy m
+            -> StrictTVar m a
+            -> (Maybe a -> a -> InspectMonad m TraceValue)
+            -> m ()
+traceTVarIO p StrictTVar {tvar} = Lazy.traceTVarIO p tvar
 
 castStrictTVar :: LazyTVar m ~ LazyTVar n
                => StrictTVar m a -> StrictTVar n a
@@ -197,6 +216,20 @@ labelTMVar (StrictTMVar tvar) = Lazy.labelTMVar tvar
 
 labelTMVarIO :: MonadLabelledSTM m => StrictTMVar m a -> String -> m ()
 labelTMVarIO v = atomically . labelTMVar v
+
+traceTMVar :: MonadTraceSTM m
+           => proxy m
+           -> StrictTMVar m a 
+           -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m TraceValue)
+           -> STM m ()
+traceTMVar p (StrictTMVar var) = Lazy.traceTMVar p var
+
+traceTMVarIO :: MonadTraceSTM m
+             => proxy m
+             -> StrictTMVar m a
+             -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m TraceValue)
+             -> m ()
+traceTMVarIO p (StrictTMVar var) = Lazy.traceTMVarIO p var
 
 castStrictTMVar :: LazyTMVar m ~ LazyTMVar n
                 => StrictTMVar m a -> StrictTMVar n a

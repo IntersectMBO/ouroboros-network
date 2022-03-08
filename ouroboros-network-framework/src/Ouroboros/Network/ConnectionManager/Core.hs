@@ -577,7 +577,7 @@ withConnectionManager ConnectionManagerArguments {
       <- atomically $  do
           v  <- newTMVar Map.empty
           labelTMVar v "cm-state"
-          traceTMVar (Proxy :: Proxy m) (toLazyTMVar v)
+          traceTMVar (Proxy :: Proxy m) v
                    $ \old new ->
                      case (old, new) of
                        (Nothing, _)             -> pure DontTrace
