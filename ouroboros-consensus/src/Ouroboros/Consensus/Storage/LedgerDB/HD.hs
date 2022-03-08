@@ -389,11 +389,11 @@ instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SudMeasure k v) where
 instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SudMeasure k v) where
   fromCBOR = do
       len <- CBOR.decodeListLen
-      i   <- CBOR.decodeWord
-      case (len, i) of
+      tag <- CBOR.decodeWord
+      case (len, tag) of
         (1, 0) -> pure SudMeasureNothing
         (4, 1) -> SudMeasureJust <$> fromCBOR <*> fromCBOR <*> fromCBOR
-        o      -> fail $ "SudMeasure unknown len and constructor index: " <> show o
+        o      -> fail $ "SudMeasure unknown len and tag: " <> show o
 
 sizeSudMeasure :: SudMeasure k v -> Int
 sizeSudMeasure = \case

@@ -416,7 +416,7 @@ instance (SOP.All ShelleyBasedEra eras, Typeable eras) => ToCBOR (ShelleyTxOut e
 instance (SOP.All ShelleyBasedEra eras, Typeable eras) => FromCBOR (ShelleyTxOut eras) where
   fromCBOR = do
       CBOR.decodeListLenOf 2
-      i <- CBOR.decodeWord
+      tag <- CBOR.decodeWord
       let aDecoder =
               mconcat
             $ SOP.hcollapse
@@ -424,8 +424,8 @@ instance (SOP.All ShelleyBasedEra eras, Typeable eras) => FromCBOR (ShelleyTxOut
                 (Proxy @ShelleyBasedEra)
                 each
                 (SOP.indices @eras)
-      case Monoid.getFirst $ aDecoder i of
-        Nothing -> error $ "FromCBOR ShelleyTxOut, unknown constructor index " <> show i
+      case Monoid.getFirst $ aDecoder tag of
+        Nothing -> error $ "FromCBOR ShelleyTxOut, unknown tag: " <> show tag
         Just x  -> unADecoder x
     where
       each ::
