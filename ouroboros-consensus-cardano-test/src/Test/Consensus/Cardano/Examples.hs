@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE InstanceSigs        #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -137,7 +136,7 @@ instance Inject Examples where
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
       , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
       , exampleSlotNo           =                                            exampleSlotNo
-      , examplesLedgerTables    = inj (Proxy @WrapLedgerTables)              examplesLedgerTables -- TODO Consider using Flip with :.: (compose) instead. I prefer using the newtype since it involves less SOP operators (compose, Flip).
+      , examplesLedgerTables    = inj (Proxy @WrapLedgerTables)              examplesLedgerTables
       }
     where
       inj ::
@@ -149,29 +148,36 @@ instance Inject Examples where
         => Proxy f -> Labelled a -> Labelled b
       inj p = fmap (fmap (inject' p startBounds idx))
 
+-- | This wrapper is used only in the 'Example' instance of 'Inject' so that we
+-- can use a type that matches the kind expected by 'inj'.
 newtype WrapLedgerTables blk = WrapLedgerTables ( LedgerTables (ExtLedgerState blk) ValuesMK )
 
 instance Inject WrapLedgerTables where
-   -- TODO: here the only options I see are either to remove the signature of
-   -- the local binding in the where clause, or ignore the compiler warning
-   -- about 'CanHardFork xs' being a redundant constraint.
-   inject ::
-       forall x xs. (CanHardFork xs, LedgerTablesCanHardFork xs)
-      => Exactly xs History.Bound
-         -- ^ Start bound of each era
-      -> Index xs x
-      -> WrapLedgerTables x
-      -> WrapLedgerTables (HardForkBlock xs)
-   inject _startBounds idx (WrapLedgerTables (ExtLedgerStateTables lt)) =
-     WrapLedgerTables $ ExtLedgerStateTables $ injectLedgerTables lt
-     where
-       injectLedgerTables ::
-            (IsApplyMapKind mk)
-         => LedgerTables (LedgerState                  x) mk
-         -> LedgerTables (LedgerState (HardForkBlock xs)) mk
-       injectLedgerTables = applyInjectLedgerTables
-                          $ projectNP idx hardForkInjectLedgerTablesKeysMK
+  inject = injectWrapLedgerTables
 
+-- In the definition of 'inject' for 'WrapLedgerTables', if we want to add a
+-- type declaration to the local definition 'injectLedgerTables' we need to add
+-- a type declaration for 'inject' which requires enabling 'InstanceSigs' and
+-- introduces a compiler warning about 'CanHardFork xs' being a redundant
+-- constraint. By defining 'inject' in terms of 'injectWrapLedgerTables' we
+-- avoid this problem.
+injectWrapLedgerTables ::
+    forall x xs.
+    LedgerTablesCanHardFork xs
+   => Exactly xs History.Bound
+      -- ^ Start bound of each era
+   -> Index xs x
+   -> WrapLedgerTables x
+   -> WrapLedgerTables (HardForkBlock xs)
+injectWrapLedgerTables _startBounds idx (WrapLedgerTables (ExtLedgerStateTables lt)) =
+    WrapLedgerTables $ ExtLedgerStateTables $ injectLedgerTables lt
+  where
+    injectLedgerTables ::
+         (IsApplyMapKind mk)
+      => LedgerTables (LedgerState                  x) mk
+      -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+    injectLedgerTables = applyInjectLedgerTables
+                       $ projectNP idx hardForkInjectLedgerTablesKeysMK
 
 {-------------------------------------------------------------------------------
   Setup
