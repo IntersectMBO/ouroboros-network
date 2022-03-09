@@ -29,9 +29,7 @@ import           GHC.Generics (Generic (..))
 import           Quiet (Quiet (..))
 
 import           Network.Mux.Types
-#ifdef linux_HOST_OS
 import           Network.Mux.TCPInfo
-#endif
 
 
 --
@@ -152,11 +150,7 @@ data MuxTrace =
     | MuxTraceStartedOnDemand MiniProtocolNum MiniProtocolDir
     | MuxTraceTerminating MiniProtocolNum MiniProtocolDir
     | MuxTraceShutdown
-#ifdef linux_HOST_OS
     | MuxTraceTCPInfo StructTCPInfo Word16
-#else
-    | MuxTraceTCPInfo Word16
-#endif
 
 instance Show MuxTrace where
     show MuxTraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -194,7 +188,7 @@ instance Show MuxTrace where
     show (MuxTraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
     show (MuxTraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
     show MuxTraceShutdown = "Mux shutdown"
-#ifdef linux_HOST_OS
+#ifdef os_HOST_linux
     show (MuxTraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
             , tcpi_rtt, tcpi_rttvar, tcpi_snd_cwnd }
@@ -207,6 +201,6 @@ instance Show MuxTrace where
         (fromIntegral tcpi_retrans :: Word)
         len
 #else
-    show (MuxTraceTCPInfo len) = printf "TCPInfo len %d" len
+    show (MuxTraceTCPInfo _ len) = printf "TCPInfo len %d" len
 #endif
 

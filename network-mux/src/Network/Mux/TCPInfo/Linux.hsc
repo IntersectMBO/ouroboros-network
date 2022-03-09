@@ -15,9 +15,9 @@
 
 #include "HsNet.h"
 
-module Network.Mux.TCPInfo
+module Network.Mux.TCPInfo.Linux
   ( StructTCPInfo (..)
-  , SocketOption(TCPInfoSocketOption)
+  , SocketOption (TCPInfoSocketOption)
   ) where
 
 import           Foreign.C
