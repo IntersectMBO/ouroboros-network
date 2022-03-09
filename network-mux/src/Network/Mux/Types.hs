@@ -153,7 +153,7 @@ deriving instance Ord (MiniProtocolDirection (mode :: MuxMode))
 
 type IngressQueue m = StrictTVar m BL.ByteString
 
--- | The index of a protocol in a MuxApplication, used for array indicies
+-- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
   deriving (Eq, Ord, Num, Enum, Ix, Show)
 

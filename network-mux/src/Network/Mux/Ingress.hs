@@ -78,7 +78,7 @@ flipMiniProtocolDir ResponderDir = InitiatorDir
 -- >    └───────────┘  └───────────┘
 
 -- | Each peer's multiplexer has some state that provides both
--- de-multiplexing details (for despatch of incoming mesages to mini
+-- de-multiplexing details (for despatch of incoming messages to mini
 -- protocols) and for dispatching incoming SDUs.  This is shared
 -- between the muxIngress and the bearerIngress processes.
 --
