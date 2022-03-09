@@ -94,10 +94,11 @@ library
                        Network.Mux.DeltaQ.TraceStatsSupport
                        Network.Mux.DeltaQ.TraceTransformer
                        Network.Mux.DeltaQ.TraceTypes
+                       Network.Mux.TCPInfo
                        Control.Concurrent.JobPool
 
   if os(linux)
-    other-modules:     Network.Mux.TCPInfo
+    other-modules:     Network.Mux.TCPInfo.Linux
 
   if os(windows)
     exposed-modules:
