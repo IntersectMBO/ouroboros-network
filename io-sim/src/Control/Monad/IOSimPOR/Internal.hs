@@ -378,8 +378,7 @@ schedule thread@Thread{
 
     LiftST st k -> do
       x <- strictToLazyST st
-      let thread' = thread { threadControl = ThreadControl (k x) ctl,
-                             threadEffect  = effect <> liftSTEffect }
+      let thread' = thread { threadControl = ThreadControl (k x) ctl }
       schedule thread' simstate
 
     GetMonoTime k -> do
