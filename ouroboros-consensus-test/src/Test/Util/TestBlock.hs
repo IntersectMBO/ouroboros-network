@@ -89,6 +89,7 @@ import           Data.Time.Clock (UTCTime (..))
 import           Data.Tree (Tree (..))
 import qualified Data.Tree as Tree
 import           Data.TreeDiff (ToExpr)
+import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -328,10 +329,8 @@ class ( Typeable ptype
       , StowableLedgerTables (LedgerState (TestBlockWith ptype))
       , ShowLedgerState      (LedgerState (TestBlockWith ptype))
 
-      , NoThunks (LedgerTables (LedgerState (TestBlockWith ptype)) 'SeqDiffMK)
-      , NoThunks (LedgerTables (LedgerState (TestBlockWith ptype)) 'ValuesMK)
-      , FromCBOR (LedgerTables (LedgerState (TestBlockWith ptype)) 'ValuesMK)
-      , ToCBOR   (LedgerTables (LedgerState (TestBlockWith ptype)) 'ValuesMK)
+      , NoThunks (LedgerTables (LedgerState (TestBlockWith ptype)) SeqDiffMK)
+      , NoThunks (LedgerTables (LedgerState (TestBlockWith ptype)) ValuesMK)
 
       , Eq        (PayloadDependentError ptype)
       , Show      (PayloadDependentError ptype)
