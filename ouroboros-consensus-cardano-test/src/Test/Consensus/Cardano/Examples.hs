@@ -1,5 +1,8 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -31,14 +34,15 @@ import           Ouroboros.Network.Block (Serialised (..))
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, IsApplyMapKind,
+                     ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (SomeQuery (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (Exactly (..))
-import           Ouroboros.Consensus.Util.SOP (Index (..))
+import           Ouroboros.Consensus.Util.SOP (Index (..), projectNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
@@ -132,6 +136,7 @@ instance Inject Examples where
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
       , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
       , exampleSlotNo           =                                            exampleSlotNo
+      , examplesLedgerTables    = inj (Proxy @WrapLedgerTables)              examplesLedgerTables
       }
     where
       inj ::
@@ -142,6 +147,37 @@ instance Inject Examples where
            )
         => Proxy f -> Labelled a -> Labelled b
       inj p = fmap (fmap (inject' p startBounds idx))
+
+-- | This wrapper is used only in the 'Example' instance of 'Inject' so that we
+-- can use a type that matches the kind expected by 'inj'.
+newtype WrapLedgerTables blk = WrapLedgerTables ( LedgerTables (ExtLedgerState blk) ValuesMK )
+
+instance Inject WrapLedgerTables where
+  inject = injectWrapLedgerTables
+
+-- In the definition of 'inject' for 'WrapLedgerTables', if we want to add a
+-- type declaration to the local definition 'injectLedgerTables' we need to add
+-- a type declaration for 'inject' which requires enabling 'InstanceSigs' and
+-- introduces a compiler warning about 'CanHardFork xs' being a redundant
+-- constraint. By defining 'inject' in terms of 'injectWrapLedgerTables' we
+-- avoid this problem.
+injectWrapLedgerTables ::
+    forall x xs.
+    LedgerTablesCanHardFork xs
+   => Exactly xs History.Bound
+      -- ^ Start bound of each era
+   -> Index xs x
+   -> WrapLedgerTables x
+   -> WrapLedgerTables (HardForkBlock xs)
+injectWrapLedgerTables _startBounds idx (WrapLedgerTables (ExtLedgerStateTables lt)) =
+    WrapLedgerTables $ ExtLedgerStateTables $ injectLedgerTables lt
+  where
+    injectLedgerTables ::
+         (IsApplyMapKind mk)
+      => LedgerTables (LedgerState                  x) mk
+      -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+    injectLedgerTables = applyInjectLedgerTables
+                       $ projectNP idx hardForkInjectLedgerTablesKeysMK
 
 {-------------------------------------------------------------------------------
   Setup
