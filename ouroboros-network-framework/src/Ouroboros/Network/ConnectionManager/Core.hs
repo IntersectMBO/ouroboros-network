@@ -24,7 +24,7 @@ module Ouroboros.Network.ConnectionManager.Core
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (forM_, guard, when)
+import           Control.Monad (forM_, guard, when, (>=>))
 import           Control.Monad.Fix
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork, ThreadId, throwTo)
@@ -1663,32 +1663,34 @@ withConnectionManager ConnectionManagerArguments {
             (trans, mbAssertion) <- atomically $ do
               connState <- readTVar connVar
 
-              let assertion = case connState of
-                    ReservedOutboundState ->
-                      Nothing
-                    _                     ->
-                      Just (CM.TrUnexpectedlyFalseAssertion
-                              (RequestOutboundConnection
-                                (Just connId)
-                                (abstractState (Known connState))
-                              )
-                           )
               -- @
               --  Connected : ReservedOutboundState
               --            → UnnegotiatedState Outbound
               -- @
-                  connState' = UnnegotiatedState provenance connId connThread
-              writeTVar connVar connState'
-              return ( mkTransition connState connState'
-                     , assertion
-                     )
+              case connState of
+                ReservedOutboundState -> do
+                  let connState' = UnnegotiatedState provenance connId connThread
+                  writeTVar connVar connState'
+                  return ( Just $ mkTransition connState connState'
+                         , Nothing
+                         )
+                TerminatingState {} ->
+                  return (Nothing, Nothing)
+                TerminatedState {} ->
+                  return (Nothing, Nothing)
+                _ -> 
+                  return ( Nothing
+                         , Just (CM.TrUnexpectedlyFalseAssertion
+                                   (RequestOutboundConnection
+                                     (Just connId)
+                                     (abstractState (Known connState))
+                                   )
+                                )
+                         )
 
-            whenJust mbAssertion $ \tr -> do
-              traceWith tracer tr
-              _ <- evaluate (assert False)
-              pure ()
-
-            traceWith trTracer (TransitionTrace peerAddr trans)
+            traverse_ (traceWith trTracer . TransitionTrace peerAddr) trans
+            traverse_ (traceWith tracer >=> evaluate . assert True)
+                      mbAssertion
             traceCounters stateVar
 
             res <- atomically (readPromise reader)
