@@ -50,7 +50,7 @@ import           Network.Mux.Types
 --      prioritisation between such traffic.
 --
 --   2) We are assuming that the underlying TCP/IP bearer is managed
---      so that indivual Mux-layer PDUs are paced. a) this is necessary
+--      so that individual Mux-layer PDUs are paced. a) this is necessary
 --      to mitigate head-of-line blocking effects (i.e. arbitrary
 --      amounts of data accruing in the O/S kernel); b) ensuring that
 --      any host egress data rate limits can be respected / enforced.
@@ -171,7 +171,7 @@ processSingleWanton egressQueue MuxBearer { write, sduSize }
       if BL.null rest
         then writeTVar (want wanton) BL.empty
         else do
-          -- Note that to preserve bytestream ordering withing a given
+          -- Note that to preserve bytestream ordering within a given
           -- miniprotocol the readTVar and writeTVar operations
           -- must be inside the same STM transaction.
           writeTVar (want wanton) rest

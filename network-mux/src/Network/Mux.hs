@@ -102,7 +102,7 @@ data MuxStatus
     -- | Mux failed with 'SomeException'
     | MuxFailed SomeException
 
-    -- | Mux is beeing stopped; mux will not accept any new mini-protocols to
+    -- | Mux is being stopped; mux will not accept any new mini-protocols to
     -- start.
     | MuxStopping
 
@@ -165,15 +165,15 @@ data MuxGroup = MuxJob
 --
 -- __Isometric flow control: analysis of head-of-line blocking of the ingress side of the multiplexer__
 --
--- For each mini-protocol (enumeratated by @ptcl@), mux will create two
+-- For each mini-protocol (enumerated by @ptcl@), mux will create two
 -- channels. One for initiator and one for the responder.  Each channel will use
 -- a single 'Wanton'.  When it is filled, it is put in a common queue
 -- 'tsrQueue'.  This means that the queue is bound by @2 * |ptcl|@.  Every side
--- of a mini-protocol is served by a single 'Wanton': when an applicaiton sends
+-- of a mini-protocol is served by a single 'Wanton': when an application sends
 -- data, the channel will try to put it into the 'Wanton' (which might block).
 -- 'Wanton's are taken from the 'tsrQueue' queue by one of mux threads.  This
--- elimnates head of line blocking: each mini-protocol thread can block on
--- puting more bytes into its 'Wanton', but it cannot block the other
+-- eliminates head of line blocking: each mini-protocol thread can block on
+-- putting more bytes into its 'Wanton', but it cannot block the other
 -- mini-protocols or the thread that is reading the 'tsrQueue' queue.  This is
 -- ensured since the 'muxChannel' will put only a non-empty 'Wanton' to the
 -- 'tsrQueue' queue, and on such wantons the queue is never blocked.  This means
@@ -181,7 +181,7 @@ data MuxGroup = MuxJob
 -- none of the mini-protocols wanted to send.  The egress part will read
 -- a 'Wanton', take a fixed amount of bytes encode them in as an 'MuxSDU'; if
 -- there are leftovers it will put them back in the 'Wanton' and place it at the
--- end of the queue (reading and writting to it will happen in a single STM
+-- end of the queue (reading and writing to it will happen in a single STM
 -- transaction which assures that the order of requests from a mini-protocol is
 -- preserved.
 --
@@ -219,7 +219,7 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
         traceWith tracer (MuxTraceState Mature)
 
         -- Wait for someone to shut us down by calling muxStop or an error.
-        -- Outstaning jobs are shut down Upon completion of withJobPool.
+        -- Outstanding jobs are shut down Upon completion of withJobPool.
         withTimeoutSerial $ \timeout ->
           monitor tracer
                   timeout
@@ -329,7 +329,7 @@ data MiniProtocolAction m where
 type MiniProtocolKey = (MiniProtocolNum, MiniProtocolDir)
 
 newtype MonitorCtx m mode = MonitorCtx {
-    -- | Mini-Protocols started on deman and waiting to be scheduled.
+    -- | Mini-Protocols started on demand and waiting to be scheduled.
     --
     mcOnDemandProtocols :: (Map MiniProtocolKey
                                 (MiniProtocolState mode m, MiniProtocolAction m))
@@ -338,8 +338,8 @@ newtype MonitorCtx m mode = MonitorCtx {
 
 -- | The monitoring loop does two jobs:
 --
---  1. it waits for mini-protocol threads to terminate
---  2. it starts responder protocol threads on demand when the first
+--  1. It waits for mini-protocol threads to terminate.
+--  2. It starts responder protocol threads on demand when the first
 --     incoming message arrives.
 --
 monitor :: forall mode m.
@@ -575,7 +575,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
     recv :: m (Maybe BL.ByteString)
     recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
-        -- matching ingress queueu. This is the same queue the 'demux' thread writes to.
+        -- matching ingress queue. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ MuxTraceChannelRecvStart mc
         blob <- atomically $ do
             blob <- readTVar q
@@ -610,7 +610,7 @@ traceMuxBearerState tracer state =
 -- The result is a STM action to block and wait on the protocol completion.
 -- It is safe to call this completion action multiple times: it will always
 -- return the same result once the protocol thread completes.
--- Incase the Mux has stopped, either due to an exception or because of a call
+-- In case the Mux has stopped, either due to an exception or because of a call
 -- to muxStop a `Left MuxError` will be returned from the STM action.
 --
 -- It is an error to start a new protocol thread while one is still running,

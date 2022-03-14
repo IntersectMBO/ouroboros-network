@@ -39,7 +39,7 @@ import qualified Network.Mux.Timeout as Mx
 
 -- | Abstraction over various types of handles.  We provide two instances:
 --
---  * based on 'Handle': os independepnt, but will not work well on Windows,
+--  * based on 'Handle': os independent, but will not work well on Windows,
 --  * based on 'Win32.HANDLE': Windows specific.
 --
 data PipeChannel = PipeChannel {

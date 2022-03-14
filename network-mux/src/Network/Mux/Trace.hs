@@ -36,7 +36,7 @@ import           Network.Mux.TCPInfo
 -- Errors
 --
 
--- | Error type used in accross the mux layer.
+-- | Error type used in across the mux layer.
 --
 data MuxError = MuxError {
       errorType :: !MuxErrorType
@@ -78,7 +78,7 @@ instance Exception MuxError where
     displayException MuxError{errorType, errorMsg}
       = (show errorType) ++ " " ++ (show errorMsg)
 
--- | Handler for 'IOException's which wrappes them in 'MuxError'.
+-- | Handler for 'IOException's which wraps them in 'MuxError'.
 --
 -- It is used various 'MuxBearer' implementations:
 -- * 'socketAsMuxBearer'
@@ -114,7 +114,7 @@ data WithMuxBearer peerid a = WithMuxBearer {
 
 
 data MuxBearerState = Mature
-                    -- ^ MuxBearer has successufully completed the handshake.
+                    -- ^ MuxBearer has successfully completed the handshake.
                     | Dead
                     -- ^ MuxBearer is dead and the underlying bearer has been
                     -- closed.
