@@ -4,7 +4,8 @@
 { lib, stdenv, pkgs, haskell-nix, buildPackages, config ? { }
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
-, libsodium-vrf ? pkgs.libsodium-vrf }:
+, libsodium-vrf ? pkgs.libsodium-vrf
+}:
 let
   compiler-nix-name = pkgs.localConfig.ghcVersion;
   src = haskell-nix.haskellLib.cleanGit {
@@ -78,6 +79,7 @@ let
             "xhtml"
             # "stm" "terminfo"
           ];
+          packages.ouroboros-network-testing.flags.nightly = config.nightly;
           # ruby/perl dependencies cannot be cross-built for cddl tests:
           packages.ouroboros-network.flags.cddl = false;
 
@@ -110,6 +112,7 @@ let
       # Options for when not compiling to windows:
       ({ pkgs, ... }:
         lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
+          packages.ouroboros-network-testing.flags.nightly = config.nightly;
           packages.ouroboros-network.flags.cddl = true;
           packages.ouroboros-network.components.tests.cddl.build-tools =
             [ pkgs.cddl pkgs.cbor-diag ];
