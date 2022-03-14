@@ -728,7 +728,7 @@ class ( HasHeader blk
   Internal auxiliary
 -------------------------------------------------------------------------------}
 
-type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockReason blk, Slot
+type InvalidBlocks blk = Map (HeaderHash blk) (InvalidBlockReason blk, SlotNo)
 
 -- | Result of 'validate', also used internally.
 data ValidatedChain blk =
