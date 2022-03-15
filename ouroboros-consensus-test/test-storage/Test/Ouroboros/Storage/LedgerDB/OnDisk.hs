@@ -49,7 +49,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.TreeDiff.Class (genericToExpr)
 import           Data.TreeDiff.Expr (Expr (App))
-import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           System.Random (getStdRandom, randomR)
@@ -72,7 +71,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
@@ -153,8 +151,7 @@ instance PayloadSemantics Tx where
              -- 'PayloadSemantics' of 'Tx'.
            , utxhist      :: Set Token
            }
-    deriving stock    (Generic, Eq, Show)
-    deriving anyclass (NoThunks, Serialise, ToExpr)
+    deriving stock    (Generic)
 
   type PayloadDependentError Tx = TxErr
 
@@ -200,6 +197,15 @@ instance PayloadSemantics Tx where
   getPayloadKeySets Tx{consumed} =
     TokenToTValue $ ApplyKeysMK $ HD.UtxoKeys $ Set.singleton consumed
 
+deriving stock    instance (Eq        (PayloadDependentState Tx EmptyMK))
+deriving stock    instance (Eq        (PayloadDependentState Tx ValuesMK))
+deriving stock    instance (Show      (PayloadDependentState Tx (ApplyMapKind' mk)))
+deriving anyclass instance (Serialise (PayloadDependentState Tx EmptyMK))
+deriving anyclass instance (ToExpr    (PayloadDependentState Tx ValuesMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx EmptyMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx ValuesMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx SeqDiffMK))
+
 onValues ::
      (Map Token TValue -> Map Token TValue)
   -> LedgerTables (LedgerState TestBlock) ValuesMK
@@ -223,8 +229,7 @@ queryKeys f (TokenToTValue (ApplyValuesMK (HD.UtxoValues utxovals))) = f utxoval
 instance TableStuff (LedgerState TestBlock) where
   newtype LedgerTables (LedgerState TestBlock) mk =
     TokenToTValue { testUtxtokTable :: ApplyMapKind mk Token TValue }
-    deriving stock   (Generic, Eq, Show)
-    deriving newtype (NoThunks)
+    deriving stock (Generic)
 
   projectLedgerTables st       = utxtoktables $ payloadDependentState st
   withLedgerTables    st table = st { payloadDependentState =
@@ -233,15 +238,28 @@ instance TableStuff (LedgerState TestBlock) where
 
   pureLedgerTables = TokenToTValue
 
-  mapLedgerTables  f TokenToTValue { testUtxtokTable } =
-    TokenToTValue { testUtxtokTable = f testUtxtokTable }
+  mapLedgerTables      f (TokenToTValue x)                   = TokenToTValue    (f x)
 
-  zipLedgerTables  f tables0 tables1 =
-    TokenToTValue { testUtxtokTable = f (testUtxtokTable tables0) (testUtxtokTable tables1) }
+  traverseLedgerTables f (TokenToTValue x)                   = TokenToTValue <$> f x
 
-  foldLedgerTables f TokenToTValue { testUtxtokTable } = f testUtxtokTable
+  zipLedgerTables      f (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
 
-instance (Typeable mk, SingI mk) => Serialise (LedgerTables (LedgerState TestBlock) mk) where
+  foldLedgerTables     f (TokenToTValue x)                   =                   f x
+
+  foldLedgerTables2    f (TokenToTValue x) (TokenToTValue y) =                   f x y
+
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) EmptyMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) DiffMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving newtype  instance Show     (LedgerTables (LedgerState TestBlock) (ApplyMapKind' mk))
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) EmptyMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) SeqDiffMK)
+
+instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
+  codecLedgerTables = TokenToTValue $ CodecMK toCBOR toCBOR fromCBOR fromCBOR
+
+instance Serialise (LedgerTables (LedgerState TestBlock) EmptyMK) where
   encode TokenToTValue {testUtxtokTable} = toCBOR testUtxtokTable
   decode = fmap TokenToTValue fromCBOR
 
@@ -256,12 +274,6 @@ instance ToCBOR TValue where
 
 instance FromCBOR TValue where
   fromCBOR = fmap TValue S.decode
-
-instance (Typeable mk, SingI mk) => ToCBOR (LedgerTables (LedgerState TestBlock) mk) where
-  toCBOR TokenToTValue { testUtxtokTable } = toCBOR testUtxtokTable
-
-instance (Typeable mk, SingI mk) => FromCBOR (LedgerTables (LedgerState TestBlock) mk) where
-  fromCBOR = fmap TokenToTValue fromCBOR
 
 instance TickedTableStuff (LedgerState TestBlock) where
   projectLedgerTablesTicked (TickedTestLedger st)        = projectLedgerTables st
@@ -280,10 +292,10 @@ stowErr :: String -> a
 stowErr fname = error $ "Function " <> fname <> " should not be used in these tests."
                       <> " The dual ledger should never be used."
 
-instance Show (ApplyMapKind mk Token TValue) where
+instance Show (ApplyMapKind' mk' Token TValue) where
   show ap = showsApplyMapKind ap ""
 
-instance ToExpr (ApplyMapKind mk Token TValue) where
+instance ToExpr (ApplyMapKind' mk' Token TValue) where
   toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
   toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
   toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr keys]
@@ -323,7 +335,7 @@ instance ToExpr (HD.UtxoEntryDiff TValue) where
 instance ToExpr (ExtLedgerState TestBlock ValuesMK) where
   toExpr = genericToExpr
 
-instance ToExpr (LedgerState (TestBlockWith Tx) 'ValuesMK) where
+instance ToExpr (LedgerState (TestBlockWith Tx) ValuesMK) where
   toExpr = genericToExpr
 
 -- Required by the ToExpr (SeqUtxoDiff k v) instance
@@ -334,7 +346,7 @@ instance ToExpr (HD.SudElement Token TValue) where
 instance ToExpr (HD.UtxoDiff Token TValue) where
   toExpr = genericToExpr
 
-instance ToExpr (LedgerTables (LedgerState TestBlock) mk) where
+instance ToExpr (LedgerTables (LedgerState TestBlock) ValuesMK) where
   toExpr = genericToExpr
 
 -- Required by the genericToExpr application on RewoundKeys
