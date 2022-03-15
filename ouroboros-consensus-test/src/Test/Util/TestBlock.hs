@@ -319,11 +319,17 @@ class ( Typeable ptype
       , Eq       ptype
       , NoThunks ptype
 
-      , forall mk . Eq        (PayloadDependentState ptype mk)
-      , forall mk . Show      (PayloadDependentState ptype mk)
-      , forall mk . Generic   (PayloadDependentState ptype mk)
-      ,             Serialise (PayloadDependentState ptype EmptyMK)
-      , forall mk . NoThunks  (PayloadDependentState ptype mk)
+      , Eq        (PayloadDependentState ptype EmptyMK)
+      , Eq        (PayloadDependentState ptype ValuesMK)
+
+      , forall mk'. Show (PayloadDependentState ptype (ApplyMapKind' mk'))
+
+      , forall mk. Generic   (PayloadDependentState ptype mk)
+      ,            Serialise (PayloadDependentState ptype EmptyMK)
+
+      , NoThunks  (PayloadDependentState ptype EmptyMK)
+      , NoThunks  (PayloadDependentState ptype ValuesMK)
+      , NoThunks  (PayloadDependentState ptype SeqDiffMK)
 
       , TickedTableStuff     (LedgerState (TestBlockWith ptype))
       , StowableLedgerTables (LedgerState (TestBlockWith ptype))
@@ -510,9 +516,15 @@ data instance LedgerState (TestBlockWith ptype) mk =
       , payloadDependentState :: PayloadDependentState ptype mk
       }
 
-deriving stock instance PayloadSemantics ptype => Show    (LedgerState (TestBlockWith ptype) mk)
-deriving stock instance PayloadSemantics ptype => Eq      (LedgerState (TestBlockWith ptype) mk)
-deriving stock instance                           Generic (LedgerState (TestBlockWith ptype) mk)
+deriving stock instance PayloadSemantics ptype
+  => Show (LedgerState (TestBlockWith ptype) (ApplyMapKind' mk))
+
+deriving stock instance Eq (PayloadDependentState ptype EmptyMK)
+  => Eq (LedgerState (TestBlockWith ptype) EmptyMK)
+deriving stock instance Eq (PayloadDependentState ptype ValuesMK)
+  => Eq (LedgerState (TestBlockWith ptype) ValuesMK)
+
+deriving stock instance Generic (LedgerState (TestBlockWith ptype) mk)
 
 deriving anyclass instance PayloadSemantics ptype =>
   Serialise (LedgerState (TestBlockWith ptype) EmptyMK)
@@ -533,7 +545,6 @@ testInitLedgerWithState = TestLedger GenesisPoint
 newtype instance Ticked1 (LedgerState (TestBlockWith ptype)) mk = TickedTestLedger {
       getTickedTestLedger :: LedgerState (TestBlockWith ptype) mk
     }
-  -- deriving stock   (Eq)
 
 testInitExtLedgerWithState ::
   PayloadDependentState ptype mk -> ExtLedgerState (TestBlockWith ptype) mk
