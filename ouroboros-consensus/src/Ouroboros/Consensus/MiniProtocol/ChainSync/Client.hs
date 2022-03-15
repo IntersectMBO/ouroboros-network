@@ -124,12 +124,13 @@ bracketChainSyncClient
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
     -> peer
+    -> NodeToNodeVersion
     -> (    StrictTVar m (AnchoredFragment (Header blk))
          -> m a
        )
     -> m a
 bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
-                       peer body =
+                       peer version body =
     bracket newCandidateVar releaseCandidateVar
       $ \varCandidate ->
       withWatcher
@@ -148,6 +149,7 @@ bracketChainSyncClient tracer ChainDbView { getIsInvalidBlock } varCandidates
     invalidBlockWatcher varCandidate =
       invalidBlockRejector
         tracer
+        version
         getIsInvalidBlock
         (readTVar varCandidate)
 
@@ -983,13 +985,14 @@ invalidBlockRejector
        , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
+    -> NodeToNodeVersion
     -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
        -- ^ Get the invalid block checker
     -> STM m (AnchoredFragment (Header blk))
     -> Watcher m
          (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
          Fingerprint
-invalidBlockRejector tracer getIsInvalidBlock getCandidate =
+invalidBlockRejector tracer version getIsInvalidBlock getCandidate =
     Watcher {
         wFingerprint = getFingerprint
       , wInitial     = Nothing
@@ -1002,15 +1005,25 @@ invalidBlockRejector tracer getIsInvalidBlock getCandidate =
       theirFrag <- atomically getCandidate
       -- The invalid block is likely to be a more recent block, so check from
       -- newest to oldest.
+      --
+      -- As of block diffusion pipelining, their tip header might be tentative.
+      -- Since they do not yet have a way to explicitly say whether it is
+      -- tentative, we assume it is and therefore skip their tip here. TODO once
+      -- it's explicit, only skip it if it's annotated as tentative
       mapM_ (uncurry disconnect) $ firstJust
         (\hdr -> (hdr,) <$> isInvalidBlock (headerHash hdr))
-        (AF.toNewestFirst theirFrag)
+        (  (if enablePipelining then drop 1 else id)
+         $ AF.toNewestFirst theirFrag
+        )
 
     disconnect :: Header blk -> InvalidBlockReason blk -> m ()
     disconnect invalidHeader reason = do
       let ex = InvalidBlock (headerPoint invalidHeader) reason
       traceWith tracer $ TraceException ex
       throwIO ex
+
+    enablePipelining :: Bool
+    enablePipelining = version >= NodeToNodeV_8
 
 -- | Auxiliary data type used as an intermediary result in 'rollForward'.
 data IntersectCheck blk =
