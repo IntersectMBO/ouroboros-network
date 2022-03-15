@@ -355,7 +355,8 @@ runChainSync securityParam (ClientUpdates clientUpdates)
            chainSyncTracer
            chainDbView
            varCandidates
-           serverId $ \varCandidate -> do
+           serverId
+           maxBound $ \varCandidate -> do
              atomically $ modifyTVar varFinalCandidates $
                Map.insert serverId varCandidate
              (result, _) <-
