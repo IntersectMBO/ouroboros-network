@@ -283,7 +283,7 @@ data TPraosChainSelectView c = TPraosChainSelectView {
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
   , csvIssueNo     :: Word64
   , csvLeaderVRF   :: VRF.OutputVRF (VRF c)
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Generic, NoThunks)
 
 instance SL.PraosCrypto c => Ord (TPraosChainSelectView c) where
   compare =
