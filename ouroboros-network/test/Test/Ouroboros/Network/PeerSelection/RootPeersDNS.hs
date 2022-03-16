@@ -25,9 +25,11 @@ import           Data.Foldable (foldl', toList)
 import           Data.Functor (void)
 import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
 import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
+import           Data.Proxy (Proxy(..))
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
@@ -42,7 +44,7 @@ import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, newTVarIO,
-                     readTVar)
+                     readTVar, traceTVarIO, MonadTraceSTM, TraceValue(..))
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer
@@ -71,6 +73,8 @@ tests =
                       prop_local_resolvesDomainsCorrectly
        , testProperty "updates domains correctly"
                       prop_local_updatesDomainsCorrectly
+       , testProperty "localRootPeersProvider has single source of truth"
+                      prop_local_singleSourceOfTruth
        ]
     , testGroup "publicRootPeersProvider"
        [ testProperty "resolves domains correctly"
@@ -295,12 +299,17 @@ mockDNSActions dnsMapScript dnsTimeoutScript dnsLookupDelayScript =
        Just (Left e)  -> return ([e], [])
        Just (Right a) -> return ([], a)
 
+-- TODO: Change this once upgraded to most recent GHC version
+newtype Solo a = Solo { unSolo :: a }
+  deriving (Show, Eq)
+
 -- | 'localRootPeersProvider' running with a given MockRoots env
 --
 mockLocalRootPeersProvider :: forall m.
-                              ( MonadAsync m
-                              , MonadDelay m
-                              , MonadTimer m
+                              ( MonadAsync    m
+                              , MonadDelay    m
+                              , MonadTimer    m
+                              , MonadTraceSTM m
                               , Eq (Async m Void)
                               )
                            => Tracer m (TraceLocalRootPeers SockAddr Failure)
@@ -315,6 +324,9 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
+      _ <- traceTVarIO proxy
+                       resultVar
+                       (\_ a -> pure $ TraceDynamic (Solo a))
 
       void $ MonadTimer.timeout 3600 $
         localRootPeersProvider tracer
@@ -325,6 +337,9 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
                                                dnsLookupDelayScriptVar)
                                (readTVar localRootPeersVar)
                                resultVar
+  where
+    proxy :: Proxy m
+    proxy = Proxy
 
 -- | 'publicRootPeersProvider' running with a given MockRoots env.
 --
@@ -669,6 +684,53 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
               (tail tr)
      in property (fst r)
 
+
+-- | The 'localRootPeersProvider' monitors each domain address for DNS
+-- resolving. It then should update the local result group correctly, but it
+-- should only update the single source of truth and not some cached version.
+--
+-- This test follows #3638 and checks this doesn't happen.
+--
+-- The way we test for this is to look at TraceLocalRootGroups results and check
+-- if they are monotonic i.e. the most recent value of TraceLocalRootGroups has
+-- to be subset or equal to the last values of TraceLocalRootGroups. Since we
+-- only do fixed DNS resolution, the single source of truth should be only
+-- increasing on not decreasing.
+--
+prop_local_singleSourceOfTruth :: MockRoots
+                               -> Script DNSTimeout
+                               -> Script DNSLookupDelay
+                               -> Property
+prop_local_singleSourceOfTruth mockRoots
+                               dnsTimeoutScript
+                               dnsLookupDelayScript =
+    let sim = runSimTrace
+            $ mockLocalRootPeersProvider tracerTraceLocalRoots
+                                         mockRoots
+                                         dnsTimeoutScript
+                                         dnsLookupDelayScript
+
+        sourceOfTruth =
+            Trace.toList
+          $ fmap unSolo
+          $ traceSelectTraceEventsDynamic
+              @_ @(Solo (Seq (Int, Map SockAddr PeerAdvertise)))
+          $ sim
+
+        simTrace = map snd
+                 $ selectLocalRootGroupsEvents
+                 $ selectLocalRootPeersEvents
+                 $ selectRootPeerDNSTraceEvents
+                 $ sim
+
+     in foldr
+          (\(sot, st) r ->
+              counterexample (show sot ++ " is different from " ++ show st)
+              (sot == st)
+            .&&. r
+          )
+          (property True)
+          (zip sourceOfTruth simTrace)
 
 --
 -- Public Root Peers Provider Tests
