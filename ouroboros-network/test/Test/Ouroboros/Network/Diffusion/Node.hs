@@ -3,8 +3,8 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE TupleSections #-}
 
 module Test.Ouroboros.Network.Diffusion.Node
   ( -- * run a node
@@ -84,7 +84,7 @@ import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                      TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
-import           Ouroboros.Network.Testing.Data.Script (Script (..))
+import           Ouroboros.Network.Testing.Data.Script (Script (..), singletonScript)
 import           Simulation.Network.Snocket (AddressType (IPv4Address), FD)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
@@ -158,6 +158,8 @@ run :: forall resolver m.
 run blockGeneratorArgs limits ni na =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
+        dnsMapScriptVar <- LazySTM.newTVarIO
+                        $ singletonScript (fmap (, 0) <$> iDomainMap ni)
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
         peerMetrics  <- atomically $ PeerMetrics
@@ -198,7 +200,7 @@ run blockGeneratorArgs limits ni na =
               , Diff.P2P.diRng                   = diffStgGen
               , Diff.P2P.diInstallSigUSR1Handler = \_ -> pure ()
               , Diff.P2P.diDnsActions            = const (mockDNSActions
-                                                     (iDomainMap ni)
+                                                     dnsMapScriptVar
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
               }

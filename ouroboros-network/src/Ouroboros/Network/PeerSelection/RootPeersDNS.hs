@@ -130,6 +130,8 @@ localRootPeersProvider tracer
           -- the addresses within each group, we fill the TVar with
           -- a placeholder list, in order for each monitored DomainAddress to
           -- be updated in the correct group.
+          --
+          -- This is the static configuration.
           rootPeersGroups :: Seq (Int, Map peerAddr PeerAdvertise)
           rootPeersGroups = Seq.fromList $ map (\(target, m) -> (target, f m)) domainsGroups
             where
@@ -154,7 +156,7 @@ localRootPeersProvider tracer
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
       domainsGroups' <-
-        withAsyncAll (monitorDomain rr `map` domains) $ \as -> do
+        withAsyncAll (monitorDomain rr rootPeersGroups `map` domains) $ \as -> do
           res <- atomically $
                   -- wait until any of the monitoring threads errors
                   ((\(a, res) ->
@@ -205,9 +207,12 @@ localRootPeersProvider tracer
 
     monitorDomain
       :: Resource m (DNSorIOError exception) resolver
+      -> Seq (Int, Map peerAddr PeerAdvertise)
+      -- ^ Static configuration, this always comes from the source
+      -- STM transaction 'readDomainGroups'.
       -> (Int, DomainAccessPoint, PeerAdvertise)
       -> m Void
-    monitorDomain rr0 (index, domain, advertisePeer) =
+    monitorDomain rr0 rpgStatic (index, domain, advertisePeer) =
         go rr0 0
       where
         go :: Resource m (DNSorIOError exception) resolver
@@ -230,8 +235,21 @@ localRootPeersProvider tracer
             Right results -> do
               rootPeersGroups <- atomically $ do
                 rootPeersGroups <- readTVar rootPeersGroupsVar
-                let (target, entry)  = rootPeersGroups `Seq.index` index
+                    -- We should get the entry from the static configuration in
+                    -- order to garbage collect old lookup values for this
+                    -- entry. It's important not to overwrite the statically
+                    -- configured IPs, that's why we get the entry from the
+                    -- statically configured rootPeersGroups list.
+                    --
+                let (target, entry)  = rpgStatic `Seq.index` index
                     resultsMap       = Map.fromList (map fst results)
+                    -- Discard old values and only keep current lookup result.
+                    --
+                    -- Since the 'loop' function always receives the groups read
+                    -- from the source stm transaction 'readDomainGroups', we
+                    -- need to merge against it (because it has the statically
+                    -- configurated IPs) and not what is read from the TVar
+                    -- 'rootPeersGroupsVar'.
                     entry'           = resultsMap <> entry
                     rootPeersGroups' =
                       Seq.update index

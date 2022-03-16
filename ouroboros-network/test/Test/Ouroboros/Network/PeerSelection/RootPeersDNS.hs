@@ -25,9 +25,11 @@ import           Data.Foldable (foldl', toList)
 import           Data.Functor (void)
 import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
 import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
+import           Data.Proxy (Proxy(..))
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
@@ -42,7 +44,7 @@ import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, newTVarIO,
-                     readTVar)
+                     readTVar, traceTVarIO, MonadTraceSTM, TraceValue(..))
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer
@@ -51,7 +53,8 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
-                     Script (Script), initScript', stepScript)
+                     Script (Script), initScript', stepScript, singletonScript,
+                     scriptHead)
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -70,6 +73,8 @@ tests =
                       prop_local_resolvesDomainsCorrectly
        , testProperty "updates domains correctly"
                       prop_local_updatesDomainsCorrectly
+       , testProperty "localRootPeersProvider has single source of truth"
+                      prop_local_singleSourceOfTruth
        ]
     , testGroup "publicRootPeersProvider"
        [ testProperty "resolves domains correctly"
@@ -84,9 +89,9 @@ tests =
 
 data MockRoots = MockRoots {
     mockLocalRootPeers        :: [(Int, Map RelayAccessPoint PeerAdvertise)]
-  , mockLocalRootPeersDNSMap  :: Map Domain [IP]
+  , mockLocalRootPeersDNSMap  :: Script (Map Domain [(IP, TTL)])
   , mockPublicRootPeers       :: [RelayAccessPoint]
-  , mockPublicRootPeersDNSMap :: Map Domain [IP]
+  , mockPublicRootPeersDNSMap :: Script (Map Domain [(IP, TTL)])
   }
   deriving Show
 
@@ -115,13 +120,8 @@ genMockRoots = sized $ \relaysNumber -> do
 
         ipsPerDomain = 2
 
-    localRootDomainIPs <- blocks ipsPerDomain
-            -- Modules under test do not differ by IP version so we only
-            -- generate IPv4 addresses.
-            <$> vectorOf (ipsPerDomain * length localRootDomains)
-                         (IPv4 . toIPv4w <$> arbitrary)
-
-    let lrpDNSMap = Map.fromList $ zip localRootDomains localRootDomainIPs
+    lrpDNSMap <- Script . NonEmpty.fromList
+              <$> listOf1 (genDomainLookupTable ipsPerDomain localRootDomains)
 
     -- Generate PublicRootPeers
     --
@@ -132,14 +132,8 @@ genMockRoots = sized $ \relaysNumber -> do
         publicRootDomains = [ domain
                             | RelayAccessDomain domain _ <- publicRootPeers ]
 
-    publicRootDomainIPs <- blocks ipsPerDomain
-            -- Modules under test do not differ by IP version so we only
-            -- generate IPv4 addresses.
-            <$> vectorOf (ipsPerDomain * length publicRootDomains)
-                         (IPv4 . toIPv4w <$> arbitrary)
-
-    let publicRootPeersDNSMap = Map.fromList
-                              $ zip publicRootDomains publicRootDomainIPs
+    publicRootPeersDNSMap <- Script . NonEmpty.fromList
+                          <$> listOf1 (genDomainLookupTable ipsPerDomain publicRootDomains)
 
     return (MockRoots {
       mockLocalRootPeers        = localRootPeers,
@@ -148,6 +142,22 @@ genMockRoots = sized $ \relaysNumber -> do
       mockPublicRootPeersDNSMap = publicRootPeersDNSMap
     })
   where
+    genDomainLookupTable :: Int -> [Domain] -> Gen (Map Domain [(IP, TTL)])
+    genDomainLookupTable ipsPerDomain localRootDomains = do
+      localRootDomainIPs <- blocks ipsPerDomain
+              -- Modules under test do not differ by IP version so we only
+              -- generate IPv4 addresses.
+              <$> vectorOf (ipsPerDomain * length localRootDomains)
+                           (IPv4 . toIPv4w <$> arbitrary)
+      localRootDomainTTLs <- blocks ipsPerDomain
+              <$> vectorOf (ipsPerDomain * length localRootDomains)
+                           (arbitrary :: Gen TTL)
+
+      let localRootDomainsIP_TTls = zipWith zip localRootDomainIPs localRootDomainTTLs
+          lrpDNSMap = Map.fromList $ zip localRootDomains localRootDomainsIP_TTls
+
+      return lrpDNSMap
+
     tagRelays relays =
       zipWith
         (\tag rel
@@ -177,8 +187,8 @@ instance Arbitrary MockRoots where
               Set.fromList [ domain
                            | RelayAccessDomain domain _
                               <- concatMap (Map.keys . snd) lrp ]
-            lrpDNSMap  = Map.restrictKeys mockLocalRootPeersDNSMap
-                                          lrpDomains
+            lrpDNSMap  = (`Map.restrictKeys` lrpDomains)
+                       <$> mockLocalRootPeersDNSMap
       ] ++
       [ roots { mockPublicRootPeers       = prp
               , mockPublicRootPeersDNSMap = prpDNSMap
@@ -186,14 +196,14 @@ instance Arbitrary MockRoots where
       | prp <- shrinkList (const []) mockPublicRootPeers,
         let prpDomains = Set.fromList [ domain
                                       | RelayAccessDomain domain _ <- prp ]
-            prpDNSMap  = Map.restrictKeys mockPublicRootPeersDNSMap
-                                          prpDomains
+            prpDNSMap  = (`Map.restrictKeys` prpDomains)
+                       <$> mockPublicRootPeersDNSMap
       ]
 
 -- | Used for debugging in GHCI
 --
 simpleMockRoots :: MockRoots
-simpleMockRoots = MockRoots localRootPeers dnsMap [] Map.empty
+simpleMockRoots = MockRoots localRootPeers dnsMap [] (singletonScript Map.empty)
   where
     localRootPeers =
       [ ( 2
@@ -207,7 +217,7 @@ simpleMockRoots = MockRoots localRootPeers dnsMap [] Map.empty
           ]
         )
       ]
-    dnsMap = Map.fromList
+    dnsMap = singletonScript $ Map.fromList
               [ ("test.domain", [read "192.1.1.1", read "192.2.2.2"])
               ]
 
@@ -254,11 +264,11 @@ mockDNSActions :: forall exception m.
                   , MonadDelay m
                   , MonadTimer m
                   )
-               => Map Domain [IP]
+               => LazySTM.TVar m (Script (Map Domain [(IP, TTL)]))
                -> LazySTM.TVar m (Script DNSTimeout)
                -> LazySTM.TVar m (Script DNSLookupDelay)
                -> DNSActions () exception m
-mockDNSActions dnsMap dnsTimeoutScript dnsLookupDelayScript =
+mockDNSActions dnsMapScript dnsTimeoutScript dnsLookupDelayScript =
     DNSActions {
       dnsResolverResource,
       dnsAsyncResolverResource,
@@ -273,6 +283,7 @@ mockDNSActions dnsMap dnsTimeoutScript dnsLookupDelayScript =
                     -> Domain
                     -> m ([DNSError], [(IP, TTL)])
    dnsLookupWithTTL _ _ domain = do
+     dnsMap <- stepScript dnsMapScript
      DNSTimeout dnsTimeout <- stepScript dnsTimeoutScript
      DNSLookupDelay dnsLookupDelay <- stepScript dnsLookupDelayScript
 
@@ -281,19 +292,24 @@ mockDNSActions dnsMap dnsTimeoutScript dnsLookupDelayScript =
           MonadTimer.threadDelay dnsLookupDelay
           case Map.lookup domain dnsMap of
             Nothing -> return (Left NameError)
-            Just x  -> return (Right (map (\a -> (a, 0)) x))
+            Just x  -> return (Right x)
 
      case dnsLookup of
        Nothing        -> return ([TimeoutExpired], [])
        Just (Left e)  -> return ([e], [])
        Just (Right a) -> return ([], a)
 
+-- TODO: Change this once upgraded to most recent GHC version
+newtype Solo a = Solo { unSolo :: a }
+  deriving (Show, Eq)
+
 -- | 'localRootPeersProvider' running with a given MockRoots env
 --
 mockLocalRootPeersProvider :: forall m.
-                              ( MonadAsync m
-                              , MonadDelay m
-                              , MonadTimer m
+                              ( MonadAsync    m
+                              , MonadDelay    m
+                              , MonadTimer    m
+                              , MonadTraceSTM m
                               , Eq (Async m Void)
                               )
                            => Tracer m (TraceLocalRootPeers SockAddr Failure)
@@ -301,22 +317,29 @@ mockLocalRootPeersProvider :: forall m.
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
                            -> m ()
-mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMap _ _)
+mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
                            dnsTimeoutScript dnsLookupDelayScript = do
+      dnsMapScriptVar <- initScript' dnsMapScript
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
+      _ <- traceTVarIO proxy
+                       resultVar
+                       (\_ a -> pure $ TraceDynamic (Solo a))
 
       void $ MonadTimer.timeout 3600 $
         localRootPeersProvider tracer
                                (curry toSockAddr)
                                DNSResolver.defaultResolvConf
-                               (mockDNSActions dnsMap
+                               (mockDNSActions dnsMapScriptVar
                                                dnsTimeoutScriptVar
                                                dnsLookupDelayScriptVar)
                                (readTVar localRootPeersVar)
                                resultVar
+  where
+    proxy :: Proxy m
+    proxy = Proxy
 
 -- | 'publicRootPeersProvider' running with a given MockRoots env.
 --
@@ -336,8 +359,9 @@ mockPublicRootPeersProvider :: forall m a.
                             -> Script DNSLookupDelay
                             -> ((Int -> m (Set SockAddr, DiffTime)) -> m a)
                             -> m ()
-mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMap)
+mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                             dnsTimeoutScript dnsLookupDelayScript action = do
+      dnsMapScriptVar <- initScript' dnsMapScript
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       publicRootPeersVar <- newTVarIO publicRootPeers
@@ -347,7 +371,7 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMap)
                                 DNSResolver.defaultResolvConf
                                 (readTVar publicRootPeersVar)
                                 (mockDNSActions @Failure
-                                                dnsMap
+                                                dnsMapScriptVar
                                                 dnsTimeoutScriptVar
                                                 dnsLookupDelayScriptVar)
                                 action
@@ -363,13 +387,14 @@ mockResolveDomainAddresses :: ( MonadAsync m
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
                            -> m (Map DomainAccessPoint (Set SockAddr))
-mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMap)
+mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                            dnsTimeoutScript dnsLookupDelayScript = do
+      dnsMapScriptVar <- initScript' dnsMapScript
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       resolveDomainAccessPoint tracer
                                DNSResolver.defaultResolvConf
-                               (mockDNSActions @Failure dnsMap
+                               (mockDNSActions @Failure dnsMapScriptVar
                                                         dnsTimeoutScriptVar
                                                         dnsLookupDelayScriptVar)
                                [ domain
@@ -459,30 +484,36 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
 
-        -- local root addresses
-        localRootAddresses :: [(a, Map RelayAccessPoint PeerAdvertise)]
-                           -> Set SockAddr
-        localRootAddresses lrp =
-          Set.fromList
-          [ toSockAddr (ip, port)
-          | (_, m) <- lrp
-          , RelayAccessAddress ip port <- Map.keys m
-          ]
-
-        localGroupEventsAddresses :: (a, Seq (Int, Map SockAddr PeerAdvertise))
-                                  -> Set SockAddr
-        localGroupEventsAddresses (_, s) =
+     in checkAll tr
+      .&&. not (null tr)
+  where
+    checkAll :: [(Time, Seq (Int, Map SockAddr PeerAdvertise))] -> Property
+    checkAll [] = property True
+    checkAll (x:t) =
+      let
+          -- local root addresses
+          localRootAddresses :: [(a, Map RelayAccessPoint PeerAdvertise)]
+                             -> Set SockAddr
+          localRootAddresses lrp =
             Set.fromList
-          $ concatMap (Map.keys . snd)
-          $ toList s
+            [ toSockAddr (ip, port)
+            | (_, m) <- lrp
+            , RelayAccessAddress ip port <- Map.keys m
+            ]
 
-     in property
-      $ all (\x -> localRootAddresses localRoots
-                   `Set.isSubsetOf`
-                   localGroupEventsAddresses x
-            )
-            tr
-      && not (null tr)
+          localGroupEventsAddresses :: (a, Seq (Int, Map SockAddr PeerAdvertise))
+                                    -> Set SockAddr
+          localGroupEventsAddresses (_, s) =
+              Set.fromList
+            $ concatMap (Map.keys . snd)
+            $ toList s
+
+          localRootAddressesSet = localRootAddresses localRoots
+          localGroupEventsAddressesSet = localGroupEventsAddresses x
+       in counterexample (show localRootAddressesSet ++ " is not subset of "
+                         ++ show localGroupEventsAddressesSet)
+        $ localRootAddressesSet `Set.isSubsetOf` localGroupEventsAddressesSet
+        .&&. checkAll t
 
 -- | The 'localRootPeersProvider' should preserve the local root peers
 -- group number and respective targets. This property tests whether local
@@ -528,14 +559,18 @@ prop_local_resolvesDomainsCorrectly :: MockRoots
                                     -> Script DNSTimeout
                                     -> Script DNSLookupDelay
                                     -> Property
-prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots dnsMap _ _)
+prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
                                     dnsTimeoutScript
                                     dnsLookupDelayScript =
-    let tr = selectLocalRootPeersEvents
+    let mockRoots' =
+          mockRoots { mockLocalRootPeersDNSMap =
+                        singletonScript (scriptHead lDNSMap)
+                    }
+        tr = selectLocalRootPeersEvents
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
-                                        mockRoots
+                                        mockRoots'
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
 
@@ -549,15 +584,17 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots dnsMap _ _)
           ]
 
         -- domains that were resolved during simulation
-        resultMap :: Map Domain [IP]
-        resultMap = Map.fromList
-                  $ map snd
+        resultMap :: Set Domain
+        resultMap = Set.fromList
+                  $ map (fst . snd)
                   $ selectLocalRootResultEvents
                   $ tr
 
-        -- all domains that could have been resolved
-        maxResultMap :: Map Domain [IP]
-        maxResultMap = dnsMap `Map.restrictKeys` localRootDomains
+        -- all domains that could have been resolved in each script
+        maxResultMap :: Script (Set Domain)
+        maxResultMap = Map.keysSet
+                     . (`Map.restrictKeys` localRootDomains)
+                     <$> lDNSMap
 
         -- all domains that were tried to resolve during the simulation
         allTriedDomains :: Set Domain
@@ -579,7 +616,13 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots dnsMap _ _)
       -- we verify that we tried to resolve all local root domains, and that the
       -- resolved ones are a subset of `maxResultMap`
            localRootDomains === allTriedDomains
-      .&&. property (resultMap `Map.isSubmapOf` maxResultMap)
+      .&&. foldr (\rm r -> counterexample (show resultMap ++ " is subset of "
+                                     ++ show rm)
+                          (resultMap `Set.isSubsetOf` rm)
+                        .&&. r
+                 )
+                 (property True)
+                 maxResultMap
 
 
 -- | The 'localRootPeersProvider' after resolving a DNS domain address
@@ -642,6 +685,53 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
      in property (fst r)
 
 
+-- | The 'localRootPeersProvider' monitors each domain address for DNS
+-- resolving. It then should update the local result group correctly, but it
+-- should only update the single source of truth and not some cached version.
+--
+-- This test follows #3638 and checks this doesn't happen.
+--
+-- The way we test for this is to look at TraceLocalRootGroups results and check
+-- if they are monotonic i.e. the most recent value of TraceLocalRootGroups has
+-- to be subset or equal to the last values of TraceLocalRootGroups. Since we
+-- only do fixed DNS resolution, the single source of truth should be only
+-- increasing on not decreasing.
+--
+prop_local_singleSourceOfTruth :: MockRoots
+                               -> Script DNSTimeout
+                               -> Script DNSLookupDelay
+                               -> Property
+prop_local_singleSourceOfTruth mockRoots
+                               dnsTimeoutScript
+                               dnsLookupDelayScript =
+    let sim = runSimTrace
+            $ mockLocalRootPeersProvider tracerTraceLocalRoots
+                                         mockRoots
+                                         dnsTimeoutScript
+                                         dnsLookupDelayScript
+
+        sourceOfTruth =
+            Trace.toList
+          $ fmap unSolo
+          $ traceSelectTraceEventsDynamic
+              @_ @(Solo (Seq (Int, Map SockAddr PeerAdvertise)))
+          $ sim
+
+        simTrace = map snd
+                 $ selectLocalRootGroupsEvents
+                 $ selectLocalRootPeersEvents
+                 $ selectRootPeerDNSTraceEvents
+                 $ sim
+
+     in foldr
+          (\(sot, st) r ->
+              counterexample (show sot ++ " is different from " ++ show st)
+              (sot == st)
+            .&&. r
+          )
+          (property True)
+          (zip sourceOfTruth simTrace)
+
 --
 -- Public Root Peers Provider Tests
 --
@@ -698,12 +788,17 @@ prop_public_resolvesDomainsCorrectly :: MockRoots
                                      -> Int
                                      -> Property
 prop_public_resolvesDomainsCorrectly
-    mockRoots@(MockRoots _ _ _ dnsMap)
+    mockRoots@(MockRoots _ _ _ pDNSMap)
     (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
     n
-  = let tr = runSimTrace
+  =
+    let mockRoots' =
+          mockRoots { mockPublicRootPeersDNSMap =
+                        singletonScript (scriptHead pDNSMap)
+                    }
+        tr = runSimTrace
            $ mockPublicRootPeersProvider tracerTracePublicRoots
-                                         mockRoots
+                                         mockRoots'
                                          dnsTimeoutScript
                                          dnsLookupDelayScript
                                          ($ n)
@@ -716,4 +811,4 @@ prop_public_resolvesDomainsCorrectly
         successesMap = Map.fromList $ map snd successes
 
      in counterexample (show successes)
-      $ successesMap == dnsMap
+      $ successesMap == (map fst <$> Map.unions pDNSMap)

@@ -25,9 +25,9 @@ data PeerSource = PeerSourceLocalRoot
 -- For certain peers specified by configuration it would be an appropriate
 -- policy to keep them private.
 --
-data PeerAdvertise = DoAdvertisePeer
-                   | DoNotAdvertisePeer
-  deriving (Eq, Show, Generic)
+data PeerAdvertise = DoNotAdvertisePeer
+                   | DoAdvertisePeer
+  deriving (Eq, Show, Ord, Generic)
 
 instance FromJSON PeerAdvertise where
   parseJSON = withBool "PeerAdvertise" $
