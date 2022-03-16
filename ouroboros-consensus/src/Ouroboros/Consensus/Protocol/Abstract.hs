@@ -46,6 +46,7 @@ class ( Show (ChainDepState   p)
       , NoThunks (ConsensusConfig p)
       , NoThunks (ChainDepState   p)
       , NoThunks (ValidationErr   p)
+      , NoThunks (SelectView      p)
       , Typeable p -- so that p can appear in exceptions
       ) => ConsensusProtocol p where
   -- | Protocol-specific state

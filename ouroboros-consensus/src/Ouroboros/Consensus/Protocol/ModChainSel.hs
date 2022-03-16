@@ -26,6 +26,7 @@ instance ( ConsensusProtocol p
          , Show s
          , Typeable p
          , Typeable s
+         , NoThunks s
          ) => ConsensusProtocol (ModChainSel p s) where
     type SelectView    (ModChainSel p s) = s
 
