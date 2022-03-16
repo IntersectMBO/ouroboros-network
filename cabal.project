@@ -157,8 +157,7 @@ package prettyprinter-configurable
   tests: False
 
 allow-newer:
-  monoidal-containers:aeson,
-  size-based:template-haskell,
+  size-based:template-haskell
 
 constraints:
   -- bizarre issue: in earlier versions they define their own 'GEq', in newer
