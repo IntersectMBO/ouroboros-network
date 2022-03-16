@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -21,6 +23,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
+import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
 
@@ -123,7 +127,7 @@ data WithBlockNo (f :: k -> Type) (a :: k) = WithBlockNo {
       getBlockNo  :: BlockNo
     , dropBlockNo :: f a
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NoThunks)
 
 mapWithBlockNo :: (f x -> g y) -> WithBlockNo f x -> WithBlockNo g y
 mapWithBlockNo f (WithBlockNo bno fx) = WithBlockNo bno (f fx)

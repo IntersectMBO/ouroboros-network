@@ -146,6 +146,7 @@ deriving instance Show (SelectView    (BlockProtocol blk)) => Show (WrapSelectVi
 deriving instance Show (ValidationErr (BlockProtocol blk)) => Show (WrapValidationErr blk)
 
 deriving instance NoThunks (ChainDepState (BlockProtocol blk)) => NoThunks (WrapChainDepState blk)
+deriving instance NoThunks (SelectView    (BlockProtocol blk)) => NoThunks (WrapSelectView    blk)
 deriving instance NoThunks (ValidationErr (BlockProtocol blk)) => NoThunks (WrapValidationErr blk)
 
 {-------------------------------------------------------------------------------
