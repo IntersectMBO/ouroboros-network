@@ -118,6 +118,7 @@ rewind p (HeaderStateHistory history) = HeaderStateHistory <$>
       ((== p) . either headerStatePoint headerStatePoint)
       history
 
+
 {-------------------------------------------------------------------------------
   Validation
 -------------------------------------------------------------------------------}

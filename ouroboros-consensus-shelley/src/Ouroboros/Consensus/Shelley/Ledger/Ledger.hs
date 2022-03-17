@@ -425,9 +425,8 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
                                 shelleyLedgerTip
                               , shelleyLedgerState
                               , shelleyLedgerTransition
-                              , shelleyLedgerTables
                               } =
-      swizzle appTick <&> \l' ->
+    swizzle appTick <&> \l' ->
       TickedShelleyLedgerState {
           untickedShelleyLedgerTip      = shelleyLedgerTip
         , tickedShelleyLedgerTransition =
@@ -437,7 +436,7 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
             else
               shelleyLedgerTransition
         , tickedShelleyLedgerState      = l'
-        , tickedShelleyLedgerTables     = shelleyLedgerTables
+        , tickedShelleyLedgerTables     = polyEmptyLedgerTables
         }
     where
       globals = shelleyLedgerGlobals cfg

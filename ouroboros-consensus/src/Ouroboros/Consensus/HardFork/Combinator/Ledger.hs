@@ -148,14 +148,12 @@ instance ( CanHardFork xs
 
   type AuxLedgerEvent (LedgerState (HardForkBlock xs)) = OneEraLedgerEvent xs
 
-  applyChainTickLedgerResult :: forall mk .
-                                       IsApplyMapKind mk
-                                    => LedgerCfg (LedgerState (HardForkBlock xs))
-                                    -> SlotNo
-                                    -> LedgerState (HardForkBlock xs) mk
-                                    -> LedgerResult
-                                         (LedgerState (HardForkBlock xs))
-                                         (Ticked1 (LedgerState (HardForkBlock xs)) mk)
+  applyChainTickLedgerResult :: LedgerCfg (LedgerState (HardForkBlock xs))
+                             -> SlotNo
+                             -> LedgerState (HardForkBlock xs) EmptyMK
+                             -> LedgerResult
+                                  (LedgerState (HardForkBlock xs))
+                                  (Ticked1 (LedgerState (HardForkBlock xs)) ValuesMK)
   applyChainTickLedgerResult cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
       sequenceHardForkState
         (hcizipWith proxySingle (tickOne ei slot) cfgs extended) <&> \l' ->
@@ -188,21 +186,28 @@ instance ( CanHardFork xs
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger cfg st
 
-      extended :: HardForkState (Flip LedgerState mk) xs
+      extended :: HardForkState (Flip LedgerState ValuesMK) xs
       extended = State.extendToSlot cfg slot st
 
-tickOne :: (SingleEraBlock blk, IsApplyMapKind mk)
+tickOne :: SingleEraBlock blk
         => EpochInfo (Except PastHorizonException)
         -> SlotNo
-        -> Index xs                                           blk
-        -> WrapPartialLedgerConfig                            blk
-        -> Flip LedgerState mk                                blk
-        -> (    LedgerResult (LedgerState (HardForkBlock xs))
-            :.: FlipTickedLedgerState mk
-           )                                                  blk
-tickOne ei slot index pcfg (Flip st) = Comp $ fmap FlipTickedLedgerState $
-      embedLedgerResult (injectLedgerEvent index)
-    $ applyChainTickLedgerResult (completeLedgerConfig' ei pcfg) slot st
+        -> Index                                          xs   blk
+        -> WrapPartialLedgerConfig                             blk
+        -> (Flip LedgerState ValuesMK)                         blk
+        -> (     LedgerResult (LedgerState (HardForkBlock xs))
+             :.: FlipTickedLedgerState ValuesMK
+           )                                                   blk
+tickOne ei slot sopIdx partialCfg st =
+      Comp
+    . fmap ( FlipTickedLedgerState
+           . mappendValuesTicked (projectLedgerTables $ unFlip st)
+           )
+    . embedLedgerResult (injectLedgerEvent sopIdx)
+    . applyChainTickLedgerResult (completeLedgerConfig' ei partialCfg) slot
+    . forgetLedgerStateTables
+    . unFlip
+    $ st
 
 instance LedgerTablesCanHardFork '[x] where
   hardForkInjectLedgerTablesKeysMK = InjectLedgerTables LedgerTablesOne :* Nil

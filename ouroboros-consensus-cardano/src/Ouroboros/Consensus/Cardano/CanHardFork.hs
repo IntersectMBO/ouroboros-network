@@ -81,6 +81,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      addSlots)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.RedundantConstraints
@@ -705,31 +706,27 @@ translateLedgerStateByronToShelleyWrapper :: forall c.
        ByronBlock
        (ShelleyBlock (ShelleyEra c))
 translateLedgerStateByronToShelleyWrapper =
-    RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
-    TranslateLedgerState $ \epochNo ledgerByron ->
-      -- TODO yuck! this fixup step is too clever
-      (\x -> case sMapKind' ledgerByron of
-          SValuesMK -> unstowLedgerTables x
-          _         -> unstowLedgerTables x `withLedgerTables` polyEmptyLedgerTables) $
-      ShelleyLedgerState {
-        shelleyLedgerTip =
-          translatePointByronToShelley
-            (ledgerTipPoint (Proxy @ByronBlock) ledgerByron)
-            (byronLedgerTipBlockNo ledgerByron)
-      , shelleyLedgerState =
-          SL.translateToShelleyLedgerState
-            (shelleyLedgerGenesis cfgShelley)
-            epochNo
-            (byronLedgerState ledgerByron)
-      , shelleyLedgerTransition =
-          ShelleyTransitionInfo{shelleyAfterVoting = 0}
-      , shelleyLedgerTables = translateNoTables (projectLedgerTables ledgerByron)
-      }
-  where
-    translateNoTables ::
-         LedgerTables (LedgerState ByronBlock)                    mk
-      -> LedgerTables (LedgerState (ShelleyBlock (ShelleyEra c))) EmptyMK
-    translateNoTables NoByronLedgerTables = emptyLedgerTables
+      RequireBoth
+    $ \_ (WrapLedgerConfig cfgShelley) ->
+        TranslateLedgerState {
+            translateLedgerStateWith = \epochNo ledgerByron ->
+                unstowLedgerTables
+              $ ShelleyLedgerState {
+                    shelleyLedgerTip =
+                      translatePointByronToShelley
+                      (ledgerTipPoint (Proxy @ByronBlock) ledgerByron)
+                      (byronLedgerTipBlockNo ledgerByron)
+                  , shelleyLedgerState =
+                      SL.translateToShelleyLedgerState
+                        (shelleyLedgerGenesis cfgShelley)
+                        epochNo
+                        (byronLedgerState ledgerByron)
+                  , shelleyLedgerTransition =
+                      ShelleyTransitionInfo{shelleyAfterVoting = 0}
+                  , shelleyLedgerTables = polyEmptyLedgerTables
+                }
+          , translateLedgerTablesWith = \NoByronLedgerTables -> polyEmptyLedgerTables
+          }
 
 translateChainDepStateByronToShelleyWrapper ::
      RequiringBoth
@@ -841,8 +838,22 @@ translateLedgerStateShelleyToAllegraWrapper ::
        (ShelleyBlock (AllegraEra c))
 translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
-      TranslateLedgerState $ \_epochNo ->
-        unFlip . unComp . SL.translateEra' () . Comp . Flip
+      TranslateLedgerState {
+          translateLedgerStateWith = \_epochNo ->
+                noNewTickingValues
+              . unFlip
+              . unComp
+              . SL.translateEra' ()
+              . Comp
+              . Flip
+        , translateLedgerTablesWith =
+              \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } ->
+               ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK
+                                                      . HD.UtxoValues
+                                                      . fmap (SL.translateEra' ())
+                                                      $ vals
+                                   }
+        }
 
 translateTxShelleyToAllegraWrapper ::
      PraosCrypto c
@@ -873,8 +884,22 @@ translateLedgerStateAllegraToMaryWrapper ::
        (ShelleyBlock (MaryEra c))
 translateLedgerStateAllegraToMaryWrapper =
     ignoringBoth $
-      TranslateLedgerState $ \_epochNo ->
-        unFlip . unComp . SL.translateEra' () . Comp . Flip
+      TranslateLedgerState {
+          translateLedgerStateWith = \_epochNo ->
+                noNewTickingValues
+              . unFlip
+              . unComp
+              . SL.translateEra' ()
+              . Comp
+              . Flip
+        , translateLedgerTablesWith =
+            \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } ->
+             ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK
+                                                    . HD.UtxoValues
+                                                    . fmap (SL.translateEra' ())
+                                                    $ vals
+                                 }
+        }
 
 {-------------------------------------------------------------------------------
   Translation from Allegra to Mary
@@ -909,8 +934,22 @@ translateLedgerStateMaryToAlonzoWrapper ::
        (ShelleyBlock (AlonzoEra c))
 translateLedgerStateMaryToAlonzoWrapper =
     RequireBoth $ \_cfgMary cfgAlonzo ->
-      TranslateLedgerState $ \_epochNo ->
-        unFlip . unComp . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo) . Comp . Flip
+      TranslateLedgerState {
+          translateLedgerStateWith = \_epochNo ->
+                noNewTickingValues
+              . unFlip
+              . unComp
+              . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo)
+              . Comp
+              . Flip
+        , translateLedgerTablesWith =
+            \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } ->
+             ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK
+                                                    . HD.UtxoValues
+                                                    . fmap Alonzo.translateTxOut
+                                                    $ vals
+                                 }
+        }
 
 getAlonzoTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (AlonzoEra c))
