@@ -2518,10 +2518,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
          else (a, b, c + d - a)
 
     networkStateTracer getState =
-      sayTracer
-      <> (Tracer $ \_ -> do
-      state <- getState
-      traceM state)
+      Tracer $ \_ -> getState >>= traceM
 
     sim :: IOSim s ()
     sim = do
