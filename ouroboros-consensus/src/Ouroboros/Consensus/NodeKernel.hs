@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -46,7 +47,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo)
 import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.NodeToNode
+                     (MiniProtocolParameters (..))
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TxSubmissionMempoolWriter)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
@@ -81,6 +83,7 @@ import           Ouroboros.Consensus.Util.STM
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment (InvalidBlockPunishment)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
@@ -285,6 +288,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
               <> " " <> show err
         headerForgeUTCTime = slotToUTCTime . headerRealPoint . unFromConsensus
         blockForgeUTCTime  = slotToUTCTime . blockRealPoint  . unFromConsensus
+
     pure BlockFetchConsensusInterface {..}
   where
     toSummary ::
@@ -331,14 +335,61 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     readFetchedBlocks :: STM m (Point blk -> Bool)
     readFetchedBlocks = ChainDB.getIsFetched chainDB
 
+    -- See 'mkAddFetchedBlock_'
+    mkAddFetchedBlock ::
+         WhetherReceivingTentativeBlocks
+      -> STM m (Point blk -> blk -> m ())
+    mkAddFetchedBlock enabledPipelining = do
+      unlessImproved <- InvalidBlockPunishment.mkUnlessImproved (Proxy @blk)
+      pure $ mkAddFetchedBlock_ unlessImproved enabledPipelining
+
     -- Waits until the block has been written to disk, but not until chain
     -- selection has processed the block.
-    addFetchedBlock :: Point blk -> blk -> m ()
-    addFetchedBlock _pt blk = void $ do
+    mkAddFetchedBlock_ ::
+         (   SelectView (BlockProtocol blk)
+          -> InvalidBlockPunishment m
+          -> InvalidBlockPunishment m
+         )
+      -> WhetherReceivingTentativeBlocks
+      -> Point blk
+      -> blk
+      -> m ()
+    mkAddFetchedBlock_ unlessImproved enabledPipelining _pt blk = void $ do
        disconnect <- InvalidBlockPunishment.mkPunishThisThread
+       -- A BlockFetch peer can either send an entire range or none of the
+       -- range; anything else will incur a disconnect. And in 'FetchDeadline'
+       -- mode, which is the relevant case for this kind of DoS attack (because
+       -- in bulk sync, our honest peers will be streaming a very dense chain
+       -- very quickly, meaning the adversary only has very small windows during
+       -- which we're interested in its chains), the node only requests whole
+       -- suffixes from peers: the BlockFetch decision logic does not avoid
+       -- requesting a block that is already in-flight from other peers. Thus
+       -- the adversary cannot send us blocks out-of-order (during
+       -- 'FetchDeadline'), even if they control more than one of our peers.
+       --
+       -- Therefore, the following punishment logic only needs to cover the
+       -- "whole chain received in-order from a single-peer" case. Which it
+       -- currently does.
+       --
+       -- TODO maintain the context of which ChainSync candidate incurring this
+       -- fetch request, and disconnect immediately if the invalid block is not
+       -- the tip of that candidate. As-is, in 'FetchDeadline' they must also
+       -- send the next block, but they might be able to wait long enough that
+       -- it is not desirable when it arrives, and therefore not be disconnected
+       -- from. So their choices are: cause a disconnect or else do nothing for
+       -- long enough. Both are fine by us, from a DoS mitigation perspective.
+       let punishment = InvalidBlockPunishment.branch $ \case
+             -- invalid parents always cause a disconnect
+             InvalidBlockPunishment.BlockPrefix -> disconnect
+             -- when pipelining, we forgive an invalid block itself if it's
+             -- better than the previous invalid block this peer delivered
+             InvalidBlockPunishment.BlockItself -> case enabledPipelining of
+               NotReceivingTentativeBlocks -> disconnect
+               ReceivingTentativeBlocks    ->
+                 unlessImproved (selectView bcfg (getHeader blk)) disconnect
        ChainDB.addBlockWaitWrittenToDisk
          chainDB
-         disconnect
+         punishment
          blk
 
     readFetchedMaxSlotNo :: STM m MaxSlotNo

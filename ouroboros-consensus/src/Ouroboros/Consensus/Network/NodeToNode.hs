@@ -556,7 +556,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       -> m ((), Maybe bBF)
     aBlockFetchClient version controlMessageSTM them channel = do
       labelThisThread "BlockFetchClient"
-      bracketFetchClient (getFetchClientRegistry kernel) them $ \clientCtx ->
+      bracketFetchClient (getFetchClientRegistry kernel) version them $ \clientCtx ->
         runPipelinedPeerWithLimits
           (contramap (TraceLabelPeer them) tBlockFetchTracer)
           (cBlockFetchCodec (mkCodecs version))

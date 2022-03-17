@@ -27,6 +27,7 @@ module Ouroboros.Network.BlockFetch.ClientState
   , ChainRange (..)
     -- * Ancillary
   , FromConsensus (..)
+  , WhetherReceivingTentativeBlocks (..)
   ) where
 
 import           Data.List (foldl')
@@ -76,6 +77,12 @@ data FetchClientPolicy header block m =
        addFetchedBlock    :: Point block -> block -> m (),
        blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
      }
+
+-- | Whether the block fetch peer is sending tentative blocks, which are
+-- understood to possibly be invalid
+data WhetherReceivingTentativeBlocks
+  = ReceivingTentativeBlocks
+  | NotReceivingTentativeBlocks
 
 -- | A set of variables shared between the block fetch logic thread and each
 -- thread executing the client side of the block fetch protocol. That is, these

@@ -567,7 +567,7 @@ _unit_bracketSyncWithFetchClient step = do
       let peer  = "thepeer"
           fetch :: m a
           fetch = withFetchTestAction $ \body ->
-                    bracketFetchClient registry peer $ \_ ->
+                    bracketFetchClient registry maxBound peer $ \_ ->
                       body
 
           sync :: m b
