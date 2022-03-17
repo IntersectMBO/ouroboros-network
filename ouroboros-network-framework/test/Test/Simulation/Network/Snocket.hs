@@ -43,6 +43,9 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Text.Printf
 
+import           Foreign.C.Error
+import           GHC.IO.Exception
+
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Driver.Simple
@@ -417,7 +420,24 @@ prop_connect_to_accepting_socket defaultBearerInfo =
           $ \serverAsync -> do
             _ <- runClient clientAddr serverAddr
                             snocket (close snocket)
-            wait serverAsync
+            r <- wait serverAsync
+            return $
+              case (r, abiAcceptFailure defaultBearerInfo) of
+                (Left (UnexpectedError e), Just (_, AbsIOErrConnectionAborted)) ->
+                  case fromException e of
+                    Just ioe | Just errno <- ioe_errno ioe
+                             , errno == (case eCONNABORTED of Errno a -> a)
+                            -> Right ()
+                    _       -> r
+                (Left (UnexpectedError e), Just (_, AbsIOErrResourceExhausted)) ->
+                  case fromException e of
+                    Just ioe | ResourceExhausted <- ioe_type ioe
+                            -> Right ()
+                    _       -> r
+
+                (Right {}, Just {}) -> Left UnexpectedOutcome
+                _                   -> r
+
 
 prop_connect_and_not_close :: AbsBearerInfo -> Property
 prop_connect_and_not_close defaultBearerInfo =
