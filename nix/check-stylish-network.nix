@@ -1,9 +1,12 @@
-{ runCommand, fd, lib, stylish-haskell }:
+{ runCommand, fd, lib, stylish-haskell, haskell-nix }:
 
 runCommand "check-stylish-network" {
   meta.platforms = with lib.platforms; [ linux ];
   buildInputs = [ fd stylish-haskell ];
-  src = ./..;
+  src = haskell-nix.haskellLib.cleanGit {
+    name = "ouroboros-network-src";
+    src = ../.;
+  };
 } ''
   unpackPhase
   cd $sourceRoot
