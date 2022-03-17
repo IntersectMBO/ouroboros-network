@@ -556,7 +556,9 @@ instance IsLedger (LedgerState TestBlock) where
   type AuxLedgerEvent (LedgerState TestBlock) =
     VoidLedgerEvent (LedgerState TestBlock)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
+  applyChainTickLedgerResult _ _ = pureLedgerResult
+                                 . TickedTestLedger
+                                 . flip withLedgerTables polyEmptyLedgerTables
 
 instance ShowLedgerState (LedgerState TestBlock) where
   showsLedgerState _sing = shows

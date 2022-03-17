@@ -438,7 +438,7 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock era)) where
               shelleyLedgerTransition
         , tickedShelleyLedgerState      = l'
         , tickedShelleyLedgerTables     = shelleyLedgerTables
-        }
+        } `withLedgerTablesTicked` polyEmptyLedgerTables
     where
       globals = shelleyLedgerGlobals cfg
 

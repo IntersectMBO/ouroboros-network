@@ -143,35 +143,43 @@ reapplyLedgerBlock ::
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
   -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
 tickThenApplyLedgerResult cfg blk l = do
-  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) l
-  lrBlock <-   applyBlockLedgerResult     cfg            blk  (lrResult lrTick)
+  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
+  lrBlock <-    applyBlockLedgerResult     cfg            blk  (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
+  let tickDiffs = zipLedgerTables calculateDifference (projectLedgerTables l)
+                . projectLedgerTablesTicked
+                . lrResult
+                $ lrTick
   pure LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = lrResult lrBlock
+    , lrResult = mappendTracking tickDiffs $ lrResult lrBlock
     }
 
 tickThenReapplyLedgerResult ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
   -> LedgerResult l (l TrackingMK)
 tickThenReapplyLedgerResult cfg blk l =
-  let lrTick  = applyChainTickLedgerResult cfg (blockSlot blk) l
-      lrBlock = reapplyBlockLedgerResult   cfg            blk  (lrResult lrTick)
+  let lrTick    = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
+      lrBlock   = reapplyBlockLedgerResult   cfg            blk  (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
+      tickDiffs = zipLedgerTables calculateDifference (projectLedgerTables l)
+                . projectLedgerTablesTicked
+                . lrResult
+                $ lrTick
   in LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = lrResult lrBlock
+    , lrResult = mappendTracking tickDiffs $ lrResult lrBlock
     }
 
 tickThenApply ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -179,7 +187,7 @@ tickThenApply ::
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
-     ApplyBlock l blk
+     (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l
   -> blk
   -> l ValuesMK

@@ -227,7 +227,9 @@ instance IsLedger (LedgerState BlockB) where
   type AuxLedgerEvent (LedgerState BlockB) =
     VoidLedgerEvent (LedgerState BlockB)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateB
+  applyChainTickLedgerResult _ _ = pureLedgerResult
+                                 . TickedLedgerStateB
+                                 . flip withLedgerTables polyEmptyLedgerTables
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyBlockLedgerResult   = \_ b _ -> return $ pureLedgerResult $ LgrB (blockPoint b)

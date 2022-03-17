@@ -465,8 +465,14 @@ ledgerState_AtoB ::
        TranslateLedgerState
        BlockA
        BlockB
-ledgerState_AtoB = InPairs.ignoringBoth $ TranslateLedgerState $ \_ LgrA{..} -> LgrB {
-      lgrB_tip = castPoint lgrA_tip
+ledgerState_AtoB =
+    InPairs.ignoringBoth
+  $ TranslateLedgerState {
+        translateLedgerStateWith = \_ LgrA{..} ->
+            LgrB {
+              lgrB_tip = castPoint lgrA_tip
+            }
+      , translateLedgerTablesWith = \_ -> NoBTables
     }
 
 chainDepState_AtoB ::

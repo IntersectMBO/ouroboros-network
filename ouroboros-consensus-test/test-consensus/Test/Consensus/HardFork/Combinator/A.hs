@@ -254,7 +254,9 @@ instance IsLedger (LedgerState BlockA) where
   type AuxLedgerEvent (LedgerState BlockA) =
     VoidLedgerEvent (LedgerState BlockA)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedLedgerStateA
+  applyChainTickLedgerResult _ _ = pureLedgerResult
+                                 . TickedLedgerStateA
+                                 . flip withLedgerTables polyEmptyLedgerTables
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyBlockLedgerResult cfg blk =

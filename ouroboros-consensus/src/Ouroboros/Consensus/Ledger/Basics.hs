@@ -87,7 +87,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
-    -- ** Convenience alises
+    -- ** Convenience aliases
   , TableKeySets
   , TableReadSets
   , applyDiffsLedgerTables
@@ -97,6 +97,9 @@ module Ouroboros.Consensus.Ledger.Basics (
   , forgetTickedLedgerStateTracking
   , polyEmptyLedgerTables
   , trackingTablesToDiffs
+  , mappendValues
+  , mappendValuesTicked
+  , mappendTracking
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
@@ -286,6 +289,14 @@ class ( -- Requirements on the ledger state itself
   -- it would mean a /previous/ block set up the ledger state in such a way
   -- that as soon as a certain slot was reached, /any/ block would be invalid.
   --
+  -- Currently, ticking transformations don't require data from the ledger
+  -- tables, therefore the input map kind is fixed to @EmptyMK@. As translating
+  -- a @LedgerState@ between eras happens during the ticking operation on the
+  -- @HardForkBlock@ instance, the return type has to allow for new tables to be
+  -- populated in the translation thus it is set to @ValuesMK@. Currently this
+  -- does happen in the Byron to Shelley translation where the UTxO map is
+  -- populated.
+  --
   -- PRECONDITION: The slot number must be strictly greater than the slot at
   -- the tip of the ledger (except for EBBs, obviously..).
   --
@@ -299,19 +310,18 @@ class ( -- Requirements on the ledger state itself
   -- NOTE: The 'IsApplyMapKind' constraint is here for the same reason it's on
   -- 'projectLedgerTables'
   applyChainTickLedgerResult ::
-       IsApplyMapKind mk
-    => LedgerCfg l
+       LedgerCfg l
     -> SlotNo
-    -> l mk
-    -> LedgerResult l (Ticked1 l mk)
+    -> l EmptyMK
+    -> LedgerResult l (Ticked1 l ValuesMK)
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick ::
-     (IsLedger l, IsApplyMapKind mk)
+     IsLedger l
   => LedgerCfg l
   -> SlotNo
-  -> l mk
-  -> Ticked1 l mk
+  -> l EmptyMK
+  -> Ticked1 l ValuesMK
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 -- This can't be in IsLedger because we have a compositional IsLedger instance
@@ -439,6 +449,22 @@ zipOverLedgerTables f l tables2 =
       (\tables1 -> zipLedgerTables f tables1 tables2)
       l
 
+-- | Mappend the values in the tables and in the ledger state
+mappendValues ::
+     TableStuff l
+  => LedgerTables l ValuesMK
+  -> l ValuesMK
+  -> l ValuesMK
+mappendValues = flip (zipOverLedgerTables (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2))
+
+-- | Mappend the differences in the tables and in the ledger state
+mappendTracking ::
+     TableStuff l
+  => LedgerTables l TrackingMK
+  -> l TrackingMK
+  -> l TrackingMK
+mappendTracking = flip (zipOverLedgerTables (\(ApplyTrackingMK v1 d1) (ApplyTrackingMK _ d2) -> ApplyTrackingMK v1 (d2 <> d1)))
+
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
 class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
@@ -483,6 +509,14 @@ zipOverLedgerTablesTicked f l tables2 =
     overLedgerTablesTicked
       (\tables1 -> zipLedgerTables f tables1 tables2)
       l
+
+-- | Mappend the values in the tables and in the ticked ledger state
+mappendValuesTicked ::
+     TickedTableStuff l
+  => LedgerTables l ValuesMK
+  -> Ticked1      l ValuesMK
+  -> Ticked1      l ValuesMK
+mappendValuesTicked = flip (zipOverLedgerTablesTicked (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2))
 
 -- | This class provides a 'CodecMK' that can be used to encode/decode keys and
 -- values on @'LedgerTables' l mk@

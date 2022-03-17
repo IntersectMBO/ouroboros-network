@@ -329,13 +329,16 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
 
 -- | Tick the 'LedgerState' using the given 'BlockSlot'.
 tickLedgerState
-  :: forall blk mk. (UpdateLedger blk, ValidateEnvelope blk, IsApplyMapKind mk)
+  :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
   => LedgerConfig     blk
-  -> ForgeLedgerState blk mk
-  -> (SlotNo, TickedLedgerState blk mk)
+  -> ForgeLedgerState blk ValuesMK
+  -> (SlotNo, TickedLedgerState blk ValuesMK)
 tickLedgerState _cfg (ForgeInKnownSlot slot st) = (slot, st)
 tickLedgerState  cfg (ForgeInUnknownSlot st) =
-    (slot, applyChainTick cfg slot st)
+    (slot, mappendValuesTicked (projectLedgerTables st)
+         $ applyChainTick cfg slot
+         $ forgetLedgerStateTables st
+    )
   where
     -- Optimistically assume that the transactions will be included in a block
     -- in the next available slot
