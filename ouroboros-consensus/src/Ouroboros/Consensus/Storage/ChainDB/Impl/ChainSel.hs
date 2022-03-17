@@ -286,7 +286,11 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
         trace $ IgnoreInvalidBlock (blockRealPoint b) reason
         deliverWrittenToDisk False
 
-        InvalidBlockPunishment.enact blockPunish
+        -- We wouldn't know the block is invalid if its prefix was invalid,
+        -- hence 'InvalidBlockPunishment.BlockItself'.
+        InvalidBlockPunishment.enact
+          blockPunish
+          InvalidBlockPunishment.BlockItself
 
         chainSelectionForFutureBlocks cdb BlockCache.empty
 
@@ -468,7 +472,11 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
       | Just (InvalidBlockInfo reason _) <- Map.lookup (headerHash hdr) invalid -> do
         trace $ IgnoreInvalidBlock p reason
 
-        InvalidBlockPunishment.enact punish
+        -- We wouldn't know the block is invalid if its prefix was invalid,
+        -- hence 'InvalidBlockPunishment.BlockItself'.
+        InvalidBlockPunishment.enact
+          punish
+          InvalidBlockPunishment.BlockItself
 
         return tipPoint
 
@@ -970,6 +978,9 @@ ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
         -- Consensus and Storage Layer technical report.
         whenJust punish $ \(addedPt, punishment) -> do
           let m = InvalidBlockPunishment.enact punishment
+                $ if addedPt == pt
+                  then InvalidBlockPunishment.BlockItself
+                  else InvalidBlockPunishment.BlockPrefix
           case realPointSlot pt `compare` realPointSlot addedPt of
             LT -> m
             GT -> pure ()
@@ -1071,8 +1082,13 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
               suffix
               invalidHeaders
 
+          -- It's possible the block's prefix is invalid, but we can't know for
+          -- sure. So we use 'InvalidBlockPunishment.BlockItself' to be more
+          -- conservative.
           forM_ exceedClockSkew $ \x -> do
-            InvalidBlockPunishment.enact (InFuture.inFuturePunish x)
+            InvalidBlockPunishment.enact
+              (InFuture.inFuturePunish x)
+              InvalidBlockPunishment.BlockItself
 
         -- Truncate the original 'ChainDiff' to match the truncated
         -- 'AnchoredFragment'.
