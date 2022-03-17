@@ -337,7 +337,13 @@ toBearerInfo abi =
         biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
         biInboundWriteFailure  = abiInboundWriteFailure abi,
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
-        biAcceptFailures       = Nothing, -- TODO
+        biAcceptFailures       = (\(errDelay, errType) ->
+                                   ( delay errDelay
+                                   , case errType of
+                                      AbsIOErrConnectionAborted -> IOErrConnectionAborted
+                                      AbsIOErrResourceExhausted -> IOErrResourceExhausted
+                                   )
+                                 ) <$> abiAcceptFailure abi,
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 

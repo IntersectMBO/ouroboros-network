@@ -3577,6 +3577,7 @@ unit_connection_terminated_when_negotiating =
           , abiOutboundAttenuation = NoAttenuation FastSpeed
           , abiInboundWriteFailure = Nothing
           , abiOutboundWriteFailure = Just 3
+          , abiAcceptFailure = Nothing
           , abiSDUSize = LargeSDU
           }
       multiNodeScript =
