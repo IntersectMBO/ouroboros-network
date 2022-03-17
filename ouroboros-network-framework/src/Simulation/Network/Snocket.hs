@@ -142,7 +142,7 @@ mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } =
           . STAttenuatedChannelTrace connId
           )
           `contramap` tr)
-        ( ( WithAddr (Just localAddress) (Just remoteAddress)
+        ( ( WithAddr (Just remoteAddress) (Just localAddress)
           . STAttenuatedChannelTrace ConnectionId
               { localAddress  = remoteAddress
               , remoteAddress = localAddress
