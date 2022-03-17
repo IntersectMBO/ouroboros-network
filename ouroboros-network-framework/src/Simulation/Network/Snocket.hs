@@ -565,7 +565,6 @@ data SnocketTrace m addr
     -- ^ TODO: Document meaning of 'Maybe (Maybe OpenState)'
     | STClosingQueue Bool
     | STClosedQueue  Bool
-    | STClosedWhenReading
     | STAcceptFailure SockType SomeException
     | STAccepting
     | STAccepted      addr
