@@ -293,7 +293,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
           -- TODO: this currently needs MuxPeerRaw because of the resource
           -- bracket
           MuxPeerRaw $ \channel ->
-          bracketFetchClient registry connectionId $ \clientCtx ->
+          bracketFetchClient registry maxBound connectionId $ \clientCtx ->
             runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer connectionId) stdoutTracer)
               codecBlockFetch
@@ -315,8 +315,9 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                                        map (maxSlotNoFromWithOrigin . pointSlot) .
                                        Set.elems <$>
                                        getTestFetchedBlocks blockHeap,
-              addFetchedBlock        = \p b -> addTestFetchedBlock blockHeap
-                                         (castPoint p) (blockHeader b),
+              mkAddFetchedBlock        = \_enablePipelining -> do
+                  pure $ \p b ->
+                    addTestFetchedBlock blockHeap (castPoint p) (blockHeader b),
 
               plausibleCandidateChain,
               compareCandidateChains,
