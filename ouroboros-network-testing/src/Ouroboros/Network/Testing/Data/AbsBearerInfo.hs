@@ -282,7 +282,7 @@ instance Arbitrary AbsBearerInfoScript where
     | script'
         <- map (NonEmpty.fromList . fixupAbsBearerInfos)
         . filter (not . List.null)
-         -- TODO: shrinking of 'AbsBearerInfo' needs to be more aggresive to use
+         -- TODO: shrinking of 'AbsBearerInfo' needs to be more aggressive to use
          -- @shrinkList shrink@
          $ shrinkList (const []) (NonEmpty.toList script)
     , script' /= script

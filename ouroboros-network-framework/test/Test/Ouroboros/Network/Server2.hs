@@ -269,7 +269,7 @@ oneshotNextRequests ClientAndServerData {
                       warmInitiatorRequests,
                       establishedInitiatorRequests
                     } = do
-    -- we pass a `StricTVar` with all the requests to each initiator.  This way
+    -- we pass a `StrictTVar` with all the requests to each initiator.  This way
     -- the each round (which runs a single instance of `ReqResp` protocol) will
     -- use its own request list.
     hotRequestsVar         <- newTVarIO hotInitiatorRequests
@@ -1067,7 +1067,7 @@ data MultiNodeScript req peerAddr = MultiNodeScript
   deriving (Show)
 
 -- | A sequence of connection events that make up a test scenario for `prop_multinode_Sim_Pruning`.
--- This test optimizes for triggering prunings.
+-- This test optimizes for triggering pruning.
 data MultiNodePruningScript req = MultiNodePruningScript
   { mnpsAcceptedConnLimit :: AcceptedConnectionsLimit
     -- ^ Should yield small values to trigger pruning
@@ -1275,7 +1275,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
 maxAcceptedConnectionsLimit :: AcceptedConnectionsLimit
 maxAcceptedConnectionsLimit = AcceptedConnectionsLimit maxBound maxBound 0
 
--- | This Script has a percentage of events more favorable to trigger pruning
+-- | This Script has a percentage of events more favourable to trigger pruning
 --   transitions. And forces a bidirectional connection between each server.
 --   It also starts inbound protocols in order to trigger the:
 --
@@ -1290,7 +1290,7 @@ instance Arbitrary req =>
          Arbitrary (MultiNodePruningScript req) where
   arbitrary = do
     Positive len <- scale ((* 2) . (`div` 3)) arbitrary
-    -- NOTE: Although we still do not enforce the configured hardlimit to be
+    -- NOTE: Although we still do not enforce the configured hard limit to be
     -- strictly positive. We assume that the hard limit is always bigger than
     -- 0.
     Small hardLimit <- (`div` 10) <$> arbitrary
@@ -1849,7 +1849,7 @@ instance Arbitrary ArbDataFlow where
 data ActivityType
     = IdleConn
 
-    -- | Active connections are onces that reach any of the state:
+    -- | Active connections are once that reach any of the state:
     --
     -- - 'InboundSt'
     -- - 'OutobundUniSt'
@@ -2431,9 +2431,9 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
           -- connections.
           --
           -- TODO: we are computing upper bound of contribution of each
-          -- address seprately.  This avoids tracking timing information of
-          -- events, which is less acurate but it might be less fragile.  We
-          -- should investiage if it's possible to make accurate and robust
+          -- address separately.  This avoids tracking timing information of
+          -- events, which is less accurate but it might be less fragile.  We
+          -- should investigate if it's possible to make accurate and robust
           -- time series of counter changes.
           connectionManagerCounters =
               foldMap' id
@@ -2594,17 +2594,17 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
     -- verifyTimeouts checks that in all \tau transition states the timeout is
     -- respected. It does so by checking the stream of abstract transitions
     -- paired with the time they happened, for a given connection; and checking
-    -- that transitions from \tau states to any other happens withing the correct
+    -- that transitions from \tau states to any other happens within the correct
     -- timeout bounds. One note is that for the example
     -- InboundIdleState^\tau -> OutboundState^\tau -> OutboundState sequence
     -- The first transition would be fine, but for the second we need the time
     -- when we transitioned into InboundIdleState and not OutboundState.
     --
     verifyTimeouts :: Maybe (AbstractState, Time)
-                   -- ^ Map of first occurence of a given \tau state
+                   -- ^ Map of first occurrence of a given \tau state
                    -> [(Time , AbstractTransitionTrace SimAddr)]
                    -- ^ Stream of abstract transitions for a given connection
-                   -- paired with the time it ocurred
+                   -- paired with the time it occurred
                    -> Property
     verifyTimeouts state [] =
       counterexample
@@ -3604,7 +3604,7 @@ unit_connection_terminated_when_negotiating =
         multiNodeScript
 
 
--- | Split 'AbstractTransitionTrace' into seprate connections.  This relies on
+-- | Split 'AbstractTransitionTrace' into separate connections.  This relies on
 -- the property that every connection is terminated with 'UnknownConnectionSt'.
 -- This property is verified by 'verifyAbstractTransitionOrder'.
 --

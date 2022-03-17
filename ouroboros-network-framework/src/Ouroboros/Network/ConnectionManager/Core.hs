@@ -1753,7 +1753,7 @@ withConnectionManager ConnectionManagerArguments {
                     --
                     -- Key was overwritten in the dictionary (stateVar),
                     -- so we do not trace anything as it was already traced upon
-                    -- overwritting.
+                    -- overwriting.
                      else return [ ]
 
 

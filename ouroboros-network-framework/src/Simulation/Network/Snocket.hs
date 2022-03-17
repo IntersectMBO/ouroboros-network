@@ -350,7 +350,7 @@ instance (Typeable addr, Show addr)
 
 
 -- | A type class for global IP address scheme.  Every node in the simulation
--- has an ephemeral address.  Every node in the simulation has an implicite ipv4
+-- has an ephemeral address.  Every node in the simulation has an implicit ipv4
 -- and ipv6 address (if one is not bound by explicitly).
 --
 class GlobalAddressScheme addr where
