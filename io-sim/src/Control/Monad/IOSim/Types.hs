@@ -107,6 +107,7 @@ import qualified Debug.Trace as Debug
 import           Text.Printf
 
 import           GHC.Generics (Generic)
+import           GHC.Exts (oneShot)
 import           Quiet (Quiet (..))
 
 import           Control.Monad.IOSim.CommonTypes
@@ -126,10 +127,10 @@ runIOSim :: IOSim s a -> SimA s a
 runIOSim (IOSim k) = k Return
 
 traceM :: Typeable a => a -> IOSim s ()
-traceM x = IOSim $ \k -> Output (toDyn x) (k ())
+traceM x = IOSim $ oneShot $ \k -> Output (toDyn x) (k ())
 
 traceSTM :: Typeable a => a -> STMSim s ()
-traceSTM x = STM $ \k -> OutputStm (toDyn x) (k ())
+traceSTM x = STM $ oneShot $ \k -> OutputStm (toDyn x) (k ())
 
 data SimA s a where
   Return       :: a -> SimA s a
@@ -203,24 +204,24 @@ type SimSTM = STM
 
 instance Functor (IOSim s) where
     {-# INLINE fmap #-}
-    fmap f = \d -> IOSim $ \k -> unIOSim d (k . f)
+    fmap f = \d -> IOSim $ oneShot $ \k -> unIOSim d (k . f)
 
 instance Applicative (IOSim s) where
     {-# INLINE pure #-}
-    pure = \x -> IOSim $ \k -> k x
+    pure = \x -> IOSim $ oneShot $ \k -> k x
 
     {-# INLINE (<*>) #-}
-    (<*>) = \df dx -> IOSim $ \k ->
+    (<*>) = \df dx -> IOSim $ oneShot $ \k ->
                         unIOSim df (\f -> unIOSim dx (\x -> k (f x)))
 
     {-# INLINE (*>) #-}
-    (*>) = \dm dn -> IOSim $ \k -> unIOSim dm (\_ -> unIOSim dn k)
+    (*>) = \dm dn -> IOSim $ oneShot $ \k -> unIOSim dm (\_ -> unIOSim dn k)
 
 instance Monad (IOSim s) where
     return = pure
 
     {-# INLINE (>>=) #-}
-    (>>=) = \dm f -> IOSim $ \k -> unIOSim dm (\m -> unIOSim (f m) k)
+    (>>=) = \dm f -> IOSim $ oneShot $ \k -> unIOSim dm (\m -> unIOSim (f m) k)
 
     {-# INLINE (>>) #-}
     (>>) = (*>)
@@ -240,32 +241,32 @@ instance Monoid a => Monoid (IOSim s a) where
 #endif
 
 instance Fail.MonadFail (IOSim s) where
-  fail msg = IOSim $ \_ -> Throw (toException (IO.Error.userError msg))
+  fail msg = IOSim $ oneShot $ \_ -> Throw (toException (IO.Error.userError msg))
 
 instance MonadFix (IOSim s) where  
-    mfix f = IOSim $ \k -> Fix f k 
+    mfix f = IOSim $ oneShot $ \k -> Fix f k 
 
 
 instance Functor (STM s) where
     {-# INLINE fmap #-}
-    fmap f = \d -> STM $ \k -> unSTM d (k . f)
+    fmap f = \d -> STM $ oneShot $ \k -> unSTM d (k . f)
 
 instance Applicative (STM s) where
     {-# INLINE pure #-}
-    pure = \x -> STM $ \k -> k x
+    pure = \x -> STM $ oneShot $ \k -> k x
 
     {-# INLINE (<*>) #-}
-    (<*>) = \df dx -> STM $ \k ->
+    (<*>) = \df dx -> STM $ oneShot $ \k ->
                         unSTM df (\f -> unSTM dx (\x -> k (f x)))
 
     {-# INLINE (*>) #-}
-    (*>) = \dm dn -> STM $ \k -> unSTM dm (\_ -> unSTM dn k)
+    (*>) = \dm dn -> STM $ oneShot $ \k -> unSTM dm (\_ -> unSTM dn k)
 
 instance Monad (STM s) where
     return = pure
 
     {-# INLINE (>>=) #-}
-    (>>=) = \dm f -> STM $ \k -> unSTM dm (\m -> unSTM (f m) k)
+    (>>=) = \dm f -> STM $ oneShot $ \k -> unSTM dm (\m -> unSTM (f m) k)
 
     {-# INLINE (>>) #-}
     (>>) = (*>)
@@ -275,7 +276,7 @@ instance Monad (STM s) where
 #endif
 
 instance Fail.MonadFail (STM s) where
-  fail msg = STM $ \_ -> ThrowStm (toException (ErrorCall msg))
+  fail msg = STM $ oneShot $ \_ -> ThrowStm (toException (ErrorCall msg))
 
 instance Alternative (STM s) where
     empty = MonadSTM.retry
@@ -284,19 +285,19 @@ instance Alternative (STM s) where
 instance MonadPlus (STM s) where
 
 instance MonadSay (IOSim s) where
-  say msg = IOSim $ \k -> Say msg (k ())
+  say msg = IOSim $ oneShot $ \k -> Say msg (k ())
 
 instance MonadThrow (IOSim s) where
-  throwIO e = IOSim $ \_ -> Throw (toException e)
+  throwIO e = IOSim $ oneShot $ \_ -> Throw (toException e)
 
 instance MonadEvaluate (IOSim s) where
-  evaluate a = IOSim $ \k -> Evaluate a k
+  evaluate a = IOSim $ oneShot $ \k -> Evaluate a k
 
 instance Exceptions.MonadThrow (IOSim s) where
   throwM = MonadThrow.throwIO
 
 instance MonadThrow (STM s) where
-  throwIO e = STM $ \_ -> ThrowStm (toException e)
+  throwIO e = STM $ oneShot $ \_ -> ThrowStm (toException e)
 
   -- Since these involve re-throwing the exception and we don't provide
   -- CatchSTM at all, then we can get away with trivial versions:
@@ -316,7 +317,7 @@ instance Exceptions.MonadThrow (STM s) where
 
 instance MonadCatch (IOSim s) where
   catch action handler =
-    IOSim $ \k -> Catch (runIOSim action) (runIOSim . handler) k
+    IOSim $ oneShot $ \k -> Catch (runIOSim action) (runIOSim . handler) k
 
 instance Exceptions.MonadCatch (IOSim s) where
   catch = MonadThrow.catch
@@ -363,19 +364,19 @@ blockUninterruptible a = IOSim (SetMaskState MaskedUninterruptible a)
 
 instance MonadThread (IOSim s) where
   type ThreadId (IOSim s) = ThreadId
-  myThreadId       = IOSim $ \k -> GetThreadId k
-  labelThread t l  = IOSim $ \k -> LabelThread t l (k ())
+  myThreadId       = IOSim $ oneShot $ \k -> GetThreadId k
+  labelThread t l  = IOSim $ oneShot $ \k -> LabelThread t l (k ())
 
 instance MonadFork (IOSim s) where
-  forkIO task        = IOSim $ \k -> Fork task k
+  forkIO task        = IOSim $ oneShot $ \k -> Fork task k
   forkIOWithUnmask f = forkIO (f unblock)
-  throwTo tid e      = IOSim $ \k -> ThrowTo (toException e) tid (k ())
+  throwTo tid e      = IOSim $ oneShot $ \k -> ThrowTo (toException e) tid (k ())
 
 instance MonadTest (IOSim s) where
-  exploreRaces       = IOSim $ \k -> ExploreRaces (k ())
+  exploreRaces       = IOSim $ oneShot $ \k -> ExploreRaces (k ())
 
 instance MonadSay (STMSim s) where
-  say msg = STM $ \k -> SayStm msg (k ())
+  say msg = STM $ oneShot $ \k -> SayStm msg (k ())
 
 
 instance MonadLabelledSTM (IOSim s) where
@@ -391,13 +392,13 @@ instance MonadSTM (IOSim s) where
   type TQueue    (IOSim s) = TQueueDefault (IOSim s)
   type TBQueue   (IOSim s) = TBQueueDefault (IOSim s)
 
-  atomically action = IOSim $ \k -> Atomically action k
+  atomically action = IOSim $ oneShot $ \k -> Atomically action k
 
-  newTVar         x = STM $ \k -> NewTVar Nothing x k
-  readTVar   tvar   = STM $ \k -> ReadTVar tvar k
-  writeTVar  tvar x = STM $ \k -> WriteTVar tvar x (k ())
-  retry             = STM $ \_ -> Retry
-  orElse        a b = STM $ \k -> OrElse (runSTM a) (runSTM b) k
+  newTVar         x = STM $ oneShot $ \k -> NewTVar Nothing x k
+  readTVar   tvar   = STM $ oneShot $ \k -> ReadTVar tvar k
+  writeTVar  tvar x = STM $ oneShot $ \k -> WriteTVar tvar x (k ())
+  retry             = STM $ oneShot $ \_ -> Retry
+  orElse        a b = STM $ oneShot $ \k -> OrElse (runSTM a) (runSTM b) k
 
   newTMVar          = MonadSTM.newTMVarDefault
   newEmptyTMVar     = MonadSTM.newEmptyTMVarDefault
@@ -484,18 +485,18 @@ instance MonadST (IOSim s) where
   withLiftST f = f liftST
 
 liftST :: StrictST.ST s a -> IOSim s a
-liftST action = IOSim $ \k -> LiftST action k
+liftST action = IOSim $ oneShot $ \k -> LiftST action k
 
 instance MonadMonotonicTime (IOSim s) where
-  getMonotonicTime = IOSim $ \k -> GetMonoTime k
+  getMonotonicTime = IOSim $ oneShot $ \k -> GetMonoTime k
 
 instance MonadTime (IOSim s) where
-  getCurrentTime   = IOSim $ \k -> GetWallTime k
+  getCurrentTime   = IOSim $ oneShot $ \k -> GetWallTime k
 
 -- | Set the current wall clock time for the thread's clock domain.
 --
 setCurrentTime :: UTCTime -> IOSim s ()
-setCurrentTime t = IOSim $ \k -> SetWallTime t (k ())
+setCurrentTime t = IOSim $ oneShot $ \k -> SetWallTime t (k ())
 
 -- | Put the thread into a new wall clock domain, not shared with the parent
 -- thread. Changing the wall clock time in the new clock domain will not affect
@@ -503,7 +504,7 @@ setCurrentTime t = IOSim $ \k -> SetWallTime t (k ())
 -- this point onwards will share the new clock domain.
 --
 unshareClock :: IOSim s ()
-unshareClock = IOSim $ \k -> UnshareClock (k ())
+unshareClock = IOSim $ oneShot $ \k -> UnshareClock (k ())
 
 instance MonadDelay (IOSim s) where
   -- Use default in terms of MonadTimer
@@ -518,9 +519,9 @@ instance MonadTimer (IOSim s) where
   readTimeout (Timeout var _bvar _key) = MonadSTM.readTVar var
   readTimeout (NegativeTimeout _key)   = pure TimeoutCancelled
 
-  newTimeout      d = IOSim $ \k -> NewTimeout      d k
-  updateTimeout t d = IOSim $ \k -> UpdateTimeout t d (k ())
-  cancelTimeout t   = IOSim $ \k -> CancelTimeout t   (k ())
+  newTimeout      d = IOSim $ oneShot $ \k -> NewTimeout      d k
+  updateTimeout t d = IOSim $ oneShot $ \k -> UpdateTimeout t d (k ())
+  cancelTimeout t   = IOSim $ oneShot $ \k -> CancelTimeout t   (k ())
 
   timeout d action
     | d <  0    = Just <$> action
@@ -543,7 +544,7 @@ instance MonadTimer (IOSim s) where
                   throwTo pid' AsyncCancelled)
             (\_ -> Just <$> action)
 
-  registerDelay d = IOSim $ \k -> NewTimeout d (\(Timeout _var bvar _) -> k bvar)
+  registerDelay d = IOSim $ oneShot $ \k -> NewTimeout d (\(Timeout _var bvar _) -> k bvar)
 
 newtype TimeoutException = TimeoutException TimeoutId deriving Eq
 
