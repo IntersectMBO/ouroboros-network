@@ -324,6 +324,11 @@ clientServerSimulation payloads =
 -- Auxiliary
 --
 
+-- TODO: should be defined where 'AbsBearerInfo' is defined, but it also
+-- requires access to 'ouroboros-network-framework' where 'BearerInfo' is
+-- defined.  This can be fixed by moving `ouroboros-network-testing` to
+-- `ouroboros-network-framework:testlib`.
+--
 toBearerInfo :: AbsBearerInfo -> BearerInfo
 toBearerInfo abi =
     BearerInfo {
