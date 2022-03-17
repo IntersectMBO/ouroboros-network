@@ -98,6 +98,7 @@ module Ouroboros.Network.BlockFetch
   , FetchMode (..)
   , FromConsensus (..)
   , SizeInBytes
+  , WhetherReceivingTentativeBlocks (..)
   ) where
 
 import           Data.Hashable (Hashable)
@@ -120,7 +121,8 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
                      bracketSyncWithFetchClient, newFetchClientRegistry,
                      readFetchClientsStateVars, readFetchClientsStatus,
                      readPeerGSVs, setFetchClientContext)
-import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus (..))
+import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus (..),
+                     WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.BlockFetch.State
 
 
@@ -163,10 +165,12 @@ data BlockFetchConsensusInterface peer header block m =
        -- | Recent, only within last K
        readFetchedBlocks      :: STM m (Point block -> Bool),
 
-       -- | This and 'readFetchedBlocks' are required to be linked. Upon
-       -- successful completion of 'addFetchedBlock' it must be the case that
+       -- | This method allocates an @addFetchedBlock@ function per client.
+       -- That function and 'readFetchedBlocks' are required to be linked. Upon
+       -- successful completion of @addFetchedBlock@ it must be the case that
        -- 'readFetchedBlocks' reports the block.
-       addFetchedBlock        :: Point block -> block -> m (),
+       mkAddFetchedBlock      :: WhetherReceivingTentativeBlocks
+                              -> STM m (Point block -> block -> m ()),
 
        -- | The highest stored/downloaded slot number.
        --
@@ -279,7 +283,7 @@ blockFetchLogic decisionTracer clientStateTracer
                 registry
                 BlockFetchConfiguration{..} = do
 
-    setFetchClientContext registry clientStateTracer fetchClientPolicy
+    setFetchClientContext registry clientStateTracer mkFetchClientPolicy
 
     fetchLogicIterations
       decisionTracer clientStateTracer
@@ -287,13 +291,15 @@ blockFetchLogic decisionTracer clientStateTracer
       fetchTriggerVariables
       fetchNonTriggerVariables
   where
-    fetchClientPolicy :: FetchClientPolicy header block m
-    fetchClientPolicy = FetchClientPolicy {
-                          blockFetchSize,
-                          blockMatchesHeader,
-                          addFetchedBlock,
-                          blockForgeUTCTime
-                        }
+    mkFetchClientPolicy :: WhetherReceivingTentativeBlocks -> STM m (FetchClientPolicy header block m)
+    mkFetchClientPolicy receivingTentativeBlocks = do
+      addFetchedBlock <- mkAddFetchedBlock receivingTentativeBlocks
+      pure FetchClientPolicy {
+          blockFetchSize,
+          blockMatchesHeader,
+          addFetchedBlock,
+          blockForgeUTCTime
+        }
 
     fetchDecisionPolicy :: FetchDecisionPolicy header
     fetchDecisionPolicy =

@@ -278,7 +278,7 @@ sampleBlockFetchPolicy1 headerFieldsForgeUTCTime blockHeap currentChain candidat
                                map (maxSlotNoFromWithOrigin . pointSlot) .
                                Set.elems <$>
                                getTestFetchedBlocks blockHeap,
-      addFetchedBlock        = addTestFetchedBlock blockHeap,
+      mkAddFetchedBlock      = \_enablePipelining -> pure $ addTestFetchedBlock blockHeap,
 
       plausibleCandidateChain,
       compareCandidateChains,
@@ -324,7 +324,7 @@ runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a)
                 -> m a
 runFetchClient tracer registry peerid channel client =
-    bracketFetchClient registry peerid $ \clientCtx ->
+    bracketFetchClient registry maxBound peerid $ \clientCtx ->
       fst <$>
         runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
           timeLimitsBlockFetch channel (client clientCtx)
