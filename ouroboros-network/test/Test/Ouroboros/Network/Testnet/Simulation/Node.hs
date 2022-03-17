@@ -66,7 +66,6 @@ import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
-import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket (BearerInfo (..), withSnocket, FD)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as Node
@@ -143,11 +142,11 @@ genDomainMap raps = do
 
 genCommands :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
-  commands <- vectorOf size (frequency [ (3, JoinNetwork <$> delay)
-                                       , (2, Reconfigure
-                                              <$> delay
+  commands <- vectorOf size (frequency [ (7, JoinNetwork <$> shortDelay)
+                                       , (4, Reconfigure
+                                              <$> shortDelay
                                               <*> subLocalRootPeers)
-                                       , (1, Kill <$> delay)
+                                       , (1, Kill <$> longDelay)
                                        ])
   return (fixupCommands commands)
   where
@@ -156,7 +155,8 @@ genCommands localRoots = sized $ \size -> do
       subLRP <- sublistOf localRoots
       mapM (mapM (fmap Map.fromList . sublistOf . Map.toList)) subLRP
 
-    delay = frequency [(3, genDelayWithPrecision 10), (1, (/ 10) <$> genDelayWithPrecision 2)]
+    shortDelay = fromInteger <$> choose (0, 60)
+    longDelay = fromInteger <$> choose (1 * 60 * 60, 10 * 60 * 60)
 
 fixupCommands :: [Command] -> [Command]
 fixupCommands [] = []
@@ -186,7 +186,7 @@ instance Arbitrary DiffusionScript where
   arbitrary = do
     -- Limit the number of nodes to run in Simulation otherwise it is going
     -- to take very long time for tests to run
-    size <- chooseInt (0, 5)
+    size <- chooseInt (0, 3)
     raps <- nub <$> vectorOf size arbitrary
     dMap <- genDomainMap raps
 
