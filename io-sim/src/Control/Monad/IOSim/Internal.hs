@@ -101,7 +101,7 @@ data Thread s a = Thread {
     -- other threads blocked in a ThrowTo to us because we are or were masked
     threadThrowTo :: ![(SomeException, Labelled ThreadId)],
     threadClockId :: !ClockId,
-    threadLabel   :: Maybe ThreadLabel,
+    threadLabel   ::  Maybe ThreadLabel,
     threadNextTId :: !Int
   }
 
@@ -181,13 +181,13 @@ timeSinceEpoch (Time t) = fromRational (toRational t)
 -- | Schedule / run a thread.
 --
 schedule :: Thread s a -> SimState s a -> ST s (SimTrace a)
-schedule thread@Thread{
+schedule !thread@Thread{
            threadId      = tid,
            threadControl = ThreadControl action ctl,
            threadMasking = maskst,
            threadLabel   = tlbl
          }
-         simstate@SimState {
+         !simstate@SimState {
            runqueue,
            threads,
            timers,
@@ -326,12 +326,12 @@ schedule thread@Thread{
               trace)
 
     NewTimeout d k -> do
-      tvar  <- execNewTVar nextVid
-                           (Just $ "<<timeout-state " ++ show (unTimeoutId nextTmid) ++ ">>")
-                           TimeoutPending
-      tvar' <- execNewTVar (succ nextVid)
-                           (Just $ "<<timeout " ++ show (unTimeoutId nextTmid) ++ ">>")
-                           False
+      !tvar  <- execNewTVar nextVid
+                            (Just $ "<<timeout-state " ++ show (unTimeoutId nextTmid) ++ ">>")
+                            TimeoutPending
+      !tvar' <- execNewTVar (succ nextVid)
+                            (Just $ "<<timeout " ++ show (unTimeoutId nextTmid) ++ ">>")
+                            False
       let expiry  = d `addTime` time
           t       = Timeout tvar tvar' nextTmid
           timers' = PSQ.insert nextTmid expiry (TimerVars tvar tvar') timers
@@ -368,8 +368,8 @@ schedule thread@Thread{
     CancelTimeout (Timeout tvar _tvar' tmid) k -> do
       let timers' = PSQ.delete tmid timers
           thread' = thread { threadControl = ThreadControl k ctl }
-      written <- execAtomically' (runSTM $ writeTVar tvar TimeoutCancelled)
-      (wakeup, wokeby) <- threadsUnblockedByWrites written
+      !written <- execAtomically' (runSTM $ writeTVar tvar TimeoutCancelled)
+      (!wakeup, wokeby) <- threadsUnblockedByWrites written
       mapM_ (\(SomeTVar var) -> unblockAllThreadsFromTVar var) written
       let (unblocked,
            simstate') = unblockThreads wakeup simstate
@@ -412,8 +412,8 @@ schedule thread@Thread{
       case res of
         StmTxCommitted x written _read created
                          tvarDynamicTraces tvarStringTraces nextVid' -> do
-          (wakeup, wokeby) <- threadsUnblockedByWrites written
-          mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
+          (!wakeup, wokeby) <- threadsUnblockedByWrites written
+          !_ <- mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
           let thread'     = thread { threadControl = ThreadControl (k x) ctl }
               (unblocked,
                simstate') = unblockThreads wakeup simstate
@@ -451,7 +451,7 @@ schedule thread@Thread{
           return $ SimTrace time tid tlbl (EventTxAborted Nothing) trace
 
         StmTxBlocked read -> do
-          mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
+          !_ <- mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
           vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) read
           trace <- deschedule Blocked thread simstate
           return $ SimTrace time tid tlbl (EventTxBlocked vids Nothing)
@@ -557,7 +557,7 @@ threadInterruptible thread =
       MaskedUninterruptible    -> False
 
 deschedule :: Deschedule -> Thread s a -> SimState s a -> ST s (SimTrace a)
-deschedule Yield thread simstate@SimState{runqueue, threads} =
+deschedule Yield !thread !simstate@SimState{runqueue, threads} =
 
     -- We don't interrupt runnable threads to provide fairness anywhere else.
     -- We do it here by putting the thread to the back of the runqueue, behind
@@ -571,14 +571,14 @@ deschedule Yield thread simstate@SimState{runqueue, threads} =
         threads'  = Map.insert (threadId thread) thread threads in
     reschedule simstate { runqueue = runqueue', threads  = threads' }
 
-deschedule Interruptable thread@Thread {
+deschedule Interruptable !thread@Thread {
                            threadId      = tid,
                            threadControl = ThreadControl _ ctl,
                            threadMasking = Unmasked,
                            threadThrowTo = (e, tid') : etids,
                            threadLabel   = tlbl
                          }
-                         simstate@SimState{ curTime = time, threads } = do
+                         !simstate@SimState{ curTime = time, threads } = do
 
     -- We're unmasking, but there are pending blocked async exceptions.
     -- So immediately raise the exception and unblock the blocked thread
@@ -595,13 +595,13 @@ deschedule Interruptable thread@Thread {
                        , let tlbl'' = lookupThreadLabel tid'' threads ]
              trace
 
-deschedule Interruptable thread simstate =
+deschedule Interruptable !thread !simstate =
     -- Either masked or unmasked but no pending async exceptions.
     -- Either way, just carry on.
     schedule thread simstate
 
-deschedule Blocked thread@Thread { threadThrowTo = _ : _
-                                 , threadMasking = maskst } simstate
+deschedule Blocked !thread@Thread { threadThrowTo = _ : _
+                                  , threadMasking = maskst } !simstate
     | maskst /= MaskedUninterruptible =
     -- We're doing a blocking operation, which is an interrupt point even if
     -- we have async exceptions masked, and there are pending blocked async
@@ -609,12 +609,12 @@ deschedule Blocked thread@Thread { threadThrowTo = _ : _
     -- thread if possible.
     deschedule Interruptable thread { threadMasking = Unmasked } simstate
 
-deschedule Blocked thread simstate@SimState{threads} =
+deschedule Blocked !thread !simstate@SimState{threads} =
     let thread'  = thread { threadBlocked = True }
         threads' = Map.insert (threadId thread') thread' threads in
     reschedule simstate { threads = threads' }
 
-deschedule Terminated thread simstate@SimState{ curTime = time, threads } = do
+deschedule Terminated !thread !simstate@SimState{ curTime = time, threads } = do
     -- This thread is done. If there are other threads blocked in a
     -- ThrowTo targeted at this thread then we can wake them up now.
     let wakeup      = map (l_labelled . snd) (reverse (threadThrowTo thread))
@@ -633,7 +633,7 @@ deschedule Sleep _thread _simstate =
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
 reschedule :: SimState s a -> ST s (SimTrace a)
-reschedule simstate@SimState{ runqueue, threads }
+reschedule !simstate@SimState{ runqueue, threads }
   | Just (tid, runqueue') <- Deque.uncons runqueue =
     assert (invariant Nothing simstate) $
 
@@ -643,7 +643,7 @@ reschedule simstate@SimState{ runqueue, threads }
 
 -- But when there are no runnable threads, we advance the time to the next
 -- timer event, or stop.
-reschedule simstate@SimState{ threads, timers, curTime = time } =
+reschedule !simstate@SimState{ threads, timers, curTime = time } =
     assert (invariant Nothing simstate) $
 
     -- important to get all events that expire at this time
@@ -654,9 +654,9 @@ reschedule simstate@SimState{ threads, timers, curTime = time } =
 
         -- Reuse the STM functionality here to write all the timer TVars.
         -- Simplify to a special case that only reads and writes TVars.
-        written <- execAtomically' (runSTM $ mapM_ timeoutAction fired)
+        !written <- execAtomically' (runSTM $ mapM_ timeoutAction fired)
         (wakeup, wokeby) <- threadsUnblockedByWrites written
-        mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
+        !_ <- mapM_ (\(SomeTVar tvar) -> unblockAllThreadsFromTVar tvar) written
 
         let (unblocked,
              simstate') = unblockThreads wakeup simstate
@@ -680,7 +680,7 @@ reschedule simstate@SimState{ threads, timers, curTime = time } =
         TimeoutCancelled -> return ()
 
 unblockThreads :: [ThreadId] -> SimState s a -> ([ThreadId], SimState s a)
-unblockThreads wakeup simstate@SimState {runqueue, threads} =
+unblockThreads !wakeup !simstate@SimState {runqueue, threads} =
     -- To preserve our invariants (that threadBlocked is correct)
     -- we update the runqueue and threads together here
     (unblocked, simstate {
@@ -748,7 +748,7 @@ removeMinimums = \psq ->
       Nothing              -> Nothing
       Just (k, p, x, psq') -> Just (collectAll [k] p [x] psq')
   where
-    collectAll ks p xs psq =
+    collectAll !ks !p !xs !psq =
       case PSQ.minView psq of
         Just (k, p', x, psq')
           | p == p' -> collectAll (k:ks) p (x:xs) psq'
@@ -797,7 +797,7 @@ execAtomically :: forall s a c.
                -> StmA s a
                -> (StmTxResult s a -> ST s (SimTrace c))
                -> ST s (SimTrace c)
-execAtomically time tid tlbl nextVid0 action0 k0 =
+execAtomically !time !tid !tlbl !nextVid0 action0 k0 =
     go AtomicallyFrame Map.empty Map.empty [] [] nextVid0 action0
   where
     go :: forall b.
@@ -809,17 +809,17 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
        -> TVarId                   -- var fresh name supply
        -> StmA s b
        -> ST s (SimTrace c)
-    go ctl !read !written writtenSeq createdSeq !nextVid action = assert localInvariant $
+    go !ctl !read !written !writtenSeq !createdSeq !nextVid action = assert localInvariant $
                                                        case action of
       ReturnStm x -> case ctl of
         AtomicallyFrame -> do
           -- Trace each created TVar
-          ds  <- traverse (\(SomeTVar tvar) -> traceTVarST tvar True) createdSeq
+          !ds  <- traverse (\(SomeTVar tvar) -> traceTVarST tvar True) createdSeq
           -- Trace & commit each TVar
-          ds' <- Map.elems <$> traverse
+          !ds' <- Map.elems <$> traverse
                     (\(SomeTVar tvar) -> do
                         tr <- traceTVarST tvar False
-                        commitTVar tvar
+                        !_ <- commitTVar tvar
                         -- Also assert the data invariant that outside a tx
                         -- the undo stack is empty:
                         undos <- readTVarUndos tvar
@@ -839,8 +839,8 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
         OrElseLeftFrame _b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
           -- in the written set of the outer transaction
-          traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
-                    (Map.intersection written writtenOuter)
+          !_ <- traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
+                          (Map.intersection written writtenOuter)
           -- Merge the written set of the inner with the outer
           let written'    = Map.union written writtenOuter
               writtenSeq' = filter (\(SomeTVar tvar) ->
@@ -853,8 +853,8 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
         OrElseRightFrame k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
           -- in the written set of the outer transaction
-          traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
-                    (Map.intersection written writtenOuter)
+          !_ <- traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
+                          (Map.intersection written writtenOuter)
           -- Merge the written set of the inner with the outer
           let written'    = Map.union written writtenOuter
               writtenSeq' = filter (\(SomeTVar tvar) ->
@@ -867,26 +867,26 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
 
       ThrowStm e -> do
         -- Revert all the TVar writes
-        traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+        !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
         k0 $ StmTxAborted [] (toException e)
 
       Retry -> case ctl of
         AtomicallyFrame -> do
           -- Revert all the TVar writes
-          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Return vars read, so the thread can block on them
-          k0 $ StmTxBlocked (Map.elems read)
+          k0 $! StmTxBlocked $! (Map.elems read)
 
         OrElseLeftFrame b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Revert all the TVar writes within this orElse
-          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Execute the orElse right hand with an empty written set
           let ctl'' = OrElseRightFrame k writtenOuter writtenOuterSeq createdOuterSeq ctl'
           go ctl'' read Map.empty [] [] nextVid b
 
         OrElseRightFrame _k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Revert all the TVar writes within this orElse branch
-          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Skip the continuation and propagate the retry into the outer frame
           -- using the written set for the outer frame
           go ctl' read writtenOuter writtenOuterSeq createdOuterSeq nextVid Retry
@@ -897,15 +897,15 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
         go ctl' read Map.empty [] [] nextVid a
 
       NewTVar !mbLabel x k -> do
-        v <- execNewTVar nextVid mbLabel x
+        !v <- execNewTVar nextVid mbLabel x
         go ctl read written writtenSeq (SomeTVar v : createdSeq) (succ nextVid) (k v)
 
       LabelTVar !label tvar k -> do
-        writeSTRef (tvarLabel tvar) $! (Just label)
+        !_ <- writeSTRef (tvarLabel tvar) $! (Just label)
         go ctl read written writtenSeq createdSeq nextVid k
 
       TraceTVar tvar f k -> do
-        writeSTRef (tvarTrace tvar) (Just f)
+        !_ <- writeSTRef (tvarTrace tvar) (Just f)
         go ctl read written writtenSeq createdSeq nextVid k
 
       ReadTVar v k
@@ -919,11 +919,11 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
 
       WriteTVar v x k
         | tvarId v `Map.member` written -> do
-            execWriteTVar v x
+            !_ <- execWriteTVar v x
             go ctl read written writtenSeq createdSeq nextVid k
         | otherwise -> do
-            saveTVar v
-            execWriteTVar v x
+            !_ <- saveTVar v
+            !_ <- execWriteTVar v x
             let written' = Map.insert (tvarId v) (SomeTVar v) written
             go ctl read written' (SomeTVar v : writtenSeq) createdSeq nextVid k
 
@@ -951,18 +951,18 @@ execAtomically' = go Map.empty
        -> ST s [SomeTVar s]
     go !written action = case action of
       ReturnStm () -> do
-        traverse_ (\(SomeTVar tvar) -> commitTVar tvar) written
+        !_ <- traverse_ (\(SomeTVar tvar) -> commitTVar tvar) written
         return (Map.elems written)
       ReadTVar v k  -> do
         x <- execReadTVar v
         go written (k x)
       WriteTVar v x k
         | tvarId v `Map.member` written -> do
-            execWriteTVar v x
+            !_ <- execWriteTVar v x
             go written k
         | otherwise -> do
-            saveTVar v
-            execWriteTVar v x
+            !_ <- saveTVar v
+            !_ <- execWriteTVar v x
             let written' = Map.insert (tvarId v) (SomeTVar v) written
             go written' k
       _ -> error "execAtomically': only for special case of reads and writes"
@@ -970,41 +970,48 @@ execAtomically' = go Map.empty
 
 execNewTVar :: TVarId -> Maybe String -> a -> ST s (TVar s a)
 execNewTVar nextVid !mbLabel x = do
-    tvarLabel   <- newSTRef mbLabel
-    tvarCurrent <- newSTRef x
-    tvarUndo    <- newSTRef []
-    tvarBlocked <- newSTRef ([], Set.empty)
-    tvarVClock  <- newSTRef (VectorClock Map.empty)
-    tvarTrace   <- newSTRef Nothing
+    !tvarLabel   <- newSTRef mbLabel
+    !tvarCurrent <- newSTRef x
+    !tvarUndo    <- newSTRef $! []
+    !tvarBlocked <- newSTRef ([], Set.empty)
+    !tvarVClock  <- newSTRef $! VectorClock Map.empty
+    !tvarTrace   <- newSTRef $! Nothing
     return TVar {tvarId = nextVid, tvarLabel,
                  tvarCurrent, tvarUndo, tvarBlocked, tvarVClock,
                  tvarTrace}
 
 execReadTVar :: TVar s a -> ST s a
 execReadTVar TVar{tvarCurrent} = readSTRef tvarCurrent
+{-# INLINE execReadTVar #-}
 
 execWriteTVar :: TVar s a -> a -> ST s ()
 execWriteTVar TVar{tvarCurrent} = writeSTRef tvarCurrent
+{-# INLINE execWriteTVar #-}
 
 saveTVar :: TVar s a -> ST s ()
 saveTVar TVar{tvarCurrent, tvarUndo} = do
     -- push the current value onto the undo stack
     v  <- readSTRef tvarCurrent
     vs <- readSTRef tvarUndo
-    writeSTRef tvarUndo (v:vs)
+    !_ <- writeSTRef tvarUndo (v:vs)
+    return ()
 
 revertTVar :: TVar s a -> ST s ()
 revertTVar TVar{tvarCurrent, tvarUndo} = do
     -- pop the undo stack, and revert the current value
     (v:vs) <- readSTRef tvarUndo
-    writeSTRef tvarCurrent v
-    writeSTRef tvarUndo    vs
+    !_ <- writeSTRef tvarCurrent v
+    !_ <- writeSTRef tvarUndo    vs
+    return ()
+{-# INLINE revertTVar #-}
 
 commitTVar :: TVar s a -> ST s ()
 commitTVar TVar{tvarUndo} = do
     -- pop the undo stack, leaving the current value unchanged
     (_:vs) <- readSTRef tvarUndo
-    writeSTRef tvarUndo vs
+    !_ <- writeSTRef tvarUndo vs
+    return ()
+{-# INLINE commitTVar #-}
 
 readTVarUndos :: TVar s a -> ST s [a]
 readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
@@ -1021,7 +1028,7 @@ traceTVarST TVar{tvarCurrent, tvarUndo, tvarTrace} new = do
                                    , traceString = Nothing }
       Just f  -> do
         vs <- readSTRef tvarUndo
-        v <- readSTRef tvarCurrent
+        v  <- readSTRef tvarCurrent
         case (new, vs) of
           (True, _) -> f Nothing v
           (_, _:_)  -> f (Just $ last vs) v
@@ -1042,11 +1049,13 @@ blockThreadOnTVar tid TVar{tvarBlocked} = do
     when (tid `Set.notMember` tidsSet) $ do
       let !tids'    = tid : tids
           !tidsSet' = Set.insert tid tidsSet
-      writeSTRef tvarBlocked (tids', tidsSet')
+      !_ <- writeSTRef tvarBlocked (tids', tidsSet')
+      return ()
 
 unblockAllThreadsFromTVar :: TVar s a -> ST s ()
 unblockAllThreadsFromTVar TVar{tvarBlocked} = do
-    writeSTRef tvarBlocked ([], Set.empty)
+    !_ <- writeSTRef tvarBlocked ([], Set.empty)
+    return ()
 
 -- | For each TVar written to in a transaction (in order) collect the threads
 -- that blocked on each one (in order).
@@ -1057,14 +1066,14 @@ unblockAllThreadsFromTVar TVar{tvarBlocked} = do
 threadsUnblockedByWrites :: [SomeTVar s]
                          -> ST s ([ThreadId], Map ThreadId (Set (Labelled TVarId)))
 threadsUnblockedByWrites written = do
-  tidss <- sequence
+  !tidss <- sequence
              [ (,) <$> labelledTVarId tvar <*> readTVarBlockedThreads tvar
              | SomeTVar tvar <- written ]
   -- Threads to wake up, in wake up order, annotated with the vars written that
   -- caused the unblocking.
   -- We reverse the individual lists because the tvarBlocked is used as a stack
   -- so it is in order of last written, LIFO, and we want FIFO behaviour.
-  let wakeup = ordNub [ tid | (_vid, tids) <- tidss, tid <- reverse tids ]
+  let !wakeup = ordNub [ tid | (_vid, tids) <- tidss, tid <- reverse tids ]
       wokeby = Map.fromListWith Set.union
                                 [ (tid, Set.singleton vid)
                                 | (vid, tids) <- tidss
@@ -1078,3 +1087,4 @@ ordNub = go Set.empty
     go !s (x:xs)
       | x `Set.member` s = go s xs
       | otherwise        = x : go (Set.insert x s) xs
+{-# INLINE ordNub #-}
