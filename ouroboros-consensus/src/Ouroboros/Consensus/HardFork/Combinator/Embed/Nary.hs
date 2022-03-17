@@ -29,7 +29,7 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
-import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Storage.Serialisation
@@ -190,7 +190,7 @@ instance Inject (Flip ExtLedgerState mk) where
 -- problematic, but extending 'ledgerViewForecastAt' is a lot more subtle; see
 -- @forecastNotFinal@.
 injectInitialExtLedgerState ::
-     forall x xs. CanHardFork (x ': xs)
+     forall x xs. (CanHardFork (x ': xs), TableStuff (LedgerState (HardForkBlock (x : xs))))
   => TopLevelConfig (HardForkBlock (x ': xs))
   -> ExtLedgerState x ValuesMK
   -> ExtLedgerState (HardForkBlock (x ': xs)) ValuesMK
@@ -210,13 +210,20 @@ injectInitialExtLedgerState cfg extLedgerState0 =
 
     targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs)) ValuesMK
     targetEraLedgerState =
-        HardForkLedgerState $
+          mappendValues ( projectLedgerTables
+                        . HardForkLedgerState
+                        . initHardForkState
+                        . Flip
+                        . ledgerState
+                        $ extLedgerState0
+                        )
+        $ HardForkLedgerState
           -- We can immediately extend it to the right slot, executing any
           -- scheduled hard forks in the first slot
-          State.extendToSlot
+        $ State.extendToSlot
             (configLedger cfg)
             (SlotNo 0)
-            (initHardForkState $ Flip $ ledgerState extLedgerState0)
+            (initHardForkState $ Flip $ forgetLedgerStateTables $ ledgerState extLedgerState0)
 
     firstEraChainDepState :: HardForkChainDepState (x ': xs)
     firstEraChainDepState =

@@ -567,7 +567,9 @@ instance PayloadSemantics ptype => IsLedger (LedgerState (TestBlockWith ptype)) 
   type AuxLedgerEvent (LedgerState (TestBlockWith ptype)) =
     VoidLedgerEvent (LedgerState (TestBlockWith ptype))
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
+  applyChainTickLedgerResult _ _ = pureLedgerResult
+                                 . TickedTestLedger
+                                 . noNewTickingValues
 
 instance PayloadSemantics ptype => UpdateLedger (TestBlockWith ptype)
 
