@@ -1483,7 +1483,7 @@ multinodeExperiment
     -> AcceptedConnectionsLimit
     -> MultiNodeScript req peerAddr
     -> m ()
-multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
+multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                     snocket addrFamily serverAddr accInit
                     dataFlow0 acceptedConnLimit
                     (MultiNodeScript script _) =
@@ -1613,7 +1613,7 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
                 Duplex ->
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
-                          inboundTrTracer trTracer inboundTracer cmTracer
+                          inboundTrTracer trTracer cmTracer inboundTracer
                           snocket fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           timeLimitsHandshake
@@ -1635,7 +1635,7 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
                       (show name)
                 Unidirectional ->
                   Job ( withInitiatorOnlyConnectionManager
-                          name simTimeouts trTracer inboundTracer snocket (Just localAddr)
+                          name simTimeouts trTracer cmTracer snocket (Just localAddr)
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
