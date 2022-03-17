@@ -173,17 +173,18 @@ epochInfoPrecomputedTransitionInfo shape transition st =
 -------------------------------------------------------------------------------}
 
 -- | Extend the telescope until the specified slot is within the era at the tip
-extendToSlot :: forall xs mk .
-                (CanHardFork xs, IsApplyMapKind mk)
+extendToSlot :: forall xs.
+                (CanHardFork xs)
              => HardForkLedgerConfig xs
              -> SlotNo
-             -> HardForkState (Flip LedgerState mk) xs -> HardForkState (Flip LedgerState mk) xs
+             -> HardForkState (Flip LedgerState EmptyMK) xs -> HardForkState (Flip LedgerState ValuesMK) xs
 extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
-      HardForkState . unI
+      HardForkState
+    . unI
     . Telescope.extend
-        ( InPairs.hmap (\f -> Require $ \(K t)
-                           -> Extend  $ \cur
-                           -> I $ howExtend f t cur)
+        ( InPairs.hcmap proxySingle (\f -> Require $ \(K t)
+                                        -> Extend  $ \cur
+                                        -> I $ howExtend f t cur)
         $ translate
         )
         (hczipWith
@@ -191,6 +192,16 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
            (fn .: whenExtend)
            pcfgs
            (getExactly (History.getShape hardForkLedgerConfigShape)))
+    -- In order to make this an automorphism, as required by 'Telescope.extend',
+    -- we have to promote the input to @ValuesMK@ albeit it being empty.
+    $ hcmap
+        proxySingle
+        (\c -> c { currentState = Flip
+                                . flip withLedgerTables polyEmptyLedgerTables
+                                . unFlip
+                                . currentState
+                                $ c }
+        )
     $ st
   where
     pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
@@ -198,11 +209,11 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     ei    = epochInfoLedger ledgerCfg ledgerSt
 
     -- Return the end of this era if we should transition to the next
-    whenExtend :: SingleEraBlock                blk
-               => WrapPartialLedgerConfig       blk
-               -> K History.EraParams           blk
-               -> Current (Flip LedgerState mk) blk
-               -> (Maybe :.: K History.Bound)   blk
+    whenExtend :: SingleEraBlock                      blk
+               => WrapPartialLedgerConfig             blk
+               -> K History.EraParams                 blk
+               -> Current (Flip LedgerState ValuesMK) blk
+               -> (Maybe :.: K History.Bound)         blk
     whenExtend pcfg (K eraParams) cur = Comp $ K <$> do
         transition <- singleEraTransition'
                         pcfg
@@ -216,10 +227,11 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
         guard (slot >= History.boundSlot endBound)
         return endBound
 
-    howExtend :: TranslateLedgerState blk blk'
+    howExtend :: (TableStuff (LedgerState blk), TableStuff (LedgerState blk'))
+              => TranslateLedgerState blk blk'
               -> History.Bound
-              -> Current (Flip LedgerState mk) blk
-              -> (K Past blk, Current (Flip LedgerState mk) blk')
+              -> Current (Flip LedgerState ValuesMK) blk
+              -> (K Past blk, Current (Flip LedgerState ValuesMK) blk')
     howExtend f currentEnd cur = (
           K Past {
               pastStart    = currentStart cur
@@ -227,9 +239,25 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
             }
         , Current {
               currentStart = currentEnd
-            , currentState = Flip $ translateLedgerStateWith f
-                               (History.boundEpoch currentEnd)
-                               (unFlip $ currentState cur)
+            , currentState = Flip
+                             -- we need to bring back the values provided by
+                             -- previous translations. Note that if there is
+                             -- only one translation or if the previous
+                             -- translations don't add any new tables this will
+                             -- just be a no-op. See the haddock for
+                             -- 'translateLedgerTablesWith' for more
+                             -- information).
+                             . mappendValues ( translateLedgerTablesWith f
+                                               . projectLedgerTables
+                                               . unFlip
+                                               . currentState
+                                               $ cur
+                                             )
+                             . translateLedgerStateWith f (History.boundEpoch currentEnd)
+                             . forgetLedgerStateTables
+                             . unFlip
+                             . currentState
+                             $ cur
             }
         )
 

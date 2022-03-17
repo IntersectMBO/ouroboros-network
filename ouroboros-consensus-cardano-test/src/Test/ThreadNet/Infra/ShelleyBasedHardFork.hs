@@ -189,14 +189,26 @@ instance ShelleyBasedHardForkConstraints era1 era2
              (ShelleyBlock era2)
       translateLedgerState =
           InPairs.RequireBoth
-        $ \_cfg1 cfg2 -> HFC.TranslateLedgerState
-        $ \_epochNo ->
-              unFlip
-            . unComp
-            . SL.translateEra'
-                (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
-            . Comp
-            . Flip
+        $ \_cfg1 cfg2 ->
+          HFC.TranslateLedgerState {
+            translateLedgerStateWith =  \_epochNo ->
+                noNewTickingValues
+              . unFlip
+              . unComp
+              . SL.translateEra'
+                  (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
+              . Comp
+              . Flip
+          , translateLedgerTablesWith =
+            \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } -> ShelleyLedgerTables {
+                shelleyUTxOTable = ApplyValuesMK
+                                 . HD.UtxoValues
+                                 . fmap ( unTxOutWrapper
+                                        . SL.translateEra' (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
+                                        . TxOutWrapper)
+                                 $ vals
+              }
+        }
 
       translateLedgerView ::
            InPairs.RequiringBoth
@@ -423,17 +435,18 @@ instance
      ShelleyBasedHardForkConstraints era1 era2
   => LedgerTablesCanHardFork (ShelleyBasedHardForkEras era1 era2) where
   hardForkInjectLedgerTablesKeysMK =
-         shelley
-      :* shelley
+         shelley SOP.IZ
+      :* shelley (SOP.IS SOP.IZ)
       :* Nil
     where
       shelley ::
            (ShelleyBasedEra' (EraCrypto era1) era)
-        => InjectLedgerTables (ShelleyBasedHardForkEras era1 era2) (ShelleyBlock era)
-      shelley =
+        => SOP.Index '[era1, era2] era
+        -> InjectLedgerTables (ShelleyBasedHardForkEras era1 era2) (ShelleyBlock era)
+      shelley idx =
           InjectLedgerTables
-        $ \(ShelleyLedgerTables (ApplyKeysMK keys)) ->
-            ShelleyBasedHardForkLedgerTables $ ApplyKeysMK $ HD.castUtxoKeys keys
+        $ \(ShelleyLedgerTables lt) ->
+            ShelleyBasedHardForkLedgerTables $ mapValuesAppliedMK (ShelleyTxOut . SOP.injectNS idx . TxOutWrapper) lt
 
 {-------------------------------------------------------------------------------
   Protocol info
