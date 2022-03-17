@@ -186,7 +186,7 @@ clientServerSimulation payloads =
         res <- untilSuccess (client snocket)
         if res
            then return (Right ())
-           else return (Left (UnexpectedOutcome ""))
+           else return (Left UnexpectedOutcome)
   where
     reqRespProtocolNum :: MiniProtocolNum
     reqRespProtocolNum = MiniProtocolNum 0
@@ -351,13 +351,14 @@ toBearerInfo abi =
 -- Properties
 --
 
-data TestError addr = UnexpectedOutcome String
+data TestError addr = UnexpectedOutcome
+                    | UnexpectedError SomeException
                     | UnexpectedlyReleasedListeningSockets
                     | DidNotTimeout
                     | DidNotComplainAboutNoSuchListeningSockets
                     | DoNotExistInNetworkState addr addr
                     -- ^ LocalAddress, RemoteAddress
-  deriving (Show, Eq)
+  deriving Show
 
 verify_no_error
   :: (forall s . IOSim s (Either (TestError (TestAddress Int)) ()))
@@ -577,7 +578,7 @@ acceptOne accept = mask_ $ do
     Accepted fd' _ -> do
       return (Right fd')
     AcceptFailure err ->
-      return (Left (UnexpectedOutcome (show err)))
+      return (Left (UnexpectedError err))
 
 runClient
   :: ( MonadThread m
@@ -596,7 +597,7 @@ runClient localAddress remoteAddress snocket closeF = do
               bind snocket fd localAddress
               Right <$> connect snocket fd remoteAddress
               `catch` (\(e :: SomeException) ->
-                  return (Left (UnexpectedOutcome (show e))))
+                  return (Left (UnexpectedError e)))
 
 listenAndConnect
   :: ( MonadThread m
@@ -621,7 +622,7 @@ listenAndConnect localAddress remoteAddress snocket getState = do
                         bind snocket fd' localAddress
                         res <- (Right <$> connect snocket fd' remoteAddress)
                               `catch` (\(e :: SomeException) ->
-                                return (Left (UnexpectedOutcome (show e))))
+                                return (Left (UnexpectedError e)))
                         assertNetworkState localAddress remoteAddress
                                             getState res
 
