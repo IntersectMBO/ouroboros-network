@@ -58,8 +58,6 @@ import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
-import           Foreign.C.Error
-import qualified GHC.IO.Exception as IO
 
 import           Text.Printf
 
@@ -119,11 +117,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsAttenuation (..), AbsBearerInfo (..),
-                     AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
-                     AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
-                     absNoAttenuation, toNonFailingAbsBearerInfoScript)
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision, nightlyTest)
 
 import           Test.Ouroboros.Network.ConnectionManager
@@ -164,14 +158,10 @@ tests =
     , testProperty "bidirectional Sim"      prop_bidirectional_Sim
     , testProperty "never above hardlimit"  prop_never_above_hardlimit
     , testGroup      "accept errors"
-      [ testProperty "throw ConnectionAborted"
-                    (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
-      , testProperty "throw ResourceExhausted"
-                    (unit_server_accept_error IOErrResourceExhausted IOErrThrow)
-      , testProperty "return ConnectionAborted"
-                    (unit_server_accept_error IOErrConnectionAborted IOErrReturn)
-      , testProperty "return ResourceExhausted"
-                    (unit_server_accept_error IOErrResourceExhausted IOErrReturn)
+      [ testProperty "ConnectionAborted"
+                    (unit_server_accept_error IOErrConnectionAborted)
+      , testProperty "ResourceExhausted"
+                    (unit_server_accept_error IOErrResourceExhausted)
       ]
     ]
   , testProperty "connection terminated when negotiating"
@@ -3414,15 +3404,15 @@ prop_never_above_hardlimit serverAcc
 
 -- | Checks that the server re-throws exceptions returned by an 'accept' call.
 --
-unit_server_accept_error :: IOErrType -> IOErrThrowOrReturn -> Property
-unit_server_accept_error ioErrType ioErrThrowOrReturn =
+unit_server_accept_error :: IOErrType -> Property
+unit_server_accept_error ioErrType =
     runSimOrThrow sim
   where
     -- The following attenuation make sure that the `accept` call will throw.
     --
     bearerAttenuation :: BearerInfo
     bearerAttenuation =
-      noAttenuation { biAcceptFailures = Just (0, ioErrType, ioErrThrowOrReturn) }
+      noAttenuation { biAcceptFailures = Just (0, ioErrType) }
 
     sim :: IOSim s Property
     sim = handle (\e -> return $ case fromException e of
@@ -3476,22 +3466,7 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
                      Nothing        -> counterexample "server did not throw"
                                          (ioErrType == IOErrConnectionAborted)
                      Just (Right _) -> counterexample "unexpected value" False
-                     Just (Left e)  | IOErrReturn <- ioErrThrowOrReturn
-                                    , Just (err :: IOError) <- fromException e
-                                    -- any IO exception which is not
-                                    -- 'ECONNABORTED' is ok
-                                    -- TODO: use isECONNABORTED function
-                                    -> case IO.ioe_errno err of
-                                          Just errno ->
-                                            case eCONNABORTED of
-                                              Errno errno' ->
-                                                counterexample
-                                                  ("unexpected error " ++ show e) $
-                                                   errno /= errno'
-                                          Nothing ->
-                                            property True
-
-                                    -- If we throw exceptions, any IO exception
+                     Just (Left e)  -- If we throw exceptions, any IO exception
                                     -- can go through; the check for
                                     -- 'ECONNABORTED' relies on that.  It is
                                     -- a bug in a snocket implementation if it
@@ -3499,7 +3474,7 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
                                     | Just (_ :: IOError) <- fromException e
                                     -> property True
 
-                                    |  otherwise
+                                    | otherwise
                                     -> counterexample ("unexpected error " ++ show e)
                                                       False
                  )

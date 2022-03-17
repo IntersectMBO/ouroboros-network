@@ -32,7 +32,6 @@ module Simulation.Network.Snocket
   , normaliseId
   , BearerInfo (..)
   , IOErrType (..)
-  , IOErrThrowOrReturn (..)
   , SuccessOrFailure (..)
   , TimeoutDetail (..)
   , noAttenuation
@@ -230,14 +229,6 @@ data IOErrType = IOErrConnectionAborted
   deriving (Eq, Show)
 
 
--- | The io error can be either thrown by `accept` or return as part of
--- 'AcceptFailure'.  Even if our 'Snocket' implementation is faulty, we can
--- verify that the server will behave as expected.
---
-data IOErrThrowOrReturn = IOErrThrow
-                        | IOErrReturn
-  deriving (Eq, Show)
-
 -- | Each bearer info describes outbound and inbound side of a point to
 -- point bearer.
 --
@@ -270,7 +261,7 @@ data BearerInfo = BearerInfo
       -- which would be caught, and delivered to the application via
       -- 'AcceptFailure'.
       --
-    , biAcceptFailures       :: !(Maybe (DiffTime, IOErrType, IOErrThrowOrReturn))
+    , biAcceptFailures       :: !(Maybe (DiffTime, IOErrType))
 
       -- | SDU size of the bearer; it will be shared between outbound and inbound
       -- sides.
@@ -359,7 +350,7 @@ instance (Typeable addr, Show addr)
 
 
 -- | A type class for global IP address scheme.  Every node in the simulation
--- has an ephemeral address.  Every node in the simulation has an implicity ipv4
+-- has an ephemeral address.  Every node in the simulation has an implicite ipv4
 -- and ipv6 address (if one is not bound by explicitly).
 --
 class GlobalAddressScheme addr where
@@ -1041,7 +1032,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                return False
 
         accept_ :: Time
-                -> Maybe (DiffTime, IOErrType, IOErrThrowOrReturn)
+                -> Maybe (DiffTime, IOErrType)
                 -> Accept m (FD m (TestAddress addr))
                                   (TestAddress addr)
         accept_ time deltaAndIOErrType = Accept $ do
@@ -1080,19 +1071,14 @@ mkSnocket state tr = Snocket { getLocalAddr
                     case deltaAndIOErrType of
                       -- the `ctime` is the time when we issued 'accept' not
                       -- when read something from the queue.
-                      Just (delta, ioErrType, ioErrThrowOrReturn) | delta `addTime` time >= ctime ->
-                        case (ioErrType, ioErrThrowOrReturn) of
-                          (IOErrConnectionAborted, IOErrThrow) ->
-                            throwSTM connectionAbortedError
-                          (IOErrResourceExhausted, IOErrThrow) ->
-                            throwSTM (resourceExhaustedError fd)
-
-                          (IOErrConnectionAborted, IOErrReturn) ->
+                      Just (delta, ioErrType) | delta `addTime` time >= ctime ->
+                        case ioErrType of
+                          IOErrConnectionAborted ->
                             return $ Left ( toException connectionAbortedError
                                           , Just localAddress
                                           , mkSockType fd
                                           )
-                          (IOErrResourceExhausted, IOErrReturn) ->
+                          IOErrResourceExhausted ->
                             return $ Left ( toException $ resourceExhaustedError fd
                                           , Just localAddress
                                           , mkSockType fd
