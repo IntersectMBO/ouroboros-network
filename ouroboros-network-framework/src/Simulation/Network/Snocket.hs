@@ -1047,16 +1047,19 @@ mkSnocket state tr = Snocket { getLocalAddr
                     -- here.
                     return $ Left ( toException $ invalidError fd
                                   , mbAddr
+                                  , Nothing
                                   , mkSockType fd
                                   )
                   FDConnecting connId _ ->
                     return $ Left ( toException $ invalidError fd
                                   , Just (localAddress connId)
+                                  , Nothing
                                   , mkSockType fd
                                   )
                   FDConnected connId _ ->
                     return $ Left ( toException $ invalidError fd
                                   , Just (localAddress connId)
+                                  , Nothing
                                   , mkSockType fd
                                   )
 
@@ -1076,11 +1079,13 @@ mkSnocket state tr = Snocket { getLocalAddr
                           IOErrConnectionAborted ->
                             return $ Left ( toException connectionAbortedError
                                           , Just localAddress
+                                          , Just (connId, cwiChannelLocal cwi)
                                           , mkSockType fd
                                           )
                           IOErrResourceExhausted ->
                             return $ Left ( toException $ resourceExhaustedError fd
                                           , Just localAddress
+                                          , Just (connId, cwiChannelLocal cwi)
                                           , mkSockType fd
                                           )
                       _  -> return $ Right ( cwi
@@ -1089,6 +1094,7 @@ mkSnocket state tr = Snocket { getLocalAddr
 
                   FDClosed {} ->
                     return $ Left ( toException $ invalidError fd
+                                  , Nothing
                                   , Nothing
                                   , mkSockType fd
                                   )
@@ -1111,9 +1117,21 @@ mkSnocket state tr = Snocket { getLocalAddr
               )
               $ \ result ->
                 case result of
-                  Left (err, mbLocalAddr, fdType) -> do
-                    traceWith tr (WithAddr (mbLocalAddr) Nothing
-                                           (STAcceptFailure fdType err))
+                  Left (err, mbLocalAddr, mbConnIdAndChann, fdType) -> do
+                    uninterruptibleMask_ $ 
+                      traverse_ (\(connId, chann) -> do
+                                   acClose chann
+                                   atomically $ modifyTVar
+                                     (nsConnections state)
+                                     (Map.update
+                                       (\conn@Connection { connState } ->
+                                         case connState of
+                                           FIN -> Nothing
+                                           _   -> Just conn { connState = FIN })
+                                       (normaliseId connId))
+                                )
+                                mbConnIdAndChann
+                    traceWith tr (WithAddr mbLocalAddr Nothing (STAcceptFailure fdType err))
                     return (AcceptFailure err, accept_ time deltaAndIOErrType)
 
                   Right (chann, connId@ConnectionId { localAddress, remoteAddress }) -> do
