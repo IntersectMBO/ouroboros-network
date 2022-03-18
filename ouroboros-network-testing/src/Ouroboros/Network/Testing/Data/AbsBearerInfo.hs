@@ -18,6 +18,7 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , absNoAttenuation
   , AbsBearerInfo (..)
   , toNonFailingAbsBearerInfoScript
+  , AbsIOErrType (..)
   ) where
 
 import           Control.Monad.Class.MonadTime (DiffTime, Time (..), addTime)
@@ -164,12 +165,26 @@ attenuation (ErrorInterval speed from len) =
             else Failure
         )
 
+data AbsIOErrType = AbsIOErrConnectionAborted
+                  | AbsIOErrResourceExhausted
+  deriving (Eq, Show)
+
+instance Arbitrary AbsIOErrType where
+    arbitrary = elements [ AbsIOErrConnectionAborted
+                         , AbsIOErrResourceExhausted
+                         ]
+    shrink AbsIOErrConnectionAborted = [AbsIOErrResourceExhausted]
+    shrink AbsIOErrResourceExhausted = []
+
 data AbsBearerInfo = AbsBearerInfo
     { abiConnectionDelay      :: !AbsDelay
     , abiInboundAttenuation   :: !AbsAttenuation
     , abiOutboundAttenuation  :: !AbsAttenuation
     , abiInboundWriteFailure  :: !(Maybe Int)
     , abiOutboundWriteFailure :: !(Maybe Int)
+    , abiAcceptFailure        :: !(Maybe ( AbsDelay
+                                         , AbsIOErrType
+                                         ))
     , abiSDUSize              :: !AbsSDUSize
     }
   deriving (Eq, Show)
@@ -181,12 +196,13 @@ absNoAttenuation = AbsBearerInfo
     , abiOutboundAttenuation  = NoAttenuation NormalSpeed
     , abiInboundWriteFailure  = Nothing
     , abiOutboundWriteFailure = Nothing
+    , abiAcceptFailure        = Nothing
     , abiSDUSize              = NormalSDU
     }
 
 canFail :: AbsBearerInfo -> Bool
 canFail abi = getAny $
-      case abiInboundAttenuation abi of
+       case abiInboundAttenuation abi of
          NoAttenuation {} -> Any False
          _                -> Any True
     <> case abiOutboundAttenuation abi of
@@ -198,6 +214,9 @@ canFail abi = getAny $
     <> case abiOutboundWriteFailure abi of
          Nothing -> Any False
          _       -> Any True
+    <> case abiAcceptFailure abi of
+         Nothing -> Any False
+         _       -> Any True
 
 instance Arbitrary AbsBearerInfo where
     arbitrary =
@@ -206,12 +225,18 @@ instance Arbitrary AbsBearerInfo where
                       <*> arbitrary
                       <*> genWriteFailure
                       <*> genWriteFailure
+                      <*> genAcceptFailure
                       <*> arbitrary
       where
         genWriteFailure =
           frequency
             [ (2, pure Nothing)
             , (1, Just <$> arbitrarySizedNatural)
+            ]
+        genAcceptFailure =
+          frequency
+            [ (2, pure Nothing)
+            , (1, (\a b -> Just (a,b)) <$> arbitrary <*> arbitrary)
             ]
 
     shrink abi =
@@ -257,7 +282,7 @@ instance Arbitrary AbsBearerInfoScript where
     | script'
         <- map (NonEmpty.fromList . fixupAbsBearerInfos)
         . filter (not . List.null)
-         -- TODO: shrinking of 'AbsBearerInfo' needs to be more aggresive to use
+         -- TODO: shrinking of 'AbsBearerInfo' needs to be more aggressive to use
          -- @shrinkList shrink@
          $ shrinkList (const []) (NonEmpty.toList script)
     , script' /= script
@@ -279,6 +304,7 @@ toNonFailingAbsBearerInfoScript (AbsBearerInfoScript script) =
          , abiOutboundWriteFailure = Nothing
          , abiInboundAttenuation   = unfailAtt $ abiInboundAttenuation bi
          , abiOutboundAttenuation  = unfailAtt $ abiOutboundAttenuation bi
+         , abiAcceptFailure        = Nothing
          }
 
     unfailAtt (ErrorInterval    speed _ _) = NoAttenuation speed

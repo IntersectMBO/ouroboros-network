@@ -43,6 +43,9 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Text.Printf
 
+import           Foreign.C.Error
+import           GHC.IO.Exception
+
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Driver.Simple
@@ -186,7 +189,7 @@ clientServerSimulation payloads =
         res <- untilSuccess (client snocket)
         if res
            then return (Right ())
-           else return (Left (UnexpectedOutcome ""))
+           else return (Left UnexpectedOutcome)
   where
     reqRespProtocolNum :: MiniProtocolNum
     reqRespProtocolNum = MiniProtocolNum 0
@@ -324,6 +327,11 @@ clientServerSimulation payloads =
 -- Auxiliary
 --
 
+-- TODO: should be defined where 'AbsBearerInfo' is defined, but it also
+-- requires access to 'ouroboros-network-framework' where 'BearerInfo' is
+-- defined.  This can be fixed by moving `ouroboros-network-testing` to
+-- `ouroboros-network-framework:testlib`.
+--
 toBearerInfo :: AbsBearerInfo -> BearerInfo
 toBearerInfo abi =
     BearerInfo {
@@ -332,7 +340,13 @@ toBearerInfo abi =
         biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
         biInboundWriteFailure  = abiInboundWriteFailure abi,
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
-        biAcceptFailures       = Nothing, -- TODO
+        biAcceptFailures       = (\(errDelay, errType) ->
+                                   ( delay errDelay
+                                   , case errType of
+                                      AbsIOErrConnectionAborted -> IOErrConnectionAborted
+                                      AbsIOErrResourceExhausted -> IOErrResourceExhausted
+                                   )
+                                 ) <$> abiAcceptFailure abi,
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 
@@ -340,13 +354,14 @@ toBearerInfo abi =
 -- Properties
 --
 
-data TestError addr = UnexpectedOutcome String
+data TestError addr = UnexpectedOutcome
+                    | UnexpectedError SomeException
                     | UnexpectedlyReleasedListeningSockets
                     | DidNotTimeout
                     | DidNotComplainAboutNoSuchListeningSockets
                     | DoNotExistInNetworkState addr addr
                     -- ^ LocalAddress, RemoteAddress
-  deriving (Show, Eq)
+  deriving Show
 
 verify_no_error
   :: (forall s . IOSim s (Either (TestError (TestAddress Int)) ()))
@@ -405,7 +420,24 @@ prop_connect_to_accepting_socket defaultBearerInfo =
           $ \serverAsync -> do
             _ <- runClient clientAddr serverAddr
                             snocket (close snocket)
-            wait serverAsync
+            r <- wait serverAsync
+            return $
+              case (r, abiAcceptFailure defaultBearerInfo) of
+                (Left (UnexpectedError e), Just (_, AbsIOErrConnectionAborted)) ->
+                  case fromException e of
+                    Just ioe | Just errno <- ioe_errno ioe
+                             , errno == (case eCONNABORTED of Errno a -> a)
+                            -> Right ()
+                    _       -> r
+                (Left (UnexpectedError e), Just (_, AbsIOErrResourceExhausted)) ->
+                  case fromException e of
+                    Just ioe | ResourceExhausted <- ioe_type ioe
+                            -> Right ()
+                    _       -> r
+
+                (Right {}, Just {}) -> Left UnexpectedOutcome
+                _                   -> r
+
 
 prop_connect_and_not_close :: AbsBearerInfo -> Property
 prop_connect_and_not_close defaultBearerInfo =
@@ -566,7 +598,7 @@ acceptOne accept = mask_ $ do
     Accepted fd' _ -> do
       return (Right fd')
     AcceptFailure err ->
-      return (Left (UnexpectedOutcome (show err)))
+      return (Left (UnexpectedError err))
 
 runClient
   :: ( MonadThread m
@@ -585,7 +617,7 @@ runClient localAddress remoteAddress snocket closeF = do
               bind snocket fd localAddress
               Right <$> connect snocket fd remoteAddress
               `catch` (\(e :: SomeException) ->
-                  return (Left (UnexpectedOutcome (show e))))
+                  return (Left (UnexpectedError e)))
 
 listenAndConnect
   :: ( MonadThread m
@@ -610,7 +642,7 @@ listenAndConnect localAddress remoteAddress snocket getState = do
                         bind snocket fd' localAddress
                         res <- (Right <$> connect snocket fd' remoteAddress)
                               `catch` (\(e :: SomeException) ->
-                                return (Left (UnexpectedOutcome (show e))))
+                                return (Left (UnexpectedError e)))
                         assertNetworkState localAddress remoteAddress
                                             getState res
 

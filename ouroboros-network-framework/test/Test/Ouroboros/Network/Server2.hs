@@ -58,8 +58,6 @@ import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
-import           Foreign.C.Error
-import qualified GHC.IO.Exception as IO
 
 import           Text.Printf
 
@@ -119,11 +117,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsAttenuation (..), AbsBearerInfo (..),
-                     AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
-                     AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
-                     absNoAttenuation, toNonFailingAbsBearerInfoScript)
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision, nightlyTest)
 
 import           Test.Ouroboros.Network.ConnectionManager
@@ -164,14 +158,10 @@ tests =
     , testProperty "bidirectional Sim"      prop_bidirectional_Sim
     , testProperty "never above hardlimit"  prop_never_above_hardlimit
     , testGroup      "accept errors"
-      [ testProperty "throw ConnectionAborted"
-                    (unit_server_accept_error IOErrConnectionAborted IOErrThrow)
-      , testProperty "throw ResourceExhausted"
-                    (unit_server_accept_error IOErrResourceExhausted IOErrThrow)
-      , testProperty "return ConnectionAborted"
-                    (unit_server_accept_error IOErrConnectionAborted IOErrReturn)
-      , testProperty "return ResourceExhausted"
-                    (unit_server_accept_error IOErrResourceExhausted IOErrReturn)
+      [ testProperty "ConnectionAborted"
+                    (unit_server_accept_error IOErrConnectionAborted)
+      , testProperty "ResourceExhausted"
+                    (unit_server_accept_error IOErrResourceExhausted)
       ]
     ]
   , testProperty "connection terminated when negotiating"
@@ -279,7 +269,7 @@ oneshotNextRequests ClientAndServerData {
                       warmInitiatorRequests,
                       establishedInitiatorRequests
                     } = do
-    -- we pass a `StricTVar` with all the requests to each initiator.  This way
+    -- we pass a `StrictTVar` with all the requests to each initiator.  This way
     -- the each round (which runs a single instance of `ReqResp` protocol) will
     -- use its own request list.
     hotRequestsVar         <- newTVarIO hotInitiatorRequests
@@ -1077,7 +1067,7 @@ data MultiNodeScript req peerAddr = MultiNodeScript
   deriving (Show)
 
 -- | A sequence of connection events that make up a test scenario for `prop_multinode_Sim_Pruning`.
--- This test optimizes for triggering prunings.
+-- This test optimizes for triggering pruning.
 data MultiNodePruningScript req = MultiNodePruningScript
   { mnpsAcceptedConnLimit :: AcceptedConnectionsLimit
     -- ^ Should yield small values to trigger pruning
@@ -1285,7 +1275,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
 maxAcceptedConnectionsLimit :: AcceptedConnectionsLimit
 maxAcceptedConnectionsLimit = AcceptedConnectionsLimit maxBound maxBound 0
 
--- | This Script has a percentage of events more favorable to trigger pruning
+-- | This Script has a percentage of events more favourable to trigger pruning
 --   transitions. And forces a bidirectional connection between each server.
 --   It also starts inbound protocols in order to trigger the:
 --
@@ -1300,7 +1290,7 @@ instance Arbitrary req =>
          Arbitrary (MultiNodePruningScript req) where
   arbitrary = do
     Positive len <- scale ((* 2) . (`div` 3)) arbitrary
-    -- NOTE: Although we still do not enforce the configured hardlimit to be
+    -- NOTE: Although we still do not enforce the configured hard limit to be
     -- strictly positive. We assume that the hard limit is always bigger than
     -- 0.
     Small hardLimit <- (`div` 10) <$> arbitrary
@@ -1493,7 +1483,7 @@ multinodeExperiment
     -> AcceptedConnectionsLimit
     -> MultiNodeScript req peerAddr
     -> m ()
-multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
+multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                     snocket addrFamily serverAddr accInit
                     dataFlow0 acceptedConnLimit
                     (MultiNodeScript script _) =
@@ -1623,7 +1613,7 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
                 Duplex ->
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
-                          inboundTrTracer trTracer inboundTracer cmTracer
+                          inboundTrTracer trTracer cmTracer inboundTracer
                           snocket fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           timeLimitsHandshake
@@ -1645,7 +1635,7 @@ multinodeExperiment inboundTrTracer trTracer cmTracer inboundTracer
                       (show name)
                 Unidirectional ->
                   Job ( withInitiatorOnlyConnectionManager
-                          name simTimeouts trTracer inboundTracer snocket (Just localAddr)
+                          name simTimeouts trTracer cmTracer snocket (Just localAddr)
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
@@ -1859,7 +1849,7 @@ instance Arbitrary ArbDataFlow where
 data ActivityType
     = IdleConn
 
-    -- | Active connections are onces that reach any of the state:
+    -- | Active connections are once that reach any of the state:
     --
     -- - 'InboundSt'
     -- - 'OutobundUniSt'
@@ -2441,9 +2431,9 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
           -- connections.
           --
           -- TODO: we are computing upper bound of contribution of each
-          -- address seprately.  This avoids tracking timing information of
-          -- events, which is less acurate but it might be less fragile.  We
-          -- should investiage if it's possible to make accurate and robust
+          -- address separately.  This avoids tracking timing information of
+          -- events, which is less accurate but it might be less fragile.  We
+          -- should investigate if it's possible to make accurate and robust
           -- time series of counter changes.
           connectionManagerCounters =
               foldMap' id
@@ -2528,10 +2518,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
          else (a, b, c + d - a)
 
     networkStateTracer getState =
-      sayTracer
-      <> (Tracer $ \_ -> do
-      state <- getState
-      traceM state)
+      Tracer $ \_ -> getState >>= traceM
 
     sim :: IOSim s ()
     sim = do
@@ -2607,17 +2594,17 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
     -- verifyTimeouts checks that in all \tau transition states the timeout is
     -- respected. It does so by checking the stream of abstract transitions
     -- paired with the time they happened, for a given connection; and checking
-    -- that transitions from \tau states to any other happens withing the correct
+    -- that transitions from \tau states to any other happens within the correct
     -- timeout bounds. One note is that for the example
     -- InboundIdleState^\tau -> OutboundState^\tau -> OutboundState sequence
     -- The first transition would be fine, but for the second we need the time
     -- when we transitioned into InboundIdleState and not OutboundState.
     --
     verifyTimeouts :: Maybe (AbstractState, Time)
-                   -- ^ Map of first occurence of a given \tau state
+                   -- ^ Map of first occurrence of a given \tau state
                    -> [(Time , AbstractTransitionTrace SimAddr)]
                    -- ^ Stream of abstract transitions for a given connection
-                   -- paired with the time it ocurred
+                   -- paired with the time it occurred
                    -> Property
     verifyTimeouts state [] =
       counterexample
@@ -3414,15 +3401,15 @@ prop_never_above_hardlimit serverAcc
 
 -- | Checks that the server re-throws exceptions returned by an 'accept' call.
 --
-unit_server_accept_error :: IOErrType -> IOErrThrowOrReturn -> Property
-unit_server_accept_error ioErrType ioErrThrowOrReturn =
+unit_server_accept_error :: IOErrType -> Property
+unit_server_accept_error ioErrType =
     runSimOrThrow sim
   where
     -- The following attenuation make sure that the `accept` call will throw.
     --
     bearerAttenuation :: BearerInfo
     bearerAttenuation =
-      noAttenuation { biAcceptFailures = Just (0, ioErrType, ioErrThrowOrReturn) }
+      noAttenuation { biAcceptFailures = Just (0, ioErrType) }
 
     sim :: IOSim s Property
     sim = handle (\e -> return $ case fromException e of
@@ -3476,22 +3463,7 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
                      Nothing        -> counterexample "server did not throw"
                                          (ioErrType == IOErrConnectionAborted)
                      Just (Right _) -> counterexample "unexpected value" False
-                     Just (Left e)  | IOErrReturn <- ioErrThrowOrReturn
-                                    , Just (err :: IOError) <- fromException e
-                                    -- any IO exception which is not
-                                    -- 'ECONNABORTED' is ok
-                                    -- TODO: use isECONNABORTED function
-                                    -> case IO.ioe_errno err of
-                                          Just errno ->
-                                            case eCONNABORTED of
-                                              Errno errno' ->
-                                                counterexample
-                                                  ("unexpected error " ++ show e) $
-                                                   errno /= errno'
-                                          Nothing ->
-                                            property True
-
-                                    -- If we throw exceptions, any IO exception
+                     Just (Left e)  -- If we throw exceptions, any IO exception
                                     -- can go through; the check for
                                     -- 'ECONNABORTED' relies on that.  It is
                                     -- a bug in a snocket implementation if it
@@ -3499,7 +3471,7 @@ unit_server_accept_error ioErrType ioErrThrowOrReturn =
                                     | Just (_ :: IOError) <- fromException e
                                     -> property True
 
-                                    |  otherwise
+                                    | otherwise
                                     -> counterexample ("unexpected error " ++ show e)
                                                       False
                  )
@@ -3602,6 +3574,7 @@ unit_connection_terminated_when_negotiating =
           , abiOutboundAttenuation = NoAttenuation FastSpeed
           , abiInboundWriteFailure = Nothing
           , abiOutboundWriteFailure = Just 3
+          , abiAcceptFailure = Nothing
           , abiSDUSize = LargeSDU
           }
       multiNodeScript =
@@ -3631,7 +3604,7 @@ unit_connection_terminated_when_negotiating =
         multiNodeScript
 
 
--- | Split 'AbstractTransitionTrace' into seprate connections.  This relies on
+-- | Split 'AbstractTransitionTrace' into separate connections.  This relies on
 -- the property that every connection is terminated with 'UnknownConnectionSt'.
 -- This property is verified by 'verifyAbstractTransitionOrder'.
 --
