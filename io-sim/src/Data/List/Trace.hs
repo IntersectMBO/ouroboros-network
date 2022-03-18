@@ -72,6 +72,18 @@ instance Bifoldable Trace where
     bifoldMap f g (Cons b bs) = g b <> bifoldMap f g bs
     bifoldMap f _ (Nil a)     = f a
 
+    bifoldr f g c = go
+      where
+        go (Cons b bs) = b `g` go bs
+        go (Nil  a)    = a `f` c
+    {-# INLINE[0] bifoldr #-}
+
+    bifoldl f g = go
+      where
+        go c (Cons b bs) = go (c `g` b) bs
+        go c (Nil a)     = c `f` a
+    {-# INLINE[0] bifoldl #-}
+
 instance Bitraversable Trace where
     bitraverse f g (Cons b bs) = Cons <$> g b <*> bitraverse f g bs
     bitraverse f _ (Nil a)     = Nil <$> f a
