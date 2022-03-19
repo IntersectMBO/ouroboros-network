@@ -672,7 +672,7 @@ deschedule Sleep _thread _simstate =
 -- schedule the next one to run.
 reschedule :: SimState s a -> ST s (SimTrace a)
 reschedule !simstate@SimState{ runqueue, threads }
-  | Just (tid, runqueue') <- Deque.uncons runqueue =
+  | Just (!tid, runqueue') <- Deque.uncons runqueue =
     {-# SCC "reschedule.Just" #-}
     assert (invariant Nothing simstate) $
 
@@ -729,15 +729,15 @@ unblockThreads !wakeup !simstate@SimState {runqueue, threads} =
                 })
   where
     -- can only unblock if the thread exists and is blocked (not running)
-    unblocked = [ tid
-                | tid <- wakeup
-                , case Map.lookup tid threads of
-                       Just Thread { threadBlocked = True } -> True
-                       _                                    -> False
-                ]
+    !unblocked = [ tid
+                 | tid <- wakeup
+                 , case Map.lookup tid threads of
+                        Just Thread { threadBlocked = True } -> True
+                        _                                    -> False
+                 ]
     -- and in which case we mark them as now running
-    threads'  = List.foldl'
-                  (flip (Map.adjust (\t -> t { threadBlocked = False })))
+    !threads'  = List.foldl'
+                   (flip (Map.adjust (\t -> t { threadBlocked = False })))
                   threads unblocked
 
 
