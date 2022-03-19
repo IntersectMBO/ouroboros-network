@@ -207,7 +207,7 @@ schedule !thread@Thread{
 
       ForkFrame -> do
         -- this thread is done
-        trace <- deschedule Terminated thread simstate
+        !trace <- deschedule Terminated thread simstate
         return $ SimTrace time tid tlbl EventThreadFinished
                $ SimTrace time tid tlbl (EventDeschedule Terminated)
                $ trace
@@ -217,7 +217,7 @@ schedule !thread@Thread{
         let thread' = thread { threadControl = ThreadControl (k x) ctl'
                              , threadMasking = maskst' }
         -- but if we're now unmasked, check for any pending async exceptions
-        trace <- deschedule Interruptable thread' simstate
+        !trace <- deschedule Interruptable thread' simstate
         return $ SimTrace time tid tlbl (EventMask maskst')
                $ SimTrace time tid tlbl (EventDeschedule Interruptable)
                $ trace
@@ -245,7 +245,7 @@ schedule !thread@Thread{
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
-          trace <- deschedule Terminated thread simstate
+          !trace <- deschedule Terminated thread simstate
           return $ SimTrace time tid tlbl (EventThrow e)
                  $ SimTrace time tid tlbl (EventThreadUnhandled e)
                  $ SimTrace time tid tlbl (EventDeschedule Terminated)
@@ -426,7 +426,7 @@ schedule !thread@Thread{
               -- For testing, we should have a more sophisticated policy to show
               -- that algorithms are not sensitive to the exact policy, so long
               -- as it is a fair policy (all runnable threads eventually run).
-          trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
+          !trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $ SimTrace time tid tlbl (EventTxCommitted
                                              written' created' Nothing)
                  $ traceMany
@@ -447,13 +447,13 @@ schedule !thread@Thread{
         StmTxAborted _read e -> do
           -- schedule this thread to immediately raise the exception
           let thread' = thread { threadControl = ThreadControl (Throw e) ctl }
-          trace <- schedule thread' simstate
+          !trace <- schedule thread' simstate
           return $ SimTrace time tid tlbl (EventTxAborted Nothing) trace
 
         StmTxBlocked read -> do
           !_ <- mapM_ (\(SomeTVar tvar) -> blockThreadOnTVar tid tvar) read
           vids <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) read
-          trace <- deschedule Blocked thread simstate
+          !trace <- deschedule Blocked thread simstate
           return $ SimTrace time tid tlbl (EventTxBlocked vids Nothing)
                  $ SimTrace time tid tlbl (EventDeschedule Blocked)
                  $ trace
@@ -481,7 +481,7 @@ schedule !thread@Thread{
                                                (runIOSim action')
                                                (MaskFrame k maskst ctl)
                            , threadMasking = maskst' }
-      trace <-
+      !trace <-
         case maskst' of
           -- If we're now unmasked then check for any pending async exceptions
           Unmasked -> SimTrace time tid tlbl (EventDeschedule Interruptable)
@@ -508,7 +508,7 @@ schedule !thread@Thread{
           -- exception and the source thread id to the pending async exceptions.
           let adjustTarget t = t { threadThrowTo = (e, Labelled tid tlbl) : threadThrowTo t }
               threads'       = Map.adjust adjustTarget tid' threads
-          trace <- deschedule Blocked thread' simstate { threads = threads' }
+          !trace <- deschedule Blocked thread' simstate { threads = threads' }
           return $ SimTrace time tid tlbl (EventThrowTo e tid')
                  $ SimTrace time tid tlbl EventThrowToBlocked
                  $ SimTrace time tid tlbl (EventDeschedule Blocked)
@@ -620,7 +620,7 @@ deschedule Terminated !thread !simstate@SimState{ curTime = time, threads } = do
     let wakeup      = map (l_labelled . snd) (reverse (threadThrowTo thread))
         (unblocked,
          simstate') = unblockThreads wakeup simstate
-    trace <- reschedule simstate'
+    !trace <- reschedule simstate'
     return $ traceMany
                [ (time, tid', tlbl', EventThrowToWakeup)
                | tid' <- unblocked
