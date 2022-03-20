@@ -53,7 +53,9 @@ module Control.Monad.IOSim.Internal
 
 import           Prelude hiding (read)
 
-import           Data.Foldable (traverse_)
+import           Deque.Strict (Deque)
+import qualified Deque.Strict as Deque
+import           Data.Foldable (traverse_, toList)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
 import           Data.Maybe (mapMaybe)
@@ -65,6 +67,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
 import           Data.Dynamic
+
+import           GHC.Exts (fromList)
 
 import           Control.Exception (NonTermination (..),
                    assert, throw)
@@ -123,7 +127,7 @@ data TimerVars s = TimerVars !(TVar s TimeoutState) !(TVar s Bool)
 -- | Internal state.
 --
 data SimState s a = SimState {
-       runqueue :: ![ThreadId],
+       runqueue :: !(Deque ThreadId),
        -- | All threads other than the currently running thread: both running
        -- and blocked threads.
        threads  :: !(Map ThreadId (Thread s a)),
@@ -140,7 +144,7 @@ data SimState s a = SimState {
 initialState :: SimState s a
 initialState =
     SimState {
-      runqueue = [],
+      runqueue = mempty,
       threads  = Map.empty,
       curTime  = Time 0,
       timers   = PSQ.empty,
@@ -156,7 +160,7 @@ invariant :: Maybe (Thread s a) -> SimState s a -> Bool
 invariant (Just running) simstate@SimState{runqueue,threads,clocks} =
     not (threadBlocked running)
  && threadId running `Map.notMember` threads
- && threadId running `List.notElem` runqueue
+ && threadId running `List.notElem` toList runqueue
  && threadClockId running `Map.member` clocks
  && invariant Nothing simstate
 
@@ -164,7 +168,7 @@ invariant Nothing SimState{runqueue,threads,clocks} =
     all (`Map.member` threads) runqueue
  && and [ threadBlocked t == (threadId t `notElem` runqueue)
         | t <- Map.elems threads ]
- && runqueue == List.nub runqueue
+ && toList runqueue == List.nub (toList runqueue)
  && and [ threadClockId t `Map.member` clocks
         | t <- Map.elems threads ]
 
@@ -400,7 +404,7 @@ schedule thread@Thread{
                             , threadNextTId = 1
                             }
           threads' = Map.insert tid' thread'' threads
-      trace <- schedule thread' simstate { runqueue = runqueue ++ [tid']
+      trace <- schedule thread' simstate { runqueue = Deque.snoc tid' runqueue
                                          , threads  = threads' }
       return (SimTrace time tid tlbl (EventThreadForked tid') trace)
 
@@ -563,7 +567,7 @@ deschedule Yield thread simstate@SimState{runqueue, threads} =
     -- algorithms are not sensitive to the exact policy, so long as it is a
     -- fair policy (all runnable threads eventually run).
 
-    let runqueue' = runqueue ++ [threadId thread]
+    let runqueue' = Deque.snoc (threadId thread) runqueue
         threads'  = Map.insert (threadId thread) thread threads in
     reschedule simstate { runqueue = runqueue', threads  = threads' }
 
@@ -629,7 +633,8 @@ deschedule Sleep _thread _simstate =
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
 reschedule :: SimState s a -> ST s (SimTrace a)
-reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
+reschedule simstate@SimState{ runqueue, threads }
+  | Just (tid, runqueue') <- Deque.uncons runqueue =
     assert (invariant Nothing simstate) $
 
     let thread = threads Map.! tid in
@@ -638,7 +643,7 @@ reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
 
 -- But when there are no runnable threads, we advance the time to the next
 -- timer event, or stop.
-reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time } =
+reschedule simstate@SimState{ threads, timers, curTime = time } =
     assert (invariant Nothing simstate) $
 
     -- important to get all events that expire at this time
@@ -679,7 +684,7 @@ unblockThreads wakeup simstate@SimState {runqueue, threads} =
     -- To preserve our invariants (that threadBlocked is correct)
     -- we update the runqueue and threads together here
     (unblocked, simstate {
-                  runqueue = runqueue ++ unblocked,
+                  runqueue = runqueue <> fromList unblocked,
                   threads  = threads'
                 })
   where
