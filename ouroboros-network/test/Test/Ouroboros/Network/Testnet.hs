@@ -6,7 +6,8 @@
 module Test.Ouroboros.Network.Testnet (tests) where
 
 import           Control.Monad.IOSim
-import           Control.Monad.Class.MonadTime (Time (Time))
+import           Control.Monad.IOSim.Types (ThreadId)
+import           Control.Monad.Class.MonadTime (Time (Time), diffTime, DiffTime)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
 import           Data.Void (Void)
@@ -18,6 +19,7 @@ import           Data.Dynamic (Typeable)
 import           Data.Functor (void)
 import           Data.List (intercalate)
 import qualified Data.List.Trace as Trace
+import           Data.Time (secondsToDiffTime)
 
 import           System.Random (mkStdGen)
 import           GHC.Exception.Type (SomeException)
@@ -52,7 +54,7 @@ import           Test.Ouroboros.Network.Testnet.Simulation.Node
                      prop_diffusionScript_fixupCommands,
                      DiffusionSimulationTrace (..))
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import           Test.QuickCheck (Property, counterexample, conjoin, classify)
+import           Test.QuickCheck (Property, counterexample, conjoin, classify, property)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -64,6 +66,8 @@ tests =
                    prop_diffusionScript_fixupCommands
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
+    , testProperty "diffusion no livelock"
+                   prop_diffusion_nolivelock
     , testProperty "diffusion target established local"
                    prop_diffusion_target_established_local
     , testProperty "diffusion target active below"
@@ -152,6 +156,77 @@ tracerDiffusionSimWithTimeName ntnAddr =
  . tracerWithTime
  $ dynamicTracer
 
+-- | A variant of
+-- 'Test.Ouroboros.Network.ConnectionHandler.Network.PeerSelection.prop_governor_nolivelock'
+-- but for running on Diffusion. This test doesn't check for events occuring at the same
+-- time but rather for events happening between an interval (usual 1s). This is because,
+-- since Diffusion is much more complex and can run more than 1 node in parallel, time
+-- might progress but very slowly almost like a livelock. We want to safeguard from such
+-- cases.
+--
+prop_diffusion_nolivelock :: AbsBearerInfo
+                         -> DiffusionScript
+                         -> Property
+prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript l) =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        trace :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+        trace = take 1000000
+              . traceEvents
+              $ runSimTrace sim
+
+        lastTime :: Time
+        lastTime = getTime (last trace)
+
+     in classifySimulatedTime lastTime
+      $ check_governor_nolivelock (secondsToDiffTime 0)
+                                  trace
+  where
+    check_governor_nolivelock :: DiffTime
+                              -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+                              -> Property
+    check_governor_nolivelock dt trace =
+      let trace' = (\(t, tid, tl, e) -> (t, (tid, tl, e)))
+                 <$> trace
+
+          numberOfEvents = 10000 * max (length l) 1
+
+       in case tooManyEventsBeforeTimeAdvances numberOfEvents dt trace' of
+            Nothing -> property True
+            Just es ->
+              counterexample
+                ("over " ++ show numberOfEvents ++ " events in "
+                ++ show dt ++ "\n" ++ "first " ++ show numberOfEvents
+                ++ " events: " ++ (unlines . map show . take numberOfEvents $ es))
+              $ property False
+
+    tooManyEventsBeforeTimeAdvances :: Int
+                                    -> DiffTime
+                                    -> [(Time, e)]
+                                    -> Maybe [(Time, e)]
+    tooManyEventsBeforeTimeAdvances _         _  []     = Nothing
+    tooManyEventsBeforeTimeAdvances threshold dt trace0 =
+        go (groupByTime dt trace0)
+      where
+        groupByTime :: DiffTime -> [(Time, e)] -> [[(Time, e)]]
+        groupByTime _ [] = []
+        groupByTime dtime trace@((t, _):_) =
+          let (tl, tr) = span (\(t', _) -> diffTime t' t <= dtime) trace
+           in tl : groupByTime dtime tr
+
+        go :: [[(Time, e)]] -> Maybe [(Time, e)]
+        go []    = Nothing
+        go (h:t)
+          | countdown threshold h = go t
+          | otherwise = Just h
+
+        countdown 0 (_ : _) = False
+        countdown _ []      = True
+        countdown n (_ : es)  = countdown (n-1) es
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
@@ -606,6 +681,9 @@ data JoinedOrKilled = Joined | Killed
 fromJoinedOrKilled :: c -> c -> JoinedOrKilled -> c
 fromJoinedOrKilled j _ Joined = j
 fromJoinedOrKilled _ k Killed = k
+
+getTime :: (Time, ThreadId, Maybe ThreadLabel, SimEventType) -> Time
+getTime (t, _, _, _) = t
 
 classifySimulatedTime :: Time -> Property -> Property
 classifySimulatedTime lastTime =

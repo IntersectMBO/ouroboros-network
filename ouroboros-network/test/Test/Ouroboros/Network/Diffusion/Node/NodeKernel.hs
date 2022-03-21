@@ -250,7 +250,8 @@ withSlotTime slotDuration k = do
         go :: SlotNo -> m Void
         go next = do
           t <- getMonotonicTime
-          let delay = Time (slotDuration * fromIntegral (Block.unSlotNo next))
+          let delay = abs
+                    $ Time (slotDuration * fromIntegral (Block.unSlotNo next))
                       `diffTime` t
           threadDelay delay
           atomically $ writeTVar slotVar next
