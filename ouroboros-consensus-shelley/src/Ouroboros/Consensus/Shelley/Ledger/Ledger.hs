@@ -286,6 +286,8 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock era)) wher
 
   foldLedgerTables2 f (ShelleyLedgerTables utxo1) (ShelleyLedgerTables utxo2) = f utxo1 utxo2
 
+  mapOverLedgerTables f st = st { shelleyLedgerTables = ShelleyLedgerTables $ f $ shelleyUTxOTable $ shelleyLedgerTables st }
+
 instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock era)) where
   projectLedgerTablesTicked        = tickedShelleyLedgerTables
   withLedgerTablesTicked st tables =

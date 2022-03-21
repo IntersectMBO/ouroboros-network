@@ -503,6 +503,15 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
   foldLedgerTables     f                         (CardanoLedgerTables x) = f x
   foldLedgerTables2    f (CardanoLedgerTables l) (CardanoLedgerTables r) = f l r
 
+  mapOverLedgerTables f (HardForkLedgerState hlspe) =
+      HardForkLedgerState
+    $ HardForkState
+    $ Telescope.bihcmap proxySingle id (\(Current start state) -> Current start
+                                                   $ Flip
+                                                   $ mapOverLedgerTables f
+                                                   $ unFlip state)
+    $ getHardForkState hlspe
+
 instance CardanoHardForkConstraints c
       => SufficientSerializationForAnyBackingStore (LedgerState (CardanoBlock c)) where
     codecLedgerTables = CardanoLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)

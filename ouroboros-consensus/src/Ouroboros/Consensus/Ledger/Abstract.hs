@@ -44,6 +44,8 @@ import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM, (..:))
 
+import qualified Debug.Trace as TRACE
+
 -- | " Validated " transaction or block
 --
 -- The ledger defines how to validate transactions and blocks. It's possible the
@@ -151,7 +153,7 @@ tickThenApplyLedgerResult ::
 tickThenApplyLedgerResult cfg blk l = do
   let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
   lrBlock <-    applyBlockLedgerResult     cfg            blk  (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
-  let tickDiffs = zipLedgerTables calculateDifference (projectLedgerTables l)
+  let tickDiffs = zipLedgerTables calculateDifference polyEmptyLedgerTables
                 . projectLedgerTablesTicked
                 . lrResult
                 $ lrTick
@@ -169,11 +171,12 @@ tickThenReapplyLedgerResult ::
 tickThenReapplyLedgerResult cfg blk l =
   let lrTick    = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
       lrBlock   = reapplyBlockLedgerResult   cfg            blk  (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
-      tickDiffs = zipLedgerTables calculateDifference (projectLedgerTables l)
+      tickDiffs = zipLedgerTables calculateDifference polyEmptyLedgerTables
                 . projectLedgerTablesTicked
                 . lrResult
                 $ lrTick
-  in LedgerResult {
+  in TRACE.trace (show $ blockSlot blk)
+   $ LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
     , lrResult = mappendTracking tickDiffs $ lrResult lrBlock
     }

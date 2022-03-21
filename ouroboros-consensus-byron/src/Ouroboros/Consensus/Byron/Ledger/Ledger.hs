@@ -201,6 +201,8 @@ instance TableStuff (LedgerState ByronBlock) where
   foldLedgerTables     _f                     NoByronLedgerTables = mempty
   foldLedgerTables2    _f NoByronLedgerTables NoByronLedgerTables = mempty
 
+  mapOverLedgerTables _f bls = convertMapKind bls
+
 instance SufficientSerializationForAnyBackingStore (LedgerState ByronBlock) where
     codecLedgerTables = NoByronLedgerTables
 

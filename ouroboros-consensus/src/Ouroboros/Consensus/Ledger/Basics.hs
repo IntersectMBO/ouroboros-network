@@ -415,6 +415,11 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> m
 
+  mapOverLedgerTables ::
+    ( forall k v . Ord k => mk1 k v -> mk2 k v)
+    -> l mk1
+    -> l mk2
+
 overLedgerTables ::
      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
   => (LedgerTables l mk1 -> LedgerTables l mk2)
@@ -422,16 +427,16 @@ overLedgerTables ::
   -> l mk2
 overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
 
-mapOverLedgerTables ::
-     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
-  => (forall k v.
-          Ord k
-       => mk1 k v
-       -> mk2 k v
-     )
-  -> l mk1
-  -> l mk2
-mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
+-- mapOverLedgerTables ::
+--      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
+--   => (forall k v.
+--           Ord k
+--        => mk1 k v
+--        -> mk2 k v
+--      )
+--   -> l mk1
+--   -> l mk2
+-- mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
 
 zipOverLedgerTables ::
      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
@@ -455,7 +460,7 @@ mappendValues ::
   => LedgerTables l ValuesMK
   -> l ValuesMK
   -> l ValuesMK
-mappendValues = flip (zipOverLedgerTables (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2))
+mappendValues = flip $ zipOverLedgerTables (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2)
 
 -- | Mappend the differences in the tables and in the ledger state
 mappendTracking ::
@@ -463,7 +468,7 @@ mappendTracking ::
   => LedgerTables l TrackingMK
   -> l TrackingMK
   -> l TrackingMK
-mappendTracking = flip (zipOverLedgerTables (\(ApplyTrackingMK v1 d1) (ApplyTrackingMK _ d2) -> ApplyTrackingMK v1 (d2 <> d1)))
+mappendTracking = flip $ zipOverLedgerTables (\(ApplyTrackingMK v1 d1) (ApplyTrackingMK _ d2) -> ApplyTrackingMK v1 (d2 <> d1))
 
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
@@ -516,7 +521,7 @@ mappendValuesTicked ::
   => LedgerTables l ValuesMK
   -> Ticked1      l ValuesMK
   -> Ticked1      l ValuesMK
-mappendValuesTicked = flip (zipOverLedgerTablesTicked (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2))
+mappendValuesTicked = flip $ zipOverLedgerTablesTicked (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2)
 
 -- | This class provides a 'CodecMK' that can be used to encode/decode keys and
 -- values on @'LedgerTables' l mk@

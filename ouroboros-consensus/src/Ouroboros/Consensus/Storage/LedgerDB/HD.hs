@@ -106,7 +106,7 @@ emptyUtxoValues :: UtxoValues k v
 emptyUtxoValues = UtxoValues Map.empty
 
 mapUtxoValues :: (v -> v') -> UtxoValues k v -> UtxoValues k v'
-mapUtxoValues f (UtxoValues vs) = UtxoValues $ fmap f vs
+mapUtxoValues f (UtxoValues vs) = UtxoValues $ Map.map f vs
 
 {-------------------------------------------------------------------------------
   Difference of maps
@@ -178,7 +178,7 @@ emptyUtxoDiff = UtxoDiff Map.empty
 -- value is uniquely determined by context).
 mapUtxoDiff :: (v -> v') -> UtxoDiff k v -> UtxoDiff k v'
 mapUtxoDiff f (UtxoDiff m) =
-    UtxoDiff $ fmap g m
+    UtxoDiff $ Map.map g m
   where
     g (UtxoEntryDiff v diffstate) = UtxoEntryDiff (f v) diffstate
 

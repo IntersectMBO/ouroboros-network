@@ -29,6 +29,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Telescope (
   , bihap
   , bihczipWith
   , bihmap
+  , bihcmap
   , bihzipWith
     -- * Extension, retraction, alignment
   , Extend (..)
