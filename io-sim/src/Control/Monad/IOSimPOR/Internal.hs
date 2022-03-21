@@ -438,9 +438,9 @@ schedule thread@Thread{
           t       = Timeout tvar tvar' nextTmid
           timers' = PSQ.insert nextTmid expiry (TimerVars tvar tvar') timers
           thread' = thread { threadControl = ThreadControl (k t) ctl }
-      trace <- schedule thread' simstate { timers   = timers'
-                                         , nextVid  = succ (succ nextVid)
-                                         , nextTmid = succ nextTmid }
+      !trace <- schedule thread' simstate { timers   = timers'
+                                          , nextVid  = succ (succ nextVid)
+                                          , nextTmid = succ nextTmid }
       return (SimPORTrace time tid tstep tlbl (EventTimerCreated nextTmid nextVid expiry) trace)
 
     -- we do not follow `GHC.Event` behaviour here; updating a timer to the past
