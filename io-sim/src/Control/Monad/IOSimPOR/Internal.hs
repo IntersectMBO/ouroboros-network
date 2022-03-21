@@ -840,7 +840,7 @@ reschedule simstate@SimState{ runqueue, threads,
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
 reschedule simstate@SimState{ runqueue, threads }
-    | Just (Down tid, _, _, runqueue') <- PSQ.minView runqueue =
+    | Just (Down !tid, _, _, runqueue') <- PSQ.minView runqueue =
     invariant Nothing simstate $
 
     let thread = threads Map.! tid in
@@ -910,24 +910,24 @@ unblockThreads vClock wakeup simstate@SimState {runqueue, threads} =
   where
     -- can only unblock if the thread exists and is blocked (not running)
     unblocked :: [Thread s a]
-    unblocked = [ thread
-                | tid <- wakeup
-                , thread <-
-                    case Map.lookup tid threads of
-                      Just   Thread { threadDone    = True } -> [ ]
-                      Just t@Thread { threadBlocked = True } -> [t]
-                      _                                      -> [ ]
-                ]
+    !unblocked = [ thread
+                 | tid <- wakeup
+                 , thread <-
+                     case Map.lookup tid threads of
+                       Just   Thread { threadDone    = True } -> [ ]
+                       Just t@Thread { threadBlocked = True } -> [t]
+                       _                                      -> [ ]
+                 ]
 
     unblockedIds :: [ThreadId]
-    unblockedIds = map threadId unblocked
+    !unblockedIds = map threadId unblocked
 
     -- and in which case we mark them as now running
-    threads'  = List.foldl'
-                  (flip (Map.adjust
-                    (\t -> t { threadBlocked = False,
-                               threadVClock = vClock `leastUpperBoundVClock` threadVClock t })))
-                  threads unblockedIds
+    !threads'  = List.foldl'
+                   (flip (Map.adjust
+                     (\t -> t { threadBlocked = False,
+                                threadVClock = vClock `leastUpperBoundVClock` threadVClock t })))
+                   threads unblockedIds
 
 
 -- | Iterate through the control stack to find an enclosing exception handler
