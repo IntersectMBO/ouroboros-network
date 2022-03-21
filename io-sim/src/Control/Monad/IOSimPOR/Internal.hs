@@ -302,7 +302,7 @@ schedule thread@Thread{
 
       ForkFrame -> do
         -- this thread is done
-        trace <- deschedule Terminated thread simstate
+        !trace <- deschedule Terminated thread simstate
         return $ SimPORTrace time tid tstep tlbl EventThreadFinished
                $ SimPORTrace time tid tstep tlbl (EventDeschedule Terminated)
                $ trace
@@ -312,7 +312,7 @@ schedule thread@Thread{
         let thread' = thread { threadControl = ThreadControl (k x) ctl'
                              , threadMasking = maskst' }
         -- but if we're now unmasked, check for any pending async exceptions
-        trace <- deschedule Interruptable thread' simstate
+        !trace <- deschedule Interruptable thread' simstate
         return $ SimPORTrace time tid tstep tlbl (EventMask maskst')
                $ SimPORTrace time tid tstep tlbl (EventDeschedule Interruptable)
                $ trace
@@ -345,7 +345,7 @@ schedule thread@Thread{
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
-          trace <- deschedule Terminated thread simstate
+          !trace <- deschedule Terminated thread simstate
           return $ SimPORTrace time tid tstep tlbl (EventThrow e)
                  $ SimPORTrace time tid tstep tlbl (EventThreadUnhandled e)
                  $ SimPORTrace time tid tstep tlbl (EventDeschedule Terminated)
@@ -482,7 +482,7 @@ schedule thread@Thread{
            simstate') = unblockThreads vClock wakeup simstate
       modifySTRef (tvarVClock tvar)  (leastUpperBoundVClock vClock)
       modifySTRef (tvarVClock tvar') (leastUpperBoundVClock vClock)
-      trace <- deschedule Yield thread' simstate' { timers = timers' }
+      !trace <- deschedule Yield thread' simstate' { timers = timers' }
       return $ SimPORTrace time tid tstep tlbl (EventTimerCancelled tmid)
              $ traceMany
                  -- TODO: step
@@ -524,9 +524,9 @@ schedule thread@Thread{
                             }
           threads' = Map.insert tid' thread'' threads
       -- A newly forked thread may have a higher priority, so we deschedule this one.
-      trace <- deschedule Yield thread'
-                 simstate { runqueue = insertThread thread'' runqueue
-                          , threads  = threads' }
+      !trace <- deschedule Yield thread'
+                  simstate { runqueue = insertThread thread'' runqueue
+                           , threads  = threads' }
       return $ SimPORTrace time tid tstep tlbl (EventThreadForked tid')
              $ SimPORTrace time tid tstep tlbl (EventDeschedule Yield)
              $ trace
@@ -553,7 +553,7 @@ schedule thread@Thread{
           written' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
           created' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) created
           -- We deschedule a thread after a transaction... another may have woken up.
-          trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
+          !trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $
             SimPORTrace time tid tstep tlbl (EventTxCommitted written' created' (Just effect')) $
             traceMany
@@ -591,7 +591,7 @@ schedule thread@Thread{
           let effect' = effect <> readEffects read
               thread' = thread { threadVClock  = vClock `leastUpperBoundVClock` vClockRead,
                                  threadEffect  = effect' }
-          trace <- deschedule Blocked thread' simstate
+          !trace <- deschedule Blocked thread' simstate
           return $ SimPORTrace time tid tstep tlbl (EventTxBlocked vids (Just effect'))
                  $ SimPORTrace time tid tstep tlbl (EventDeschedule Blocked)
                  $ trace
@@ -743,7 +743,7 @@ deschedule Interruptable thread@Thread {
         (unblocked,
          simstate') = unblockThreads vClock [l_labelled tid'] simstate
     -- the thread is stepped when we Yield
-    trace <- deschedule Yield thread' simstate'
+    !trace <- deschedule Yield thread' simstate'
     return $ SimPORTrace time tid tstep tlbl (EventDeschedule Yield)
            $ SimPORTrace time tid tstep tlbl (EventThrowToUnmasked tid')
            -- TODO: step
@@ -790,7 +790,7 @@ deschedule Terminated thread@Thread { threadId = tid, threadVClock = vClock }
         threads'    = Map.insert tid thread' threads
     -- We must keep terminated threads in the state to preserve their vector clocks,
     -- which matters when other threads throwTo them.
-    trace <- reschedule simstate' { races = threadTerminatesRaces tid $
+    !trace <- reschedule simstate' { races = threadTerminatesRaces tid $
                                               updateRacesInSimState thread simstate,
                                     control = advanceControl (threadStepId thread) control,
                                     threads = threads' }
@@ -874,8 +874,8 @@ reschedule simstate@SimState{ threads, timers, curTime = time, races } =
              simstate') = unblockThreads bottomVClock wakeup simstate
             -- all open races will be completed and reported at this time
             simstate''  = simstate'{ races = noRaces }
-        trace <- reschedule simstate'' { curTime = time'
-                                       , timers  = timers' }
+        !trace <- reschedule simstate'' { curTime = time'
+                                        , timers  = timers' }
         let traceEntries =
                      [ (time', ThreadId [-1], (-1), Just "timer", EventTimerExpired tmid)
                      | tmid <- tmids ]
