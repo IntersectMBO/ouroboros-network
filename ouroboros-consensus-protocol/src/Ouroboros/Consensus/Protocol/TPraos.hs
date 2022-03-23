@@ -17,7 +17,6 @@
 --   schedule determining slots to be produced by BFT
 module Ouroboros.Consensus.Protocol.TPraos (
     MaxMajorProtVer (..)
-  , SelfIssued (..)
   , TPraos
   , TPraosCanBeLeader (..)
   , TPraosChainSelectView (..)
@@ -270,35 +269,17 @@ data instance ConsensusConfig (TPraos c) = TPraosConfig {
 
 instance SL.PraosCrypto c => NoThunks (ConsensusConfig (TPraos c))
 
--- | Separate type instead of 'Bool' for the custom 'Ord' instance +
--- documentation.
-data SelfIssued =
-    -- | A block we produced ourself
-    SelfIssued
-    -- | A block produced by another node
-  | NotSelfIssued
-  deriving (Show, Eq)
-
-instance Ord SelfIssued where
-  compare SelfIssued    SelfIssued    = EQ
-  compare NotSelfIssued NotSelfIssued = EQ
-  compare SelfIssued    NotSelfIssued = GT
-  compare NotSelfIssued SelfIssued    = LT
-
 -- | View of the ledger tip for chain selection.
 --
 -- We order between chains as follows:
 --
 -- 1. By chain length, with longer chains always preferred.
--- 2. If the tip of each chain has the same slot number, we prefer the one tip
---    that we produced ourselves.
--- 3. If the tip of each chain was issued by the same agent, then we prefer
+-- 2. If the tip of each chain was issued by the same agent, then we prefer
 --    the chain whose tip has the highest ocert issue number.
--- 4. By the leader value of the chain tip, with lower values preferred.
+-- 3. By the leader value of the chain tip, with lower values preferred.
 data TPraosChainSelectView c = TPraosChainSelectView {
     csvChainLength :: BlockNo
   , csvSlotNo      :: SlotNo
-  , csvSelfIssued  :: SelfIssued
   , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
   , csvIssueNo     :: Word64
   , csvLeaderVRF   :: VRF.OutputVRF (VRF c)
@@ -308,7 +289,6 @@ instance SL.PraosCrypto c => Ord (TPraosChainSelectView c) where
   compare =
       mconcat [
           compare `on` csvChainLength
-        , whenSame csvSlotNo (compare `on` csvSelfIssued)
         , whenSame csvIssuer (compare `on` csvIssueNo)
         , compare `on` Down . csvLeaderVRF
         ]

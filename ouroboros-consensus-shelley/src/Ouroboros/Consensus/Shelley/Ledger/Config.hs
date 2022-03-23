@@ -47,13 +47,9 @@ data instance BlockConfig (ShelleyBlock era) = ShelleyConfig {
       shelleyProtocolVersion  :: !SL.ProtVer
     , shelleySystemStart      :: !SystemStart
     , shelleyNetworkMagic     :: !NetworkMagic
-      -- | When chain selection is comparing two fragments, it will prefer the
-      -- fragment with a tip signed by (one of) its own key(s) (provided that
-      -- the 'BlockNo's and 'SlotNo's of the two tips are equal). For nodes that
-      -- can produce blocks, this should be set to the verification key(s)
-      -- corresponding to the node's signing key(s), to make sure we prefer
-      -- self-issued blocks. For non block producing nodes, this can be set to
-      -- the empty map.
+      -- | For nodes that can produce blocks, this should be set to the
+      -- verification key(s) corresponding to the node's signing key(s). For non
+      -- block producing nodes, this can be set to the empty map.
     , shelleyBlockIssuerVKeys :: !(Map (SL.KeyHash 'SL.BlockIssuer (EraCrypto era))
                                        (SL.VKey 'SL.BlockIssuer (EraCrypto era)))
     }
