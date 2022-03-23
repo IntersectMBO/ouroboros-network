@@ -48,7 +48,8 @@
         "sha256": "09jrhq48h5vwl6vyf4q8d38vlaqmbd00m550rwxz79k90bxb7q6y",
         "type": "tarball",
         "url": "https://github.com/input-output-hk/iohk-nix/archive/5e667b374153327c7bdfdbfab8ef19b1f27d4aac.tar.gz",
-        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz",
+        "version": "60fe72cf807a4ec4409a53883d5c3af77f60f721"
     },
     "nixpkgs": {
         "branch": "nixpkgs-unstable",
