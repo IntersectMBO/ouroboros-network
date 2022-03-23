@@ -478,7 +478,7 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
         -- store.
         db'' <- do
           let (toFlush, toKeep) =
-                ledgerDbFlush DbChangelogFlushAllImmutable db'
+                ledgerDbFlush DbChangelogFlushALL db'
           flush backingStore toFlush
           pure toKeep
 

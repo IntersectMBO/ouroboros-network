@@ -157,6 +157,7 @@ import           Ouroboros.Consensus.Util.Singletons
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
+import Data.Maybe (fromJust)
 
 {-------------------------------------------------------------------------------
   Tip
@@ -1109,6 +1110,7 @@ pruneVolatilePartDbChangelog (SecurityParam k) dblog =
 data DbChangelogFlushPolicy =
     -- | Always flush everything older than the immutable tip
     DbChangelogFlushAllImmutable
+    | DbChangelogFlushALL
 
 flushDbChangelog :: forall l.
      (GetTip (l EmptyMK), TableStuff l)
@@ -1155,6 +1157,34 @@ flushDbChangelog DbChangelogFlushAllImmutable dblog =
       , changelogDiffs           = r
       , changelogImmutableStates = AS.Empty immTip
       , changelogVolatileStates  = vol
+      }
+flushDbChangelog DbChangelogFlushALL dblog =
+    (ldblog, rdblog)
+  where
+    DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs
+      , changelogImmutableStates
+      , changelogVolatileStates
+      } = dblog
+
+    imm = changelogImmutableStates
+    vol = changelogVolatileStates
+
+    volTip = either id id $ AS.head vol
+
+    ldblog = DbChangelog {
+        changelogDiffAnchor
+      , changelogDiffs           = changelogDiffs
+      , changelogImmutableStates = fromJust $ AS.join (const $ const True) imm  vol
+      , changelogVolatileStates  = AS.Empty volTip
+      }
+
+    rdblog = DbChangelog {
+        changelogDiffAnchor      = getTipSlot (unDbChangelogState volTip)
+      , changelogDiffs           = pureLedgerTables (ApplySeqDiffMK emptySeqUtxoDiff)
+      , changelogImmutableStates = AS.Empty volTip
+      , changelogVolatileStates  = AS.Empty volTip
       }
 
 prefixDbChangelog ::
