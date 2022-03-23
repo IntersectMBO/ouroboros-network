@@ -26,6 +26,7 @@ library
   hs-source-dirs:      src
 
   exposed-modules:
+                       Ouroboros.Consensus.Shelley.Crypto
                        Ouroboros.Consensus.Shelley.Eras
                        Ouroboros.Consensus.Shelley.HFEras
                        Ouroboros.Consensus.Shelley.Ledger
@@ -57,6 +58,7 @@ library
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
+                     , cardano-crypto-praos
                      , cardano-data
                      , cardano-ledger-core
                      , cardano-protocol-tpraos
