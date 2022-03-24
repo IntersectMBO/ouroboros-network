@@ -195,6 +195,8 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
 
   mapOverLedgerTables f (ExtLedgerState lstate b) = ExtLedgerState (mapOverLedgerTables f lstate) b
 
+  zipOverLedgerTables f (ExtLedgerState lstate b) tbs = ExtLedgerState (zipOverLedgerTables f lstate (coerce tbs)) b
+
 instance ( LedgerSupportsProtocol blk
          , SufficientSerializationForAnyBackingStore (LedgerState blk)
          )

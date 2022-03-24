@@ -152,7 +152,7 @@ tickThenApplyLedgerResult ::
   -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
 tickThenApplyLedgerResult cfg blk l = do
   let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
-  lrBlock <-    applyBlockLedgerResult     cfg            blk  (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
+  lrBlock <-    applyBlockLedgerResult     cfg            blk (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
   let tickDiffs = zipLedgerTables calculateDifference polyEmptyLedgerTables
                 . projectLedgerTablesTicked
                 . lrResult

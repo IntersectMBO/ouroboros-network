@@ -203,6 +203,8 @@ instance TableStuff (LedgerState ByronBlock) where
 
   mapOverLedgerTables _f bls = convertMapKind bls
 
+  zipOverLedgerTables _f st _l = convertMapKind st
+
 instance SufficientSerializationForAnyBackingStore (LedgerState ByronBlock) where
     codecLedgerTables = NoByronLedgerTables
 

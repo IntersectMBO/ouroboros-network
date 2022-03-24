@@ -288,6 +288,8 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock era)) wher
 
   mapOverLedgerTables f st = st { shelleyLedgerTables = ShelleyLedgerTables $ f $ shelleyUTxOTable $ shelleyLedgerTables st }
 
+  zipOverLedgerTables f st tbs = st { shelleyLedgerTables = ShelleyLedgerTables $ flip f (shelleyUTxOTable tbs) $ shelleyUTxOTable $ shelleyLedgerTables st }
+
 instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock era)) where
   projectLedgerTablesTicked        = tickedShelleyLedgerTables
   withLedgerTablesTicked st tables =
