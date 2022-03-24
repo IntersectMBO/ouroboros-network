@@ -32,6 +32,10 @@ data NodeToNodeVersion
     | NodeToNodeV_8
     -- ^ Changes:
     --
+    -- * Enable block diffusion pipelining in ChainSync and BlockFetch logic.
+    | NodeToNodeV_9
+    -- ^ Changes:
+    --
     -- * Enable full duplex connections.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
@@ -40,9 +44,11 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_7 = CBOR.TInt 7
     encodeTerm NodeToNodeV_8 = CBOR.TInt 8
+    encodeTerm NodeToNodeV_9 = CBOR.TInt 9
 
     decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
     decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
+    decodeTerm (CBOR.TInt 9) = Right NodeToNodeV_9
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n

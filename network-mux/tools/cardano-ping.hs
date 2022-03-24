@@ -127,6 +127,7 @@ supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
 supportedNodeToNodeVersions magic =
   [ NodeToNodeVersionV7 magic False
   , NodeToNodeVersionV8 magic False
+  , NodeToNodeVersionV9 magic False
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -206,6 +207,7 @@ data NodeVersion =       NodeToClientVersionV9  Word32
                        | NodeToNodeVersionV6   Word32 Bool
                        | NodeToNodeVersionV7   Word32 Bool
                        | NodeToNodeVersionV8   Word32 Bool
+                       | NodeToNodeVersionV9   Word32 Bool
                        deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -267,6 +269,7 @@ handshakeReqEnc versions =
     encodeVersion (NodeToNodeVersionV6 magic mode) = encodeWithMode 6 magic mode
     encodeVersion (NodeToNodeVersionV7 magic mode) = encodeWithMode 7 magic mode
     encodeVersion (NodeToNodeVersionV8 magic mode) = encodeWithMode 8 magic mode
+    encodeVersion (NodeToNodeVersionV9 magic mode) = encodeWithMode 9 magic mode
 
 
     encodeWithMode :: Word -> Word32 -> Bool -> CBOR.Encoding
@@ -339,6 +342,7 @@ handshakeDec = do
              , version `testBit`  nodeToClientVersionBit ) of
              (7, False) -> decodeWithMode NodeToNodeVersionV7
              (8, False) -> decodeWithMode NodeToNodeVersionV8
+             (9, False) -> decodeWithMode NodeToNodeVersionV9
              (9, True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
              (10, True) -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
              (11, True) -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
