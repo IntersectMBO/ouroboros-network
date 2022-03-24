@@ -252,7 +252,7 @@ runConnectedPeers createChannels tracer codec client server =
 
 
 -- Run the same protocol with different codes.  This is useful for testing
--- 'Hanshake' protocol which knows how to decode different versions.
+-- 'Handshake' protocol which knows how to decode different versions.
 --
 runConnectedPeersAsymmetric
     :: ( MonadSTM m
