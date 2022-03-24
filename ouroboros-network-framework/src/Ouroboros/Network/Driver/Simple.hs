@@ -26,6 +26,7 @@ module Ouroboros.Network.Driver.Simple
   , runPipelinedPeer
     -- * Connected peers
     -- TODO: move these to a test lib
+  , Role (..)
   , runConnectedPeers
   , runConnectedPeersAsymmetric
   , runConnectedPeersPipelined
@@ -216,6 +217,8 @@ runDecoderWithChannel Channel{recv} = go
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
 
+data Role = Client | Server
+
 -- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
 --
 -- This is useful for tests and quick experiments.
@@ -232,7 +235,7 @@ runConnectedPeers :: ( MonadSTM m
                      , ShowProxy ps
                      )
                   => m (Channel m bytes, Channel m bytes)
-                  -> Tracer m (PeerRole, TraceSendRecv ps)
+                  -> Tracer m (Role, TraceSendRecv ps)
                   -> Codec ps failure m bytes
                   -> Peer ps pr st m a
                   -> Peer ps (FlipAgency pr) st m b
@@ -244,8 +247,8 @@ runConnectedPeers createChannels tracer codec client server =
       `concurrently`
     (fst <$> runPeer tracerServer codec serverChannel server)
   where
-    tracerClient = contramap ((,) AsClient) tracer
-    tracerServer = contramap ((,) AsServer) tracer
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
 
 
 -- Run the same protocol with different codes.  This is useful for testing
@@ -261,7 +264,7 @@ runConnectedPeersAsymmetric
        , ShowProxy ps
        )
     => m (Channel m bytes, Channel m bytes)
-    -> Tracer m (PeerRole, TraceSendRecv ps)
+    -> Tracer m (Role, TraceSendRecv ps)
     -> Codec ps failure m bytes
     -> Codec ps failure m bytes
     -> Peer ps pr st m a
@@ -274,8 +277,8 @@ runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
       `concurrently`
     (fst <$> runPeer tracerServer codec' serverChannel server)
   where
-    tracerClient = contramap ((,) AsClient) tracer
-    tracerServer = contramap ((,) AsServer) tracer
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
 
 
 runConnectedPeersPipelined :: ( MonadSTM m
@@ -287,7 +290,7 @@ runConnectedPeersPipelined :: ( MonadSTM m
                               , ShowProxy ps
                               )
                            => m (Channel m bytes, Channel m bytes)
-                           -> Tracer m (PeerRole, TraceSendRecv ps)
+                           -> Tracer m (Role, TraceSendRecv ps)
                            -> Codec ps failure m bytes
                            -> PeerPipelined ps pr st m a
                            -> Peer          ps (FlipAgency pr) st m b
@@ -299,6 +302,6 @@ runConnectedPeersPipelined createChannels tracer codec client server =
       `concurrently`
     (fst <$> runPeer          tracerServer codec serverChannel server)
   where
-    tracerClient = contramap ((,) AsClient) tracer
-    tracerServer = contramap ((,) AsServer) tracer
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
 

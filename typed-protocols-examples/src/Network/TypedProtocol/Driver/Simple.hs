@@ -19,6 +19,7 @@ module Network.TypedProtocol.Driver.Simple
     -- * Normal peers
     runPeer
   , TraceSendRecv (..)
+  , Role (..)
     -- * Pipelined peers
   , runPipelinedPeer
     -- * Connected peers
@@ -170,6 +171,9 @@ runDecoderWithChannel Channel{recv} = go
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
 
+data Role = Client | Server
+  deriving Show
+
 -- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
 --
 -- This is useful for tests and quick experiments.
@@ -180,7 +184,7 @@ runDecoderWithChannel Channel{recv} = go
 runConnectedPeers :: (MonadSTM m, MonadAsync m, MonadCatch m,
                       Exception failure)
                   => m (Channel m bytes, Channel m bytes)
-                  -> Tracer m (PeerRole, TraceSendRecv ps)
+                  -> Tracer m (Role, TraceSendRecv ps)
                   -> Codec ps failure m bytes
                   -> Peer ps pr st m a
                   -> Peer ps (FlipAgency pr) st m b
@@ -192,8 +196,8 @@ runConnectedPeers createChannels tracer codec client server =
       `concurrently`
     runPeer tracerServer codec serverChannel server
   where
-    tracerClient = contramap ((,) AsClient) tracer
-    tracerServer = contramap ((,) AsServer) tracer
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
 
 runConnectedPeersPipelined :: (MonadSTM m, MonadAsync m, MonadCatch m,
                                Exception failure)
