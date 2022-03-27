@@ -24,6 +24,7 @@ module Network.TypedProtocol.Driver.Simple
   , TraceSendRecv (..)
     -- * Connected peers
   , runConnectedPeers
+  , runConnectedPeersAsymmetric
     -- * Driver utilities
     -- | This may be useful if you want to write your own driver.
   , driverSimple
@@ -331,6 +332,33 @@ runConnectedPeers createChannels tracer codec client server =
     (fst <$> runPeer tracerClient codec clientChannel client)
       `concurrently`
     (fst <$> runPeer tracerServer codec serverChannel server)
+  where
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
+
+
+-- Run the same protocol with different codes.  This is useful for testing
+-- 'Handshake' protocol which knows how to decode different versions.
+--
+runConnectedPeersAsymmetric
+    :: ( MonadAsync      m
+       , MonadMask       m
+       , MonadThrow (STM m)
+       , Exception failure
+       )
+    => m (Channel m bytes, Channel m bytes)
+    -> Tracer m (Role, TraceSendRecv ps)
+    -> Codec ps failure m bytes
+    -> Codec ps failure m bytes
+    -> Peer ps             pr  pl  Empty st m (STM m) a
+    -> Peer ps (FlipAgency pr) pl' Empty st m (STM m) b
+    -> m (a, b)
+runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    (fst <$> runPeer tracerClient codec  clientChannel client)
+      `concurrently`
+    (fst <$> runPeer tracerServer codec' serverChannel server)
   where
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer
