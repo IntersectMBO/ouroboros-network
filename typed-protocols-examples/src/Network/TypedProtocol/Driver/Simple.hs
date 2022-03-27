@@ -28,6 +28,7 @@ module Network.TypedProtocol.Driver.Simple
     -- | This may be useful if you want to write your own driver.
   , driverSimple
   , runDecoderWithChannel
+    -- * Extras
   , Role (..)
   ) where
 
@@ -297,6 +298,7 @@ tryRunDecoderWithChannel Channel{tryRecv} = go
         Nothing -> return (Right (Left (DecoderState d dstate)))
         Just m  -> k m >>= go Nothing
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
+
 
 data Role = Client | Server
   deriving Show
