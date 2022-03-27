@@ -298,7 +298,10 @@ schedule thread@Thread{
         -- even if other threads are still running
         return $ SimPORTrace time tid tstep tlbl EventThreadFinished
                $ traceFinalRacesFound simstate
-               $ TraceMainReturn time x (labelledThreads threads)
+               $ TraceMainReturn time x ( labelledThreads
+                                        . Map.filter (not . threadDone)
+                                        $ threads
+                                        )
 
       ForkFrame -> do
         -- this thread is done
