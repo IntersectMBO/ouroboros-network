@@ -240,7 +240,7 @@ runPeer
 runPeer tracer codec channel peer = do
     (driver, (v :: StrictTVar m (Maybe (SomeAsync m))))
       <- driverSimple tracer codec channel
-    runPeerWithDriver driver peer (startDState driver)
+    runPeerWithDriver driver peer
       `catch` handleAsyncException v
   where
     handleAsyncException :: StrictTVar m (Maybe (SomeAsync m))

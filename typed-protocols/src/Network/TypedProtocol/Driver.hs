@@ -163,10 +163,13 @@ runPeerWithDriver
      MonadSTM m
   => Driver ps pr bytes failure dstate m
   -> Peer ps pr pl Empty st m (STM m) a
-  -> dstate
   -> m (a, dstate)
-runPeerWithDriver Driver{sendMessage, recvMessage, tryRecvMessage, recvMessageSTM} =
-    flip goEmpty
+runPeerWithDriver Driver{ sendMessage
+                        , recvMessage
+                        , tryRecvMessage
+                        , recvMessageSTM
+                        , startDState } =
+    goEmpty startDState
   where
     goEmpty
        :: forall st'.
