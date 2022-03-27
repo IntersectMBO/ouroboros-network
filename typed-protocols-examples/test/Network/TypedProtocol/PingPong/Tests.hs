@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE KindSignatures           #-}
 {-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE NumericUnderscores       #-}
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE RecordWildCards          #-}
@@ -36,12 +37,16 @@ import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Type
 
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.IOSim (IOSim, runSimOrThrow)
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer)
 
+import           Data.Bifunctor (bimap)
 import           Data.Functor.Identity (Identity (..))
 import           Data.List (inits, tails)
 
@@ -64,28 +69,31 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Network.TypedProtocol.PingPong"
-  [ testProperty "direct"              prop_direct
-  , testProperty "directPipelined 1"   prop_directPipelined1
-  , testProperty "directPipelined 2"   prop_directPipelined2
-  , testProperty "connect"             prop_connect
-  , testProperty "connect_pipelined 1" prop_connect_pipelined1
-  , testProperty "connect_pipelined 2" prop_connect_pipelined2
-  , testProperty "connect_pipelined 3" prop_connect_pipelined3
-  , testProperty "connect_pipelined 4" prop_connect_pipelined4
-  , testProperty "connect_pipelined 5" prop_connect_pipelined5
-  , testProperty "channel ST"          prop_channel_ST
-  , testProperty "channel IO"          prop_channel_IO
+  [ testProperty "direct"                prop_direct
+  , testProperty "directPipelined 1"     prop_directPipelined1
+  , testProperty "directPipelined 2"     prop_directPipelined2
+  , testProperty "connect"               prop_connect
+  , testProperty "connect_pipelined 1"   prop_connect_pipelined1
+  , testProperty "connect_pipelined 2"   prop_connect_pipelined2
+  , testProperty "connect_pipelined 3"   prop_connect_pipelined3
+  , testProperty "connect_pipelined 4"   prop_connect_pipelined4
+  , testProperty "connect_pipelined 5"   prop_connect_pipelined5
+  , testProperty "connect_pipelined stm" prop_connect_pipelined_stm
+  , testProperty "channel ST"            prop_channel_ST
+  , testProperty "channel IO"            prop_channel_IO
+  , testProperty "channel STM ST"        prop_channel_stm_ST
+  , testProperty "channel STM IO"        prop_channel_stm_IO
 #if !defined(mingw32_HOST_OS)
-  , testProperty "namedPipePipelined"  prop_namedPipePipelined_IO
-  , testProperty "socketPipelined"     prop_socketPipelined_IO
+  , testProperty "namedPipePipelined"    prop_namedPipePipelined_IO
+  , testProperty "socketPipelined"       prop_socketPipelined_IO
 #endif
   , testGroup "Codec"
-    [ testProperty "codec"             prop_codec_PingPong
-    , testProperty "codec 2-splits"    prop_codec_splits2_PingPong
-    , testProperty "codec 3-splits"    prop_codec_splits3_PingPong
+    [ testProperty "codec"               prop_codec_PingPong
+    , testProperty "codec 2-splits"      prop_codec_splits2_PingPong
+    , testProperty "codec 3-splits"      prop_codec_splits3_PingPong
     , testGroup "CBOR"
-      [ testProperty "codec"           prop_codec_cbor_PingPong
-      , testProperty "codec 2-splits"  prop_codec_cbor_splits2_PingPong
+      [ testProperty "codec"             prop_codec_cbor_PingPong
+      , testProperty "codec 2-splits"    prop_codec_cbor_splits2_PingPong
       , testProperty "codec 3-splits"  $ withMaxSuccess 30 prop_codec_cbor_splits3_PingPong
       ]
     ]
@@ -237,6 +245,22 @@ connect_pipelined client cs =
          (n, reqResps)
 
 
+connect_pipelined_stm :: (forall s. PingPongClientPipelined (IOSim s) [Either Int Int])
+                      -> [Bool]
+                      -> (Int, [Either Int Int])
+connect_pipelined_stm client cs =
+  case runSimOrThrow
+         (connect cs []
+            (pingPongClientPeerPipelinedSTM client)
+            (pingPongServerPeer pingPongServerCount))
+
+    of (reqResps, n, TerminalStates (SingProtocolState SingDone)
+                                    ReflNobodyAgency
+                                    (SingProtocolState SingDone)
+                                    ReflNobodyAgency) ->
+         (n, reqResps)
+
+
 -- | Using a client that forces maximum pipeling, show that irrespective of
 -- the envronment's choices, the interleaving we get is all requests followed
 -- by all responses.
@@ -307,6 +331,18 @@ prop_connect_pipelined5 choices (Positive omax) (NonNegative n) =
     reqResps = pipelineInterleaving omax choices [0..n-1] [0..n-1]
 
 
+-- | Using a client that forces maximum pipeling, show that irrespective of
+-- the envronment's choices, the interleaving we get is all requests followed
+-- by all responses.
+--
+prop_connect_pipelined_stm :: [Bool] -> NonNegative Int -> Bool
+prop_connect_pipelined_stm choices (NonNegative n) =
+    connect_pipelined_stm (pingPongClientPipelinedMax n) choices
+ ==
+    (n, reqResps)
+  where
+    reqResps = map Left [0..n-1] ++ map Right [0..n-1]
+
 --
 -- Properties using channels, codecs and drivers.
 --
@@ -334,6 +370,57 @@ prop_channel_IO n =
 prop_channel_ST :: NonNegative Int -> Bool
 prop_channel_ST n =
     runSimOrThrow (prop_channel n)
+
+
+prop_channel_stm :: ( MonadLabelledSTM m, MonadAsync m, MonadCatch m, MonadMask m
+                    , MonadTraceSTM m, MonadTest m, MonadThrow (STM m), MonadTimer m )
+             => DiffTime
+             -> DiffTime
+             -> NonNegative Int
+             -> Tracer m (Role, TraceSendRecv PingPong)
+             -> m Bool
+prop_channel_stm a b (NonNegative n) tr = do
+    exploreRaces
+    (_, r) <- runConnectedPeers (bimap (delayChannel a)
+                                       (delayChannel b)
+                                  <$> createConnectedBufferedChannelsUnbounded)
+                                tr
+                                codecPingPong client server
+    return (r == n)
+  where
+    client = pingPongClientPeerPipelinedSTM (pingPongClientPipelinedMin n)
+    server = pingPongServerPeer  pingPongServerCount
+
+
+prop_channel_stm_ST :: NonNegative Int
+                    -- delay in simulated seconds
+                    -> NonNegative Int
+                    -- delay in simulated seconds
+                    -> NonNegative Int
+                    -> Property
+prop_channel_stm_ST (NonNegative a) (NonNegative b) n =
+    exploreSimTrace id sim $ \_ trace ->
+        counterexample (ppTrace trace)
+      $ case traceResult True trace of
+          Left e  -> counterexample (show e) False
+          Right r -> property r
+  where
+    sim :: IOSim s Bool
+    sim = prop_channel_stm (fromIntegral a)
+                           (fromIntegral b)
+                           n
+                           (Tracer (say . show))
+
+prop_channel_stm_IO :: NonNegative Int
+                    -- delay in micro seconds
+                    -> NonNegative Int
+                    -- delay in micro seconds
+                    -> NonNegative Int
+                    -> Property
+prop_channel_stm_IO (NonNegative a) (NonNegative b) n =
+    ioProperty (prop_channel_stm (fromIntegral a / 1_000_000)
+                                 (fromIntegral b / 1_000_000)
+                                 n nullTracer)
 
 
 #if !defined(mingw32_HOST_OS)

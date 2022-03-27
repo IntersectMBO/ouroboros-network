@@ -12,9 +12,10 @@ module Network.TypedProtocol.PingPong.Client
   , PingPongClientPipelined (..)
   , PingPongClientIdle (..)
   , pingPongClientPeerPipelined
+  , pingPongClientPeerPipelinedSTM
   ) where
 
-import           Control.Monad.Class.MonadSTM (STM)
+import           Control.Monad.Class.MonadSTM
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Peer.Client
@@ -166,6 +167,45 @@ pingPongClientPeerIdle = go
     go (CollectPipelined mNone collect) =
       Collect
         (go <$> mNone)
+        (\MsgPong -> CollectDone $ Effect (go <$> collect))
+
+    go (SendMsgDonePipelined result) =
+      -- Send `MsgDone` and complete the protocol
+      Yield
+        MsgDone
+        (Done result)
+
+
+-- | Interpret a pipelined client as a pipelined 'Peer' on the client side of
+-- the 'PingPong' protocol.
+--
+pingPongClientPeerPipelinedSTM
+  :: MonadSTM m
+  => PingPongClientPipelined m a
+  -> Client PingPong 'Pipelined Empty StIdle m (STM m) a
+pingPongClientPeerPipelinedSTM (PingPongClientPipelined peer) =
+    pingPongClientPeerIdleSTM peer
+
+
+pingPongClientPeerIdleSTM
+  :: forall (q :: Queue PingPong) m a. MonadSTM m
+  => PingPongClientIdle                q        m a
+  -> Client PingPong 'Pipelined q StIdle m (STM m) a
+pingPongClientPeerIdleSTM = go
+  where
+    go :: forall (q' :: Queue PingPong).
+          PingPongClientIdle         q'        m         a
+       -> Client PingPong 'Pipelined q' StIdle m (STM m) a
+
+    go (SendMsgPingPipelined next) =
+      -- Pipelined yield: send `MsgPing`, immediately follow with the next step.
+      YieldPipelined
+        MsgPing
+        (go next)
+
+    go (CollectPipelined mNone collect) =
+      CollectSTM
+        (maybe retry (pure . go) mNone)
         (\MsgPong -> CollectDone $ Effect (go <$> collect))
 
     go (SendMsgDonePipelined result) =
