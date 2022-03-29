@@ -16,7 +16,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE StandaloneDeriving         #-}
- 
+
 {-# OPTIONS_GHC -Wno-orphans            #-}
 -- incomplete uni patterns in 'schedule' (when interpreting 'StmTxCommitted')
 -- and 'reschedule'.
@@ -435,7 +435,7 @@ schedule thread@Thread{
                            False
       modifySTRef (tvarVClock tvar') (leastUpperBoundVClock vClock)
       let expiry  = d `addTime` time
-          t       = Timeout tvar tvar' nextTmid
+          t       = Timeout tvar nextTmid
           timers' = PSQ.insert nextTmid expiry (TimerVars tvar tvar') timers
           thread' = thread { threadControl = ThreadControl (k t) ctl }
       !trace <- schedule thread' simstate { timers   = timers'
@@ -445,13 +445,13 @@ schedule thread@Thread{
 
     -- we do not follow `GHC.Event` behaviour here; updating a timer to the past
     -- effectively cancels it.
-    UpdateTimeout (Timeout _tvar _tvar' tmid) d k | d < 0 -> do
+    UpdateTimeout (Timeout _tvar tmid) d k | d < 0 -> do
       let timers' = PSQ.delete tmid timers
           thread' = thread { threadControl = ThreadControl k ctl }
       trace <- schedule thread' simstate { timers = timers' }
       return (SimPORTrace time tid tstep tlbl (EventTimerCancelled tmid) trace)
 
-    UpdateTimeout (Timeout _tvar _tvar' tmid) d k -> do
+    UpdateTimeout (Timeout _tvar tmid) d k -> do
           -- updating an expired timeout is a noop, so it is safe
           -- to race using a timeout with updating or cancelling it
       let updateTimeout_  Nothing       = ((), Nothing)
@@ -467,7 +467,7 @@ schedule thread@Thread{
       let thread' = thread { threadControl = ThreadControl k ctl }
       schedule thread' simstate
 
-    CancelTimeout (Timeout tvar tvar' tmid) k -> do
+    CancelTimeout (Timeout tvar tmid) k -> do
       let timers' = PSQ.delete tmid timers
       written <- execAtomically' (runSTM $ writeTVar tvar TimeoutCancelled)
       (wakeup, wokeby) <- threadsUnblockedByWrites written
@@ -481,7 +481,6 @@ schedule thread@Thread{
           (unblocked,
            simstate') = unblockThreads vClock wakeup simstate
       modifySTRef (tvarVClock tvar)  (leastUpperBoundVClock vClock)
-      modifySTRef (tvarVClock tvar') (leastUpperBoundVClock vClock)
       !trace <- deschedule Yield thread' simstate' { timers = timers' }
       return $ SimPORTrace time tid tstep tlbl (EventTimerCancelled tmid)
              $ traceMany
@@ -1619,7 +1618,7 @@ stepInfoToScheduleMods
   -- It is actually possible for a later step that races with an earlier one
   -- not to *depend* on it in a happens-before sense. But we don't want to try
   -- to follow any steps *after* the later one.
-  [ ScheduleMod 
+  [ ScheduleMod
       { scheduleModTarget    = stepStepId step
       , scheduleModControl   = control
       , scheduleModInsertion = takeWhile (/=stepStepId step')

@@ -53,6 +53,9 @@ class Monad m => MonadDelay m where
   threadDelay d   = void . atomically . awaitTimeout =<< newTimeout d
 
 class (MonadSTM m, MonadDelay m) => MonadTimer m where
+  -- | The type of the timeout handle, used with 'newTimeout', 'readTimeout',
+  -- 'updateTimeout' and 'cancelTimeout'.
+  --
   data Timeout m :: Type
 
   -- | Create a new timeout which will fire at the given time duration in
