@@ -9,7 +9,8 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Consensus.Shelley.Node.Praos (
-    praosBlockForging
+    ProtocolParamsBabbage (..)
+  , praosBlockForging
   , praosSharedBlockForging
   , protocolInfoPraosBabbage
   , protocolInfoPraosShelleyBased
@@ -43,7 +44,7 @@ import           Ouroboros.Consensus.Protocol.Praos (ConsensusConfig (..),
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (MaxMajorProtVer (MaxMajorProtVer),
                      PraosCanBeLeader (praosCanBeLeaderOpCert))
-import           Ouroboros.Consensus.Shelley.Eras (AlonzoEra, EraCrypto,
+import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, EraCrypto,
                      ShelleyBasedEra (shelleyBasedEraName))
 import           Ouroboros.Consensus.Shelley.Ledger
                      (CodecConfig (ShelleyCodecConfig), LedgerState (..),
@@ -157,8 +158,6 @@ praosSharedBlockForging
 {-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}
-
-type BabbageEra c = AlonzoEra c
 
 -- | Parameters needed to run Babbage
 data ProtocolParamsBabbage c = ProtocolParamsBabbage
