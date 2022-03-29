@@ -384,7 +384,7 @@ class ( ShowLedgerState (LedgerTables l)
     ->    LedgerTables l mk1
     -> f (LedgerTables l mk2)
 
-  zipLedgerTables ::
+  zipLedgerTables :: HasCallStack =>
        (forall k v.
             Ord k
          => mk1 k v
@@ -452,7 +452,7 @@ mapOverLedgerTables ::
 mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
 
 zipOverLedgerTables ::
-     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
+     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3, HasCallStack)
   => (forall k v.
           Ord k
        => mk1 k v
@@ -469,7 +469,7 @@ zipOverLedgerTables f l tables2 =
 
 -- | Mappend the values in the tables and in the ledger state
 mappendValues ::
-     TableStuff l
+     (TableStuff l, HasCallStack)
   => LedgerTables l ValuesMK
   -> l ValuesMK
   -> l ValuesMK
@@ -477,7 +477,7 @@ mappendValues = flip $ zipOverLedgerTables (\(ApplyValuesMK v1) (ApplyValuesMK v
 
 -- | Mappend the differences in the tables and in the ledger state
 mappendTracking ::
-     TableStuff l
+     (TableStuff l, HasCallStack)
   => LedgerTables l TrackingMK
   -> l TrackingMK
   -> l TrackingMK
@@ -494,7 +494,7 @@ class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
   withLedgerTablesTicked    :: IsApplyMapKind mk => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
 
 overLedgerTablesTicked ::
-     (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
+     (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2, HasCallStack)
   => (LedgerTables l mk1 -> LedgerTables l mk2)
   -> Ticked1 l mk1
   -> Ticked1 l mk2
@@ -513,7 +513,7 @@ mapOverLedgerTablesTicked ::
 mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
 
 zipOverLedgerTablesTicked ::
-     (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
+     (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3, HasCallStack)
   => (forall k v.
          Ord k
       => mk1 k v
@@ -530,7 +530,7 @@ zipOverLedgerTablesTicked f l tables2 =
 
 -- | Mappend the values in the tables and in the ticked ledger state
 mappendValuesTicked ::
-     TickedTableStuff l
+     (TickedTableStuff l, HasCallStack)
   => LedgerTables l ValuesMK
   -> Ticked1      l ValuesMK
   -> Ticked1      l ValuesMK

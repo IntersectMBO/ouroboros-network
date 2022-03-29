@@ -145,7 +145,7 @@ reapplyLedgerBlock ::
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
-     (ApplyBlock l blk, TickedTableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l, HasCallStack)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -163,7 +163,7 @@ tickThenApplyLedgerResult cfg blk l = do
     }
 
 tickThenReapplyLedgerResult ::
-     (ApplyBlock l blk, TickedTableStuff l)
+     (ApplyBlock l blk, TickedTableStuff l, HasCallStack)
   => LedgerCfg l
   -> blk
   -> l ValuesMK
@@ -178,7 +178,7 @@ tickThenReapplyLedgerResult cfg blk l =
   in TRACE.trace (show $ blockSlot blk)
    $ LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = mappendTracking tickDiffs $ lrResult lrBlock
+    , lrResult = TRACE.trace "result" $ mappendTracking (TRACE.trace "diffs" tickDiffs) $ lrResult (TRACE.trace "lrBlock" lrBlock)
     }
 
 tickThenApply ::

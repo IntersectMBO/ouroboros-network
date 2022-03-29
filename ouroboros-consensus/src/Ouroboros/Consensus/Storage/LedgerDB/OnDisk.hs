@@ -621,7 +621,7 @@ readKeySets (LedgerBackingStore backingStore) rew = do
     readKeySetsVH (HD.bsRead backingStore) rew
 
 readKeySetsVH :: forall m l.
-     (IOLike m, TableStuff l)
+     (IOLike m, TableStuff l, HasCallStack)
   => (LedgerTables l KeysMK -> m (WithOrigin SlotNo, LedgerTables l ValuesMK))
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
