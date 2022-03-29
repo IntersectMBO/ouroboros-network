@@ -23,12 +23,15 @@ import           Ouroboros.Consensus.Protocol.TPraos (StandardCrypto, TPraos)
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Shelley.Eras (AllegraEra, AlonzoEra,
                      MaryEra, ShelleyEra, StandardAllegra, StandardAlonzo,
-                     StandardMary, StandardShelley)
+                     StandardMary, StandardShelley, BabbageEra)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock,
                      ShelleyCompatible)
 import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
+import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import Ouroboros.Consensus.Protocol.Praos (Praos)
 
 {-------------------------------------------------------------------------------
   Hard fork eras
@@ -61,3 +64,6 @@ instance
 instance
   (TPraos.PraosCrypto c, Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)) =>
   ShelleyCompatible (TPraos c) (AlonzoEra c)
+
+instance
+  (Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (BabbageEra c)

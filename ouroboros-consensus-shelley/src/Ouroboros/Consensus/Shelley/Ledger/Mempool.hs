@@ -61,6 +61,7 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.Alonzo.PParams
+import           Cardano.Ledger.Babbage.PParams
 import           Cardano.Ledger.Alonzo.Tx (totExUnits)
 import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq)
@@ -327,6 +328,25 @@ data AlonzoMeasure = AlonzoMeasure {
 
 fromExUnits :: ExUnits -> ExUnits' (WithTop Natural)
 fromExUnits = fmap NotTop . unWrapExUnits
+
+instance ( ShelleyCompatible p (BabbageEra c)
+         ) => TxLimits (ShelleyBlock p (BabbageEra c)) where
+
+  type TxMeasure (ShelleyBlock p (BabbageEra c)) = AlonzoMeasure
+
+  txMeasure (ShelleyValidatedTx _txid vtx) =
+    AlonzoMeasure {
+        byteSize = ByteSize $ txInBlockSize (mkShelleyTx @(BabbageEra c) @p (SL.extractTx vtx))
+      , exUnits  = fromExUnits $ totExUnits (SL.extractTx vtx)
+      }
+
+  txsBlockCapacity ledgerState =
+      AlonzoMeasure {
+          byteSize = ByteSize $ txsMaxBytes ledgerState
+        , exUnits  = fromExUnits $ getField @"_maxBlockExUnits" pparams
+        }
+    where
+      pparams = getPParams $ tickedShelleyLedgerState ledgerState
 
 {-------------------------------------------------------------------------------
   WithTop
