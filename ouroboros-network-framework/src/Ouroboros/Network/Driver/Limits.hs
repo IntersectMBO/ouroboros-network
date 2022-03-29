@@ -24,6 +24,7 @@ module Ouroboros.Network.Driver.Limits
   , TraceSendRecv (..)
     -- * Driver utilities
   , driverWithLimits
+  , runConnectedPeersWithLimits
   ) where
 
 import           Data.Bifunctor
@@ -37,7 +38,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer (..), traceWith)
+import           Control.Tracer (Tracer (..), contramap, traceWith)
 
 import           Network.Mux.Timeout
 import           Network.TypedProtocol.Codec
@@ -455,3 +456,43 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
         Nothing               -> throwIO e
         Just (SomeAsync hndl) -> cancelWith hndl e
                               >> throwIO e
+
+
+-- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
+-- The client side is using 'driverWithLimits'.
+--
+-- This is useful for tests and quick experiments.
+--
+-- The first argument is expected to create two channels that are connected,
+-- for example 'createConnectedChannels'.
+--
+runConnectedPeersWithLimits :: forall ps pr pl pl' st failure bytes m a b.
+                               ( Alternative (STM m)
+                               , MonadAsync      m
+                               , MonadFork       m
+                               , MonadMask       m
+                               , MonadTimer      m
+                               , MonadThrow (STM m)
+                               , Exception failure
+                               , ShowProxy ps
+                               , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+                               )
+                            => m (Channel m bytes, Channel m bytes)
+                            -> Tracer m (Role, TraceSendRecv ps)
+                            -> Codec ps failure m bytes
+                            -> ProtocolSizeLimits ps bytes
+                            -> ProtocolTimeLimits ps
+                            -> Peer ps             pr  pl  Empty st m (STM m) a
+                            -> Peer ps (FlipAgency pr) pl' Empty st m (STM m) b
+                            -> m (a, b)
+runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    (fst <$> runPeerWithLimits
+                     tracerClient codec slimits tlimits
+                                        clientChannel client)
+      `concurrently`
+    (fst <$> runPeer tracerServer codec serverChannel server)
+  where
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
