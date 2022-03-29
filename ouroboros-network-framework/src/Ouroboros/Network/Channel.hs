@@ -13,6 +13,7 @@ module Ouroboros.Network.Channel
   , mvarsAsChannel
   , handlesAsChannel
   , createConnectedChannels
+  , createConnectedBufferedChannelsUnbounded
   , createConnectedBufferedChannels
   , createConnectedBufferedChannelsSTM
   , createPipelineTestChannels
@@ -174,6 +175,30 @@ createConnectedChannels = do
 
     return (mvarsAsChannel bufferB bufferA,
             mvarsAsChannel bufferA bufferB)
+
+
+-- | Create a pair of channels that are connected via two unbounded buffers.
+--
+-- This is primarily useful for testing protocols.
+--
+createConnectedBufferedChannelsUnbounded :: forall m a. MonadSTM m
+                                         => m (Channel m a, Channel m a)
+createConnectedBufferedChannelsUnbounded = do
+    -- Create two TQueues to act as the channel buffers (one for each
+    -- direction) and use them to make both ends of a bidirectional channel
+    bufferA <- atomically $ newTQueue
+    bufferB <- atomically $ newTQueue
+
+    return (queuesAsChannel bufferB bufferA,
+            queuesAsChannel bufferA bufferB)
+  where
+    queuesAsChannel bufferRead bufferWrite =
+        Channel{send, recv, tryRecv}
+      where
+        send x  = atomically (writeTQueue bufferWrite x)
+        recv    = atomically (     Just <$> readTQueue bufferRead)
+        tryRecv = atomically (fmap Just <$> tryReadTQueue bufferRead)
+
 
 -- | Create a pair of channels that are connected via N-place buffers.
 --
