@@ -381,9 +381,9 @@ registerGenesisStaking ::
 registerGenesisStaking staking nes = nes {
       SL.nesEs = epochState {
           SL.esLState = ledgerState {
-          SL._delegationState = dpState {
-              SL._dstate = dState'
-            , SL._pstate = pState'
+          SL.lsDPState = dpState {
+              SL.dpsDState = dState'
+            , SL.dpsPState = pState'
             }
         }
         , SL.esSnapshots = (SL.esSnapshots epochState) {
@@ -400,14 +400,14 @@ registerGenesisStaking staking nes = nes {
     SL.ShelleyGenesisStaking { sgsPools, sgsStake } = staking
     SL.NewEpochState { nesEs = epochState } = nes
     ledgerState = SL.esLState epochState
-    dpState = SL._delegationState ledgerState
+    dpState = SL.lsDPState ledgerState
 
     -- New delegation state. Since we're using base addresses, we only care
     -- about updating the '_delegations' field.
     --
     -- See STS DELEG for details
     dState' :: SL.DState (EraCrypto era)
-    dState' = (SL._dstate dpState) {
+    dState' = (SL.dpsDState dpState) {
           SL._unified = UM.unify
             ( Map.map (const $ SL.Coin 0)
                       . Map.mapKeys SL.KeyHashObj
@@ -419,7 +419,7 @@ registerGenesisStaking staking nes = nes {
     -- We consider pools as having been registered in slot 0
     -- See STS POOL for details
     pState' :: SL.PState (EraCrypto era)
-    pState' = (SL._pstate dpState) {
+    pState' = (SL.dpsPState dpState) {
           SL._pParams = sgsPools
         }
 
@@ -437,7 +437,7 @@ registerGenesisStaking staking nes = nes {
         -- Note that 'updateStakeDistribution' takes first the set of UTxO to
         -- delete, and then the set to add. In our case, there is nothing to
         -- delete, since this is an initial UTxO set.
-        (SL.updateStakeDistribution mempty mempty (SL._utxo (SL._utxoState ledgerState)))
+        (SL.updateStakeDistribution mempty mempty (SL._utxo (SL.lsUTxOState ledgerState)))
         dState'
         pState'
 
@@ -478,7 +478,7 @@ registerInitialFunds initialFunds nes = nes {
     epochState   = SL.nesEs          nes
     accountState = SL.esAccountState epochState
     ledgerState  = SL.esLState       epochState
-    utxoState    = SL._utxoState     ledgerState
+    utxoState    = SL.lsUTxOState     ledgerState
     utxo         = SL._utxo          utxoState
     reserves     = SL._reserves      accountState
 
@@ -501,7 +501,7 @@ registerInitialFunds initialFunds nes = nes {
     -- is nothing to delete in the incremental update.
     utxoToDel     = SL.UTxO mempty
     ledgerState'  = ledgerState {
-          SL._utxoState = utxoState {
+          SL.lsUTxOState = utxoState {
               SL._utxo        = utxo',
               -- Normally we would incrementally update here. But since we pass
               -- the full UTxO as "toAdd" rather than a delta, we simply

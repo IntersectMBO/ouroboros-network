@@ -16,6 +16,7 @@
                 -Wno-incomplete-uni-patterns
                 -Wno-incomplete-record-updates
                 -Wno-overlapping-patterns #-}
+{-# LANGUAGE RankNTypes #-}
 module Ouroboros.Consensus.Cardano.Node (
     CardanoHardForkConstraints
   , MaxMajorProtVer (..)
@@ -67,7 +68,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
+import           Ouroboros.Consensus.Util.OptNP (OptNP (..), optAppendSkip)
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP (Index (..))
 
@@ -94,7 +95,6 @@ import           Ouroboros.Consensus.Shelley.ShelleyBased
 
 import qualified Cardano.Ledger.BaseTypes as SL
 import           Cardano.Slotting.Time (SystemStart (SystemStart))
-import           Data.Kind (Type)
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.ShelleyBased
@@ -103,6 +103,7 @@ import           Ouroboros.Consensus.Shelley.Node.Common
                      (shelleyBlockIssuerVKey)
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 import qualified Ouroboros.Consensus.Shelley.Node.TPraos as TPraos
+import Ouroboros.Consensus.Shelley.Node.Praos (ProtocolParamsBabbage(..))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
@@ -138,7 +139,7 @@ instance SerialiseConstraintsHFC ByronBlock
 -- For more details, see:
 -- <https://github.com/input-output-hk/ouroboros-network/pull/1175#issuecomment-558147194>
 instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
-  encodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley ccfgAllegra ccfgMary ccfgAlonzo) = \case
+  encodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley ccfgAllegra ccfgMary ccfgAlonzo ccfgBabbage) = \case
       -- We are backwards compatible with Byron and thus use the exact same
       -- encoding.
       BlockByron   blockByron   ->                encodeDisk ccfgByron blockByron
@@ -147,7 +148,8 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
       BlockAllegra blockAllegra -> prependTag 3 $ encodeDisk ccfgAllegra blockAllegra
       BlockMary    blockMary    -> prependTag 4 $ encodeDisk ccfgMary    blockMary
       BlockAlonzo  blockAlonzo  -> prependTag 5 $ encodeDisk ccfgAlonzo  blockAlonzo
-  decodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley ccfgAllegra ccfgMary ccfgAlonzo) = do
+      BlockBabbage blockBabbage -> prependTag 6 $ encodeDisk ccfgBabbage blockBabbage
+  decodeDiskHfcBlock (CardanoCodecConfig ccfgByron ccfgShelley ccfgAllegra ccfgMary ccfgAlonzo ccfgBabbage) = do
       enforceSize "CardanoBlock" 2
       CBOR.decodeWord >>= \case
         0 -> fmap BlockByron   <$> Byron.decodeByronBoundaryBlock epochSlots
@@ -158,6 +160,7 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
         3 -> fmap BlockAllegra <$> decodeDisk ccfgAllegra
         4 -> fmap BlockMary    <$> decodeDisk ccfgMary
         5 -> fmap BlockAlonzo  <$> decodeDisk ccfgAlonzo
+        6 -> fmap BlockBabbage <$> decodeDisk ccfgBabbage
         t -> cborError $ DecoderErrorUnknownTag "CardanoBlock" (fromIntegral t)
     where
       epochSlots = Byron.getByronEpochSlots ccfgByron
@@ -172,6 +175,7 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
         3 -> SomeSecond $ NestedCtxt (NCS (NCS (NCZ Shelley.CtxtShelley)))
         4 -> SomeSecond $ NestedCtxt (NCS (NCS (NCS (NCZ Shelley.CtxtShelley))))
         5 -> SomeSecond $ NestedCtxt (NCS (NCS (NCS (NCS (NCZ Shelley.CtxtShelley)))))
+        6 -> SomeSecond $ NestedCtxt (NCS (NCS (NCS (NCS (NCS (NCZ Shelley.CtxtShelley))))))
         _ -> error $ "CardanoBlock: invalid prefix " <> show prefix
 
   getHfcBinaryBlockInfo = \case
@@ -187,6 +191,8 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
         shiftHeaderOffset 2 $ getBinaryBlockInfo blockMary
       BlockAlonzo blockAlonzo ->
         shiftHeaderOffset 2 $ getBinaryBlockInfo blockAlonzo
+      BlockBabbage blockBabbage ->
+        shiftHeaderOffset 2 $ getBinaryBlockInfo blockBabbage
     where
       shiftHeaderOffset :: Word16 -> BinaryBlockInfo -> BinaryBlockInfo
       shiftHeaderOffset shift binfo = binfo {
@@ -201,6 +207,7 @@ instance CardanoHardForkConstraints c => SerialiseHFC (CardanoEras c) where
       HeaderAllegra headerAllegra -> estimateBlockSize headerAllegra + 2
       HeaderMary    headerMary    -> estimateBlockSize headerMary    + 2
       HeaderAlonzo  headerAlonzo  -> estimateBlockSize headerAlonzo  + 2
+      HeaderBabbage headerBabbage -> estimateBlockSize headerBabbage + 2
 
 -- | Prepend the given tag by creating a CBOR 2-tuple with the tag as the
 -- first element and the given 'Encoding' as the second.
@@ -235,6 +242,7 @@ pattern CardanoNodeToNodeVersion2 =
       :* EraNodeToNodeDisabled
       :* EraNodeToNodeDisabled
       :* EraNodeToNodeDisabled
+      :* EraNodeToNodeDisabled
       :* Nil
       )
 
@@ -247,6 +255,7 @@ pattern CardanoNodeToNodeVersion3 =
       (  EraNodeToNodeEnabled ByronNodeToNodeVersion2
       :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
       :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeDisabled
       :* EraNodeToNodeDisabled
       :* EraNodeToNodeDisabled
       :* Nil
@@ -263,6 +272,7 @@ pattern CardanoNodeToNodeVersion4 =
       :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
       :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
       :* EraNodeToNodeDisabled
+      :* EraNodeToNodeDisabled
       :* Nil
       )
 
@@ -277,8 +287,25 @@ pattern CardanoNodeToNodeVersion5 =
       :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
       :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
       :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeDisabled
       :* Nil
       )
+
+-- | The hard fork enabled with the latest Byron version, the Shelley, Allegra,
+-- Mary, Alonzo and Babbage eras enabled.
+pattern CardanoNodeToNodeVersion6 :: BlockNodeToNodeVersion (CardanoBlock c)
+pattern CardanoNodeToNodeVersion6 =
+    HardForkNodeToNodeEnabled
+      HardForkSpecificNodeToNodeVersion1
+      (  EraNodeToNodeEnabled ByronNodeToNodeVersion2
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* EraNodeToNodeEnabled ShelleyNodeToNodeVersion1
+      :* Nil
+      )
+
 
 -- | We support the sole Byron version with the hard fork disabled.
 pattern CardanoNodeToClientVersion1 :: BlockNodeToClientVersion (CardanoBlock c)
@@ -295,6 +322,7 @@ pattern CardanoNodeToClientVersion2 =
       :* EraNodeToClientDisabled
       :* EraNodeToClientDisabled
       :* EraNodeToClientDisabled
+      :* EraNodeToClientDisabled
       :* Nil
       )
 
@@ -306,6 +334,7 @@ pattern CardanoNodeToClientVersion3 =
       HardForkSpecificNodeToClientVersion2
       (  EraNodeToClientEnabled ByronNodeToClientVersion1
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
+      :* EraNodeToClientDisabled
       :* EraNodeToClientDisabled
       :* EraNodeToClientDisabled
       :* EraNodeToClientDisabled
@@ -325,6 +354,7 @@ pattern CardanoNodeToClientVersion4 =
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
       :* EraNodeToClientDisabled
       :* EraNodeToClientDisabled
+      :* EraNodeToClientDisabled
       :* Nil
       )
 
@@ -339,6 +369,7 @@ pattern CardanoNodeToClientVersion5 =
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion2
+      :* EraNodeToClientDisabled
       :* EraNodeToClientDisabled
       :* Nil
       )
@@ -355,6 +386,7 @@ pattern CardanoNodeToClientVersion6 =
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion3
       :* EraNodeToClientDisabled
+      :* EraNodeToClientDisabled
       :* Nil
       )
 
@@ -368,6 +400,7 @@ pattern CardanoNodeToClientVersion7 =
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion4
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion4
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion4
+      :* EraNodeToClientDisabled
       :* Nil
       )
 
@@ -383,15 +416,32 @@ pattern CardanoNodeToClientVersion8 =
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
+      :* EraNodeToClientDisabled
       :* Nil
       )
 
+-- | The hard fork enabled, and the Shelley, Allegra, Mary, Alonzo and Babbage
+-- eras enabled Using 'ShelleyNodeToClientVersion5' for the Shelley-based eras,
+-- which enables new queries.
+pattern CardanoNodeToClientVersion9 :: BlockNodeToClientVersion (CardanoBlock c)
+pattern CardanoNodeToClientVersion9 =
+    HardForkNodeToClientEnabled
+      HardForkSpecificNodeToClientVersion2
+      (  EraNodeToClientEnabled ByronNodeToClientVersion1
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
+      :* Nil
+      )
 instance CardanoHardForkConstraints c
       => SupportedNetworkProtocolVersion (CardanoBlock c) where
   supportedNodeToNodeVersions _ = Map.fromList $
       [ (NodeToNodeV_7, CardanoNodeToNodeVersion5)
       , (NodeToNodeV_8, CardanoNodeToNodeVersion5)
       , (NodeToNodeV_9, CardanoNodeToNodeVersion5)
+      , (NodeToNodeV_10, CardanoNodeToNodeVersion6)
       ]
 
   supportedNodeToClientVersions _ = Map.fromList
@@ -407,6 +457,7 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_10, CardanoNodeToClientVersion7)
       , (NodeToClientV_11, CardanoNodeToClientVersion8)
       , (NodeToClientV_12, CardanoNodeToClientVersion8)
+      , (NodeToClientV_13, CardanoNodeToClientVersion9)
       ]
 
   latestReleasedNodeVersion _prx = (Just NodeToNodeV_8, Just NodeToClientV_12)
@@ -428,9 +479,8 @@ type ShelleyTPraosEras c =
   , AlonzoEra c
   ]
 
-type ShelleyPraosEras :: Type -> [Type]
 -- | TODO Remove this copy of Alonzo and add Babbage
-type ShelleyPraosEras c = '[AlonzoEra c]
+type ShelleyPraosEras c = '[BabbageEra c]
 
 -- | Create a 'ProtocolInfo' for 'CardanoBlock'
 --
@@ -448,10 +498,12 @@ protocolInfoCardano ::
   -> ProtocolParamsAllegra c
   -> ProtocolParamsMary    c
   -> ProtocolParamsAlonzo  c
+  -> ProtocolParamsBabbage c
   -> ProtocolTransitionParamsShelleyBased (ShelleyEra c)
   -> ProtocolTransitionParamsShelleyBased (AllegraEra c)
   -> ProtocolTransitionParamsShelleyBased (MaryEra c)
   -> ProtocolTransitionParamsShelleyBased (AlonzoEra c)
+  -> ProtocolTransitionParamsShelleyBased (BabbageEra c)
   -> ProtocolInfo m (CardanoBlock c)
 protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         byronGenesis                = genesisByron
@@ -479,6 +531,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         alonzoProtVer                = protVerAlonzo
                       , alonzoMaxTxCapacityOverrides = maxTxCapacityOverridesAlonzo
                       }
+                    ProtocolParamsBabbage {
+                        babbageProtVer                = protVerBabbage
+                      , babbageMaxTxCapacityOverrides = maxTxCapacityOverridesBabbage
+                      }
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
                       , transitionTrigger            = triggerHardForkShelley
@@ -494,6 +550,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = transCtxtAlonzo
                       , transitionTrigger            = triggerHardForkAlonzo
+                      }
+                    ProtocolTransitionParamsShelleyBased {
+                        transitionTranslationContext = transCtxtBabbage
+                      , transitionTrigger            = triggerHardForkBabbage
                       }
   | SL.Mainnet <- SL.sgNetworkId genesisShelley
   , length credssShelleyBased > 1
@@ -648,8 +708,31 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           genesisAlonzo
           transCtxtAlonzo
           maxMajorProtVer
-          TriggerHardForkNever
+          triggerHardForkBabbage
 
+    -- Babbage
+
+    genesisBabbage :: ShelleyGenesis (BabbageEra c)
+    genesisBabbage = Core.translateEra' transCtxtBabbage genesisAlonzo
+
+    blockConfigBabbage :: BlockConfig (ShelleyBlock (Praos c) (BabbageEra c))
+    blockConfigBabbage =
+        Shelley.mkShelleyBlockConfig
+          protVerBabbage
+          genesisBabbage
+          (shelleyBlockIssuerVKey <$> credssShelleyBased)
+
+    partialConsensusConfigBabbage ::
+         PartialConsensusConfig (BlockProtocol (ShelleyBlock (Praos c) (BabbageEra c)))
+    partialConsensusConfigBabbage = praosParams
+
+    partialLedgerConfigBabbage :: PartialLedgerConfig (ShelleyBlock (Praos c) (BabbageEra c))
+    partialLedgerConfigBabbage =
+        mkPartialLedgerConfigShelley
+          genesisBabbage
+          transCtxtBabbage
+          maxMajorProtVer
+          TriggerHardForkNever
     -- Cardano
 
     k :: SecurityParam
@@ -662,6 +745,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         :* K (Shelley.shelleyEraParams genesisAllegra)
         :* K (Shelley.shelleyEraParams genesisMary)
         :* K (Shelley.shelleyEraParams genesisAlonzo)
+        :* K (Shelley.shelleyEraParams genesisBabbage)
         :* Nil
 
     cfg :: TopLevelConfig (CardanoBlock c)
@@ -675,6 +759,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
               :* WrapPartialConsensusConfig partialConsensusConfigAllegra
               :* WrapPartialConsensusConfig partialConsensusConfigMary
               :* WrapPartialConsensusConfig partialConsensusConfigAlonzo
+              :* WrapPartialConsensusConfig partialConsensusConfigBabbage
               :* Nil
               )
           }
@@ -686,6 +771,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
               :* WrapPartialLedgerConfig partialLedgerConfigAllegra
               :* WrapPartialLedgerConfig partialLedgerConfigMary
               :* WrapPartialLedgerConfig partialLedgerConfigAlonzo
+              :* WrapPartialLedgerConfig partialLedgerConfigBabbage
               :* Nil
               )
           }
@@ -696,6 +782,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
             blockConfigAllegra
             blockConfigMary
             blockConfigAlonzo
+            blockConfigBabbage
       , topLevelConfigCodec =
           CardanoCodecConfig
             (configCodec topLevelConfigByron)
@@ -703,9 +790,11 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
             Shelley.ShelleyCodecConfig
             Shelley.ShelleyCodecConfig
             Shelley.ShelleyCodecConfig
+            Shelley.ShelleyCodecConfig
       , topLevelConfigStorage =
           CardanoStorageConfig
             (configStorage topLevelConfigByron)
+            (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
             (Shelley.ShelleyStorageConfig tpraosSlotsPerKESPeriod k)
@@ -760,8 +849,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockForging :: m [BlockForging m (CardanoBlock c)]
     blockForging = do
         shelleyBased <- blockForgingShelleyTPraosBased
-        -- praosBased <- blockForgingShelleyPraosBased
-        let praosBased = []
+        praosBased <- blockForgingShelleyPraosBased
         let blockForgings :: [OptNP 'False (BlockForging m) (CardanoEras c)]
             blockForgings = case (mBlockForgingByron, shelleyBased, praosBased) of
               (Nothing,    shelley, praoses)         -> shelley <> praoses
@@ -799,7 +887,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         reassoc ::
              NP (BlockForging m :.: ShelleyBlock (TPraos c)) (ShelleyTPraosEras c)
           -> OptNP 'False (BlockForging m) (CardanoEras c)
-        reassoc = OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+        reassoc = optAppendSkip Proxy . OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
 
         maxTxCapacityOverridess =
           Comp maxTxCapacityOverridesShelley :*
@@ -808,29 +896,29 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           Comp maxTxCapacityOverridesAlonzo  :*
           Nil
 
-    -- blockForgingShelleyPraosBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
-    -- blockForgingShelleyPraosBased = do
-    --     shelleyBased <-
-    --       traverse
-    --         (\creds -> Praos.praosSharedBlockForging
-    --            (Proxy @(ShelleyPraosEras c))
-    --            praosParams
-    --            creds
-    --            maxTxCapacityOverridess
-    --         )
-    --         credssShelleyBased
+    blockForgingShelleyPraosBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
+    blockForgingShelleyPraosBased = do
+        shelleyBased <-
+          traverse
+            (\creds -> Praos.praosSharedBlockForging
+               (Proxy @(ShelleyPraosEras c))
+               praosParams
+               creds
+               maxTxCapacityOverridess
+            )
+            credssShelleyBased
 
-    --     return $ reassoc <$> shelleyBased
-    --   where
-    --     -- TODO This is rather ugly! Can we do this in a nicer way?
-    --     reassoc ::
-    --          NP (BlockForging m :.: ShelleyBlock (Praos c)) (ShelleyPraosEras c)
-    --       -> OptNP 'False (BlockForging m) (CardanoEras c)
-    --     reassoc = OptSkip . OptSkip . OptSkip . OptSkip . OptSkip
-    --             . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+        return $ reassoc <$> shelleyBased
+      where
+        -- TODO This is rather ugly! Can we do this in a nicer way?
+        reassoc ::
+             NP (BlockForging m :.: ShelleyBlock (Praos c)) (ShelleyPraosEras c)
+          -> OptNP 'False (BlockForging m) (CardanoEras c)
+        reassoc = OptSkip . OptSkip . OptSkip . OptSkip . OptSkip
+                . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
 
-    --     maxTxCapacityOverridess =
-    --       Comp (error "maxTxCapacityOverridesAlonzo")  :* Nil
+        maxTxCapacityOverridess =
+          Comp maxTxCapacityOverridesBabbage :* Nil
 
 
 protocolClientInfoCardano
@@ -842,6 +930,7 @@ protocolClientInfoCardano epochSlots = ProtocolClientInfo {
       pClientInfoCodecConfig =
         CardanoCodecConfig
           (pClientInfoCodecConfig (protocolClientInfoByron epochSlots))
+          (pClientInfoCodecConfig protocolClientInfoShelley)
           (pClientInfoCodecConfig protocolClientInfoShelley)
           (pClientInfoCodecConfig protocolClientInfoShelley)
           (pClientInfoCodecConfig protocolClientInfoShelley)

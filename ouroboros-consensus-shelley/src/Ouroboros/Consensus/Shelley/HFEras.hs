@@ -30,6 +30,7 @@ import           Ouroboros.Consensus.Shelley.Eras (AllegraEra, AlonzoEra,
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock,
                      ShelleyCompatible)
 import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
+import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
 
@@ -64,3 +65,6 @@ instance
 instance
   (TPraos.PraosCrypto c, Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)) =>
   ShelleyCompatible (TPraos c) (AlonzoEra c)
+
+instance
+  (Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (BabbageEra c)
