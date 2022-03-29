@@ -59,15 +59,13 @@ import           Data.Kind (Type)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict (NP (..), NS (..), type (-.->), unComp,
+import           Data.SOP.Strict (NP (..), NS (..), unComp,
                      (:.:) (..))
 import qualified Data.SOP.Strict as SOP
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 
@@ -112,7 +110,6 @@ import           Ouroboros.Consensus.Shelley.ShelleyHFC
 import           Cardano.Ledger.Allegra.Translation ()
 import qualified Cardano.Ledger.Alonzo.Genesis as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
-import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Mary.Translation ()
@@ -120,10 +117,6 @@ import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Cardano.Block
 
-
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
-                     Requiring (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
 
@@ -362,8 +355,6 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
   TableStuff
 -------------------------------------------------------------------------------}
 
-type CardanoTxOut c = ShelleyTxOut (ShelleyBasedEras c)
-
 -- We reuse this for both TableStuff and TickedTableStuff instances, so the
 -- @TickedTableStuff x@ constraint here is excessive in the TableStuff case.
 -- However, since x is always a Cardano era, we do know we have
@@ -503,9 +494,10 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
       . getHardForkState
       $ hfstate
     where
-      f :: IsApplyMapKind mk => NS (Flip LedgerTables mk :.: LedgerState) (CardanoEras c)
-        -> Telescope (SOP.K Past) (Current (Flip LedgerState any)) (CardanoEras c)
-        -> Telescope (SOP.K Past) (Current (Flip LedgerState mk)) (CardanoEras c)
+      f :: (IsApplyMapKind mk, SOP.All (SOP.Compose TableStuff LedgerState) xs)
+        => NS (Flip LedgerTables mk :.: LedgerState)               xs
+        -> Telescope (SOP.K Past) (Current (Flip LedgerState any)) xs
+        -> Telescope (SOP.K Past) (Current (Flip LedgerState mk))  xs
       f (Z (Comp tbs)) (TZ ttip) =
           TZ
         . Current (currentStart ttip)
@@ -516,7 +508,9 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
                            )
         . unFlip
         $ tbs
-      -- f (S s) (TS g ts) = TS g (f s ts) TODO
+      f (S s) (TS g ts) = TS g (f s ts)
+      f (S _) (TZ _)   = error "unaligned withLedgerTables"
+      f (Z _) (TS _ _)   = error "unaligned withLedgerTables"
 
   pureLedgerTables f =
         CardanoLedgerTables
@@ -527,28 +521,27 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
 
   mapLedgerTables f =
       CardanoLedgerTables
-    . SOP.hcmap proxySingle (\(Comp x') -> Comp
+    . SOP.hcmap proxySingle ( Comp
                             . Flip
                             . mapLedgerTables f
                             . unFlip
-                            $ x'
-               )
+                            . unComp
+                            )
     . cardanoUTxOTable
 
   traverseLedgerTables f =
       fmap CardanoLedgerTables
     . SOP.sequence_NS'
-    . SOP.hcmap proxySingle (\(Comp x') -> Comp
-                              . fmap (Comp . Flip)
-                              . traverseLedgerTables f
-                              . unFlip
-                              $ x'
-               )
+    . SOP.hcmap proxySingle (Comp
+                            . fmap (Comp . Flip)
+                            . traverseLedgerTables f
+                            . unFlip
+                            . unComp
+                            )
     . cardanoUTxOTable
 
-  zipLedgerTables :: forall mk1 mk2 mk3 c.
-                     CardanoHardForkConstraints c
-                  => (forall k v. Ord k
+  zipLedgerTables :: forall mk1 mk2 mk3.
+                     (forall k v. Ord k
                                => mk1 k v
                                -> mk2 k v
                                -> mk3 k v
@@ -560,88 +553,91 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
         CardanoLedgerTables
       $ go left right
     where
-      go :: ( SOP.All (SOP.And (SOP.Compose TableStuff LedgerState) SingleEraBlock) xs
-            )
+      go :: SOP.All (SOP.And (SOP.Compose TableStuff LedgerState) SingleEraBlock) xs
          => NS (Flip LedgerTables mk1 :.: LedgerState) xs
          -> NS (Flip LedgerTables mk2 :.: LedgerState) xs
          -> NS (Flip LedgerTables mk3 :.: LedgerState) xs
-      go l r =
-        case (l, r) of
-          (Z (Comp l'), Z (Comp r')) -> Z (Comp . Flip $ zipLedgerTables f (unFlip l') (unFlip r'))
-          (S l', S r')               -> S $ go l' r'
-          (S _, Z _)                 -> error "Unaligned zip" -- go l ( Telescope.tip
-                                        --      . SOP.unI
-                                        --      . Telescope.alignExtendNS (tailsInPairs left trans) undefined l
-                                        --      . Telescope.fromTip
-                                        --       $ r
-                                        --      )
-          (Z _, S _)                 -> error "Unaligned zip" -- go (Telescope.tip
-                                        --      . SOP.unI
-                                        --      . Telescope.alignExtendNS (tailsInPairs right trans) undefined r
-                                        --      . Telescope.fromTip
-                                        --       $ l
-                                        --      ) r
-
-      -- trans :: InPairs ((Telescope.Extend
-      --                       SOP.I
-      --                       (SOP.K ())
-      --                       (Flip LedgerTables mk :.: LedgerState)
-      --                   )
-      --                  ) (CardanoEras c)
-      -- trans = InPairs.hcmap proxySingle
-      --         ( \f -> Telescope.Extend
-      --         $ \(Comp cur) -> SOP.I (SOP.K (), Comp $ Flip $ translateLedgerTablesWith ((provideBoth f) undefined undefined) $ unFlip cur)
-      --         )
-      --         $ translateLedgerState hardForkEraTranslation
-
-      -- tailsInPairs :: SOP.SListI xs => NS f xs -> InPairs g xs -> InPairs g xs'
-      -- tailsInPairs = undefined
+      go (Z (Comp l')) (Z (Comp r')) = Z (Comp . Flip $ zipLedgerTables f (unFlip l') (unFlip r'))
+      go (S l')        (S r')        = S $ go l' r'
+      go (S _)         (Z _)         = error "Unaligned zip"
+      go (Z _)         (S _)         = error "Unaligned zip"
 
   foldLedgerTables f =
       SOP.hcollapse
-    . SOP.hcmap proxySingle (\(Comp x) -> SOP.K
-                             . foldLedgerTables f
-                             . unFlip
-                             $ x)
+    . SOP.hcmap proxySingle ( SOP.K
+                            . foldLedgerTables f
+                            . unFlip
+                            . unComp)
     . cardanoUTxOTable
 
-  foldLedgerTables2    f (CardanoLedgerTables l) (CardanoLedgerTables r) = undefined --f l r
+  foldLedgerTables2 :: forall m mk1 mk2. Monoid m
+    => (forall k v . Ord k
+        => mk1 k v
+        -> mk2 k v
+        -> m
+       )
+    -> LedgerTables (LedgerState (CardanoBlock c)) mk1
+    -> LedgerTables (LedgerState (CardanoBlock c)) mk2
+    -> m
+  foldLedgerTables2 f (CardanoLedgerTables l) (CardanoLedgerTables r) =
+    SOP.hcollapse
+   $ go l r
+   where
+     go :: ( SOP.All (SOP.And (SOP.Compose TableStuff LedgerState) SingleEraBlock) xs
+            )
+         => NS (Flip LedgerTables mk1 :.: LedgerState) xs
+         -> NS (Flip LedgerTables mk2 :.: LedgerState) xs
+         -> NS (SOP.K m) xs
+     go (Z (Comp l')) (Z (Comp r')) = Z (SOP.K $ foldLedgerTables2 f (unFlip l') (unFlip r'))
+     go (S l')        (S r')        = S $ go l' r'
+     go (Z _)         (S _)        = error "unaligned foldLedgerTables2"
+     go (S _)         (Z _)        = error "unaligned foldLedgerTables2"
+
+
 
 instance CardanoHardForkConstraints c
       => SufficientSerializationForAnyBackingStore (LedgerState (CardanoBlock c)) where
-    codecLedgerTables = CardanoLedgerTables undefined --(CodecMK toCBOR toCBOR fromCBOR fromCBOR)
+    codecLedgerTables = CardanoLedgerTables (Z . Comp . Flip $ codecLedgerTables) -- TODO @js: these are byron codecs??
 
 deriving newtype instance (PraosCrypto c, SOP.All (SOP.Compose Eq (Flip LedgerTables EmptyMK :.: LedgerState)) (CardanoEras c)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
 deriving newtype instance (PraosCrypto c, SOP.All (SOP.Compose Eq (Flip LedgerTables ValuesMK :.: LedgerState)) (CardanoEras c)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
 deriving newtype instance (PraosCrypto c, SOP.All (SOP.Compose Eq (Flip LedgerTables DiffMK :.: LedgerState)) (CardanoEras c)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) DiffMK)
 
+deriving instance Eq (LedgerTables (LedgerState blk) EmptyMK) => Eq ((Flip LedgerTables EmptyMK :.: LedgerState) blk)
+deriving instance Eq (LedgerTables (LedgerState blk) DiffMK) => Eq ((Flip LedgerTables DiffMK :.: LedgerState) blk)
+deriving instance Eq (LedgerTables (LedgerState blk) ValuesMK) => Eq ((Flip LedgerTables ValuesMK :.: LedgerState) blk)
+
 deriving newtype instance (PraosCrypto c, SOP.All (SOP.Compose NoThunks (Flip LedgerTables EmptyMK :.: LedgerState)) (CardanoEras c)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
 deriving newtype instance (PraosCrypto c, SOP.All (SOP.Compose NoThunks (Flip LedgerTables ValuesMK :.: LedgerState)) (CardanoEras c)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
 deriving newtype instance (PraosCrypto c, SOP.All (SOP.Compose NoThunks (Flip LedgerTables SeqDiffMK :.: LedgerState)) (CardanoEras c)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) SeqDiffMK)
 
-instance PraosCrypto c => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
-  showsLedgerState _mk (CardanoLedgerTables utxo) =
-        showParen True
-      $ showString "CardanoLedgerTables " . showsApplyMapKind undefined -- utxo
+instance CardanoHardForkConstraints c => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
+  showsLedgerState mk =
+      SOP.hcollapse
+    . SOP.hcmap proxySingle ( SOP.K
+                            . showsLedgerState mk
+                            . unFlip
+                            . unComp)
+    . cardanoUTxOTable
 
 -- | Auxiliary for convenience
 --
 -- We can't reuse 'Translate' because we don't have the 'EpochNo' it requires.
-newtype TranslateTxOutWrapper era1 era2 =
-    TranslateTxOutWrapper (Core.TxOut era1 -> Core.TxOut era2)
+-- newtype TranslateTxOutWrapper era1 era2 =
+--     TranslateTxOutWrapper (Core.TxOut era1 -> Core.TxOut era2)
 
 -- | The 'Core.TxOut' translations between the adjacent Shelley-based eras in
 -- Cardano
-translateTxOut ::
-     CardanoHardForkConstraints c
-  => InPairs
-       TranslateTxOutWrapper
-       (ShelleyBasedEras c)
-translateTxOut =
-      PCons (TranslateTxOutWrapper $ SL.translateEra' ())
-    $ PCons (TranslateTxOutWrapper $ SL.translateEra' ())
-    $ PCons (TranslateTxOutWrapper $ Alonzo.translateTxOut)
-    $ PNil
+-- translateTxOut ::
+--      CardanoHardForkConstraints c
+--   => InPairs
+--        TranslateTxOutWrapper
+--        (ShelleyBasedEras c)
+-- translateTxOut =
+--       PCons (TranslateTxOutWrapper $ SL.translateEra' ())
+--     $ PCons (TranslateTxOutWrapper $ SL.translateEra' ())
+--     $ PCons (TranslateTxOutWrapper $ Alonzo.translateTxOut)
+--     $ PNil
 
 -- | Auxiliary @SOP@ combinator
 --
@@ -649,38 +645,38 @@ translateTxOut =
 -- precedes the 'NP' index.
 --
 -- TODO use an accumulator instead of this quadratic traversal
-composeTxOutTranslationPairs ::
-     (SOP.SListI eras, HasCallStack)
-  => InPairs
-       TranslateTxOutWrapper
-       eras
-  -> NP
-       (SOP.K (NS TxOutWrapper eras) -.-> TxOutWrapper)
-       eras
-composeTxOutTranslationPairs = \case
-    PNil                                  ->
-      (SOP.fn $ SOP.unZ . SOP.unK) :* Nil
-    PCons (TranslateTxOutWrapper f) inner ->
-         (SOP.fn $
-            eitherNS
-              id
-              (error "composeTxOutTranslationPairs: anachrony")
-          . SOP.unK
-         )
-      :* SOP.hmap
-          (\innerf -> SOP.fn $
-              SOP.apFn innerf
-            . SOP.K
-            . eitherNS
-                (Z . TxOutWrapper . f . unTxOutWrapper)
-                id
-            . SOP.unK)
-          (composeTxOutTranslationPairs inner)
-  where
-    eitherNS :: (f x -> c) -> (NS f xs -> c) -> NS f (x ': xs) -> c
-    eitherNS l r = \case
-      Z x -> l x
-      S x -> r x
+-- composeTxOutTranslationPairs ::
+--      (SOP.SListI eras, HasCallStack)
+--   => InPairs
+--        TranslateTxOutWrapper
+--        eras
+--   -> NP
+--        (SOP.K (NS TxOutWrapper eras) -.-> TxOutWrapper)
+--        eras
+-- composeTxOutTranslationPairs = \case
+--     PNil                                  ->
+--       (SOP.fn $ SOP.unZ . SOP.unK) :* Nil
+--     PCons (TranslateTxOutWrapper f) inner ->
+--          (SOP.fn $
+--             eitherNS
+--               id
+--               (error "composeTxOutTranslationPairs: anachrony")
+--           . SOP.unK
+--          )
+--       :* SOP.hmap
+--           (\innerf -> SOP.fn $
+--               SOP.apFn innerf
+--             . SOP.K
+--             . eitherNS
+--                 (Z . TxOutWrapper . f . unTxOutWrapper)
+--                 id
+--             . SOP.unK)
+--           (composeTxOutTranslationPairs inner)
+--   where
+--     eitherNS :: (f x -> c) -> (NS f xs -> c) -> NS f (x ': xs) -> c
+--     eitherNS l r = \case
+--       Z x -> l x
+--       S x -> r x
 
 -- | Auxiliary alias for convenenience
 class    (ShelleyBasedEra era, SL.Crypto era ~ c) => CardanoShelleyBasedEra c era
@@ -724,43 +720,60 @@ instance IsShelleyTele xs => IsShelleyTele (x ': xs) where
     TS (Comp p) inner -> TS p (unconsolidateShelleyTele inner)
 
 instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoBlock c)) where
-  projectLedgerTablesTicked st = undefined
-      -- projectLedgerTablesHelper
-      --   (\(FlipTickedLedgerState st') -> projectLedgerTablesTicked st')
-      --   (tickedHardForkLedgerStatePerEra st)
-  withLedgerTablesTicked TickedHardForkLedgerState{..} tables = undefined
-      -- TickedHardForkLedgerState {
-      --     tickedHardForkLedgerStateTransition = tickedHardForkLedgerStateTransition
-      --   , tickedHardForkLedgerStatePerEra     =
-      --       withLedgerTablesHelper
-      --         (\(FlipTickedLedgerState st) tables' ->
-      --            FlipTickedLedgerState $ withLedgerTablesTicked st tables')
-      --         tickedHardForkLedgerStatePerEra
-      --         tables
-      --   }
+  projectLedgerTablesTicked =
+        CardanoLedgerTables
+      . SOP.hcmap proxySingle ( Comp
+                              . Flip
+                              . projectLedgerTablesTicked
+                              . getFlipTickedLedgerState
+                              . currentState
+                              )
+      . Telescope.tip
+      . getHardForkState
+      . tickedHardForkLedgerStatePerEra
+
+  withLedgerTablesTicked TickedHardForkLedgerState{..} (CardanoLedgerTables tables) =
+      TickedHardForkLedgerState tickedHardForkLedgerStateTransition
+      . HardForkState
+      . f tables
+      . getHardForkState
+      $ tickedHardForkLedgerStatePerEra
+    where
+      f :: (IsApplyMapKind mk, SOP.All (SOP.Compose TickedTableStuff LedgerState) xs)
+        => NS (Flip LedgerTables mk :.: LedgerState)               xs
+        -> Telescope (SOP.K Past) (Current (FlipTickedLedgerState any)) xs
+        -> Telescope (SOP.K Past) (Current (FlipTickedLedgerState mk))  xs
+      f (Z (Comp tbs)) (TZ ttip) = TZ
+                                 . Current (currentStart ttip)
+                                 . FlipTickedLedgerState
+                                 . withLedgerTablesTicked ( getFlipTickedLedgerState
+                                                          . currentState
+                                                          $ ttip
+                                                          )
+                                 . unFlip
+                                 $ tbs
+      f (S s)          (TS g ts) = TS g (f s ts)
+      f (S _)          (TZ _)    = error "unaligned withLedgerTables"
+      f (Z _)          (TS _ _)  = error "unaligned withLedgerTables"
 
 instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c) where
-  hardForkInjectLedgerTablesKeysMK =
+  hardForkInjectLedgerTables =
          byron
-      :* shelley IZ
       :* shelley (IS IZ)
-      :* shelley (IS (IS IZ))
-      :* shelley (IS (IS (IS IZ)))
+      :* shelley (IS $ IS IZ)
+      :* shelley (IS $ IS (IS IZ))
+      :* shelley (IS $ IS (IS (IS IZ)))
       :* Nil
     where
       byron :: InjectLedgerTables (CardanoEras c) ByronBlock
       byron = InjectLedgerTables $ \NoByronLedgerTables -> polyEmptyLedgerTables
 
-      shelley ::
-           forall era. CardanoShelleyBasedEra c era
-        => SOP.Index (ShelleyBasedEras c) era
-        -> InjectLedgerTables (CardanoEras c) (ShelleyBlock era)
+      shelley :: SOP.Index (CardanoEras c) (ShelleyBlock era)
+              -> InjectLedgerTables (CardanoEras c) (ShelleyBlock era)
       shelley idx =
           InjectLedgerTables
-        $ \(ShelleyLedgerTables lt) -> CardanoLedgerTables $ undefined --mapValuesAppliedMK f lt
-        where
-          f :: Core.TxOut era -> CardanoTxOut c
-          f = ShelleyTxOut . SOP.injectNS idx . TxOutWrapper
+        $ CardanoLedgerTables . SOP.injectNS idx . Comp . Flip
+
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley

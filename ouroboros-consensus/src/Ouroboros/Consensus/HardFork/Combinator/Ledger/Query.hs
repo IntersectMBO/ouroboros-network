@@ -281,7 +281,7 @@ prepareQueryIfCurrent ::
   => QueryIfCurrent xs LargeL result
   -> TableKeySets (LedgerState (HardForkBlock xs))
 prepareQueryIfCurrent =
-    \qic -> go qic hardForkInjectLedgerTablesKeysMK
+    \qic -> go qic hardForkInjectLedgerTables
   where
     go ::
          All SingleEraBlock ys

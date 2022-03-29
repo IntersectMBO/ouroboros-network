@@ -125,7 +125,7 @@ instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown
 
 -- | How to inject each era's ledger tables into their shared ledger tables
 class LedgerTablesCanHardFork xs where
-  hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables xs) xs
+  hardForkInjectLedgerTables :: NP (InjectLedgerTables xs) xs
 
 newtype InjectLedgerTables xs x = InjectLedgerTables {
       applyInjectLedgerTables :: forall mk. IsApplyMapKind mk =>

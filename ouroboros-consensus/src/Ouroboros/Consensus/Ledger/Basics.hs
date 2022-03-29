@@ -416,22 +416,22 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> m
 
-  mapOverLedgerTables ::
-    ( forall k v . Ord k => mk1 k v -> mk2 k v)
-    -> l mk1
-    -> l mk2
+  -- mapOverLedgerTables ::
+  --   ( forall k v . Ord k => mk1 k v -> mk2 k v)
+  --   -> l mk1
+  --   -> l mk2
 
-  zipOverLedgerTables ::
-     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
-    => (forall k v.
-         Ord k
-         => mk1 k v
-         -> mk2 k v
-         -> mk3 k v
-       )
-    ->              l mk1
-    -> LedgerTables l mk2
-    ->              l mk3
+  -- zipOverLedgerTables ::
+  --    (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
+  --   => (forall k v.
+  --        Ord k
+  --        => mk1 k v
+  --        -> mk2 k v
+  --        -> mk3 k v
+  --      )
+  --   ->              l mk1
+  --   -> LedgerTables l mk2
+  --   ->              l mk3
 
 overLedgerTables ::
      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
@@ -440,32 +440,32 @@ overLedgerTables ::
   -> l mk2
 overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
 
--- mapOverLedgerTables ::
---      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
---   => (forall k v.
---           Ord k
---        => mk1 k v
---        -> mk2 k v
---      )
---   -> l mk1
---   -> l mk2
--- mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
+mapOverLedgerTables ::
+     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
+  => (forall k v.
+          Ord k
+       => mk1 k v
+       -> mk2 k v
+     )
+  -> l mk1
+  -> l mk2
+mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
 
--- zipOverLedgerTables ::
---      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
---   => (forall k v.
---           Ord k
---        => mk1 k v
---        -> mk2 k v
---        -> mk3 k v
---      )
---   ->              l mk1
---   -> LedgerTables l mk2
---   ->              l mk3
--- zipOverLedgerTables f l tables2 =
---     overLedgerTables
---       (\tables1 -> zipLedgerTables f tables1 tables2)
---       l
+zipOverLedgerTables ::
+     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
+  => (forall k v.
+          Ord k
+       => mk1 k v
+       -> mk2 k v
+       -> mk3 k v
+     )
+  ->              l mk1
+  -> LedgerTables l mk2
+  ->              l mk3
+zipOverLedgerTables f l tables2 =
+    overLedgerTables
+      (\tables1 -> zipLedgerTables f tables1 tables2)
+      l
 
 -- | Mappend the values in the tables and in the ledger state
 mappendValues ::

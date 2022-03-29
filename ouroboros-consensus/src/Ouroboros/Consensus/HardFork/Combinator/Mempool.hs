@@ -128,7 +128,7 @@ instance CanHardFork' xs => LedgerSupportsMempool (HardForkBlock xs) where
 
   getTransactionKeySets (HardForkGenTx (OneEraGenTx ns)) =
         hcollapse
-      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
+      $ hczipWith proxySingle f hardForkInjectLedgerTables ns
     where
       f ::
            SingleEraBlock                                    x
