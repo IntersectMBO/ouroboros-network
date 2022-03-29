@@ -25,6 +25,8 @@ module Ouroboros.Network.Driver.Limits
   , TraceSendRecv (..)
     -- * Driver utilities
   , driverWithLimits
+  , runConnectedPeersWithLimits
+  , runConnectedPipelinedPeersWithLimits
   ) where
 
 import Data.Maybe (fromMaybe)
@@ -33,7 +35,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer (..), contramap, traceWith)
 
 import Network.Mux.Timeout
 import Network.TypedProtocol.Codec
@@ -201,3 +203,83 @@ runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
       in runPipelinedPeerWithDriver driver peer
+
+
+-- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
+-- The client side is using 'driverWithLimits'.
+--
+-- This is useful for tests and quick experiments.
+--
+-- The first argument is expected to create two channels that are connected,
+-- for example 'createConnectedChannels'.
+--
+runConnectedPeersWithLimits
+  :: forall ps pr st failure bytes m a b.
+     ( MonadAsync      m
+     , MonadFork       m
+     , MonadMask       m
+     , MonadTimer      m
+     , MonadThrow (STM m)
+     , Exception failure
+     , ShowProxy ps
+     , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     )
+  => m (Channel m bytes, Channel m bytes)
+  -> Tracer m (Role, TraceSendRecv ps)
+  -> Codec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> ProtocolTimeLimits ps
+  -> Peer ps             pr  NonPipelined st m a
+  -> Peer ps (FlipAgency pr) NonPipelined st m b
+  -> m (a, b)
+runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    (fst <$> runPeerWithLimits
+                     tracerClient codec slimits tlimits
+                                        clientChannel client)
+      `concurrently`
+    (fst <$> runPeer tracerServer codec serverChannel server)
+  where
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
+
+
+-- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
+-- The client side is using 'driverWithLimits'.
+--
+-- This is useful for tests and quick experiments.
+--
+-- The first argument is expected to create two channels that are connected,
+-- for example 'createConnectedChannels'.
+--
+runConnectedPipelinedPeersWithLimits
+  :: forall ps pr st failure bytes m a b.
+     ( MonadAsync      m
+     , MonadFork       m
+     , MonadMask       m
+     , MonadTimer      m
+     , MonadThrow (STM m)
+     , Exception failure
+     , ShowProxy ps
+     , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     )
+  => m (Channel m bytes, Channel m bytes)
+  -> Tracer m (Role, TraceSendRecv ps)
+  -> Codec ps failure m bytes
+  -> ProtocolSizeLimits ps bytes
+  -> ProtocolTimeLimits ps
+  -> PeerPipelined ps    pr               st m a
+  -> Peer ps (FlipAgency pr) NonPipelined st m b
+  -> m (a, b)
+runConnectedPipelinedPeersWithLimits createChannels tracer codec slimits tlimits client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    (fst <$> runPipelinedPeerWithLimits
+                     tracerClient codec slimits tlimits
+                                        clientChannel client)
+      `concurrently`
+    (fst <$> runPeer tracerServer codec serverChannel server)
+  where
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
