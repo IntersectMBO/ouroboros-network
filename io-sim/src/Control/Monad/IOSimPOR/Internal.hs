@@ -1251,9 +1251,11 @@ execNewTVar nextVid !mbLabel x = do
 
 execReadTVar :: TVar s a -> ST s a
 execReadTVar TVar{tvarCurrent} = readSTRef tvarCurrent
+{-# INLINE execReadTVar #-}
 
 execWriteTVar :: TVar s a -> a -> ST s ()
 execWriteTVar TVar{tvarCurrent} = writeSTRef tvarCurrent
+{-# INLINE execWriteTVar #-}
 
 saveTVar :: TVar s a -> ST s ()
 saveTVar TVar{tvarCurrent, tvarUndo} = do
@@ -1268,12 +1270,14 @@ revertTVar TVar{tvarCurrent, tvarUndo} = do
     (v:vs) <- readSTRef tvarUndo
     writeSTRef tvarCurrent v
     writeSTRef tvarUndo    vs
+{-# INLINE revertTVar #-}
 
 commitTVar :: TVar s a -> ST s ()
 commitTVar TVar{tvarUndo} = do
     -- pop the undo stack, leaving the current value unchanged
     (_:vs) <- readSTRef tvarUndo
     writeSTRef tvarUndo vs
+{-# INLINE commitTVar #-}
 
 readTVarUndos :: TVar s a -> ST s [a]
 readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
