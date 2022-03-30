@@ -1466,30 +1466,30 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
 
       -- a new step cannot race with any threads that it just woke up
       new :: [StepInfo]
-      new | isNotRacyThreadId tid  = []  -- non-racy threads do not race
-          | Set.null newConcurrent = []  -- cannot race with anything
-          | justBlocking           = []  -- no need to defer a blocking transaction
-          | otherwise              =
-              [StepInfo { stepInfoStep       = newStep,
-                          stepInfoControl    = control,
-                          stepInfoConcurrent = newConcurrent,
-                          stepInfoNonDep     = [],
-                          stepInfoRaces      = []
-                        }]
+      !new | isNotRacyThreadId tid  = []  -- non-racy threads do not race
+           | Set.null newConcurrent = []  -- cannot race with anything
+           | justBlocking           = []  -- no need to defer a blocking transaction
+           | otherwise              =
+               [StepInfo { stepInfoStep       = newStep,
+                           stepInfoControl    = control,
+                           stepInfoConcurrent = newConcurrent,
+                           stepInfoNonDep     = [],
+                           stepInfoRaces      = []
+                         }]
         where
           newConcurrent :: Set ThreadId
           newConcurrent = foldr Set.delete newConcurrent0 (effectWakeup newEffect)
 
       activeRaces' :: [StepInfo]
-      activeRaces' =
+      !activeRaces' =
         [ -- if this step depends on the previous step, or is not concurrent,
           -- then any threads that it wakes up become non-concurrent also.
-          let lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
+          let !lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
           if tid `elem` concurrent then
             let theseStepsRace = isRacyThreadId tid && racingSteps step newStep
                 happensBefore  = step `happensBeforeStep` newStep
-                nondep' | happensBefore = nondep
-                        | otherwise     = newStep : nondep
+                !nondep' | happensBefore = nondep
+                         | otherwise     = newStep : nondep
                 -- We will only record the first race with each thread---reversing
                 -- the first race makes the next race detectable. Thus we remove a
                 -- thread from the concurrent set after the first race.
@@ -1499,10 +1499,10 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
                 -- Here we record discovered races.
                 -- We only record a new race if we are following the default schedule,
                 -- to avoid finding the same race in different parts of the search space.
-                stepRaces' | (control == ControlDefault ||
-                              control == ControlFollow [] []) &&
-                             theseStepsRace  = newStep : stepRaces
-                           | otherwise       = stepRaces
+                !stepRaces' | (control == ControlDefault ||
+                               control == ControlFollow [] []) &&
+                              theseStepsRace  = newStep : stepRaces
+                            | otherwise       = stepRaces
 
             in stepInfo { stepInfoConcurrent = effectForks newEffect
                                              `Set.union` concurrent',
@@ -1512,10 +1512,10 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
 
           else stepInfo { stepInfoConcurrent = lessConcurrent }
 
-        | stepInfo@StepInfo { stepInfoStep       = step,
-                              stepInfoConcurrent = concurrent,
-                              stepInfoNonDep     = nondep,
-                              stepInfoRaces      = stepRaces
+        | !stepInfo@StepInfo { stepInfoStep       = step,
+                               stepInfoConcurrent = concurrent,
+                               stepInfoNonDep     = nondep,
+                               stepInfoRaces      = stepRaces
                             }
             <- activeRaces ]
   in normalizeRaces $ races { activeRaces = new ++ activeRaces' }
@@ -1531,10 +1531,10 @@ threadTerminatesRaces tid races@Races{ activeRaces } =
 
 normalizeRaces :: Races -> Races
 normalizeRaces Races{ activeRaces, completeRaces } =
-  let activeRaces' = filter (not . null. stepInfoConcurrent) activeRaces
-      completeRaces' = filter (not . null. stepInfoRaces)
-                         (filter (null . stepInfoConcurrent) activeRaces)
-                    ++ completeRaces
+  let !activeRaces'   = filter (not . null. stepInfoConcurrent) activeRaces
+      !completeRaces' = filter (not . null. stepInfoRaces)
+                          (filter (null . stepInfoConcurrent) activeRaces)
+                     ++ completeRaces
   in Races{ activeRaces = activeRaces', completeRaces = completeRaces' }
 
 -- We assume that steps do not race with later steps after a quiescent
