@@ -37,6 +37,7 @@ library
                        Control.Monad.Class.MonadAsync
                        Control.Monad.Class.MonadEventlog
                        Control.Monad.Class.MonadFork
+                       Control.Monad.Class.MonadMVar
                        Control.Monad.Class.MonadSay
                        Control.Monad.Class.MonadST
                        Control.Monad.Class.MonadSTM
@@ -57,6 +58,7 @@ library
   build-depends:       base  >=4.9 && <4.15,
                        async >=2.1,
                        bytestring,
+                       deque,
                        mtl   >=2.2 && <2.3,
                        stm   >=2.5 && <2.6,
                        time  >=1.9.1 && <1.11

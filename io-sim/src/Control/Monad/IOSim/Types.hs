@@ -81,6 +81,7 @@ import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadEventlog
+import           Control.Monad.Class.MonadMVar
 import           Control.Monad.Class.MonadSTM (MonadSTM, MonadInspectSTM (..),
                    MonadLabelledSTM (..), MonadTraceSTM (..), TMVarDefault, TraceValue)
 import qualified Control.Monad.Class.MonadSTM as MonadSTM
@@ -447,6 +448,17 @@ instance MonadTraceSTM (IOSim s) where
   traceTVar _ tvar f = STM $ \k -> TraceTVar tvar f (k ())
   traceTQueue  = traceTQueueDefault
   traceTBQueue = traceTBQueueDefault
+
+
+instance MonadMVar (IOSim s) where
+  type MVar (IOSim s) = MVarDefault (IOSim s)
+  newEmptyMVar = newEmptyMVarDefault
+  newMVar      = newMVarDefault
+  takeMVar     = takeMVarDefault
+  putMVar      = putMVarDefault
+  tryTakeMVar  = tryTakeMVarDefault
+  tryPutMVar   = tryPutMVarDefault
+  isEmptyMVar  = isEmptyMVarDefault
 
 data Async s a = Async !ThreadId (STM s (Either SomeException a))
 

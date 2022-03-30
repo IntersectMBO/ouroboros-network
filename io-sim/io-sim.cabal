@@ -49,6 +49,7 @@ library
                        ScopedTypeVariables,
                        TypeFamilies
   build-depends:       base              >=4.9 && <4.15,
+                       deque,
                        io-classes        >=0.2 && <0.3,
                        exceptions        >=0.10,
                        containers,
