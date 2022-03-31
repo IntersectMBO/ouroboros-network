@@ -55,7 +55,7 @@ import           Prelude hiding (read)
 
 import           Deque.Strict (Deque)
 import qualified Deque.Strict as Deque
-import           Data.Foldable (traverse_, toList)
+import           Data.Foldable (traverse_, toList, foldl')
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
 import           Data.Maybe (mapMaybe)
@@ -71,10 +71,8 @@ import           Data.Dynamic
 import           GHC.Exts (fromList)
 
 import           Control.Exception (NonTermination (..),
-                   assert, throw)
-import           Control.Monad (join)
-
-import           Control.Monad (when)
+                   assert, throw, AsyncException (ThreadKilled))
+import           Control.Monad (join, when)
 import           Control.Monad.ST.Lazy
 import           Control.Monad.ST.Lazy.Unsafe (unsafeIOToST, unsafeInterleaveST)
 import           Data.STRef.Lazy
@@ -125,7 +123,10 @@ data TimerCompletionInfo s =
        Timer !(TVar s TimeoutState)
      | TimerRegisterDelay !(TVar s Bool)
      | TimerThreadDelay !ThreadId
+     | TimerTimeout !ThreadId !TimeoutId
 
+data IsLocked = NotLocked | Locked !ThreadId
+  deriving (Eq, Show)
 
 -- | Internal state.
 --
@@ -136,8 +137,11 @@ data SimState s a = SimState {
        threads  :: !(Map ThreadId (Thread s a)),
        -- | current time
        curTime  :: !Time,
-       -- | ordered list of timers
+       -- | ordered list of timers and timeouts
        timers   :: !(OrdPSQ TimeoutId Time (TimerCompletionInfo s)),
+       -- | timeout locks in order to synchronize the timeout handler and the
+       -- main thread
+       locks    :: !(Map TimeoutId IsLocked),
        -- | list of clocks
        clocks   :: !(Map ClockId UTCTime),
        nextVid  :: !TVarId,     -- ^ next unused 'TVarId'
@@ -151,6 +155,7 @@ initialState =
       threads  = Map.empty,
       curTime  = Time 0,
       timers   = PSQ.empty,
+      locks    = Map.empty,
       clocks   = Map.singleton (ClockId []) epoch1970,
       nextVid  = TVarId 0,
       nextTmid = TimeoutId 0
@@ -158,22 +163,22 @@ initialState =
   where
     epoch1970 = UTCTime (fromGregorian 1970 1 1) 0
 
-invariant :: Maybe (Thread s a) -> SimState s a -> Bool
+invariant :: Maybe (Thread s a) -> SimState s a -> x -> x
 
 invariant (Just running) simstate@SimState{runqueue,threads,clocks} =
-    not (threadBlocked running)
- && threadId running `Map.notMember` threads
- && threadId running `List.notElem` toList runqueue
- && threadClockId running `Map.member` clocks
- && invariant Nothing simstate
+   assert (not (threadBlocked running))
+ . assert (threadId running `Map.notMember` threads)
+ . assert (threadId running `List.notElem` runqueue)
+ . assert (threadClockId running `Map.member` clocks)
+ . invariant Nothing simstate
 
 invariant Nothing SimState{runqueue,threads,clocks} =
-    all (`Map.member` threads) runqueue
- && and [ threadBlocked t == (threadId t `notElem` runqueue)
-        | t <- Map.elems threads ]
- && toList runqueue == List.nub (toList runqueue)
- && and [ threadClockId t `Map.member` clocks
-        | t <- Map.elems threads ]
+   assert (all (`Map.member` threads) runqueue)
+ . assert (and [ threadBlocked t == (threadId t `notElem` runqueue)
+               | t <- Map.elems threads ])
+ . assert (toList runqueue == List.nub (toList runqueue))
+ . assert (and [ threadClockId t `Map.member` clocks
+               | t <- Map.elems threads ])
 
 -- | Interpret the simulation monotonic time as a 'NominalDiffTime' since
 -- the start.
@@ -194,11 +199,12 @@ schedule !thread@Thread{
            runqueue,
            threads,
            timers,
+           locks,
            clocks,
            nextVid, nextTmid,
            curTime  = time
          } =
-  assert (invariant (Just thread) simstate) $
+  invariant (Just thread) simstate $
   case action of
 
     Return x -> {-# SCC "schedule.Return" #-}
@@ -231,15 +237,100 @@ schedule !thread@Thread{
         let thread' = thread { threadControl = ThreadControl (k x) ctl' }
         schedule thread' simstate
 
+      TimeoutFrame _tid tmid k ctl' ->
+        -- It could happen that the timeout action finished at the same time
+        -- as the timeout expired, this will be a race condition. That's why
+        -- we have the locks to solve this. If at this moment the lock is
+        -- 'Locked', then it means that this thread still hasn't received the
+        -- 'TimeoutException', so we need to kill the thread that is responsible
+        -- for doing that and run our continuation successfully; if it is
+        -- 'NotLocked' then it means we can lock it and carry on with the
+        -- success case'.
+        case Map.lookup tmid locks of
+          Nothing            -> error "TimeoutFrame: impossible happened!"
+          Just (Locked etid) -> do
+                -- Remove the timer from the queue
+            let timers' = PSQ.delete tmid timers
+                -- Remove the lock for this particular timeout
+                locks'  = Map.delete tmid locks
+                -- Kill the exception throwing thread and carry on the
+                -- continuation
+                thread' = thread { threadControl =
+                                      ThreadControl (ThrowTo (toException ThreadKilled)
+                                                             etid
+                                                             (k (Just x)))
+                                                    ctl'
+                                  }
+            schedule thread' simstate { timers = timers'
+                                      , locks  = locks'
+                                      }
+
+          Just NotLocked -> do
+                -- Remove the timer from the queue
+            let timers' = PSQ.delete tmid timers
+                -- Remove the mutex (this is equivalent to locking it since
+                -- we are just forking exception throwing threads for timeouts
+                -- which mutexes exist and are not locked
+                locks'  = Map.delete tmid locks
+                -- Run the continuation
+                thread' = thread { threadControl = ThreadControl (k (Just x)) ctl' }
+
+            schedule thread' simstate { timers = timers'
+                                      , locks  = locks'
+                                      }
+
+      -- This thread was blocked on threadDelay, but managed to reach the end.
+      -- Unwind the control stack.
+      ThreadDelayFrame _ ctl' -> do
+        let thread' = thread { threadControl = ThreadControl action ctl' }
+        schedule thread' simstate
+
     Throw e -> {-# SCC "schedule.Throw" #-}
                case unwindControlStack e thread of
-      Right thread'@Thread { threadMasking = maskst' } -> do
+      -- Found a CatchFrame without any ThreadDelayFrame
+      ( Right ( thread'@Thread { threadMasking = maskst' }
+              , Nothing) , Nothing) -> do
         -- We found a suitable exception handler, continue with that
         trace <- schedule thread' simstate
         return (SimTrace time tid tlbl (EventThrow e) $
                 SimTrace time tid tlbl (EventMask maskst') trace)
 
-      Left isMain
+      -- Found a CatchFrame with a ThreadDelayFrame so we need to unregister
+      -- the threadDelay timer
+      (Right ( thread'@Thread { threadMasking = maskst' }
+             , Nothing) , Just tdid) -> do
+        let timers' = PSQ.delete tdid timers
+        -- We found a suitable exception handler, continue with that
+        trace <- schedule thread' simstate { timers = timers' }
+        return (SimTrace time tid tlbl (EventThrow e) $
+                SimTrace time tid tlbl (EventMask maskst') trace)
+
+      -- Found a TimeoutFrame without any ThreadDelayFrame so we only need to
+      -- delete the timeout lock
+      ( Right ( thread'@Thread { threadMasking = maskst' }
+              , Just tmid) , Nothing) -> do
+        let locks' = Map.delete tmid locks
+        -- We found a suitable exception handler, continue with that removing
+        -- the timeout lock from the map
+        trace <- schedule thread' simstate { locks = locks' }
+        return (SimTrace time tid tlbl (EventThrow e) $
+                SimTrace time tid tlbl (EventMask maskst') trace)
+
+      -- Found a TimeoutFrame with a ThreadDelayFrame so we need to unregister
+      -- the threadDelay timer and delete the timeout lock
+      ( Right ( thread'@Thread { threadMasking = maskst' }
+              , Just tmid) , Just tdid) -> do
+        let locks'  = Map.delete tmid locks
+            timers' = PSQ.delete tdid timers
+        -- We found a suitable exception handler, continue with that removing
+        -- the timeout lock from the map
+        trace <- schedule thread' simstate { locks  = locks'
+                                           , timers = timers'
+                                           }
+        return (SimTrace time tid tlbl (EventThrow e) $
+                SimTrace time tid tlbl (EventMask maskst') trace)
+
+      (Left isMain, _)
         -- We unwound and did not find any suitable exception handler, so we
         -- have an unhandled exception at the top level of the thread.
         | isMain ->
@@ -354,8 +445,28 @@ schedule !thread@Thread{
                                          , nextTmid = succ nextTmid }
       return (SimTrace time tid tlbl (EventTimerCreated nextTmid nextVid expiry) trace)
 
+    StartTimeout d _ _ | d <= 0 ->
+      error "schedule: StartTimeout: Impossible happened"
+
+    -- we treat negative timeouts as cancelled ones; for the record we put
+    -- `EventTimerCreated` and `EventTimerCancelled` in the trace; This differs
+    -- from `GHC.Event` behaviour.
+    StartTimeout d action' k ->
+      {-# SCC "schedule.StartTimeout" #-} do
+      let !expiry    = d `addTime` time
+          !timers'   = PSQ.insert nextTmid expiry (TimerTimeout tid nextTmid) timers
+          !locks'    = Map.insert nextTmid NotLocked locks
+          !thread'   = thread { threadControl =
+                                 ThreadControl (runIOSim action')
+                                               (TimeoutFrame tid nextTmid k ctl)
+                              }
+      !trace <- deschedule Yield thread' simstate { timers   = timers'
+                                                  , locks    = locks'
+                                                  , nextTmid = succ nextTmid }
+      return (SimTrace time tid tlbl (EventTimeoutCreated nextTmid tid expiry) trace)
+
     NewRegisterDelay d k | d < 0 ->
-      {-# SCC "schedule.NewRegisterDelay" #-} do
+      {-# SCC "schedule.NewRegisterDelay.1" #-} do
       !tvar <- execNewTVar nextVid
                           (Just $ "<<timeout " ++ show (unTimeoutId nextTmid) ++ ">>")
                           True
@@ -367,7 +478,7 @@ schedule !thread@Thread{
               trace)
 
     NewRegisterDelay d k ->
-      {-# SCC "schedule.NewRegisterDelay" #-} do
+      {-# SCC "schedule.NewRegisterDelay.2" #-} do
       !tvar <- execNewTVar nextVid
                           (Just $ "<<timeout " ++ show (unTimeoutId nextTmid) ++ ">>")
                           False
@@ -393,7 +504,8 @@ schedule !thread@Thread{
       {-# SCC "schedule.NewThreadDelay" #-} do
       let !expiry  = d `addTime` time
           !timers' = PSQ.insert nextTmid expiry (TimerThreadDelay tid) timers
-          !thread' = thread { threadControl = ThreadControl k ctl }
+          !thread' = thread { threadControl =
+                               ThreadControl k (ThreadDelayFrame nextTmid ctl) }
       !trace <- deschedule Blocked thread' simstate { timers   = timers'
                                                     , nextTmid = succ nextTmid }
       return (SimTrace time tid tlbl (EventThreadDelay expiry) trace)
@@ -719,7 +831,7 @@ reschedule :: SimState s a -> ST s (SimTrace a)
 reschedule !simstate@SimState{ runqueue, threads }
   | Just (!tid, runqueue') <- Deque.uncons runqueue =
     {-# SCC "reschedule.Just" #-}
-    assert (invariant Nothing simstate) $
+    invariant Nothing simstate $
 
     let thread = threads Map.! tid in
     schedule thread simstate { runqueue = runqueue'
@@ -729,7 +841,7 @@ reschedule !simstate@SimState{ runqueue, threads }
 -- timer event, or stop.
 reschedule !simstate@SimState{ threads, timers, curTime = time } =
     {-# SCC "reschedule.Nothing" #-}
-    assert (invariant Nothing simstate) $
+    invariant Nothing simstate $
 
     -- important to get all events that expire at this time
     case removeMinimums timers of
@@ -748,8 +860,13 @@ reschedule !simstate@SimState{ threads, timers, curTime = time } =
             wakeup            = wakeupThreadDelay ++ wakeupSTM
             (_, !simstate')   = unblockThreads wakeup simstate
 
-        !trace <- reschedule simstate' { curTime = time'
-                                       , timers  = timers' }
+            -- run throwTo timeout expired threads
+            !timeoutExpired = [ (tid, tmid) | TimerTimeout tid tmid <- fired ]
+            !simstate''     = throwExceptionThreads timeoutExpired simstate'
+
+        !trace <- reschedule simstate'' { curTime = time'
+                                        , timers  = timers' }
+
         return $
           traceMany ([ ( time', ThreadId [-1], Just "timer"
                        , EventTimerExpired tmid)
@@ -763,7 +880,10 @@ reschedule !simstate@SimState{ threads, timers, curTime = time } =
                      , let Just vids = Set.toList <$> Map.lookup tid' wokeby ]
                   ++ [ ( time', tid, Just "thread delay timer"
                        , EventThreadDelayExpired)
-                     | tid <- wakeupThreadDelay ])
+                     | tid <- wakeupThreadDelay ]
+                  ++ [ ( time', tid, Just "timeout delay timer"
+                       , EventTimeoutCreatedExpired tmid)
+                     | (tid, tmid) <- timeoutExpired ])
                     trace
   where
     timeoutAction (Timer var) = do
@@ -774,6 +894,7 @@ reschedule !simstate@SimState{ threads, timers, curTime = time } =
         TimeoutCancelled -> return ()
     timeoutAction (TimerRegisterDelay var) = writeTVar var True
     timeoutAction (TimerThreadDelay _)     = return ()
+    timeoutAction (TimerTimeout _ _)       = return ()
 
 unblockThreads :: [ThreadId] -> SimState s a -> ([ThreadId], SimState s a)
 unblockThreads !wakeup !simstate@SimState {runqueue, threads} =
@@ -794,7 +915,58 @@ unblockThreads !wakeup !simstate@SimState {runqueue, threads} =
     -- and in which case we mark them as now running
     !threads'  = List.foldl'
                    (flip (Map.adjust (\t -> t { threadBlocked = False })))
-                  threads unblocked
+                   threads
+                   unblocked
+
+
+throwExceptionThreads :: [(ThreadId, TimeoutId)] -> SimState s a -> SimState s a
+throwExceptionThreads timeoutExpired simState@SimState {threads, locks} =
+  foldl' (\st@SimState{ runqueue = runqueue
+                      , threads  = threads'
+                      , locks    = locks'
+                      }
+           (t, tmid)
+          -> let tid' = threadId t
+                 threads'' = Map.insert tid' t threads'
+                 locks'' = Map.update (const (Just (Locked tid'))) tmid locks'
+                 runqueue' = Deque.snoc tid' runqueue
+              in st { runqueue = runqueue'
+                    , threads  = threads''
+                    , locks    = locks''
+                    })
+          simState
+          throwToThread
+
+  where
+    -- can only throw exception if the thread exists and if the mutually
+    -- exclusive lock exists and is still 'NotLocked'
+    toThrow = [ (tid, tmid, t)
+              | (tid, tmid) <- timeoutExpired
+              , Just t <- [Map.lookup tid threads]
+              , Just NotLocked <- [Map.lookup tmid locks]
+              ]
+    -- we launch a thread responsible for throwing an AsyncCancelled exception
+    -- to the thread which timeout expired
+    throwToThread =
+      [ let nextId   = threadNextTId t
+            tid'     = childThreadId tid nextId
+         in ( Thread { threadId      = tid'
+                    , threadControl =
+                       ThreadControl
+                         (ThrowTo (toException (TimeoutException tmid))
+                                   tid
+                                   (Return ()))
+                         ForkFrame
+                    , threadBlocked = False
+                    , threadMasking = Unmasked
+                    , threadThrowTo = []
+                    , threadClockId = ClockId []
+                    , threadLabel   = Just "timeout-forked-thread"
+                    , threadNextTId = 1
+                    }
+            , tmid)
+      | (tid, tmid, t) <- toThrow
+      ]
 
 
 -- | Iterate through the control stack to find an enclosing exception handler
@@ -806,15 +978,23 @@ unblockThreads !wakeup !simstate@SimState {runqueue, threads} =
 unwindControlStack :: forall s a.
                       SomeException
                    -> Thread s a
-                   -> Either Bool (Thread s a)
+                                               --v If the ControlStack had a
+                                               --  TimeoutFrame
+                   -> ( Either Bool (Thread s a, Maybe TimeoutId)
+                      --v If ControlStack had a ThreadDelayFrame
+                      , Maybe TimeoutId
+                      )
 unwindControlStack e thread =
     case threadControl thread of
       ThreadControl _ ctl -> unwind (threadMasking thread) ctl
   where
     unwind :: forall s' c. MaskingState
-           -> ControlStack s' c a -> Either Bool (Thread s' a)
-    unwind _  MainFrame                 = Left True
-    unwind _  ForkFrame                 = Left False
+           -> ControlStack s' c a
+           -> ( Either Bool (Thread s' a, Maybe TimeoutId)
+              , Maybe TimeoutId
+              )
+    unwind _  MainFrame                 = (Left True, Nothing)
+    unwind _  ForkFrame                 = (Left False, Nothing)
     unwind _ (MaskFrame _k maskst' ctl) = unwind maskst' ctl
 
     unwind maskst (CatchFrame handler k ctl) =
@@ -824,12 +1004,40 @@ unwindControlStack e thread =
 
         -- Ok! We will be able to continue the thread with the handler
         -- followed by the continuation after the catch
-        Just e' -> Right thread {
-                      -- As per async exception rules, the handler is run masked
-                     threadControl = ThreadControl (handler e')
-                                                   (MaskFrame k maskst ctl),
-                     threadMasking = atLeastInterruptibleMask maskst
-                   }
+        Just e' ->
+          ( Right ( thread {
+                        -- As per async exception rules, the handler is run
+                        -- masked
+                       threadControl = ThreadControl (handler e')
+                                                     (MaskFrame k maskst ctl),
+                       threadMasking = atLeastInterruptibleMask maskst
+                     }
+                  , Nothing)
+          , Nothing)
+
+    -- Either Timeout fired or the action threw an exception.
+    -- - If Timeout fired, then it was possibly during this thread's execution
+    --   so we need to run the continuation with a Nothing value.
+    -- - If the timeout action threw an exception we need to keep unwinding the
+    --   control stack looking for a handler to this exception.
+    unwind maskst (TimeoutFrame _ tmid k ctl) =
+      case fromException e of
+        -- Exception came from timeout expiring
+        Just (TimeoutException tmid') ->
+          assert (tmid == tmid') $
+          ( Right ( thread { threadControl = ThreadControl (k Nothing) ctl }
+                  , Just tmid)
+          , Nothing)
+        -- Exception came from a different exception
+        _ -> unwind maskst ctl
+
+    -- Exception landed inside threadDelay. We should unregister the threadDelay
+    -- timer and keep unwinding the stack.
+    unwind maskst (ThreadDelayFrame tmid ctl) =
+          -- Ignore inner possible ThreadDelayFrames since we only care about
+          -- the outermost, which means is the one we are at currently.
+      let (er, _) = unwind maskst ctl
+       in (er, Just tmid)
 
     atLeastInterruptibleMask :: MaskingState -> MaskingState
     atLeastInterruptibleMask Unmasked = MaskedInterruptible
