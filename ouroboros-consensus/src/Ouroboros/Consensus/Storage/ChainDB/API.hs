@@ -54,6 +54,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
     -- * Invalid block reason
   , InvalidBlockReason (..)
     -- * Followers
+  , ChainType (..)
   , Follower (..)
   , traverseFollower
     -- * Recovery
@@ -301,6 +302,7 @@ data ChainDB m blk = ChainDB {
       --
     , newFollower ::
            forall b. ResourceRegistry m
+        -> ChainType
         -> BlockComponent blk b
         -> m (Follower m blk b)
 
@@ -620,6 +622,14 @@ instance LedgerSupportsProtocol blk
 {-------------------------------------------------------------------------------
   Followers
 -------------------------------------------------------------------------------}
+
+-- | Chain type
+--
+-- 'Follower's can choose to track changes to the "normal" 'SelectedChain', or
+-- track the 'TentativeChain', which might contain a pipelineable header at the
+-- tip.
+data ChainType = SelectedChain | TentativeChain
+  deriving (Eq, Show, Generic)
 
 -- | Follower
 --

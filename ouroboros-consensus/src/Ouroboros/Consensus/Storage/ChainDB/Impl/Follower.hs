@@ -35,7 +35,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDbError (..), Follower (..), getPoint)
+                     ChainDbError (..), ChainType, Follower (..), getPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
@@ -89,9 +89,10 @@ newFollower ::
      )
   => ChainDbHandle m blk
   -> ResourceRegistry m
+  -> ChainType
   -> BlockComponent blk b
   -> m (Follower m blk b)
-newFollower h registry blockComponent = getEnv h $ \CDB{..} -> do
+newFollower h registry chainType blockComponent = getEnv h $ \CDB{..} -> do
     -- The following operations don't need to be done in a single transaction
     followerKey  <- atomically $ stateTVar cdbNextFollowerKey $ \r -> (r, succ r)
     varFollower <- newTVarIO FollowerInit
@@ -103,7 +104,8 @@ newFollower h registry blockComponent = getEnv h $ \CDB{..} -> do
   where
     mkFollowerHandle :: StrictTVar m (FollowerState m blk b) -> FollowerHandle m blk
     mkFollowerHandle varFollower = FollowerHandle
-      { fhClose      = do
+      { fhChainType  = chainType
+      , fhClose      = do
           -- This is only called by 'closeAllFollowers'. We just release the
           -- resources. We don't check whether the Follower is still open.
           -- We don't have to remove the follower from the 'cdbFollowers',

@@ -86,8 +86,8 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
-                     ChainDbError (..), InvalidBlockReason, StreamFrom,
-                     StreamTo, UnknownRange)
+                     ChainDbError (..), ChainType, InvalidBlockReason,
+                     StreamFrom, StreamTo, UnknownRange)
 import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
                      (InvalidBlockPunishment)
 import           Ouroboros.Consensus.Storage.Serialisation
@@ -341,7 +341,9 @@ newtype FollowerKey = FollowerKey Word
 -- blk@, etc.) parameter so 'Follower's with different' @b@s can be stored
 -- together in 'cdbFollowers'.
 data FollowerHandle m blk = FollowerHandle
-  { fhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
+  { fhChainType  :: ChainType
+    -- ^ Whether we follow the tentative chain.
+  , fhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
     -- ^ When we have switched to a fork, all open 'Follower's must be notified.
   , fhClose      :: m ()
     -- ^ When closing the ChainDB, we must also close all open 'Follower's, as
