@@ -359,7 +359,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       IteratorNext  it         -> IterResult          <$> iteratorNext (unWithEq it)
       IteratorNextGCed  it     -> iterResultGCed      <$> iteratorNext (unWithEq it)
       IteratorClose it         -> Unit                <$> iteratorClose (unWithEq it)
-      NewFollower              -> follower            =<< newFollower registry allComponents
+      NewFollower              -> follower            =<< newFollower registry SelectedChain allComponents
       FollowerInstruction flr  -> MbChainUpdate       <$> followerInstruction (unWithEq flr)
       FollowerForward flr pts  -> MbPoint             <$> followerForward (unWithEq flr) pts
       FollowerClose flr        -> Unit                <$> followerClose (unWithEq flr)
