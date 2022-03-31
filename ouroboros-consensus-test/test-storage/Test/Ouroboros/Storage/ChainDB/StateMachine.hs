@@ -146,7 +146,7 @@ data Cmd blk it flr
   | IteratorNextGCed      it
     -- ^ Only for blocks that may have been garbage collected.
   | IteratorClose         it
-  | NewFollower
+  | NewFollower           ChainType
   | FollowerInstruction   flr
     -- ^ 'followerInstructionBlocking' is excluded, as it requires multiple
     -- threads. Its code path is pretty much the same as 'followerInstruction'
@@ -359,7 +359,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       IteratorNext  it         -> IterResult          <$> iteratorNext (unWithEq it)
       IteratorNextGCed  it     -> iterResultGCed      <$> iteratorNext (unWithEq it)
       IteratorClose it         -> Unit                <$> iteratorClose (unWithEq it)
-      NewFollower              -> follower            =<< newFollower registry SelectedChain allComponents
+      NewFollower ct           -> follower            =<< newFollower registry ct allComponents
       FollowerInstruction flr  -> MbChainUpdate       <$> followerInstruction (unWithEq flr)
       FollowerForward flr pts  -> MbPoint             <$> followerForward (unWithEq flr) pts
       FollowerClose flr        -> Unit                <$> followerClose (unWithEq flr)
@@ -587,7 +587,11 @@ runPure cfg = \case
     IteratorNext  it         -> ok  IterResult          $ update  (Model.iteratorNext it allComponents)
     IteratorNextGCed it      -> ok  iterResultGCed      $ update  (Model.iteratorNext it allComponents)
     IteratorClose it         -> ok  Unit                $ update_ (Model.iteratorClose it)
-    NewFollower              -> ok  Flr                 $ update   Model.newFollower
+    -- As tentative followers differ from normal followers only during chain
+    -- selection, this test can not distinguish between them due to its
+    -- sequential nature. Hence, we don't add a pure model for tentative
+    -- followers.
+    NewFollower _            -> ok  Flr                 $ update   Model.newFollower
     FollowerInstruction flr  -> err MbChainUpdate       $ updateE (Model.followerInstruction flr allComponents)
     FollowerForward flr pts  -> err MbPoint             $ updateE (Model.followerForward flr pts)
     FollowerClose flr        -> ok  Unit                $ update_ (Model.followerClose flr)
@@ -828,7 +832,7 @@ generator genBlock m@Model {..} = At <$> frequency
     , (if null iterators then 0 else 2, genIteratorClose)
 
     -- Followers
-    , (10, return NewFollower)
+    , (10, genNewFollower)
     , (if null followers then 0 else 10, genFollowerInstruction)
     , (if null followers then 0 else 10, genFollowerForward)
       -- Use a lower frequency for closing, so that the chance increases that
@@ -950,6 +954,8 @@ generator genBlock m@Model {..} = At <$> frequency
       return $ if blockCanBeGCed
         then IteratorNextGCed it
         else IteratorNext     it
+
+    genNewFollower = NewFollower <$> elements [SelectedChain, TentativeChain]
 
     genFollowerInstruction = FollowerInstruction <$> elements followers
     genFollowerForward     = FollowerForward     <$> elements followers
