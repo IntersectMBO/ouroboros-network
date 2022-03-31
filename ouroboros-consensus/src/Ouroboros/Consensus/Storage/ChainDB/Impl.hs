@@ -40,6 +40,7 @@ import           Control.Tracer
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe.Strict (StrictMaybe (..))
 import           GHC.Stack (HasCallStack)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -71,6 +72,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.TentativeState
+                     (TentativeState (NoLastInvalidTentative))
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -164,6 +167,8 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
 
       atomically $ LgrDB.setCurrent lgrDB ledger
       varChain           <- newTVarIO chain
+      varTentativeState  <- newTVarIO NoLastInvalidTentative
+      varTentativeHeader <- newTVarIO SNothing
       varIterators       <- newTVarIO Map.empty
       varFollowers       <- newTVarIO Map.empty
       varNextIteratorKey <- newTVarIO (IteratorKey 0)
@@ -176,6 +181,8 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
                     , cdbVolatileDB      = volatileDB
                     , cdbLgrDB           = lgrDB
                     , cdbChain           = varChain
+                    , cdbTentativeState  = varTentativeState
+                    , cdbTentativeHeader = varTentativeHeader
                     , cdbIterators       = varIterators
                     , cdbFollowers       = varFollowers
                     , cdbTopLevelConfig  = cfg

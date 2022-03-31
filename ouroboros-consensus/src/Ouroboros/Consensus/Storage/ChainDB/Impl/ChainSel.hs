@@ -32,6 +32,8 @@ import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
+import           Data.Maybe.Strict (StrictMaybe (..), isSNothing,
+                     strictMaybeToMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
@@ -56,6 +58,7 @@ import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
+import           Ouroboros.Consensus.Util.TentativeState
 
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.Diff as Diff
@@ -184,23 +187,30 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
         assert (all ((LgrDB.currentPoint ledger ==) .
                      castPoint . AF.anchorPoint)
                     candidates) $
-        assert (all (preferAnchoredCandidate bcfg curChain) candidates) $
-        chainSelection chainSelEnv (Diff.extend <$> candidates)
+        assert (all (preferAnchoredCandidate bcfg curChain) candidates) $ do
+          cse <- chainSelEnv
+          chainSelection cse (Diff.extend <$> candidates)
       where
         curChain = VF.validatedFragment curChainAndLedger
         ledger   = VF.validatedLedger   curChainAndLedger
-        chainSelEnv = ChainSelEnv
-          { lgrDB
-          , bcfg
-          , varInvalid
-          , varFutureBlocks
-          , futureCheck
-          , blockCache = BlockCache.empty
-          , curChainAndLedger
-          , trace = traceWith
-              (contramap (InitChainSelValidation) tracer)
-          , punish = Nothing
-          }
+        chainSelEnv = do
+          varTentativeState  <- newTVarIO NoLastInvalidTentative
+          varTentativeHeader <- newTVarIO SNothing
+          pure ChainSelEnv
+            { lgrDB
+            , bcfg
+            , varInvalid
+            , varFutureBlocks
+            , futureCheck
+            , blockCache = BlockCache.empty
+            , curChainAndLedger
+            , trace = traceWith
+                (contramap (InitChainSelValidation) tracer)
+              -- initial chain selection is not concerned about pipelining
+            , varTentativeState
+            , varTentativeHeader
+            , punish = Nothing
+            }
 
 -- | Add a block to the ChainDB, /asynchronously/.
 --
@@ -514,16 +524,18 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
 
     mkChainSelEnv :: ChainAndLedger blk -> ChainSelEnv m blk
     mkChainSelEnv curChainAndLedger = ChainSelEnv
-      { lgrDB             = cdbLgrDB
-      , bcfg              = configBlock cdbTopLevelConfig
-      , varInvalid        = cdbInvalid
-      , varFutureBlocks   = cdbFutureBlocks
-      , futureCheck       = cdbCheckInFuture
-      , blockCache        = blockCache
-      , curChainAndLedger = curChainAndLedger
-      , trace             =
+      { lgrDB              = cdbLgrDB
+      , bcfg               = configBlock cdbTopLevelConfig
+      , varInvalid         = cdbInvalid
+      , varFutureBlocks    = cdbFutureBlocks
+      , varTentativeState  = cdbTentativeState
+      , varTentativeHeader = cdbTentativeHeader
+      , futureCheck        = cdbCheckInFuture
+      , blockCache         = blockCache
+      , curChainAndLedger  = curChainAndLedger
+      , trace              =
           traceWith (contramap (TraceAddBlockEvent . AddBlockValidation) cdbTracer)
-      , punish            = Just (p, punish)
+      , punish                = Just (p, punish)
       }
 
     -- | PRECONDITION: the header @hdr@ (and block @b@) fit onto the end of
@@ -578,7 +590,10 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
               Nothing ->
                 return curTip
               Just validatedChainDiff ->
-                switchTo validatedChainDiff AddedToCurrentChain
+                switchTo
+                  validatedChainDiff
+                  (varTentativeHeader chainSelEnv)
+                  AddedToCurrentChain
       where
         chainSelEnv = mkChainSelEnv curChainAndLedger
         curChain    = VF.validatedFragment curChainAndLedger
@@ -636,7 +651,10 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
               Nothing                 ->
                 return curTip
               Just validatedChainDiff ->
-                switchTo validatedChainDiff SwitchedToAFork
+                switchTo
+                  validatedChainDiff
+                  (varTentativeHeader chainSelEnv)
+                  SwitchedToAFork
       where
         chainSelEnv = mkChainSelEnv curChainAndLedger
         curChain    = VF.validatedFragment curChainAndLedger
@@ -686,6 +704,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
       :: HasCallStack
       => ValidatedChainDiff (Header blk) (LedgerDB' blk)
          -- ^ Chain and ledger to switch to
+      -> StrictTVar m (StrictMaybe (Header blk))
+         -- ^ Tentative header
       -> (    [LedgerEvent blk]
            -> NewTipInfo blk
            -> AnchoredFragment (Header blk)
@@ -695,7 +715,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
          -- ^ Given the 'NewTipInfo', the previous chain, and the new chain,
          -- return the event to trace when we switched to the new chain.
       -> m (Point blk)
-    switchTo (ValidatedChainDiff chainDiff newLedger) mkTraceEvent = do
+    switchTo vChainDiff varTentativeHeader mkTraceEvent = do
         (curChain, newChain, events) <- atomically $ do
           curChain  <- readTVar         cdbChain -- Not Query.getCurrentChain!
           curLedger <- LgrDB.getCurrent cdbLgrDB
@@ -714,6 +734,9 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
                              (ledgerState $ LgrDB.ledgerDbCurrent curLedger)
                              (ledgerState $ LgrDB.ledgerDbCurrent newLedger)
 
+              -- Clear the tentative header
+              writeTVar varTentativeHeader SNothing
+
               -- Update the followers
               --
               -- 'Follower.switchFork' needs to know the intersection point
@@ -729,6 +752,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
         traceWith cdbTraceLedger newLedger
 
         return $ castPoint $ AF.headPoint newChain
+      where
+        ValidatedChainDiff chainDiff newLedger = vChainDiff
 
     -- | We have a new block @b@ that doesn't fit onto the current chain, but
     -- we have found a 'ChainDiff' connecting it to the current chain via
@@ -768,14 +793,16 @@ getKnownHeaderThroughCache volatileDB hash = gets (Map.lookup hash) >>= \case
 
 -- | Environment used by 'chainSelection' and related functions.
 data ChainSelEnv m blk = ChainSelEnv
-    { lgrDB             :: LgrDB m blk
-    , trace             :: TraceValidationEvent blk -> m ()
-    , bcfg              :: BlockConfig blk
-    , varInvalid        :: StrictTVar m (WithFingerprint (InvalidBlocks blk))
-    , varFutureBlocks   :: StrictTVar m (FutureBlocks m blk)
-    , futureCheck       :: CheckInFuture m blk
-    , blockCache        :: BlockCache blk
-    , curChainAndLedger :: ChainAndLedger blk
+    { lgrDB              :: LgrDB m blk
+    , trace              :: TraceValidationEvent blk -> m ()
+    , bcfg               :: BlockConfig blk
+    , varInvalid         :: StrictTVar m (WithFingerprint (InvalidBlocks blk))
+    , varFutureBlocks    :: StrictTVar m (FutureBlocks m blk)
+    , varTentativeState  :: StrictTVar m (TentativeState blk)
+    , varTentativeHeader :: StrictTVar m (StrictMaybe (Header blk))
+    , futureCheck        :: CheckInFuture m blk
+    , blockCache         :: BlockCache blk
+    , curChainAndLedger  :: ChainAndLedger blk
       -- | The block that this chain selection invocation is processing, and the
       -- punish action for the peer that sent that block; see
       -- 'InvalidBlockPunishment'.
@@ -797,7 +824,7 @@ data ChainSelEnv m blk = ChainSelEnv
       -- Thus invalid blocks can be skipped entirely or somewhat-arbitrarily
       -- delayed. This is part of the reason we bothered to restrict the
       -- expressiveness of the 'InvalidBlockPunishment' combiantors.
-    , punish            :: Maybe (RealPoint blk, InvalidBlockPunishment m)
+    , punish             :: Maybe (RealPoint blk, InvalidBlockPunishment m)
     }
 
 -- | Perform chain selection with the given candidates. If a validated
@@ -827,8 +854,7 @@ chainSelection chainSelEnv chainDiffs =
                 chainDiffs) $
     go (sortCandidates (NE.toList chainDiffs))
   where
-    ChainSelEnv { bcfg, curChainAndLedger, varInvalid, varFutureBlocks } =
-      chainSelEnv
+    ChainSelEnv {..} = chainSelEnv
 
     curChain = VF.validatedFragment curChainAndLedger
 
@@ -848,35 +874,58 @@ chainSelection chainSelEnv chainDiffs =
          [ChainDiff (Header blk)]
       -> m (Maybe (ValidatedChainDiff (Header blk) (LedgerDB' blk)))
     go []            = return Nothing
-    go (candidate:candidates0) =
-      validateCandidate chainSelEnv candidate >>= \case
-        InsufficientSuffix -> do
-          candidates1 <- truncateRejectedBlocks candidates0
-          go (sortCandidates candidates1)
-        FullyValid validatedCandidate@(ValidatedChainDiff candidate' _) ->
-          -- The entire candidate is valid
-          assert (Diff.getTip candidate == Diff.getTip candidate') $
-          return $ Just validatedCandidate
-        ValidPrefix candidate' -> do
-          -- Prefix of the candidate because it contained rejected blocks
-          -- (invalid blocks and/or blocks from the future). Note that the
-          -- spec says go back to candidate selection, see [^whyGoBack],
-          -- because there might still be some candidates that contain the
-          -- same rejected block. To simplify the control flow, we do it
-          -- differently: instead of recomputing the candidates taking
-          -- rejected blocks into account, we just truncate the remaining
-          -- candidates that contain rejected blocks.
-          candidates1 <- truncateRejectedBlocks candidates0
-          -- Only include the prefix if it is still preferred over the current
-          -- chain. When the candidate is now empty because of the truncation,
-          -- it will be dropped here, as it will not be preferred over the
-          -- current chain.
-          let candidates2
-                | preferAnchoredCandidate bcfg curChain (Diff.getSuffix candidate')
-                = candidate':candidates1
-                | otherwise
-                = candidates1
-          go (sortCandidates candidates2)
+    go (candidate:candidates0) = do
+        mTentativeHeader <- setTentativeHeader
+        validateCandidate chainSelEnv candidate >>= \case
+          InsufficientSuffix ->
+            -- When the body of the tentative block turns out to be invalid, we
+            -- have a valid *empty* prefix, as the tentative header fits on top
+            -- of the current chain.
+            assert (isSNothing mTentativeHeader) $ do
+              candidates1 <- truncateRejectedBlocks candidates0
+              go (sortCandidates candidates1)
+          FullyValid validatedCandidate@(ValidatedChainDiff candidate' _) ->
+            -- The entire candidate is valid
+            assert (Diff.getTip candidate == Diff.getTip candidate') $
+            return $ Just validatedCandidate
+          ValidPrefix candidate' -> do
+            whenJust (strictMaybeToMaybe mTentativeHeader) clearTentativeHeader
+            -- Prefix of the candidate because it contained rejected blocks
+            -- (invalid blocks and/or blocks from the future). Note that the
+            -- spec says go back to candidate selection, see [^whyGoBack],
+            -- because there might still be some candidates that contain the
+            -- same rejected block. To simplify the control flow, we do it
+            -- differently: instead of recomputing the candidates taking
+            -- rejected blocks into account, we just truncate the remaining
+            -- candidates that contain rejected blocks.
+            candidates1 <- truncateRejectedBlocks candidates0
+            -- Only include the prefix if it is still preferred over the current
+            -- chain. When the candidate is now empty because of the truncation,
+            -- it will be dropped here, as it will not be preferred over the
+            -- current chain.
+            let candidates2
+                  | preferAnchoredCandidate bcfg curChain (Diff.getSuffix candidate')
+                  = candidate':candidates1
+                  | otherwise
+                  = candidates1
+            go (sortCandidates candidates2)
+      where
+        -- | Set and return the tentative header, if applicable.
+        setTentativeHeader :: m (StrictMaybe (Header blk))
+        setTentativeHeader = atomically $ do
+            mTentativeHeader <-
+                  (\ts -> isPipelineable bcfg ts candidate)
+              <$> readTVar varTentativeState
+            whenJust (strictMaybeToMaybe mTentativeHeader) $
+              writeTVar varTentativeHeader . SJust
+            pure mTentativeHeader
+
+        -- | Clear a tentative header that turned out to be invalid.
+        clearTentativeHeader :: Header blk -> m ()
+        clearTentativeHeader tentativeHeader = atomically $ do
+            writeTVar varTentativeHeader SNothing
+            writeTVar varTentativeState $
+              LastInvalidTentative (selectView bcfg tentativeHeader)
 
     -- | Truncate the given (remaining) candidates that contain rejected
     -- blocks. Discard them if they are truncated so much that they are no
@@ -1147,6 +1196,29 @@ validateCandidate chainSelEnv chainDiff =
 
 -- | Instantiate 'ValidatedFragment' in the way that chain selection requires.
 type ChainAndLedger blk = ValidatedFragment (Header blk) (LedgerDB' blk)
+
+{-------------------------------------------------------------------------------
+  Diffusion pipelining
+-------------------------------------------------------------------------------}
+
+-- | Check whether a 'ChainDiff' can be pipelined. If it can, the tentative
+-- header is returned.
+--
+-- PRECONDITION: The 'ChainDiff' fits on top of the current chain and is better.
+isPipelineable ::
+     LedgerSupportsProtocol blk
+  => BlockConfig blk
+  -> TentativeState blk
+  -> ChainDiff (Header blk)
+  -> StrictMaybe (Header blk)
+isPipelineable bcfg tentativeState ChainDiff {..}
+  | -- we apply exactly one header
+    AF.Empty _ :> hdr <- getSuffix
+  , preferToLastInvalidTentative bcfg tentativeState hdr
+    -- ensure that the diff is applied to the chain tip
+  , getRollback == 0
+  = SJust hdr
+  | otherwise = SNothing
 
 {-------------------------------------------------------------------------------
   Helpers

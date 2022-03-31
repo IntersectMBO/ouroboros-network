@@ -61,6 +61,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
+import           Data.Maybe.Strict (StrictMaybe (..))
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
@@ -101,6 +102,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB,
                      VolatileDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.TentativeState (TentativeState (..))
 
 -- | All the serialisation related constraints needed by the ChainDB.
 class ( ImmutableDbSerialiseConstraints blk
@@ -197,6 +199,13 @@ data ChainDbEnv m blk = CDB
     --
     -- Note that the \"immutable\" block will /never/ be /more/ than @k@
     -- blocks back, as opposed to the anchor point of 'cdbChain'.
+  , cdbTentativeState  :: !(StrictTVar m (TentativeState blk))
+  , cdbTentativeHeader :: !(StrictTVar m (StrictMaybe (Header blk)))
+    -- ^ The tentative header. Note that we never read from this; it is only
+    -- maintained for clarity and explicitness.
+    --
+    -- INVARIANT: It fits on top of the current chain, and its body is not known
+    -- to be invalid, but might turn out to be.
   , cdbIterators       :: !(StrictTVar m (Map IteratorKey (m ())))
     -- ^ The iterators.
     --
