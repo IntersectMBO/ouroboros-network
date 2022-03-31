@@ -322,6 +322,12 @@ schedule thread@Thread{
         let thread' = thread { threadControl = ThreadControl (k x) ctl' }
         schedule thread' simstate
 
+      TimeoutFrame _tid _tmid _k _ctl' ->
+        error "TODO"
+
+      ThreadDelayFrame _tmid _ctl' ->
+        error "TODO"
+
     Throw e -> case unwindControlStack e thread of
       Right thread0@Thread { threadMasking = maskst' } -> do
         -- We found a suitable exception handler, continue with that
@@ -442,6 +448,15 @@ schedule thread@Thread{
                                           , nextVid  = succ (succ nextVid)
                                           , nextTmid = succ nextTmid }
       return (SimPORTrace time tid tstep tlbl (EventTimerCreated nextTmid nextVid expiry) trace)
+
+    StartTimeout _d _action _k ->
+      error "TODO"
+
+    NewRegisterDelay _d _k ->
+      error "TODO"
+
+    NewThreadDelay _d _k ->
+      error "TODO"
 
     -- we do not follow `GHC.Event` behaviour here; updating a timer to the past
     -- effectively cancels it.
@@ -962,6 +977,12 @@ unwindControlStack e thread =
                                                    (MaskFrame k maskst ctl),
                      threadMasking = atLeastInterruptibleMask maskst
                    }
+
+    unwind maskst (TimeoutFrame _tid _tmid _k _ctl) =
+      error "TODO"
+
+    unwind maskst (ThreadDelayFrame _tmid _ctl) =
+      error "TODO"
 
     atLeastInterruptibleMask :: MaskingState -> MaskingState
     atLeastInterruptibleMask Unmasked = MaskedInterruptible
