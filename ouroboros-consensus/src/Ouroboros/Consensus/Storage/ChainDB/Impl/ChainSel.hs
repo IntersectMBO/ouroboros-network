@@ -66,7 +66,8 @@ import           Ouroboros.Consensus.Fragment.ValidatedDiff
                      (ValidatedChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.ValidatedDiff as ValidatedDiff
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
-                     BlockComponent (..), InvalidBlockReason (..))
+                     BlockComponent (..), ChainType (..),
+                     InvalidBlockReason (..))
 import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
                      (InvalidBlockPunishment)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
@@ -210,6 +211,7 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
             , varTentativeState
             , varTentativeHeader
             , punish = Nothing
+            , getTentativeFollowers = pure []
             }
 
 -- | Add a block to the ChainDB, /asynchronously/.
@@ -524,16 +526,19 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
 
     mkChainSelEnv :: ChainAndLedger blk -> ChainSelEnv m blk
     mkChainSelEnv curChainAndLedger = ChainSelEnv
-      { lgrDB              = cdbLgrDB
-      , bcfg               = configBlock cdbTopLevelConfig
-      , varInvalid         = cdbInvalid
-      , varFutureBlocks    = cdbFutureBlocks
-      , varTentativeState  = cdbTentativeState
-      , varTentativeHeader = cdbTentativeHeader
-      , futureCheck        = cdbCheckInFuture
-      , blockCache         = blockCache
-      , curChainAndLedger  = curChainAndLedger
-      , trace              =
+      { lgrDB                 = cdbLgrDB
+      , bcfg                  = configBlock cdbTopLevelConfig
+      , varInvalid            = cdbInvalid
+      , varFutureBlocks       = cdbFutureBlocks
+      , varTentativeState     = cdbTentativeState
+      , varTentativeHeader    = cdbTentativeHeader
+      , getTentativeFollowers =
+              filter ((TentativeChain ==) . fhChainType) . Map.elems
+          <$> readTVar cdbFollowers
+      , futureCheck           = cdbCheckInFuture
+      , blockCache            = blockCache
+      , curChainAndLedger     = curChainAndLedger
+      , trace                 =
           traceWith (contramap (TraceAddBlockEvent . AddBlockValidation) cdbTracer)
       , punish                = Just (p, punish)
       }
@@ -793,16 +798,17 @@ getKnownHeaderThroughCache volatileDB hash = gets (Map.lookup hash) >>= \case
 
 -- | Environment used by 'chainSelection' and related functions.
 data ChainSelEnv m blk = ChainSelEnv
-    { lgrDB              :: LgrDB m blk
-    , trace              :: TraceValidationEvent blk -> m ()
-    , bcfg               :: BlockConfig blk
-    , varInvalid         :: StrictTVar m (WithFingerprint (InvalidBlocks blk))
-    , varFutureBlocks    :: StrictTVar m (FutureBlocks m blk)
-    , varTentativeState  :: StrictTVar m (TentativeState blk)
-    , varTentativeHeader :: StrictTVar m (StrictMaybe (Header blk))
-    , futureCheck        :: CheckInFuture m blk
-    , blockCache         :: BlockCache blk
-    , curChainAndLedger  :: ChainAndLedger blk
+    { lgrDB                 :: LgrDB m blk
+    , trace                 :: TraceValidationEvent blk -> m ()
+    , bcfg                  :: BlockConfig blk
+    , varInvalid            :: StrictTVar m (WithFingerprint (InvalidBlocks blk))
+    , varFutureBlocks       :: StrictTVar m (FutureBlocks m blk)
+    , varTentativeState     :: StrictTVar m (TentativeState blk)
+    , varTentativeHeader    :: StrictTVar m (StrictMaybe (Header blk))
+    , getTentativeFollowers :: STM m [FollowerHandle m blk]
+    , futureCheck           :: CheckInFuture m blk
+    , blockCache            :: BlockCache blk
+    , curChainAndLedger     :: ChainAndLedger blk
       -- | The block that this chain selection invocation is processing, and the
       -- punish action for the peer that sent that block; see
       -- 'InvalidBlockPunishment'.
@@ -824,7 +830,7 @@ data ChainSelEnv m blk = ChainSelEnv
       -- Thus invalid blocks can be skipped entirely or somewhat-arbitrarily
       -- delayed. This is part of the reason we bothered to restrict the
       -- expressiveness of the 'InvalidBlockPunishment' combiantors.
-    , punish             :: Maybe (RealPoint blk, InvalidBlockPunishment m)
+    , punish                :: Maybe (RealPoint blk, InvalidBlockPunishment m)
     }
 
 -- | Perform chain selection with the given candidates. If a validated
@@ -845,8 +851,8 @@ chainSelection
   -> NonEmpty (ChainDiff (Header blk))
   -> m (Maybe (ValidatedChainDiff (Header blk) (LedgerDB' blk)))
      -- ^ The (valid) chain diff and corresponding LedgerDB that was selected,
-     -- or 'Nothing' if there is no valid chain diff preferred over the
-     -- current chain.
+     -- or 'Nothing' if there is no valid chain diff preferred over the current
+     -- chain.
 chainSelection chainSelEnv chainDiffs =
     assert (all (preferAnchoredCandidate bcfg curChain . Diff.getSuffix)
                 chainDiffs) $
@@ -910,22 +916,32 @@ chainSelection chainSelEnv chainDiffs =
                   = candidates1
             go (sortCandidates candidates2)
       where
-        -- | Set and return the tentative header, if applicable.
+        -- | Set and return the tentative header, if applicable. Also, notify
+        -- the tentative followers.
         setTentativeHeader :: m (StrictMaybe (Header blk))
-        setTentativeHeader = atomically $ do
+        setTentativeHeader = do
             mTentativeHeader <-
                   (\ts -> isPipelineable bcfg ts candidate)
-              <$> readTVar varTentativeState
-            whenJust (strictMaybeToMaybe mTentativeHeader) $
-              writeTVar varTentativeHeader . SJust
+              <$> readTVarIO varTentativeState
+            whenJust (strictMaybeToMaybe mTentativeHeader) $ \tentativeHeader -> do
+              atomically $ writeTVar varTentativeHeader $ SJust tentativeHeader
+              -- As we are only extending the existing chain, the intersection
+              -- point is not receding, in which case fhSwitchFork is not
+              -- necessary.
             pure mTentativeHeader
 
-        -- | Clear a tentative header that turned out to be invalid.
+        -- | Clear a tentative header that turned out to be invalid. Also, roll
+        -- back the tentative followers.
         clearTentativeHeader :: Header blk -> m ()
         clearTentativeHeader tentativeHeader = atomically $ do
             writeTVar varTentativeHeader SNothing
             writeTVar varTentativeState $
               LastInvalidTentative (selectView bcfg tentativeHeader)
+            forTentativeFollowers $ \followerHandle -> do
+              let curTipPoint = castPoint $ AF.headPoint curChain
+              fhSwitchFork followerHandle curTipPoint curChain
+          where
+            forTentativeFollowers f = getTentativeFollowers >>= mapM_ f
 
     -- | Truncate the given (remaining) candidates that contain rejected
     -- blocks. Discard them if they are truncated so much that they are no

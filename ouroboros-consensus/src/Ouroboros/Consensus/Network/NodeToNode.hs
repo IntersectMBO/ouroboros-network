@@ -537,7 +537,13 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       labelThisThread "ChainSyncServer"
       chainSyncTimeout <- genChainSyncTimeout
       bracketWithPrivateRegistry
-        (chainSyncHeaderServerFollower (getChainDB kernel))
+        (chainSyncHeaderServerFollower
+           (getChainDB kernel)
+           ( if version >= NodeToNodeV_8
+             then ChainDB.TentativeChain
+             else ChainDB.SelectedChain
+           )
+        )
         ChainDB.followerClose
         $ \flr ->
           runPeerWithLimits

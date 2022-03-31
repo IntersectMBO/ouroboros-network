@@ -22,6 +22,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
+import           Data.Maybe.Strict (StrictMaybe (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -35,7 +36,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (blockUntilJust)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDbError (..), Follower (..), getPoint)
+                     ChainDbError (..), ChainType (..), Follower (..), getPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
@@ -89,21 +90,24 @@ newFollower ::
      )
   => ChainDbHandle m blk
   -> ResourceRegistry m
+  -> ChainType
   -> BlockComponent blk b
   -> m (Follower m blk b)
-newFollower h registry blockComponent = getEnv h $ \CDB{..} -> do
+newFollower h registry chainType blockComponent = getEnv h $ \CDB{..} -> do
     -- The following operations don't need to be done in a single transaction
     followerKey  <- atomically $ stateTVar cdbNextFollowerKey $ \r -> (r, succ r)
     varFollower <- newTVarIO FollowerInit
     let followerHandle = mkFollowerHandle varFollower
     atomically $ modifyTVar cdbFollowers $ Map.insert followerKey followerHandle
-    let follower = makeNewFollower h followerKey varFollower registry blockComponent
+    let follower =
+          makeNewFollower h followerKey varFollower chainType registry blockComponent
     traceWith cdbTracer $ TraceFollowerEvent NewFollower
     return follower
   where
     mkFollowerHandle :: StrictTVar m (FollowerState m blk b) -> FollowerHandle m blk
     mkFollowerHandle varFollower = FollowerHandle
-      { fhClose      = do
+      { fhChainType  = chainType
+      , fhClose      = do
           -- This is only called by 'closeAllFollowers'. We just release the
           -- resources. We don't check whether the Follower is still open.
           -- We don't have to remove the follower from the 'cdbFollowers',
@@ -125,19 +129,20 @@ makeNewFollower ::
   => ChainDbHandle m blk
   -> FollowerKey
   -> StrictTVar m (FollowerState m blk b)
+  -> ChainType
   -> ResourceRegistry m
   -> BlockComponent blk b
   -> Follower m blk b
-makeNewFollower h followerKey varFollower registry blockComponent = Follower {..}
+makeNewFollower h followerKey varFollower chainType registry blockComponent = Follower {..}
   where
     followerInstruction :: m (Maybe (ChainUpdate blk b))
     followerInstruction = getFollower h followerKey $
-      instructionHelper registry varFollower blockComponent id
+      instructionHelper registry varFollower chainType blockComponent id
 
     followerInstructionBlocking :: m (ChainUpdate blk b)
     followerInstructionBlocking = fmap runIdentity $
       getFollower h followerKey $
-      instructionHelper registry varFollower blockComponent (fmap Identity . blockUntilJust)
+      instructionHelper registry varFollower chainType blockComponent (fmap Identity . blockUntilJust)
 
     followerForward :: [Point blk] -> m (Maybe (Point blk))
     followerForward = getFollower1 h followerKey $
@@ -202,6 +207,7 @@ instructionHelper ::
      )
   => ResourceRegistry m
   -> StrictTVar m (FollowerState m blk b)
+  -> ChainType
   -> BlockComponent blk b
   -> (    STM m (Maybe (ChainUpdate blk (Header blk)))
        -> STM m (f     (ChainUpdate blk (Header blk))))
@@ -211,12 +217,12 @@ instructionHelper ::
      -- @Maybe@.
   -> ChainDbEnv m blk
   -> m (f (ChainUpdate blk b))
-instructionHelper registry varFollower blockComponent fromMaybeSTM CDB{..} = do
+instructionHelper registry varFollower chainType blockComponent fromMaybeSTM CDB{..} = do
     -- In one transaction: check in which state we are, if in the
     -- @FollowerInMem@ state, just call 'instructionSTM', otherwise,
     -- return the contents of the 'FollowerInImmutableDB' state.
     inImmutableDBOrRes <- atomically $ do
-      curChain <- readTVar cdbChain
+      curChain <- getCurrentChainByType
       readTVar varFollower >>= \case
         -- Just return the contents of the state and end the transaction in
         -- these two cases.
@@ -264,6 +270,14 @@ instructionHelper registry varFollower blockComponent fromMaybeSTM CDB{..} = do
             return $ pure $ RollBack pt
   where
     trace = traceWith (contramap TraceFollowerEvent cdbTracer)
+
+    getCurrentChainByType = do
+        curChain <- readTVar cdbChain
+        case chainType of
+          SelectedChain  -> pure curChain
+          TentativeChain -> readTVar cdbTentativeHeader <&> \case
+            SJust hdr -> curChain AF.:> hdr
+            SNothing  -> curChain
 
     codecConfig :: CodecConfig blk
     codecConfig = configCodec cdbTopLevelConfig
@@ -351,7 +365,7 @@ instructionHelper registry varFollower blockComponent fromMaybeSTM CDB{..} = do
              -> do
             trace $ FollowerSwitchToMem pt slotNoAtImmutableDBTip
             fupdate <- atomically $ fromMaybeSTM $ do
-              curChain <- readTVar cdbChain
+              curChain <- getCurrentChainByType
               instructionSTM
                 (RollForwardFrom pt)
                 curChain
