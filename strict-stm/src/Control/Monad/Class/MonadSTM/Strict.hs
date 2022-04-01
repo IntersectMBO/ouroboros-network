@@ -23,6 +23,7 @@ module Control.Monad.Class.MonadSTM.Strict
   , fromLazyTVar
   , newTVar
   , newTVarIO
+  , newTVarWithInvariant
   , newTVarWithInvariantIO
   , readTVar
   , readTVarIO
@@ -148,6 +149,15 @@ newTVarIO = newTVarWithInvariantIO (const Nothing)
 newTVarM :: MonadSTM m => a -> m (StrictTVar m a)
 newTVarM = newTVarIO
 {-# DEPRECATED newTVarM "Use newTVarIO" #-}
+
+newTVarWithInvariant :: (MonadSTM m, HasCallStack)
+                     => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
+                     -> a
+                     -> STM m (StrictTVar m a)
+newTVarWithInvariant  invariant !a =
+        checkInvariant (invariant a) $
+        (\tvar -> mkStrictTVar invariant tvar)
+    <$> Lazy.newTVar a
 
 newTVarWithInvariantIO :: (MonadSTM m, HasCallStack)
                        => (a -> Maybe String) -- ^ Invariant (expect 'Nothing')
