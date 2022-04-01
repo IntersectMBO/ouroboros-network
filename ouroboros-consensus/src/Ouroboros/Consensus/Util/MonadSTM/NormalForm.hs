@@ -3,6 +3,7 @@ module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
   , module Ouroboros.Consensus.Util.MonadSTM.StrictMVar
   , newEmptyMVar
   , newMVar
+  , newTVar
   , newTVarIO
     -- * Temporary
   , uncheckedNewEmptyMVar
@@ -30,6 +31,10 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 newTVarIO :: (MonadSTM m, HasCallStack, NoThunks a)
           => a -> m (StrictTVar m a)
 newTVarIO = Strict.newTVarWithInvariantIO (fmap show . unsafeNoThunks)
+
+newTVar :: (MonadSTM m, HasCallStack, NoThunks a)
+          => a -> STM m (StrictTVar m a)
+newTVar = Strict.newTVarWithInvariant (fmap show . unsafeNoThunks)
 
 newMVar :: (MonadSTM m, HasCallStack, NoThunks a)
         => a -> m (StrictMVar m a)
