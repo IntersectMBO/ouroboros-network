@@ -16,6 +16,10 @@ jobs:
         ghc: ["8.10.7"]
         os: [ubuntu-20.04, windows-latest]
 
+    env:
+      # current ref from: 27.02.2022
+      SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
+
     steps:
     - name: Install Haskell
       uses: haskell/actions/setup@v1
@@ -75,10 +79,6 @@ jobs:
         export LIBSODIUM_PATH="$(readlink -f libsodium-win64/bin | sed 's|^/d|D:|g' | tr / '\\')"
         echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
         echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
-
-    - name: Install libsodium (MacOS)
-      if: matrix.os == 'macos-latest'
-      run: brew install libsodium
 
     - name: Install build environment
       if: matrix.os == 'ubuntu-20.04'
