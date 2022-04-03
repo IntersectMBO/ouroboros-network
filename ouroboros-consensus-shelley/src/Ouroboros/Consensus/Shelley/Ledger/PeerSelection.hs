@@ -58,8 +58,8 @@ instance c ~ EraCrypto era
         where
           pstate :: SL.PState c
           pstate =
-                SL._pstate
-              . SL._delegationState
+                SL.dpsPState
+              . SL.lsDPState
               . SL.esLState
               . SL.nesEs
               $ shelleyLedgerState

@@ -135,7 +135,7 @@ protocolUpdates genesis st = [
     SL.ProposedPPUpdates proposals =
           SL.proposals
         . SL._ppups
-        . SL._utxoState
+        . SL.lsUTxOState
         . SL.esLState
         . SL.nesEs
         . shelleyLedgerState
