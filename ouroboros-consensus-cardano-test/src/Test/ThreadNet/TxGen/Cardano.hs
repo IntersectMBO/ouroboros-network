@@ -278,7 +278,7 @@ getUTxOShelley :: Ticked (LedgerState (ShelleyBlock era))
                -> SL.UTxO era
 getUTxOShelley tls =
     SL._utxo $
-    SL._utxoState $
+    SL.lsUTxOState $
     SL.esLState $
     SL.nesEs $
     tickedShelleyLedgerState tls

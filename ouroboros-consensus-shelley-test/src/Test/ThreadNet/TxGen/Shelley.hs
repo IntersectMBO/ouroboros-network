@@ -99,7 +99,7 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
     Just . mkShelleyTx <$> Gen.genTx
       genEnv
       ledgerEnv
-      (utxoSt, dpState)
+      (SL.LedgerState utxoSt dpState)
   where
     epochState :: SL.EpochState (MockShelley h)
     epochState = SL.nesEs tickedShelleyLedgerState
@@ -114,13 +114,13 @@ genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =
 
     utxoSt :: SL.UTxOState (MockShelley h)
     utxoSt =
-        SL._utxoState
+        SL.lsUTxOState
       . SL.esLState
       $ epochState
 
     dpState :: SL.DPState (MockCrypto h)
     dpState =
-        SL._delegationState
+        SL.lsDPState
       . SL.esLState
       $ epochState
 

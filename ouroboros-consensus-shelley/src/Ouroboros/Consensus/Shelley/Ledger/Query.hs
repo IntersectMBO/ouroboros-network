@@ -429,14 +429,14 @@ getProposedPPUpdates ::
      ShelleyBasedEra era
   => SL.NewEpochState era -> SL.ProposedPPUpdates era
 getProposedPPUpdates = SL.proposals . SL._ppups
-                     . SL._utxoState . SL.esLState . SL.nesEs
+                     . SL.lsUTxOState . SL.esLState . SL.nesEs
 
 -- Get the current 'EpochState.' This is mainly for debugging.
 getEpochState :: SL.NewEpochState era -> SL.EpochState era
 getEpochState = SL.nesEs
 
 getDState :: SL.NewEpochState era -> SL.DState (EraCrypto era)
-getDState = SL._dstate . SL._delegationState . SL.esLState . SL.nesEs
+getDState = SL.dpsDState . SL.lsDPState . SL.esLState . SL.nesEs
 
 getFilteredDelegationsAndRewardAccounts ::
      SL.NewEpochState era

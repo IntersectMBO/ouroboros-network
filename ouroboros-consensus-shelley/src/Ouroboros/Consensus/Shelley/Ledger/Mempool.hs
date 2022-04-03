@@ -63,7 +63,7 @@ import           Ouroboros.Consensus.Util.Condense
 import           Cardano.Ledger.Alonzo.PParams
 import           Cardano.Ledger.Alonzo.Tx (totExUnits)
 import qualified Cardano.Ledger.Core as Core (Tx)
-import qualified Cardano.Ledger.Era as SL (Crypto, TxSeq, fromTxSeq)
+import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.TxIn as SL (txid)
 
@@ -271,9 +271,7 @@ set lens inner outer =
 theLedgerLens ::
      -- TODO SL.overNewEpochState should not require 'Applicative'
      Applicative f
-  => (      (SL.UTxOState era, SL.DPState (SL.Crypto era))
-       -> f (SL.UTxOState era, SL.DPState (SL.Crypto era))
-     )
+  => (SL.LedgerState era -> f (SL.LedgerState era))
   ->    TickedLedgerState (ShelleyBlock era)
   -> f (TickedLedgerState (ShelleyBlock era))
 theLedgerLens f x =
