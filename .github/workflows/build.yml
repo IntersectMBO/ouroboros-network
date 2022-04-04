@@ -119,7 +119,7 @@ jobs:
         cd secp256k1
         unzip ../secp256k1.zip
         cd ..
-        export PKG_CONFIG_PATH="$(readlink -f secp256k1/lib/pkgconfig)"
+        export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$(readlink -f secp256k1/lib/pkgconfig)"
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
         export SECP256K1_PATH="$(readlink -f secp256k1/bin | tr / '\\')"
         echo "$SECP256K1_PATH" >> $GITHUB_PATH
@@ -161,10 +161,7 @@ jobs:
         cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
 
     - name: Build dependencies
-      run: |
-        echo "$PKG_CONFIG_PATH"
-        echo "------------------------"
-        cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
+      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
 
     - name: Print logs
       if: always()
