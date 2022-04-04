@@ -307,8 +307,8 @@ set lens inner outer =
 theLedgerLens ::
      -- TODO SL.overNewEpochState should not require 'Applicative'
      Applicative f
-  => (      (SL.UTxOState era, SL.DPState (SL.Crypto era))
-       -> f (SL.UTxOState era, SL.DPState (SL.Crypto era))
+  => (      SL.MempoolState era
+       -> f (SL.MempoolState era)
      )
   ->    TickedLedgerState (ShelleyBlock era) mk
   -> f (TickedLedgerState (ShelleyBlock era) mk)
