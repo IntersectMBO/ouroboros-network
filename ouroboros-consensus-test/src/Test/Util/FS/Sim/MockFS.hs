@@ -754,29 +754,36 @@ doesFileExist fp = readMockFS $ \fs ->
 --
 -- Same limitations as 'removeFile'.
 removeDirectoryRecursive :: CanSimFS m => FsPath -> m ()
-removeDirectoryRecursive fp =
-    modifyMockFS $ \fs -> case fsPathToList fp of
-      []
-        -> throwError FsError {
-               fsErrorType   = FsIllegalOperation
-             , fsErrorPath   = fsToFsErrorPathUnmounted fp
-             , fsErrorString = "cannot remove the root directory"
-             , fsErrorNo     = Nothing
-             , fsErrorStack  = prettyCallStack
-             , fsLimitation  = True
-             }
-      _ | fp `S.member` openFilePaths fs
-        -> throwError FsError {
-               fsErrorType   = FsIllegalOperation
-             , fsErrorPath   = fsToFsErrorPathUnmounted fp
-             , fsErrorString = "cannot remove an open file"
-             , fsErrorNo     = Nothing
-             , fsErrorStack  = prettyCallStack
-             , fsLimitation  = True
-             }
-      _ -> do
-        files' <- checkFsTree $ FS.removeDirRecursive fp (mockFiles fs)
-        return ((), fs { mockFiles = files' })
+removeDirectoryRecursive fp = do
+    modifyMockFS $ \fs -> do
+      reachablePaths <- fmap S.fromList $ checkFsTree $ FS.find fp (mockFiles fs)
+      let openReachablePaths = reachablePaths `S.intersection` openFilePaths fs
+      case fsPathToList fp of
+        []
+          -> throwError FsError {
+                 fsErrorType   = FsIllegalOperation
+               , fsErrorPath   = fsToFsErrorPathUnmounted fp
+               , fsErrorString = "cannot remove the root directory"
+               , fsErrorNo     = Nothing
+               , fsErrorStack  = prettyCallStack
+               , fsLimitation  = True
+               }
+        _ | openReachablePaths /= mempty
+          -> throwError FsError {
+                 fsErrorType   = FsIllegalOperation
+               , fsErrorPath   = fsToFsErrorPathUnmounted fp
+               , fsErrorString =  "cannot remove an open file. "
+                               ++ "The following files are reachable from "
+                               ++ show fp
+                               ++ "and are still open: "
+                               ++ show openReachablePaths
+               , fsErrorNo     = Nothing
+               , fsErrorStack  = prettyCallStack
+               , fsLimitation  = True
+               }
+        _ -> do
+          files' <- checkFsTree $ FS.removeDirRecursive fp (mockFiles fs)
+          return ((), fs { mockFiles = files' })
 
 -- | Remove a file
 --

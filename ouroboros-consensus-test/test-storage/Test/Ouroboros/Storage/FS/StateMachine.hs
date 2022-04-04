@@ -1381,7 +1381,7 @@ showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)
 
 prop_sequential :: FilePath -> Property
-prop_sequential tmpDir =
+prop_sequential tmpDir = withMaxSuccess 50000 $
     QSM.forAllCommands (sm mountUnused) Nothing $ \cmds -> QC.monadicIO $ do
       (tstTmpDir, hist, res) <- QC.run $
         withTempDirectory tmpDir "HasFS" $ \tstTmpDir -> do
