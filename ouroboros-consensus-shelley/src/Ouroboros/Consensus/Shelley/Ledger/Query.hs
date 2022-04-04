@@ -32,6 +32,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import           Data.Typeable (Typeable)
 import           Data.UMap (domRestrictedView)

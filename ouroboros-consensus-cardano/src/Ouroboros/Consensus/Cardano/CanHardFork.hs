@@ -512,15 +512,15 @@ instance CardanoHardForkConstraints c
       => SufficientSerializationForAnyBackingStore (LedgerState (CardanoBlock c)) where
     codecLedgerTables = CardanoLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
 
-deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
-deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
-deriving newtype instance PraosCrypto c => Eq (LedgerTables (LedgerState (CardanoBlock c)) DiffMK)
+deriving newtype instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
+deriving newtype instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
+deriving newtype instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) DiffMK)
 
-deriving newtype instance PraosCrypto c => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
-deriving newtype instance PraosCrypto c => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
-deriving newtype instance PraosCrypto c => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) SeqDiffMK)
+deriving newtype instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
+deriving newtype instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
+deriving newtype instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) SeqDiffMK)
 
-instance PraosCrypto c => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
+instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
   showsLedgerState _mk (CardanoLedgerTables utxo) =
         showParen True
       $ showString "CardanoLedgerTables " . showsApplyMapKind utxo
