@@ -65,7 +65,7 @@ import           Ouroboros.Consensus.Util.Condense
 import           Cardano.Ledger.Alonzo.PParams
 import           Cardano.Ledger.Alonzo.Tx (totExUnits)
 import qualified Cardano.Ledger.Core as Core (Tx)
-import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq)
+import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq, getAllTxInputs)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.TxIn as SL (txid)
 
@@ -154,7 +154,7 @@ instance ShelleyBasedEra era
         ShelleyLedger.ShelleyLedgerTables
       $ ApplyKeysMK
       $ HD.UtxoKeys
-      $ getShelleyTxInputs tx
+      $ SL.getAllTxInputs (getField @"body"  tx)
 
 mkShelleyTx :: forall era. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock era)
 mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
@@ -305,9 +305,12 @@ set lens inner outer =
     runIdentity $ lens (\_ -> Identity inner) outer
 
 theLedgerLens ::
-     Functor f
-  => (SL.LedgerState era -> f (SL.LedgerState era))
-  -> TickedLedgerState (ShelleyBlock era) mk
+     -- TODO SL.overNewEpochState should not require 'Applicative'
+     Applicative f
+  => (      SL.MempoolState era
+       -> f (SL.MempoolState era)
+     )
+  ->    TickedLedgerState (ShelleyBlock era) mk
   -> f (TickedLedgerState (ShelleyBlock era) mk)
 theLedgerLens f x =
         (\y -> x{tickedShelleyLedgerState = y})

@@ -523,14 +523,12 @@ instance ShelleyBasedEra era
                 , asoEvents     = STS.EPReturn
                 }
 
-  getBlockKeySets blk =
+  getBlockKeySets =
         ShelleyLedgerTables
-      $ ApplyKeysMK
-      $ HD.UtxoKeys
-      $ foldMap getShelleyTxInputs
-      $ Core.fromTxSeq @era txs
-    where
-      ShelleyBlock { shelleyBlockRaw = SL.Block _ txs } = blk
+      . ApplyKeysMK
+      . HD.UtxoKeys
+      . Core.neededTxInsForBlock
+      . shelleyBlockRaw
 
 data ShelleyReapplyException =
   forall era. Show (SL.BlockTransitionError era)
