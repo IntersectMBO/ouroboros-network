@@ -68,7 +68,7 @@ jobs:
         tar zxvf libsodium-1.0.18-mingw.tar.gz
         sed -i "s|/d/a/1/s/|$RUNNER_TEMP_FWD\/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
 
-        export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig)"
+        export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig | sed 's|^/d|D:|g' | tr / '\\')"
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
@@ -104,6 +104,34 @@ jobs:
         make check
         sudo make install
         cd ../..
+
+    - name: Install secp256k1 (Windows)
+      if: matrix.os == 'windows-latest'
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
+      run: |
+        echo "RUNNER_TEMP=$RUNNER_TEMP"
+        cd "$RUNNER_TEMP"
+
+        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
+
+        curl -Ls \
+          --connect-timeout 5 \
+          --max-time 10 \
+          --retry 5 \
+          --retry-delay 0 \
+          --retry-max-time 40 \
+          https://hydra.iohk.io/job/Cardano/haskell-nix/windows-secp256k1/latest/download/1 -o secp256k1.zip
+        mkdir secp256k1
+        cd secp256k1
+        unzip ../secp256k1.zip
+        cd ..
+        export PKG_CONFIG_PATH="$PKG_CONFIG_PATH;$(readlink -f secp256k1/lib/pkgconfig | sed 's|^/d|D:|g' | tr / '\\')"
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        export SECP256K1_PATH="$(readlink -f secp256k1/bin | sed 's|^/d|D:|g' | tr / '\\')"
+        echo "SECP256K1_PATH=$SECP256K1_PATH"
+        echo "$SECP256K1_PATH" >> $GITHUB_PATH
 
     - name: Set up temp directory
       env:
