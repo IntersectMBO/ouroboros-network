@@ -161,7 +161,10 @@ jobs:
         cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
 
     - name: Build dependencies
-      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
+      run: |
+        echo "$PKG_CONFIG_PATH"
+        echo "------------------------"
+        cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
 
     - name: Print logs
       if: always()
