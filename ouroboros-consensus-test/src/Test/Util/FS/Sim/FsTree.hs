@@ -30,6 +30,8 @@ module Test.Util.FS.Sim.FsTree (
   , removeFile
   , renameFile
   , replace
+    -- * Path-listing
+  , find
     -- * Pretty-printing
   , pretty
   ) where
@@ -280,6 +282,55 @@ renameFile fpOld fpNew tree = do
     tree' <- removeFile fpOld tree
     -- Overwrite the new file with the old one
     alterFile fpNew Left (Right oldF) (const (Right oldF)) tree'
+
+{-------------------------------------------------------------------------------
+  Path-listing
+-------------------------------------------------------------------------------}
+
+-- Find all the file paths reachable from fp. Similar to Unix's @find@.
+--
+-- The initial path will be prepended to the each item in the resulting list of
+-- paths.
+--
+-- For instance, given the following file system, say @fs@:
+--
+-- > usr
+-- >  |-- local
+-- >        |-- bin
+--
+-- find ["usr"] fs will return:
+--
+-- > [usr, usr/local, usr/local/bin]
+--
+-- find ["usr", "local"] fs will return:
+--
+-- > [usr/local, usr/local/bin]
+--
+-- See the unit tests in @Test.Ouroboros.Storage.FsTree@ for additional
+-- examples.
+--
+-- If the given file system path does not exist, a (Left FsMissing{}) is
+-- returned.
+find :: forall a . FsPath -> FsTree a -> Either FsTreeError [FsPath]
+find fp fs = fmap (appendStartingDir . findTree) $ getDir fp fs
+  where
+    appendStartingDir :: [[Text]] -> [FsPath]
+    appendStartingDir fps = fmap fsPathFromList
+                          $ fmap (fsPathToList fp <>)
+                          $ []: fps
+
+    findTree :: Folder a -> [[Text]]
+    findTree folder = concat
+                    $ fmap appendFileNameAndFind
+                    $ M.toList folder
+      where
+        appendFileNameAndFind :: (Text, FsTree a) -> [[Text]]
+        appendFileNameAndFind (fileName, t) =
+            [fileName] : (fmap ([fileName] <>) $ findFsTree t)
+
+        findFsTree :: FsTree a -> [[Text]]
+        findFsTree (File   _      ) = []
+        findFsTree (Folder folder') = findTree folder'
 
 {-------------------------------------------------------------------------------
   Pretty-printing
