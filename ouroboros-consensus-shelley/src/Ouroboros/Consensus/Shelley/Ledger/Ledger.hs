@@ -88,10 +88,12 @@ import           Ouroboros.Consensus.Util.Singletons (SingI)
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BHeaderView as SL (BHeaderView)
+import qualified Cardano.Ledger.Block as Core
 import qualified Cardano.Ledger.Chain as Chain
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.LedgerState as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL (makeHeaderView)
 import qualified Control.State.Transition.Extended as STS
 
@@ -100,7 +102,7 @@ import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
 import           Ouroboros.Consensus.Protocol.TPraos
                      (ConsensusConfig (tpraosParams), MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView), tpraosMaxMajorPV)
-import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, getShelleyTxInputs)
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.TPraos ()
@@ -358,7 +360,7 @@ projectUtxoSL =
     . HD.UtxoValues
     . SL.unUTxO
     . SL._utxo
-    . SL._utxoState
+    . SL.lsUTxOState
     . SL.esLState
     . SL.nesEs
 
@@ -370,7 +372,7 @@ withUtxoSL nes (ApplyValuesMK (HD.UtxoValues m)) =
     nes {
         SL.nesEs = es {
             SL.esLState = us {
-                SL._utxoState = utxo {
+                SL.lsUTxOState = utxo {
                     SL._utxo = SL.UTxO m
                   }
               }
@@ -379,7 +381,7 @@ withUtxoSL nes (ApplyValuesMK (HD.UtxoValues m)) =
   where
     es   = SL.nesEs nes
     us   = SL.esLState es
-    utxo = SL._utxoState us
+    utxo = SL.lsUTxOState us
 
 {-------------------------------------------------------------------------------
   GetTip
