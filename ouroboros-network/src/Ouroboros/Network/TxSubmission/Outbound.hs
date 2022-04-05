@@ -26,7 +26,7 @@ import           Control.Tracer (Tracer, traceWith)
 import           Ouroboros.Network.Mux (ControlMessage, ControlMessageSTM,
                      timeoutWithControlMessage)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
-import           Ouroboros.Network.Protocol.TxSubmission.Client
+import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
 

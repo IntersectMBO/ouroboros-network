@@ -39,7 +39,7 @@ import           Control.Tracer (Tracer, traceWith)
 import           Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
-import           Ouroboros.Network.Protocol.TxSubmission.Server
+import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
 

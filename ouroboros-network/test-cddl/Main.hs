@@ -90,7 +90,6 @@ import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSub
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
                      (LocalTxSubmission)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
-import qualified Ouroboros.Network.Protocol.Trans.Hello.Type as Hello
 import           Ouroboros.Network.Protocol.TxSubmission.Codec
                      (codecTxSubmission)
 import           Ouroboros.Network.Protocol.TxSubmission.Test (Tx, TxId)
@@ -690,22 +689,19 @@ unit_decodeTxSubmission2 spec =
     validateDecoder (Just txSubmissionFix)
       spec txSubmissionCodec2
       [ SomeAgency
-        $ ClientAgency
-          Hello.TokHello
+        $ ClientAgency TxSubmission2.TokInit
       , SomeAgency
         $ ClientAgency
-        $ Hello.TokClientTalk
-            (TxSubmission.TokTxIds TxSubmission.TokBlocking)
+        $ TxSubmission2.TokTxIds TxSubmission2.TokBlocking
       , SomeAgency
         $ ClientAgency
-        $ Hello.TokClientTalk
-            (TxSubmission.TokTxIds TxSubmission.TokNonBlocking)
+        $ TxSubmission2.TokTxIds TxSubmission2.TokNonBlocking
       , SomeAgency
         $ ClientAgency
-        $ Hello.TokClientTalk TxSubmission.TokTxs
+        $ TxSubmission2.TokTxs
       , SomeAgency
         $ ServerAgency
-        $ Hello.TokServerTalk TxSubmission.TokIdle
+        $ TxSubmission2.TokIdle
       ]
       100
 

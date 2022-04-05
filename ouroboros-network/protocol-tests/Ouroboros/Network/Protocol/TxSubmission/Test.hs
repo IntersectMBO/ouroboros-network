@@ -14,6 +14,7 @@ module Ouroboros.Network.Protocol.TxSubmission.Test
   ( tests
   , TxId (..)
   , Tx (..)
+  , txId
   , TxSubmissionTestParams (..)
   , testClient
   , testServer
