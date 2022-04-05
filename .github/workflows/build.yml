@@ -106,8 +106,15 @@ jobs:
         cd ../..
 
     - name: Install secp256k1 (Windows)
-      if: runner.os == 'Windows'
+      if: matrix.os == 'windows-latest'
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
       run: |
+        echo "RUNNER_TEMP=$RUNNER_TEMP"
+        cd "$RUNNER_TEMP"
+
+        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
+
         curl -Ls \
           --connect-timeout 5 \
           --max-time 10 \
@@ -163,7 +170,7 @@ jobs:
         cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
 
     - name: Build dependencies
-      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
+      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all -v
 
     - name: Print logs
       if: always()
