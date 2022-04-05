@@ -170,7 +170,7 @@ jobs:
         cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
 
     - name: Build dependencies
-      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all -v
+      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all -v3
 
     - name: Print logs
       if: always()
