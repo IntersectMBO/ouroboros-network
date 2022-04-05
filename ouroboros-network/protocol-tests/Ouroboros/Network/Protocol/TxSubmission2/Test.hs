@@ -13,10 +13,16 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Network.Protocol.TxSubmission2.Test (tests) where
+module Ouroboros.Network.Protocol.TxSubmission2.Test
+  ( tests
+  , Tx (..)
+  , TxId (..)
+  ) where
 
 import           Data.ByteString.Lazy (ByteString)
+import           Data.List (nub)
 import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
@@ -25,7 +31,7 @@ import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
 import           Control.Tracer (Tracer (..), nullTracer)
 
-import           Codec.Serialise (DeserialiseFailure)
+import           Codec.Serialise (DeserialiseFailure, Serialise)
 import qualified Codec.Serialise as Serialise (decode, encode)
 
 import           Network.TypedProtocol.Codec hiding (prop_codec)
@@ -33,17 +39,14 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
-import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSubmission)
-import qualified Ouroboros.Network.Protocol.TxSubmission.Type as TxV1
-import qualified Ouroboros.Network.Protocol.TxSubmission.Codec as TxV1
-import           Ouroboros.Network.Protocol.TxSubmission.Test (TxSubmissionTestParams (..), DistinctList (..), TxId (..), Tx (..), txId)
-import qualified Ouroboros.Network.Protocol.TxSubmission2.Codec as TxV2
+import           Ouroboros.Network.Util.ShowProxy
+
+import           Ouroboros.Network.Protocol.TxSubmission2.Codec
 import           Ouroboros.Network.Protocol.TxSubmission2.Direct
 import           Ouroboros.Network.Protocol.TxSubmission2.Examples
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
-import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxV2
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
@@ -72,7 +75,6 @@ tests =
                                              prop_codec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
-        , testProperty "encodings agree"     prop_encodings_agree
         , testProperty "channel ST"          prop_channel_ST
         , testProperty "channel IO"          prop_channel_IO
         , testProperty "pipe IO"             prop_pipe_IO
@@ -82,6 +84,21 @@ tests =
 --
 -- Common types & clients and servers used in the tests in this module.
 --
+
+newtype Tx = Tx TxId
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+instance ShowProxy Tx where
+    showProxy _ = "Tx"
+
+txId :: Tx -> TxId
+txId (Tx txid) = txid
+
+newtype TxId = TxId Int
+  deriving (Eq, Ord, Show, Arbitrary, Serialise)
+
+instance ShowProxy TxId where
+    showProxy _ = "TxId"
 
 type TestServer m = TxSubmissionServerPipelined TxId Tx m [Tx]
 type TestClient m = TxSubmissionClient          TxId Tx m ()
@@ -283,21 +300,11 @@ instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
   _ == _ = False
 
 
-
-codec_v1 :: MonadST m
-          => Codec (TxSubmission TxId Tx)
-                   DeserialiseFailure
-                   m ByteString
-codec_v1 = TxV1.codecTxSubmission
-           Serialise.encode Serialise.decode
-           Serialise.encode Serialise.decode
-
-
 codec_v2 :: MonadST m
          => Codec (TxSubmission2 TxId Tx)
                    DeserialiseFailure
                    m ByteString
-codec_v2 = TxV2.codecTxSubmission2
+codec_v2 = codecTxSubmission2
            Serialise.encode Serialise.decode
            Serialise.encode Serialise.decode
 
@@ -312,7 +319,7 @@ prop_codec msg =
 --
 prop_codec_id :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
 prop_codec_id msg =
-  runST (prop_codecM TxV2.codecTxSubmission2Id msg)
+  runST (prop_codecM codecTxSubmission2Id msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
@@ -339,56 +346,37 @@ prop_codec_valid_cbor
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec_v2
 
--- | 'codecTxSubmission' and 'codecTxSubmission2' agree on the encoding.  This
--- and 'prop_codec' ensures the 'codecTxSubmission2' is backward compatible with
--- 'codecTxSubmission'.
 --
-prop_encodings_agree :: AnyMessageAndAgency (TxSubmission TxId Tx) -> Bool
-prop_encodings_agree (AnyMessageAndAgency stok@ClientAgency {} msg) =
-     encode (codec_v1 @IO)  stok msg
-  == encode (codec_v2 @IO)
-            (tokV1ToV2 stok)
-            (msgV1ToV2 msg)
-prop_encodings_agree (AnyMessageAndAgency stok@ServerAgency {} msg) =
-     encode (codec_v1 @IO)  stok msg
-  == encode (codec_v2 @IO)
-            (tokV1ToV2 stok)
-            (msgV1ToV2 msg)
+-- Local generators
+--
+
+data TxSubmissionTestParams =
+     TxSubmissionTestParams {
+       testMaxUnacked        :: Positive (Small Word16),
+       testMaxTxIdsToRequest :: Positive (Small Word16),
+       testMaxTxToRequest    :: Positive (Small Word16),
+       testTransactions      :: DistinctList Tx
+     }
+  deriving Show
+
+instance Arbitrary TxSubmissionTestParams where
+  arbitrary =
+    TxSubmissionTestParams <$> arbitrary
+                           <*> arbitrary
+                           <*> arbitrary
+                           <*> arbitrary
+
+  shrink (TxSubmissionTestParams a b c d) =
+    [ TxSubmissionTestParams a' b' c' d'
+    | (a', b', c', d') <- shrink (a, b, c, d) ]
 
 
-type        V1ToV2 :: TxSubmission txid tx -> TxSubmission2 txid tx
-type family V1ToV2 st where
-  V1ToV2 TxV1.StIdle                       = TxV2.StIdle
-  V1ToV2 (TxV1.StTxIds TxV1.StBlocking)    = TxV2.StTxIds TxV2.StBlocking
-  V1ToV2 (TxV1.StTxIds TxV1.StNonBlocking) = TxV2.StTxIds TxV2.StNonBlocking
-  V1ToV2 TxV1.StTxs                        = TxV2.StTxs
-  V1ToV2 TxV1.StDone                       = TxV2.StDone
+newtype DistinctList a = DistinctList { fromDistinctList :: [a] }
+  deriving Show
 
-msgV1ToV2 :: Message (TxSubmission txid tx) from to
-          -> Message (TxSubmission2 txid tx) (V1ToV2 from) (V1ToV2 to)
-msgV1ToV2 (TxV1.MsgRequestTxIds TxV1.TokBlocking ackNo reqNo) =
-           TxV2.MsgRequestTxIds TxV2.TokBlocking ackNo reqNo
-msgV1ToV2 (TxV1.MsgRequestTxIds TxV1.TokNonBlocking ackNo reqNo) =
-           TxV2.MsgRequestTxIds TxV2.TokNonBlocking ackNo reqNo
-msgV1ToV2 (TxV1.MsgReplyTxIds (TxV1.BlockingReply txids)) =
-           TxV2.MsgReplyTxIds (TxV2.BlockingReply txids)
-msgV1ToV2 (TxV1.MsgReplyTxIds (TxV1.NonBlockingReply txids)) =
-           TxV2.MsgReplyTxIds (TxV2.NonBlockingReply txids)
-msgV1ToV2 (TxV1.MsgRequestTxs txs) =
-           TxV2.MsgRequestTxs txs
-msgV1ToV2 (TxV1.MsgReplyTxs txs) =
-           TxV2.MsgReplyTxs txs
-msgV1ToV2  TxV1.MsgDone =
-           TxV2.MsgDone
-    
+instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
+  arbitrary = DistinctList . nub <$> arbitrary
 
-tokV1ToV2 :: PeerHasAgency pr (st :: TxSubmission  txid tx)
-          -> PeerHasAgency pr (V1ToV2 st)
-tokV1ToV2 (ClientAgency (TxV1.TokTxIds TxV1.TokBlocking)) =
-           ClientAgency (TxV2.TokTxIds TxV2.TokBlocking)
-tokV1ToV2 (ClientAgency (TxV1.TokTxIds TxV1.TokNonBlocking)) =
-           ClientAgency (TxV2.TokTxIds TxV2.TokNonBlocking) 
-tokV1ToV2 (ClientAgency  TxV1.TokTxs) =
-           ClientAgency  TxV2.TokTxs
-tokV1ToV2 (ServerAgency  TxV1.TokIdle) =
-           ServerAgency  TxV2.TokIdle
+  shrink (DistinctList xs) =
+    [ DistinctList (nub xs') | xs' <- shrink xs ]
+

@@ -53,9 +53,6 @@ tests = testGroup "Ouroboros.Network.Protocol.KeepAlive"
   , testProperty "connect"             prop_connect
   , testProperty "channel ST"          prop_channel_ST
   , testProperty "channel IO"          prop_channel_IO
-  , testProperty "codec"               prop_codec
-  , testProperty "codec 2-splits"      prop_codec_splits2
-  , testProperty "codec 3-splits"      (withMaxSuccess 33 prop_codec_splits3)
   , testProperty "codec v2"            prop_codec_v2
   , testProperty "codec v2 2-splits"   prop_codec_v2_splits2
   , testProperty "codec v2 3-splits"   (withMaxSuccess 33 prop_codec_v2_splits3)
@@ -107,7 +104,7 @@ prop_channel :: ( MonadST    m
 prop_channel f n = do
     (s, c) <- runConnectedPeers createConnectedChannels
                                 nullTracer
-                                codecKeepAlive
+                                codecKeepAlive_v2
                                 server client
     return ((s, c) === (n, foldr (.) id (replicate n f) 0))
   where
@@ -146,18 +143,6 @@ instance Eq (AnyMessage KeepAlive) where
     AnyMessage MsgDone                        == AnyMessage MsgDone                        = True
     _ == _ = False
 
-prop_codec :: AnyMessageAndAgency KeepAlive -> Bool
-prop_codec msg =
-    runST (prop_codecM codecKeepAlive msg)
-
-prop_codec_splits2 :: AnyMessageAndAgency KeepAlive -> Bool
-prop_codec_splits2 msg =
-    runST (prop_codec_splitsM splits2 codecKeepAlive msg)
-
-prop_codec_splits3 :: AnyMessageAndAgency KeepAlive -> Bool
-prop_codec_splits3 msg =
-    runST (prop_codec_splitsM splits3 codecKeepAlive msg)
-
 prop_codec_v2 :: AnyMessageAndAgency KeepAlive -> Bool
 prop_codec_v2 msg =
     runST (prop_codecM codecKeepAlive_v2 msg)
@@ -180,5 +165,5 @@ prop_byteLimits (AnyMessageAndAgency agency msg) =
         dataSize (encode agency msg)
      <= sizeLimitForState agency
   where
-    Codec { encode } = (codecKeepAlive :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString)
+    Codec { encode } = (codecKeepAlive_v2 :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString)
     ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive (fromIntegral . BL.length)

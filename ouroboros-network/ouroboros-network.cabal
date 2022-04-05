@@ -113,10 +113,6 @@ library
                        Ouroboros.Network.Protocol.TipSample.Client
                        Ouroboros.Network.Protocol.TipSample.Server
                        Ouroboros.Network.Protocol.TipSample.Codec
-                       Ouroboros.Network.Protocol.TxSubmission.Type
-                       Ouroboros.Network.Protocol.TxSubmission.Client
-                       Ouroboros.Network.Protocol.TxSubmission.Server
-                       Ouroboros.Network.Protocol.TxSubmission.Codec
                        Ouroboros.Network.Protocol.TxSubmission2.Type
                        Ouroboros.Network.Protocol.TxSubmission2.Codec
                        Ouroboros.Network.Protocol.TxSubmission2.Client
@@ -244,9 +240,6 @@ library ouroboros-protocol-tests
                        Ouroboros.Network.Protocol.TipSample.Direct
                        Ouroboros.Network.Protocol.TipSample.Examples
                        Ouroboros.Network.Protocol.TipSample.Test
-                       Ouroboros.Network.Protocol.TxSubmission.Direct
-                       Ouroboros.Network.Protocol.TxSubmission.Examples
-                       Ouroboros.Network.Protocol.TxSubmission.Test
                        Ouroboros.Network.Protocol.TxSubmission2.Direct
                        Ouroboros.Network.Protocol.TxSubmission2.Test
                        Ouroboros.Network.Protocol.TxSubmission2.Examples

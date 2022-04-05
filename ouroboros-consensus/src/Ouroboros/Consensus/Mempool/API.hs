@@ -30,7 +30,7 @@ module Ouroboros.Consensus.Mempool.API (
 
 import           Data.Word (Word32)
 
-import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSizeInBytes)
+import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
 import           Ouroboros.Consensus.Block (SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract

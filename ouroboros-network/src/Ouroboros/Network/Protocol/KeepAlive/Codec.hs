@@ -7,8 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.KeepAlive.Codec
-  ( codecKeepAlive
-  , codecKeepAlive_v2
+  ( codecKeepAlive_v2
   , codecKeepAliveId
   , byteLimitsKeepAlive
   , timeLimitsKeepAlive
@@ -32,40 +31,6 @@ import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits
-
-
-codecKeepAlive
-  :: forall m.
-     MonadST m
-  => Codec KeepAlive CBOR.DeserialiseFailure m ByteString
-codecKeepAlive = mkCodecCborLazyBS encodeMsg decodeMsg
-   where
-     encodeMsg :: forall (pr :: PeerRole) st st'.
-                  PeerHasAgency pr st
-               -> Message KeepAlive st st'
-               -> CBOR.Encoding
-     encodeMsg (ClientAgency TokClient) (MsgKeepAlive (Cookie c))         = CBOR.encodeWord 0 <> CBOR.encodeWord16 c
-     encodeMsg (ServerAgency TokServer) (MsgKeepAliveResponse (Cookie c)) = CBOR.encodeWord 1 <> CBOR.encodeWord16 c
-     encodeMsg (ClientAgency TokClient) MsgDone                           = CBOR.encodeWord 2
-
-     decodeMsg :: forall (pr :: PeerRole) s (st :: KeepAlive).
-                  PeerHasAgency pr st
-               -> CBOR.Decoder s (SomeMessage st)
-     decodeMsg stok = do
-       key <- CBOR.decodeWord
-       case (stok, key) of
-         (ClientAgency TokClient, 0) -> do
-             cookie <- CBOR.decodeWord16
-             return (SomeMessage $ MsgKeepAlive $ Cookie cookie)
-         (ServerAgency TokServer, 1) -> do
-             cookie <- CBOR.decodeWord16
-             return (SomeMessage $ MsgKeepAliveResponse $ Cookie cookie)
-         (ClientAgency TokClient, 2) -> pure (SomeMessage MsgDone)
-
-         (ClientAgency TokClient, _) ->
-           fail ("codecKeepAlive.StClient: unexpected key:" ++ show key)
-         (ServerAgency TokServer, _) ->
-           fail ("codecKeepAlive.StServer: unexpected key: " ++ show key)
 
 
 codecKeepAlive_v2

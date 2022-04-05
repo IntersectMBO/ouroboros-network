@@ -24,30 +24,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
 -- | Enumeration of node to node protocol versions.
 --
 data NodeToNodeVersion
-    = NodeToNodeV_1
-    | NodeToNodeV_2
-    -- ^ Changes:
-    --
-    -- * Enable block size hints for Byron headers in ChainSync
-    -- * Enable @CardanoNodeToNodeVersion2@, i.e., Shelley
-    | NodeToNodeV_3
-    -- ^ Changes:
-    --
-    -- * Enable KeepAlive miniprotocol
-    | NodeToNodeV_4
-    -- ^ Changes:
-    --
-    -- * Added 'DiffusionMode' Handshake argument.
-    -- * Enable @CardanoNodeToNodeVersion3@, i.e., Allegra
-    | NodeToNodeV_5
-    -- ^ Changes:
-    --
-    -- * Enable @CardanoNodeToNodeVersion4@, i.e., Mary
-    | NodeToNodeV_6
-    -- ^ Changes:
-    --
-    -- * Replace 'TxSubmision' with 'Txsubmission2' protocol.
-    | NodeToNodeV_7
+    = NodeToNodeV_7
     -- ^ Changes:
     --
     -- * new 'KeepAlive' codec
@@ -61,21 +38,9 @@ data NodeToNodeVersion
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
-    encodeTerm NodeToNodeV_1 = CBOR.TInt 1
-    encodeTerm NodeToNodeV_2 = CBOR.TInt 2
-    encodeTerm NodeToNodeV_3 = CBOR.TInt 3
-    encodeTerm NodeToNodeV_4 = CBOR.TInt 4
-    encodeTerm NodeToNodeV_5 = CBOR.TInt 5
-    encodeTerm NodeToNodeV_6 = CBOR.TInt 6
     encodeTerm NodeToNodeV_7 = CBOR.TInt 7
     encodeTerm NodeToNodeV_8 = CBOR.TInt 8
 
-    decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
-    decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
-    decodeTerm (CBOR.TInt 3) = Right NodeToNodeV_3
-    decodeTerm (CBOR.TInt 4) = Right NodeToNodeV_4
-    decodeTerm (CBOR.TInt 5) = Right NodeToNodeV_5
-    decodeTerm (CBOR.TInt 6) = Right NodeToNodeV_6
     decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
     decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
@@ -120,29 +85,7 @@ instance Acceptable NodeToNodeVersionData where
 
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm version
-  | version <= NodeToNodeV_3
-  = let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic }
-          = CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-
-        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm (CBOR.TInt x)
-          | x >= 0
-          , x <= 0xffffffff
-          = Right
-              NodeToNodeVersionData {
-                  networkMagic = NetworkMagic (fromIntegral x),
-                  -- the default 'NodeMode' for version @≤ NodeToNodeV_3@
-                  diffusionMode = InitiatorAndResponderDiffusionMode
-                }
-          | otherwise
-          = Left $ T.pack $ "networkMagic out of bound: " <> show x
-        decodeTerm t
-          = Left $ T.pack $ "unknown encoding: " ++ show t
-    in CodecCBORTerm {encodeTerm, decodeTerm}
-
-  | otherwise -- NodeToNodeV_4 and beyond
+nodeToNodeCodecCBORTerm _version
   = let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
         encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode }
           = CBOR.TList
