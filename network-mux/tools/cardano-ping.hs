@@ -199,6 +199,7 @@ data NodeVersion =       NodeToClientVersionV9  Word32
                        | NodeToClientVersionV10 Word32
                        | NodeToClientVersionV11 Word32
                        | NodeToClientVersionV12 Word32
+                       | NodeToClientVersionV13 Word32
                        | NodeToNodeVersionV1   Word32
                        | NodeToNodeVersionV2   Word32
                        | NodeToNodeVersionV3   Word32
@@ -208,6 +209,7 @@ data NodeVersion =       NodeToClientVersionV9  Word32
                        | NodeToNodeVersionV7   Word32 Bool
                        | NodeToNodeVersionV8   Word32 Bool
                        | NodeToNodeVersionV9   Word32 Bool
+                       | NodeToNodeVersionV10  Word32 Bool
                        deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -255,6 +257,9 @@ handshakeReqEnc versions =
     encodeVersion (NodeToClientVersionV12 magic) =
           CBOR.encodeWord (12 `setBit` nodeToClientVersionBit)
        <> CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV13 magic) =
+          CBOR.encodeWord (13 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
     encodeVersion (NodeToNodeVersionV1 magic) =
           CBOR.encodeWord 1
        <> CBOR.encodeInt (fromIntegral magic)
@@ -270,6 +275,7 @@ handshakeReqEnc versions =
     encodeVersion (NodeToNodeVersionV7 magic mode) = encodeWithMode 7 magic mode
     encodeVersion (NodeToNodeVersionV8 magic mode) = encodeWithMode 8 magic mode
     encodeVersion (NodeToNodeVersionV9 magic mode) = encodeWithMode 9 magic mode
+    encodeVersion (NodeToNodeVersionV10 magic mode) = encodeWithMode 10 magic mode
 
 
     encodeWithMode :: Word -> Word32 -> Bool -> CBOR.Encoding
@@ -347,6 +353,7 @@ handshakeDec = do
              (10, True) -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
              (11, True) -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
              (12, True) -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
+             (13, True) -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
              _          -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> Bool -> NodeVersion)
