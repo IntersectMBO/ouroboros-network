@@ -64,7 +64,7 @@ runKeepAliveClient
 runKeepAliveClient tracer rng controlMessageSTM registry peer channel keepAliveInterval =
     let kacApp dqCtx = runPeerWithLimits
                          nullTracer
-                         codecKeepAlive
+                         codecKeepAlive_v2
                          (byteLimitsKeepAlive (fromIntegral . BL.length))
                          timeLimitsKeepAlive
                          channel
@@ -88,7 +88,7 @@ runKeepAliveServer
 runKeepAliveServer channel =
     runPeerWithLimits
         nullTracer
-        codecKeepAlive
+        codecKeepAlive_v2
         (byteLimitsKeepAlive (fromIntegral . BL.length))
         timeLimitsKeepAlive
         channel

@@ -249,7 +249,7 @@ txSubmissionSimulation maxUnacked outboundTxs
         nullTracer
         maxUnacked
         (getMempoolReader outboundMempool)
-        NodeToNodeV_3
+        NodeToNodeV_7
         controlMessageSTM
 
     inboundPeer :: Mempool m txid -> TxSubmissionServerPipelined txid (Tx txid) m ()
@@ -259,7 +259,7 @@ txSubmissionSimulation maxUnacked outboundTxs
         maxUnacked
         (getMempoolReader inboundMempool)
         (getMempoolWriter inboundMempool)
-        NodeToNodeV_3
+        NodeToNodeV_7
 
 
 newtype LargeNonEmptyList a = LargeNonEmpty { getLargeNonEmpty :: [a] }

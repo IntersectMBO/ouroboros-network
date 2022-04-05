@@ -31,9 +31,8 @@ instance HasNetworkProtocolVersion ByronBlock where
 
 instance SupportedNetworkProtocolVersion ByronBlock where
   supportedNodeToNodeVersions   _ = Map.fromList [
-        (NodeToNodeV_1, ByronNodeToNodeVersion1)
-        -- V_2 enables block size hints for Byron headers within the hard fork
-        -- combinator, not supported by Byron-only.
+        (NodeToNodeV_7, ByronNodeToNodeVersion1)
+      , (NodeToNodeV_8, ByronNodeToNodeVersion1)
       ]
   supportedNodeToClientVersions _ = Map.fromList [
         (NodeToClientV_1, ByronNodeToClientVersion1)

@@ -88,7 +88,7 @@ cborCodecs = Codecs
                                     Serialise.encode Serialise.decode
                                     (Block.encodeTip Serialise.encode)
                                     (Block.decodeTip Serialise.decode)
-  , keepAliveCodec = codecKeepAlive
+  , keepAliveCodec = codecKeepAlive_v2
   , pingPongCodec  = codecPingPong
   }
 
