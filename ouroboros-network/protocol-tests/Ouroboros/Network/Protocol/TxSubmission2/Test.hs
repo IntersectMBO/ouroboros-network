@@ -33,8 +33,6 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
-import           Ouroboros.Network.Protocol.Trans.Hello.Type (Hello)
-import qualified Ouroboros.Network.Protocol.Trans.Hello.Type as Hello
 import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSubmission)
 import qualified Ouroboros.Network.Protocol.TxSubmission.Type as TxV1
 import qualified Ouroboros.Network.Protocol.TxSubmission.Codec as TxV1
@@ -46,7 +44,6 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxV2
-import qualified Ouroboros.Network.Protocol.TxSubmission2.Hello.Codec as Hello
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
@@ -76,7 +73,6 @@ tests =
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
         , testProperty "encodings agree"     prop_encodings_agree
-        , testProperty "v2 encodings agree"  prop_v2_encodings_argree
         , testProperty "channel ST"          prop_channel_ST
         , testProperty "channel IO"          prop_channel_IO
         , testProperty "pipe IO"             prop_pipe_IO
@@ -223,24 +219,6 @@ prop_pipe_IO params =
     ioProperty (prop_channel createPipeConnectedChannels params)
 
 
-instance Arbitrary (AnyMessageAndAgency ps)
-      => Arbitrary (AnyMessageAndAgency (Hello ps stIdle)) where
-  arbitrary =
-      frequency [ (5, f <$> arbitrary)
-                , (1, pure (AnyMessageAndAgency (ClientAgency Hello.TokHello) Hello.MsgHello))
-                ]
-    where
-      f :: AnyMessageAndAgency ps -> AnyMessageAndAgency (Hello ps stIdle)
-      f (AnyMessageAndAgency (ClientAgency tok) msg) =
-          AnyMessageAndAgency
-            (ClientAgency (Hello.TokClientTalk tok))
-            (Hello.MsgTalk msg)
-      f (AnyMessageAndAgency (ServerAgency tok) msg) =
-          AnyMessageAndAgency
-            (ServerAgency (Hello.TokServerTalk tok))
-            (Hello.MsgTalk msg)
-
-
 instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where
   arbitrary = oneof
     [ pure $ AnyMessageAndAgency (ClientAgency TokInit) MsgInit
@@ -305,30 +283,6 @@ instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
   _ == _ = False
 
 
-instance Eq (AnyMessageAndAgency        ps)
-      => Eq (AnyMessageAndAgency (Hello ps stIdle)) where
-  (==) (AnyMessageAndAgency (ClientAgency Hello.TokHello) Hello.MsgHello)
-       (AnyMessageAndAgency (ClientAgency Hello.TokHello) Hello.MsgHello)
-     = True
-  (==) (AnyMessageAndAgency (ClientAgency (Hello.TokClientTalk tok))  (Hello.MsgTalk msg))
-       (AnyMessageAndAgency (ClientAgency (Hello.TokClientTalk tok')) (Hello.MsgTalk msg'))
-     = AnyMessageAndAgency (ClientAgency tok) msg == AnyMessageAndAgency (ClientAgency tok') msg'
-  (==) (AnyMessageAndAgency (ServerAgency (Hello.TokServerTalk tok))  (Hello.MsgTalk msg))
-       (AnyMessageAndAgency (ServerAgency (Hello.TokServerTalk tok')) (Hello.MsgTalk msg'))
-     = AnyMessageAndAgency (ServerAgency tok) msg == AnyMessageAndAgency (ServerAgency tok') msg'
-  (==) _ _ = False
-
-
-instance Eq (AnyMessage        ps)
-      => Eq (AnyMessage (Hello ps stIdle)) where
-  (==) (AnyMessage Hello.MsgHello)
-       (AnyMessage Hello.MsgHello) =
-    True
-  (==) (AnyMessage (Hello.MsgTalk msg))
-       (AnyMessage (Hello.MsgTalk msg')) =
-    AnyMessage msg == AnyMessage msg'
-  (==) _ _ = False
-
 
 codec_v1 :: MonadST m
           => Codec (TxSubmission TxId Tx)
@@ -346,15 +300,6 @@ codec_v2 :: MonadST m
 codec_v2 = TxV2.codecTxSubmission2
            Serialise.encode Serialise.decode
            Serialise.encode Serialise.decode
-
-
-codec_hello :: MonadST m
-            => Codec (Hello (TxSubmission TxId Tx) TxV1.StIdle)
-                      DeserialiseFailure
-                      m ByteString
-codec_hello = Hello.codecTxSubmission2
-                Serialise.encode Serialise.decode
-                Serialise.encode Serialise.decode
 
 
 -- | Check the codec round trip property.
@@ -447,30 +392,3 @@ tokV1ToV2 (ClientAgency  TxV1.TokTxs) =
            ClientAgency  TxV2.TokTxs
 tokV1ToV2 (ServerAgency  TxV1.TokIdle) =
            ServerAgency  TxV2.TokIdle
-
-type        HelloToV2 :: Hello (TxSubmission txid tx) TxV1.StIdle
-                      -> TxSubmission2 txid tx
-type family HelloToV2 st where
-  HelloToV2  Hello.StHello    = StInit
-  HelloToV2 (Hello.StTalk st) = V1ToV2 st
-
-
-prop_v2_encodings_argree
-    :: AnyMessageAndAgency (Hello (TxSubmission TxId Tx) TxV1.StIdle)
-    -> Bool
-prop_v2_encodings_argree (AnyMessageAndAgency stok msg) =
-       encode (codec_hello @IO) stok msg
-    == encode (codec_v2 @IO) (tokHelloToV2 stok) (msgHelloToV2 msg)
-
-
-msgHelloToV2 :: Message (Hello (TxSubmission TxId Tx) TxV1.StIdle) from to
-             -> Message (TxSubmission2 TxId Tx) (HelloToV2 from) (HelloToV2 to)
-msgHelloToV2  Hello.MsgHello     = MsgInit 
-msgHelloToV2 (Hello.MsgTalk msg) = msgV1ToV2 msg
-
-
-tokHelloToV2 :: PeerHasAgency pr (st :: Hello (TxSubmission txid tx) TxV1.StIdle)
-             -> PeerHasAgency pr (HelloToV2 st)
-tokHelloToV2 (ClientAgency Hello.TokHello) = ClientAgency TokInit
-tokHelloToV2 (ClientAgency (Hello.TokClientTalk tok)) = tokV1ToV2 (ClientAgency tok)
-tokHelloToV2 (ServerAgency (Hello.TokServerTalk tok)) = tokV1ToV2 (ServerAgency tok)
