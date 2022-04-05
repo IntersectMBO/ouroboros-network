@@ -47,6 +47,8 @@ data NodeToClientVersion
     -- ^ added 'GetRewardInfoPools` Block query
     | NodeToClientV_12
     -- ^ added 'LocalTxMonitor' mini-protocol
+    | NodeToClientV_13
+    -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -71,6 +73,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       encodeTerm NodeToClientV_10 = CBOR.TInt (10 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_11 = CBOR.TInt (11 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_12 = CBOR.TInt (12 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_13 = CBOR.TInt (13 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -88,6 +91,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (10, True) -> Right NodeToClientV_10
         (11, True) -> Right NodeToClientV_11
         (12, True) -> Right NodeToClientV_12
+        (13, True) -> Right NodeToClientV_13
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
