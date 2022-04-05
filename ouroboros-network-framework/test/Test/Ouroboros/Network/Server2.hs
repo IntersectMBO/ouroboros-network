@@ -3668,7 +3668,7 @@ splitRemoteConns =
 
 ppTransition :: AbstractTransition -> String
 ppTransition Transition {fromState, toState} =
-    printf "%-30s → %s" (show fromState) (show toState)
+    printf "%-30s -> %s" (show fromState) (show toState)
 
 ppScript :: (Show peerAddr, Show req) => MultiNodeScript peerAddr req -> String
 ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script

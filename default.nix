@@ -8,7 +8,9 @@
   # }'
 , sourcesOverride ? { }
   # pinned version of nixpkgs augmented with overlays (iohk-nix and our packages).
-, pkgs ? import ./nix { inherit system crossSystem config sourcesOverride; }
+  , pkgs ? import ./nix { inherit system crossSystem sourcesOverride;
+                          config = { nightly = false; } // config;
+                        }
 , gitrev ? pkgs.iohkNix.commitIdFromGitRepoOrZero ./.git }:
 with pkgs;
 with commonLib;
@@ -61,6 +63,10 @@ let
         haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
       Shelley =
         haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
+      ouroboros-network-framework =
+        haskellPackages.ouroboros-network-framework.components.tests.test;
+      ouroboros-network =
+        haskellPackages.ouroboros-network.components.tests.test;
     };
 
     shell = import ./shell.nix {
