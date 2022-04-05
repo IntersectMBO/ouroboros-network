@@ -47,10 +47,10 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
-import           Ouroboros.Network.Protocol.TxSubmission.Client
-import           Ouroboros.Network.Protocol.TxSubmission.Codec
-import           Ouroboros.Network.Protocol.TxSubmission.Server
-import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.Protocol.TxSubmission2.Client
+import           Ouroboros.Network.Protocol.TxSubmission2.Codec
+import           Ouroboros.Network.Protocol.TxSubmission2.Server
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
 import           Ouroboros.Network.TxSubmission.Outbound
@@ -166,12 +166,12 @@ getMempoolWriter (Mempool mempool) =
       }
 
 
-txSubmissionCodec :: MonadST m
-                  => Codec (TxSubmission Int (Tx Int))
-                           CBOR.DeserialiseFailure m ByteString
-txSubmissionCodec =
-    codecTxSubmission CBOR.encodeInt CBOR.decodeInt
-                      encodeTx decodeTx
+txSubmissionCodec2 :: MonadST m
+                   => Codec (TxSubmission2 Int (Tx Int))
+                            CBOR.DeserialiseFailure m ByteString
+txSubmissionCodec2 =
+    codecTxSubmission2 CBOR.encodeInt CBOR.decodeInt
+                       encodeTx decodeTx
   where
     encodeTx Tx {getTxId, getTxSize, getTxValid} =
          CBOR.encodeListLen 3
@@ -221,18 +221,18 @@ txSubmissionSimulation maxUnacked outboundTxs
     outboundAsync <-
       async $ runPeerWithLimits
                 (("OUTBOUND",) `contramap` verboseTracer)
-                txSubmissionCodec
-                (byteLimitsTxSubmission (fromIntegral . BSL.length))
-                timeLimitsTxSubmission
+                txSubmissionCodec2
+                (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                timeLimitsTxSubmission2
                 (fromMaybe id (delayChannel <$> outboundDelay) outboundChannel)
                 (txSubmissionClientPeer (outboundPeer outboundMempool))
 
     inboundAsync <-
       async $ runPipelinedPeerWithLimits
                 (("INBOUND",) `contramap` verboseTracer)
-                txSubmissionCodec
-                (byteLimitsTxSubmission (fromIntegral . BSL.length))
-                timeLimitsTxSubmission
+                txSubmissionCodec2
+                (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                timeLimitsTxSubmission2
                 (fromMaybe id (delayChannel <$> inboundDelay) inboundChannel)
                 (txSubmissionServerPeerPipelined (inboundPeer inboundMempool))
 
@@ -274,7 +274,7 @@ prop_txSubmission :: Positive Word16
                   -> Maybe (Positive SmallDelay)
                   -- ^ The delay must be smaller (<) than 5s, so that overall
                   -- delay is less than 10s, otherwise 'smallDelay' in
-                  -- 'timeLimitsTxSubmission' will kick in.
+                  -- 'timeLimitsTxSubmission2' will kick in.
                   -> Property
 prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
     let mbDelayTime = getSmallDelay . getPositive <$> delay
