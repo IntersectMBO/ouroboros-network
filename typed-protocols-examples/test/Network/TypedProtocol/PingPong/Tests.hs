@@ -283,7 +283,7 @@ prop_connect_pipelined5 choices (Positive omax) (NonNegative n) =
 --
 prop_channel :: (MonadSTM m, MonadAsync m, MonadCatch m)
              => NonNegative Int
-             -> Tracer m (PeerRole, TraceSendRecv PingPong)
+             -> Tracer m (Role, TraceSendRecv PingPong)
              -> m Bool
 prop_channel (NonNegative n) tr = do
     ((), n') <- runConnectedPeers createConnectedChannels

@@ -40,6 +40,13 @@ package Win32-network
 package io-classes
   flags: +asserts
 
+package io-sim
+  tests: True
+  -- NOTE: to enable benchmarks, one needs to disable tests for --
+  -- `typed-protocols-examples`.  This won't be a problem, once `io-sim` lands
+  -- in its own repository.
+  benchmarks: False
+
 package strict-stm
   flags: +asserts
 

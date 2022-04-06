@@ -58,3 +58,36 @@ decodeTerminatedFrame terminator k = go []
                                       (if null c' then Nothing else Just c)
               _         -> go (chunk : chunks)
 
+
+
+codecPingPongId
+  :: forall m. Monad m
+  => Codec PingPong CodecFailure m (AnyMessage PingPong)
+codecPingPongId =
+    Codec{encode,decode}
+  where
+    encode :: forall pr (st :: PingPong) (st' :: PingPong)
+           .  PeerHasAgency pr st
+           -> Message PingPong st st'
+           -> AnyMessage PingPong
+    encode _ msg = AnyMessage msg
+
+    decode :: forall pr (st :: PingPong)
+           .  PeerHasAgency pr st
+           -> m (DecodeStep (AnyMessage PingPong) CodecFailure m (SomeMessage st))
+    decode stok =
+      pure $ DecodePartial $ \mb ->
+        case mb of
+          Nothing -> return $ DecodeFail (CodecFailure "expected more data")
+          Just (AnyMessage msg) -> return $ 
+            case (stok, msg) of
+              (ServerAgency TokBusy, MsgPong) ->
+                DecodeDone (SomeMessage msg) Nothing
+              (ClientAgency TokIdle, MsgPing) ->
+                DecodeDone (SomeMessage msg) Nothing
+              (ClientAgency TokIdle, MsgDone) ->
+                DecodeDone (SomeMessage msg) Nothing
+              (ServerAgency _      , _     ) -> DecodeFail failure
+                where failure = CodecFailure ("unexpected server message: " ++ show msg)
+              (ClientAgency _      , _     ) -> DecodeFail failure
+                where failure = CodecFailure ("unexpected client message: " ++ show msg )

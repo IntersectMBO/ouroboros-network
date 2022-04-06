@@ -162,11 +162,12 @@ labelledThreads threadMap =
 --
 data TimerVars s = TimerVars !(TVar s TimeoutState) !(TVar s Bool)
 
+type RunQueue = OrdPSQ (Down ThreadId) (Down ThreadId) ()
 
 -- | Internal state.
 --
 data SimState s a = SimState {
-       runqueue :: ![ThreadId],
+       runqueue :: !RunQueue,
        -- | All threads other than the currently running thread: both running
        -- and blocked threads.
        threads  :: !(Map ThreadId (Thread s a)),
@@ -193,7 +194,7 @@ data SimState s a = SimState {
 initialState :: SimState s a
 initialState =
     SimState {
-      runqueue = [],
+      runqueue = PSQ.empty,
       threads  = Map.empty,
       curTime  = Time 0,
       timers   = PSQ.empty,
@@ -213,15 +214,17 @@ invariant :: Maybe (Thread s a) -> SimState s a -> x -> x
 invariant (Just running) simstate@SimState{runqueue,threads,clocks} =
     assert (not (threadBlocked running))
   . assert (threadId running `Map.notMember` threads)
-  . assert (threadId running `List.notElem` runqueue)
+  . assert (not (Down (threadId running) `PSQ.member` runqueue))
   . assert (threadClockId running `Map.member` clocks)
   . invariant Nothing simstate
 
 invariant Nothing SimState{runqueue,threads,clocks} =
-    assert (all (`Map.member` threads) runqueue)
-  . assert (and [ (threadBlocked t || threadDone t) == (threadId t `notElem` runqueue)
+    assert (PSQ.fold' (\(Down tid) _ _ a -> tid `Map.member` threads && a) True runqueue)
+  . assert (and [ (threadBlocked t || threadDone t) == not (Down (threadId t) `PSQ.member` runqueue)
                 | t <- Map.elems threads ])
-  . assert (and (zipWith (>) runqueue (drop 1 runqueue)))
+  . assert (and (zipWith (\(Down tid, _, _) (Down tid', _, _) -> tid > tid')
+                         (PSQ.toList runqueue)
+                         (drop 1 (PSQ.toList runqueue))))
   . assert (and [ threadClockId t `Map.member` clocks
                 | t <- Map.elems threads ])
 
@@ -233,8 +236,8 @@ timeSinceEpoch (Time t) = fromRational (toRational t)
 
 -- | Insert thread into `runqueue`.
 --
-insertThread :: Thread s a -> [ThreadId] -> [ThreadId]
-insertThread t = List.insertBy (comparing Down) (threadId t)
+insertThread :: Thread s a -> RunQueue -> RunQueue
+insertThread Thread { threadId } = PSQ.insert (Down threadId) (Down threadId) ()
 
 
 -- | Schedule / run a thread.
@@ -299,7 +302,7 @@ schedule thread@Thread{
 
       ForkFrame -> do
         -- this thread is done
-        trace <- deschedule Terminated thread simstate
+        !trace <- deschedule Terminated thread simstate
         return $ SimPORTrace time tid tstep tlbl EventThreadFinished
                $ SimPORTrace time tid tstep tlbl (EventDeschedule Terminated)
                $ trace
@@ -309,7 +312,7 @@ schedule thread@Thread{
         let thread' = thread { threadControl = ThreadControl (k x) ctl'
                              , threadMasking = maskst' }
         -- but if we're now unmasked, check for any pending async exceptions
-        trace <- deschedule Interruptable thread' simstate
+        !trace <- deschedule Interruptable thread' simstate
         return $ SimPORTrace time tid tstep tlbl (EventMask maskst')
                $ SimPORTrace time tid tstep tlbl (EventDeschedule Interruptable)
                $ trace
@@ -342,7 +345,7 @@ schedule thread@Thread{
 
         | otherwise -> do
           -- An unhandled exception in any other thread terminates the thread
-          trace <- deschedule Terminated thread simstate
+          !trace <- deschedule Terminated thread simstate
           return $ SimPORTrace time tid tstep tlbl (EventThrow e)
                  $ SimPORTrace time tid tstep tlbl (EventThreadUnhandled e)
                  $ SimPORTrace time tid tstep tlbl (EventDeschedule Terminated)
@@ -435,9 +438,9 @@ schedule thread@Thread{
           t       = Timeout tvar tvar' nextTmid
           timers' = PSQ.insert nextTmid expiry (TimerVars tvar tvar') timers
           thread' = thread { threadControl = ThreadControl (k t) ctl }
-      trace <- schedule thread' simstate { timers   = timers'
-                                         , nextVid  = succ (succ nextVid)
-                                         , nextTmid = succ nextTmid }
+      !trace <- schedule thread' simstate { timers   = timers'
+                                          , nextVid  = succ (succ nextVid)
+                                          , nextTmid = succ nextTmid }
       return (SimPORTrace time tid tstep tlbl (EventTimerCreated nextTmid nextVid expiry) trace)
 
     -- we do not follow `GHC.Event` behaviour here; updating a timer to the past
@@ -479,7 +482,7 @@ schedule thread@Thread{
            simstate') = unblockThreads vClock wakeup simstate
       modifySTRef (tvarVClock tvar)  (leastUpperBoundVClock vClock)
       modifySTRef (tvarVClock tvar') (leastUpperBoundVClock vClock)
-      trace <- deschedule Yield thread' simstate' { timers = timers' }
+      !trace <- deschedule Yield thread' simstate' { timers = timers' }
       return $ SimPORTrace time tid tstep tlbl (EventTimerCancelled tmid)
              $ traceMany
                  -- TODO: step
@@ -521,9 +524,9 @@ schedule thread@Thread{
                             }
           threads' = Map.insert tid' thread'' threads
       -- A newly forked thread may have a higher priority, so we deschedule this one.
-      trace <- deschedule Yield thread'
-                 simstate { runqueue = insertThread thread'' runqueue
-                          , threads  = threads' }
+      !trace <- deschedule Yield thread'
+                  simstate { runqueue = insertThread thread'' runqueue
+                           , threads  = threads' }
       return $ SimPORTrace time tid tstep tlbl (EventThreadForked tid')
              $ SimPORTrace time tid tstep tlbl (EventDeschedule Yield)
              $ trace
@@ -550,7 +553,7 @@ schedule thread@Thread{
           written' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) written
           created' <- traverse (\(SomeTVar tvar) -> labelledTVarId tvar) created
           -- We deschedule a thread after a transaction... another may have woken up.
-          trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
+          !trace <- deschedule Yield thread' simstate' { nextVid  = nextVid' }
           return $
             SimPORTrace time tid tstep tlbl (EventTxCommitted written' created' (Just effect')) $
             traceMany
@@ -588,7 +591,7 @@ schedule thread@Thread{
           let effect' = effect <> readEffects read
               thread' = thread { threadVClock  = vClock `leastUpperBoundVClock` vClockRead,
                                  threadEffect  = effect' }
-          trace <- deschedule Blocked thread' simstate
+          !trace <- deschedule Blocked thread' simstate
           return $ SimPORTrace time tid tstep tlbl (EventTxBlocked vids (Just effect'))
                  $ SimPORTrace time tid tstep tlbl (EventDeschedule Blocked)
                  $ trace
@@ -740,7 +743,7 @@ deschedule Interruptable thread@Thread {
         (unblocked,
          simstate') = unblockThreads vClock [l_labelled tid'] simstate
     -- the thread is stepped when we Yield
-    trace <- deschedule Yield thread' simstate'
+    !trace <- deschedule Yield thread' simstate'
     return $ SimPORTrace time tid tstep tlbl (EventDeschedule Yield)
            $ SimPORTrace time tid tstep tlbl (EventThrowToUnmasked tid')
            -- TODO: step
@@ -787,7 +790,7 @@ deschedule Terminated thread@Thread { threadId = tid, threadVClock = vClock }
         threads'    = Map.insert tid thread' threads
     -- We must keep terminated threads in the state to preserve their vector clocks,
     -- which matters when other threads throwTo them.
-    trace <- reschedule simstate' { races = threadTerminatesRaces tid $
+    !trace <- reschedule simstate' { races = threadTerminatesRaces tid $
                                               updateRacesInSimState thread simstate,
                                     control = advanceControl (threadStepId thread) control,
                                     threads = threads' }
@@ -818,7 +821,7 @@ reschedule simstate@SimState{ runqueue, threads,
                               curTime=time
                               } =
     fmap (SimPORTrace time tid tstep Nothing (EventReschedule control)) $
-    assert (tid `elem` runqueue) $
+    assert (Down tid `PSQ.member` runqueue) $
     assert (tid `Map.member` threads) $
     invariant Nothing simstate $
     let thread = threads Map.! tid in
@@ -831,12 +834,13 @@ reschedule simstate@SimState{ runqueue, threads,
            ++ "  actual step: "++show (threadStep thread)++"\n"
            ++ "Thread:\n" ++ show thread ++ "\n"
     else
-    schedule thread simstate { runqueue = List.delete tid runqueue
+    schedule thread simstate { runqueue = PSQ.delete (Down tid) runqueue
                              , threads  = Map.delete tid threads }
 
 -- When there is no current running thread but the runqueue is non-empty then
 -- schedule the next one to run.
-reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
+reschedule simstate@SimState{ runqueue, threads }
+    | Just (Down !tid, _, _, runqueue') <- PSQ.minView runqueue =
     invariant Nothing simstate $
 
     let thread = threads Map.! tid in
@@ -845,7 +849,7 @@ reschedule simstate@SimState{ runqueue = tid:runqueue', threads } =
 
 -- But when there are no runnable threads, we advance the time to the next
 -- timer event, or stop.
-reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time, races } =
+reschedule simstate@SimState{ threads, timers, curTime = time, races } =
     invariant Nothing simstate $
 
     -- time is moving on
@@ -870,8 +874,8 @@ reschedule simstate@SimState{ runqueue = [], threads, timers, curTime = time, ra
              simstate') = unblockThreads bottomVClock wakeup simstate
             -- all open races will be completed and reported at this time
             simstate''  = simstate'{ races = noRaces }
-        trace <- reschedule simstate'' { curTime = time'
-                                       , timers  = timers' }
+        !trace <- reschedule simstate'' { curTime = time'
+                                        , timers  = timers' }
         let traceEntries =
                      [ (time', ThreadId [-1], (-1), Just "timer", EventTimerExpired tmid)
                      | tmid <- tmids ]
@@ -906,24 +910,24 @@ unblockThreads vClock wakeup simstate@SimState {runqueue, threads} =
   where
     -- can only unblock if the thread exists and is blocked (not running)
     unblocked :: [Thread s a]
-    unblocked = [ thread
-                | tid <- wakeup
-                , thread <-
-                    case Map.lookup tid threads of
-                      Just   Thread { threadDone    = True } -> [ ]
-                      Just t@Thread { threadBlocked = True } -> [t]
-                      _                                      -> [ ]
-                ]
+    !unblocked = [ thread
+                 | tid <- wakeup
+                 , thread <-
+                     case Map.lookup tid threads of
+                       Just   Thread { threadDone    = True } -> [ ]
+                       Just t@Thread { threadBlocked = True } -> [t]
+                       _                                      -> [ ]
+                 ]
 
     unblockedIds :: [ThreadId]
-    unblockedIds = map threadId unblocked
+    !unblockedIds = map threadId unblocked
 
     -- and in which case we mark them as now running
-    threads'  = List.foldl'
-                  (flip (Map.adjust
-                    (\t -> t { threadBlocked = False,
-                               threadVClock = vClock `leastUpperBoundVClock` threadVClock t })))
-                  threads unblockedIds
+    !threads'  = List.foldl'
+                   (flip (Map.adjust
+                     (\t -> t { threadBlocked = False,
+                                threadVClock = vClock `leastUpperBoundVClock` threadVClock t })))
+                   threads unblockedIds
 
 
 -- | Iterate through the control stack to find an enclosing exception handler
@@ -1051,18 +1055,19 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
        -> TVarId                   -- var fresh name supply
        -> StmA s b
        -> ST s (SimTrace c)
-    go ctl !read !written writtenSeq createdSeq !nextVid action = assert localInvariant $
+    go !ctl !read !written !writtenSeq !createdSeq !nextVid action = assert localInvariant $
                                                        case action of
-      ReturnStm x -> case ctl of
+      ReturnStm x ->
+        {-# SCC "execAtomically.go.ReturnStm" #-}
+        case ctl of
         AtomicallyFrame -> do
           -- Trace each created TVar
-          ds  <- traverse (\(SomeTVar tvar) -> traceTVarST tvar True
-                          ) createdSeq
+          !ds  <- traverse (\(SomeTVar tvar) -> traceTVarST tvar True) createdSeq
           -- Trace & commit each TVar
-          ds' <- Map.elems <$> traverse
+          !ds' <- Map.elems <$> traverse
                     (\(SomeTVar tvar) -> do
                         tr <- traceTVarST tvar False
-                        commitTVar tvar
+                        !_ <- commitTVar tvar
                         -- Also assert the data invariant that outside a tx
                         -- the undo stack is empty:
                         undos <- readTVarUndos tvar
@@ -1082,8 +1087,8 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
         OrElseLeftFrame _b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
           -- in the written set of the outer transaction
-          traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
-                    (Map.intersection written writtenOuter)
+          !_ <- traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
+                          (Map.intersection written writtenOuter)
           -- Merge the written set of the inner with the outer
           let written'    = Map.union written writtenOuter
               writtenSeq' = filter (\(SomeTVar tvar) ->
@@ -1096,8 +1101,8 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
         OrElseRightFrame k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
           -- Commit the TVars written in this sub-transaction that are also
           -- in the written set of the outer transaction
-          traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
-                    (Map.intersection written writtenOuter)
+          !_ <- traverse_ (\(SomeTVar tvar) -> commitTVar tvar)
+                          (Map.intersection written writtenOuter)
           -- Merge the written set of the inner with the outer
           let written'    = Map.union written writtenOuter
               writtenSeq' = filter (\(SomeTVar tvar) ->
@@ -1108,78 +1113,93 @@ execAtomically time tid tlbl nextVid0 action0 k0 =
           -- Continue with the k continuation
           go ctl' read written' writtenSeq' createdSeq' nextVid (k x)
 
-      ThrowStm e -> do
+      ThrowStm e ->
+        {-# SCC "execAtomically.go.ThrowStm" #-} do
         -- Revert all the TVar writes
-        traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+        !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
         k0 $ StmTxAborted (Map.elems read) (toException e)
 
-      Retry -> case ctl of
+      Retry ->
+        {-# SCC "execAtomically.go.Retry" #-}
+        case ctl of
         AtomicallyFrame -> do
           -- Revert all the TVar writes
-          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Return vars read, so the thread can block on them
-          k0 $ StmTxBlocked (Map.elems read)
+          k0 $! StmTxBlocked $! Map.elems read
 
-        OrElseLeftFrame b k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
+        OrElseLeftFrame b k writtenOuter writtenOuterSeq createdOuterSeq ctl' ->
+          {-# SCC "execAtomically.go.OrElseLeftFrame" #-} do
           -- Revert all the TVar writes within this orElse
-          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Execute the orElse right hand with an empty written set
           let ctl'' = OrElseRightFrame k writtenOuter writtenOuterSeq createdOuterSeq ctl'
           go ctl'' read Map.empty [] [] nextVid b
 
-        OrElseRightFrame _k writtenOuter writtenOuterSeq createdOuterSeq ctl' -> do
+        OrElseRightFrame _k writtenOuter writtenOuterSeq createdOuterSeq ctl' ->
+          {-# SCC "execAtomically.go.OrElseRightFrame" #-} do
           -- Revert all the TVar writes within this orElse branch
-          traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
+          !_ <- traverse_ (\(SomeTVar tvar) -> revertTVar tvar) written
           -- Skip the continuation and propagate the retry into the outer frame
           -- using the written set for the outer frame
           go ctl' read writtenOuter writtenOuterSeq createdOuterSeq nextVid Retry
 
-      OrElse a b k -> do
+      OrElse a b k ->
+        {-# SCC "execAtomically.go.OrElse" #-} do
         -- Execute the left side in a new frame with an empty written set
         let ctl' = OrElseLeftFrame b k written writtenSeq createdSeq ctl
         go ctl' read Map.empty [] [] nextVid a
 
-      NewTVar !mbLabel x k -> do
-        v <- execNewTVar nextVid mbLabel x
+      NewTVar !mbLabel x k ->
+        {-# SCC "execAtomically.go.NewTVar" #-} do
+        !v <- execNewTVar nextVid mbLabel x
         -- record a write to the TVar so we know to update its VClock
         let written' = Map.insert (tvarId v) (SomeTVar v) written
         -- save the value: it will be committed or reverted
-        saveTVar v
+        !_ <- saveTVar v
         go ctl read written' writtenSeq (SomeTVar v : createdSeq) (succ nextVid) (k v)
 
-      LabelTVar !label tvar k -> do
-        writeSTRef (tvarLabel tvar) $! (Just label)
+      LabelTVar !label tvar k ->
+        {-# SCC "execAtomically.go.LabelTVar" #-} do
+        !_ <- writeSTRef (tvarLabel tvar) $! (Just label)
         go ctl read written writtenSeq createdSeq nextVid k
 
-      TraceTVar tvar f k -> do
-        writeSTRef (tvarTrace tvar) (Just f)
+      TraceTVar tvar f k ->
+        {-# SCC "execAtomically.go.TraceTVar" #-} do
+        !_ <- writeSTRef (tvarTrace tvar) (Just f)
         go ctl read written writtenSeq createdSeq nextVid k
 
       ReadTVar v k
-        | tvarId v `Map.member` read || tvarId v `Map.member` written -> do
+        | tvarId v `Map.member` read ->
+            {-# SCC "execAtomically.go.ReadTVar" #-} do
             x <- execReadTVar v
             go ctl read written writtenSeq createdSeq nextVid (k x)
-        | otherwise -> do
+        | otherwise ->
+            {-# SCC "execAtomically.go.ReadTVar" #-} do
             x <- execReadTVar v
             let read' = Map.insert (tvarId v) (SomeTVar v) read
             go ctl read' written writtenSeq createdSeq nextVid (k x)
 
       WriteTVar v x k
-        | tvarId v `Map.member` written -> do
-            execWriteTVar v x
+        | tvarId v `Map.member` written ->
+            {-# SCC "execAtomically.go.WriteTVar" #-} do
+            !_ <- execWriteTVar v x
             go ctl read written writtenSeq createdSeq nextVid k
-        | otherwise -> do
-            saveTVar v
-            execWriteTVar v x
+        | otherwise ->
+            {-# SCC "execAtomically.go.WriteTVar" #-} do
+            !_ <- saveTVar v
+            !_ <- execWriteTVar v x
             let written' = Map.insert (tvarId v) (SomeTVar v) written
             go ctl read written' (SomeTVar v : writtenSeq) createdSeq nextVid k
 
-      SayStm msg k -> do
+      SayStm msg k ->
+        {-# SCC "execAtomically.go.SayStm" #-} do
         trace <- go ctl read written writtenSeq createdSeq nextVid k
         -- TODO: step
         return $ SimPORTrace time tid (-1) tlbl (EventSay msg) trace
 
-      OutputStm x k -> do
+      OutputStm x k ->
+        {-# SCC "execAtomically.go.OutputStm" #-} do
         trace <- go ctl read written writtenSeq createdSeq nextVid k
         -- TODO: step
         return $ SimPORTrace time tid (-1) tlbl (EventLog x) trace
@@ -1201,18 +1221,18 @@ execAtomically' = go Map.empty
        -> ST s [SomeTVar s]
     go !written action = case action of
       ReturnStm () -> do
-        traverse_ (\(SomeTVar tvar) -> commitTVar tvar) written
+        !_ <- traverse_ (\(SomeTVar tvar) -> commitTVar tvar) written
         return (Map.elems written)
       ReadTVar v k  -> do
         x <- execReadTVar v
         go written (k x)
       WriteTVar v x k
         | tvarId v `Map.member` written -> do
-            execWriteTVar v x
+            !_ <- execWriteTVar v x
             go written k
         | otherwise -> do
-            saveTVar v
-            execWriteTVar v x
+            !_ <- saveTVar v
+            !_ <- execWriteTVar v x
             let written' = Map.insert (tvarId v) (SomeTVar v) written
             go written' k
       _ -> error "execAtomically': only for special case of reads and writes"
@@ -1232,9 +1252,11 @@ execNewTVar nextVid !mbLabel x = do
 
 execReadTVar :: TVar s a -> ST s a
 execReadTVar TVar{tvarCurrent} = readSTRef tvarCurrent
+{-# INLINE execReadTVar #-}
 
 execWriteTVar :: TVar s a -> a -> ST s ()
 execWriteTVar TVar{tvarCurrent} = writeSTRef tvarCurrent
+{-# INLINE execWriteTVar #-}
 
 saveTVar :: TVar s a -> ST s ()
 saveTVar TVar{tvarCurrent, tvarUndo} = do
@@ -1249,12 +1271,14 @@ revertTVar TVar{tvarCurrent, tvarUndo} = do
     (v:vs) <- readSTRef tvarUndo
     writeSTRef tvarCurrent v
     writeSTRef tvarUndo    vs
+{-# INLINE revertTVar #-}
 
 commitTVar :: TVar s a -> ST s ()
 commitTVar TVar{tvarUndo} = do
     -- pop the undo stack, leaving the current value unchanged
     (_:vs) <- readSTRef tvarUndo
     writeSTRef tvarUndo vs
+{-# INLINE commitTVar #-}
 
 readTVarUndos :: TVar s a -> ST s [a]
 readTVarUndos TVar{tvarUndo} = readSTRef tvarUndo
@@ -1442,30 +1466,30 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
 
       -- a new step cannot race with any threads that it just woke up
       new :: [StepInfo]
-      new | isNotRacyThreadId tid  = []  -- non-racy threads do not race
-          | Set.null newConcurrent = []  -- cannot race with anything
-          | justBlocking           = []  -- no need to defer a blocking transaction
-          | otherwise              =
-              [StepInfo { stepInfoStep       = newStep,
-                          stepInfoControl    = control,
-                          stepInfoConcurrent = newConcurrent,
-                          stepInfoNonDep     = [],
-                          stepInfoRaces      = []
-                        }]
+      !new | isNotRacyThreadId tid  = []  -- non-racy threads do not race
+           | Set.null newConcurrent = []  -- cannot race with anything
+           | justBlocking           = []  -- no need to defer a blocking transaction
+           | otherwise              =
+               [StepInfo { stepInfoStep       = newStep,
+                           stepInfoControl    = control,
+                           stepInfoConcurrent = newConcurrent,
+                           stepInfoNonDep     = [],
+                           stepInfoRaces      = []
+                         }]
         where
           newConcurrent :: Set ThreadId
           newConcurrent = foldr Set.delete newConcurrent0 (effectWakeup newEffect)
 
       activeRaces' :: [StepInfo]
-      activeRaces' =
+      !activeRaces' =
         [ -- if this step depends on the previous step, or is not concurrent,
           -- then any threads that it wakes up become non-concurrent also.
-          let lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
+          let !lessConcurrent = foldr Set.delete concurrent (effectWakeup newEffect) in
           if tid `elem` concurrent then
             let theseStepsRace = isRacyThreadId tid && racingSteps step newStep
                 happensBefore  = step `happensBeforeStep` newStep
-                nondep' | happensBefore = nondep
-                        | otherwise     = newStep : nondep
+                !nondep' | happensBefore = nondep
+                         | otherwise     = newStep : nondep
                 -- We will only record the first race with each thread---reversing
                 -- the first race makes the next race detectable. Thus we remove a
                 -- thread from the concurrent set after the first race.
@@ -1475,10 +1499,10 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
                 -- Here we record discovered races.
                 -- We only record a new race if we are following the default schedule,
                 -- to avoid finding the same race in different parts of the search space.
-                stepRaces' | (control == ControlDefault ||
-                              control == ControlFollow [] []) &&
-                             theseStepsRace  = newStep : stepRaces
-                           | otherwise       = stepRaces
+                !stepRaces' | (control == ControlDefault ||
+                               control == ControlFollow [] []) &&
+                              theseStepsRace  = newStep : stepRaces
+                            | otherwise       = stepRaces
 
             in stepInfo { stepInfoConcurrent = effectForks newEffect
                                              `Set.union` concurrent',
@@ -1488,10 +1512,10 @@ updateRaces newStep@Step{ stepThreadId = tid, stepEffect = newEffect }
 
           else stepInfo { stepInfoConcurrent = lessConcurrent }
 
-        | stepInfo@StepInfo { stepInfoStep       = step,
-                              stepInfoConcurrent = concurrent,
-                              stepInfoNonDep     = nondep,
-                              stepInfoRaces      = stepRaces
+        | !stepInfo@StepInfo { stepInfoStep       = step,
+                               stepInfoConcurrent = concurrent,
+                               stepInfoNonDep     = nondep,
+                               stepInfoRaces      = stepRaces
                             }
             <- activeRaces ]
   in normalizeRaces $ races { activeRaces = new ++ activeRaces' }
@@ -1507,10 +1531,10 @@ threadTerminatesRaces tid races@Races{ activeRaces } =
 
 normalizeRaces :: Races -> Races
 normalizeRaces Races{ activeRaces, completeRaces } =
-  let activeRaces' = filter (not . null. stepInfoConcurrent) activeRaces
-      completeRaces' = filter (not . null. stepInfoRaces)
-                         (filter (null . stepInfoConcurrent) activeRaces)
-                    ++ completeRaces
+  let !activeRaces'   = filter (not . null. stepInfoConcurrent) activeRaces
+      !completeRaces' = filter (not . null. stepInfoRaces)
+                          (filter (null . stepInfoConcurrent) activeRaces)
+                     ++ completeRaces
   in Races{ activeRaces = activeRaces', completeRaces = completeRaces' }
 
 -- We assume that steps do not race with later steps after a quiescent
