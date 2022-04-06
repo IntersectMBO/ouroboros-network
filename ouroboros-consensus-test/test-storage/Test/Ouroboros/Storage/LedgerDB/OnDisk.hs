@@ -238,15 +238,12 @@ instance TableStuff (LedgerState TestBlock) where
 
   pureLedgerTables = TokenToTValue
 
-  mapLedgerTables      f (TokenToTValue x)                   = TokenToTValue    (f x)
-
-  traverseLedgerTables f (TokenToTValue x)                   = TokenToTValue <$> f x
-
-  zipLedgerTables      f (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
-
-  foldLedgerTables     f (TokenToTValue x)                   =                   f x
-
-  foldLedgerTables2    f (TokenToTValue x) (TokenToTValue y) =                   f x y
+  mapLedgerTables      f                                     (TokenToTValue x) = TokenToTValue    (f x)
+  traverseLedgerTables f                                     (TokenToTValue x) = TokenToTValue <$> f x
+  zipLedgerTables      f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
+  zipLedgerTables2     f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue    (f x y z)
+  foldLedgerTables     f                                     (TokenToTValue x) =                   f x
+  foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
 
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) EmptyMK)
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) DiffMK)

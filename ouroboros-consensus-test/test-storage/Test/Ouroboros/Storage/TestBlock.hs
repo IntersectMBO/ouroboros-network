@@ -123,7 +123,7 @@ import           Test.Util.Orphans.SignableRepresentation ()
 
 instance InMemory.ReadsKeySets Identity (LedgerState TestBlock) where
   readDb (InMemory.RewoundTableKeySets seqNo NoTestLedgerTables) =
-      pure $ InMemory.UnforwardedReadSets seqNo NoTestLedgerTables
+      pure $ InMemory.UnforwardedReadSets seqNo NoTestLedgerTables NoTestLedgerTables
 
 data TestBlock = TestBlock {
       testHeader :: !TestHeader
@@ -571,12 +571,13 @@ instance TableStuff (LedgerState TestBlock) where
   projectLedgerTables _st                    = NoTestLedgerTables
   withLedgerTables    st  NoTestLedgerTables = convertMapKind st
 
-  pureLedgerTables     _                                       = NoTestLedgerTables
-  mapLedgerTables      _                    NoTestLedgerTables = NoTestLedgerTables
-  traverseLedgerTables _                    NoTestLedgerTables = pure NoTestLedgerTables
-  zipLedgerTables      _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
-  foldLedgerTables     _                    NoTestLedgerTables = mempty
-  foldLedgerTables2    _ NoTestLedgerTables NoTestLedgerTables = mempty
+  pureLedgerTables     _                                                          = NoTestLedgerTables
+  mapLedgerTables      _                                       NoTestLedgerTables = NoTestLedgerTables
+  traverseLedgerTables _                                       NoTestLedgerTables = pure NoTestLedgerTables
+  zipLedgerTables      _                    NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  zipLedgerTables2     _ NoTestLedgerTables NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  foldLedgerTables     _                                       NoTestLedgerTables = mempty
+  foldLedgerTables2    _                    NoTestLedgerTables NoTestLedgerTables = mempty
 
 instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
     codecLedgerTables = NoTestLedgerTables

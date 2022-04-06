@@ -115,7 +115,7 @@ class ( IsLedger l
   -- TODO: this might not be the best place to define this function. Maybe we
   -- want to make the on-disk ledger state storage concern orthogonal to the
   -- ledger state transformation concern.
-  getBlockKeySets :: blk -> TableKeySets l
+  getBlockKeySets :: blk -> LedgerTables l KeysMK
 
 -- | Interaction with the ledger layer
 class (ApplyBlock (LedgerState blk) blk, TickedTableStuff (LedgerState blk)) => UpdateLedger blk

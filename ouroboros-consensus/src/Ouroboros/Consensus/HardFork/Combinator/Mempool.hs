@@ -131,10 +131,10 @@ instance CanHardFork' xs => LedgerSupportsMempool (HardForkBlock xs) where
       $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
     where
       f ::
-           SingleEraBlock                                    x
-        => InjectLedgerTables xs                             x
-        -> GenTx                                             x
-        -> K (TableKeySets (LedgerState (HardForkBlock xs))) x
+           SingleEraBlock                                           x
+        => InjectLedgerTables xs                                    x
+        -> GenTx                                                    x
+        -> K (LedgerTables (LedgerState (HardForkBlock xs)) KeysMK) x
       f inj tx = K $ applyInjectLedgerTables inj $ getTransactionKeySets tx
 
 -- | A private type used only to clarify the parameterization of 'applyHelper'

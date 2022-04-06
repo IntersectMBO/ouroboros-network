@@ -279,7 +279,7 @@ prepareQueryIfCurrent ::
   forall xs result.
      (All SingleEraBlock xs, LedgerTablesCanHardFork xs)
   => QueryIfCurrent xs LargeL result
-  -> TableKeySets (LedgerState (HardForkBlock xs))
+  -> LedgerTables (LedgerState (HardForkBlock xs)) KeysMK
 prepareQueryIfCurrent =
     \qic -> go qic hardForkInjectLedgerTablesKeysMK
   where
@@ -287,7 +287,7 @@ prepareQueryIfCurrent =
          All SingleEraBlock ys
       => QueryIfCurrent ys LargeL result
       -> NP (InjectLedgerTables xs) ys
-      -> TableKeySets (LedgerState (HardForkBlock xs))
+      -> LedgerTables (LedgerState (HardForkBlock xs)) KeysMK
     go (QS qic) (_   :* injs) = go qic injs
     go (QZ bq)  (inj :* _)    =
       applyInjectLedgerTables inj $ prepareBlockQuery bq

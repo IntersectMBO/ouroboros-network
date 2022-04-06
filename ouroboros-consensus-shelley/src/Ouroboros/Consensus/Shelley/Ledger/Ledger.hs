@@ -93,7 +93,6 @@ import qualified Cardano.Ledger.Chain as Chain
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.LedgerState as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL (makeHeaderView)
 import qualified Control.State.Transition.Extended as STS
 
@@ -284,6 +283,13 @@ instance ShelleyBasedEra era => TableStuff (LedgerState (ShelleyBlock era)) wher
 
   zipLedgerTables f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
       ShelleyLedgerTables (f utxoL utxoR)
+
+  zipLedgerTables2
+    f
+    (ShelleyLedgerTables utxoL)
+    (ShelleyLedgerTables utxoM)
+    (ShelleyLedgerTables utxoR) =
+      ShelleyLedgerTables (f utxoL utxoM utxoR)
 
   foldLedgerTables f (ShelleyLedgerTables utxo) = f utxo
 
