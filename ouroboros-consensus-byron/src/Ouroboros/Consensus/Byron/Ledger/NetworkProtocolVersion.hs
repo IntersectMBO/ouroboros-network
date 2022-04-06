@@ -35,10 +35,10 @@ instance SupportedNetworkProtocolVersion ByronBlock where
       , (NodeToNodeV_8, ByronNodeToNodeVersion1)
       ]
   supportedNodeToClientVersions _ = Map.fromList [
-        (NodeToClientV_1, ByronNodeToClientVersion1)
-        -- Enable the LocalStateQuery protocol, no serialisation changes
-      , (NodeToClientV_2, ByronNodeToClientVersion1)
-        -- V_3 enables the hard fork, not supported by Byron-only.
+        (NodeToClientV_9,  ByronNodeToClientVersion1)
+      , (NodeToClientV_10, ByronNodeToClientVersion1)
+      , (NodeToClientV_11, ByronNodeToClientVersion1)
+      , (NodeToClientV_12, ByronNodeToClientVersion1)
       ]
 
   latestReleasedNodeVersion = latestReleasedNodeVersionDefault
