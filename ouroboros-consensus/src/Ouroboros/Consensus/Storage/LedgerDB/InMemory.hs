@@ -507,7 +507,7 @@ applyBlock cfg ap db = case ap of
       -> (l ValuesMK -> m (l TrackingMK))
       -> m (l TrackingMK)
     withBlockReadSets b f = do
-      let ks = getBlockKeySets b :: TableKeySets l
+      let ks = getBlockKeySets b :: LedgerTables l KeysMK
       let aks = rewindTableKeySets (ledgerDbChangelog db) ks :: RewoundTableKeySets l
       urs <- readDb aks
       case withHydratedLedgerState urs f of
@@ -544,7 +544,7 @@ data RewoundTableKeySets l =
 
 rewindTableKeySets ::
      TableStuff l
-  => DbChangelog l -> TableKeySets l -> RewoundTableKeySets l
+  => DbChangelog l -> LedgerTables l KeysMK -> RewoundTableKeySets l
 rewindTableKeySets dblog = \keys ->
       RewoundTableKeySets
         (changelogDiffAnchor dblog)
@@ -560,8 +560,14 @@ rewindTableKeySets dblog = \keys ->
       ApplyRewoundMK $ rewindKeys keys (cumulativeDiffSeqUtxoDiff diffs)
 
 data UnforwardedReadSets l = UnforwardedReadSets {
+    -- | The Slot number of the anchor of the 'DbChangelog' that was used when
+    -- rewinding and reading.
     ursSeqNo  :: !(WithOrigin SlotNo)
+    -- | The values that were found in the 'BackingStore'.
   , ursValues :: !(LedgerTables l ValuesMK)
+    -- | The values that were not present in the 'BackingStore' and are present
+    -- in the set of differences in the 'DbChangelog'.
+  , ursKeys   :: !(LedgerTables l KeysMK)
   }
 
 forwardTableKeySets ::
@@ -569,11 +575,11 @@ forwardTableKeySets ::
   => DbChangelog l
   -> UnforwardedReadSets l
   -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
-            (TableReadSets l)
-forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values) ->
+            (LedgerTables l ValuesMK)
+forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
     if seqNo /= seqNo' then Left (seqNo, seqNo') else
     Right
-      $ zipLedgerTables forward values
+      $ zipLedgerTables2 forward values keys
       $ changelogDiffs dblog
   where
     seqNo = changelogDiffAnchor dblog
@@ -581,10 +587,11 @@ forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values) ->
     forward ::
          Ord k
       => ApplyMapKind ValuesMK  k v
+      -> ApplyMapKind KeysMK    k v
       -> ApplyMapKind SeqDiffMK k v
       -> ApplyMapKind ValuesMK  k v
-    forward (ApplyValuesMK values) (ApplySeqDiffMK diffs) =
-      ApplyValuesMK $ forwardValues values (cumulativeDiffSeqUtxoDiff diffs)
+    forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
+      ApplyValuesMK $ forwardValuesAndKeys values keys (cumulativeDiffSeqUtxoDiff diffs)
 
 ledgerDbVolatileCheckpoints ::
      LedgerDB l
@@ -648,8 +655,8 @@ instance
      ReadsKeySets Identity (LedgerState blk)
   => ReadsKeySets Identity (Extended.ExtLedgerState blk) where
   readDb (RewoundTableKeySets seqNo (Extended.ExtLedgerStateTables rew)) = do
-      UnforwardedReadSets seqNo' values <- readDb (RewoundTableKeySets seqNo rew)
-      pure $ UnforwardedReadSets seqNo' (Extended.ExtLedgerStateTables values)
+      UnforwardedReadSets seqNo' values keys <- readDb (RewoundTableKeySets seqNo rew)
+      pure $ UnforwardedReadSets seqNo' (Extended.ExtLedgerStateTables values) (Extended.ExtLedgerStateTables keys)
 
 defaultReadKeySets :: TypeOf_readDB m l -> DbReader m l a -> m a
 defaultReadKeySets f dbReader = runReaderT (runDbReader dbReader) f

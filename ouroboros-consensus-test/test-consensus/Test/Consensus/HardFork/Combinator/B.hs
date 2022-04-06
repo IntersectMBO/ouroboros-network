@@ -176,12 +176,13 @@ instance TableStuff (LedgerState BlockB) where
   projectLedgerTables _st           = NoBTables
   withLedgerTables    st  NoBTables = convertMapKind st
 
-  pureLedgerTables     _f                     = NoBTables
-  mapLedgerTables      _f           NoBTables = NoBTables
-  traverseLedgerTables _f           NoBTables = pure NoBTables
-  zipLedgerTables      _f NoBTables NoBTables = NoBTables
-  foldLedgerTables     _f           NoBTables = mempty
-  foldLedgerTables2    _f NoBTables NoBTables = mempty
+  pureLedgerTables     _f                               = NoBTables
+  mapLedgerTables      _f                     NoBTables = NoBTables
+  traverseLedgerTables _f                     NoBTables = pure NoBTables
+  zipLedgerTables      _f           NoBTables NoBTables = NoBTables
+  zipLedgerTables2     _f NoBTables NoBTables NoBTables = NoBTables
+  foldLedgerTables     _f                     NoBTables = mempty
+  foldLedgerTables2    _f           NoBTables NoBTables = mempty
 
 instance SufficientSerializationForAnyBackingStore (LedgerState BlockB) where
     codecLedgerTables = NoBTables

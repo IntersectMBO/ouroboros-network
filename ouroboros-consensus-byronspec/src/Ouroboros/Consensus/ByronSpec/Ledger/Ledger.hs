@@ -128,12 +128,13 @@ instance TableStuff (LedgerState ByronSpecBlock) where
   projectLedgerTables _st                     = NoByronSpecLedgerTables
   withLedgerTables st NoByronSpecLedgerTables = convertMapKind st
 
-  pureLedgerTables     _f                                                 = NoByronSpecLedgerTables
-  mapLedgerTables      _f                         NoByronSpecLedgerTables = NoByronSpecLedgerTables
-  traverseLedgerTables _f                         NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
-  zipLedgerTables      _f NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
-  foldLedgerTables     _f                         NoByronSpecLedgerTables = mempty
-  foldLedgerTables2    _f NoByronSpecLedgerTables NoByronSpecLedgerTables = mempty
+  pureLedgerTables     _f                                                                         = NoByronSpecLedgerTables
+  mapLedgerTables      _f                                                 NoByronSpecLedgerTables = NoByronSpecLedgerTables
+  traverseLedgerTables _f                                                 NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
+  zipLedgerTables      _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
+  zipLedgerTables2     _f NoByronSpecLedgerTables NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
+  foldLedgerTables     _f                                                 NoByronSpecLedgerTables = mempty
+  foldLedgerTables2    _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = mempty
 
 instance SufficientSerializationForAnyBackingStore (LedgerState ByronSpecBlock) where
     codecLedgerTables = NoByronSpecLedgerTables

@@ -227,6 +227,7 @@ instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerSta
   pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState x) f
   mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState x) f
   zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState x) f
+  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState x) f
   foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState x) f
   foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState x) f
 
@@ -338,10 +339,10 @@ instance ( CanHardFork xs
       $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
     where
       f ::
-           SingleEraBlock                                    x
-        => InjectLedgerTables xs                             x
-        -> I                                                 x
-        -> K (TableKeySets (LedgerState (HardForkBlock xs))) x
+           SingleEraBlock                                           x
+        => InjectLedgerTables xs                                    x
+        -> I                                                        x
+        -> K (LedgerTables (LedgerState (HardForkBlock xs)) KeysMK) x
       f inj (I blk) = K $ applyInjectLedgerTables inj $ getBlockKeySets blk
 
 apply :: SingleEraBlock blk

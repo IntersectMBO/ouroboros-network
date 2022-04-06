@@ -373,12 +373,13 @@ instance TableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   projectLedgerTables _st            = NoAbTables
   withLedgerTables    st  NoAbTables = convertMapKind st
 
-  pureLedgerTables     _f                       = NoAbTables
-  mapLedgerTables      _f            NoAbTables = NoAbTables
-  traverseLedgerTables _f            NoAbTables = pure NoAbTables
-  zipLedgerTables      _f NoAbTables NoAbTables = NoAbTables
-  foldLedgerTables     _f            NoAbTables = mempty
-  foldLedgerTables2    _f NoAbTables NoAbTables = mempty
+  pureLedgerTables     _f                                  = NoAbTables
+  mapLedgerTables      _f                       NoAbTables = NoAbTables
+  traverseLedgerTables _f                       NoAbTables = pure NoAbTables
+  zipLedgerTables      _f            NoAbTables NoAbTables = NoAbTables
+  zipLedgerTables2     _f NoAbTables NoAbTables NoAbTables = NoAbTables
+  foldLedgerTables     _f                       NoAbTables = mempty
+  foldLedgerTables2    _f            NoAbTables NoAbTables = mempty
 
 instance SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock '[BlockA, BlockB])) where
     codecLedgerTables = NoAbTables

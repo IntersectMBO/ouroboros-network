@@ -215,12 +215,13 @@ instance TableStuff (LedgerState BlockA) where
   projectLedgerTables _st           = NoATables
   withLedgerTables    st  NoATables = convertMapKind st
 
-  pureLedgerTables     _f                     = NoATables
-  mapLedgerTables      _f           NoATables = NoATables
-  traverseLedgerTables _f           NoATables = pure NoATables
-  zipLedgerTables      _f NoATables NoATables = NoATables
-  foldLedgerTables     _f           NoATables = mempty
-  foldLedgerTables2    _f NoATables NoATables = mempty
+  pureLedgerTables     _f                               = NoATables
+  mapLedgerTables      _f                     NoATables = NoATables
+  traverseLedgerTables _f                     NoATables = pure NoATables
+  zipLedgerTables      _f           NoATables NoATables = NoATables
+  zipLedgerTables2     _f NoATables NoATables NoATables = NoATables
+  foldLedgerTables     _f                     NoATables = mempty
+  foldLedgerTables2    _f           NoATables NoATables = mempty
 
 instance SufficientSerializationForAnyBackingStore (LedgerState BlockA) where
     codecLedgerTables = NoATables

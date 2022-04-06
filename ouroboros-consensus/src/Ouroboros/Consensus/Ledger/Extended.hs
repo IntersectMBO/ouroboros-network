@@ -190,6 +190,7 @@ instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuf
   pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState blk) f
   mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState blk) f
   zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState blk) f
+  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState blk) f
   foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState blk) f
   foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState blk) f
 

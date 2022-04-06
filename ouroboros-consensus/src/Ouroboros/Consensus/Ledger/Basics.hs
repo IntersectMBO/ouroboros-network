@@ -89,8 +89,6 @@ module Ouroboros.Consensus.Ledger.Basics (
   , DiskLedgerView (..)
   , FootprintL (..)
     -- ** Convenience aliases
-  , TableKeySets
-  , TableReadSets
   , applyDiffsLedgerTables
   , emptyLedgerTables
   , forgetLedgerStateTables
@@ -402,6 +400,19 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk1
     -> LedgerTables l mk2
     -> LedgerTables l mk3
+
+  zipLedgerTables2 ::
+       (forall k v.
+            Ord k
+         => mk1 k v
+         -> mk2 k v
+         -> mk3 k v
+         -> mk4 k v
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> LedgerTables l mk3
+    -> LedgerTables l mk4
 
   foldLedgerTables ::
        Monoid m
@@ -922,8 +933,6 @@ data DiskLedgerView m l =
       (RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK))   -- TODO will be unacceptably coarse once we have multiple tables
       (m ())
 
-type TableKeySets l = LedgerTables l KeysMK
-
 {-------------------------------------------------------------------------------
   Special classes of ledger states
 
@@ -940,8 +949,6 @@ class InMemory (l :: LedgerStateKind) where
   -- This function is useful to combine functions that operate on functions that
   -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
   convertMapKind :: l mk -> l mk'
-
-type TableReadSets l = LedgerTables l ValuesMK
 
 -- | TODO Once we remove the dual ledger, we won't need this anymore
 class StowableLedgerTables (l :: LedgerStateKind) where
