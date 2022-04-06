@@ -934,6 +934,7 @@ chainSelection chainSelEnv chainDiffs =
               -- point is not receding, in which case fhSwitchFork is not
               -- necessary.
               tracePipelining $ SetTentativeHeader tentativeHeader
+              yield
             pure mTentativeHeader
 
         -- | Clear a tentative header that turned out to be invalid. Also, roll

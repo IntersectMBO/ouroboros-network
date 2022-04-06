@@ -370,6 +370,7 @@ instance MonadFork (IOSim s) where
   forkIO task        = IOSim $ \k -> Fork task k
   forkIOWithUnmask f = forkIO (f unblock)
   throwTo tid e      = IOSim $ \k -> ThrowTo (toException e) tid (k ())
+  yield              = error "TODO yield for IOSim?"
 
 instance MonadTest (IOSim s) where
   exploreRaces       = IOSim $ \k -> ExploreRaces (k ())

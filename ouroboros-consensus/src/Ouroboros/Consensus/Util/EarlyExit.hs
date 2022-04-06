@@ -198,6 +198,7 @@ instance MonadFork m => MonadFork (WithEarlyExit m) where
                              unmask' = earlyExit . unmask . withEarlyExit
                          in collapse <$> withEarlyExit (f unmask')
   throwTo            = lift .: throwTo
+  yield              = lift yield
 
 instance MonadST m => MonadST (WithEarlyExit m) where
   withLiftST f = lowerLiftST $ \(_proxy :: Proxy s) liftST ->

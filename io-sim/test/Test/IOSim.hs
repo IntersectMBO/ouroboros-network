@@ -890,7 +890,7 @@ unit_async_10 =
                       throwTo tid1 DivideByZero
                       say "never 2"
           threadDelay 1
-          yield
+          yield'
           -- this one does not block, child 2 does not have exceptions
           -- masked (and it is blocked in an interruptible throwTo)
           throwTo tid2 DivideByZero
@@ -900,8 +900,9 @@ unit_async_10 =
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
-    yield :: IOSim s ()
-    yield = atomically (return ())  -- yield, go to end of runqueue
+    yield' :: IOSim s ()
+      -- TODO call new 'yield' method?
+    yield' = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_11 =
@@ -910,7 +911,7 @@ unit_async_11 =
                     mask_ $ do
                       threadDelay 1
                       say "child 1"
-                      yield
+                      yield'
                       say "child 1 running"
                     say "never 1"
           tid2 <- forkIO $
@@ -925,7 +926,7 @@ unit_async_11 =
                       throwTo tid1 DivideByZero
                       say "never 2"
           threadDelay 1
-          yield
+          yield'
           -- this one does not block, even though child 2 has exceptions
           -- masked, since it is blocked in an interruptible throwTo
           throwTo tid2 DivideByZero
@@ -935,8 +936,9 @@ unit_async_11 =
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
   where
-    yield :: IOSim s ()
-    yield = atomically (return ())  -- yield, go to end of runqueue
+    yield' :: IOSim s ()
+      -- TODO call new 'yield' method?
+    yield' = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_12 =
