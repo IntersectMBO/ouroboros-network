@@ -124,24 +124,17 @@ logger msgQueue json = go True
                  when json $ putStrLn "] }"
 
 supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
-supportedNodeToNodeVersions magic = [
-    NodeToNodeVersionV1 magic
-  , NodeToNodeVersionV2 magic
-  , NodeToNodeVersionV3 magic
-  , NodeToNodeVersionV4 magic False
-  , NodeToNodeVersionV5 magic False
-  , NodeToNodeVersionV6 magic False
-  , NodeToNodeVersionV7 magic False
+supportedNodeToNodeVersions magic =
+  [ NodeToNodeVersionV7 magic False
   , NodeToNodeVersionV8 magic False
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
-supportedNodeToClientVersions magic = [
-    NodeToClientVersionV5 magic
-  , NodeToClientVersionV6 magic
-  , NodeToClientVersionV7 magic
-  , NodeToClientVersionV8 magic
-  , NodeToClientVersionV9 magic
+supportedNodeToClientVersions magic =
+  [ NodeToClientVersionV9  magic
+  , NodeToClientVersionV10 magic
+  , NodeToClientVersionV11 magic
+  , NodeToClientVersionV12 magic
   ]
 
 main :: IO ()
@@ -201,11 +194,10 @@ main = do
     doLog :: StrictTMVar IO LogMsg -> LogMsg -> IO ()
     doLog msgQueue msg = atomically $ putTMVar msgQueue msg
 
-data NodeVersion =       NodeToClientVersionV5 Word32
-                       | NodeToClientVersionV6 Word32
-                       | NodeToClientVersionV7 Word32
-                       | NodeToClientVersionV8 Word32
-                       | NodeToClientVersionV9 Word32
+data NodeVersion =       NodeToClientVersionV9  Word32
+                       | NodeToClientVersionV10 Word32
+                       | NodeToClientVersionV11 Word32
+                       | NodeToClientVersionV12 Word32
                        | NodeToNodeVersionV1   Word32
                        | NodeToNodeVersionV2   Word32
                        | NodeToNodeVersionV3   Word32
@@ -249,20 +241,17 @@ handshakeReqEnc versions =
                ]
   where
     encodeVersion :: NodeVersion -> CBOR.Encoding
-    encodeVersion (NodeToClientVersionV5 magic) =
-          CBOR.encodeWord (5 `setBit` nodeToClientVersionBit)
-       <> CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV6 magic) =
-          CBOR.encodeWord (6 `setBit` nodeToClientVersionBit)
-       <> CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV7 magic) =
-          CBOR.encodeWord (7 `setBit` nodeToClientVersionBit)
-       <> CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToClientVersionV8 magic) =
-          CBOR.encodeWord (8 `setBit` nodeToClientVersionBit)
-       <> CBOR.encodeInt (fromIntegral magic)
     encodeVersion (NodeToClientVersionV9 magic) =
           CBOR.encodeWord (9 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV10 magic) =
+          CBOR.encodeWord (10 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV11 magic) =
+          CBOR.encodeWord (11 `setBit` nodeToClientVersionBit)
+       <> CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV12 magic) =
+          CBOR.encodeWord (12 `setBit` nodeToClientVersionBit)
        <> CBOR.encodeInt (fromIntegral magic)
     encodeVersion (NodeToNodeVersionV1 magic) =
           CBOR.encodeWord 1
@@ -348,19 +337,12 @@ handshakeDec = do
         version <- CBOR.decodeWord
         case ( version `clearBit` nodeToClientVersionBit
              , version `testBit`  nodeToClientVersionBit ) of
-             (1, False) -> Right . NodeToNodeVersionV1 <$> CBOR.decodeWord32
-             (2, False) -> Right . NodeToNodeVersionV2 <$> CBOR.decodeWord32
-             (3, False) -> Right . NodeToNodeVersionV3 <$> CBOR.decodeWord32
-             (4, False) -> decodeWithMode NodeToNodeVersionV4
-             (5, False) -> decodeWithMode NodeToNodeVersionV5
-             (6, False) -> decodeWithMode NodeToNodeVersionV6
              (7, False) -> decodeWithMode NodeToNodeVersionV7
              (8, False) -> decodeWithMode NodeToNodeVersionV8
-             (5, True)  -> Right . NodeToClientVersionV5 <$> CBOR.decodeWord32
-             (6, True)  -> Right . NodeToClientVersionV6 <$> CBOR.decodeWord32
-             (7, True)  -> Right . NodeToClientVersionV7 <$> CBOR.decodeWord32
-             (8, True)  -> Right . NodeToClientVersionV8 <$> CBOR.decodeWord32
              (9, True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
+             (10, True) -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
+             (11, True) -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
+             (12, True) -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
              _          -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> Bool -> NodeVersion)
@@ -467,21 +449,14 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
              Right (_, Left err) -> do
                  eprint $ printf "%s Protocol error %s\n" peerStr (show err)
              Right (_, Right version) -> do
-                 unless quiet $ printf "%s Negotiated version %s\n" peerStr (show version)
-                 case version of
-                      (NodeToNodeVersionV1   _) -> return ()
-                      (NodeToNodeVersionV2   _) -> return ()
-                      (NodeToClientVersionV5 _) -> return ()
-                      (NodeToClientVersionV6 _) -> return ()
-                      (NodeToClientVersionV7 _) -> return ()
-                      (NodeToClientVersionV8 _) -> return ()
-                      _                       -> do
-                          keepAlive bearer timeoutfn peerStr version (tdigest []) 0
-                          -- send terminating message
-                          _ <- write bearer timeoutfn $
-                                 wrap keepaliveNum InitiatorDir (keepAliveDone version)
-                          -- protocol idle timeout
-                          threadDelay 5
+                 unless quiet $ do
+                   printf "%s Negotiated version %s\n" peerStr (show version)
+                   keepAlive bearer timeoutfn peerStr version (tdigest []) 0
+                   -- send terminating message
+                   _ <- write bearer timeoutfn $
+                          wrap keepaliveNum InitiatorDir (keepAliveDone version)
+                   -- protocol idle timeout
+                   threadDelay 5
 
     )
   where
