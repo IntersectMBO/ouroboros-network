@@ -6,6 +6,11 @@ CHANGELOG](../ouroboros-consensus/docs/interface-CHANGELOG.md) file for how
 this changelog is supposed to be used.
 
 
+## Circa 2022-04-06
+
+- removed `node-to-node` versions `1` to `6`.  The lowest supported version is
+  `NodeToNodeV_7` introduced before the Alonzo hard fark.
+
 ## Circa 2022-03-08
 
 
