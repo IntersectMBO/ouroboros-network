@@ -210,7 +210,6 @@ readCDDLSpecs = do
     handshakeNodeToNode   <- BL.readFile (dir </> "handshake-node-to-node.cddl")
     chainSync             <- BL.readFile (dir </> "chain-sync.cddl")
     blockFetch            <- BL.readFile (dir </> "block-fetch.cddl")
-    txSubmission          <- BL.readFile (dir </> "tx-submission.cddl")
     txSubmission2         <- BL.readFile (dir </> "tx-submission2.cddl")
     keepAlive             <- BL.readFile (dir </> "keep-alive.cddl")
     localTxSubmission     <- BL.readFile (dir </> "local-tx-submission.cddl")
@@ -226,7 +225,6 @@ readCDDLSpecs = do
         cddlBlockFetch            = CDDLSpec $ blockFetch
                                             <> common,
         cddlTxSubmission2         = CDDLSpec $ txSubmission2
-                                            <> txSubmission
                                             <> common,
         cddlKeepAlive             = CDDLSpec keepAlive,
         cddlLocalTxSubmission     = CDDLSpec $ localTxSubmission

@@ -18,7 +18,6 @@ data-files:
   test-cddl/specs/handshake-node-to-client.cddl
   test-cddl/specs/chain-sync.cddl
   test-cddl/specs/block-fetch.cddl
-  test-cddl/specs/tx-submission.cddl
   test-cddl/specs/tx-submission2.cddl
   test-cddl/specs/keep-alive.cddl
   test-cddl/specs/local-tx-submission.cddl
