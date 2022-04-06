@@ -30,6 +30,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
     -- * Combinators
   , RewoundKeys (..)
   , forwardValues
+  , forwardValuesAndKeys
   , mapRewoundKeys
   , restrictValues
   , rewindKeys
@@ -339,6 +340,46 @@ forwardValues (UtxoValues values) (UtxoDiff diffs) =
       UedsIns       -> error "impossible! duplicate insert of key"
       UedsInsAndDel -> error "impossible! duplicate insert of key"
 
+-- | Transport a set of values by applying a valid difference as well as
+-- creating the values for keys that must be created in said differences.
+--
+-- The provided values come from reading a BackingStore, the differences come
+-- from the current 'DbChangelog' and the keys are the values that are created
+-- or created and consumed along the 'DbChangelog' and therefore we know are not
+-- present on the 'BackingStore'. Note that in particular, a key cannot appear
+-- in both arguments at the same time.
+--
+-- Note that this fails via 'error' if the diff is invalid, eg it deletes a key
+-- that is not present in the argument or inserts a key that is already in the
+-- argument.
+forwardValuesAndKeys :: forall k v. (Ord k, HasCallStack) => UtxoValues k v -> UtxoKeys k v -> UtxoDiff k v -> UtxoValues k v
+forwardValuesAndKeys (UtxoValues values) (UtxoKeys keys) (UtxoDiff diffs) =
+      UtxoValues
+     $ Map.mapMaybe id (Map.fromSet g keys) `Map.union` Map.mapMaybeWithKey f values
+   where
+     f :: k -> v -> Maybe v
+     f k v = case Map.lookup k diffs of
+       -- The value is in the backing store and not deleted by the differences
+       Nothing                              -> Just v
+       -- The value is inserted (or inserted and deleted) by the differences and
+       -- it was on the backing store. This is an error.
+       Just (UtxoEntryDiff _ UedsIns)       -> error "impossible! duplicate insert of key"
+       Just (UtxoEntryDiff _ UedsInsAndDel) -> error "impossible! duplicate insert of key"
+       -- The value was in the backing store but the differences delete it
+       Just (UtxoEntryDiff _ UedsDel)       -> Nothing
+
+     g :: k -> Maybe v
+     g k = case Map.lookup k diffs of
+       -- The value is not created by the differences
+       Nothing                              -> Nothing
+       -- The value is created by the differences
+       Just (UtxoEntryDiff v UedsIns)       -> Just v
+       -- The value is created and deleted by the differences
+       Just (UtxoEntryDiff _ UedsInsAndDel) -> Nothing
+       -- The value is only deleted by the differences. This is an error as the
+       -- presence of the key in 'keys' means that it was already not in the
+       -- 'BackingStore'
+       Just (UtxoEntryDiff _ UedsDel)       -> error "impossible! deleted entry that was not in UTxO"
 {-------------------------------------------------------------------------------
   Sequence of diffs
 -------------------------------------------------------------------------------}

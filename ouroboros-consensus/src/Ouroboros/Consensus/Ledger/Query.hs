@@ -290,7 +290,7 @@ answerQuery cfg query st = case query of
   GetChainBlockNo -> headerStateBlockNo (headerState st)
   GetChainPoint -> headerStatePoint (headerState st)
 
-prepareQuery :: QueryLedger blk => Query blk LargeL result -> TableKeySets (LedgerState blk)
+prepareQuery :: QueryLedger blk => Query blk LargeL result -> LedgerTables (LedgerState blk) KeysMK
 prepareQuery (BlockQuery query) = prepareBlockQuery query
 
 class QuerySat (mk :: MapKind) (fp :: FootprintL)
@@ -311,13 +311,13 @@ class IsQuery (BlockQuery blk) => QueryLedger blk where
   -- | Answer the given query about the extended ledger state.
   answerBlockQuery :: QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk mk -> result
 
-  prepareBlockQuery :: BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
+  prepareBlockQuery :: BlockQuery blk LargeL result -> LedgerTables (LedgerState blk) KeysMK
 
   answerWholeBlockQuery :: BlockQuery blk WholeL result -> IncrementalQueryHandler blk result
 
   -- This method need not be defined for a @'BlockQuery' blk@ that only contains
   -- 'SmallL' queries.
-  default prepareBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk LargeL result -> TableKeySets (LedgerState blk)
+  default prepareBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk LargeL result -> LedgerTables (LedgerState blk) KeysMK
   prepareBlockQuery query = proveNotLargeQuery query
 
   -- This method need not be defined for a @'BlockQuery' blk@ that only contains

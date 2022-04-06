@@ -191,7 +191,7 @@ instance Condense TestHash where
 
 instance InMemory.ReadsKeySets Identity (LedgerState TestBlock) where
   readDb (InMemory.RewoundTableKeySets seqNo NoTestLedgerTables) =
-      pure $ InMemory.UnforwardedReadSets seqNo NoTestLedgerTables
+      pure $ InMemory.UnforwardedReadSets seqNo NoTestLedgerTables NoTestLedgerTables
 
 -- | Test block parametrized on the payload type
 --
@@ -363,7 +363,7 @@ class ( Typeable ptype
   -- 'ApplyBlock' class. Thus we assume that the payload contains all the
   -- information needed to determine which keys should be retrieved from the
   -- backing store to apply a 'TestBlockWith'.
-  getPayloadKeySets :: ptype -> TableKeySets (LedgerState (TestBlockWith ptype))
+  getPayloadKeySets :: ptype -> LedgerTables (LedgerState (TestBlockWith ptype)) KeysMK
 
 instance PayloadSemantics () where
   data PayloadDependentState () mk = EmptyPLDS
@@ -456,12 +456,13 @@ instance TableStuff (LedgerState TestBlock) where
   projectLedgerTables _                  = NoTestLedgerTables
   withLedgerTables st NoTestLedgerTables = convertMapKind st
 
-  pureLedgerTables     _                                       = NoTestLedgerTables
-  mapLedgerTables      _ NoTestLedgerTables                    = NoTestLedgerTables
-  traverseLedgerTables _ NoTestLedgerTables                    = pure NoTestLedgerTables
-  zipLedgerTables      _ NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
-  foldLedgerTables     _ NoTestLedgerTables                    = mempty
-  foldLedgerTables2    _ NoTestLedgerTables NoTestLedgerTables = mempty
+  pureLedgerTables     _                                                          = NoTestLedgerTables
+  mapLedgerTables      _                                       NoTestLedgerTables = NoTestLedgerTables
+  traverseLedgerTables _                                       NoTestLedgerTables = pure NoTestLedgerTables
+  zipLedgerTables      _                    NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  zipLedgerTables2     _ NoTestLedgerTables NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  foldLedgerTables     _                                       NoTestLedgerTables = mempty
+  foldLedgerTables2    _                    NoTestLedgerTables NoTestLedgerTables = mempty
 
 instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
     codecLedgerTables = NoTestLedgerTables

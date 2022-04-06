@@ -39,7 +39,6 @@ module Ouroboros.Consensus.Shelley.Eras (
 import           Control.Exception (Exception, throw)
 import           Control.Monad.Except
 import           Data.Default.Class (Default)
-import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import           Data.Void (Void)

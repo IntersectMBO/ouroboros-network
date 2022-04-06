@@ -630,6 +630,9 @@ readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
     pure UnforwardedReadSets {
         ursSeqNo  = slot
       , ursValues = zipLedgerTables comb rew values
+      , ursKeys   = mapLedgerTables
+                      (\(ApplyRewoundMK rew') -> ApplyKeysMK (HD.rkAbsent rew'))
+                      rew
     }
   where
     prj :: ApplyMapKind RewoundMK k v -> ApplyMapKind KeysMK k v
