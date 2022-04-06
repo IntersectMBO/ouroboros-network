@@ -452,16 +452,8 @@ instance CardanoHardForkConstraints c
       , (NodeToNodeV_10, CardanoNodeToNodeVersion6)
       ]
 
-  supportedNodeToClientVersions _ = Map.fromList
-      [ (NodeToClientV_1 , CardanoNodeToClientVersion1)
-      , (NodeToClientV_2 , CardanoNodeToClientVersion1)
-      , (NodeToClientV_3 , CardanoNodeToClientVersion2)
-      , (NodeToClientV_4 , CardanoNodeToClientVersion3)
-      , (NodeToClientV_5 , CardanoNodeToClientVersion4)
-      , (NodeToClientV_6 , CardanoNodeToClientVersion5)
-      , (NodeToClientV_7 , CardanoNodeToClientVersion6)
-      , (NodeToClientV_8 , CardanoNodeToClientVersion6)
-      , (NodeToClientV_9 , CardanoNodeToClientVersion7)
+  supportedNodeToClientVersions _ = Map.fromList $
+      [ (NodeToClientV_9 , CardanoNodeToClientVersion7)
       , (NodeToClientV_10, CardanoNodeToClientVersion7)
       , (NodeToClientV_11, CardanoNodeToClientVersion8)
       , (NodeToClientV_12, CardanoNodeToClientVersion8)

@@ -227,9 +227,8 @@ instance ( blockVersion ~ BlockNodeToClientVersion blk
       -- This case statement will cause a warning when we add a new top
       -- level query and hence a new QueryVersion. In that case we should
       -- support such top level `Query` constructors in this Arbitrary instance.
-      Query.TopLevelQueryDisabled -> arbitraryBlockQuery queryVersion
-      Query.QueryVersion1         -> genTopLevelQuery1
-      Query.QueryVersion2         -> genTopLevelQuery2
+      Query.QueryVersion1 -> genTopLevelQuery1
+      Query.QueryVersion2 -> genTopLevelQuery2
     where
       mkEntry :: QueryVersion
         -> Query blk query
