@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -98,7 +99,7 @@ implTryAddTxs
 implTryAddTxs istate cfg txSize trcr wti =
     go []
   where
-    go acc = \case
+    go !acc = \case
       []     -> pure (reverse acc, [])
       tx:txs -> join $ atomically $ do
         is <- readTVar istate
@@ -136,16 +137,17 @@ pureTryAddTxs cfg txSize wti tx is
   = case eVtx of
       -- We only extended the ValidationResult with a single transaction
       -- ('tx'). So if it's not in 'vrInvalid', it must be in 'vrNewValid'.
-      Right vtx ->
-        assert (isJust (vrNewValid vr)) $
-          TryAddTxs
-            (Just is')
-            (MempoolTxAdded vtx)
-            (TraceMempoolAddedTx
-              vtx
-              (isMempoolSize is)
-              (isMempoolSize is')
-            )
+      Right !vtx ->
+        let !is' = internalStateFromVR vr
+        in assert (isJust (vrNewValid vr)) $
+             TryAddTxs
+               (Just is')
+               (MempoolTxAdded vtx)
+               (TraceMempoolAddedTx
+                 vtx
+                 (isMempoolSize is)
+                 (isMempoolSize is')
+               )
       Left err ->
         assert (isNothing (vrNewValid vr))  $
           assert (length (vrInvalid vr) == 1) $
@@ -159,7 +161,7 @@ pureTryAddTxs cfg txSize wti tx is
               )
     where
       (eVtx, vr) = extendVRNew cfg txSize wti tx $ validationResultFromIS is
-      is'        = internalStateFromVR vr
+
 
 -- | A datatype containing the state resulting after removing the requested
 -- transactions from the mempool and maybe a message to be traced while removing

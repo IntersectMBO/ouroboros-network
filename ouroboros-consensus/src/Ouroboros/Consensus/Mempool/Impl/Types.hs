@@ -147,36 +147,36 @@ initInternalState capacityOverride lastTicketNo slot st = IS {
 
 data ValidationResult invalidTx blk = ValidationResult {
       -- | The tip of the chain before applying these transactions
-      vrBeforeTip      :: ChainHash blk
+      vrBeforeTip      :: !(ChainHash blk)
 
       -- | The slot number of the (imaginary) block the txs will be placed in
-    , vrSlotNo         :: SlotNo
+    , vrSlotNo         :: !SlotNo
 
       -- | Capacity of the Mempool. Corresponds to 'vrBeforeTip' and
       -- 'vrBeforeSlotNo', /not/ 'vrAfter'.
-    , vrBeforeCapacity :: MempoolCapacityBytes
+    , vrBeforeCapacity :: !MempoolCapacityBytes
 
       -- | The transactions that were found to be valid (oldest to newest)
-    , vrValid          :: TxSeq (Validated (GenTx blk))
+    , vrValid          :: !(TxSeq (Validated (GenTx blk)))
 
       -- | The cached IDs of transactions that were found to be valid (oldest to
       -- newest)
-    , vrValidTxIds     :: Set (GenTxId blk)
+    , vrValidTxIds     :: !(Set (GenTxId blk))
 
       -- | A new transaction (not previously known) which was found to be valid.
       --
       -- n.b. This will only contain a valid transaction that was /newly/ added
       -- to the mempool (not a previously known valid transaction).
-    , vrNewValid       :: Maybe (Validated (GenTx blk))
+    , vrNewValid       :: !(Maybe (Validated (GenTx blk)))
 
       -- | The state of the ledger after applying 'vrValid' against the ledger
       -- state identifeid by 'vrBeforeTip'.
-    , vrAfter          :: TickedLedgerState blk
+    , vrAfter          :: !(TickedLedgerState blk)
 
       -- | The transactions that were invalid, along with their errors
       --
       -- From oldest to newest.
-    , vrInvalid        :: [(invalidTx, ApplyTxErr blk)]
+    , vrInvalid        :: ![(invalidTx, ApplyTxErr blk)]
 
       -- | The mempool 'TicketNo' counter.
       --
@@ -184,7 +184,7 @@ data ValidationResult invalidTx blk = ValidationResult {
       -- from 'isLastTicketNo' of the 'InternalState'.
       -- When validating previously applied transactions, this field should not
       -- be affected.
-    , vrLastTicketNo   :: TicketNo
+    , vrLastTicketNo   :: !TicketNo
   }
 
 -- | Extend 'ValidationResult' with a previously validated transaction that
