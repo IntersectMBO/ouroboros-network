@@ -1,8 +1,8 @@
 # Note: later rules override earlier rules.
 
 # Default
-#                                  Marcin Armando Nick     Paweł        "Higher ups"
-*                                  @coot  @bolt12 @nfrisby @EncodePanda @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+#                                  Marcin Armando Nick      "Higher ups"
+*                                  @coot  @bolt12 @nfrisby  @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 
 # Network Team
 
