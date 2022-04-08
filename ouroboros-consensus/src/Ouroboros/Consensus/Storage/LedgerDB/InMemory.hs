@@ -22,7 +22,7 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 -- TODO stylish haskell insists on deleting this pragma if placed in the group above.
-{-# LANGUAGE DerivingStrategies       #-}
+{-# LANGUAGE DerivingStrategies         #-}
 
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
@@ -798,17 +798,17 @@ ledgerDbPrefix ::
   -> LedgerDB l
   -> Maybe (LedgerDB l)
 ledgerDbPrefix pt db
-    | pt == (castPoint $ getTip (ledgerDbAnchor db))
+    | pt == castPoint (getTip (ledgerDbAnchor db))
     = Just $ LedgerDB {
           ledgerDbCheckpoints = AS.Empty . AS.anchor <$>      (ledgerDbCheckpoints db)
         , ledgerDbChangelog   = prefixBackToAnchorDbChangelog (ledgerDbChangelog db)
         }
     | otherwise
     =  do
-        checkpoints' <- AS.rollback
-                          (pointSlot pt)
-                          ((== pt) . castPoint . getTip . unCheckpoint . either id id)
-                          <$> (ledgerDbCheckpoints db)
+        let checkpoints' = AS.rollback
+                            (pointSlot pt)
+                            ((== pt) . castPoint . getTip . unCheckpoint . either id id)
+                            =<< ledgerDbCheckpoints db
         dblog' <- dbChangelogPrefix pt $ ledgerDbChangelog db
         return $ LedgerDB
                   { ledgerDbCheckpoints = checkpoints'
