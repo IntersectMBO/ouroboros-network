@@ -155,27 +155,23 @@ prop_keepAlive_convergenceM tracer (NetworkDelay nd) seed = do
     controlMessageV <- newTVarIO Continue
     let controlMessageSTM = readTVar controlMessageV
         clientId = "client"
-        timeConstant = 1000 -- Same as in PeerGSV's <> definition
         keepAliveInterval = 10
 
     (c_aid, s_aid) <- runKeepAliveClientAndServer (NetworkDelay nd) seed tracer controlMessageSTM
                           registry clientId (KeepAliveInterval keepAliveInterval)
-    threadDelay $ timeConstant * keepAliveInterval
 
-    atomically $ writeTVar controlMessageV Terminate
     void $ wait c_aid
     void $ wait s_aid
-
-    -- XXX Must be larger than the KeepAliveInterval timeout or we leak threads in the SIM
-    -- Can be removed after #2631 is merged.
-    threadDelay (keepAliveInterval + 128)
 
 -- Test that our estimate of PeerGSV's G terms converge to
 -- a given constant delay.
 prop_keepAlive_convergence :: NetworkDelay -> Int -> Property
 prop_keepAlive_convergence nd seed =
-    let trace = selectTraceEventsDynamic $ runSimTrace $ prop_keepAlive_convergenceM dynamicTracer nd seed in
-    verifyConvergence trace
+    let trace = take 1000
+              . selectTraceEventsDynamic
+              $ runSimTrace
+              $ prop_keepAlive_convergenceM dynamicTracer nd seed
+     in verifyConvergence trace
   where
     verifyConvergence :: [TraceKeepAliveClient String] -> Property
     verifyConvergence [] = property False
