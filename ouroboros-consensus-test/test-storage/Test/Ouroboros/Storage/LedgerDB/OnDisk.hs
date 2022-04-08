@@ -750,7 +750,7 @@ runMock cmd initMock =
     push b = do
         ls <- State.get
         l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (cur ls)
-        State.put ((b, forgetLedgerStateTracking l'):ls)
+        State.put ((b, applyDiffsLedgerTables (cur ls) $ projectLedgerTables l'):ls)
 
     switch :: Word64
            -> [TestBlock]

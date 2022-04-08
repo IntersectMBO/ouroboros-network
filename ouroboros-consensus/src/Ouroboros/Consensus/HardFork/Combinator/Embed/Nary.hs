@@ -210,14 +210,14 @@ injectInitialExtLedgerState cfg extLedgerState0 =
 
     targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs)) ValuesMK
     targetEraLedgerState =
-          mappendValues ( projectLedgerTables
-                        . HardForkLedgerState
-                        . initHardForkState
-                        . Flip
-                        . ledgerState
-                        $ extLedgerState0
-                        )
-        $ HardForkLedgerState
+          applyDiffsLedgerTables ( HardForkLedgerState
+                                 . initHardForkState
+                                 . Flip
+                                 . ledgerState
+                                 $ extLedgerState0
+                                 )
+        . projectLedgerTables
+        . HardForkLedgerState
           -- We can immediately extend it to the right slot, executing any
           -- scheduled hard forks in the first slot
         $ State.extendToSlot

@@ -40,7 +40,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , IsLedger (..)
   , LedgerCfg
   , applyChainTick
-  , noNewTickingValues
+  , noNewTickingDiffs
     -- * Link block to its ledger
   , LedgerConfig
   , LedgerError
@@ -121,7 +121,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , youngestImmutableSlotDbChangelog
     -- ** Misc
   , ShowLedgerState (..)
-  ) where
+  , applyDiffsLedgerTablesTicked, prependDiffs', prependDiffs, prependDiffsTicked) where
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
@@ -312,7 +312,7 @@ class ( -- Requirements on the ledger state itself
        LedgerCfg l
     -> SlotNo
     -> l EmptyMK
-    -> LedgerResult l (Ticked1 l ValuesMK)
+    -> LedgerResult l (Ticked1 l DiffMK)
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick ::
@@ -320,16 +320,16 @@ applyChainTick ::
   => LedgerCfg l
   -> SlotNo
   -> l EmptyMK
-  -> Ticked1 l ValuesMK
+  -> Ticked1 l DiffMK
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 -- | When applying a block that is not on an era transition, ticking won't
 -- generate new values, so this function can be used to wrap the call to the
 -- ledger rules that perform the tick.
-noNewTickingValues :: TickedTableStuff l
+noNewTickingDiffs :: TickedTableStuff l
                    => l any
-                   -> l ValuesMK
-noNewTickingValues l = withLedgerTables l polyEmptyLedgerTables
+                   -> l DiffMK
+noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables
 
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
@@ -537,6 +537,44 @@ mappendValuesTicked ::
   -> Ticked1      l ValuesMK
   -> Ticked1      l ValuesMK
 mappendValuesTicked = flip (zipOverLedgerTablesTicked (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2))
+
+applyDiffsLedgerTablesTicked ::
+     (TickedTableStuff l)
+  => Ticked1      l DiffMK
+  -> LedgerTables l ValuesMK
+  -> Ticked1      l ValuesMK
+applyDiffsLedgerTablesTicked =
+  zipOverLedgerTablesTicked (\(ApplyDiffMK diffs') (ApplyValuesMK vals') -> ApplyValuesMK (forwardValues vals' diffs'))
+
+prependDiffs' ::
+     (TableStuff l)
+  => LedgerTables l DiffMK
+  -> l DiffMK
+  -> l DiffMK
+prependDiffs' ticked applied =
+  zipOverLedgerTables
+    (\(ApplyDiffMK (UtxoDiff d1)) (ApplyDiffMK (UtxoDiff d2)) -> ApplyDiffMK (UtxoDiff (d1 <> d2)))
+    applied
+    ticked
+
+prependDiffs ::
+     (TickedTableStuff l)
+  => Ticked1 l DiffMK
+  -> l DiffMK
+  -> l DiffMK
+prependDiffs = prependDiffs' . projectLedgerTablesTicked
+
+prependDiffsTicked ::
+     (TickedTableStuff l)
+  => l DiffMK
+  -> Ticked1 l DiffMK
+  -> Ticked1 l DiffMK
+prependDiffsTicked ticked1 ticked2 =
+  zipOverLedgerTablesTicked
+    (\(ApplyDiffMK (UtxoDiff d2)) (ApplyDiffMK (UtxoDiff d1)) -> ApplyDiffMK (UtxoDiff (d1 <> d2)))
+    ticked2
+    (projectLedgerTables ticked1)
+
 
 -- | This class provides a 'CodecMK' that can be used to encode/decode keys and
 -- values on @'LedgerTables' l mk@

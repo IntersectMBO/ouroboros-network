@@ -91,7 +91,7 @@ class ( IsLedger l
     => LedgerCfg l
     -> blk
     -> Ticked1 l ValuesMK
-    -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
+    -> Except (LedgerErr l) (LedgerResult l (l DiffMK))
 
   -- | Re-apply a block to the very same ledger state it was applied in before.
   --
@@ -107,7 +107,7 @@ class ( IsLedger l
     => LedgerCfg l
     -> blk
     -> Ticked1 l ValuesMK
-    -> LedgerResult l (l TrackingMK)
+    -> LedgerResult l (l DiffMK)
 
   -- | Given a block, get the key-sets that we need to apply it to a ledger
   -- state.
@@ -124,13 +124,82 @@ class (ApplyBlock (LedgerState blk) blk, TickedTableStuff (LedgerState blk)) => 
   Derived functionality
 -------------------------------------------------------------------------------}
 
+{-| The following diagram describes the current flow during block ticking and
+  application. The two provided arguments are the Block and the LedgerDB:
+
+
+@
+Key:  ┏━━━━━━━━━━━━┓  ╔════════════╗  ╔════════════╗
+      ┃  FUNCTION  ┃  ║   LEDGER   ║  ║   LEDGER   ║╗
+      ┗━━━━━━━━━━━━┛  ║   STATE    ║  ║   TABLES   ║║
+                      ╚════════════╝  ╚════════════╝║
+                                       ╚════════════╝
+@
+
+@
+                  ┌────────────────┐                      │
+                  ▼                │                      │
+            ╔══════════╗           │                      ▼
+            ║          ║           │                              l Empty
+            ║ l Empty  ║           └──────────────    LedgerDB   ◄────────────────────────────────┐
+            ║          ║                                                                          │
+            ╚══════════╝                                                                          │
+                  │                                                                               │
+                  ▼                                                                               │
+                 ┌─┐                                                                              │
+      ┌──────────│↣│                                                                              │
+      │          └─┘                                                                              │
+      │           │                                                                               │
+      │           ▼                                                                               │forget
+      │     ╔══════════╗                                                                    ╔══════════╗
+      │     ║          ║                    ┌─┐           ┌───────────┐            ┌──┐     ║          ║
+      │     ║ l Values ║───────────────────▶│◁│──────────▶│   apply   │───────────▶│<>│─────║ l Diffs  ║
+      │     ║          ║                    └─┘   l Values└───────────┘ l Diffs    └──┘     ║          ║
+      │     ╚══════════╝                     ▲                  ▲                   ▲       ╚══════════╝
+      │           │forget                    │                  │                   │             │
+      │           │                          │                  │                   │             │
+      │           │                          │                  │                   │             │
+ ╔════════╗       │         ┌───────────┐    │                  \                   │             │
+ ║        ║╗      └────────▶│  ticking  │────┴──────────────────────────────────────┘             │
+ ║ values ║║        l Empty └───────────┘ l Diff                /                                 │
+ ║        ║║                                                    │                                 │
+ ╚════════╝║                                                    │                                 │
+  ╚════════╝                                                    │                                 │
+      │    readDB                                               \                                 │
+      │◄──────────────────────── DbChangelog + BackendStore ◄─────────────────────────────────────┘
+      │                                                         /
+ ╔════════╗                                                     │
+ ║        ║╗                                                    │
+ ║  keys  ║║                                                    │
+ ║        ║║                                                    │
+ ╚════════╝║                                                    │
+  ╚════════╝                                                    │
+      │ getNeededTxInputs                                       │
+      │                                                         │
+  ┌───┴───┐                                                     │
+  │       │                                                     │
+  │ Block ├─────────────────────────────────────────────────────┘
+  │       │
+  └───▲───┘
+      │
+@
+
+In particular:
+- ↣ is @withLedgerTables@
+- ◁ is @applyDiffsLedgerTables@
+- <> is @prependDiffs@
+
+TODO: Elaborate more this comment
+
+-}
+
 -- | 'lrResult' after 'applyBlockLedgerResult'
 applyLedgerBlock ::
      (ApplyBlock l blk, HasCallStack)
   => LedgerCfg l
   -> blk
   -> Ticked1 l ValuesMK
-  -> Except (LedgerErr l) (l TrackingMK)
+  -> Except (LedgerErr l) (l DiffMK)
 applyLedgerBlock = fmap lrResult ..: applyBlockLedgerResult
 
 -- | 'lrResult' after 'reapplyBlockLedgerResult'
@@ -139,7 +208,7 @@ reapplyLedgerBlock ::
   => LedgerCfg l
   -> blk
   -> Ticked1 l ValuesMK
-  -> l TrackingMK
+  -> l DiffMK
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
@@ -147,17 +216,13 @@ tickThenApplyLedgerResult ::
   => LedgerCfg l
   -> blk
   -> l ValuesMK
-  -> Except (LedgerErr l) (LedgerResult l (l TrackingMK))
+  -> Except (LedgerErr l) (LedgerResult l (l DiffMK))
 tickThenApplyLedgerResult cfg blk l = do
   let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
-  lrBlock <-    applyBlockLedgerResult     cfg            blk  (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
-  let tickDiffs = zipLedgerTables calculateDifference polyEmptyLedgerTables
-                . projectLedgerTablesTicked
-                . lrResult
-                $ lrTick
+  lrBlock <-    applyBlockLedgerResult     cfg            blk  (applyDiffsLedgerTablesTicked (lrResult lrTick) (projectLedgerTables l))
   pure LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = mappendTracking tickDiffs $ lrResult lrBlock
+    , lrResult = prependDiffs (lrResult lrTick) (lrResult lrBlock)
     }
 
 tickThenReapplyLedgerResult ::
@@ -165,17 +230,13 @@ tickThenReapplyLedgerResult ::
   => LedgerCfg l
   -> blk
   -> l ValuesMK
-  -> LedgerResult l (l TrackingMK)
+  -> LedgerResult l (l DiffMK)
 tickThenReapplyLedgerResult cfg blk l =
   let lrTick    = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
-      lrBlock   = reapplyBlockLedgerResult   cfg            blk  (mappendValuesTicked (projectLedgerTables l) $ lrResult lrTick)
-      tickDiffs = zipLedgerTables calculateDifference polyEmptyLedgerTables
-                . projectLedgerTablesTicked
-                . lrResult
-                $ lrTick
+      lrBlock   = reapplyBlockLedgerResult   cfg            blk  (applyDiffsLedgerTablesTicked (lrResult lrTick) (projectLedgerTables l))
   in LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = mappendTracking tickDiffs $ lrResult lrBlock
+    , lrResult = prependDiffs (lrResult lrTick) (lrResult lrBlock)
     }
 
 tickThenApply ::
@@ -183,7 +244,7 @@ tickThenApply ::
   => LedgerCfg l
   -> blk
   -> l ValuesMK
-  -> Except (LedgerErr l) (l TrackingMK)
+  -> Except (LedgerErr l) (l DiffMK)
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
@@ -191,18 +252,18 @@ tickThenReapply ::
   => LedgerCfg l
   -> blk
   -> l ValuesMK
-  -> l TrackingMK
+  -> l DiffMK
 tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
 
 foldLedger ::
      (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l -> [blk] -> l ValuesMK -> Except (LedgerErr l) (l ValuesMK)
-foldLedger cfg = repeatedlyM (\blk -> fmap forgetLedgerStateTracking . tickThenApply cfg blk)
+foldLedger cfg = repeatedlyM (\blk state -> fmap (applyDiffsLedgerTables state . projectLedgerTables) $ tickThenApply cfg blk state)
 
 refoldLedger ::
      (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l -> [blk] -> l ValuesMK -> l ValuesMK
-refoldLedger cfg = repeatedly (\blk -> forgetLedgerStateTracking . tickThenReapply cfg blk)
+refoldLedger cfg = repeatedly (\blk state -> applyDiffsLedgerTables state . projectLedgerTables $ tickThenReapply cfg blk state)
 
 {-------------------------------------------------------------------------------
   Short-hand

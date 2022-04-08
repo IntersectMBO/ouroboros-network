@@ -335,7 +335,7 @@ tickLedgerState
   -> (SlotNo, TickedLedgerState blk ValuesMK)
 tickLedgerState _cfg (ForgeInKnownSlot slot st) = (slot, st)
 tickLedgerState  cfg (ForgeInUnknownSlot st) =
-    (slot, mappendValuesTicked (projectLedgerTables st)
+    (slot, flip applyDiffsLedgerTablesTicked (projectLedgerTables st)
          $ applyChainTick cfg slot
          $ forgetLedgerStateTables st
     )

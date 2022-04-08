@@ -128,7 +128,7 @@ mkMempool mpEnv = Mempool
                   pureGetSnapshotFor
                     cfg
                     (ForgeInKnownSlot slot
-                      $ mappendValuesTicked (projectLedgerTables $ ledgerState ls')
+                      $ flip applyDiffsLedgerTablesTicked (projectLedgerTables $ ledgerState ls')
                       $ applyChainTick cfg slot
                       $ forgetLedgerStateTables
                       $ ledgerState ls')

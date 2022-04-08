@@ -558,7 +558,7 @@ instance IsLedger (LedgerState TestBlock) where
 
   applyChainTickLedgerResult _ _ = pureLedgerResult
                                  . TickedTestLedger
-                                 . noNewTickingValues
+                                 . noNewTickingDiffs
 
 instance ShowLedgerState (LedgerState TestBlock) where
   showsLedgerState _sing = shows

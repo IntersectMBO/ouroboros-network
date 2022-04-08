@@ -573,7 +573,7 @@ forkBlockForging IS{..} blockForging =
         trace $ TraceNodeIsLeader currentSlot
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: TickedLedgerState blk ValuesMK
+        let tickedLedgerState :: TickedLedgerState blk DiffMK
             tickedLedgerState =
               applyChainTick
                 (configLedger cfg)
