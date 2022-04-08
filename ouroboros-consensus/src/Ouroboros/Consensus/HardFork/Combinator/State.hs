@@ -177,7 +177,7 @@ extendToSlot :: forall xs.
                 (CanHardFork xs)
              => HardForkLedgerConfig xs
              -> SlotNo
-             -> HardForkState (Flip LedgerState EmptyMK) xs -> HardForkState (Flip LedgerState ValuesMK) xs
+             -> HardForkState (Flip LedgerState EmptyMK) xs -> HardForkState (Flip LedgerState DiffMK) xs
 extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st) =
       HardForkState
     . unI
@@ -193,7 +193,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
            pcfgs
            (getExactly (History.getShape hardForkLedgerConfigShape)))
     -- In order to make this an automorphism, as required by 'Telescope.extend',
-    -- we have to promote the input to @ValuesMK@ albeit it being empty.
+    -- we have to promote the input to @DiffMK@ albeit it being empty.
     $ hcmap
         proxySingle
         (\c -> c { currentState = Flip
@@ -209,11 +209,11 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     ei    = epochInfoLedger ledgerCfg ledgerSt
 
     -- Return the end of this era if we should transition to the next
-    whenExtend :: SingleEraBlock                      blk
-               => WrapPartialLedgerConfig             blk
-               -> K History.EraParams                 blk
-               -> Current (Flip LedgerState ValuesMK) blk
-               -> (Maybe :.: K History.Bound)         blk
+    whenExtend :: SingleEraBlock                    blk
+               => WrapPartialLedgerConfig           blk
+               -> K History.EraParams               blk
+               -> Current (Flip LedgerState DiffMK) blk
+               -> (Maybe :.: K History.Bound)       blk
     whenExtend pcfg (K eraParams) cur = Comp $ K <$> do
         transition <- singleEraTransition'
                         pcfg
@@ -230,8 +230,8 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     howExtend :: (TableStuff (LedgerState blk), TableStuff (LedgerState blk'))
               => TranslateLedgerState blk blk'
               -> History.Bound
-              -> Current (Flip LedgerState ValuesMK) blk
-              -> (K Past blk, Current (Flip LedgerState ValuesMK) blk')
+              -> Current (Flip LedgerState DiffMK) blk
+              -> (K Past blk, Current (Flip LedgerState DiffMK) blk')
     howExtend f currentEnd cur = (
           K Past {
               pastStart    = currentStart cur
@@ -240,14 +240,14 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
         , Current {
               currentStart = currentEnd
             , currentState = Flip
-                             -- we need to bring back the values provided by
+                             -- we need to bring back the diffs provided by
                              -- previous translations. Note that if there is
                              -- only one translation or if the previous
                              -- translations don't add any new tables this will
                              -- just be a no-op. See the haddock for
                              -- 'translateLedgerTablesWith' for more
                              -- information).
-                             . mappendValues ( translateLedgerTablesWith f
+                             . prependDiffs' ( translateLedgerTablesWith f
                                                . projectLedgerTables
                                                . unFlip
                                                . currentState

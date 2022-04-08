@@ -938,7 +938,7 @@ applyMaybeBlock :: UpdateLedger blk
                 -> Maybe blk
                 -> TickedLedgerState blk ValuesMK
                 -> LedgerState blk EmptyMK
-                -> Except (LedgerError blk) (LedgerState blk TrackingMK)
+                -> Except (LedgerError blk) (LedgerState blk DiffMK)
 applyMaybeBlock _   Nothing      _   st =
     -- if there is no block, then are no changes to track
     return $ st `withLedgerTables` polyEmptyLedgerTables
@@ -953,7 +953,7 @@ reapplyMaybeBlock :: UpdateLedger blk
                   -> Maybe blk
                   -> TickedLedgerState blk ValuesMK
                   -> LedgerState blk EmptyMK
-                  -> LedgerState blk TrackingMK
+                  -> LedgerState blk DiffMK
 reapplyMaybeBlock _   Nothing      _   st =
     -- if there is no block, then are no changes to track
     st `withLedgerTables` polyEmptyLedgerTables

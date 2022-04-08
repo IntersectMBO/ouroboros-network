@@ -716,7 +716,9 @@ translateLedgerStateByronToShelleyWrapper =
     $ \_ (WrapLedgerConfig cfgShelley) ->
         TranslateLedgerState {
             translateLedgerStateWith = \epochNo ledgerByron ->
-                unstowLedgerTables
+                trackingTablesToDiffs
+              . flip (zipOverLedgerTables calculateDifference) polyEmptyLedgerTables
+              . unstowLedgerTables
               $ ShelleyLedgerState {
                     shelleyLedgerTip =
                       translatePointByronToShelley
@@ -846,19 +848,19 @@ translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
       TranslateLedgerState {
           translateLedgerStateWith = \_epochNo ->
-                noNewTickingValues
+                noNewTickingDiffs -- TODO The AVVM deletions should be added here!!
               . unFlip
               . unComp
               . SL.translateEra' ()
               . Comp
               . Flip
         , translateLedgerTablesWith =
-              \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } ->
-               ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK
-                                                      . HD.UtxoValues
-                                                      . fmap (SL.translateEra' ())
-                                                      $ vals
-                                   }
+            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
+             ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
+                                                    . HD.UtxoDiff
+                                                    . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff (SL.translateEra' () x) y)
+                                                    $ vals
+                                 }
         }
 
 translateTxShelleyToAllegraWrapper ::
@@ -892,17 +894,17 @@ translateLedgerStateAllegraToMaryWrapper =
     ignoringBoth $
       TranslateLedgerState {
           translateLedgerStateWith = \_epochNo ->
-                noNewTickingValues
+                noNewTickingDiffs
               . unFlip
               . unComp
               . SL.translateEra' ()
               . Comp
               . Flip
         , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } ->
-             ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK
-                                                    . HD.UtxoValues
-                                                    . fmap (SL.translateEra' ())
+            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
+             ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
+                                                    . HD.UtxoDiff
+                                                    . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff (SL.translateEra' () x) y)
                                                     $ vals
                                  }
         }
@@ -942,17 +944,17 @@ translateLedgerStateMaryToAlonzoWrapper =
     RequireBoth $ \_cfgMary cfgAlonzo ->
       TranslateLedgerState {
           translateLedgerStateWith = \_epochNo ->
-                noNewTickingValues
+                noNewTickingDiffs
               . unFlip
               . unComp
               . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo)
               . Comp
               . Flip
         , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } ->
-             ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK
-                                                    . HD.UtxoValues
-                                                    . fmap Alonzo.translateTxOut
+            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
+             ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
+                                                    . HD.UtxoDiff
+                                                    . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff (Alonzo.translateTxOut x) y)
                                                     $ vals
                                  }
         }

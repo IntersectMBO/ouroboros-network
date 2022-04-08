@@ -264,7 +264,7 @@ byronPBftParams ByronSpecGenesis{..} =
 instance TxGen DualByronBlock where
   testGenTxs _coreNodeId _numCoreNodes curSlotNo cfg () = \st -> do
       n <- choose (0, 20)
-      go [] n $ mappendValuesTicked (projectLedgerTables st) $ applyChainTick (configLedger cfg) curSlotNo $ forgetLedgerStateTables st
+      go [] n $ flip applyDiffsLedgerTablesTicked (projectLedgerTables st) $ applyChainTick (configLedger cfg) curSlotNo $ forgetLedgerStateTables st
     where
       -- Attempt to produce @n@ transactions
       -- Stops when the transaction generator cannot produce more txs

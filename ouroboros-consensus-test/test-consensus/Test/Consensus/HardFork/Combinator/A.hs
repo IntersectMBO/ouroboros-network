@@ -257,7 +257,7 @@ instance IsLedger (LedgerState BlockA) where
 
   applyChainTickLedgerResult _ _ = pureLedgerResult
                                  . TickedLedgerStateA
-                                 . noNewTickingValues
+                                 . noNewTickingDiffs
 
 instance ApplyBlock (LedgerState BlockA) BlockA where
   applyBlockLedgerResult cfg blk =

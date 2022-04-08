@@ -153,7 +153,7 @@ instance ( CanHardFork xs
                              -> LedgerState (HardForkBlock xs) EmptyMK
                              -> LedgerResult
                                   (LedgerState (HardForkBlock xs))
-                                  (Ticked1 (LedgerState (HardForkBlock xs)) ValuesMK)
+                                  (Ticked1 (LedgerState (HardForkBlock xs)) DiffMK)
   applyChainTickLedgerResult cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
       sequenceHardForkState
         (hcizipWith proxySingle (tickOne ei slot) cfgs extended) <&> \l' ->
@@ -186,7 +186,7 @@ instance ( CanHardFork xs
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoLedger cfg st
 
-      extended :: HardForkState (Flip LedgerState ValuesMK) xs
+      extended :: HardForkState (Flip LedgerState DiffMK) xs
       extended = State.extendToSlot cfg slot st
 
 tickOne :: SingleEraBlock blk
@@ -194,14 +194,14 @@ tickOne :: SingleEraBlock blk
         -> SlotNo
         -> Index                                          xs   blk
         -> WrapPartialLedgerConfig                             blk
-        -> (Flip LedgerState ValuesMK)                         blk
+        -> (Flip LedgerState DiffMK)                         blk
         -> (     LedgerResult (LedgerState (HardForkBlock xs))
-             :.: FlipTickedLedgerState ValuesMK
+             :.: FlipTickedLedgerState DiffMK
            )                                                   blk
 tickOne ei slot sopIdx partialCfg st =
       Comp
     . fmap ( FlipTickedLedgerState
-           . mappendValuesTicked (projectLedgerTables $ unFlip st)
+           . prependDiffsTicked (unFlip st)
            )
     . embedLedgerResult (injectLedgerEvent sopIdx)
     . applyChainTickLedgerResult (completeLedgerConfig' ei partialCfg) slot
@@ -351,7 +351,7 @@ apply :: SingleEraBlock blk
       -> Product I (FlipTickedLedgerState ValuesMK)         blk
       -> (    Except (HardForkLedgerError xs)
           :.: LedgerResult (LedgerState (HardForkBlock xs))
-          :.: Flip LedgerState TrackingMK
+          :.: Flip LedgerState DiffMK
          )                                                  blk
 apply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st)) =
       Comp
@@ -364,7 +364,7 @@ reapply :: SingleEraBlock blk
         -> WrapLedgerConfig                                   blk
         -> Product I (FlipTickedLedgerState ValuesMK)         blk
         -> (    LedgerResult (LedgerState (HardForkBlock xs))
-            :.: Flip LedgerState TrackingMK
+            :.: Flip LedgerState DiffMK
            )                                                  blk
 reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st)) =
       Comp

@@ -579,7 +579,7 @@ applyHelper :: forall m era.
   -> TickedLedgerState (ShelleyBlock era) ValuesMK
   -> m (LedgerResult
           (LedgerState (ShelleyBlock era))
-          (LedgerState (ShelleyBlock era) TrackingMK))
+          (LedgerState (ShelleyBlock era) DiffMK))
 applyHelper f cfg blk stBefore = do
     let TickedShelleyLedgerState{
             tickedShelleyLedgerTransition
@@ -608,7 +608,7 @@ applyHelper f cfg blk stBefore = do
             stAfter
             (projectLedgerTablesTicked stBefore)
 
-    return $ ledgerResult <&> \newNewEpochState -> track $ unstowLedgerTables $ ShelleyLedgerState {
+    return $ ledgerResult <&> \newNewEpochState -> trackingTablesToDiffs $ track $ unstowLedgerTables $ ShelleyLedgerState {
         shelleyLedgerTip = NotOrigin ShelleyTip {
             shelleyTipBlockNo = blockNo   blk
           , shelleyTipSlotNo  = blockSlot blk

@@ -191,18 +191,20 @@ emptyLedgerState = ByronLedgerState {
 
 ledgerStateAfterEBB :: LedgerState ByronBlock ValuesMK
 ledgerStateAfterEBB =
-      mappendValues (projectLedgerTables emptyLedgerState)
-    . forgetLedgerStateTracking
+      applyDiffsLedgerTables emptyLedgerState
+    . projectLedgerTables
     . reapplyLedgerBlock ledgerConfig exampleEBB
+    . flip applyDiffsLedgerTablesTicked polyEmptyLedgerTables
     . applyChainTick ledgerConfig (SlotNo 0)
     . forgetLedgerStateTables
     $ emptyLedgerState
 
 exampleLedgerState :: LedgerState ByronBlock ValuesMK
 exampleLedgerState =
-      mappendValues (projectLedgerTables ledgerStateAfterEBB)
-    . forgetLedgerStateTracking
+      applyDiffsLedgerTables emptyLedgerState
+    . projectLedgerTables
     . reapplyLedgerBlock ledgerConfig exampleBlock
+    . flip applyDiffsLedgerTablesTicked (projectLedgerTables ledgerStateAfterEBB)
     . applyChainTick ledgerConfig (SlotNo 1)
     . forgetLedgerStateTables
     $ ledgerStateAfterEBB

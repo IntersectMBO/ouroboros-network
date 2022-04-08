@@ -491,6 +491,7 @@ instance PayloadSemantics ptype
     = case applyPayload payloadDependentState tbPayload of
         Left err  -> throwError $ InvalidPayload err
         Right st' -> return     $ pureLedgerResult
+                                $ forgetLedgerTablesValues
                                 $ TestLedger {
                                     lastAppliedPoint      = Chain.blockPoint tb
                                   , payloadDependentState = st'
@@ -500,6 +501,7 @@ instance PayloadSemantics ptype
     case applyPayload payloadDependentState tbPayload of
         Left err  -> error $ "Found an error when reapplying a block: " ++ show err
         Right st' ->              pureLedgerResult
+                                $ forgetLedgerTablesValues
                                 $ TestLedger {
                                     lastAppliedPoint      = Chain.blockPoint tb
                                   , payloadDependentState = st'
@@ -570,7 +572,7 @@ instance PayloadSemantics ptype => IsLedger (LedgerState (TestBlockWith ptype)) 
 
   applyChainTickLedgerResult _ _ = pureLedgerResult
                                  . TickedTestLedger
-                                 . noNewTickingValues
+                                 . noNewTickingDiffs
 
 instance PayloadSemantics ptype => UpdateLedger (TestBlockWith ptype)
 

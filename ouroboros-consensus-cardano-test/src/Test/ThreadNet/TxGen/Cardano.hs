@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Tele
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig, LedgerState,
                      TickedLedgerState, ValuesMK, applyChainTick,
-                     mappendValuesTicked, projectLedgerTables, forgetLedgerStateTables)
+                     projectLedgerTables, forgetLedgerStateTables, applyDiffsLedgerTablesTicked)
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
 import           Cardano.Crypto (toVerification)
@@ -227,7 +227,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
     mbUTxO =
           fmap getUTxOShelley
         . ejectShelleyTickedLedgerState
-        . mappendValuesTicked (projectLedgerTables lst)
+        . flip applyDiffsLedgerTablesTicked (projectLedgerTables lst)
         . applyChainTick lcfg curSlot
         . forgetLedgerStateTables
         $ lst
