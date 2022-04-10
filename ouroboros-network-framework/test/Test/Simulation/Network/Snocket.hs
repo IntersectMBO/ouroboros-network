@@ -1,15 +1,16 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DerivingVia           #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE NumericUnderscores    #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 
 -- TODO: Create a 'snocket' package, in order to avoid having to have
 -- ouroboros-network-testing as a dependency for this cabal library.
@@ -39,6 +40,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (traverse_)
 import           Data.Functor (void)
 import qualified Data.Map as Map
+import           Data.Monoid.Synchronisation
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Text.Printf
@@ -174,6 +176,8 @@ clientServerSimulation
        , MonadThrow  (STM m)
        , MonadTime        m
        , MonadTimer       m
+       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
 
        , Serialise payload
        , Eq payload
@@ -666,5 +670,6 @@ assertNetworkState localAddress remoteAddress getState res = do
                                                remoteAddress))
       Left _ -> return res
 
-traceTime :: MonadMonotonicTime m => Tracer m (Time, a) -> Tracer m a
+traceTime :: MonadMonotonicTime m
+          => Tracer m (Time, a) -> Tracer m a
 traceTime = contramapM (\a -> (,a) <$> getMonotonicTime)

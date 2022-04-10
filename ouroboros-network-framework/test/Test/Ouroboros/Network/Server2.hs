@@ -1,21 +1,22 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 -- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -54,7 +55,7 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import           Data.Monoid (Sum (..))
-import           Data.Monoid.Synchronisation (FirstToFinish (..))
+import           Data.Monoid.Synchronisation
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
@@ -330,6 +331,12 @@ withInitiatorOnlyConnectionManager
        , resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
        , Serialise req, Typeable req
+       , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Semigroup (LastToFinishM stm x)
+       , forall x stm. ( stm ~ STM m
+                       , Monoid x
+                       )           => Monoid    (LastToFinishM stm x)
        , MonadAsync m
        , MonadFix m
        , MonadLabelledSTM m
@@ -484,6 +491,12 @@ withBidirectionalConnectionManager
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
        , Serialise req, Typeable req
+       , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Semigroup (LastToFinishM stm x)
+       , forall x stm. ( stm ~ STM m
+                       , Monoid x
+                       )           => Monoid    (LastToFinishM stm x)
 
        -- debugging
        , MonadAsync m
@@ -744,6 +757,12 @@ unidirectionalExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
+       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Semigroup (LastToFinishM stm a)
+       , forall a stm. ( stm ~ STM m
+                       , Monoid a
+                       )           => Monoid    (LastToFinishM stm a)
 
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
@@ -846,6 +865,12 @@ bidirectionalExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
+       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Semigroup (LastToFinishM stm a)
+       , forall a stm. ( stm ~ STM m
+                       , Monoid a
+                       )           => Monoid    (LastToFinishM stm a)
 
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
@@ -1458,6 +1483,12 @@ multinodeExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
+       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Semigroup (LastToFinishM stm a)
+       , forall a stm. ( stm ~ STM m
+                       , Monoid a
+                       )           => Monoid    (LastToFinishM stm a)
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
        , Serialise req, Show req
@@ -3484,6 +3515,12 @@ multiNodeSimTracer :: ( Monad m, MonadFix m, MonadTimer m, MonadLabelledSTM m
                       , MonadThrow (STM m), MonadSay m, MonadAsync m
                       , MonadEvaluate m, MonadFork m, MonadST m
                       , Serialise req, Show req, Eq req, Typeable req
+                      , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+                      , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
+                      , forall a stm. stm ~ STM m => Semigroup (LastToFinishM stm a)
+                      , forall a stm. ( stm ~ STM m
+                                      , Monoid a
+                                      )           => Monoid    (LastToFinishM stm a)
                       )
                    => req
                    -> DataFlow

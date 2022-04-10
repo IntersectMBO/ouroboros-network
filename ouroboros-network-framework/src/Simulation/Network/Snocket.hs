@@ -1,13 +1,14 @@
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE DerivingStrategies  #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 -- | This module provides simulation environment and a snocket implementation
 -- suitable for 'IOSim'.
@@ -386,6 +387,7 @@ withSnocket
        , Ord      peerAddr
        , Typeable peerAddr
        , Show     peerAddr
+       , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
        )
     => Tracer m (WithAddr (TestAddress peerAddr)
                           (SnocketTrace m (TestAddress peerAddr)))
@@ -600,6 +602,7 @@ mkSnocket :: forall m addr.
              , GlobalAddressScheme addr
              , Ord  addr
              , Show addr
+             , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
              )
           => NetworkState m (TestAddress addr)
           -> Tracer m (WithAddr (TestAddress addr)

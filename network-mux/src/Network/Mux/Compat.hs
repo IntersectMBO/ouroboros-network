@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTSyntax                #-}
 {-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE QuantifiedConstraints     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
@@ -34,6 +35,7 @@ module Network.Mux.Compat
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)
+import           Data.Monoid.Synchronisation
 
 import           Control.Applicative ((<|>))
 import           Control.Monad
@@ -94,6 +96,8 @@ muxStart
        , MonadTime  m
        , MonadTimer m
        , MonadMask m
+       , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
        )
     => Tracer m MuxTrace
     -> MuxApplication mode m a b

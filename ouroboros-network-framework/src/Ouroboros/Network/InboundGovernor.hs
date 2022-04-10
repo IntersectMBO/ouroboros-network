@@ -1,16 +1,17 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
 
 -- 'runResponder' is using a redundant constraint.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -95,6 +96,12 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
                    , MonadMask     m
                    , Ord peerAddr
                    , HasResponder muxMode ~ True
+                   , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+                   , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+                   , forall x stm. stm ~ STM m => Semigroup (LastToFinishM stm x)
+                   , forall x stm. ( stm ~ STM m
+                                   , Monoid x
+                                   )           => Monoid    (LastToFinishM stm x)
                    )
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)

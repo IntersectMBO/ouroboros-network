@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTSyntax                #-}
 {-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE QuantifiedConstraints     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
@@ -203,6 +204,8 @@ runMux :: forall m mode.
           , MonadTime  m
           , MonadTimer m
           , MonadMask m
+          , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+          , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
           )
        => Tracer m MuxTrace
        -> Mux mode m
@@ -347,6 +350,8 @@ monitor :: forall mode m.
            , MonadAsync m
            , MonadMask m
            , MonadThrow (STM m)
+           , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+           , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
            )
         => Tracer m MuxTrace
         -> TimeoutFn m

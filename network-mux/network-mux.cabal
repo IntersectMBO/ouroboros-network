@@ -126,6 +126,7 @@ test-suite test
                        strict-stm,
                        io-sim            >=0.2 && < 0.3,
                        contra-tracer,
+                       monoidal-synchronisation,
                        network-mux,
                        Win32-network,
 

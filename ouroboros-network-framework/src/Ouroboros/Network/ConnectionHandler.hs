@@ -6,6 +6,7 @@
 {-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE QuantifiedConstraints     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
@@ -48,6 +49,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Monoid.Synchronisation
 import           Data.Typeable (Typeable)
 
 import           Network.Mux hiding (miniProtocolNum)
@@ -184,6 +186,8 @@ makeConnectionHandler
        , Ord      versionNumber
        , Show     peerAddr
        , Typeable peerAddr
+       , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
        )
     => Tracer m (WithMuxBearer (ConnectionId peerAddr) MuxTrace)
     -> SingMuxMode muxMode

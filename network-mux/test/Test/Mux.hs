@@ -4,9 +4,11 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
@@ -26,6 +28,7 @@ import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
 import           Data.List (dropWhileEnd, nub)
 import qualified Data.List as List
 import qualified Data.Map as M
+import           Data.Monoid.Synchronisation (FirstToFinish)
 import           Data.Tuple (swap)
 import           Data.Word
 import qualified System.Random.SplitMix as SM
@@ -982,17 +985,19 @@ encodeInvalidMuxSDU sdu =
 -- | Verify ingress processing of valid and invalid SDUs.
 --
 prop_demux_sdu :: forall m.
-                    ( MonadAsync m
-                    , MonadFork m
-                    , MonadLabelledSTM m
-                    , MonadMask m
-                    , MonadSay m
-                    , MonadThrow (STM m)
-                    , MonadTime m
-                    , MonadTimer m
-                    )
-                 => ArbitrarySDU
-                 -> m Property
+                  ( MonadAsync m
+                  , MonadFork m
+                  , MonadLabelledSTM m
+                  , MonadMask m
+                  , MonadSay m
+                  , MonadThrow (STM m)
+                  , MonadTime m
+                  , MonadTimer m
+                  , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+                  , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
+                  )
+               => ArbitrarySDU
+               -> m Property
 prop_demux_sdu a = do
     r <- run a
     return $ tabulate "SDU type" [stateLabel a] $
@@ -1092,7 +1097,7 @@ prop_demux_sdu a = do
         serverRes <- runMiniProtocol serverMux (miniProtocolNum serverApp) (miniProtocolDir serverApp)
                  StartEagerly server_mp
 
-        said <- async $ runMux serverTracer serverMux serverBearer
+        said <- async $ runMux @m serverTracer serverMux serverBearer
         return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.
@@ -1299,6 +1304,8 @@ prop_mux_start_mX :: forall m.
                        , MonadThrow (STM m)
                        , MonadTime m
                        , MonadTimer m
+                       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+                       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
                        )
                     => DummyApps
                     -> DiffTime
@@ -1345,6 +1352,8 @@ prop_mux_restart_m :: forall m.
                        , MonadThrow (STM m)
                        , MonadTime m
                        , MonadTimer m
+                       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+                       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
                        )
                     => DummyRestartingApps
                     -> m Property
@@ -1495,6 +1504,8 @@ prop_mux_start_m :: forall m.
                        , MonadThrow (STM m)
                        , MonadTime m
                        , MonadTimer m
+                       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+                       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
                        )
                     => MuxBearer m
                     -> (DummyApp -> m ())
@@ -1715,6 +1726,8 @@ close_experiment
        , Eq resp
        , Show req
        , Show resp
+       , forall a stm. stm ~ STM m => Semigroup (FirstToFinish stm a)
+       , forall a stm. stm ~ STM m => Monoid    (FirstToFinish stm a)
        )
     => Bool -- 'True' for @m ~ IO@
     -> FaultInjection

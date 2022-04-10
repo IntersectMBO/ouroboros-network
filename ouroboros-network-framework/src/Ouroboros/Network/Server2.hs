@@ -1,15 +1,16 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeOperators         #-}
 
 -- 'runResponder' is using a redundant constraint.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -46,6 +47,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.List (intercalate)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Monoid.Synchronisation
 import           Data.Void (Void)
 import           GHC.IO.Exception
 #if !defined(mingw32_HOST_OS)
@@ -122,6 +124,12 @@ run :: forall muxMode socket peerAddr versionNumber m a b.
        , MonadTime     m
        , MonadTimer    m
        , HasResponder muxMode ~ True
+       , forall x stm. stm ~ STM m => Semigroup (LastToFinishM stm x)
+       , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+       , forall x stm. ( stm ~ STM m
+                       , Monoid x
+                       )           => Monoid    (LastToFinishM stm x)
        , Ord      peerAddr
        , Show     peerAddr
        )

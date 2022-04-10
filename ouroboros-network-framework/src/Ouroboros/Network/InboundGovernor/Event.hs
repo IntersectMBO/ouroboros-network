@@ -1,10 +1,14 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- Internals of inbound protocol governor.  This module provide 'Event' type,
 -- which enumerates external events and stm action which block until these
@@ -123,7 +127,10 @@ data Terminated muxMode peerAddr m a b = Terminated {
 --
 -- /triggers:/ 'MiniProtocolTerminated'.
 --
-firstMiniProtocolToFinish :: MonadSTM m
+firstMiniProtocolToFinish :: ( MonadSTM m
+                             , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+                             , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+                             )
                           => EventSignal muxMode peerAddr m a b
 firstMiniProtocolToFinish
     connId
@@ -158,7 +165,10 @@ firstMiniProtocolToFinish
 -- @Unidirectional@ connections.
 --
 firstPeerPromotedToWarm :: forall muxMode peerAddr m a b.
-                           MonadSTM m
+                           ( MonadSTM m
+                           , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+                           , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+                           )
                         => EventSignal muxMode peerAddr m a b
 firstPeerPromotedToWarm
     connId
@@ -209,7 +219,14 @@ firstPeerPromotedToWarm
 -- run running).
 --
 firstPeerPromotedToHot :: forall muxMode peerAddr m a b.
-                          MonadSTM m
+                          ( MonadSTM m
+                          , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+                          , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+                          , forall x stm. stm ~ STM m => Semigroup (LastToFinishM stm x)
+                          , forall x stm. ( stm ~ STM m
+                                          , Monoid x
+                                          )           => Monoid    (LastToFinishM stm x)
+                          )
                        => EventSignal muxMode peerAddr m a b
 firstPeerPromotedToHot
    connId connState@ConnectionState { csRemoteState }
@@ -259,7 +276,10 @@ firstPeerPromotedToHot
 -- `RemoteHot → RemoteWarm` transition.
 --
 firstPeerDemotedToWarm :: forall muxMode peerAddr m a b.
-                          MonadSTM m
+                          ( MonadSTM m
+                          , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+                          , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+                          )
                        => EventSignal muxMode peerAddr m a b
 firstPeerDemotedToWarm
     connId connState@ConnectionState { csRemoteState }
@@ -303,7 +323,14 @@ firstPeerDemotedToWarm
 --
 -- /triggers:/ 'DemotedToColdRemote'
 --
-firstPeerDemotedToCold :: MonadSTM m
+firstPeerDemotedToCold :: ( MonadSTM m
+                          , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+                          , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+                          , forall x stm. stm ~ STM m => Semigroup (LastToFinishM stm x)
+                          , forall x stm. ( stm ~ STM m
+                                          , Monoid x
+                                          )           => Monoid    (LastToFinishM stm x)
+                          )
                        => EventSignal muxMode peerAddr m a b
 firstPeerDemotedToCold
     connId
@@ -345,7 +372,10 @@ firstPeerDemotedToCold
 
 -- | First peer for which the 'RemoteIdle' timeout expires.
 --
-firstPeerCommitRemote :: MonadSTM m
+firstPeerCommitRemote :: ( MonadSTM m
+                         , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+                         , forall x stm. stm ~ STM m => Monoid    (FirstToFinish stm x)
+                         )
                       => EventSignal muxMode peerAddr m a b
 firstPeerCommitRemote
     connId ConnectionState { csRemoteState }

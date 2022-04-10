@@ -11,6 +11,8 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
 -- | The implementation of connection manager.
 --
 module Ouroboros.Network.ConnectionManager.Core
@@ -531,6 +533,11 @@ withConnectionManager
        , MonadMonotonicTime m
        , MonadThrow    (STM m)
        , MonadTimer         m
+       , forall x stm. stm ~ STM m => Semigroup (FirstToFinish stm x)
+       , forall x stm. stm ~ STM m => Semigroup (LastToFinishM stm x)
+       , forall x stm. ( stm ~ STM m
+                       , Monoid x
+                       )           => Monoid    (LastToFinishM stm x)
 
        , Ord      peerAddr
        , Show     peerAddr
