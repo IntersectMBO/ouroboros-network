@@ -97,7 +97,8 @@ import           Data.Bifoldable
 import           Data.Bifunctor (bimap)
 import           Data.Map.Strict (Map)
 import           Data.Maybe (fromMaybe)
-import           Data.Monoid (Endo (..))
+import           Data.Monoid (Alt (..), Endo (..))
+import           Data.Monoid.Synchronisation
 import           Data.Dynamic (Dynamic, toDyn)
 import           Data.Semigroup (Max (..))
 import           Data.Typeable
@@ -929,3 +930,51 @@ withStepTimelimit n e = e{explorationStepTimelimit = Just n}
 
 withReplay :: ScheduleControl -> ExplorationSpec
 withReplay r e = e{explorationReplay = Just r}
+
+
+instance Semigroup (FirstToFinish (IOSim s) a) where
+    FirstToFinish a <> FirstToFinish b = FirstToFinish $ either id id <$> race a b
+
+instance Monoid (FirstToFinish (IOSim s) a) where
+    mempty = FirstToFinish $ forever $ threadDelay 3600
+
+instance Semigroup (FirstToFinish (STM s) a) where
+    FirstToFinish a <> FirstToFinish b = FirstToFinish . getAlt
+                                       $ Alt a <|> Alt b
+instance Monoid (FirstToFinish (STM s) a) where
+    mempty = FirstToFinish . getAlt $ mempty
+
+instance Semigroup (LastToFinish (IOSim s) a) where
+    LastToFinish left <> LastToFinish right = LastToFinish $ do
+      withAsync left $ \a ->
+        withAsync right $ \b ->
+          MonadSTM.atomically $ runLastToFinish $
+               LastToFinish (waitSTM a)
+            <> LastToFinish (waitSTM b)
+
+instance Semigroup (LastToFinish (STM s) a) where
+    LastToFinish left <> LastToFinish right = LastToFinish $ do
+      a <-  Left  <$> left
+        <|> Right <$> right
+      case a of
+        Left  {} -> right
+        Right {} -> left
+
+instance Semigroup (LastToFinishM (IOSim s) a) where
+    LastToFinishM left <> LastToFinishM right = LastToFinishM $ do
+      withAsync left $ \a ->
+        withAsync right $ \b ->
+          MonadSTM.atomically $ runLastToFinishM $
+               LastToFinishM (waitSTM a)
+            <> LastToFinishM (waitSTM b)
+
+instance Semigroup (LastToFinishM (STM s) a) where
+    LastToFinishM left <> LastToFinishM right = LastToFinishM $ do
+      a <-  Left  <$> left
+        <|> Right <$> right
+      case a of
+        Left  {} -> right
+        Right {} -> left
+
+instance Monoid a => Monoid (LastToFinishM (STM s) a) where
+    mempty = LastToFinishM (pure mempty)

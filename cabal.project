@@ -5,6 +5,7 @@ packages: ./typed-protocols
           ./typed-protocols-examples
           ./ouroboros-network-testing
           ./monoidal-synchronisation
+          ./monoidal-synchronisation-test
           ./network-mux
           ./ouroboros-network-framework
           ./ouroboros-network
@@ -39,6 +40,9 @@ package Win32-network
 
 package io-classes
   flags: +asserts
+
+package monoidal-synchronisation-test
+  tests: True
 
 package strict-stm
   flags: +asserts

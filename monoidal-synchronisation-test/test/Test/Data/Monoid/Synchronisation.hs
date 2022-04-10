@@ -1,5 +1,7 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 module Test.Data.Monoid.Synchronisation where
 
 import           Control.Monad.Class.MonadFork
@@ -24,6 +26,8 @@ lastToFinishExperiment
     :: forall m.
        ( MonadFork  m
        , MonadSTM   m
+       , forall a stm. stm ~ STM m
+                   => Semigroup (LastToFinish stm a)
        )
     => Bool -> m Bool
 lastToFinishExperiment writeInSingleTransaction = do

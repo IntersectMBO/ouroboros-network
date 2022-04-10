@@ -1,10 +1,12 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
 module Data.Monoid.Synchronisation
@@ -23,7 +25,10 @@ import           Data.Monoid (Alt (..), Ap (..))
 import           GHC.Generics (Generic, Generic1)
 
 import           Control.Applicative (Alternative (..))
-import           Control.Monad (MonadPlus (..))
+import           Control.Monad (MonadPlus (..), forever)
+import           Control.Monad.STM
+import           Control.Concurrent (threadDelay)
+import           Control.Concurrent.Async
 
 
 -- | First-to-finish synchronisation.  Like 'Alt' it is a monoid under '<|>'.
@@ -48,11 +53,22 @@ newtype FirstToFinish m a = FirstToFinish { runFirstToFinish :: m a }
                    , MonadPlus
                    , Traversable
                    )
-  deriving Semigroup     via (Alt m a)
-  deriving Monoid        via (Alt m a)
   deriving Foldable      via (Alt m)
   deriving Contravariant via (Alt m)
 
+
+instance Semigroup (FirstToFinish IO a) where
+    FirstToFinish a <> FirstToFinish b = FirstToFinish $ either id id <$> race a b
+
+instance Monoid (FirstToFinish IO a) where
+    mempty = FirstToFinish $ forever $ threadDelay 3_600_000
+
+instance Semigroup (FirstToFinish STM a) where
+    FirstToFinish a <> FirstToFinish b = FirstToFinish . getAlt
+                                       $ Alt a <|> Alt b
+
+instance Monoid (FirstToFinish STM a) where
+    mempty = FirstToFinish . getAlt $ mempty
 
 -- | Last-to-finish synchronisation.  It is the multiplicative semigroup of
 -- the [near-semiring](https://www.wikiwand.com/en/Near-semiring) for which addition is
@@ -83,7 +99,15 @@ newtype LastToFinish m a = LastToFinish { runLastToFinish :: m a }
                    )
   deriving Foldable via (Ap m)
 
-instance MonadPlus m => Semigroup (LastToFinish m a) where
+instance Semigroup (LastToFinish IO a) where
+    LastToFinish left <> LastToFinish right = LastToFinish $ do
+      withAsync left $ \a ->
+        withAsync right $ \b ->
+          atomically $ runLastToFinish $
+               LastToFinish (waitSTM a)
+            <> LastToFinish (waitSTM b)
+
+instance Semigroup (LastToFinish STM a) where
     LastToFinish left <> LastToFinish right = LastToFinish $ do
       a <-  Left  <$> left
         <|> Right <$> right
@@ -99,9 +123,9 @@ lastToFirst = coerce
 
 
 -- | Last-to-finish synchronisation. Like 'Ap' it is a monoid under '<*>'.
--- The advantage over 'LastToFinish' is that it has a 'Monoid' instance, but
--- 'a' must be a 'Monoid' as well.  'LastToFinishM' and 'FirstToFinish' form
--- a unitial near-ring when @m ~ STM@.
+-- The advantage over 'LastToFinish' is that it has a 'Monoid' instance for the
+-- stm monad, although 'a' must be a 'Monoid'.  'LastToFinishM' and
+-- 'FirstToFinish' form a unitial near-ring when @m ~ STM@.
 --
 -- > -- | Read all 'TMVar's and combine the result using 'Monoid' instance.
 -- > --
@@ -119,9 +143,26 @@ newtype LastToFinishM m a = LastToFinishM { runLastToFinishM :: m a }
                    , MonadPlus
                    , Traversable
                    )
-  deriving Semigroup via (Ap m a)
-  deriving Monoid    via (Ap m a)
   deriving Foldable  via (Ap m)
+
+instance Semigroup (LastToFinishM IO a) where
+    LastToFinishM left <> LastToFinishM right = LastToFinishM $ do
+      withAsync left $ \a ->
+        withAsync right $ \b ->
+          atomically $ runLastToFinishM $
+               LastToFinishM (waitSTM a)
+            <> LastToFinishM (waitSTM b)
+
+instance Semigroup (LastToFinishM STM a) where
+    LastToFinishM left <> LastToFinishM right = LastToFinishM $ do
+      a <-  Left  <$> left
+        <|> Right <$> right
+      case a of
+        Left  {} -> right
+        Right {} -> left
+
+instance Monoid a => Monoid (LastToFinishM STM a) where
+    mempty = LastToFinishM (pure mempty)
 
 firstToLastM :: FirstToFinish m a -> LastToFinishM m a
 firstToLastM = coerce
