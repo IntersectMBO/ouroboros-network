@@ -296,7 +296,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
           newLedger     =
-              either (error . show) (applyDiffsLedgerTables oldLedger . projectLedgerTables . lrResult)
+              either (error . show) (applyLedgerTablesDiffs oldLedger . lrResult)
             $ runExcept $ appliedResult
       when (blockSlot blk >= slotNo) $ storeLedgerState blk newLedger
       when (blockSlot blk > slotNo) $ issueWarning blk
@@ -371,7 +371,7 @@ checkNoThunksEvery
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
           newLedger     =
-              either (error . show) (applyDiffsLedgerTables oldLedger . projectLedgerTables . lrResult)
+              either (error . show) (applyLedgerTablesDiffs oldLedger . lrResult)
             $ runExcept $ appliedResult
           bn            = blockNo blk
       when (unBlockNo bn `mod` nBlocks == 0 ) $ checkNoThunks bn newLedger
@@ -408,7 +408,7 @@ traceLedgerProcessing
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
           newLedger     =
-              either (error . show) (applyDiffsLedgerTables oldLedger . projectLedgerTables . lrResult)
+              either (error . show) (applyLedgerTablesDiffs oldLedger . lrResult)
             $ runExcept $ appliedResult
           traces        =
             (HasAnalysis.emitTraces $

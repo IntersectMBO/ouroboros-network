@@ -602,13 +602,10 @@ applyHelper f cfg blk stBefore = do
     let track ::
              LedgerState (ShelleyBlock era) ValuesMK
           -> LedgerState (ShelleyBlock era) TrackingMK
-        track stAfter =
-          zipOverLedgerTables
-            (\after before -> calculateDifference before after)
-            stAfter
-            (projectLedgerTablesTicked stBefore)
+        track = calculateDifference stBefore
 
-    return $ ledgerResult <&> \newNewEpochState -> trackingTablesToDiffs $ track $ unstowLedgerTables $ ShelleyLedgerState {
+
+    return $ ledgerResult <&> \newNewEpochState -> forgetLedgerTablesValues $ track $ unstowLedgerTables $ ShelleyLedgerState {
         shelleyLedgerTip = NotOrigin ShelleyTip {
             shelleyTipBlockNo = blockNo   blk
           , shelleyTipSlotNo  = blockSlot blk

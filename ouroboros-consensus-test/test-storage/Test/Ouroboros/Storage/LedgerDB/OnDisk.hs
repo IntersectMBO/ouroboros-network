@@ -188,7 +188,7 @@ instance PayloadSemantics Tx where
       track :: PayloadDependentState Tx ValuesMK -> PayloadDependentState Tx TrackingMK
       track stAfter =
           stAfter { utxtoktables =
-                      TokenToTValue $ calculateDifference utxtokBefore utxtokAfter
+                      TokenToTValue $ rawCalculateDifference utxtokBefore utxtokAfter
                   }
         where
           utxtokBefore = testUtxtokTable $ utxtoktables st
@@ -198,11 +198,13 @@ instance PayloadSemantics Tx where
     TokenToTValue $ ApplyKeysMK $ HD.UtxoKeys $ Set.singleton consumed
 
 deriving stock    instance (Eq        (PayloadDependentState Tx EmptyMK))
+deriving stock    instance (Eq        (PayloadDependentState Tx DiffMK))
 deriving stock    instance (Eq        (PayloadDependentState Tx ValuesMK))
 deriving stock    instance (Show      (PayloadDependentState Tx (ApplyMapKind' mk)))
 deriving anyclass instance (Serialise (PayloadDependentState Tx EmptyMK))
 deriving anyclass instance (ToExpr    (PayloadDependentState Tx ValuesMK))
 deriving anyclass instance (NoThunks  (PayloadDependentState Tx EmptyMK))
+deriving anyclass instance (NoThunks  (PayloadDependentState Tx DiffMK))
 deriving anyclass instance (NoThunks  (PayloadDependentState Tx ValuesMK))
 deriving anyclass instance (NoThunks  (PayloadDependentState Tx SeqDiffMK))
 
@@ -251,6 +253,7 @@ deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) Values
 deriving newtype  instance Show     (LedgerTables (LedgerState TestBlock) (ApplyMapKind' mk))
 deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) EmptyMK)
 deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) DiffMK)
 deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) SeqDiffMK)
 
 instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
@@ -671,10 +674,10 @@ runMock cmd initMock =
     cfg = extLedgerDbConfig (mockSecParam initMock)
 
     go :: Cmd MockSnap -> Mock -> (Success MockSnap, Mock)
-    go Current       mock = (Ledger (forgetLedgerStateTables $ cur (mockLedger mock)), mock)
+    go Current       mock = (Ledger (forgetLedgerTables $ cur (mockLedger mock)), mock)
     go (Push b)      mock = first MaybeErr $ mockUpdateLedger (push b)      mock
     go (Switch n bs) mock = first MaybeErr $ mockUpdateLedger (switch n bs) mock
-    go Restore       mock = (Restored (initLog, forgetLedgerStateTables $ cur (mockLedger mock')), mock')
+    go Restore       mock = (Restored (initLog, forgetLedgerTables $ cur (mockLedger mock')), mock')
       where
         initLog = mockInitLog mock
         mock'   = applyMockLog initLog mock
@@ -750,7 +753,7 @@ runMock cmd initMock =
     push b = do
         ls <- State.get
         l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (cur ls)
-        State.put ((b, applyDiffsLedgerTables (cur ls) $ projectLedgerTables l'):ls)
+        State.put ((b, applyLedgerTablesDiffs (cur ls) l'):ls)
 
     switch :: Word64
            -> [TestBlock]
@@ -830,7 +833,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initDB :: LedgerDB' TestBlock
     initDB = ledgerDbWithAnchor
                RunOnlyNew
-               (forgetLedgerStateTables $ testInitExtLedgerWithState initialTestLedgerState)
+               (forgetLedgerTables $ testInitExtLedgerWithState initialTestLedgerState)
 
     getBlock ::
          RealPoint TestBlock

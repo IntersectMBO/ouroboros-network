@@ -386,68 +386,58 @@ applyBlock cfg ap db = case ap of
     Weaken ap' ->
         applyBlock cfg ap' db
     _ -> do
-      legacyLs' <- mapM (`legacyApplyBlock` ap) legacyLs
-      modernLs' <- modernApplyBlock ap
+      legacyDiff <- mapM (`legacyApplyBlock` ap) legacyLs
+      modernDiff <- modernApplyBlock ap
 
-      -- let _ = legacyLs' :: Maybe (l TrackingMK)
-      --     _ = modernLs' :: l TrackingMK
+      let legacyValues :: Maybe (l ValuesMK)
+          legacyValues = applyLedgerTablesDiffs <$> legacyLs <*> legacyDiff
+          legacyTracking :: Maybe (l TrackingMK)
+          legacyTracking = do
+            leg'  <- legacyDiff
+            leg'' <- legacyValues
+            return $ leg'' `withLedgerTables` zipLedgerTables (\(ApplyValuesMK vals) (ApplyDiffMK diff) -> ApplyTrackingMK vals diff) (projectLedgerTables leg'') (projectLedgerTables leg')
 
-      --     legacyValues :: Maybe (l ValuesMK)
-      --     legacyValues = forgetLedgerStateTracking <$> legacyLs'
+          mixViaLegacy :: LedgerTables l DiffMK -> Maybe (LedgerTables l ValuesMK)
+          mixViaLegacy diff = projectLedgerTables . (\l -> l `withLedgerTables` zipLedgerTables rawApplyDiffs (projectLedgerTables l) diff) <$> legacyLs
 
-      --     _modernValues ::l ValuesMK
-      --     _modernValues = forgetLedgerStateTracking modernLs'
+          -- Ensure the given tables are empty if the old legacy state has no
+          -- tables
+          idViaLegacy :: IsApplyMapKind mk => l mk -> Maybe (LedgerTables l mk)
+          idViaLegacy = case legacyLs of
+            Nothing -> const Nothing
+            Just leg ->
+              Just
+              . projectLedgerTables
+              . withLedgerTables leg
+              . projectLedgerTables
 
-      --     legacyDiff :: Maybe (LedgerTables l DiffMK)
-      --     legacyDiff = projectLedgerTables . trackingTablesToDiffs <$> legacyLs'
+      -- Note that we cannot directly compare legacy and modern ValuesMK, since
+      -- the legacy ValuesMK include the whole map, not just the ValuesMK that
+      -- were recently read/created.
+      --
+      -- We also cannot compare something routed through old states/tables with
+      -- something that was only routed through new states/tables, since the old
+      -- state might have no tables!
 
-      --     modernDiff :: LedgerTables l DiffMK
-      --     modernDiff = projectLedgerTables $ trackingTablesToDiffs modernLs'
+      let annihilate :: l any -> l EmptyMK
+          annihilate =
+              stowLedgerTables
+            . flip withLedgerTables polyEmptyLedgerTables
 
-      --     mixViaLegacy :: LedgerTables l DiffMK -> Maybe (LedgerTables l ValuesMK)
-      --     mixViaLegacy diff = projectLedgerTables . flip applyDiffsLedgerTables diff <$> legacyLs
+          checks =
+            case (,,) <$> legacyTracking <*> legacyDiff <*> legacyValues of
+              Just (legLs', legDiff, legValues) -> [
+                  annihilate         legLs' == annihilate         modernDiff
+                , forgetLedgerTables legLs' == forgetLedgerTables modernDiff
+                , modernDiff                == legDiff
+                , asTypeOf True $ idViaLegacy legValues     == mixViaLegacy (projectLedgerTables modernDiff)
+                ]
+              _ -> [True]
 
-      --     -- Ensure the given tables are empty if the old legacy state has no
-      --     -- tables
-      --     idViaLegacy :: IsApplyMapKind mk => l mk -> Maybe (LedgerTables l mk)
-      --     idViaLegacy = case legacyLs of
-      --       Nothing -> const Nothing
-      --       Just leg ->
-      --         Just
-      --         . projectLedgerTables
-      --         . withLedgerTables leg
-      --         . projectLedgerTables
+      when (any not checks) $ error $ show checks
 
-      -- -- Note that we cannot directly compare legacy and modern ValuesMK, since
-      -- -- the legacy ValuesMK include the whole map, not just the ValuesMK that
-      -- -- were recently read/created.
-      -- --
-      -- -- We also cannot compare something routed through old states/tables with
-      -- -- something that was only routed through new states/tables, since the old
-      -- -- state might have no tables!
-
-      -- let annihilate :: l TrackingMK -> l EmptyMK
-      --     annihilate =
-      --         stowLedgerTables
-      --       . flip withLedgerTables polyEmptyLedgerTables
-
-      --     checks =
-      --       case (,,) <$> legacyLs' <*> legacyDiff <*> legacyValues of
-      --         Just (legLs', legDiff, legValues) -> [
-      --             annihilate              legLs' == annihilate              modernLs'
-      --           , forgetLedgerStateTables legLs' == forgetLedgerStateTables modernLs'
-      --           , modernDiff                     == legDiff
-      --           , asTypeOf True $ idViaLegacy legValues     == mixViaLegacy modernDiff
-      --           ]
-      --         _ -> [True]
-
-      -- when (any not checks) $ error $ show checks
-
-      return (undefined legacyLs', modernLs')
+      return (applyLedgerTablesDiffs <$> legacyLs <*> legacyDiff, modernDiff)
   where
-    _modernLs :: l EmptyMK
-    _modernLs = ledgerDbCurrent db
-
     legacyLs :: Maybe (l ValuesMK)
     legacyLs = ledgerDbCurrentValues db
 
@@ -748,7 +738,7 @@ ledgerDbSnapshots LedgerDB{..} = case ledgerDbCheckpoints of
   Nothing -> []
   Just legacyDb ->
       zip [0..]
-    $ map (forgetLedgerStateTables . unCheckpoint)
+    $ map (forgetLedgerTables . unCheckpoint)
     $ AS.toNewestFirst legacyDb <> [AS.anchor legacyDb]
 
 -- | How many blocks can we currently roll back?

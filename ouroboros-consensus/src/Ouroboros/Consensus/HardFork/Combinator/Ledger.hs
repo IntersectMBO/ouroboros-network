@@ -201,11 +201,11 @@ tickOne :: SingleEraBlock blk
 tickOne ei slot sopIdx partialCfg st =
       Comp
     . fmap ( FlipTickedLedgerState
-           . prependDiffsTicked (unFlip st)
+           . prependLedgerTablesDiffsTicked (unFlip st)
            )
     . embedLedgerResult (injectLedgerEvent sopIdx)
     . applyChainTickLedgerResult (completeLedgerConfig' ei partialCfg) slot
-    . forgetLedgerStateTables
+    . forgetLedgerTables
     . unFlip
     $ st
 
@@ -511,7 +511,7 @@ instance CanHardFork' xs => LedgerSupportsProtocol (HardForkBlock xs) where
           , currentState = AnnForecast {
                 annForecast      = mapForecast WrapTickedLedgerView $
                                      ledgerViewForecastAt cfg' st
-              , annForecastState = forgetLedgerStateTables st
+              , annForecastState = forgetLedgerTables st
               , annForecastTip   = ledgerTipSlot st
               , annForecastEnd   = History.mkUpperBound params start <$>
                                      singleEraTransition' cfg params start st
