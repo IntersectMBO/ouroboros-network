@@ -374,7 +374,7 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                                            slot
                                           dualLedgerStateAux
         , tickedDualLedgerStateAuxOrig =
-            forgetLedgerStateTables dualLedgerStateAux
+            forgetLedgerTables dualLedgerStateAux
         , tickedDualLedgerStateBridge  = dualLedgerStateBridge
         }
     where

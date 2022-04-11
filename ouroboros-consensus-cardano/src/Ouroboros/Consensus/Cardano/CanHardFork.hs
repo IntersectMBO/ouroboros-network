@@ -716,8 +716,8 @@ translateLedgerStateByronToShelleyWrapper =
     $ \_ (WrapLedgerConfig cfgShelley) ->
         TranslateLedgerState {
             translateLedgerStateWith = \epochNo ledgerByron ->
-                trackingTablesToDiffs
-              . flip (zipOverLedgerTables calculateDifference) polyEmptyLedgerTables
+                forgetLedgerTablesValues
+              . calculateAdditions
               . unstowLedgerTables
               $ ShelleyLedgerState {
                     shelleyLedgerTip =

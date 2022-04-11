@@ -256,13 +256,7 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
         st3 = ShelleyLedger.cnv $ unstowLedgerTables $ ShelleyLedger.vnc st2
 
         st4 :: TickedLedgerState (ShelleyBlock era) TrackingMK
-        st4 =
-          overLedgerTablesTicked
-            (zipLedgerTables
-               calculateDifference
-               (projectLedgerTablesTicked st0)
-            )
-            st3
+        st4 = calculateDifferenceTicked st0 st3
 
     pure (st4, mkShelleyValidatedTx vtx)
 
@@ -284,12 +278,7 @@ reapplyShelleyTx cfg slot vgtx st0 = do
           (SL.mkMempoolState innerSt)
           vtx
 
-    let st2 =
-            overLedgerTablesTicked
-              (zipLedgerTables
-                 calculateDifference
-                 (projectLedgerTablesTicked st0)
-              )
+    let st2 = calculateDifferenceTicked st0
           $ ShelleyLedger.cnv $ unstowLedgerTables $ ShelleyLedger.vnc
           $ set theLedgerLens mempoolState' st1
 

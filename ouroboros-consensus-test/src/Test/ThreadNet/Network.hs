@@ -343,7 +343,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         v <-
             uncheckedNewTVarM
           $ VDown Genesis
-          $ forgetLedgerStateTables ledgerState
+          $ forgetLedgerTables ledgerState
         pure (nid, v)
 
     -- fork the directed edges, which also allocates their status variables
@@ -861,7 +861,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                     Right st -> pure $ applyChainTick
                                         (configLedger pInfoConfig)
                                         currentSlot
-                                        (forgetLedgerStateTables st)
+                                        (forgetLedgerTables st)
 
                   -- forge the block usings the ledger state that includes
                   -- the EBB

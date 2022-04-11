@@ -168,7 +168,7 @@ fromChain cfg initState chain =
     anchorSnapshot NE.:| snapshots =
           fmap headerState
         . NE.scanl
-            (\st blk -> applyDiffsLedgerTables st $ projectLedgerTables $ tickThenReapply (ExtLedgerCfg cfg) blk st)
+            (\st blk -> applyLedgerTablesDiffs st $ tickThenReapply (ExtLedgerCfg cfg) blk st)
             initState
         . Chain.toOldestFirst
         $ chain

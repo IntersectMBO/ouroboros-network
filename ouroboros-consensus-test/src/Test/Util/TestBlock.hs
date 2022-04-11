@@ -320,6 +320,7 @@ class ( Typeable ptype
       , NoThunks ptype
 
       , Eq        (PayloadDependentState ptype EmptyMK)
+      , Eq        (PayloadDependentState ptype DiffMK)
       , Eq        (PayloadDependentState ptype ValuesMK)
 
       , forall mk'. Show (PayloadDependentState ptype (ApplyMapKind' mk'))
@@ -330,6 +331,7 @@ class ( Typeable ptype
       , NoThunks  (PayloadDependentState ptype EmptyMK)
       , NoThunks  (PayloadDependentState ptype ValuesMK)
       , NoThunks  (PayloadDependentState ptype SeqDiffMK)
+      , NoThunks  (PayloadDependentState ptype DiffMK)
 
       , TickedTableStuff     (LedgerState (TestBlockWith ptype))
       , StowableLedgerTables (LedgerState (TestBlockWith ptype))
@@ -526,6 +528,8 @@ deriving stock instance Eq (PayloadDependentState ptype EmptyMK)
   => Eq (LedgerState (TestBlockWith ptype) EmptyMK)
 deriving stock instance Eq (PayloadDependentState ptype ValuesMK)
   => Eq (LedgerState (TestBlockWith ptype) ValuesMK)
+deriving stock instance Eq (PayloadDependentState ptype DiffMK)
+  => Eq (LedgerState (TestBlockWith ptype) DiffMK)
 
 deriving stock instance Generic (LedgerState (TestBlockWith ptype) mk)
 

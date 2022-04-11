@@ -151,34 +151,34 @@ Key:  ┏━━━━━━━━━━━━┓  ╔═════════
       │          └─┘                                                                              │
       │           │                                                                               │
       │           ▼                                                                               │forget
-      │     ╔══════════╗                                                                    ╔══════════╗
-      │     ║          ║                    ┌─┐           ┌───────────┐            ┌──┐     ║          ║
-      │     ║ l Values ║───────────────────▶│◁│──────────▶│   apply   │───────────▶│<>│─────║ l Diffs  ║
-      │     ║          ║                    └─┘   l Values└───────────┘ l Diffs    └──┘     ║          ║
-      │     ╚══════════╝                     ▲                  ▲                   ▲       ╚══════════╝
-      │           │forget                    │                  │                   │             │
-      │           │                          │                  │                   │             │
-      │           │                          │                  │                   │             │
- ╔════════╗       │         ┌───────────┐    │                  \                   │             │
+      │     ╔══════════╗                         Ticked l Values                            ╔══════════╗
+      │     ║          ║                    ┌──┐          ┌───────────┐           ┌───┐     ║          ║
+      │     ║ l Values ║───────────────────▶│◁*│─────────▶│   apply   │──────────▶│◁*+│─────║ l Diffs  ║
+      │     ║          ║                    └──┘          └───────────┘ l Diffs   └───┘     ║          ║
+      │     ╚══════════╝                     ▲                     ▲                ▲       ╚══════════╝
+      │           │                          │                     │                │             │
+      │        ┌───┐                         │                     │                │             │
+      │        │||∅│                         │                     │                │             │
+ ╔════════╗    └───┘        ┌───────────┐    │                     \                │             │
  ║        ║╗      └────────▶│  ticking  │────┴──────────────────────────────────────┘             │
- ║ values ║║        l Empty └───────────┘ l Diff                /                                 │
- ║        ║║                                                    │                                 │
- ╚════════╝║                                                    │                                 │
-  ╚════════╝                                                    │                                 │
-      │    readDB                                               \                                 │
+ ║ values ║║        l Empty └───────────┘ Ticked l Diff            /                              │
+ ║        ║║                                                       │                              │
+ ╚════════╝║                                                       │                              │
+  ╚════════╝                                                       │                              │
+      │    readDB                                                  \                              │
       │◄──────────────────────── DbChangelog + BackendStore ◄─────────────────────────────────────┘
-      │                                                         /
- ╔════════╗                                                     │
- ║        ║╗                                                    │
- ║  keys  ║║                                                    │
- ║        ║║                                                    │
- ╚════════╝║                                                    │
-  ╚════════╝                                                    │
-      │ getNeededTxInputs                                       │
-      │                                                         │
-  ┌───┴───┐                                                     │
-  │       │                                                     │
-  │ Block ├─────────────────────────────────────────────────────┘
+      │                                                            /
+ ╔════════╗                                                        │
+ ║        ║╗                                                       │
+ ║  keys  ║║                                                       │
+ ║        ║║                                                       │
+ ╚════════╝║                                                       │
+  ╚════════╝                                                       │
+      │ getNeededTxInputs                                          │
+      │                                                            │
+  ┌───┴───┐                                                        │
+  │       │                                                        │
+  │ Block ├────────────────────────────────────────────────────────┘
   │       │
   └───▲───┘
       │
@@ -218,11 +218,11 @@ tickThenApplyLedgerResult ::
   -> l ValuesMK
   -> Except (LedgerErr l) (LedgerResult l (l DiffMK))
 tickThenApplyLedgerResult cfg blk l = do
-  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
-  lrBlock <-    applyBlockLedgerResult     cfg            blk  (applyDiffsLedgerTablesTicked (lrResult lrTick) (projectLedgerTables l))
+  let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerTables l)
+  lrBlock <-    applyBlockLedgerResult     cfg            blk  (applyLedgerTablesDiffsTicked l (lrResult lrTick))
   pure LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = prependDiffs (lrResult lrTick) (lrResult lrBlock)
+    , lrResult = prependLedgerTablesDiffsFromTicked (lrResult lrTick) (lrResult lrBlock)
     }
 
 tickThenReapplyLedgerResult ::
@@ -232,11 +232,11 @@ tickThenReapplyLedgerResult ::
   -> l ValuesMK
   -> LedgerResult l (l DiffMK)
 tickThenReapplyLedgerResult cfg blk l =
-  let lrTick    = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerStateTables l)
-      lrBlock   = reapplyBlockLedgerResult   cfg            blk  (applyDiffsLedgerTablesTicked (lrResult lrTick) (projectLedgerTables l))
+  let lrTick    = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerTables l)
+      lrBlock   = reapplyBlockLedgerResult   cfg            blk  (applyLedgerTablesDiffsTicked l (lrResult lrTick))
   in LedgerResult {
       lrEvents = lrEvents lrTick <> lrEvents lrBlock
-    , lrResult = prependDiffs (lrResult lrTick) (lrResult lrBlock)
+    , lrResult = prependLedgerTablesDiffsFromTicked (lrResult lrTick) (lrResult lrBlock)
     }
 
 tickThenApply ::
@@ -258,12 +258,12 @@ tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
 foldLedger ::
      (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l -> [blk] -> l ValuesMK -> Except (LedgerErr l) (l ValuesMK)
-foldLedger cfg = repeatedlyM (\blk state -> fmap (applyDiffsLedgerTables state . projectLedgerTables) $ tickThenApply cfg blk state)
+foldLedger cfg = repeatedlyM (\blk state -> fmap (applyLedgerTablesDiffs state) $ tickThenApply cfg blk state)
 
 refoldLedger ::
      (ApplyBlock l blk, TickedTableStuff l)
   => LedgerCfg l -> [blk] -> l ValuesMK -> l ValuesMK
-refoldLedger cfg = repeatedly (\blk state -> applyDiffsLedgerTables state . projectLedgerTables $ tickThenReapply cfg blk state)
+refoldLedger cfg = repeatedly (\blk state -> applyLedgerTablesDiffs state $ tickThenReapply cfg blk state)
 
 {-------------------------------------------------------------------------------
   Short-hand
