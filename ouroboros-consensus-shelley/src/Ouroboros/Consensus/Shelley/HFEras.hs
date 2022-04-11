@@ -66,5 +66,12 @@ instance
   (TPraos.PraosCrypto c, Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)) =>
   ShelleyCompatible (TPraos c) (AlonzoEra c)
 
+-- This instance is required since the ledger view forecast function for
+-- Praos/Babbage still goes through the forecast for TPraos. Once this is
+-- addressed, we could remove this instance.
+instance
+  (Praos.PraosCrypto c, TPraos.PraosCrypto c) =>
+  ShelleyCompatible (TPraos c) (BabbageEra c)
+
 instance
   (Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (BabbageEra c)
