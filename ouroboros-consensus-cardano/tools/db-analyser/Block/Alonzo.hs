@@ -16,12 +16,14 @@ import           Prelude
 
 
 import           HasAnalysis (HasProtocolInfo (..))
-import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo)
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo,
+                     StandardCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 
 
-instance HasProtocolInfo (ShelleyBlock StandardAlonzo) where
-  data Args (ShelleyBlock StandardAlonzo) = AlonzoBlockArgs {
+instance HasProtocolInfo (ShelleyBlock  (TPraos StandardCrypto) StandardAlonzo) where
+  data Args (ShelleyBlock (TPraos StandardCrypto) StandardAlonzo) = AlonzoBlockArgs {
         configFileAlonzo :: FilePath
       }
     deriving (Show)
@@ -39,4 +41,4 @@ instance HasProtocolInfo (ShelleyBlock StandardAlonzo) where
     error $ "Not implemented because we don't "
          <> "anticipate running an 'Alonzo only' chain."
 
-type AlonzoBlockArgs = Args (ShelleyBlock StandardAlonzo)
+type AlonzoBlockArgs = Args (ShelleyBlock  (TPraos StandardCrypto) StandardAlonzo)
