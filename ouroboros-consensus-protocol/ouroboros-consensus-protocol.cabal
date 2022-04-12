@@ -63,3 +63,21 @@ library
   if flag(asserts)
     ghc-options:
       -fno-ignore-asserts
+
+library ouroboros-consensus-protocol-test
+  visibility: public
+  hs-source-dirs: test-src
+  default-language: Haskell2010
+  exposed-modules:
+    Test.Consensus.Protocol.Serialisation.Generators
+  build-depends:
+    base,
+    bytestring,
+    cardano-crypto-class,
+    cardano-crypto-tests,
+    cardano-ledger-core,
+    cardano-ledger-shelley-test,
+    cardano-protocol-tpraos,
+    cardano-slotting,
+    ouroboros-consensus-protocol,
+    QuickCheck

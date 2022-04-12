@@ -98,8 +98,8 @@ type StandardMary = MaryEra StandardCrypto
 -- | The Alonzo era with standard crypto
 type StandardAlonzo = AlonzoEra StandardCrypto
 
--- | The Babbage era with new crypto
-type StandardBabbage = BabbageEra VRF10Crypto
+-- | The Babbage era with standard crypto
+type StandardBabbage = BabbageEra StandardCrypto
 
 {-------------------------------------------------------------------------------
   Type synonyms for convenience

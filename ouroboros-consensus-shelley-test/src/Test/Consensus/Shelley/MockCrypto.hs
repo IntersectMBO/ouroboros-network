@@ -35,7 +35,6 @@ import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible)
-import Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
 
 -- | A mock replacement for 'StandardCrypto'
 --
