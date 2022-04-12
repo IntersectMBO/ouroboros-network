@@ -230,7 +230,7 @@ instance IsLedger (LedgerState BlockB) where
 
   applyChainTickLedgerResult _ _ = pureLedgerResult
                                  . TickedLedgerStateB
-                                 . noNewTickingValues
+                                 . noNewTickingDiffs
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyBlockLedgerResult   = \_ b _ -> return $ pureLedgerResult $ LgrB (blockPoint b)

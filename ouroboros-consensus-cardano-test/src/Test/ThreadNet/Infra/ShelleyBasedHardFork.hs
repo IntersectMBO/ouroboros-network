@@ -192,7 +192,7 @@ instance ShelleyBasedHardForkConstraints era1 era2
         $ \_cfg1 cfg2 ->
           HFC.TranslateLedgerState {
             translateLedgerStateWith =  \_epochNo ->
-                noNewTickingValues
+                noNewTickingDiffs
               . unFlip
               . unComp
               . SL.translateEra'
@@ -200,12 +200,13 @@ instance ShelleyBasedHardForkConstraints era1 era2
               . Comp
               . Flip
           , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyValuesMK (HD.UtxoValues vals) } -> ShelleyLedgerTables {
-                shelleyUTxOTable = ApplyValuesMK
-                                 . HD.UtxoValues
-                                 . fmap ( unTxOutWrapper
-                                        . SL.translateEra' (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
-                                        . TxOutWrapper)
+            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } -> ShelleyLedgerTables {
+                shelleyUTxOTable = ApplyDiffMK
+                                 . HD.UtxoDiff
+                                 . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff ( unTxOutWrapper
+                                                                                     . SL.translateEra' (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
+                                                                                     . TxOutWrapper
+                                                                                     $ x) y)
                                  $ vals
               }
         }

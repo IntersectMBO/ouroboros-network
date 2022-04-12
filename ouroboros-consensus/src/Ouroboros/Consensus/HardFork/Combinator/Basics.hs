@@ -94,6 +94,9 @@ deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock
 deriving stock   instance CanHardFork xs => Eq       (LedgerState (HardForkBlock xs) ValuesMK)
 deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) ValuesMK)
 
+deriving stock   instance CanHardFork xs => Eq       (LedgerState (HardForkBlock xs) DiffMK)
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) DiffMK)
+
 deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) SeqDiffMK)
 
 instance (SingI mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) (ApplyMapKind' mk)) where

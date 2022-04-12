@@ -381,31 +381,24 @@ applyBlock :: forall m c l blk
            => LedgerCfg l
            -> Ap m l blk c
            -> LedgerDB l
-           -> m (Maybe (l ValuesMK), l TrackingMK)
+           -> m (Maybe (l ValuesMK), l DiffMK)
 applyBlock cfg ap db = case ap of
     Weaken ap' ->
         applyBlock cfg ap' db
     _ -> do
-      legacyLs' <- mapM (`legacyApplyBlock` ap) legacyLs
-      modernLs' <- modernApplyBlock ap
+      legacyDiff <- mapM (`legacyApplyBlock` ap) legacyLs
+      modernDiff <- modernApplyBlock ap
 
-      let _ = legacyLs' :: Maybe (l TrackingMK)
-          _ = modernLs' :: l TrackingMK
-
-          legacyValues :: Maybe (l ValuesMK)
-          legacyValues = forgetLedgerStateTracking <$> legacyLs'
-
-          _modernValues ::l ValuesMK
-          _modernValues = forgetLedgerStateTracking modernLs'
-
-          legacyDiff :: Maybe (LedgerTables l DiffMK)
-          legacyDiff = projectLedgerTables . trackingTablesToDiffs <$> legacyLs'
-
-          modernDiff :: LedgerTables l DiffMK
-          modernDiff = projectLedgerTables $ trackingTablesToDiffs modernLs'
+      let legacyValues :: Maybe (l ValuesMK)
+          legacyValues = applyLedgerTablesDiffs <$> legacyLs <*> legacyDiff
+          legacyTracking :: Maybe (l TrackingMK)
+          legacyTracking = do
+            leg'  <- legacyDiff
+            leg'' <- legacyValues
+            return $ leg'' `withLedgerTables` zipLedgerTables (\(ApplyValuesMK vals) (ApplyDiffMK diff) -> ApplyTrackingMK vals diff) (projectLedgerTables leg'') (projectLedgerTables leg')
 
           mixViaLegacy :: LedgerTables l DiffMK -> Maybe (LedgerTables l ValuesMK)
-          mixViaLegacy diff = projectLedgerTables . flip applyDiffsLedgerTables diff <$> legacyLs
+          mixViaLegacy diff = projectLedgerTables . (\l -> l `withLedgerTables` zipLedgerTables rawApplyDiffs (projectLedgerTables l) diff) <$> legacyLs
 
           -- Ensure the given tables are empty if the old legacy state has no
           -- tables
@@ -426,32 +419,29 @@ applyBlock cfg ap db = case ap of
       -- something that was only routed through new states/tables, since the old
       -- state might have no tables!
 
-      let annihilate :: l TrackingMK -> l EmptyMK
+      let annihilate :: l any -> l EmptyMK
           annihilate =
               stowLedgerTables
             . flip withLedgerTables polyEmptyLedgerTables
 
           checks =
-            case (,,) <$> legacyLs' <*> legacyDiff <*> legacyValues of
+            case (,,) <$> legacyTracking <*> legacyDiff <*> legacyValues of
               Just (legLs', legDiff, legValues) -> [
-                  annihilate              legLs' == annihilate              modernLs'
-                , forgetLedgerStateTables legLs' == forgetLedgerStateTables modernLs'
-                , modernDiff                     == legDiff
-                , asTypeOf True $ idViaLegacy legValues     == mixViaLegacy modernDiff
+                  annihilate         legLs' == annihilate         modernDiff
+                , forgetLedgerTables legLs' == forgetLedgerTables modernDiff
+                , modernDiff                == legDiff
+                , asTypeOf True $ idViaLegacy legValues     == mixViaLegacy (projectLedgerTables modernDiff)
                 ]
               _ -> [True]
 
       when (any not checks) $ error $ show checks
 
-      return (legacyValues, modernLs')
+      return (applyLedgerTablesDiffs <$> legacyLs <*> legacyDiff, modernDiff)
   where
-    _modernLs :: l EmptyMK
-    _modernLs = ledgerDbCurrent db
-
     legacyLs :: Maybe (l ValuesMK)
     legacyLs = ledgerDbCurrentValues db
 
-    legacyApplyBlock :: l ValuesMK -> Ap m l blk c -> m (l TrackingMK)
+    legacyApplyBlock :: l ValuesMK -> Ap m l blk c -> m (l DiffMK)
     legacyApplyBlock legLs = \case
       ReapplyVal b -> return $ tickThenReapply cfg b legLs
       ApplyVal b ->
@@ -467,15 +457,14 @@ applyBlock cfg ap db = case ap of
       ApplyRef r -> do
         b <- resolveBlock r
 
-        id $
-             ( either (throwLedgerError db (blockRealPoint b)) return
+        either (throwLedgerError db (blockRealPoint b)) return
              $ runExcept
-             $ tickThenApply cfg b legLs)
+             $ tickThenApply cfg b legLs
 
       -- A value of @Weaken@ will not make it to this point, as @applyBlock@ will recurse until it fully unwraps.
       Weaken _ -> error "unreachable"
 
-    modernApplyBlock :: Ap m l blk c -> m (l TrackingMK)
+    modernApplyBlock :: Ap m l blk c -> m (l DiffMK)
     modernApplyBlock = \case
       ReapplyVal b -> withBlockReadSets b $ \lh ->
           return $ tickThenReapply cfg b lh
@@ -504,8 +493,8 @@ applyBlock cfg ap db = case ap of
     withBlockReadSets
       :: ReadsKeySets m l
       => blk
-      -> (l ValuesMK -> m (l TrackingMK))
-      -> m (l TrackingMK)
+      -> (l ValuesMK -> m (l DiffMK))
+      -> m (l DiffMK)
     withBlockReadSets b f = do
       let ks = getBlockKeySets b :: LedgerTables l KeysMK
       let aks = rewindTableKeySets (ledgerDbChangelog db) ks :: RewoundTableKeySets l
@@ -530,7 +519,8 @@ applyBlock cfg ap db = case ap of
       -> (l ValuesMK -> a)
       -> Either (WithOrigin SlotNo, WithOrigin SlotNo) a
     withHydratedLedgerState urs f =
-          (\rs -> f $ withLedgerTables (ledgerDbCurrent db) rs)
+          f
+      .   withLedgerTables (ledgerDbCurrent db)
       <$> forwardTableKeySets (ledgerDbChangelog db) urs
 
 {-------------------------------------------------------------------------------
@@ -748,7 +738,7 @@ ledgerDbSnapshots LedgerDB{..} = case ledgerDbCheckpoints of
   Nothing -> []
   Just legacyDb ->
       zip [0..]
-    $ map (forgetLedgerStateTables . unCheckpoint)
+    $ map (forgetLedgerTables . unCheckpoint)
     $ AS.toNewestFirst legacyDb <> [AS.anchor legacyDb]
 
 -- | How many blocks can we currently roll back?
@@ -855,7 +845,7 @@ ledgerDbPrune k db = db {
 pushLedgerState ::
      (IsLedger l, TickedTableStuff l)
   => SecurityParam
-  -> (Maybe (l ValuesMK), l TrackingMK) -- ^ Updated ledger state
+  -> (Maybe (l ValuesMK), l DiffMK) -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
 pushLedgerState secParam (currentOld', currentNew') db@LedgerDB{..}  =
     ledgerDbPrune secParam $ db {
@@ -863,7 +853,7 @@ pushLedgerState secParam (currentOld', currentNew') db@LedgerDB{..}  =
       , ledgerDbChangelog   =
           extendDbChangelog
             ledgerDbChangelog
-            (trackingTablesToDiffs currentNew')
+            currentNew'
       }
 
 {-------------------------------------------------------------------------------

@@ -113,9 +113,9 @@ examples = Golden.Examples {
     , exampleQuery            = unlabelled exampleQuery
     , exampleResult           = unlabelled exampleResult
     , exampleAnnTip           = unlabelled exampleAnnTip
-    , exampleLedgerState      = unlabelled $ forgetLedgerStateTables exampleLedgerState
+    , exampleLedgerState      = unlabelled $ forgetLedgerTables exampleLedgerState
     , exampleChainDepState    = unlabelled exampleChainDepState
-    , exampleExtLedgerState   = unlabelled $ forgetLedgerStateTables exampleExtLedgerState
+    , exampleExtLedgerState   = unlabelled $ forgetLedgerTables exampleExtLedgerState
     , exampleSlotNo           = unlabelled exampleSlotNo
     , examplesLedgerTables    = unlabelled NoByronLedgerTables
     }
@@ -133,7 +133,7 @@ exampleBlock =
       (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
       (BlockNo 1)
       (SlotNo 1)
-      (applyChainTick ledgerConfig (SlotNo 1) (forgetLedgerStateTables ledgerStateAfterEBB))
+      (applyChainTick ledgerConfig (SlotNo 1) (forgetLedgerTables ledgerStateAfterEBB))
       [ValidatedByronTx exampleGenTx]
       (fakeMkIsLeader leaderCredentials)
   where
@@ -191,20 +191,20 @@ emptyLedgerState = ByronLedgerState {
 
 ledgerStateAfterEBB :: LedgerState ByronBlock ValuesMK
 ledgerStateAfterEBB =
-      mappendValues (projectLedgerTables emptyLedgerState)
-    . forgetLedgerStateTracking
+      applyLedgerTablesDiffs emptyLedgerState
     . reapplyLedgerBlock ledgerConfig exampleEBB
+    . applyLedgerTablesDiffsTicked emptyLedgerState
     . applyChainTick ledgerConfig (SlotNo 0)
-    . forgetLedgerStateTables
+    . forgetLedgerTables
     $ emptyLedgerState
 
 exampleLedgerState :: LedgerState ByronBlock ValuesMK
 exampleLedgerState =
-      mappendValues (projectLedgerTables ledgerStateAfterEBB)
-    . forgetLedgerStateTracking
+      applyLedgerTablesDiffs emptyLedgerState
     . reapplyLedgerBlock ledgerConfig exampleBlock
+    . applyLedgerTablesDiffsTicked ledgerStateAfterEBB
     . applyChainTick ledgerConfig (SlotNo 1)
-    . forgetLedgerStateTables
+    . forgetLedgerTables
     $ ledgerStateAfterEBB
 
 exampleHeaderState :: HeaderState ByronBlock

@@ -30,7 +30,7 @@ import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerState, EmptyMK, ValuesMK, LedgerTables)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState, DiffMK, EmptyMK, LedgerTables)
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
@@ -112,7 +112,7 @@ data TranslateLedgerState x y = TranslateLedgerState {
         translateLedgerStateWith ::
             EpochNo
          -> LedgerState x EmptyMK
-         -> LedgerState y ValuesMK
+         -> LedgerState y DiffMK
 
         -- | How to translate tables on an era transition.
         --
@@ -128,8 +128,8 @@ data TranslateLedgerState x y = TranslateLedgerState {
         -- hole and allows us to promote tables from one era into tables from
         -- the next era.
       , translateLedgerTablesWith ::
-            LedgerTables (LedgerState x) ValuesMK
-         -> LedgerTables (LedgerState y) ValuesMK
+            LedgerTables (LedgerState x) DiffMK
+         -> LedgerTables (LedgerState y) DiffMK
     }
 
 -- | Knowledge in a particular era of the transition to the next era

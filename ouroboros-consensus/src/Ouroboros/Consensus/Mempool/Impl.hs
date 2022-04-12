@@ -128,14 +128,14 @@ mkMempool mpEnv = Mempool
                   pureGetSnapshotFor
                     cfg
                     (ForgeInKnownSlot slot
-                      $ mappendValuesTicked (projectLedgerTables $ ledgerState ls')
+                      $ applyLedgerTablesDiffsTicked (ledgerState ls')
                       $ applyChainTick cfg slot
-                      $ forgetLedgerStateTables
+                      $ forgetLedgerTables
                       $ ledgerState ls')
                     capacityOverride
                     is
             atomically $ putTMVar istate is
-            pure $ Just (forgetLedgerStateTables ls', snapshot)
+            pure $ Just (forgetLedgerTables ls', snapshot)
     , getCapacity    = isCapacity <$> readTMVar istate
     , getTxSize      = txSize
     , zeroIdx        = zeroTicketNo

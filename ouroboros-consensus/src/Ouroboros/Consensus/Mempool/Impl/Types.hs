@@ -208,7 +208,7 @@ extendVRPrevApplied cfg txTicket vr =
                       }
       Right st' -> vr { vrValid      = vrValid :> txTicket
                       , vrValidTxIds = Set.insert (txId (txForgetValidated tx)) vrValidTxIds
-                      , vrAfter      = forgetTickedLedgerStateTracking st'
+                      , vrAfter      = forgetLedgerTablesDiffsTicked st'
                       }
   where
     TxTicket { txTicketTx = tx } = txTicket
@@ -241,7 +241,7 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
         , vr { vrValid        = vrValid :> TxTicket vtx nextTicketNo (txSize tx)
              , vrValidTxIds   = Set.insert (txId tx) vrValidTxIds
              , vrNewValid     = Just vtx
-             , vrAfter        = forgetTickedLedgerStateTracking st'
+             , vrAfter        = forgetLedgerTablesDiffsTicked st'
              , vrLastTicketNo = nextTicketNo
              }
         )
@@ -335,10 +335,7 @@ tickLedgerState
   -> (SlotNo, TickedLedgerState blk ValuesMK)
 tickLedgerState _cfg (ForgeInKnownSlot slot st) = (slot, st)
 tickLedgerState  cfg (ForgeInUnknownSlot st) =
-    (slot, mappendValuesTicked (projectLedgerTables st)
-         $ applyChainTick cfg slot
-         $ forgetLedgerStateTables st
-    )
+    (slot, applyLedgerTablesDiffsTicked st $ applyChainTick cfg slot (forgetLedgerTables st))
   where
     -- Optimistically assume that the transactions will be included in a block
     -- in the next available slot

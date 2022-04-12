@@ -40,7 +40,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , IsLedger (..)
   , LedgerCfg
   , applyChainTick
-  , noNewTickingValues
+  , noNewTickingDiffs
     -- * Link block to its ledger
   , LedgerConfig
   , LedgerError
@@ -63,16 +63,12 @@ module Ouroboros.Consensus.Ledger.Basics (
   , MapKind
   , SMapKind
   , Sing (..)
-  , calculateDifference
-  , diffKeysMK
-  , diffTrackingMK
   , emptyAppliedMK
   , mapValuesAppliedMK
   , sMapKind
   , sMapKind'
   , showsApplyMapKind
   , toSMapKind
-  , valuesTrackingMK
     -- *** Mediators
   , CodecMK (..)
   , DiffMK
@@ -89,16 +85,21 @@ module Ouroboros.Consensus.Ledger.Basics (
   , DiskLedgerView (..)
   , FootprintL (..)
     -- ** Convenience aliases
-  , applyDiffsLedgerTables
   , emptyLedgerTables
-  , forgetLedgerStateTables
-  , forgetLedgerStateTracking
-  , forgetTickedLedgerStateTracking
   , polyEmptyLedgerTables
-  , trackingTablesToDiffs
-  , mappendValues
-  , mappendValuesTicked
-  , mappendTracking
+  , forgetLedgerTables
+  , forgetLedgerTablesValues
+  , forgetLedgerTablesDiffs
+  , forgetLedgerTablesDiffsTicked
+  , prependLedgerTablesDiffsRaw
+  , prependLedgerTablesDiffs
+  , prependLedgerTablesDiffsTicked
+  , prependLedgerTablesDiffsFromTicked
+  , applyLedgerTablesDiffs
+  , applyLedgerTablesDiffsTicked
+  , calculateAdditions
+  , calculateDifference
+  , calculateDifferenceTicked
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
@@ -121,6 +122,9 @@ module Ouroboros.Consensus.Ledger.Basics (
   , youngestImmutableSlotDbChangelog
     -- ** Misc
   , ShowLedgerState (..)
+    -- * Exported only for testing
+  , rawCalculateDifference
+  , rawApplyDiffs
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -135,7 +139,6 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
-import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
 import qualified NoThunks.Class as NoThunks
 
@@ -234,6 +237,8 @@ class ( -- Requirements on the ledger state itself
 --      , forall mk. (IsApplyMapKind mk, Typeable mk) => NoThunks (l mk)
       , Eq       (l EmptyMK)
       , NoThunks (l EmptyMK)
+      , Eq       (l DiffMK)
+      , NoThunks (l DiffMK)
       , Eq       (l ValuesMK)
       , NoThunks (l ValuesMK)
       , NoThunks (l SeqDiffMK)
@@ -312,7 +317,7 @@ class ( -- Requirements on the ledger state itself
        LedgerCfg l
     -> SlotNo
     -> l EmptyMK
-    -> LedgerResult l (Ticked1 l ValuesMK)
+    -> LedgerResult l (Ticked1 l DiffMK)
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick ::
@@ -320,16 +325,20 @@ applyChainTick ::
   => LedgerCfg l
   -> SlotNo
   -> l EmptyMK
-  -> Ticked1 l ValuesMK
+  -> Ticked1 l DiffMK
 applyChainTick = lrResult ..: applyChainTickLedgerResult
+
+{-------------------------------------------------------------------------------
+ [Ticked]TableStuff
+-------------------------------------------------------------------------------}
 
 -- | When applying a block that is not on an era transition, ticking won't
 -- generate new values, so this function can be used to wrap the call to the
 -- ledger rules that perform the tick.
-noNewTickingValues :: TickedTableStuff l
+noNewTickingDiffs :: TickedTableStuff l
                    => l any
-                   -> l ValuesMK
-noNewTickingValues l = withLedgerTables l polyEmptyLedgerTables
+                   -> l DiffMK
+noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables
 
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
@@ -469,22 +478,6 @@ zipOverLedgerTables f l tables2 =
       (\tables1 -> zipLedgerTables f tables1 tables2)
       l
 
--- | Mappend the values in the tables and in the ledger state
-mappendValues ::
-     TableStuff l
-  => LedgerTables l ValuesMK
-  -> l ValuesMK
-  -> l ValuesMK
-mappendValues = flip (zipOverLedgerTables (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2))
-
--- | Mappend the differences in the tables and in the ledger state
-mappendTracking ::
-     TableStuff l
-  => LedgerTables l TrackingMK
-  -> l TrackingMK
-  -> l TrackingMK
-mappendTracking = flip (zipOverLedgerTables (\(ApplyTrackingMK v1 d1) (ApplyTrackingMK _ d2) -> ApplyTrackingMK v1 (d2 <> d1)))
-
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
 class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
@@ -530,13 +523,9 @@ zipOverLedgerTablesTicked f l tables2 =
       (\tables1 -> zipLedgerTables f tables1 tables2)
       l
 
--- | Mappend the values in the tables and in the ticked ledger state
-mappendValuesTicked ::
-     TickedTableStuff l
-  => LedgerTables l ValuesMK
-  -> Ticked1      l ValuesMK
-  -> Ticked1      l ValuesMK
-mappendValuesTicked = flip (zipOverLedgerTablesTicked (\(ApplyValuesMK v1) (ApplyValuesMK v2) -> ApplyValuesMK $ v1 <> v2))
+{-------------------------------------------------------------------------------
+  Serialization Codecs
+-------------------------------------------------------------------------------}
 
 -- | This class provides a 'CodecMK' that can be used to encode/decode keys and
 -- values on @'LedgerTables' l mk@
@@ -596,40 +585,79 @@ emptyLedgerTables :: TableStuff l => LedgerTables l EmptyMK
 emptyLedgerTables = polyEmptyLedgerTables
 
 -- | Empty values for every table
-polyEmptyLedgerTables :: forall mk l.
-  (TableStuff l, IsApplyMapKind mk) => LedgerTables l mk
-polyEmptyLedgerTables =
-    pureLedgerTables $ emptyAppliedMK sMapKind
+polyEmptyLedgerTables :: forall mk l. (TableStuff l, IsApplyMapKind mk) => LedgerTables l mk
+polyEmptyLedgerTables = pureLedgerTables $ emptyAppliedMK sMapKind
 
-forgetLedgerStateTracking :: TableStuff l => l TrackingMK -> l ValuesMK
-forgetLedgerStateTracking = mapOverLedgerTables valuesTrackingMK
+-- Forget all
 
-forgetLedgerStateTables :: TableStuff l => l mk -> l EmptyMK
-forgetLedgerStateTables l = withLedgerTables l emptyLedgerTables
+forgetLedgerTables :: TableStuff l => l mk -> l EmptyMK
+forgetLedgerTables l = withLedgerTables l emptyLedgerTables
 
--- | Used only for the dual ledger
-applyDiffsLedgerTables ::
-     (TableStuff l, HasCallStack)
-  => l ValuesMK
-  -> LedgerTables l DiffMK
-  -> l ValuesMK
-applyDiffsLedgerTables =
-    zipOverLedgerTables f
-  where
-    f ::
-         Ord k
-      => ValuesMK k v
-      -> DiffMK   k v
-      -> ValuesMK k v
-    f (ApplyValuesMK values) (ApplyDiffMK diff) =
-      ApplyValuesMK (forwardValues values diff)
+-- Forget values
 
-trackingTablesToDiffs :: TableStuff l => l TrackingMK -> l DiffMK
-trackingTablesToDiffs = mapOverLedgerTables diffTrackingMK
+rawForgetValues :: TrackingMK k v -> DiffMK k v
+rawForgetValues (ApplyTrackingMK _values diff) = ApplyDiffMK diff
 
-forgetTickedLedgerStateTracking ::
-  TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l ValuesMK
-forgetTickedLedgerStateTracking = mapOverLedgerTablesTicked valuesTrackingMK
+forgetLedgerTablesValues :: TableStuff l => l TrackingMK -> l DiffMK
+forgetLedgerTablesValues = mapOverLedgerTables rawForgetValues
+
+-- Forget diffs
+
+rawForgetDiffs :: TrackingMK k v -> ValuesMK k v
+rawForgetDiffs (ApplyTrackingMK values _diff) = ApplyValuesMK values
+
+forgetLedgerTablesDiffs       ::       TableStuff l =>         l TrackingMK ->         l ValuesMK
+forgetLedgerTablesDiffsTicked :: TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l ValuesMK
+forgetLedgerTablesDiffs       = mapOverLedgerTables rawForgetDiffs
+forgetLedgerTablesDiffsTicked = mapOverLedgerTablesTicked rawForgetDiffs
+
+-- Prepend diffs
+
+rawPrependDiffs ::
+     Ord k
+  => DiffMK k v -- ^ Earlier differences
+  -> DiffMK k v -- ^ Later differences
+  -> DiffMK k v
+rawPrependDiffs (ApplyDiffMK (UtxoDiff d1)) (ApplyDiffMK (UtxoDiff d2)) = ApplyDiffMK (UtxoDiff (d1 `Map.union` d2))
+
+prependLedgerTablesDiffsRaw        ::       TableStuff l => LedgerTables l DiffMK ->         l DiffMK ->         l DiffMK
+prependLedgerTablesDiffs           ::       TableStuff l =>              l DiffMK ->         l DiffMK ->         l DiffMK
+prependLedgerTablesDiffsFromTicked :: TickedTableStuff l => Ticked1      l DiffMK ->         l DiffMK ->         l DiffMK
+prependLedgerTablesDiffsTicked     :: TickedTableStuff l =>              l DiffMK -> Ticked1 l DiffMK -> Ticked1 l DiffMK
+prependLedgerTablesDiffsRaw        = flip (zipOverLedgerTables rawPrependDiffs)
+prependLedgerTablesDiffs           = prependLedgerTablesDiffsRaw . projectLedgerTables
+prependLedgerTablesDiffsFromTicked = prependLedgerTablesDiffsRaw . projectLedgerTablesTicked
+prependLedgerTablesDiffsTicked     = flip (zipOverLedgerTablesTicked rawPrependDiffs) . projectLedgerTables
+
+-- Apply diffs
+
+rawApplyDiffs ::
+     Ord k
+  => ValuesMK k v -- ^ Values to which differences are applied
+  -> DiffMK   k v -- ^ Differences to apply
+  -> ValuesMK k v
+rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (forwardValues vals diffs)
+
+applyLedgerTablesDiffs       ::       TableStuff l => l ValuesMK ->         l DiffMK ->         l ValuesMK
+applyLedgerTablesDiffsTicked :: TickedTableStuff l => l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
+applyLedgerTablesDiffs       = flip (zipOverLedgerTables       $ flip rawApplyDiffs) . projectLedgerTables
+applyLedgerTablesDiffsTicked = flip (zipOverLedgerTablesTicked $ flip rawApplyDiffs) . projectLedgerTables
+
+-- Calculate differences
+
+rawCalculateDifference ::
+     Ord k
+  => ValuesMK   k v
+  -> ValuesMK   k v
+  -> TrackingMK k v
+rawCalculateDifference (ApplyValuesMK before) (ApplyValuesMK after) = ApplyTrackingMK after (differenceUtxoValues before after)
+
+calculateAdditions        ::       TableStuff l =>         l ValuesMK ->                               l TrackingMK
+calculateDifference       :: TickedTableStuff l => Ticked1 l ValuesMK ->         l ValuesMK ->         l TrackingMK
+calculateDifferenceTicked :: TickedTableStuff l => Ticked1 l ValuesMK -> Ticked1 l ValuesMK -> Ticked1 l TrackingMK
+calculateAdditions               after = zipOverLedgerTables       (flip rawCalculateDifference) after polyEmptyLedgerTables
+calculateDifference       before after = zipOverLedgerTables       (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
+calculateDifferenceTicked before after = zipOverLedgerTablesTicked (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
 
 {-------------------------------------------------------------------------------
   Concrete ledger tables
@@ -708,15 +736,6 @@ mapValuesAppliedMK f = \case
 
   ApplyQueryAllMK         -> ApplyQueryAllMK
   ApplyQuerySomeMK ks     -> ApplyQuerySomeMK (castUtxoKeys ks)
-
-diffKeysMK :: DiffMK k v -> KeysMK k v
-diffKeysMK (ApplyDiffMK diff) = ApplyKeysMK $ keysUtxoDiff diff
-
-diffTrackingMK :: TrackingMK k v -> DiffMK k v
-diffTrackingMK (ApplyTrackingMK _values diff) = ApplyDiffMK diff
-
-valuesTrackingMK :: TrackingMK k v -> ValuesMK k v
-valuesTrackingMK (ApplyTrackingMK values _diff) = ApplyValuesMK values
 
 instance (Ord k, Eq v) => Eq (ApplyMapKind' mk k v) where
   ApplyEmptyMK          == _                     = True
@@ -895,14 +914,6 @@ instance FromCBOR (Sing SeqDiffMK')  where fromCBOR = SSeqDiffMK  <$ CBOR.decode
 instance FromCBOR (Sing RewoundMK')  where fromCBOR = SRewoundMK  <$ CBOR.decodeNull
 instance FromCBOR (Sing QueryMK')    where fromCBOR = SQueryMK    <$ CBOR.decodeNull
 
-calculateDifference ::
-     Ord k
-  => ValuesMK k v
-  -> ValuesMK k v
-  -> TrackingMK k v
-calculateDifference (ApplyValuesMK before) (ApplyValuesMK after) =
-    ApplyTrackingMK after (differenceUtxoValues before after)
-
 {-------------------------------------------------------------------------------
   Link block to its ledger
 -------------------------------------------------------------------------------}
@@ -1072,8 +1083,8 @@ extendDbChangelog dblog newState =
       , changelogVolatileStates
       } = dblog
 
-    l'         = forgetLedgerStateTables newState
-    tablesDiff = projectLedgerTables     newState
+    l'         = forgetLedgerTables  newState
+    tablesDiff = projectLedgerTables newState
 
     slot = case getTipSlot l' of
       Origin -> error "impossible! extendDbChangelog"

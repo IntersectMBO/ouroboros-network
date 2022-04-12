@@ -383,7 +383,7 @@ initLedgerDB replayTracer
           initDb        =
             case runAlsoLegacy of
               RunBoth    -> ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
-              RunOnlyNew -> ledgerDbWithAnchor runAlsoLegacy (forgetLedgerStateTables genesisLedger)
+              RunOnlyNew -> ledgerDbWithAnchor runAlsoLegacy (forgetLedgerTables genesisLedger)
       backingStore <- newBackingStore hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
