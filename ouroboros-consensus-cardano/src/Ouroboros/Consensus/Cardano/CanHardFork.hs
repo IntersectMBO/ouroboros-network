@@ -124,6 +124,7 @@ import qualified Cardano.Protocol.TPraos.Rules.Prtcl as SL
 import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
 
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.DeadAVVMs
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -847,13 +848,43 @@ translateLedgerStateShelleyToAllegraWrapper ::
 translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
       TranslateLedgerState {
-          translateLedgerStateWith = \_epochNo ->
-                noNewTickingDiffs -- TODO The AVVM deletions should be added here!!
+          translateLedgerStateWith = \_epochNo ls ->
+                -- This 'withLedgerTables' creates out of thin air the
+                -- differences that spawn from the Shelley->Allegra transition,
+                -- using the hard-coded deadCardanoAVVMs.
+                --
+                -- In the near future, we expect the ledger to keep track of
+                -- these and expose a function so that we can get them from
+                -- inside the ledger state we are translating.
+                --
+                -- > - $ Map.map (unTxOutWrapper . SL.translateEra' () . TxOutWrapper)
+                -- > - $ SL.unUTxO deadCardanoAVVM
+                -- > + $ SL.getRedeemersToDelete $ shelleyLedgerState ls
+                --
+                -- In the long run, the ledger will already use ledger states
+                -- parametrized by the map kind and therefore will already
+                -- provide the differences in this translation.
+                flip withLedgerTables (ShelleyLedgerTables
+                                       $ ApplyDiffMK
+                                       $ HD.UtxoDiff
+                                       $ Map.map (`HD.UtxoEntryDiff` HD.UedsDel)
+                                       $ Map.map (unTxOutWrapper . SL.translateEra' () . TxOutWrapper)
+                                       $ SL.unUTxO deadCardanoAVVM
+                                      )
               . unFlip
               . unComp
               . SL.translateEra' ()
               . Comp
               . Flip
+              -- This 'stowLedgerTables' + 'withLedgerTables' injects the values
+              -- from the hard-coded deadCardanoAVVMs so that the ledger, which
+              -- expects an 'l EmptyMK' actually has those entries in the UTxO
+              -- and destroys them, modifying the reserves accordingly.
+              --
+              -- Once the ledger keeps track of these values, this operation
+              -- will no longer be needed.
+              . stowLedgerTables
+              . flip withLedgerTables (ShelleyLedgerTables $ ApplyValuesMK $ HD.UtxoValues $ SL.unUTxO deadCardanoAVVM)
         , translateLedgerTablesWith =
             \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
              ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
