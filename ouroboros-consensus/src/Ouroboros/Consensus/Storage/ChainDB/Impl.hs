@@ -23,6 +23,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , TraceInitChainSelEvent (..)
   , TraceIteratorEvent (..)
   , TraceOpenEvent (..)
+  , TracePipeliningEvent (..)
   , TraceValidationEvent (..)
     -- * Re-exported for convenience
   , Args.RelativeMountPoint (..)

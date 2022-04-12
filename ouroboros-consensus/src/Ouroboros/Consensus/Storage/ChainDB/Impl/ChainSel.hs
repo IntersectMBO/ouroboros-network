@@ -24,7 +24,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
-import           Control.Tracer (Tracer, contramap, traceWith)
+import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import           Data.List.NonEmpty (NonEmpty)
@@ -206,6 +206,7 @@ initialChainSelection immutableDB volatileDB lgrDB tracer cfg varInvalid
             , trace = traceWith
                 (contramap (InitChainSelValidation) tracer)
               -- initial chain selection is not concerned about pipelining
+            , tracePipelining = traceWith nullTracer
             , varTentativeState
             , varTentativeHeader
             , punish = Nothing
@@ -538,6 +539,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
       , curChainAndLedger     = curChainAndLedger
       , trace                 =
           traceWith (contramap (TraceAddBlockEvent . AddBlockValidation) cdbTracer)
+      , tracePipelining       =
+          traceWith (contramap (TraceAddBlockEvent . PipeliningEvent) cdbTracer)
       , punish                = Just (p, punish)
       }
 
@@ -719,7 +722,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
          -- return the event to trace when we switched to the new chain.
       -> m (Point blk)
     switchTo vChainDiff varTentativeHeader mkTraceEvent = do
-        (curChain, newChain, events) <- atomically $ do
+        (curChain, newChain, events, prevTentativeHeader) <- atomically $ do
           curChain  <- readTVar         cdbChain -- Not Query.getCurrentChain!
           curLedger <- LgrDB.getCurrent cdbLgrDB
           case Diff.apply curChain chainDiff of
@@ -738,7 +741,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
                              (ledgerState $ LgrDB.ledgerDbCurrent newLedger)
 
               -- Clear the tentative header
-              writeTVar varTentativeHeader Nothing
+              prevTentativeHeader <- swapTVar varTentativeHeader Nothing
 
               -- Update the followers
               --
@@ -749,9 +752,11 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
               forM_ followerHandles $ \followerHandle ->
                 fhSwitchFork followerHandle ipoint newChain
 
-              return (curChain, newChain, events)
+              return (curChain, newChain, events, prevTentativeHeader)
 
         trace $ mkTraceEvent events (mkNewTipInfo newLedger) curChain newChain
+        whenJust prevTentativeHeader $
+          trace . PipeliningEvent . OutdatedTentativeHeader
         traceWith cdbTraceLedger newLedger
 
         return $ castPoint $ AF.headPoint newChain
@@ -798,6 +803,7 @@ getKnownHeaderThroughCache volatileDB hash = gets (Map.lookup hash) >>= \case
 data ChainSelEnv m blk = ChainSelEnv
     { lgrDB                 :: LgrDB m blk
     , trace                 :: TraceValidationEvent blk -> m ()
+    , tracePipelining       :: TracePipeliningEvent blk -> m ()
     , bcfg                  :: BlockConfig blk
     , varInvalid            :: StrictTVar m (WithFingerprint (InvalidBlocks blk))
     , varFutureBlocks       :: StrictTVar m (FutureBlocks m blk)
@@ -927,18 +933,21 @@ chainSelection chainSelEnv chainDiffs =
               -- As we are only extending the existing chain, the intersection
               -- point is not receding, in which case fhSwitchFork is not
               -- necessary.
+              tracePipelining $ SetTentativeHeader tentativeHeader
             pure mTentativeHeader
 
         -- | Clear a tentative header that turned out to be invalid. Also, roll
         -- back the tentative followers.
         clearTentativeHeader :: Header blk -> m ()
-        clearTentativeHeader tentativeHeader = atomically $ do
-            writeTVar varTentativeHeader Nothing
-            writeTVar varTentativeState $
-              LastInvalidTentative (selectView bcfg tentativeHeader)
-            forTentativeFollowers $ \followerHandle -> do
-              let curTipPoint = castPoint $ AF.headPoint curChain
-              fhSwitchFork followerHandle curTipPoint curChain
+        clearTentativeHeader tentativeHeader = do
+            atomically $ do
+              writeTVar varTentativeHeader Nothing
+              writeTVar varTentativeState $
+                LastInvalidTentative (selectView bcfg tentativeHeader)
+              forTentativeFollowers $ \followerHandle -> do
+                let curTipPoint = castPoint $ AF.headPoint curChain
+                fhSwitchFork followerHandle curTipPoint curChain
+            tracePipelining $ TrapTentativeHeader tentativeHeader
           where
             forTentativeFollowers f = getTentativeFollowers >>= mapM_ f
 
