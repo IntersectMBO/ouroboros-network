@@ -11,6 +11,7 @@
 module Ouroboros.Consensus.Shelley.HFEras (
     StandardAllegraBlock
   , StandardAlonzoBlock
+  , StandardBabbageBlock
   , StandardMaryBlock
   , StandardShelleyBlock
   ) where
@@ -45,6 +46,8 @@ type StandardAllegraBlock = ShelleyBlock (TPraos StandardCrypto) StandardAllegra
 type StandardMaryBlock = ShelleyBlock (TPraos StandardCrypto) StandardMary
 
 type StandardAlonzoBlock = ShelleyBlock (TPraos StandardCrypto) StandardAlonzo
+
+type StandardBabbageBlock = ShelleyBlock (Praos StandardCrypto) StandardBabbage
 
 {-------------------------------------------------------------------------------
   ShelleyCompatible

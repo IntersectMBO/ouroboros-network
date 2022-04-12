@@ -17,6 +17,7 @@ import           Ouroboros.Consensus.Util (Dict (..))
 
 import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 
