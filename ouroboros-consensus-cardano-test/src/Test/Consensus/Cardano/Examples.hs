@@ -57,6 +57,7 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 import qualified Test.Consensus.Byron.Examples as Byron
 
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import qualified Test.Consensus.Shelley.Examples as Shelley
 
@@ -69,6 +70,7 @@ eraExamples =
     :* Shelley.examplesAllegra
     :* Shelley.examplesMary
     :* Shelley.examplesAlonzo
+    :* Shelley.examplesBabbage
     :* Nil
 
 -- | By using this function, we can't forget to update this test when adding a
@@ -86,6 +88,7 @@ combineEras = mconcat . hcollapse . hap eraInjections
         :* fn (K . injExamples "Allegra" (IS (IS IZ)))
         :* fn (K . injExamples "Mary"    (IS (IS (IS IZ))))
         :* fn (K . injExamples "Alonzo"  (IS (IS (IS (IS IZ)))))
+        :* fn (K . injExamples "Babbage" (IS (IS (IS (IS (IS IZ))))))
         :* Nil
 
     injExamples ::
@@ -157,6 +160,9 @@ maryEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 alonzoEraParams :: History.EraParams
 alonzoEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 
+babbageEraParams :: History.EraParams
+babbageEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+
 -- | We use 10, 20, 30, 40, ... as the transition epochs
 shelleyTransitionEpoch :: EpochNo
 shelleyTransitionEpoch = 10
@@ -192,6 +198,13 @@ alonzoStartBound =
       maryStartBound
       40
 
+babbageStartBound :: History.Bound
+babbageStartBound =
+    History.mkUpperBound
+      alonzoEraParams
+      alonzoStartBound
+      50
+
 exampleStartBounds :: Exactly (CardanoEras Crypto) History.Bound
 exampleStartBounds = Exactly $
     (  K byronStartBound
@@ -199,6 +212,7 @@ exampleStartBounds = Exactly $
     :* K allegraStartBound
     :* K maryStartBound
     :* K alonzoStartBound
+    :* K babbageStartBound
     :* Nil
     )
 
@@ -209,6 +223,7 @@ cardanoShape = History.Shape $ Exactly $
     :* K allegraEraParams
     :* K maryEraParams
     :* K alonzoEraParams
+    :* K babbageEraParams
     :* Nil
     )
 
@@ -231,6 +246,7 @@ codecConfig :: CardanoCodecConfig Crypto
 codecConfig =
     CardanoCodecConfig
       Byron.codecConfig
+      Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig

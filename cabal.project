@@ -211,6 +211,7 @@ source-repository-package
     binary/test
     cardano-crypto-class
     cardano-crypto-praos
+    cardano-crypto-tests
     measures
     orphans-deriving-via
     slotting
@@ -225,6 +226,7 @@ source-repository-package
     eras/alonzo/impl
     eras/alonzo/test-suite
     eras/babbage/impl
+    eras/babbage/test-suite
     eras/byron/chain/executable-spec
     eras/byron/crypto
     eras/byron/crypto/test

@@ -11,6 +11,7 @@
 module Ouroboros.Consensus.Shelley.HFEras (
     StandardAllegraBlock
   , StandardAlonzoBlock
+  , StandardBabbageBlock
   , StandardMaryBlock
   , StandardShelleyBlock
   ) where
@@ -23,7 +24,7 @@ import           Ouroboros.Consensus.Protocol.TPraos (StandardCrypto, TPraos)
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Shelley.Eras (AllegraEra, AlonzoEra,
                      MaryEra, ShelleyEra, StandardAllegra, StandardAlonzo,
-                     StandardMary, StandardShelley, BabbageEra)
+                     StandardMary, StandardShelley, BabbageEra, StandardBabbage)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock,
                      ShelleyCompatible)
 import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
@@ -44,6 +45,8 @@ type StandardAllegraBlock = ShelleyBlock (TPraos StandardCrypto) StandardAllegra
 type StandardMaryBlock = ShelleyBlock (TPraos StandardCrypto) StandardMary
 
 type StandardAlonzoBlock = ShelleyBlock (TPraos StandardCrypto) StandardAlonzo
+
+type StandardBabbageBlock = ShelleyBlock (Praos StandardCrypto) StandardBabbage
 
 {-------------------------------------------------------------------------------
   ShelleyCompatible

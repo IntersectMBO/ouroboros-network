@@ -99,7 +99,7 @@ type StandardMary = MaryEra StandardCrypto
 type StandardAlonzo = AlonzoEra StandardCrypto
 
 -- | The Babbage era with new crypto
-type StandardBabbage = BabbageEra VRF10Crypto
+type StandardBabbage = BabbageEra StandardCrypto
 
 {-------------------------------------------------------------------------------
   Type synonyms for convenience
