@@ -848,7 +848,7 @@ translateLedgerStateShelleyToAllegraWrapper ::
 translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
       TranslateLedgerState {
-          translateLedgerStateWith = \_epochNo ls ->
+          translateLedgerStateWith = \_epochNo ->
                 -- This 'withLedgerTables' creates out of thin air the
                 -- differences that spawn from the Shelley->Allegra transition,
                 -- using the hard-coded deadCardanoAVVMs.
