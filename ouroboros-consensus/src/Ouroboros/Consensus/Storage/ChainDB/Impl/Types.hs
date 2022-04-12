@@ -56,6 +56,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , TraceInitChainSelEvent (..)
   , TraceIteratorEvent (..)
   , TraceOpenEvent (..)
+  , TracePipeliningEvent (..)
   , TraceValidationEvent (..)
   ) where
 
@@ -644,6 +645,11 @@ data TraceAddBlockEvent blk =
     -- This is done for all blocks from the future each time a new block is
     -- added.
   | ChainSelectionForFutureBlock (RealPoint blk)
+
+    -- | The tentative header (in the context of diffusion pipelining) has been
+    -- updated.
+  | PipeliningEvent (TracePipeliningEvent blk)
+
   deriving (Generic)
 
 deriving instance
@@ -695,6 +701,18 @@ deriving instance
   ( Show (Header           blk)
   , LedgerSupportsProtocol blk
   ) => Show (TraceValidationEvent blk)
+
+data TracePipeliningEvent blk =
+    -- | A new tentative header got set.
+    SetTentativeHeader (Header blk)
+    -- | The body of tentative block turned out to be invalid.
+  | TrapTentativeHeader (Header blk)
+    -- | We selected a new (better) chain, which cleared the previous tentative
+    -- header.
+  | OutdatedTentativeHeader (Header blk)
+
+deriving stock instance Eq   (Header blk) => Eq   (TracePipeliningEvent blk)
+deriving stock instance Show (Header blk) => Show (TracePipeliningEvent blk)
 
 data TraceInitChainSelEvent blk =
     StartedInitChainSelection
