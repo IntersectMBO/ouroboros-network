@@ -57,6 +57,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Util.Condense
@@ -478,6 +479,7 @@ prop_general_internal syncity pga testOutput =
     prop_no_BlockRejections .&&.
     prop_no_unexpected_CannotForges .&&.
     prop_no_invalid_blocks .&&.
+    prop_pipelining .&&.
     propSync
       ( prop_all_common_prefix maxForkLength (Map.elems nodeChains) .&&.
         prop_all_growth .&&.
@@ -852,6 +854,39 @@ prop_general_internal syncity pga testOutput =
           -- checking all forged blocks, even if they were never or only
           -- temporarily selected.
         , (s, blk) <- Map.toAscList nodeOutputForges
+        ]
+
+    -- Check that all self-issued blocks are pipelined.
+    prop_pipelining :: Property
+    prop_pipelining = conjoin
+        [ counterexample ("Node " <> condense nid <> " did not pipeline") $
+          counterexample ("some of its blocks forged as the sole slot leader:") $
+          counterexample (condense forgedButNotPipelined) $
+          Set.null forgedButNotPipelined
+        | (nid, NodeOutput
+            { nodeOutputForges
+            , nodePipeliningEvents
+            }) <- Map.toList testOutputNodes
+        , CoreId cnid <- [nid]
+        , let tentativePoints = Set.fromList
+                [ headerPoint hdr
+                | ChainDB.SetTentativeHeader hdr <- nodePipeliningEvents
+                ]
+              forgedAsSoleLeaderPoints = Set.fromList $
+                [ blockPoint blk
+                | blk <- Map.elems nodeOutputForges
+                , let s = blockSlot blk
+                      NodeRestarts nrs = nodeRestarts
+                , getLeaderSchedule actualLeaderSchedule Map.! s == [cnid]
+                  -- When the node is restarted while it is a slot
+                  -- leader, this property is often not satisfied in
+                  -- the Byron ThreadNet tests. As diffusion
+                  -- pipelining is concerned with up-to-date,
+                  -- long-running nodes, we ignore this edge case.
+                , cnid `Map.notMember` Map.findWithDefault mempty s nrs
+                ]
+              forgedButNotPipelined =
+                forgedAsSoleLeaderPoints Set.\\ tentativePoints
         ]
 
 {-------------------------------------------------------------------------------
