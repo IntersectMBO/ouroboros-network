@@ -80,7 +80,7 @@ import           Ouroboros.Consensus.HeaderStateHistory
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util ((.:), StaticEither (..))
+import           Ouroboros.Consensus.Util (StaticEither (..), (.:))
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -91,7 +91,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-                    (LedgerBackingStoreValueHandle, LedgerDB')
+                     (LedgerBackingStoreValueHandle, LedgerDB')
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
@@ -408,6 +408,10 @@ getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
 
 -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
 -- last @k@ blocks of the current chain.
+--
+-- FIXME: with the introduction of UTxO HD this has now become more expensive
+-- that it should since at least the spine of the anchored sequence will be
+-- forced when performing a bimap on the elements of the anchored sequence.
 getHeaderStateHistory :: forall m blk.
      Monad (STM m)
   => ChainDB m blk -> STM m (HeaderStateHistory blk)
@@ -418,8 +422,7 @@ getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
       -> HeaderStateHistory blk
     toHeaderStateHistory =
           HeaderStateHistory
-        . LedgerDB.ledgerDbBimap headerState headerState
-        . LedgerDB.ledgerDbVolatileCheckpoints
+        . LedgerDB.volatileStatesBimap headerState headerState
 
 {-------------------------------------------------------------------------------
   Adding a block
