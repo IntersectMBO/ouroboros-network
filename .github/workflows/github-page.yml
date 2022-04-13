@@ -29,39 +29,10 @@ jobs:
 
     - name: Select build directory
       run: |
-        if [ "$OS" == Windows_NT ]; then
-          CABAL_BUILDDIR="D:\\a\\_temp\\dist"
-        else
-          CABAL_BUILDDIR="dist-newstyle"
-        fi
+        CABAL_BUILDDIR="dist-newstyle"
 
         echo "CABAL_BUILDDIR=$CABAL_BUILDDIR"
         echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
-
-    - name: Install pkgconfiglite
-      if: matrix.os == 'windows-latest'
-      run: choco install -y pkgconfiglite
-
-    - name: Install libsodium
-      if: matrix.os == 'windows-latest'
-      run: |
-        curl -Ls \
-          --connect-timeout 5 \
-          --max-time 10 \
-          --retry 5 \
-          --retry-delay 0 \
-          --retry-max-time 40 \
-          https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-mingw.tar.gz -o libsodium-1.0.18-mingw.tar.gz
-        tar zxvf libsodium-1.0.18-mingw.tar.gz
-
-        sed -i "s|/d/a/1/s/|D:/a/cardano-node/cardano-node/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
-
-        export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig)"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
-
-        export LIBSODIUM_PATH="$(readlink -f libsodium-win64/bin | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
-        echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
 
     - name: Configure to use libsodium
       run: |
