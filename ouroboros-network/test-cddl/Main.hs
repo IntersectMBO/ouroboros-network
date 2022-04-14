@@ -90,15 +90,9 @@ import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSub
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
                      (LocalTxSubmission)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
-import qualified Ouroboros.Network.Protocol.Trans.Hello.Type as Hello
-import           Ouroboros.Network.Protocol.TxSubmission.Codec
-                     (codecTxSubmission)
-import           Ouroboros.Network.Protocol.TxSubmission.Test (Tx, TxId)
-import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSubmission)
-import qualified Ouroboros.Network.Protocol.TxSubmission.Type as TxSubmission
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
                      (codecTxSubmission2)
-import           Ouroboros.Network.Protocol.TxSubmission2.Test ()
+import           Ouroboros.Network.Protocol.TxSubmission2.Test (Tx, TxId)
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
 
@@ -124,7 +118,6 @@ main = do
 tests :: CDDLSpecs -> TestTree
 tests CDDLSpecs { cddlChainSync
                 , cddlBlockFetch
-                , cddlTxSubmission
                 , cddlLocalTxSubmission
                 , cddlLocalTxMonitor
                 , cddlTxSubmission2
@@ -147,8 +140,6 @@ tests CDDLSpecs { cddlChainSync
                                                cddlChainSync)
       , testProperty "BlockFetch"        (prop_encodeBlockFetch
                                                cddlBlockFetch)
-      , testProperty "TxSubmission"      (prop_encodeTxSubmission
-                                               cddlTxSubmission)
       , testProperty "TxSubmission2"     (prop_encodeTxSubmission2
                                                cddlTxSubmission2)
       , testProperty "KeepAlive"         (prop_encodeKeepAlive
@@ -172,8 +163,6 @@ tests CDDLSpecs { cddlChainSync
                                            cddlChainSync)
       , testCase "BlockFetch"        (unit_decodeBlockFetch
                                            cddlBlockFetch)
-      , testCase "TxSubmission"      (unit_decodeTxSubmission
-                                           cddlTxSubmission)
       , testCase "TxSubmission2"     (unit_decodeTxSubmission2
                                            cddlTxSubmission2)
       , testCase "KeepAlive"         (unit_decodeKeepAlive
@@ -199,7 +188,6 @@ data CDDLSpecs = CDDLSpecs {
                                              (Point BlockHeader)
                                              (Tip BlockHeader)),
     cddlBlockFetch            :: CDDLSpec (BlockFetch Block (Point Block)),
-    cddlTxSubmission          :: CDDLSpec (TxSubmission TxId Tx),
     cddlTxSubmission2         :: CDDLSpec (TxSubmission2 TxId Tx),
     cddlKeepAlive             :: CDDLSpec KeepAlive,
     cddlLocalTxSubmission     :: CDDLSpec (LocalTxSubmission
@@ -222,7 +210,6 @@ readCDDLSpecs = do
     handshakeNodeToNode   <- BL.readFile (dir </> "handshake-node-to-node.cddl")
     chainSync             <- BL.readFile (dir </> "chain-sync.cddl")
     blockFetch            <- BL.readFile (dir </> "block-fetch.cddl")
-    txSubmission          <- BL.readFile (dir </> "tx-submission.cddl")
     txSubmission2         <- BL.readFile (dir </> "tx-submission2.cddl")
     keepAlive             <- BL.readFile (dir </> "keep-alive.cddl")
     localTxSubmission     <- BL.readFile (dir </> "local-tx-submission.cddl")
@@ -237,10 +224,7 @@ readCDDLSpecs = do
                                             <> common,
         cddlBlockFetch            = CDDLSpec $ blockFetch
                                             <> common,
-        cddlTxSubmission          = CDDLSpec $ txSubmission
-                                            <> common,
         cddlTxSubmission2         = CDDLSpec $ txSubmission2
-                                            <> txSubmission
                                             <> common,
         cddlKeepAlive             = CDDLSpec keepAlive,
         cddlLocalTxSubmission     = CDDLSpec $ localTxSubmission
@@ -273,16 +257,6 @@ blockFetchCodec =
     codecBlockFetch
       (wrapCBORinCBOR Serialise.encode)
       (unwrapCBORinCBOR (const <$> Serialise.decode))
-      Serialise.encode
-      Serialise.decode
-
-
-txSubmissionCodec :: Codec (TxSubmission TxId Tx)
-                           CBOR.DeserialiseFailure IO BL.ByteString
-txSubmissionCodec =
-    codecTxSubmission
-      Serialise.encode
-      Serialise.decode
       Serialise.encode
       Serialise.decode
 
@@ -391,7 +365,7 @@ instance Arbitrary (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term))
         ]
       where
         genVersion :: Gen NodeToNodeVersion
-        genVersion = elements [NodeToNodeV_4 ..]
+        genVersion = elements [NodeToNodeV_7 ..]
 
         genData :: Gen NodeToNodeVersionData
         genData = NodeToNodeVersionData
@@ -487,13 +461,6 @@ prop_encodeBlockFetch
     -> AnyMessageAndAgency (BlockFetch Block (Point Block))
     -> Property
 prop_encodeBlockFetch spec = validateEncoder spec blockFetchCodec
-
-
-prop_encodeTxSubmission
-    :: CDDLSpec            (TxSubmission TxId Tx)
-    -> AnyMessageAndAgency (TxSubmission TxId Tx)
-    -> Property
-prop_encodeTxSubmission spec = validateEncoder spec txSubmissionCodec
 
 
 prop_encodeTxSubmission2
@@ -669,20 +636,6 @@ unit_decodeBlockFetch spec =
       100
 
 
-unit_decodeTxSubmission
-    :: CDDLSpec (TxSubmission TxId Tx)
-    -> Assertion
-unit_decodeTxSubmission spec =
-    validateDecoder (Just txSubmissionFix)
-      spec txSubmissionCodec
-      [ SomeAgency $ ClientAgency (TxSubmission.TokTxIds TxSubmission.TokBlocking)
-      , SomeAgency $ ClientAgency (TxSubmission.TokTxIds TxSubmission.TokNonBlocking)
-      , SomeAgency $ ClientAgency TxSubmission.TokTxs
-      , SomeAgency $ ServerAgency TxSubmission.TokIdle
-      ]
-      100
-
-
 unit_decodeTxSubmission2
     :: CDDLSpec (TxSubmission2 TxId Tx)
     -> Assertion
@@ -690,22 +643,19 @@ unit_decodeTxSubmission2 spec =
     validateDecoder (Just txSubmissionFix)
       spec txSubmissionCodec2
       [ SomeAgency
-        $ ClientAgency
-          Hello.TokHello
+        $ ClientAgency TxSubmission2.TokInit
       , SomeAgency
         $ ClientAgency
-        $ Hello.TokClientTalk
-            (TxSubmission.TokTxIds TxSubmission.TokBlocking)
+        $ TxSubmission2.TokTxIds TxSubmission2.TokBlocking
       , SomeAgency
         $ ClientAgency
-        $ Hello.TokClientTalk
-            (TxSubmission.TokTxIds TxSubmission.TokNonBlocking)
+        $ TxSubmission2.TokTxIds TxSubmission2.TokNonBlocking
       , SomeAgency
         $ ClientAgency
-        $ Hello.TokClientTalk TxSubmission.TokTxs
+        $ TxSubmission2.TokTxs
       , SomeAgency
         $ ServerAgency
-        $ Hello.TokServerTalk TxSubmission.TokIdle
+        $ TxSubmission2.TokIdle
       ]
       100
 

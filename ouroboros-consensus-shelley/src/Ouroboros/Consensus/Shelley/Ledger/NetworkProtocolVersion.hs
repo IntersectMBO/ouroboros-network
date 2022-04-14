@@ -39,9 +39,8 @@ instance HasNetworkProtocolVersion (ShelleyBlock era) where
 -- TODO #2668 make this era-specific
 instance SupportedNetworkProtocolVersion (ShelleyBlock era) where
   supportedNodeToNodeVersions   _ = Map.fromList [
-        (NodeToNodeV_1, ShelleyNodeToNodeVersion1)
-        -- V_2 enables block size hints for Byron headers and the hard fork
-        -- combinator, unused by Shelley-only
+        (NodeToNodeV_7, ShelleyNodeToNodeVersion1)
+      , (NodeToNodeV_8, ShelleyNodeToNodeVersion1)
       ]
   supportedNodeToClientVersions _ = Map.fromList [
         (NodeToClientV_1, ShelleyNodeToClientVersion1)

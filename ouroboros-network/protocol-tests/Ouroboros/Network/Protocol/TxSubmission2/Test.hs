@@ -8,21 +8,30 @@
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Network.Protocol.TxSubmission2.Test (tests) where
+module Ouroboros.Network.Protocol.TxSubmission2.Test
+  ( tests
+  , Tx (..)
+  , TxId (..)
+  ) where
 
 import           Data.ByteString.Lazy (ByteString)
+import           Data.List (nub)
+import qualified Data.List.NonEmpty as NonEmpty
+import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch)
 import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer)
 
-import           Codec.Serialise (DeserialiseFailure)
+import           Codec.Serialise (DeserialiseFailure, Serialise)
 import qualified Codec.Serialise as Serialise (decode, encode)
 
 import           Network.TypedProtocol.Codec hiding (prop_codec)
@@ -30,12 +39,13 @@ import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
-import           Ouroboros.Network.Protocol.Trans.Hello.Type (Hello)
-import qualified Ouroboros.Network.Protocol.Trans.Hello.Type as Hello
-import           Ouroboros.Network.Protocol.TxSubmission.Client
-import           Ouroboros.Network.Protocol.TxSubmission.Server
-import           Ouroboros.Network.Protocol.TxSubmission.Test hiding (tests)
+import           Ouroboros.Network.Util.ShowProxy
+
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
+import           Ouroboros.Network.Protocol.TxSubmission2.Direct
+import           Ouroboros.Network.Protocol.TxSubmission2.Examples
+import           Ouroboros.Network.Protocol.TxSubmission2.Client
+import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
@@ -55,7 +65,8 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol"
     [ testGroup "TxSubmission2"
-        [ testProperty "connect 1" prop_connect1
+        [ testProperty "direct"              prop_direct
+        , testProperty "connect 1"           prop_connect1
         , testProperty "connect 2"           prop_connect2
         , testProperty "codec"               prop_codec
         , testProperty "codec id"            prop_codec_id
@@ -64,12 +75,79 @@ tests =
                                              prop_codec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
-        , testProperty "encodings agree"     prop_encodings_agree
         , testProperty "channel ST"          prop_channel_ST
         , testProperty "channel IO"          prop_channel_IO
         , testProperty "pipe IO"             prop_pipe_IO
         ]
     ]
+
+--
+-- Common types & clients and servers used in the tests in this module.
+--
+
+newtype Tx = Tx TxId
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+instance ShowProxy Tx where
+    showProxy _ = "Tx"
+
+txId :: Tx -> TxId
+txId (Tx txid) = txid
+
+newtype TxId = TxId Int
+  deriving (Eq, Ord, Show, Arbitrary, Serialise)
+
+instance ShowProxy TxId where
+    showProxy _ = "TxId"
+
+type TestServer m = TxSubmissionServerPipelined TxId Tx m [Tx]
+type TestClient m = TxSubmissionClient          TxId Tx m ()
+
+testServer :: Monad m
+           => Tracer m (TraceEventServer TxId Tx)
+           -> TxSubmissionTestParams
+           -> TestServer m
+testServer tracer
+           TxSubmissionTestParams {
+             testMaxUnacked        = Positive (Small maxUnacked),
+             testMaxTxIdsToRequest = Positive (Small maxTxIdsToRequest),
+             testMaxTxToRequest    = Positive (Small maxTxToRequest)
+           } =
+    txSubmissionServer
+      tracer txId
+      maxUnacked maxTxIdsToRequest maxTxToRequest
+
+testClient :: Monad m
+           => Tracer m (TraceEventClient TxId Tx)
+           -> TxSubmissionTestParams
+           -> TestClient m
+testClient tracer            TxSubmissionTestParams {
+             testMaxUnacked   = Positive (Small maxUnacked),
+             testTransactions = DistinctList txs
+           } =
+    txSubmissionClient
+      tracer txId txSize
+      maxUnacked
+      txs
+  where
+    txSize _ = 500
+
+
+--
+-- Properties going directly, not via Peer.
+--
+
+-- | Run a simple tx-submission client and server, directly on the wrappers,
+-- without going via the 'Peer'.
+--
+prop_direct :: TxSubmissionTestParams -> Bool
+prop_direct params@TxSubmissionTestParams{testTransactions} =
+    runSimOrThrow
+      (directPipelined
+        (testServer nullTracer params)
+        (testClient nullTracer params))
+  ==
+    (fromDistinctList testTransactions, ())
 
 
 -- | Run a simple tx-submission client and server, going via the 'Peer'
@@ -83,14 +161,12 @@ prop_connect1 params@TxSubmissionTestParams{testTransactions} =
     case runSimOrThrow
            (connect
              (forgetPipelined $
-              wrapServerPeerPipelined $
               txSubmissionServerPeerPipelined $
               testServer nullTracer params)
-             (wrapClientPeer $
-              txSubmissionClientPeer $
+             (txSubmissionClientPeer $
               testClient nullTracer params)) of
 
-      (txs', (), TerminalStates (Hello.TokDone TokDone) (Hello.TokDone TokDone)) ->
+      (txs', (), TerminalStates TokDone TokDone) ->
         txs' == fromDistinctList testTransactions
 
 
@@ -105,14 +181,12 @@ prop_connect2 params@TxSubmissionTestParams{testTransactions}
                       choices =
     case runSimOrThrow
            (connectPipelined choices
-             (wrapServerPeerPipelined $
-              txSubmissionServerPeerPipelined $
+             (txSubmissionServerPeerPipelined $
               testServer nullTracer params)
-             (wrapClientPeer $
-              txSubmissionClientPeer $
+             (txSubmissionClientPeer $
               testClient nullTracer params)) of
 
-      (txs', (), TerminalStates (Hello.TokDone TokDone) (Hello.TokDone TokDone)) ->
+      (txs', (), TerminalStates TokDone TokDone) ->
         txs' == fromDistinctList testTransactions
 
 --
@@ -132,12 +206,10 @@ prop_channel createChannels params@TxSubmissionTestParams{testTransactions} =
     runConnectedPeersPipelined
       createChannels
       nullTracer
-      codec2
-      (wrapServerPeerPipelined $
-       txSubmissionServerPeerPipelined $
+      codec_v2
+      (txSubmissionServerPeerPipelined $
        testServer nullTracer params)
-      (wrapClientPeer $
-       txSubmissionClientPeer $
+      (txSubmissionClientPeer $
        testClient nullTracer params)
 
 
@@ -164,57 +236,75 @@ prop_pipe_IO params =
     ioProperty (prop_channel createPipeConnectedChannels params)
 
 
-instance Arbitrary (AnyMessageAndAgency ps)
-      => Arbitrary (AnyMessageAndAgency (Hello ps stIdle)) where
-  arbitrary =
-      frequency [ (5, f <$> arbitrary)
-                , (1, pure (AnyMessageAndAgency (ClientAgency Hello.TokHello) Hello.MsgHello))
-                ]
-    where
-      f :: AnyMessageAndAgency ps -> AnyMessageAndAgency (Hello ps stIdle)
-      f (AnyMessageAndAgency (ClientAgency tok) msg) =
-          AnyMessageAndAgency
-            (ClientAgency (Hello.TokClientTalk tok))
-            (Hello.MsgTalk msg)
-      f (AnyMessageAndAgency (ServerAgency tok) msg) =
-          AnyMessageAndAgency
-            (ServerAgency (Hello.TokServerTalk tok))
-            (Hello.MsgTalk msg)
+instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where
+  arbitrary = oneof
+    [ pure $ AnyMessageAndAgency (ClientAgency TokInit) MsgInit
+    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
+        (MsgRequestTxIds TokBlocking
+                     <$> arbitrary
+                     <*> arbitrary)
+
+    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
+        (MsgRequestTxIds TokNonBlocking
+                     <$> arbitrary
+                     <*> arbitrary)
+
+    , AnyMessageAndAgency (ClientAgency (TokTxIds TokBlocking)) <$>
+        MsgReplyTxIds <$> (BlockingReply . NonEmpty.fromList
+                                         . QC.getNonEmpty
+                                       <$> arbitrary)
+
+    , AnyMessageAndAgency (ClientAgency (TokTxIds TokNonBlocking)) <$>
+        MsgReplyTxIds <$> (NonBlockingReply <$> arbitrary)
+
+    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
+        MsgRequestTxs <$> arbitrary
+
+    , AnyMessageAndAgency (ClientAgency TokTxs) <$>
+        MsgReplyTxs <$> arbitrary
+
+    , AnyMessageAndAgency (ClientAgency (TokTxIds TokBlocking)) <$>
+        pure MsgDone
+    ]
+
+instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
+
+  (==) (AnyMessage MsgInit)
+       (AnyMessage MsgInit) = True
+
+  (==) (AnyMessage (MsgRequestTxIds TokBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestTxIds TokBlocking ackNo' reqNo')) =
+    (ackNo, reqNo) == (ackNo', reqNo')
+
+  (==) (AnyMessage (MsgRequestTxIds TokNonBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestTxIds TokNonBlocking ackNo' reqNo')) =
+    (ackNo, reqNo) == (ackNo', reqNo')
+
+  (==) (AnyMessage (MsgReplyTxIds (BlockingReply txids)))
+       (AnyMessage (MsgReplyTxIds (BlockingReply txids'))) =
+    txids == txids'
+
+  (==) (AnyMessage (MsgReplyTxIds (NonBlockingReply txids)))
+       (AnyMessage (MsgReplyTxIds (NonBlockingReply txids'))) =
+    txids == txids'
+
+  (==) (AnyMessage (MsgRequestTxs txids))
+       (AnyMessage (MsgRequestTxs txids')) = txids == txids'
+
+  (==) (AnyMessage (MsgReplyTxs txs))
+       (AnyMessage (MsgReplyTxs txs')) = txs == txs'
+
+  (==) (AnyMessage MsgDone)
+       (AnyMessage MsgDone) = True
+
+  _ == _ = False
 
 
-
-
-instance Eq (AnyMessageAndAgency        ps)
-      => Eq (AnyMessageAndAgency (Hello ps stIdle)) where
-  (==) (AnyMessageAndAgency (ClientAgency Hello.TokHello) Hello.MsgHello)
-       (AnyMessageAndAgency (ClientAgency Hello.TokHello) Hello.MsgHello)
-     = True
-  (==) (AnyMessageAndAgency (ClientAgency (Hello.TokClientTalk tok))  (Hello.MsgTalk msg))
-       (AnyMessageAndAgency (ClientAgency (Hello.TokClientTalk tok')) (Hello.MsgTalk msg'))
-     = AnyMessageAndAgency (ClientAgency tok) msg == AnyMessageAndAgency (ClientAgency tok') msg'
-  (==) (AnyMessageAndAgency (ServerAgency (Hello.TokServerTalk tok))  (Hello.MsgTalk msg))
-       (AnyMessageAndAgency (ServerAgency (Hello.TokServerTalk tok')) (Hello.MsgTalk msg'))
-     = AnyMessageAndAgency (ServerAgency tok) msg == AnyMessageAndAgency (ServerAgency tok') msg'
-  (==) _ _ = False
-
-
-instance Eq (AnyMessage        ps)
-      => Eq (AnyMessage (Hello ps stIdle)) where
-  (==) (AnyMessage Hello.MsgHello)
-       (AnyMessage Hello.MsgHello) =
-    True
-  (==) (AnyMessage (Hello.MsgTalk msg))
-       (AnyMessage (Hello.MsgTalk msg')) =
-    AnyMessage msg == AnyMessage msg'
-  (==) _ _ = False
-
-
-
-codec2 :: MonadST m
-        => Codec (TxSubmission2 TxId Tx)
-                 DeserialiseFailure
-                 m ByteString
-codec2 = codecTxSubmission2
+codec_v2 :: MonadST m
+         => Codec (TxSubmission2 TxId Tx)
+                   DeserialiseFailure
+                   m ByteString
+codec_v2 = codecTxSubmission2
            Serialise.encode Serialise.decode
            Serialise.encode Serialise.decode
 
@@ -223,7 +313,7 @@ codec2 = codecTxSubmission2
 --
 prop_codec :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
 prop_codec msg =
-  runST (prop_codecM codec2 msg)
+  runST (prop_codecM codec_v2 msg)
 
 -- | Check the codec round trip property for the id condec.
 --
@@ -235,39 +325,58 @@ prop_codec_id msg =
 --
 prop_codec_splits2 :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
 prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 codec2 msg)
+  runST (prop_codec_splitsM splits2 codec_v2 msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
 prop_codec_splits3 :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
 prop_codec_splits3 msg =
-  runST (prop_codec_splitsM splits3 codec2 msg)
+  runST (prop_codec_splitsM splits3 codec_v2 msg)
 
 prop_codec_cbor
   :: AnyMessageAndAgency (TxSubmission2 TxId Tx)
   -> Bool
 prop_codec_cbor msg =
-  runST (prop_codec_cborM codec2 msg)
+  runST (prop_codec_cborM codec_v2 msg)
 
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
   :: AnyMessageAndAgency (TxSubmission2 TxId Tx)
   -> Property
-prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec2
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec_v2
 
--- | 'codecTxSubmission' and 'codecTxSubmission2' agree on the encoding.  This
--- and 'prop_codec' ensures the 'codecTxSubmission2' is backward compatible with
--- 'codecTxSubmission'.
 --
-prop_encodings_agree :: AnyMessageAndAgency (TxSubmission TxId Tx) -> Bool
-prop_encodings_agree (AnyMessageAndAgency stok@(ClientAgency tok) msg) =
-     encode (codec @IO)  stok msg
-  == encode (codec2 @IO)
-            (ClientAgency (Hello.TokClientTalk tok))
-            (Hello.MsgTalk msg)
-prop_encodings_agree (AnyMessageAndAgency stok@(ServerAgency tok) msg) =
-     encode (codec @IO)  stok msg
-  == encode (codec2 @IO)
-            (ServerAgency (Hello.TokServerTalk tok))
-            (Hello.MsgTalk msg)
+-- Local generators
+--
+
+data TxSubmissionTestParams =
+     TxSubmissionTestParams {
+       testMaxUnacked        :: Positive (Small Word16),
+       testMaxTxIdsToRequest :: Positive (Small Word16),
+       testMaxTxToRequest    :: Positive (Small Word16),
+       testTransactions      :: DistinctList Tx
+     }
+  deriving Show
+
+instance Arbitrary TxSubmissionTestParams where
+  arbitrary =
+    TxSubmissionTestParams <$> arbitrary
+                           <*> arbitrary
+                           <*> arbitrary
+                           <*> arbitrary
+
+  shrink (TxSubmissionTestParams a b c d) =
+    [ TxSubmissionTestParams a' b' c' d'
+    | (a', b', c', d') <- shrink (a, b, c, d) ]
+
+
+newtype DistinctList a = DistinctList { fromDistinctList :: [a] }
+  deriving Show
+
+instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
+  arbitrary = DistinctList . nub <$> arbitrary
+
+  shrink (DistinctList xs) =
+    [ DistinctList (nub xs') | xs' <- shrink xs ]
+

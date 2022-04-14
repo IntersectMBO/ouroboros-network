@@ -14,7 +14,7 @@
 -- For execution, 'txSubmissionClientPeer' is provided for conversion
 -- into the typed protocol.
 --
-module Ouroboros.Network.Protocol.TxSubmission.Client
+module Ouroboros.Network.Protocol.TxSubmission2.Client
   ( -- * Protocol type for the client
     -- | The protocol states from the point of view of the client.
     TxSubmissionClient (..)
@@ -32,7 +32,7 @@ import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 
 -- | The client side of the transaction submission protocol.
@@ -86,12 +86,13 @@ data ClientStTxs txid tx m a where
 --
 txSubmissionClientPeer :: forall txid tx m a. Monad m
                        => TxSubmissionClient txid tx m a
-                       -> Peer (TxSubmission txid tx) AsClient StIdle m a
+                       -> Peer (TxSubmission2 txid tx) AsClient StInit m a
 txSubmissionClientPeer (TxSubmissionClient client) =
+    Yield (ClientAgency TokInit) MsgInit $
     Effect $ go <$> client
   where
     go :: ClientStIdle txid tx m a
-       -> Peer (TxSubmission txid tx) AsClient StIdle m a
+       -> Peer (TxSubmission2 txid tx) AsClient StIdle m a
     go ClientStIdle {recvMsgRequestTxIds, recvMsgRequestTxs} =
       Await (ServerAgency TokIdle) $ \msg -> case msg of
         MsgRequestTxIds blocking ackNo reqNo -> Effect $ do

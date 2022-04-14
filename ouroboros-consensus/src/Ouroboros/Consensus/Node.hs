@@ -379,7 +379,6 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           ByteString
           ByteString
           ByteString
-          ByteString
           ()
     mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics version =
         NTN.mkApps
@@ -411,7 +410,6 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NTN.Apps
                m
                (ConnectionId addrNTN)
-               ByteString
                ByteString
                ByteString
                ByteString

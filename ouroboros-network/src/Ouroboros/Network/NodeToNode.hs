@@ -37,7 +37,7 @@ module Ouroboros.Network.NodeToNode
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
     -- * Subscription Workers
-    -- ** IP subscriptin worker
+    -- ** IP subscription worker
   , IPSubscriptionTarget (..)
   , NetworkIPSubscriptionTracers
   , NetworkSubscriptionTracers (..)
@@ -149,7 +149,7 @@ type HandshakeTr ntnAddr ntnVersion =
     WithMuxBearer (ConnectionId ntnAddr)
                   (TraceSendRecv (Handshake ntnVersion CBOR.Term))
 
--- | 'Hanshake' codec for the @node-to-node@ protocol suite.
+-- | 'Handshake' codec for the @node-to-node@ protocol suite.
 --
 nodeToNodeHandshakeCodec :: MonadST m
                          => Codec (Handshake NodeToNodeVersion CBOR.Term)
@@ -218,7 +218,7 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 -- @'MiniProtocolNum' 1@ is reserved for DeltaQ messages.
 -- 'Handshake' protocol is not included in 'NodeToNodeProtocols' as it runs
 -- before mux is started but it reusing 'MuxBearer' to send and receive
--- messages.  Only when the handshake protocol suceedes, we will know which
+-- messages.  Only when the handshake protocol succeeds, we will know which
 -- protocols to run / multiplex.
 --
 -- These are chosen to not overlap with the node to client protocol numbers (and
@@ -284,7 +284,7 @@ chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
       -- The largest message over ChainSync is @MsgRollForward@ which mainly
       -- consists of a BlockHeader.
       -- TODO: 1400 comes from maxBlockHeaderSize in genesis, but should come
-      -- from consensus rather than beeing hardcoded.
+      -- from consensus rather than being hard coded.
       maximumIngressQueue = addSafetyMargin $
         fromIntegral chainSyncPipeliningHighMark * 1400
     }
@@ -360,7 +360,7 @@ txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = M
       -- ```
       --
       -- On the ingress side of 'txSubmissionOutbound' we can have at most
-      -- `MaxUnacked' 'MsgRequestTxsIds' and the same ammount of
+      -- `MaxUnacked' 'MsgRequestTxsIds' and the same amount of
       -- 'MsgRequsetTx' containing a single 'TxId'.  The size of
       -- 'MsgRequestTxsIds' is much smaller that 'MsgReplyTx', and the size
       -- of `MsgReqeustTx` with a single 'TxId' is smaller than
@@ -550,7 +550,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
           -- buggy, adversarial, or the connection return garbage.  In the last
           -- case it's also good to shutdown both the consumer and the
           -- producer, as it's likely that the other side of the connection
-          -- will return grabage as well.
+          -- will return garbage as well.
         , ErrorPolicy
            $ \(_ :: DecoderFailure)
                  -> Just theyBuggyOrEvil
@@ -609,7 +609,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                   -> Just theyBuggyOrEvil
 
           -- Error thrown by 'IOManager', this is fatal on Windows, and it will
-          -- never fire on other platofrms.
+          -- never fire on other platforms.
         , ErrorPolicy
             $ \(_ :: IOManagerError)
                   -> Just Throw
@@ -649,7 +649,7 @@ remoteNetworkErrorPolicy = ErrorPolicies {
     veryShortDelay = 1 -- seconds
 
 -- | Error policy for local clients.  This is equivalent to
--- 'nullErrorPolicies', but explicit in the errors which can be catched.
+-- 'nullErrorPolicies', but explicit in the errors which can be caught.
 --
 -- We are very permissive here, and very strict in the
 -- `NodeToClient.networkErrorPolicy`.  After any failure the client will be

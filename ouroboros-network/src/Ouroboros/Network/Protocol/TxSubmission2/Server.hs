@@ -11,7 +11,7 @@
 --
 -- For execution, a conversion into the typed protocol is provided.
 --
-module Ouroboros.Network.Protocol.TxSubmission.Server
+module Ouroboros.Network.Protocol.TxSubmission2.Server
   ( -- * Protocol type for the server
     -- | The protocol states from the point of view of the server.
     TxSubmissionServerPipelined (..)
@@ -28,7 +28,7 @@ import           Data.Word (Word16)
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 
 data TxSubmissionServerPipelined txid tx m a where
@@ -94,13 +94,21 @@ txSubmissionServerPeerPipelined
     :: forall txid tx m a.
        Functor m
     => TxSubmissionServerPipelined txid tx m a
-    -> PeerPipelined (TxSubmission txid tx) AsServer StIdle m a
+    -> PeerPipelined (TxSubmission2 txid tx) AsServer StInit m a
 txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
-    PeerPipelined $ SenderEffect (go <$> server)
+    PeerPipelined ( goInit
+                  $ SenderEffect (go <$> server)
+                  )
   where
+    goInit :: PeerSender (TxSubmission2 txid tx) AsServer StIdle
+                         Z (Collect txid tx) m a
+           -> PeerSender (TxSubmission2 txid tx) AsServer StInit
+                         Z (Collect txid tx) m a
+    goInit k = SenderAwait (ClientAgency TokInit) $ \MsgInit -> k
+
     go :: forall (n :: N).
           ServerStIdle n txid tx m a
-       -> PeerSender (TxSubmission txid tx) AsServer StIdle
+       -> PeerSender (TxSubmission2 txid tx) AsServer StIdle
                      n (Collect txid tx) m a
 
     go (SendMsgRequestTxIdsBlocking ackNo reqNo kDone k) =
@@ -139,3 +147,4 @@ txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
       SenderCollect
         (fmap go mNone)
         (SenderEffect . fmap go . collect)
+

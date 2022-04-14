@@ -72,7 +72,6 @@ import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
-import           Ouroboros.Network.Protocol.TxSubmission.Type
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 import           Ouroboros.Consensus.Block
@@ -1065,7 +1064,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
            Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
-           (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
            (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
            (AnyMessage KeepAlive)
     customNodeToNodeCodecs cfg ntnVersion = NTN.Codecs
@@ -1081,9 +1079,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cBlockFetchCodecSerialised =
             mapFailureCodec (CodecBytesFailure "BlockFetchSerialised") $
               NTN.cBlockFetchCodecSerialised binaryProtocolCodecs
-        , cTxSubmissionCodec =
-            mapFailureCodec CodecIdFailure $
-              NTN.cTxSubmissionCodec NTN.identityCodecs
         , cTxSubmission2Codec =
             mapFailureCodec CodecIdFailure $
               NTN.cTxSubmission2Codec NTN.identityCodecs
@@ -1279,8 +1274,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           (\_ -> pure ())
       , miniProtocol "TxSubmission"
           neverReturns
-          NTN.aTxSubmissionClient
-          NTN.aTxSubmissionServer
+          NTN.aTxSubmission2Client
+          NTN.aTxSubmission2Server
           (\_ -> pure ())
       , miniProtocol "KeepAlive"
           neverReturns
@@ -1619,7 +1614,6 @@ type LimitedApp' m peer blk =
         -- channel with the same type on both ends, i.e., 'Lazy.ByteString'.
         Lazy.ByteString
         Lazy.ByteString
-        (AnyMessage (TxSubmission  (GenTxId blk) (GenTx blk)))
         (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
         (AnyMessage KeepAlive)
         ()

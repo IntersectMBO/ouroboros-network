@@ -165,7 +165,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0), (CoreNodeId 1,SlotNo 20), (CoreNodeId 2,SlotNo 22)]
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #1" $
           once $
@@ -188,7 +188,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 1)])
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "rewind to EBB supported as of Issue #1312, #2" $
           once $
@@ -207,7 +207,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 3})])
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "one testOutputTipBlockNos update per node per slot" $
           once $
@@ -229,7 +229,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0})])
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 5},Map.fromList [(CoreNodeId 1,NodeRestart)])])
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "BlockFetch live lock due to an EBB at the ImmutableDB tip, Issue #1435" $
           once $
@@ -252,7 +252,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 3),(CoreNodeId 1,SlotNo 3),(CoreNodeId 2,SlotNo 5),(CoreNodeId 3,SlotNo 57)]
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "ImmutableDB is leaking file handles, #1543" $
           -- The failure was: c0 leaks one ImmutableDB file handle (for path
@@ -286,7 +286,7 @@ tests = testGroup "Byron" $
               ]
               -- Slot length of 19s passes, and 21s also fails; I haven't seen this matter before.
             , setupSlotLength = slotLengthFromSec 20
-            , setupVersion    = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion    = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , -- Byron runs are slow, so do 10x less of this narrow test
       adjustOption (\(QuickCheckTests i) -> QuickCheckTests $ max 1 $ i `div` 10) $
@@ -314,7 +314,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn
             , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo (slotsPerEpoch + mod w window)) (Map.singleton (CoreNodeId 0) NodeRekey)
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "exercise a corner case of mkCurrentBlockContext" $
           -- The current chain fragment is @Empty a :> B@ and we're trying to
@@ -339,7 +339,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn
             , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo 1) (Map.singleton (CoreNodeId 1) NodeRestart)
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "correct EpochNumber in delegation certificate 1" $
           -- Node 3 rekeys in slot 59, which is epoch 1. But Node 3 also leads
@@ -360,7 +360,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn4
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo 59,Map.fromList [(CoreNodeId 3,NodeRekey)])])
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "correct EpochNumber in delegation certificate 2" $
           -- Revealed the incorrectness of setting the dlg cert epoch based on
@@ -385,7 +385,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 1}),(CoreNodeId 1,SlotNo {unSlotNo = 1}),(CoreNodeId 2,SlotNo {unSlotNo = 58})])
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 58},Map.fromList [(CoreNodeId 2,NodeRekey)])])
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "repeatedly add the the dlg cert tx" $
           -- Revealed the incorrectness of only adding dlg cert tx to the
@@ -441,7 +441,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [(CoreNodeId 0,SlotNo 0),(CoreNodeId 1,SlotNo 0),(CoreNodeId 2,SlotNo 83)]
             , setupNodeRestarts = NodeRestarts $ Map.fromList [(SlotNo 83,Map.fromList [(CoreNodeId 2,NodeRekey)])]
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "topology prevents timely dlg cert tx propagation" $
           -- Caught a bug in the test infrastructure. If node X rekeys in slot
@@ -484,7 +484,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0}),(CoreNodeId 2,SlotNo {unSlotNo = 0}),(CoreNodeId 3,SlotNo {unSlotNo = 37}),(CoreNodeId 4,SlotNo {unSlotNo = 37})])
             , setupNodeRestarts = NodeRestarts (Map.fromList [(SlotNo {unSlotNo = 37},Map.fromList [(CoreNodeId 4,NodeRekey)])])
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "mkDelegationEnvironment uses currentSlot not latestSlot" $
       -- After rekeying, node 2 continues to emit its dlg cert tx. This an ugly
@@ -510,7 +510,7 @@ tests = testGroup "Byron" $
         , setupNodeJoinPlan = trivialNodeJoinPlan ncn
         , setupNodeRestarts = NodeRestarts $ Map.singleton (SlotNo 30) $ Map.singleton (CoreNodeId 2) NodeRekey
         , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
         }
     , testProperty "delayed message corner case" $
           once $
@@ -527,7 +527,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 1})])
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "mkUpdateLabels anticipates instant confirmation" $
           -- caught a bug in 'mkUpdateLabels' where it didn't anticipate that
@@ -546,7 +546,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "have nodes add transactions as promptly as possible, as expected by proposal tracking" $
           -- this repro requires that changes to the ledger point triggers the
@@ -571,7 +571,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = trivialNodeJoinPlan ncn
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "track proposals even when c0 is not the first to lead" $
           -- requires prompt and accurate vote tracking when c0 is not the
@@ -592,7 +592,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [ (CoreNodeId 0, SlotNo 2) , (CoreNodeId 1, SlotNo 3) , (CoreNodeId 2, SlotNo 4) , (CoreNodeId 3, SlotNo 4) ]
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "cardano-ledger-byron checks for proposal confirmation before it checks for expiry" $
           -- must check for quorum before checking for expiration
@@ -609,7 +609,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan $ Map.fromList [ (CoreNodeId 0, SlotNo 0) , (CoreNodeId 1, SlotNo 0) , (CoreNodeId 2, SlotNo 10) , (CoreNodeId 3, SlotNo 10) , (CoreNodeId 4, SlotNo 10) ]
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "repropose an expired proposal" $
           -- the proposal expires in slot 10, but then c0 reintroduces it in
@@ -633,7 +633,7 @@ tests = testGroup "Byron" $
               ]
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "only expect EBBs if the reference simulator does" $
           -- In this repro, block in the 20th slot is wasted since c2 just
@@ -655,7 +655,7 @@ tests = testGroup "Byron" $
               ]
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "only check updates for mesh topologies" $
           -- This repro exercises
@@ -703,7 +703,7 @@ tests = testGroup "Byron" $
               ]
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = defaultSlotLength
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "HeaderProtocolError prevents JIT EBB emission" $
           -- "extra" EBB generated in anticipation of a block that ends up
@@ -730,7 +730,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 2}),(CoreNodeId 1,SlotNo {unSlotNo = 6}),(CoreNodeId 2,SlotNo {unSlotNo = 9})])
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = slotLengthFromSec 20
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "WallClock must handle PastHorizon by exactly slotLength delay" $
           -- Previously, 'PastTimeHorizon' put the node to sleep for 60s. That
@@ -748,7 +748,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 33})])
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = slotLengthFromSec 20
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "systemTimeCurrent must not answer once clock is exhausted" $
           -- This test would pass (before fixing the bug) if I moved both the
@@ -782,7 +782,7 @@ tests = testGroup "Byron" $
             , setupNodeJoinPlan = NodeJoinPlan (Map.fromList [(CoreNodeId 0,SlotNo {unSlotNo = 0}),(CoreNodeId 1,SlotNo {unSlotNo = 0}),(CoreNodeId 2,SlotNo {unSlotNo = 20})])
             , setupNodeRestarts = noRestarts
             , setupSlotLength   = slotLengthFromSec 20
-            , setupVersion      = (NodeToNodeV_1, ByronNodeToNodeVersion1)
+            , setupVersion      = (NodeToNodeV_7, ByronNodeToNodeVersion1)
             }
     , testProperty "simple convergence" $ \setup ->
         prop_simple_real_pbft_convergence setup

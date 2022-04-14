@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 
-module Ouroboros.Network.Protocol.TxSubmission.Examples
+module Ouroboros.Network.Protocol.TxSubmission2.Examples
   ( txSubmissionClient
   , txSubmissionServer
   , TraceEventClient (..)
@@ -28,8 +28,8 @@ import           Control.Tracer (Tracer, traceWith)
 
 import           Network.TypedProtocol.Pipelined (N, Nat (..))
 
-import           Ouroboros.Network.Protocol.TxSubmission.Client
-import           Ouroboros.Network.Protocol.TxSubmission.Server
+import           Ouroboros.Network.Protocol.TxSubmission2.Client
+import           Ouroboros.Network.Protocol.TxSubmission2.Server
 
 
 --

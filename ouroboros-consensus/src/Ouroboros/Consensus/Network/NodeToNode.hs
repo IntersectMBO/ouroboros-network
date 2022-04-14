@@ -40,7 +40,6 @@ module Ouroboros.Consensus.Network.NodeToNode (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (DeserialiseFailure)
-import           Control.Monad (forever)
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
@@ -81,12 +80,9 @@ import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Type
-import qualified Ouroboros.Network.Protocol.Trans.Hello.Util as Hello
-import           Ouroboros.Network.Protocol.TxSubmission.Client
-import           Ouroboros.Network.Protocol.TxSubmission.Codec
-import           Ouroboros.Network.Protocol.TxSubmission.Server
-import           Ouroboros.Network.Protocol.TxSubmission.Type
+import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
+import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -231,25 +227,23 @@ mkHandlers
 -------------------------------------------------------------------------------}
 
 -- | Node-to-node protocol codecs needed to run 'Handlers'.
-data Codecs blk e m bCS bSCS bBF bSBF bTX bTX2 bKA = Codecs {
+data Codecs blk e m bCS bSCS bBF bSBF bTX bKA = Codecs {
       cChainSyncCodec            :: Codec (ChainSync (Header blk) (Point blk) (Tip blk))           e m bCS
     , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)) e m bSCS
     , cBlockFetchCodec           :: Codec (BlockFetch blk (Point blk))                             e m bBF
     , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk) (Point blk))                e m bSBF
-    , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))                 e m bTX
-    , cTxSubmission2Codec        :: Codec (TxSubmission2 (GenTxId blk) (GenTx blk))                e m bTX2
+    , cTxSubmission2Codec        :: Codec (TxSubmission2 (GenTxId blk) (GenTx blk))                e m bTX
     , cKeepAliveCodec            :: Codec KeepAlive                                                e m bKA
     }
 
 -- | Protocol codecs for the node-to-node protocols
-defaultCodecs :: forall m blk. (IOLike m, SerialiseNodeToNodeConstraints blk,
-                                ShowProxy (GenTxId blk), ShowProxy (GenTx blk))
+defaultCodecs :: forall m blk. (IOLike m, SerialiseNodeToNodeConstraints blk)
               => CodecConfig       blk
               -> BlockNodeToNodeVersion blk
               -> NodeToNodeVersion
               -> Codecs blk DeserialiseFailure m
-                   ByteString ByteString ByteString ByteString ByteString ByteString ByteString
-defaultCodecs ccfg version nodeToNodeVersion = Codecs {
+                   ByteString ByteString ByteString ByteString ByteString ByteString
+defaultCodecs ccfg version _nodeToNodeVersion = Codecs {
       cChainSyncCodec =
         codecChainSync
           enc
@@ -282,13 +276,6 @@ defaultCodecs ccfg version nodeToNodeVersion = Codecs {
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
 
-    , cTxSubmissionCodec =
-        codecTxSubmission
-          enc
-          dec
-          enc
-          dec
-
     , cTxSubmission2Codec =
         codecTxSubmission2
           enc
@@ -296,10 +283,7 @@ defaultCodecs ccfg version nodeToNodeVersion = Codecs {
           enc
           dec
 
-    , cKeepAliveCodec =
-        if nodeToNodeVersion <= NodeToNodeV_6
-          then codecKeepAlive
-          else codecKeepAlive_v2
+    , cKeepAliveCodec = codecKeepAlive_v2
     }
   where
     p :: Proxy blk
@@ -318,7 +302,6 @@ identityCodecs :: Monad m
                     (AnyMessage (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)))
                     (AnyMessage (BlockFetch blk (Point blk)))
                     (AnyMessage (BlockFetch (Serialised blk) (Point blk)))
-                    (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
                     (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
                     (AnyMessage KeepAlive)
 identityCodecs = Codecs {
@@ -326,7 +309,6 @@ identityCodecs = Codecs {
     , cChainSyncCodecSerialised  = codecChainSyncId
     , cBlockFetchCodec           = codecBlockFetchId
     , cBlockFetchCodecSerialised = codecBlockFetchId
-    , cTxSubmissionCodec         = codecTxSubmissionId
     , cTxSubmission2Codec        = codecTxSubmission2Id
     , cKeepAliveCodec            = codecKeepAliveId
     }
@@ -344,7 +326,6 @@ data Tracers' peer blk e f = Tracers {
     , tChainSyncSerialisedTracer  :: f (TraceLabelPeer peer (TraceSendRecv (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk))))
     , tBlockFetchTracer           :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch blk (Point blk))))
     , tBlockFetchSerialisedTracer :: f (TraceLabelPeer peer (TraceSendRecv (BlockFetch (Serialised blk) (Point blk))))
-    , tTxSubmissionTracer         :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission (GenTxId blk) (GenTx blk))))
     , tTxSubmission2Tracer        :: f (TraceLabelPeer peer (TraceSendRecv (TxSubmission2 (GenTxId blk) (GenTx blk))))
     }
 
@@ -354,7 +335,6 @@ instance (forall a. Semigroup (f a)) => Semigroup (Tracers' peer blk e f) where
       , tChainSyncSerialisedTracer  = f tChainSyncSerialisedTracer
       , tBlockFetchTracer           = f tBlockFetchTracer
       , tBlockFetchSerialisedTracer = f tBlockFetchSerialisedTracer
-      , tTxSubmissionTracer         = f tTxSubmissionTracer
       , tTxSubmission2Tracer        = f tTxSubmission2Tracer
       }
     where
@@ -370,7 +350,6 @@ nullTracers = Tracers {
     , tChainSyncSerialisedTracer  = nullTracer
     , tBlockFetchTracer           = nullTracer
     , tBlockFetchSerialisedTracer = nullTracer
-    , tTxSubmissionTracer         = nullTracer
     , tTxSubmission2Tracer        = nullTracer
     }
 
@@ -388,7 +367,6 @@ showTracers tr = Tracers {
     , tChainSyncSerialisedTracer  = showTracing tr
     , tBlockFetchTracer           = showTracing tr
     , tBlockFetchSerialisedTracer = showTracing tr
-    , tTxSubmissionTracer         = showTracing tr
     , tTxSubmission2Tracer        = showTracing tr
     }
 
@@ -413,7 +391,7 @@ type ServerApp m peer bytes a =
 -- | Applications for the node-to-node protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
-data Apps m peer bCS bBF bTX bTX2 bKA a = Apps {
+data Apps m peer bCS bBF bTX bKA a = Apps {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
       aChainSyncClient     :: ClientApp m peer bCS a
@@ -428,19 +406,12 @@ data Apps m peer bCS bBF bTX bTX2 bKA a = Apps {
       -- | Start a block fetch server.
     , aBlockFetchServer    :: ServerApp m peer bBF a
 
-      -- | Start a transaction submission client that communicates with the
-      -- given upstream node.
-    , aTxSubmissionClient  :: ClientApp m peer bTX a
-
-      -- | Start a transaction submission server.
-    , aTxSubmissionServer  :: ServerApp m peer bTX a
-
       -- | Start a transaction submission v2 client that communicates with the
       -- given upstream node.
-    , aTxSubmission2Client :: ClientApp m peer bTX2 a
+    , aTxSubmission2Client :: ClientApp m peer bTX a
 
       -- | Start a transaction submission v2 server.
-    , aTxSubmission2Server :: ServerApp m peer bTX2 a
+    , aTxSubmission2Server :: ServerApp m peer bTX a
 
       -- | Start a keep-alive client.
     , aKeepAliveClient     :: ClientApp m peer bKA a
@@ -456,7 +427,7 @@ data Apps m peer bCS bBF bTX bTX2 bKA a = Apps {
 -- They don't depend on the instantiation of the protocol parameters (which
 -- block type is used, etc.), hence the use of 'RankNTypes'.
 --
-data ByteLimits bCS bBF bTX bTX2 bKA = ByteLimits {
+data ByteLimits bCS bBF bTX bKA = ByteLimits {
       blChainSync     :: forall header point tip.
                          ProtocolSizeLimits
                            (ChainSync  header point tip)
@@ -467,15 +438,10 @@ data ByteLimits bCS bBF bTX bTX2 bKA = ByteLimits {
                            (BlockFetch block point)
                            bBF
 
-    , blTxSubmission  :: forall txid tx.
-                          ProtocolSizeLimits
-                           (TxSubmission txid tx)
-                           bTX
-
     , blTxSubmission2 :: forall txid tx.
                          ProtocolSizeLimits
                            (TxSubmission2 txid tx)
-                           bTX2
+                           bTX
 
     , blKeepAlive     :: ProtocolSizeLimits
                            KeepAlive
@@ -483,20 +449,18 @@ data ByteLimits bCS bBF bTX bTX2 bKA = ByteLimits {
 
     }
 
-noByteLimits :: ByteLimits bCS bBF bTX bTX2 bKA
+noByteLimits :: ByteLimits bCS bBF bTX bKA
 noByteLimits = ByteLimits {
     blChainSync     = byteLimitsChainSync     (const 0)
   , blBlockFetch    = byteLimitsBlockFetch    (const 0)
-  , blTxSubmission  = byteLimitsTxSubmission  (const 0)
   , blTxSubmission2 = byteLimitsTxSubmission2 (const 0)
   , blKeepAlive     = byteLimitsKeepAlive     (const 0)
   }
 
-byteLimits :: ByteLimits ByteString ByteString ByteString ByteString ByteString
+byteLimits :: ByteLimits ByteString ByteString ByteString ByteString
 byteLimits = ByteLimits {
       blChainSync     = byteLimitsChainSync     size
     , blBlockFetch    = byteLimitsBlockFetch    size
-    , blTxSubmission  = byteLimitsTxSubmission  size
     , blTxSubmission2 = byteLimitsTxSubmission2 size
     , blKeepAlive     = byteLimitsKeepAlive     size
     }
@@ -507,7 +471,7 @@ byteLimits = ByteLimits {
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bBF bTX bTX2 bKA.
+  :: forall m remotePeer localPeer blk e bCS bBF bTX bKA.
      ( IOLike m
      , MonadTimer m
      , Ord remotePeer
@@ -520,12 +484,12 @@ mkApps
      )
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
-  -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bTX2 bKA)
-  -> ByteLimits bCS bBF bTX bTX2 bKA
+  -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bKA)
+  -> ByteLimits bCS bBF bTX bKA
   -> m ChainSyncTimeout
   -> ReportPeerMetrics m remotePeer
   -> Handlers m remotePeer blk
-  -> Apps m remotePeer bCS bBF bTX bTX2 bKA ()
+  -> Apps m remotePeer bCS bBF bTX bKA ()
 mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPeerMetrics {..} Handlers {..} =
     Apps {..}
   where
@@ -619,43 +583,12 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
           $ blockFetchServerPeer
           $ hBlockFetchServer version registry
 
-    aTxSubmissionClient
-      :: NodeToNodeVersion
-      -> ControlMessageSTM m
-      -> remotePeer
-      -> Channel m bTX
-      -> m ((), Maybe bTX)
-    aTxSubmissionClient version controlMessageSTM them channel = do
-      labelThisThread "TxSubmissionClient"
-      runPeerWithLimits
-        (contramap (TraceLabelPeer them) tTxSubmissionTracer)
-        (cTxSubmissionCodec (mkCodecs version))
-        blTxSubmission
-        timeLimitsTxSubmission
-        channel
-        (txSubmissionClientPeer (hTxSubmissionClient version controlMessageSTM them))
-
-    aTxSubmissionServer
-      :: NodeToNodeVersion
-      -> remotePeer
-      -> Channel m bTX
-      -> m ((), Maybe bTX)
-    aTxSubmissionServer version them channel = do
-      labelThisThread "TxSubmissionServer"
-      runPipelinedPeerWithLimits
-        (contramap (TraceLabelPeer them) tTxSubmissionTracer)
-        (cTxSubmissionCodec (mkCodecs version))
-        blTxSubmission
-        timeLimitsTxSubmission
-        channel
-        (txSubmissionServerPeerPipelined (hTxSubmissionServer version them))
-
     aTxSubmission2Client
       :: NodeToNodeVersion
       -> ControlMessageSTM m
       -> remotePeer
-      -> Channel m bTX2
-      -> m ((), Maybe bTX2)
+      -> Channel m bTX
+      -> m ((), Maybe bTX)
     aTxSubmission2Client version controlMessageSTM them channel = do
       labelThisThread "TxSubmissionClient"
       runPeerWithLimits
@@ -664,13 +597,13 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
         blTxSubmission2
         timeLimitsTxSubmission2
         channel
-        (Hello.wrapClientPeer (txSubmissionClientPeer (hTxSubmissionClient version controlMessageSTM them)))
+        (txSubmissionClientPeer (hTxSubmissionClient version controlMessageSTM them))
 
     aTxSubmission2Server
       :: NodeToNodeVersion
       -> remotePeer
-      -> Channel m bTX2
-      -> m ((), Maybe bTX2)
+      -> Channel m bTX
+      -> m ((), Maybe bTX)
     aTxSubmission2Server version them channel = do
       labelThisThread "TxSubmissionServer"
       runPipelinedPeerWithLimits
@@ -679,7 +612,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
         blTxSubmission2
         timeLimitsTxSubmission2
         channel
-        (Hello.wrapServerPeerPipelined (txSubmissionServerPeerPipelined (hTxSubmissionServer version them)))
+        (txSubmissionServerPeerPipelined (hTxSubmissionServer version them))
 
     aKeepAliveClient
       :: NodeToNodeVersion
@@ -689,12 +622,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       -> m ((), Maybe bKA)
     aKeepAliveClient version _controlMessageSTM them channel = do
       labelThisThread "KeepAliveClient"
-      let kacApp = case version of
-                     -- Version 1 doesn't support keep alive protocol but Blockfetch
-                     -- still requires a PeerGSV per peer.
-                     NodeToNodeV_1 -> \_ -> forever (threadDelay 1000) >> return ((), Nothing)
-                     NodeToNodeV_2 -> \_ -> forever (threadDelay 1000) >> return ((), Nothing)
-                     _             -> \dqCtx -> do
+      let kacApp = \dqCtx ->
                        runPeerWithLimits
                          nullTracer
                          (cKeepAliveCodec (mkCodecs version))
@@ -736,7 +664,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 initiator
   :: MiniProtocolParameters
   -> NodeToNodeVersion
-  -> Apps m (ConnectionId peer) b b b b b a
+  -> Apps m (ConnectionId peer) b b b b a
   -> OuroborosBundle 'InitiatorMode peer b m a Void
 initiator miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
@@ -753,9 +681,7 @@ initiator miniProtocolParameters version Apps {..} =
           blockFetchProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient version controlMessageSTM them))),
           txSubmissionProtocol =
-            if version >= NodeToNodeV_6
-              then InitiatorProtocolOnly (MuxPeerRaw (aTxSubmission2Client version controlMessageSTM them))
-              else InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient  version controlMessageSTM them)),
+            (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmission2Client version controlMessageSTM them))),
           keepAliveProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them)))
         })
@@ -769,7 +695,7 @@ initiator miniProtocolParameters version Apps {..} =
 initiatorAndResponder
   :: MiniProtocolParameters
   -> NodeToNodeVersion
-  -> Apps m (ConnectionId peer) b b b b b a
+  -> Apps m (ConnectionId peer) b b b b a
   -> OuroborosBundle 'InitiatorResponderMode peer b m a a
 initiatorAndResponder miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
@@ -784,15 +710,9 @@ initiatorAndResponder miniProtocolParameters version Apps {..} =
               (MuxPeerRaw (aBlockFetchClient version controlMessageSTM them))
               (MuxPeerRaw (aBlockFetchServer version                   them))),
           txSubmissionProtocol =
-            if version >= NodeToNodeV_6
-              then
-                (InitiatorAndResponderProtocol
-                  (MuxPeerRaw (aTxSubmission2Client version controlMessageSTM them))
-                  (MuxPeerRaw (aTxSubmission2Server version                   them)))
-              else
-                (InitiatorAndResponderProtocol
-                  (MuxPeerRaw (aTxSubmissionClient version controlMessageSTM them))
-                  (MuxPeerRaw (aTxSubmissionServer version                   them))),
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aTxSubmission2Client version controlMessageSTM them))
+              (MuxPeerRaw (aTxSubmission2Server version                   them))),
           keepAliveProtocol =
             (InitiatorAndResponderProtocol
               (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them))
