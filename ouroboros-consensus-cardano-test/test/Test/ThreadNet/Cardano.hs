@@ -75,6 +75,8 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
 import           Test.ThreadNet.Infra.TwoEras
+import Ouroboros.Consensus.Shelley.Node.Praos (ProtocolParamsBabbage(..))
+import Ouroboros.Consensus.Protocol.Praos.Translate ()
 
 -- | Use 'MockCryptoCompatByron' so that bootstrap addresses and
 -- bootstrap witnesses are supported.
@@ -518,6 +520,10 @@ mkProtocolCardanoAndHardForkTxs
             alonzoProtVer                 = SL.ProtVer alonzoMajorVersion  0
           , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
+        ProtocolParamsBabbage {
+            babbageProtVer                = SL.ProtVer babbageMajorVersion  0
+          , babbageMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          }
         protocolParamsByronShelley
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = ()
@@ -533,6 +539,11 @@ mkProtocolCardanoAndHardForkTxs
             transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
           , transitionTrigger            =
               TriggerHardForkAtVersion alonzoMajorVersion
+          }
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
+          , transitionTrigger            =
+              TriggerHardForkAtVersion babbageMajorVersion
           }
 
     -- Byron
@@ -588,6 +599,11 @@ maryMajorVersion = allegraMajorVersion + 1
 --
 alonzoMajorVersion :: Num a => a
 alonzoMajorVersion = maryMajorVersion + 1
+
+-- | The major protocol version of babbage in this test
+--
+babbageMajorVersion :: Num a => a
+babbageMajorVersion = alonzoMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --

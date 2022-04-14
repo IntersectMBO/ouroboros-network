@@ -11,7 +11,7 @@ import Cardano.Ledger.Crypto (Crypto)
 import Cardano.Protocol.TPraos.BHeader (HashHeader, PrevHash (..))
 import Cardano.Protocol.TPraos.OCert (KESPeriod (KESPeriod), OCert (OCert))
 import Cardano.Slotting.Block (BlockNo (BlockNo))
-import Cardano.Slotting.Slot (SlotNo (SlotNo))
+import Cardano.Slotting.Slot (SlotNo (SlotNo), WithOrigin (Origin, At))
 import Data.ByteString (ByteString)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import Ouroboros.Consensus.Protocol.Praos.Header
@@ -23,6 +23,7 @@ import Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators ()
 import Test.Crypto.KES ()
 import Test.Crypto.VRF ()
 import Test.QuickCheck (Arbitrary (..), Gen, choose, oneof)
+import Ouroboros.Consensus.Protocol.Praos (PraosState (PraosState))
 
 instance Arbitrary InputVRF where
   arbitrary = mkInputVRF <$> arbitrary <*> arbitrary
@@ -62,3 +63,16 @@ instance Praos.PraosCrypto c => Arbitrary (Header c) where
     sKey <- arbitrary
     let hSig = signedKES () period hBody sKey
     pure $ Header hBody hSig
+
+instance Praos.PraosCrypto c => Arbitrary (PraosState c) where
+  arbitrary = PraosState
+    <$> oneof [
+        pure Origin,
+        At <$> (SlotNo <$> choose (1, 10))
+      ]
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
