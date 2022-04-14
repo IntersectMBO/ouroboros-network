@@ -180,7 +180,7 @@ executable mux-demo
 
 executable cardano-ping
   import:              demo-deps
-  hs-source-dirs:      demo
+  hs-source-dirs:      tools
   main-is:             cardano-ping.hs
   other-modules:       Linger
   build-depends:       base,
