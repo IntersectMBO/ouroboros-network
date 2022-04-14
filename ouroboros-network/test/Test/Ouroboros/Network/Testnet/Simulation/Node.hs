@@ -128,19 +128,20 @@ data Command = JoinNetwork DiffTime
 genDomainMap :: [RelayAccessPoint] -> Gen (Map Domain [IP])
 genDomainMap raps = do
   let domains = [ d | RelayAccessDomain d _ <- raps ]
+      ips     = [ ip | RelayAccessAddress ip _ <- raps ]
   m <- mapM (\d -> do
     size <- chooseInt (1, 5)
-    ips <- vectorOf size genIP
-    return (d, ips)) domains
+    ips' <- vectorOf size (genIP ips)
+    return (d, ips')) domains
 
   return (Map.fromList m)
 
   where
-    genIP :: Gen IP
-    genIP =
+    genIP :: [IP] -> Gen IP
+    genIP ips =
       let genIPv4 = IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
           genIPv6 = IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
-       in oneof [genIPv4, genIPv6]
+       in oneof ([genIPv4, genIPv6] ++ map pure ips)
 
 genCommands :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
