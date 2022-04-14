@@ -56,8 +56,8 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 import qualified Test.Consensus.Byron.Examples as Byron
 
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import qualified Test.Consensus.Shelley.Examples as Shelley
 

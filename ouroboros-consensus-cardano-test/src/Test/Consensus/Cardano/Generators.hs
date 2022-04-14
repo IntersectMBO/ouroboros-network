@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -35,7 +34,9 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Ledger.Block ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
@@ -52,16 +53,15 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
 
+import           Test.Cardano.Ledger.Babbage.Serialisation.Generators ()
+import           Test.Consensus.Byron.Generators
+import           Test.Consensus.Cardano.MockCrypto
+import           Test.Consensus.Protocol.Serialisation.Generators ()
+import           Test.Consensus.Shelley.Generators
+import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      WithVersion (..))
-
-import           Test.Consensus.Byron.Generators
-
-import           Test.Consensus.Shelley.Generators
-import           Test.Consensus.Shelley.MockCrypto (CanMock)
-
-import           Test.Consensus.Cardano.MockCrypto
 
 {-------------------------------------------------------------------------------
   Disk
@@ -631,6 +631,9 @@ instance c ~ MockCryptoCompatByron
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryAnytimeResultAlonzo)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> genQueryAnytimeResultBabbage)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryHardForkResult)

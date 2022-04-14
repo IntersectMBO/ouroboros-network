@@ -167,7 +167,6 @@ roundtrip_all ccfg dictNestedHdr =
 roundtrip_SerialiseDisk
   :: forall blk.
      ( SerialiseDiskConstraints blk
-
      , Arbitrary' blk
      , Arbitrary' (Header blk)
      , Arbitrary' (LedgerState blk)

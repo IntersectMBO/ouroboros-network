@@ -6,9 +6,9 @@
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE UndecidableInstances #-}
 
 -- | Test infrastructure to test hard-forking from one Shelley-based era to
 -- another, e.g., Shelley to Allegra.

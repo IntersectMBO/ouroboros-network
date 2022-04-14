@@ -80,7 +80,6 @@ import           Data.Data (Proxy (Proxy))
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
-import           Ouroboros.Consensus.Shelley.Crypto (VRF10Crypto)
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto

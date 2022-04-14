@@ -1,13 +1,9 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -37,7 +33,12 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      SomeResult (..), WithVersion (..))
 
+import           Cardano.Ledger.Era (toTxSeq)
 import qualified Cardano.Protocol.TPraos.API as SL
+import           Ouroboros.Consensus.Protocol.Praos (Praos)
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import qualified Ouroboros.Consensus.Protocol.Praos.Header as Praos
+import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
@@ -47,7 +48,11 @@ import           Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators
                      (genCoherentBlock)
 import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
+import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import Cardano.Ledger.Crypto (Crypto)
+import Data.Coerce (coerce)
 
 {-------------------------------------------------------------------------------
   Generators
@@ -62,15 +67,55 @@ instance (CanMock era (TPraos crypto), crypto ~ EraCrypto era)
   => Arbitrary (ShelleyBlock (TPraos crypto) era) where
   arbitrary = mkShelleyBlock <$> arbitrary
 
+instance (Praos.PraosCrypto crypto, CanMock era (Praos crypto), crypto ~ EraCrypto era)
+    =>  Arbitrary (ShelleyBlock (Praos crypto) era) where
+  arbitrary = mkShelleyBlock <$> blk
+    where blk = SL.Block <$> arbitrary <*> (toTxSeq @era <$> arbitrary)
+
 -- | This uses a different upstream generator to ensure the header and block
 -- body relate as expected.
 instance (CanMock era (TPraos crypto), crypto ~ EraCrypto era)
   => Arbitrary (Coherent (ShelleyBlock (TPraos crypto) era)) where
   arbitrary = Coherent . mkShelleyBlock <$> genCoherentBlock
 
+-- | Create a coherent Praos block
+--
+--   TODO Establish a coherent block without doing this translation from a
+--   TPraos header.
+instance (CanMock era (Praos crypto), crypto ~ EraCrypto era)
+  => Arbitrary (Coherent (ShelleyBlock (Praos crypto) era)) where
+  arbitrary = Coherent . mkBlk <$> genCoherentBlock
+    where
+      mkBlk sleBlock = mkShelleyBlock $ let
+        SL.Block hdr1 bdy = sleBlock in SL.Block (translateHeader hdr1) bdy
+
+      translateHeader :: Crypto c => SL.BHeader c -> Praos.Header c
+      translateHeader (SL.BHeader bhBody bhSig) =
+          Praos.Header hBody hSig
+        where
+          hBody = Praos.HeaderBody {
+            Praos.hbBlockNo = SL.bheaderBlockNo bhBody,
+            Praos.hbSlotNo = SL.bheaderSlotNo bhBody,
+            Praos.hbPrev = SL.bheaderPrev bhBody,
+            Praos.hbVk = SL.bheaderVk bhBody,
+            Praos.hbVrfVk = SL.bheaderVrfVk bhBody,
+            Praos.hbVrfRes = coerce $ SL.bheaderEta bhBody,
+            Praos.hbBodySize = fromIntegral $ SL.bsize bhBody,
+            Praos.hbBodyHash = SL.bhash bhBody,
+            Praos.hbOCert = SL.bheaderOCert bhBody,
+            Praos.hbProtVer = SL.bprotver bhBody
+          }
+          hSig = coerce bhSig
+
 instance (CanMock era (TPraos crypto), crypto ~ EraCrypto era)
   => Arbitrary (Header (ShelleyBlock (TPraos crypto) era)) where
   arbitrary = getHeader <$> arbitrary
+
+instance (CanMock era (Praos crypto), crypto ~ EraCrypto era)
+  => Arbitrary (Header (ShelleyBlock (Praos crypto) era)) where
+  arbitrary = do
+    hdr <- arbitrary
+    pure $ ShelleyHeader hdr (ShelleyHash $ Praos.headerHash hdr)
 
 instance SL.Mock c => Arbitrary (ShelleyHash c) where
   arbitrary = ShelleyHash <$> arbitrary
