@@ -1,13 +1,9 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -37,7 +33,11 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      SomeResult (..), WithVersion (..))
 
+import           Cardano.Ledger.Era (toTxSeq)
 import qualified Cardano.Protocol.TPraos.API as SL
+import           Ouroboros.Consensus.Protocol.Praos (Praos)
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
@@ -47,6 +47,7 @@ import           Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators
                      (genCoherentBlock)
 import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
+import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 
 {-------------------------------------------------------------------------------
@@ -61,6 +62,11 @@ import           Test.Consensus.Shelley.MockCrypto (CanMock)
 instance (CanMock era (TPraos crypto), crypto ~ EraCrypto era)
   => Arbitrary (ShelleyBlock (TPraos crypto) era) where
   arbitrary = mkShelleyBlock <$> arbitrary
+
+instance (Praos.PraosCrypto crypto, CanMock era (Praos crypto), crypto ~ EraCrypto era)
+    =>  Arbitrary (ShelleyBlock (Praos crypto) era) where
+  arbitrary = mkShelleyBlock <$> blk
+    where blk = SL.Block <$> arbitrary <*> (toTxSeq @era <$> arbitrary)
 
 -- | This uses a different upstream generator to ensure the header and block
 -- body relate as expected.

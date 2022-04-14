@@ -29,6 +29,7 @@ library
 
                        Test.ThreadNet.TxGen.Allegra
                        Test.ThreadNet.TxGen.Alonzo
+                       Test.ThreadNet.TxGen.Babbage
                        Test.ThreadNet.TxGen.Cardano
                        Test.ThreadNet.TxGen.Mary
 

@@ -35,6 +35,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -631,6 +632,9 @@ instance c ~ MockCryptoCompatByron
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryAnytimeResultAlonzo)
+      , (1, WithVersion
+              <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
+              <*> genQueryAnytimeResultBabbage)
       , (1, WithVersion
               <$> (getHardForkEnabledNodeToClientVersion <$> arbitrary)
               <*> genQueryHardForkResult)
