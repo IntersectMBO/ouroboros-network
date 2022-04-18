@@ -18,7 +18,7 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 
-import           Control.Monad (replicateM_)
+import           Control.Monad (replicateM_, forever)
 import           Data.ByteString.Char8 (pack)
 import           Data.Dynamic (Typeable, fromDynamic)
 import           Data.Foldable (foldl', toList)
@@ -43,8 +43,9 @@ import           Network.Socket (SockAddr (..))
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, MonadTraceSTM,
-                     TraceValue (..), newTVarIO, readTVar, traceTVarIO)
+import           Control.Monad.Class.MonadSTM.Strict
+                     (MonadSTM, MonadTraceSTM, TraceValue(..), newTVarIO,
+                     readTVar, traceTVarIO, StrictTVar, atomically, writeTVar)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer
@@ -53,8 +54,8 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
-                     Script (Script), initScript', scriptHead, singletonScript,
-                     stepScript)
+                     Script (Script), initScript', stepScript, singletonScript,
+                     scriptHead, stepScript')
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -264,11 +265,11 @@ mockDNSActions :: forall exception m.
                   , MonadDelay m
                   , MonadTimer m
                   )
-               => LazySTM.TVar m (Script (Map Domain [(IP, TTL)]))
+               => StrictTVar m (Map Domain [(IP, TTL)])
                -> LazySTM.TVar m (Script DNSTimeout)
                -> LazySTM.TVar m (Script DNSLookupDelay)
                -> DNSActions () exception m
-mockDNSActions dnsMapScript dnsTimeoutScript dnsLookupDelayScript =
+mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
     DNSActions {
       dnsResolverResource,
       dnsAsyncResolverResource,
@@ -283,7 +284,7 @@ mockDNSActions dnsMapScript dnsTimeoutScript dnsLookupDelayScript =
                     -> Domain
                     -> m ([DNSError], [(IP, TTL)])
    dnsLookupWithTTL _ _ domain = do
-     dnsMap <- stepScript dnsMapScript
+     dnsMap <- atomically (readTVar dnsMapVar)
      DNSTimeout dnsTimeout <- stepScript dnsTimeoutScript
      DNSLookupDelay dnsLookupDelay <- stepScript dnsLookupDelayScript
 
@@ -320,6 +321,9 @@ mockLocalRootPeersProvider :: forall m.
 mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
                            dnsTimeoutScript dnsLookupDelayScript = do
       dnsMapScriptVar <- initScript' dnsMapScript
+      dnsMap <- stepScript' dnsMapScriptVar
+      dnsMapVar <- newTVarIO dnsMap
+
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       localRootPeersVar <- newTVarIO localRootPeers
@@ -327,19 +331,29 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       _ <- traceTVarIO proxy
                        resultVar
                        (\_ a -> pure $ TraceDynamic (Solo a))
-
-      void $ MonadTimer.timeout 3600 $
-        localRootPeersProvider tracer
-                               (curry toSockAddr)
-                               DNSResolver.defaultResolvConf
-                               (mockDNSActions dnsMapScriptVar
-                                               dnsTimeoutScriptVar
-                                               dnsLookupDelayScriptVar)
-                               (readTVar localRootPeersVar)
-                               resultVar
+      withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
+        void $ MonadTimer.timeout 3600 $
+          localRootPeersProvider tracer
+                                 (curry toSockAddr)
+                                 DNSResolver.defaultResolvConf
+                                 (mockDNSActions dnsMapVar
+                                                 dnsTimeoutScriptVar
+                                                 dnsLookupDelayScriptVar)
+                                 (readTVar localRootPeersVar)
+                                 resultVar
   where
     proxy :: Proxy m
     proxy = Proxy
+
+    updateDNSMap :: LazySTM.TVar m (Script (Map Domain [(IP, TTL)]))
+                 -> StrictTVar m (Map Domain [(IP, TTL)])
+                 -> m Void
+    updateDNSMap dnsMapScriptVar dnsMapVar =
+      forever $ do
+        threadDelay 10
+        dnsMap <- stepScript' dnsMapScriptVar
+        atomically (writeTVar dnsMapVar dnsMap)
+
 
 -- | 'publicRootPeersProvider' running with a given MockRoots env.
 --
@@ -362,16 +376,22 @@ mockPublicRootPeersProvider :: forall m a.
 mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                             dnsTimeoutScript dnsLookupDelayScript action = do
       dnsMapScriptVar <- initScript' dnsMapScript
+      dnsMap <- stepScript' dnsMapScriptVar
+      dnsMapVar <- newTVarIO dnsMap
+
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       publicRootPeersVar <- newTVarIO publicRootPeers
-      replicateM_ 5 $
+      replicateM_ 5 $ do
+        dnsMap' <- stepScript' dnsMapScriptVar
+        atomically (writeTVar dnsMapVar dnsMap')
+
         publicRootPeersProvider tracer
                                 (curry toSockAddr)
                                 DNSResolver.defaultResolvConf
                                 (readTVar publicRootPeersVar)
                                 (mockDNSActions @Failure
-                                                dnsMapScriptVar
+                                                dnsMapVar
                                                 dnsTimeoutScriptVar
                                                 dnsLookupDelayScriptVar)
                                 action
@@ -390,11 +410,14 @@ mockResolveDomainAddresses :: ( MonadAsync m
 mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                            dnsTimeoutScript dnsLookupDelayScript = do
       dnsMapScriptVar <- initScript' dnsMapScript
+      dnsMap <- stepScript' dnsMapScriptVar
+      dnsMapVar <- newTVarIO dnsMap
+
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       resolveDomainAccessPoint tracer
                                DNSResolver.defaultResolvConf
-                               (mockDNSActions @Failure dnsMapScriptVar
+                               (mockDNSActions @Failure dnsMapVar
                                                         dnsTimeoutScriptVar
                                                         dnsLookupDelayScriptVar)
                                [ domain

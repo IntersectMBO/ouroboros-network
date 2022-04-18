@@ -3,6 +3,8 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.Ouroboros.Network.Testnet.Simulation.Node
   ( SimArgs (..)
@@ -29,8 +31,9 @@ import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 
 import qualified Data.ByteString.Lazy as BL
+import           Data.Foldable (traverse_)
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Data.List (nub, (\\))
+import           Data.List ((\\), nub, delete)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -39,7 +42,7 @@ import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Void (Void)
 import           System.Random (StdGen, mkStdGen)
 
-import           Network.DNS (Domain)
+import           Network.DNS (Domain, TTL)
 
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
@@ -72,9 +75,9 @@ import           Simulation.Network.Snocket (BearerInfo (..), FD, withSnocket)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-                     (BlockGeneratorArgs, NtCAddr, NtCVersion, NtCVersionData,
-                     NtNAddr, NtNVersion, NtNVersionData,
-                     randomBlockGenerationArgs)
+                     (BlockGeneratorArgs, NtNAddr, randomBlockGenerationArgs,
+                     NtNVersion, NtCVersion, NtCAddr, NtCVersionData,
+                     NtNVersionData, NtNAddr_ (IPAddr))
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay, DNSTimeout)
@@ -118,7 +121,7 @@ data SimArgs =
     }
     deriving (Show)
 
-data Command = JoinNetwork DiffTime
+data Command = JoinNetwork DiffTime (Maybe NtNAddr)
              | Kill DiffTime
              | Reconfigure DiffTime
                            [(Int, Map RelayAccessPoint PeerAdvertise)]
@@ -131,21 +134,30 @@ genDomainMap raps = do
       ips     = [ ip | RelayAccessAddress ip _ <- raps ]
   m <- mapM (\d -> do
     size <- chooseInt (1, 5)
-    ips' <- vectorOf size (genIP ips)
+    ips' <- nub <$> vectorOf size (genIP ips)
     return (d, ips')) domains
 
   return (Map.fromList m)
 
-  where
-    genIP :: [IP] -> Gen IP
-    genIP ips =
-      let genIPv4 = IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
-          genIPv6 = IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
-       in oneof ([genIPv4, genIPv6] ++ map pure ips)
+genIP :: [IP] -> Gen IP
+genIP ips =
+  let genIPv4 = IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
+      genIPv6 = IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
+   in oneof ([genIPv4, genIPv6] ++ map pure ips)
 
 genCommands :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
-  commands <- vectorOf size (frequency [ (7, JoinNetwork <$> delay)
+  port <- fromIntegral <$> (arbitrary :: Gen Int)
+  commands <- vectorOf size (frequency [ (7, JoinNetwork
+                                              <$> delay
+                                              <*> ( Just
+                                                  . TestAddress
+                                                  . flip IPAddr port
+                                                  <$> genIP []
+                                                  ))
+                                       , (7, JoinNetwork
+                                              <$> delay
+                                              <*> pure Nothing)
                                        , (4, Reconfigure
                                               <$> delay
                                               <*> subLocalRootPeers)
@@ -165,17 +177,17 @@ genCommands localRoots = sized $ \size -> do
 
 fixupCommands :: [Command] -> [Command]
 fixupCommands [] = []
-fixupCommands (jn@(JoinNetwork _):t) = jn : go jn t
+fixupCommands (jn@(JoinNetwork _ _):t) = jn : go jn t
   where
     go :: Command -> [Command] -> [Command]
     go _ [] = []
     go prev (cmd:cmds) =
       case (prev, cmd) of
-        (JoinNetwork _, JoinNetwork _)   -> go prev cmds
-        (Kill _, Kill _)                 -> go prev cmds
-        (Kill _, Reconfigure _ _)        -> go prev cmds
-        (Reconfigure _ _, JoinNetwork _) -> go prev cmds
-        _                                -> cmd : go cmd cmds
+        (JoinNetwork _ _ , JoinNetwork _ _ ) -> go prev cmds
+        (Kill _          , Kill _          ) -> go prev cmds
+        (Kill _          , Reconfigure _ _ ) -> go prev cmds
+        (Reconfigure _ _ , JoinNetwork _ _ ) -> go prev cmds
+        _                                    -> cmd : go cmd cmds
 fixupCommands (_:t) = fixupCommands t
 
 -- | Multinode Diffusion Simulator Script
@@ -193,10 +205,9 @@ instance Arbitrary DiffusionScript where
     -- to take very long time for tests to run
     size <- chooseInt (0, 3)
     raps <- nub <$> vectorOf size arbitrary
-    dMap <- genDomainMap raps
 
     let toRunRaps = [ r | r@(RelayAccessAddress _ _) <- raps ]
-    toRun <- mapM (addressToRun raps dMap)
+    toRun <- mapM (addressToRun raps)
                  [ (ntnToPeerAddr ip p, r)
                  | r@(RelayAccessAddress ip p) <- toRunRaps ]
 
@@ -233,20 +244,21 @@ instance Arbitrary DiffusionScript where
 
       -- | Given a NtNAddr generate the necessary things to run in Simulation
       addressToRun :: [RelayAccessPoint]
-                   -> Map Domain [IP]
                    -> (NtNAddr, RelayAccessPoint)
                    -> Gen SimArgs
-      addressToRun raps dMap (ntnAddr, rap) = do
-        -- Slot length needs to be greater than 0 else we get a livelock in
-        -- IOSim.
+      addressToRun raps (ntnAddr, rap) = do
+        -- Slot length needs to be greater than 0 else we get a livelock on
+        -- the IOSim.
         --
         -- Quota values matches mainnet, so a slot length of 1s and 1 / 20
         -- chance that someone gets to make a block
-        let rapsWithoutSelf = raps \\ [rap]
+        let rapsWithoutSelf = delete rap raps
             bgaSlotDuration = secondsToDiffTime 1
             numberOfNodes   = length [ r | r@(RelayAccessAddress _ _) <- raps ]
             quota = 20 `div` numberOfNodes
         bgaSeed <- mkStdGen <$> arbitrary
+
+        dMap <- genDomainMap rapsWithoutSelf
 
         -- These values approximately correspond to false positive
         -- thresholds for streaks of empty slots with 99% probability,
@@ -295,7 +307,8 @@ instance Arbitrary DiffusionScript where
       shrinkDelay = map fromRational . shrink . toRational
 
       shrinkCommand :: Command -> [Command]
-      shrinkCommand (JoinNetwork d)     = JoinNetwork <$> shrinkDelay d
+      shrinkCommand (JoinNetwork d ip)  = JoinNetwork <$> shrinkDelay d
+                                                      <*> pure ip
       shrinkCommand (Kill d)            = Kill        <$> shrinkDelay d
       shrinkCommand (Reconfigure d lrp) = Reconfigure <$> shrinkDelay d
                                                       <*> shrink lrp
@@ -328,7 +341,7 @@ prop_diffusionScript_commandScript_valid (DiffusionScript ((_, cmds): t)) =
     isValid [_] = property True
     isValid (x:y:xs) =
       case (x, y) of
-        (JoinNetwork _, JoinNetwork _)   ->
+        (JoinNetwork _ _, JoinNetwork _ _)   ->
           counterexample ("Invalid sequence: " ++ show x ++ " " ++ show y) $
             property False
         (Kill _, Kill _)                 ->
@@ -337,7 +350,7 @@ prop_diffusionScript_commandScript_valid (DiffusionScript ((_, cmds): t)) =
         (Kill _, Reconfigure _ _)        ->
           counterexample ("Invalid sequence: " ++ show x ++ " " ++ show y) $
             property False
-        (Reconfigure _ _, JoinNetwork _) ->
+        (Reconfigure _ _, JoinNetwork _ _) ->
           counterexample ("Invalid sequence: " ++ show x ++ " " ++ show y) $
             property False
         _                                -> isValid (y:xs)
@@ -349,6 +362,7 @@ data DiffusionSimulationTrace
   = TrJoiningNetwork
   | TrKillingNode
   | TrReconfigurionNode
+  | TrUpdatingDNS
   | TrRunning
   deriving (Show)
 
@@ -386,9 +400,14 @@ diffusionSimulation
     withSnocket nullTracer defaultBearerInfo Map.empty
       $ \ntnSnocket _ ->
         withSnocket nullTracer defaultBearerInfo Map.empty
-      $ \ntcSnocket _ ->
+      $ \ntcSnocket _ -> do
+        let dnsMaps = map (\(sa, _)
+                            -> (saAddr sa, fmap (, 0) <$> saDomainMap sa))
+                          args
+        dnsMapVarMap <- Map.fromList <$> mapM (mapM (newTVarIO @m)) dnsMaps
         withAsyncAll
-          (map (uncurry (runCommand Nothing ntnSnocket ntcSnocket)) args)
+          (map (uncurry (runCommand Nothing ntnSnocket ntcSnocket dnsMapVarMap))
+                        args)
           $ \nodes -> do
             (_, x) <- waitAny nodes
             return x
@@ -403,49 +422,99 @@ diffusionSimulation
         -- ^ Node to node Snocket
       -> Snocket m (FD m NtCAddr) NtCAddr
         -- ^ Node to client Snocket
+      -> Map NtNAddr (StrictTVar m (Map Domain [(IP, TTL)]))
+        -- ^ Map of domain map TVars to be updated in case a node changes its IP
       -> SimArgs -- ^ Simulation arguments needed in order to run a single node
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
-    runCommand Nothing ntnSnocket ntcSnocket simArgs [] = do
+    runCommand Nothing ntnSnocket ntcSnocket dMapVarMap simArgs [] = do
       threadDelay 3600
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket simArgs []
-    runCommand (Just (_, _)) ntnSnocket ntcSnocket simArgs [] = do
+      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap simArgs []
+    runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap simArgs [] = do
       -- We shouldn't block this thread waiting
       -- on the async since this will lead to a deadlock
       -- as thread returns 'Void'.
       threadDelay 3600
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrRunning
-      runCommand Nothing ntnSnocket ntcSnocket simArgs []
-    runCommand Nothing ntnSnocket ntcSnocket simArgs (JoinNetwork delay:cs) = do
+      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap simArgs []
+    runCommand Nothing ntnSnocket ntcSnocket dMapVarMap simArgs
+               (JoinNetwork delay Nothing:cs) = do
       threadDelay delay
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrJoiningNetwork
       lrpVar <- newTVarIO $ saLocalRootPeers simArgs
-      withAsync (runNode simArgs ntnSnocket ntcSnocket lrpVar) $ \nodeAsync ->
-        runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket simArgs cs
-    runCommand _ _ _ _ (JoinNetwork _:_) =
+      let dnsMapVar = dMapVarMap Map.! saAddr simArgs
+      withAsync (runNode simArgs ntnSnocket ntcSnocket lrpVar dnsMapVar) $ \nodeAsync ->
+        runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket dMapVarMap simArgs cs
+    runCommand Nothing ntnSnocket ntcSnocket dMapVarMap simArgs
+               (JoinNetwork delay (Just ip):cs) = do
+      threadDelay delay
+      let simArgs' = simArgs { saAddr = ip }
+      traceWith (diffSimTracerWithTimName ip) TrJoiningNetwork
+      lrpVar <- newTVarIO $ saLocalRootPeers simArgs'
+
+      -- Updating DomainMap entry now that the node is having a new IP
+      let dnsMapVar = dMapVarMap Map.! saAddr simArgs
+      let dMapVarMap' = Map.delete (saAddr simArgs) dMapVarMap
+          dMapVarMap'' = Map.insert ip dnsMapVar dMapVarMap'
+
+      withAsync (runNode simArgs' ntnSnocket ntcSnocket lrpVar dnsMapVar)
+        $ \nodeAsync ->
+          withAsync (updateDomainMap delay (saAddr simArgs) ip dMapVarMap'')
+            $ \_ ->
+              runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket
+                         dMapVarMap'' simArgs' cs
+    runCommand _ _ _ _ _ (JoinNetwork _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, _)) ntnSnocket ntcSnocket simArgs
+    runCommand (Just (async, _)) ntnSnocket ntcSnocket dMapVarMap simArgs
                (Kill delay:cs) = do
       threadDelay delay
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrKillingNode
       cancel async
-      runCommand Nothing ntnSnocket ntcSnocket simArgs cs
-    runCommand _ _ _ _ (Kill _:_) = do
+      runCommand Nothing ntnSnocket ntcSnocket dMapVarMap simArgs cs
+    runCommand _ _ _ _ _ (Kill _:_) = do
       error "runCommand: Impossible happened"
-    runCommand Nothing _ _ _ (Reconfigure _ _:_) =
+    runCommand Nothing _ _ _ _ (Reconfigure _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket simArgs
+    runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap simArgs
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
       traceWith (diffSimTracerWithTimName (saAddr simArgs)) TrReconfigurionNode
       _ <- atomically $ writeTVar lrpVar newLrp
-      runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket simArgs cs
+      runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap simArgs
+                 cs
+
+    updateDomainMap :: DiffTime
+                    -> NtNAddr
+                    -> NtNAddr
+                    -> Map NtNAddr (StrictTVar m (Map Domain [(IP, TTL)]))
+                    -> m ()
+    updateDomainMap delay
+                    oip@(TestAddress (IPAddr oldIP _))
+                    (TestAddress (IPAddr newIP _))
+                    dMapVarMap = do
+      threadDelay delay
+      traceWith (diffSimTracerWithTimName oip) TrUpdatingDNS
+      traverse_ (\dMapVar -> atomically $ do
+                  dnsMap <- readTVar dMapVar
+                  let dnsMap' =
+                        Map.mapWithKey
+                          (\_ l ->
+                            case lookup oldIP l of
+                              Nothing  -> l
+                              Just ttl -> (newIP, ttl):delete (oldIP, ttl) l
+                          )
+                          dnsMap
+                  writeTVar dMapVar dnsMap'
+                )
+                dMapVarMap
+    updateDomainMap _ _ _ _ = return ()
 
     runNode :: SimArgs
             -> Snocket m (FD m NtNAddr) NtNAddr
             -> Snocket m (FD m NtCAddr) NtCAddr
             -> StrictTVar m [(Int, Map RelayAccessPoint PeerAdvertise)]
+            -> StrictTVar m (Map Domain [(IP, TTL)])
             -> m Void
     runNode SimArgs
             { saSlot                  = bgaSlotDuration
@@ -454,7 +523,6 @@ diffusionSimulation
             , saMbTime                = mustReplyTimeout
             , saRelays                = raps
             , saRng                   = stdGen
-            , saDomainMap             = dMap
             , saAddr                  = rap
             , saLocalSelectionTargets = peerSelectionTargets
             , saDNSTimeoutScript      = dnsTimeout
@@ -462,7 +530,8 @@ diffusionSimulation
             }
             ntnSnocket
             ntcSnocket
-            lrpVar =
+            lrpVar
+            dMapVar =
       let acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
           diffusionMode = InitiatorAndResponderDiffusionMode
@@ -518,11 +587,10 @@ diffusionSimulation
             Node.Interfaces
               { Node.iNtnSnocket        = ntnSnocket
               , Node.iAcceptVersion     = acceptVersion
-              , Node.iNtnDomainResolver = (return .)
-                                        <$> domainResolver raps dMap
+              , Node.iNtnDomainResolver = domainResolver raps dMapVar
               , Node.iNtcSnocket        = ntcSnocket
               , Node.iRng               = stdGen
-              , Node.iDomainMap         = dMap
+              , Node.iDomainMap         = dMapVar
               , Node.iLedgerPeersConsensusInterface
                                         = LedgerPeersConsensusInterface
                                         $ \_ -> return Nothing
@@ -553,11 +621,12 @@ diffusionSimulation
                    (tracersExtraWithTimeName rap)
 
     domainResolver :: [RelayAccessPoint]
-                   -> Map Domain [IP]
+                   -> StrictTVar m (Map Domain [(IP, TTL)])
                    -> LookupReqs
                    -> [DomainAccessPoint]
-                   -> Map DomainAccessPoint (Set NtNAddr)
-    domainResolver raps dMap _ daps = do
+                   -> m (Map DomainAccessPoint (Set NtNAddr))
+    domainResolver raps dMapVar _ daps = do
+      dMap <- fmap (map fst) <$> atomically (readTVar dMapVar)
       let domains    = [ (d, p) | RelayAccessDomain d p <- raps ]
           domainsAP  = uncurry DomainAccessPoint <$> domains
           mapDomains = [ ( DomainAccessPoint d p
@@ -568,7 +637,7 @@ diffusionSimulation
                        | DomainAccessPoint d p <- domainsAP \\ daps
                        , Map.member d dMap
                        ]
-      Map.fromList mapDomains
+      return (Map.fromList mapDomains)
 
 
 ntnToPeerAddr :: IP -> PortNumber -> NtNAddr
