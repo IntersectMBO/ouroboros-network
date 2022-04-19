@@ -42,6 +42,7 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.Util.ShowProxy
 
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
@@ -247,9 +248,13 @@ runConnectedPeers :: forall ps pr st failure bytes m a b.
 runConnectedPeers createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    (fst <$> runPeer tracerClient codec clientChannel client)
+    (do labelThisThread "client"
+        fst <$> runPeer tracerClient codec clientChannel client
+    )
       `concurrently`
-    (fst <$> runPeer tracerServer codec serverChannel server)
+    (do labelThisThread "server"
+        fst <$> runPeer tracerServer codec serverChannel server
+    )
   where
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer
