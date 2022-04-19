@@ -222,7 +222,7 @@ prop_channel_ST params =
 --
 prop_channel_IO :: TxSubmissionTestParams -> Property
 prop_channel_IO params =
-    ioProperty (prop_channel createConnectedChannels params)
+    ioProperty (prop_channel createConnectedBufferedChannelsUnbounded params)
 
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
