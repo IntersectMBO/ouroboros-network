@@ -9,6 +9,7 @@
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -30,7 +31,7 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadCatch)
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
-import Control.Tracer (Tracer (..), nullTracer)
+import Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import Codec.Serialise (DeserialiseFailure, Serialise)
 import Codec.Serialise qualified as Serialise (decode, encode)
@@ -215,9 +216,9 @@ prop_channel createChannels params@TxSubmissionTestParams{testTransactions} =
       nullTracer
       codec_v2
       (txSubmissionServerPeerPipelined $
-       testServer nullTracer params)
+       testServer (("server",) `contramap` nullTracer) params)
       (txSubmissionClientPeer $
-       testClient nullTracer params)
+       testClient (("client",) `contramap` nullTracer) params)
 
 
 -- | Run 'prop_channel' in the simulation monad.

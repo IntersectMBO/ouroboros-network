@@ -379,7 +379,6 @@ runInitiatorProtocols
        , MonadSTM         m
        , MonadThrow  (STM m)
        , HasInitiator muxMode ~ True
-       , MonadSay         m
        )
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m
