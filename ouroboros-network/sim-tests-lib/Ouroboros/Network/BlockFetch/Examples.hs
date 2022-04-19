@@ -14,6 +14,7 @@ module Ouroboros.Network.BlockFetch.Examples
 
 import Codec.Serialise (Serialise (..))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Foldable (traverse_)
 import Data.List as List (foldl')
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
@@ -39,11 +40,10 @@ import Ouroboros.Network.Block
 
 import Network.TypedProtocol.Peer.Client
 
-import Ouroboros.Network.ControlMessage (ControlMessageSTM)
-
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.Channel
+import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
@@ -102,11 +102,14 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
       labelThread threadId "driver"
       driver blockHeap
 
-    -- Order of shutdown here is important for this example: must kill off the
-    -- fetch thread before the peer threads.
-    _ <- waitAnyCancel $ [ fetchAsync, driverAsync,
-                           clientAsync, serverAsync,
-                           syncClientAsync, keepAliveAsync]
+    -- Order of shutdown is important for this example: must kill the fetch
+    -- thread before the peer threads, or otherwise the first assertion in
+    -- `fetchDecisionsForStateSnapshot` can be triggered.
+    atomically $ controlMessageSTM >>= check . (Terminate ==)
+    cancel fetchAsync
+    _ <- waitAnyCancel [ driverAsync, clientAsync, serverAsync
+                       , syncClientAsync, keepAliveAsync
+                       ]
     return ()
 
   where
