@@ -176,14 +176,14 @@ blockFetchExample1 :: forall m.
                                  (TraceSendRecv (BlockFetch Block (Point Block))))
                    -> Maybe DiffTime -- ^ client's channel delay
                    -> Maybe DiffTime -- ^ server's channel delay
-                   -> ControlMessageSTM m
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
 blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                    clientDelay serverDelay
-                   controlMessageSTM
                    currentChain candidateChains = do
+    controlMessageVar <- newTVarIO Continue
+    let controlMessageSTM = readTVar controlMessageVar
 
     registry    <- newFetchClientRegistry
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
@@ -213,9 +213,12 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     -- fetch thread before the peer threads.
     _ <- waitAnyCancel $ [ fetchAsync, driverAsync ]
                       ++ [ peerAsync
-                         | (client, server, sync, ks) <- peerAsyncs
-                         , peerAsync <- [client, server, sync, ks] ]
-    return ()
+                         | (_, server, sync, ks) <- peerAsyncs
+                         , peerAsync <- [server, sync, ks] ]
+
+    -- let the client side protocols terminate gracefully.
+    atomically $ writeTVar controlMessageVar Terminate
+    traverse_ (\(client,_,_,_) -> waitCatch client) peerAsyncs
 
   where
     serverMsgTracer = nullTracer

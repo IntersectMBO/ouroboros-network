@@ -128,7 +128,6 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
         Nothing Nothing
-        (continueForever (Proxy :: Proxy (IOSim s)))
         common' forks
 
     -- TODO: consider making a specific generator for anchored fragment forks
@@ -189,7 +188,6 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
         Nothing Nothing
-        (continueForever (Proxy :: Proxy (IOSim s)))
         (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis)
         forks
 
@@ -507,7 +505,7 @@ tracePropertyInFlight =
     checkTrace Nothing reqsInFlight []
       | reqsInFlight > 0
       = counterexample
-          ("traceProeprtyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
+          ("tracePropertyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
           False
       | otherwise
       = property True
