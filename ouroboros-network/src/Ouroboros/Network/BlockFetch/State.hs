@@ -80,7 +80,7 @@ fetchLogicIterations decisionTracer clientStateTracer
         stateFingerprint
       end <- getMonotonicTime
       let delta = diffTime end start
-      -- Limit descision making to once every decisionLoopInterval.
+      -- Limit decision is made once every decisionLoopInterval.
       threadDelay $ (decisionLoopInterval fetchDecisionPolicy) - delta
       return stateFingerprint'
 
