@@ -150,12 +150,12 @@ prop_connect1 params@TxSubmissionTestParams{testTransactions} =
     case runSimOrThrow
            (connect
              [] []
-             (txSubmissionServerPeerPipelined $
-              testServer nullTracer params)
              (txSubmissionClientPeer $
-              testClient nullTracer params)) of
+              testClient nullTracer params)
+             (txSubmissionServerPeerPipelined $
+              testServer nullTracer params)) of
 
-      (txs', (), TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
+      ((), txs', TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
                                 (SingProtocolState SingDone) ReflNobodyAgency) ->
         txs' == fromDistinctList testTransactions
 
@@ -171,12 +171,12 @@ prop_connect2 params@TxSubmissionTestParams{testTransactions}
                      (NonEmpty choices) =
     case runSimOrThrow
            (connect choices []
-             (txSubmissionServerPeerPipelined $
-              testServer nullTracer params)
              (txSubmissionClientPeer $
-              testClient nullTracer params)) of
+              testClient nullTracer params)
+             (txSubmissionServerPeerPipelined $
+              testServer nullTracer params)) of
 
-      (txs', (), TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
+      ((), txs', TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
                                 (SingProtocolState SingDone) ReflNobodyAgency) ->
         txs' == fromDistinctList testTransactions
 
