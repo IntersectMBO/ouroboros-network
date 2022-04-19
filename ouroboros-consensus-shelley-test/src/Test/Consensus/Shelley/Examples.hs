@@ -21,12 +21,11 @@ module Test.Consensus.Shelley.Examples (
 
 import           Data.Foldable (toList)
 import qualified Data.Map as Map
-import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Records (HasField (getField))
 
 import qualified Cardano.Ledger.Core as LC
-import           Cardano.Ledger.Era (Crypto)
+import           Cardano.Ledger.Era (Crypto, getAllTxInputs)
 import           Cardano.Ledger.Shelley.Tx (TxIn)
 
 import           Ouroboros.Network.Block (Serialised (..))
@@ -74,7 +73,6 @@ codecConfig = ShelleyCodecConfig
 fromShelleyLedgerExamples
   :: forall era.
      ( ShelleyBasedEra era
-     , HasField "inputs" (LC.TxBody era) (Set (TxIn (Crypto era)))
      )
   => ShelleyLedgerExamples era
   -> Golden.Examples (ShelleyBlock era)
@@ -153,7 +151,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
       where
         exampleTxIns :: [TxIn (Crypto era)]
         exampleTxIns  =
-          case toList $ getField @"inputs" $ getField @"body" sleTx of
+          case toList $ getAllTxInputs $ getField @"body" sleTx of
             [] -> error "No transaction inputs were provided to construct the ledger tables"
                   -- We require at least one transaction input (and one
                   -- transaction output) in the example provided by
