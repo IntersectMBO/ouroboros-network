@@ -14,6 +14,7 @@ module Ouroboros.Network.BlockFetch.Examples
 
 import           Codec.Serialise (Serialise (..))
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Foldable (traverse_)
 import           Data.List (foldl')
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
@@ -45,7 +46,7 @@ import           Network.TypedProtocol.Peer.Client (Client)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import           Ouroboros.Network.ControlMessage
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
@@ -183,14 +184,14 @@ blockFetchExample1 :: forall m.
                                  (TraceSendRecv (BlockFetch Block (Point Block))))
                    -> Maybe DiffTime -- ^ client's channel delay
                    -> Maybe DiffTime -- ^ server's channel delay
-                   -> ControlMessageSTM m
                    -> AnchoredFragment Block   -- ^ Fixed current chain
                    -> [AnchoredFragment Block] -- ^ Fixed candidate chains
                    -> m ()
 blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                    clientDelay serverDelay
-                   controlMessageSTM
                    currentChain candidateChains = do
+    controlMessageVar <- newTVarIO Continue
+    let controlMessageSTM = readTVar controlMessageVar
 
     registry    <- newFetchClientRegistry
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
@@ -221,9 +222,12 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
     -- fetch thread before the peer threads.
     _ <- waitAnyCancel $ [ fetchAsync, driverAsync ]
                       ++ [ peerAsync
-                         | (client, server, sync, ks) <- peerAsyncs
-                         , peerAsync <- [client, server, sync, ks] ]
-    return ()
+                         | (_, server, sync, ks) <- peerAsyncs
+                         , peerAsync <- [server, sync, ks] ]
+
+    -- let the client side protocols terminate gracefully.
+    atomically $ writeTVar controlMessageVar Terminate
+    traverse_ (\(client,_,_,_) -> waitCatch client) peerAsyncs
 
   where
     serverMsgTracer = nullTracer

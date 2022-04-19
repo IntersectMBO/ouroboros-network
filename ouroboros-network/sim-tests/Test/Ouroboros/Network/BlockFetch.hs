@@ -18,7 +18,6 @@ import           Data.List
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
-import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
@@ -34,8 +33,7 @@ import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     continueForever)
+import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import           Ouroboros.Network.DeltaQ
 --TODO: could re-export some of the trace types from more convenient places:
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -126,7 +124,6 @@ prop_blockFetchStaticNoOverlap (TestChainFork common fork1 fork2) =
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
         Nothing Nothing
-        (continueForever (Proxy :: Proxy (IOSim s)))
         common' forks
 
     -- TODO: consider making a specific generator for anchored fragment forks
@@ -187,7 +184,6 @@ prop_blockFetchStaticWithOverlap (TestChainFork _common fork1 fork2) =
         (contramap TraceFetchClientState    dynamicTracer)
         (contramap TraceFetchClientSendRecv dynamicTracer)
         Nothing Nothing
-        (continueForever (Proxy :: Proxy (IOSim s)))
         (AnchoredFragment.Empty AnchoredFragment.AnchorGenesis)
         forks
 
@@ -505,7 +501,7 @@ tracePropertyInFlight =
     checkTrace Nothing reqsInFlight []
       | reqsInFlight > 0
       = counterexample
-          ("traceProeprtyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
+          ("tracePropertyInFlight: reqsInFlight = " ++ show reqsInFlight ++ " ≠ 0")
           False
       | otherwise
       = property True
