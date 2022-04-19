@@ -3,7 +3,7 @@
 
 module Main (main) where
 
-import           Control.Monad (replicateM)
+import           Control.Monad (replicateM, forever)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
@@ -67,6 +67,9 @@ prop_timeout_fail = timeout 1 (threadDelay 2)
 prop_timeout_succeed :: forall m. MonadTimer m => m (Maybe ())
 prop_timeout_succeed = timeout 2 (threadDelay 1)
 
+prop_timeout_race :: forall m. MonadTimer m => m (Maybe ())
+prop_timeout_race = timeout 1 (threadDelay 1)
+
 
 --
 -- threads, async
@@ -88,6 +91,13 @@ prop_async n = do
                             )
     traverse_ wait threads
 
+prop_threadDelay_bottleneck :: forall m. (MonadTimer m, MonadSay m)
+                            => m (Maybe ())
+prop_threadDelay_bottleneck =
+  timeout 1000000 $ do
+    forever $ do
+      threadDelay 1
+      say ""
 
 main :: IO ()
 main = defaultMain
@@ -117,6 +127,8 @@ main = defaultMain
           whnf id (runSimOrThrow prop_timeout_fail)
         , bench "succeed" $
           whnf id (runSimOrThrow prop_timeout_succeed)
+        , bench "race" $
+          whnf id (runSimOrThrow prop_timeout_race)
         ]
       ]
     ,
@@ -127,6 +139,8 @@ main = defaultMain
           whnf id (runSimOrThrow (prop_async n))
         , bench "forkIO silent" $
           whnf id (runSimOrThrow (prop_threads n))
+        , bench "threadDelay bottleneck silent" $
+          whnf id (runSimOrThrow prop_threadDelay_bottleneck)
         , bench "async say" $
           nf id ( selectTraceEventsSay
                 $ runSimTrace
@@ -135,6 +149,10 @@ main = defaultMain
           nf id ( selectTraceEventsSay
                 $ runSimTrace
                 $ prop_threads n)
+        , bench "threadDelay bottleneck say" $
+          nf id ( selectTraceEventsSay
+                $ runSimTrace
+                $ prop_threadDelay_bottleneck)
         ]
       , env (pure 250) $ \n ->
         bgroup "250"
