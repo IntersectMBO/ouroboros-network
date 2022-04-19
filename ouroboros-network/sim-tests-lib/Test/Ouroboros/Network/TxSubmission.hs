@@ -230,7 +230,8 @@ txSubmissionSimulation maxUnacked outboundTxs
 
     inboundMempool  <- emptyMempool
     outboundMempool <- newMempool outboundTxs
-    (outboundChannel, inboundChannel) <- createConnectedChannels
+    (outboundChannel, inboundChannel) <- createConnectedBufferedChannels
+                                           (fromIntegral maxUnacked)
     outboundAsync <-
       async $ runPeerWithLimits
                 (("OUTBOUND",) `contramap` verboseTracer)
