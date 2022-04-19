@@ -350,8 +350,14 @@ delayChannel :: MonadDelay m
              => DiffTime
              -> Channel m a
              -> Channel m a
-delayChannel delay = channelEffect (\_ -> return ())
-                                   (\_ -> threadDelay delay)
+delayChannel delay Channel{send, recv, tryRecv} =
+    Channel { send
+            , recv    = threadDelay (delay / 2)
+                     >> recv
+                     <* threadDelay (delay / 2)
+            , tryRecv = tryRecv
+            }
+
 
 
 -- | Channel which logs sent and received messages.
