@@ -32,6 +32,7 @@ module Ouroboros.Network.Driver.Limits
 import Data.Maybe (fromMaybe)
 
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
@@ -215,11 +216,11 @@ runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
 --
 runConnectedPeersWithLimits
   :: forall ps pr st failure bytes m a b.
-     ( MonadAsync      m
-     , MonadFork       m
-     , MonadMask       m
-     , MonadTimer      m
-     , MonadThrow (STM m)
+     ( MonadAsync       m
+     , MonadFork        m
+     , MonadMask        m
+     , MonadTimer       m
+     , MonadThrow  (STM m)
      , Exception failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
@@ -235,11 +236,13 @@ runConnectedPeersWithLimits
 runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    (fst <$> runPeerWithLimits
-                     tracerClient codec slimits tlimits
-                                        clientChannel client)
+    (do labelThisThread "client"
+        fst <$> runPeerWithLimits
+                        tracerClient codec slimits tlimits
+                                     clientChannel client)
       `concurrently`
-    (fst <$> runPeer tracerServer codec serverChannel server)
+    (do labelThisThread "server"
+        fst <$> runPeer tracerServer codec serverChannel server)
   where
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer

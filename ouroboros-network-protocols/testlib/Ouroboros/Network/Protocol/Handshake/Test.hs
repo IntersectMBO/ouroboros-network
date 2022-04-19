@@ -549,6 +549,7 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
 prop_channel_asymmetric
     :: ( MonadAsync m
        , MonadCatch m
+       , MonadLabelledSTM m
        , MonadMask  m
        , MonadST m
        )
