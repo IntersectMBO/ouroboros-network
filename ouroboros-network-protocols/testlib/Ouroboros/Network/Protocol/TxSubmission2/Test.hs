@@ -9,6 +9,7 @@
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneKindSignatures   #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
@@ -32,7 +33,7 @@ import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
                      MonadThrow)
 import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
-import           Control.Tracer (Tracer (..), nullTracer)
+import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           Codec.Serialise (DeserialiseFailure, Serialise)
 import qualified Codec.Serialise as Serialise (decode, encode)
@@ -41,7 +42,7 @@ import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Driver.Simple (Role (..), runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
@@ -203,9 +204,9 @@ prop_channel createChannels params@TxSubmissionTestParams{testTransactions} =
       nullTracer
       codec_v2
       (txSubmissionServerPeerPipelined $
-       testServer nullTracer params)
+       testServer ((Server,) `contramap` nullTracer) params)
       (txSubmissionClientPeer $
-       testClient nullTracer params)
+       testClient ((Client,) `contramap` nullTracer) params)
 
 
 -- | Run 'prop_channel' in the simulation monad.
