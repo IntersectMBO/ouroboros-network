@@ -692,13 +692,14 @@ reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
 --
 runInitiatorProtocols
     :: forall muxMode m a b.
-       ( MonadAsync      m
-       , MonadCatch      m
-       , MonadMask       m
-       , MonadSTM        m
-       , MonadThrow (STM m)
+       ( MonadAsync       m
+       , MonadCatch       m
+       , MonadLabelledSTM m
+       , MonadMask        m
+       , MonadSTM         m
+       , MonadThrow  (STM m)
        , HasInitiator muxMode ~ True
-       , MonadSay        m
+       , MonadSay         m
        )
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m

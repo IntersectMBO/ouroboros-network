@@ -195,7 +195,7 @@ prop_connect input =
 prop_channel :: ( MonadAsync m
                 , MonadCatch m
                 , MonadLabelledSTM m
-                , MonadST m
+                , MonadST    m
                 , MonadMask  m
                 , MonadThrow m
                 , MonadThrow (STM m)

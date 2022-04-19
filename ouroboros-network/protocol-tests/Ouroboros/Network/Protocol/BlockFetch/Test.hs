@@ -17,7 +17,7 @@ import           Data.Singletons
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadSTM (MonadSTM, STM)
+import           Control.Monad.Class.MonadSTM (MonadSTM, MonadLabelledSTM, STM)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask, MonadThrow)
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
@@ -245,8 +245,8 @@ prop_connect_pipelined5 (TestChainAndPoints chain points)
 
 -- | Run a simple block-fetch client and server using connected channels.
 --
-prop_channel :: ( MonadAsync m, MonadCatch m, MonadMask m, MonadST m
-                , MonadThrow m, MonadThrow (STM m) )
+prop_channel :: ( MonadAsync m, MonadCatch m, MonadLabelledSTM m, MonadMask m
+                , MonadST m, MonadThrow m, MonadThrow (STM m) )
              => m (Channel m ByteString, Channel m ByteString)
              -> Chain Block -> [Point Block] -> m Property
 prop_channel createChannels chain points = do

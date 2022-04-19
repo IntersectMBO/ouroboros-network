@@ -85,14 +85,15 @@ import           Ouroboros.Network.Server.RateLimiting
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
 inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a b.
-                   ( MonadAsync    m
-                   , MonadCatch    m
-                   , MonadEvaluate m
-                   , MonadThrow    m
-                   , MonadThrow    (STM m)
-                   , MonadTime     m
-                   , MonadTimer    m
-                   , MonadMask     m
+                   ( MonadAsync       m
+                   , MonadCatch       m
+                   , MonadEvaluate    m
+                   , MonadLabelledSTM m
+                   , MonadThrow       m
+                   , MonadThrow  (STM m)
+                   , MonadTime        m
+                   , MonadTimer       m
+                   , MonadMask        m
                    , Ord peerAddr
                    , HasResponder muxMode ~ True
                    )
@@ -467,10 +468,11 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
 --
 runResponder :: forall (mode :: MuxMode) m a b.
                  ( HasResponder mode ~ True
-                 , MonadAsync m
-                 , MonadCatch m
-                 , MonadMask  m
-                 , MonadThrow (STM m)
+                 , MonadAsync       m
+                 , MonadLabelledSTM m
+                 , MonadCatch       m
+                 , MonadMask        m
+                 , MonadThrow  (STM m)
                  )
               => Mux.Mux mode m
               -> MiniProtocol mode ByteString m a b

@@ -189,6 +189,7 @@ txSubmissionCodec2 =
 txSubmissionSimulation
   :: forall m txid.
      ( MonadAsync m
+     , MonadLabelledSTM m
      , MonadFork  m
      , MonadMask  m
      , MonadSay   m

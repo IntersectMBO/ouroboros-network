@@ -973,10 +973,11 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
 -- protocol bundle indicated by the type of the first argument.
 --
 startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature) peerAddr m a b.
-                  ( MonadAsync m
-                  , MonadCatch m
-                  , MonadMask  m
-                  , MonadThrow (STM m)
+                  ( MonadAsync       m
+                  , MonadLabelledSTM m
+                  , MonadCatch       m
+                  , MonadMask        m
+                  , MonadThrow  (STM m)
                   , HasInitiator muxMode ~ True
                   )
                => TokProtocolTemperature pt

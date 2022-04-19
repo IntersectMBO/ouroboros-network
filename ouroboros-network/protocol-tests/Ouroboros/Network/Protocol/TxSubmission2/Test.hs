@@ -26,7 +26,7 @@ import           Data.Word (Word16)
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadSTM (STM)
+import           Control.Monad.Class.MonadSTM (MonadLabelledSTM, STM)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask, MonadThrow)
 import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
@@ -185,8 +185,9 @@ prop_connect2 params@TxSubmissionTestParams{testTransactions}
 
 -- | Run a simple tx-submission client and server using connected channels.
 --
-prop_channel :: ( MonadAsync m, MonadCatch m, MonadMask m, MonadST m
-                , MonadThrow m, MonadThrow (STM m))
+prop_channel :: ( MonadAsync m, MonadCatch m, MonadLabelledSTM m
+                , MonadMask m, MonadST m, MonadThrow m, MonadThrow (STM m)
+                )
              => m (Channel m ByteString, Channel m ByteString)
              -> TxSubmissionTestParams
              -> m Bool

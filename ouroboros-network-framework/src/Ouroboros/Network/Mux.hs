@@ -314,9 +314,10 @@ data MuxPeer bytes m a where
            :: (Channel m bytes -> m (a, Maybe bytes))
            -> MuxPeer bytes m a
 
-toApplication :: ( MonadAsync m
-                 , MonadMask  m
-                 , MonadThrow (STM m)
+toApplication :: ( MonadAsync       m
+                 , MonadLabelledSTM m
+                 , MonadMask        m
+                 , MonadThrow  (STM m)
                  )
               => ConnectionId addr
               -> ControlMessageSTM m
@@ -373,9 +374,10 @@ mkMiniProtocolBundle = MiniProtocolBundle . foldMap fn
                ]
 
 toMuxRunMiniProtocol :: forall mode m a b.
-                        ( MonadAsync m
-                        , MonadMask  m
-                        , MonadThrow (STM m)
+                        ( MonadAsync       m
+                        , MonadLabelledSTM m
+                        , MonadMask        m
+                        , MonadThrow  (STM m)
                         )
                      => RunMiniProtocol mode LBS.ByteString m a b
                      -> Mux.Compat.RunMiniProtocol mode m a b
@@ -391,9 +393,10 @@ toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
 -- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
 --
 runMuxPeer
-  :: ( MonadAsync m
-     , MonadMask  m
-     , MonadThrow (STM m)
+  :: ( MonadAsync        m
+     , MonadLabelledSTM  m
+     , MonadMask         m
+     , MonadThrow   (STM m)
      )
   => MuxPeer bytes m a
   -> Channel m bytes

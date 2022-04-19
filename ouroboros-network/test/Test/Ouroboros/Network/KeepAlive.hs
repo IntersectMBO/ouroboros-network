@@ -137,6 +137,7 @@ prop_keepAlive_convergenceM
     :: forall m.
         ( Eq (Async m ())
         , MonadAsync m
+        , MonadLabelledSTM m
         , MonadFork m
         , MonadMask m
         , MonadMonotonicTime m

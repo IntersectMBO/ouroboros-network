@@ -208,7 +208,7 @@ createConnectedBufferedChannelsUnbounded = do
 --
 -- This is primarily useful for testing protocols.
 --
-createConnectedBufferedChannels :: forall m a. MonadSTM m
+createConnectedBufferedChannels :: forall m a. MonadLabelledSTM m
                                 => Natural -> m (Channel m a, Channel m a)
 createConnectedBufferedChannels sz = do
     (chan1, chan2) <- atomically $ createConnectedBufferedChannelsSTM sz
@@ -224,13 +224,15 @@ createConnectedBufferedChannels sz = do
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
 --
 -- TODO: it should return a pair of `Channel m a`.
-createConnectedBufferedChannelsSTM :: MonadSTM m
+createConnectedBufferedChannelsSTM :: MonadLabelledSTM m
                                    => Natural -> STM m (Channel (STM m) a, Channel (STM m) a)
 createConnectedBufferedChannelsSTM sz = do
     -- Create two TBQueues to act as the channel buffers (one for each
     -- direction) and use them to make both ends of a bidirectional channel
     bufferA <- newTBQueue sz
+    labelTBQueue bufferA "chann-a"
     bufferB <- newTBQueue sz
+    labelTBQueue bufferB "chann-b"
 
     return (queuesAsChannel bufferB bufferA,
             queuesAsChannel bufferA bufferB)
