@@ -619,7 +619,7 @@ _unit_bracketSyncWithFetchClient step = do
 -- | Check that the client can terminate using `ControlMessage` mechanism.
 --
 -- The 'awaitDelay' of @100 * delay@ is a bit arbitrary.  It would be nicer to
--- make a proper calucation what should it be.  At the moment this test shows
+-- make a proper calculation what should it be.  At the moment this test shows
 -- that the block fetch protocol can exit within some large time limit.
 --
 prop_terminate :: TestChainFork -> Positive SmallDelay -> Property
