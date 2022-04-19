@@ -97,8 +97,8 @@ data ControlMessage =
 type ControlMessageSTM m = STM m ControlMessage
 
 continueForever :: Applicative (STM m)
-          => proxy m
-          -> ControlMessageSTM m
+                => proxy m
+                -> ControlMessageSTM m
 continueForever _ = pure Continue
 
 
