@@ -47,7 +47,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , encodeSnapshot
     -- ** Queries
   , ledgerDbAnchor
-  , ledgerDbBimap
   , ledgerDbChangelog
   , ledgerDbCurrent
   , ledgerDbFlush
@@ -57,7 +56,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPrune
   , ledgerDbSnapshots
   , ledgerDbTip
-  , ledgerDbVolatileCheckpoints
+  , volatileStatesBimap
     -- ** Running updates
   , AnnLedgerError (..)
   , Ap (..)
@@ -85,13 +84,13 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
 import           Codec.Serialise.Decoding (Decoder)
 import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
+import           Control.Exception
 import qualified Control.Exception as Exn
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
---import qualified Debug.Trace
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
@@ -100,7 +99,6 @@ import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
 
-import           Control.Exception
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -583,27 +581,6 @@ forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
     forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
       ApplyValuesMK $ forwardValuesAndKeys values keys (cumulativeDiffSeqUtxoDiff diffs)
 
-ledgerDbVolatileCheckpoints ::
-     LedgerDB l
-  -> AnchoredSeq
-       (WithOrigin SlotNo)
-       (Checkpoint (l EmptyMK))
-       (Checkpoint (l EmptyMK))
-ledgerDbVolatileCheckpoints =
-    dbChangelogVolatileCheckpoints . ledgerDbChangelog
-
-dbChangelogVolatileCheckpoints ::
-     DbChangelog l
-  -> AnchoredSeq
-       (WithOrigin SlotNo)
-       (Checkpoint (l EmptyMK))
-       (Checkpoint (l EmptyMK))
-dbChangelogVolatileCheckpoints =
-    AS.bimapPreservingMeasure
-      (\(DbChangelogState l) -> Checkpoint l)
-      (\(DbChangelogState l) -> Checkpoint l)
-  . changelogVolatileStates
-
 dbChangelogPrefix ::
      ( HasHeader blk, HeaderHash blk ~ HeaderHash (l EmptyMK)
      , GetTip (l EmptyMK)
@@ -667,17 +644,17 @@ ledgerDbCurrentValues =
 -- | The ledger state at the tip of the chain
 ledgerDbCurrent :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK
 ledgerDbCurrent =
-    either unCheckpoint unCheckpoint
+    either unDbChangelogState unDbChangelogState
   . AS.head
-  . dbChangelogVolatileCheckpoints
+  . changelogVolatileStates
   . ledgerDbChangelog
 
 -- | Information about the state of the ledger at the anchor
 ledgerDbAnchor :: LedgerDB l -> l EmptyMK
 ledgerDbAnchor =
-    unCheckpoint
+    unDbChangelogState
   . AS.anchor
-  . dbChangelogVolatileCheckpoints
+  . changelogVolatileStates
   . ledgerDbChangelog
 
 -- | Information about the state of the most recently flushed ledger
@@ -746,7 +723,7 @@ ledgerDbMaxRollback :: (GetTip (l ValuesMK), GetTip (l EmptyMK)) => LedgerDB l -
 ledgerDbMaxRollback LedgerDB{..} =
   let
     old = fromIntegral . AS.length <$> ledgerDbCheckpoints
-    new = fromIntegral $ AS.length $ dbChangelogVolatileCheckpoints ledgerDbChangelog
+    new = fromIntegral $ AS.length $ changelogVolatileStates ledgerDbChangelog
   in
     assert (old == Nothing || old == Just new) new
 
@@ -805,21 +782,17 @@ ledgerDbPrefix pt db
                   , ledgerDbChangelog   = dblog'
                   }
 
-
 -- | Transform the underlying 'AnchoredSeq' using the given functions.
-ledgerDbBimap ::
+volatileStatesBimap ::
      Anchorable (WithOrigin SlotNo) a b
-  => (l (mk :: MapKind) -> a)
-  -> (l mk -> b)
-  -> AnchoredSeq (WithOrigin SlotNo)
-                 (Checkpoint (l mk))
-                 (Checkpoint (l mk))
+  => (l EmptyMK -> a)
+  -> (l EmptyMK -> b)
+  -> LedgerDB l
   -> AnchoredSeq (WithOrigin SlotNo) a b
-ledgerDbBimap f g =
-    -- Instead of exposing 'ledgerDbCheckpoints' directly, this function hides
-    -- the internal 'Checkpoint' type.
-    AS.bimap (f . unCheckpoint) (g . unCheckpoint)
-
+volatileStatesBimap f g =
+      AS.bimap (f . unDbChangelogState) (g . unDbChangelogState)
+    . changelogVolatileStates
+    . ledgerDbChangelog
 
 -- | Prune snapshots until at we have at most @k@ snapshots in the LedgerDB,
 -- excluding the snapshots stored at the anchor.
