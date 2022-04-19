@@ -97,8 +97,8 @@ prop_connect f (NonNegative n) =
 --
 
 prop_channel :: ( Alternative (STM m)
-                , MonadST    m
-                , MonadSTM   m
+                , MonadST          m
+                , MonadLabelledSTM m
                 , MonadAsync m
                 , MonadCatch m
                 , MonadMask  m

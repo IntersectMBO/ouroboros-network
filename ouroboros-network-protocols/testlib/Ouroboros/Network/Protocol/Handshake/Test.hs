@@ -473,6 +473,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
 prop_channel :: ( Alternative (STM m)
                 , MonadAsync m
                 , MonadCatch m
+                , MonadLabelledSTM m
                 , MonadMask  m
                 , MonadST    m
                 , MonadThrow m
@@ -555,6 +556,7 @@ prop_channel_asymmetric
     :: ( Alternative (STM m)
        , MonadAsync m
        , MonadCatch m
+       , MonadLabelledSTM m
        , MonadMask  m
        , MonadST    m
        , MonadThrow m
@@ -936,6 +938,7 @@ prop_query_version_NodeToClient_SimNet
 prop_query_version :: ( Alternative (STM m)
                       , MonadAsync m
                       , MonadCatch m
+                      , MonadLabelledSTM m
                       , MonadMask  m
                       , MonadST m
                       , MonadThrow (STM m)
@@ -1075,6 +1078,7 @@ prop_channel_simultaneous_open
     :: ( Alternative (STM m)
        , MonadAsync m
        , MonadCatch m
+       , MonadLabelledSTM m
        , MonadMask  m
        , MonadST    m
        , MonadThrow m

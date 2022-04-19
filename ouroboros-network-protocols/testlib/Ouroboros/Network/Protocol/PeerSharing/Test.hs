@@ -13,7 +13,7 @@ module Ouroboros.Network.Protocol.PeerSharing.Test where
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM (STM)
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
@@ -105,12 +105,13 @@ prop_connect f l =
 --
 
 prop_channel :: ( Alternative (STM m)
-                , MonadST    m
-                , MonadAsync m
-                , MonadCatch m
-                , MonadMask  m
-                , MonadThrow m
-                , MonadThrow (STM m)
+                , MonadST          m
+                , MonadAsync       m
+                , MonadCatch       m
+                , MonadLabelledSTM m
+                , MonadMask        m
+                , MonadThrow       m
+                , MonadThrow  (STM m)
                 )
              => Fun Word8 Int
              -> [PeerSharingAmount]

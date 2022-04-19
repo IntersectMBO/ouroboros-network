@@ -468,11 +468,12 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
 --
 runConnectedPeersWithLimits :: forall ps pr pl pl' st failure bytes m a b.
                                ( Alternative (STM m)
-                               , MonadAsync      m
-                               , MonadFork       m
-                               , MonadMask       m
-                               , MonadTimer      m
-                               , MonadThrow (STM m)
+                               , MonadAsync       m
+                               , MonadFork        m
+                               , MonadLabelledSTM m
+                               , MonadMask        m
+                               , MonadTimer       m
+                               , MonadThrow  (STM m)
                                , Exception failure
                                , ShowProxy ps
                                , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
@@ -488,11 +489,13 @@ runConnectedPeersWithLimits :: forall ps pr pl pl' st failure bytes m a b.
 runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    (fst <$> runPeerWithLimits
-                     tracerClient codec slimits tlimits
-                                        clientChannel client)
+    (do labelThisThread "client"
+        fst <$> runPeerWithLimits
+                        tracerClient codec slimits tlimits
+                                     clientChannel client)
       `concurrently`
-    (fst <$> runPeer tracerServer codec serverChannel server)
+    (do labelThisThread "server"
+        fst <$> runPeer tracerServer codec serverChannel server)
   where
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer

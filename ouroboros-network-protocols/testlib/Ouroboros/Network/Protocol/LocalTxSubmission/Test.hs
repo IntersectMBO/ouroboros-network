@@ -21,7 +21,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Control.Applicative (Alternative)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadSTM (STM)
+import           Control.Monad.Class.MonadSTM (MonadLabelledSTM, STM)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
                      MonadThrow)
 import           Control.Monad.IOSim
@@ -143,8 +143,9 @@ prop_connect p txs =
 
 -- | Run a local tx-submission client and server using connected channels.
 --
-prop_channel :: ( Alternative (STM m), MonadAsync m, MonadCatch m, MonadMask m
-                , MonadST m , MonadThrow m, MonadThrow (STM m) )
+prop_channel :: ( Alternative (STM m), MonadAsync m, MonadCatch m
+                , MonadLabelledSTM m, MonadMask m, MonadST m , MonadThrow m
+                , MonadThrow (STM m) )
              => m (Channel m ByteString, Channel m ByteString)
              -> (Tx -> SubmitResult Reject) -> [Tx]
              -> m Bool

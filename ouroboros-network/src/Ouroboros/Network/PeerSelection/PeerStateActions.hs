@@ -1054,10 +1054,11 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
 startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature)
                          responderCtx peerAddr versionData m a b.
                   ( Alternative (STM m)
-                  , MonadAsync m
-                  , MonadCatch m
-                  , MonadMask  m
-                  , MonadThrow (STM m)
+                  , MonadLabelledSTM m
+                  , MonadAsync       m
+                  , MonadCatch       m
+                  , MonadMask        m
+                  , MonadThrow  (STM m)
                   , HasInitiator muxMode ~ True
                   )
                => SingProtocolTemperature pt

@@ -554,7 +554,7 @@ chainSyncDemo
      , MonadAsync m
      , MonadMask m
      , MonadST m
-     , MonadSTM m
+     , MonadLabelledSTM m
      , MonadFork m
      , MonadThrow m
      , MonadThrow (STM m)
@@ -621,7 +621,7 @@ chainSyncDemoPipelined
      ( Alternative (STM m)
      , MonadMask  m
      , MonadST    m
-     , MonadSTM   m
+     , MonadLabelledSTM m
      , MonadFork  m
      , MonadAsync m
      , MonadThrow m

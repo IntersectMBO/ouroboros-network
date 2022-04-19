@@ -63,7 +63,7 @@ module Ouroboros.Network.Mux
   ) where
 
 import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM (STM)
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
@@ -347,9 +347,10 @@ pattern MuxPeerRaw { runMuxPeer } = MiniProtocolCb runMuxPeer
 mkMiniProtocolCbFromPeer
   :: forall (pr :: PeerRole) (pl :: IsPipelined) ps (st :: ps) failure bytes ctx m a.
      ( Alternative (STM m)
-     , MonadAsync m
-     , MonadMask  m
-     , MonadThrow (STM m)
+     , MonadAsync       m
+     , MonadLabelledSTM m
+     , MonadMask        m
+     , MonadThrow  (STM m)
      , Exception failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
@@ -368,9 +369,10 @@ mkMiniProtocolCbFromPeer fn =
 -- | Run a 'MuxPeer' using supplied 'ctx' and 'Mux.Channel'
 --
 runMiniProtocolCb :: ( Alternative (STM m)
-                     , MonadAsync m
-                     , MonadMask  m
-                     , MonadThrow (STM m)
+                     , MonadAsync       m
+                     , MonadLabelledSTM m
+                     , MonadMask        m
+                     , MonadThrow  (STM m)
                      )
                   => MiniProtocolCb ctx LBS.ByteString m a
                   -> ctx
@@ -428,9 +430,10 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 -- Note that callbacks will always receive `IsNotBigLedgerPeer`.
 toApplication :: forall mode initiatorCtx responderCtx m a b.
                  ( Alternative (STM m)
-                 , MonadAsync m
-                 , MonadMask  m
-                 , MonadThrow (STM m)
+                 , MonadAsync       m
+                 , MonadLabelledSTM m
+                 , MonadMask        m
+                 , MonadThrow  (STM m)
                  )
               => initiatorCtx
               -> responderCtx

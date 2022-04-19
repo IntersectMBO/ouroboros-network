@@ -152,7 +152,7 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
 createTwoWaySubscriptionChannels
   :: forall block tip m.
      ( MonadDelay m
-     , MonadSTM m
+     , MonadLabelledSTM m
      , MonadTimer m
      )
   => DiffTime
@@ -275,7 +275,7 @@ forkRelayKernel upstream cpsVar = do
 relayNode :: forall m block.
              ( Alternative (STM m)
              , MonadAsync m
-             , MonadSTM m
+             , MonadLabelledSTM m
              , MonadFork m
              , MonadMask m
              , MonadTimer m
@@ -348,7 +348,7 @@ relayNode _nid initChain chans = do
 forkCoreKernel :: forall block m.
                   ( HasFullHeader block
                   , MonadDelay m
-                  , MonadSTM m
+                  , MonadLabelledSTM m
                   , MonadFork m
                   , MonadTimer m
                   )
@@ -397,8 +397,7 @@ coreNode :: forall m.
         ( Alternative (STM m)
         , MonadAsync m
         , MonadDelay m
-        , MonadSTM m
-        , MonadSTM m
+        , MonadLabelledSTM m
         , MonadFork m
         , MonadMask m
         , MonadThrow m

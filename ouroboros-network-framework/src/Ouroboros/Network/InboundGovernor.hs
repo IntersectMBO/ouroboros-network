@@ -81,14 +81,15 @@ import           Ouroboros.Network.Server.RateLimiting
 --
 inboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber m a b.
                    ( Alternative (STM m)
-                   , MonadAsync    m
-                   , MonadCatch    m
-                   , MonadEvaluate m
-                   , MonadThrow    m
-                   , MonadThrow    (STM m)
-                   , MonadTime     m
-                   , MonadTimer    m
-                   , MonadMask     m
+                   , MonadAsync       m
+                   , MonadCatch       m
+                   , MonadEvaluate    m
+                   , MonadLabelledSTM m
+                   , MonadThrow       m
+                   , MonadThrow  (STM m)
+                   , MonadTime        m
+                   , MonadTimer       m
+                   , MonadMask        m
                    , Ord peerAddr
                    , HasResponder muxMode ~ True
                    )
@@ -468,10 +469,11 @@ inboundGovernor trTracer tracer inboundInfoChannel
 runResponder :: forall (mode :: MuxMode) initiatorCtx peerAddr m a b.
                  ( Alternative (STM m)
                  , HasResponder mode ~ True
-                 , MonadAsync m
-                 , MonadCatch m
-                 , MonadMask  m
-                 , MonadThrow (STM m)
+                 , MonadAsync       m
+                 , MonadLabelledSTM m
+                 , MonadCatch       m
+                 , MonadMask        m
+                 , MonadThrow  (STM m)
                  )
               => Mux.Mux mode m
               -> MiniProtocolData mode initiatorCtx peerAddr m a b

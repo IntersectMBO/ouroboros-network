@@ -145,6 +145,7 @@ prop_keepAlive_convergenceM
         , MonadAsync m
         , MonadDelay m
         , MonadFork m
+        , MonadLabelledSTM m
         , MonadMask m
         , MonadMonotonicTime m
         , MonadSay m

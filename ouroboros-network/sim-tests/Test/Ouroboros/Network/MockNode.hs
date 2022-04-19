@@ -133,7 +133,7 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
 coreToRelaySim :: ( Alternative (STM m)
                   , MonadAsync m
                   , MonadDelay m
-                  , MonadSTM m
+                  , MonadLabelledSTM m
                   , MonadFork m
                   , MonadMask m
                   , MonadSay m
@@ -218,7 +218,7 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
 coreToRelaySim2 :: ( Alternative (STM m)
                    , MonadAsync m
                    , MonadDelay m
-                   , MonadSTM m
+                   , MonadLabelledSTM m
                    , MonadFork m
                    , MonadMask m
                    , MonadThrow m
@@ -320,7 +320,7 @@ networkGraphSim :: forall m.
                   ( Alternative (STM m)
                   , MonadAsync m
                   , MonadDelay m
-                  , MonadSTM m
+                  , MonadLabelledSTM m
                   , MonadFork m
                   , MonadMask m
                   , MonadThrow m

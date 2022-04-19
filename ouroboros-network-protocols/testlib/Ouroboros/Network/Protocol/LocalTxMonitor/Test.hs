@@ -16,7 +16,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Control.Applicative (Alternative)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM (STM)
+import           Control.Monad.Class.MonadSTM (MonadLabelledSTM, STM)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.IOSim
 import qualified Control.Monad.ST as ST
@@ -148,8 +148,9 @@ prop_connect (slot, txs) =
 
 -- | Run a local tx-monitor client and server using connected channels.
 --
-prop_channel :: ( Alternative (STM m), MonadAsync m, MonadCatch m, MonadMask m
-                , MonadST m, MonadThrow m, MonadThrow (STM m) )
+prop_channel :: ( Alternative (STM m), MonadAsync m, MonadCatch m
+                , MonadLabelledSTM m, MonadMask m , MonadST m, MonadThrow m
+                , MonadThrow (STM m) )
              => m (Channel m ByteString, Channel m ByteString)
              -> (SlotNo, [Tx])
              -> m Bool

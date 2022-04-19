@@ -380,13 +380,14 @@ withBidirectionalConnectionManager snocket makeBearer socket
 runInitiatorProtocols
     :: forall muxMode addr m a b.
        ( Alternative (STM m)
-       , MonadAsync      m
-       , MonadCatch      m
-       , MonadMask       m
-       , MonadSTM        m
-       , MonadThrow (STM m)
+       , MonadAsync       m
+       , MonadCatch       m
+       , MonadLabelledSTM m
+       , MonadMask        m
+       , MonadSTM         m
+       , MonadThrow  (STM m)
        , HasInitiator muxMode ~ True
-       , MonadSay        m
+       , MonadSay         m
        )
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m

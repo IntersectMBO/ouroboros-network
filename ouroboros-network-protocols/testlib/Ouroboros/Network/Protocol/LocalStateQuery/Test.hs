@@ -206,7 +206,7 @@ prop_channel :: ( Alternative (STM m)
                 , MonadAsync m
                 , MonadCatch m
                 , MonadLabelledSTM m
-                , MonadST m
+                , MonadST    m
                 , MonadMask  m
                 , MonadThrow m
                 , MonadThrow (STM m)
