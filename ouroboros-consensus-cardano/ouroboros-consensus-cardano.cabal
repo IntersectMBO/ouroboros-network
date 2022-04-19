@@ -32,7 +32,6 @@ library
                        Ouroboros.Consensus.Cardano.CanHardFork
                        Ouroboros.Consensus.Cardano.Node
                        Ouroboros.Consensus.Cardano.ShelleyBased
-                       Ouroboros.Consensus.Cardano.DeadAVVMs
 
   build-depends:       base              >=4.9   && <4.15
                      , bytestring        >=0.10  && <0.11
@@ -53,16 +52,13 @@ library
                      , cardano-protocol-tpraos
                      , cardano-slotting
 
+                     , strict-containers
+
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-shelley
-
-                     -- Dead AVVMs
-                     , text
-                     , cardano-crypto-wrapper
-                     , compact-map
 
   default-language:    Haskell2010
   ghc-options:         -Wall
