@@ -562,6 +562,10 @@ schedule !thread@Thread{
           return $ SimTrace time tid tlbl (EventThrowTo e tid')
                  $ trace
 
+    YieldSim k -> do
+      let thread' = thread { threadControl = ThreadControl k ctl }
+      deschedule Yield thread' simstate
+
     -- ExploreRaces is ignored by this simulator
     ExploreRaces k ->
       {-# SCC "schedule.ExploreRaces" #-}

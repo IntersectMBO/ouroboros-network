@@ -164,6 +164,8 @@ data SimA s a where
   SetMaskState :: MaskingState  -> IOSim s a -> (a -> SimA s b) -> SimA s b
   GetMaskState :: (MaskingState -> SimA s b) -> SimA s b
 
+  YieldSim     :: SimA s a -> SimA s a
+
   ExploreRaces :: SimA s b -> SimA s b
 
   Fix          :: (x -> IOSim s x) -> (x -> SimA s r) -> SimA s r
@@ -371,6 +373,7 @@ instance MonadFork (IOSim s) where
   forkIO task        = IOSim $ oneShot $ \k -> Fork task k
   forkIOWithUnmask f = forkIO (f unblock)
   throwTo tid e      = IOSim $ oneShot $ \k -> ThrowTo (toException e) tid (k ())
+  yield              = IOSim $ oneShot $ \k -> YieldSim (k ())
 
 instance MonadTest (IOSim s) where
   exploreRaces       = IOSim $ oneShot $ \k -> ExploreRaces (k ())

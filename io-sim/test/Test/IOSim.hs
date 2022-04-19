@@ -899,9 +899,6 @@ unit_async_10 =
           )
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
-  where
-    yield :: IOSim s ()
-    yield = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_11 =
@@ -934,9 +931,6 @@ unit_async_11 =
           )
  ===
    ["child 1", "child 2", "child 1 running", "parent done"]
-  where
-    yield :: IOSim s ()
-    yield = atomically (return ())  -- yield, go to end of runqueue
 
 
 unit_async_12 =

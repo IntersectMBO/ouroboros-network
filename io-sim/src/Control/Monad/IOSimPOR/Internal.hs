@@ -696,6 +696,11 @@ schedule thread@Thread{
           return $ SimPORTrace time tid tstep tlbl (EventThrowTo e tid')
                  $ trace
 
+    -- intentionally a no-op (at least for now)
+    YieldSim k -> do
+      let thread' = thread { threadControl = ThreadControl k ctl }
+      schedule thread' simstate
+
 
 threadInterruptible :: Thread s a -> Bool
 threadInterruptible thread =
