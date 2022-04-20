@@ -196,14 +196,14 @@ localRootPeersProvider tracer
       mapM_ (traceWith tracer . TraceLocalRootFailure domain . DNSError)
             errs
 
-      if null results
-         then return $ Left errs
-         else do
+      if null errs
+         then do
            traceWith tracer (TraceLocalRootResult domain results)
            return $ Right [ (( toPeerAddr addr dapPortNumber
                             , advertisePeer)
                             , _ttl)
                           | (addr, _ttl) <- results ]
+         else return $ Left errs
 
     monitorDomain
       :: Resource m (DNSorIOError exception) resolver
