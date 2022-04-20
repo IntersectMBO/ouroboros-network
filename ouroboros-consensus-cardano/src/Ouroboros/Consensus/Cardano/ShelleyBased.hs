@@ -42,14 +42,14 @@ overShelleyBasedLedgerState f (HardForkLedgerState st) =
     fs = fn id
         :* injectShelleyNP2
             reassoc
-            foo
+            f'
 
-    foo ::
+    f' ::
       NP2 (LedgerState :..: ShelleyBlock
             -..-> LedgerState :..: ShelleyBlock
           )
           (ShelleyErasAndProtos c)
-    foo = cpure_NP2
+    f' = cpure_NP2
                (Proxy @(And2 (HasCrypto c) ShelleyCompatible))
                (Fn2 (Comp2 . f . unComp2))
 
