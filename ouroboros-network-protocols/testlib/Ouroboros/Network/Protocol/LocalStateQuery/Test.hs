@@ -15,6 +15,7 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Test
   ( tests
   , codec
   , AnyMessageWithResult (..)
+  , Query (..)
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
