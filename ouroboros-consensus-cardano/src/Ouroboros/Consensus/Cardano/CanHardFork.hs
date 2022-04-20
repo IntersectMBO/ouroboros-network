@@ -644,24 +644,13 @@ translateLedgerStateAlonzoToBabbageWrapper =
   where
     transPraosLS ::
       LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) ->
-      LedgerState (ShelleyBlock (Praos c) (AlonzoEra c))
+      LedgerState (ShelleyBlock (Praos c)  (AlonzoEra c))
     transPraosLS (ShelleyLedgerState wo nes st) =
       ShelleyLedgerState
-        { shelleyLedgerTip = case wo of
-            Origin -> Origin
-            At st' ->
-              At
-                ( case st' of
-                    (ShelleyTip sn bn hh) ->
-                      ShelleyTip
-                        { shelleyTipSlotNo = sn,
-                          shelleyTipBlockNo = bn,
-                          shelleyTipHash = coerce hh
-                        }),
-          shelleyLedgerState = nes,
-          shelleyLedgerTransition = st
+        { shelleyLedgerTip        = fmap castShelleyTip wo
+        , shelleyLedgerState      = nes
+        , shelleyLedgerTransition = st
         }
-
 
 getBabbageTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (Praos c) (BabbageEra c))
