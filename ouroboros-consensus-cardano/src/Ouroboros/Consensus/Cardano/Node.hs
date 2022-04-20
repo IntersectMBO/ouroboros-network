@@ -69,7 +69,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..), optAppendSkip)
+import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP (OptSkip), optAppendSkip)
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP (Index (..))
 
@@ -851,7 +851,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockForging = do
         shelleyBased <- blockForgingShelleyTPraosBased
         praosBased <- blockForgingShelleyPraosBased
-        let blockForgings :: [OptNP 'False (BlockForging m) (CardanoEras c)]
+        let blockForgings :: [NonEmptyOptNP (BlockForging m) (CardanoEras c)]
             blockForgings = case (mBlockForgingByron, shelleyBased, praosBased) of
               (Nothing,    shelley, praoses)         -> shelley <> praoses
               (Just byron, [], [])              -> [byron]
@@ -866,12 +866,12 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
         return $ hardForkBlockForging "Cardano" <$> blockForgings
 
-    mBlockForgingByron :: Maybe (OptNP 'False (BlockForging m) (CardanoEras c))
+    mBlockForgingByron :: Maybe (NonEmptyOptNP (BlockForging m) (CardanoEras c))
     mBlockForgingByron = do
         creds <- mCredsByron
         return $ byronBlockForging maxTxCapacityOverridesByron creds `OptNP.at` IZ
 
-    blockForgingShelleyTPraosBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
+    blockForgingShelleyTPraosBased :: m [NonEmptyOptNP (BlockForging m) (CardanoEras c)]
     blockForgingShelleyTPraosBased = do
         shelleyBased <-
           traverse
@@ -887,7 +887,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
       where
         reassoc ::
              NP (BlockForging m :.: ShelleyBlock (TPraos c)) (ShelleyTPraosEras c)
-          -> OptNP 'False (BlockForging m) (CardanoEras c)
+          -> NonEmptyOptNP (BlockForging m) (CardanoEras c)
         reassoc = optAppendSkip Proxy . OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
 
         maxTxCapacityOverridess =
@@ -897,7 +897,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           Comp maxTxCapacityOverridesAlonzo  :*
           Nil
 
-    blockForgingShelleyPraosBased :: m [OptNP 'False (BlockForging m) (CardanoEras c)]
+    blockForgingShelleyPraosBased :: m [NonEmptyOptNP (BlockForging m) (CardanoEras c)]
     blockForgingShelleyPraosBased = do
         shelleyBased <-
           traverse
@@ -914,7 +914,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         -- TODO This is rather ugly! Can we do this in a nicer way?
         reassoc ::
              NP (BlockForging m :.: ShelleyBlock (Praos c)) (ShelleyPraosEras c)
-          -> OptNP 'False (BlockForging m) (CardanoEras c)
+          -> NonEmptyOptNP (BlockForging m) (CardanoEras c)
         reassoc = OptSkip . OptSkip . OptSkip . OptSkip . OptSkip
                 . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
 

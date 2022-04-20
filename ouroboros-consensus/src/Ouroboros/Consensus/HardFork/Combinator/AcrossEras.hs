@@ -78,7 +78,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (allEqual)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
-import           Ouroboros.Consensus.Util.OptNP (OptNP)
+import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Info
@@ -100,12 +100,12 @@ newtype PerEraStorageConfig   xs = PerEraStorageConfig   { getPerEraStorageConfi
 {-------------------------------------------------------------------------------
   Values for /some/ eras
 
-  The reason for using @OptNP 'False f xs@ as opposed to @NP (Maybe :.: f) xs@
+  The reason for using @NonEmptyOptNP f xs@ as opposed to @NP (Maybe :.: f) xs@
   is to maintain the isomorphism between @blk@ and @HardForkBlock '[blk]@ in
   "Ouroboros.Consensus.HardFork.Combinator.Embed.Unary"
 -------------------------------------------------------------------------------}
 
-newtype SomeErasCanBeLeader xs = SomeErasCanBeLeader { getSomeErasCanBeLeader :: OptNP 'False WrapCanBeLeader xs }
+newtype SomeErasCanBeLeader xs = SomeErasCanBeLeader { getSomeErasCanBeLeader :: NonEmptyOptNP WrapCanBeLeader xs }
 
 {-------------------------------------------------------------------------------
   Value for /one/ era

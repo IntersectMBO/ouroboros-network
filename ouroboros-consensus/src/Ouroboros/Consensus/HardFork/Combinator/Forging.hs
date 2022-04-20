@@ -25,7 +25,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..), ViewOptNP (..))
+import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP, ViewOptNP (..))
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP
 
@@ -83,7 +83,7 @@ hardForkBlockForging ::
   => Text
      -- ^ Used as the 'forgeLabel', the labels of the given 'BlockForging's will
      -- be ignored.
-  -> OptNP 'False (BlockForging m) xs
+  -> NonEmptyOptNP (BlockForging m) xs
   -> BlockForging m (HardForkBlock xs)
 hardForkBlockForging forgeLabel blockForging =
     BlockForging {
@@ -96,7 +96,7 @@ hardForkBlockForging forgeLabel blockForging =
 
 hardForkCanBeLeader ::
      CanHardFork xs
-  => OptNP 'False (BlockForging m) xs -> HardForkCanBeLeader xs
+  => NonEmptyOptNP (BlockForging m) xs -> HardForkCanBeLeader xs
 hardForkCanBeLeader =
       SomeErasCanBeLeader
     . hmap (WrapCanBeLeader . canBeLeader)
@@ -105,7 +105,7 @@ hardForkCanBeLeader =
 -- the ticked 'ChainDepState'.
 hardForkUpdateForgeState ::
      forall m xs. (CanHardFork xs, Monad m)
-  => OptNP 'False (BlockForging m) xs
+  => NonEmptyOptNP (BlockForging m) xs
   -> TopLevelConfig (HardForkBlock xs)
   -> SlotNo
   -> Ticked (HardForkChainDepState xs)
