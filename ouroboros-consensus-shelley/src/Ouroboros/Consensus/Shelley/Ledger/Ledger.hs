@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , ShelleyTip (..)
   , ShelleyTransition (..)
   , Ticked (..)
+  , castShelleyTip
   , shelleyLedgerTipPoint
   , shelleyTipToPoint
     -- * Ledger config
@@ -51,6 +52,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (decode, encode)
 import qualified Control.Exception as Exception
 import           Control.Monad.Except
+import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity
 import           Data.Word
@@ -178,6 +180,15 @@ shelleyTipToPoint :: WithOrigin (ShelleyTip proto era) -> Point (ShelleyBlock pr
 shelleyTipToPoint Origin          = GenesisPoint
 shelleyTipToPoint (NotOrigin tip) = BlockPoint (shelleyTipSlotNo tip)
                                                (shelleyTipHash   tip)
+
+castShelleyTip ::
+     HeaderHash (ShelleyBlock proto era) ~ HeaderHash (ShelleyBlock proto' era')
+  => ShelleyTip proto era -> ShelleyTip proto' era'
+castShelleyTip (ShelleyTip sn bn hh) = ShelleyTip {
+      shelleyTipSlotNo  = sn
+    , shelleyTipBlockNo = bn
+    , shelleyTipHash    = coerce hh
+    }
 
 data instance LedgerState (ShelleyBlock proto era) = ShelleyLedgerState {
       shelleyLedgerTip        :: !(WithOrigin (ShelleyTip proto era))
