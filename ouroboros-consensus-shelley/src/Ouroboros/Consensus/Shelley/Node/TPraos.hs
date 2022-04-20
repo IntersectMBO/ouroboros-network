@@ -110,73 +110,63 @@ shelleyBlockForging ::
   -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
   -> ShelleyLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock (TPraos c) era))
-shelleyBlockForging tpraosParams maxTxCapacityOverrides credentials =
-      aux <$> shelleySharedBlockForging
-        (Proxy @'[era])
-        tpraosParams
-        credentials
-        (Comp maxTxCapacityOverrides :* Nil)
+shelleyBlockForging tpraosParams maxTxCapacityOverrides credentials = do
+    hotKey <- HotKey.mkHotKey @m @c initSignKey startPeriod tpraosMaxKESEvo
+    pure $ shelleySharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
   where
-    aux ::
-         NP (BlockForging m :.: ShelleyBlock (TPraos c)) '[era]
-      -> BlockForging m (ShelleyBlock (TPraos c) era)
-    aux = unComp . hd
+    TPraosParams {tpraosMaxKESEvo, tpraosSlotsPerKESPeriod} = tpraosParams
 
--- | Create a 'BlockForging' record for each of the given Shelley-based eras,
--- safely sharing the same set of credentials for all of them.
+    ShelleyLeaderCredentials {
+        shelleyLeaderCredentialsInitSignKey = initSignKey
+      , shelleyLeaderCredentialsCanBeLeader = canBeLeader
+      } = credentials
+
+    startPeriod :: Absolute.KESPeriod
+    startPeriod = SL.ocertKESPeriod $ praosCanBeLeaderOpCert canBeLeader
+
+    slotToPeriod :: SlotNo -> Absolute.KESPeriod
+    slotToPeriod (SlotNo slot) =
+      SL.KESPeriod $ fromIntegral $ slot `div` tpraosSlotsPerKESPeriod
+
+-- | Create a 'BlockForging' record safely using a given 'Hotkey'.
 --
 -- The name of the era (separated by a @_@) will be appended to each
 -- 'forgeLabel'.
 shelleySharedBlockForging ::
-     forall m c eras.
+     forall m c era.
      ( PraosCrypto c
-     , All (ShelleyEraWithCrypto c (TPraos c)) eras
+     , ShelleyEraWithCrypto c (TPraos c) era
      , IOLike m
      )
-  => Proxy eras
-  -> TPraosParams
+  => HotKey c m
+  -> (SlotNo -> Absolute.KESPeriod)
   -> ShelleyLeaderCredentials c
-  -> NP    (TxLimits.Overrides :.: ShelleyBlock (TPraos c)) eras
-  -> m (NP (BlockForging m     :.: ShelleyBlock (TPraos c)) eras)
-shelleySharedBlockForging
-                    _
-                    TPraosParams {..}
-                    ShelleyLeaderCredentials {
-                        shelleyLeaderCredentialsInitSignKey = initSignKey
-                      , shelleyLeaderCredentialsCanBeLeader = canBeLeader
-                      , shelleyLeaderCredentialsLabel       = label
-                      }
-                    maxTxCapacityOverridess = do
-    hotKey <- HotKey.mkHotKey @m @c initSignKey startPeriod tpraosMaxKESEvo
-    return $
-      hcmap
-        (Proxy @(ShelleyEraWithCrypto c (TPraos c)))
-        (aux hotKey)
-        maxTxCapacityOverridess
+  -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
+  -> BlockForging m     (ShelleyBlock (TPraos c) era)
+shelleySharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides =
+    BlockForging {
+        forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
+      , canBeLeader      = canBeLeader
+      , updateForgeState = \_ curSlot _ ->
+                               forgeStateUpdateInfoFromUpdateInfo <$>
+                                 HotKey.evolve hotKey (slotToPeriod curSlot)
+      , checkCanForge    = \cfg curSlot _tickedChainDepState ->
+                               tpraosCheckCanForge
+                                 (configConsensus cfg)
+                                 forgingVRFHash
+                                 curSlot
+      , forgeBlock       = \cfg ->
+          forgeShelleyBlock
+            hotKey
+            canBeLeader
+            cfg
+            maxTxCapacityOverrides
+      }
   where
-    aux ::
-         forall era. ShelleyEraWithCrypto c (TPraos c) era
-      => HotKey c m
-      -> (TxLimits.Overrides :.: ShelleyBlock (TPraos c)) era
-      -> (BlockForging m     :.: ShelleyBlock (TPraos c)) era
-    aux hotKey (Comp maxTxCapacityOverrides) = Comp $ BlockForging {
-          forgeLabel       = label <> "_" <> shelleyBasedEraName (Proxy @era)
-        , canBeLeader      = canBeLeader
-        , updateForgeState = \_ curSlot _ ->
-                                 forgeStateUpdateInfoFromUpdateInfo <$>
-                                   HotKey.evolve hotKey (slotToPeriod curSlot)
-        , checkCanForge    = \cfg curSlot _tickedChainDepState ->
-                                 tpraosCheckCanForge
-                                   (configConsensus cfg)
-                                   forgingVRFHash
-                                   curSlot
-        , forgeBlock       = \cfg ->
-            forgeShelleyBlock
-              hotKey
-              canBeLeader
-              cfg
-              maxTxCapacityOverrides
-        }
+    ShelleyLeaderCredentials {
+        shelleyLeaderCredentialsCanBeLeader = canBeLeader
+      , shelleyLeaderCredentialsLabel       = label
+      } = credentials
 
     forgingVRFHash :: SL.Hash c (SL.VerKeyVRF c)
     forgingVRFHash =
@@ -184,13 +174,6 @@ shelleySharedBlockForging
         . VRF.deriveVerKeyVRF
         . praosCanBeLeaderSignKeyVRF
         $ canBeLeader
-
-    startPeriod :: Absolute.KESPeriod
-    startPeriod = SL.ocertKESPeriod $ praosCanBeLeaderOpCert canBeLeader
-
-    slotToPeriod :: SlotNo -> Absolute.KESPeriod
-    slotToPeriod (SlotNo slot) =
-        SL.KESPeriod $ fromIntegral $ slot `div` tpraosSlotsPerKESPeriod
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
