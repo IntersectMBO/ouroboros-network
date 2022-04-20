@@ -6,13 +6,14 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Test
   ( tests
   , codec
   , AnyMessageWithResult (..)
+  , Query (..)
+  , MockLedgerState (..)
   ) where
 
 import Codec.CBOR.Decoding qualified as CBOR
