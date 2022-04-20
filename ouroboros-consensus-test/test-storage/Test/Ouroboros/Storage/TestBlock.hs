@@ -463,7 +463,7 @@ data BftWithEBBsSelectView = BftWithEBBsSelectView {
     , bebbChainLength :: ChainLength
     , bebbHash        :: TestHeaderHash
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NoThunks)
 
 instance Ord BftWithEBBsSelectView where
   compare (BftWithEBBsSelectView lBlockNo lIsEBB lChainLength lHash)

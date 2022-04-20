@@ -56,11 +56,13 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , TraceInitChainSelEvent (..)
   , TraceIteratorEvent (..)
   , TraceOpenEvent (..)
+  , TracePipeliningEvent (..)
   , TraceValidationEvent (..)
   ) where
 
 import           Control.Tracer
 import           Data.Map.Strict (Map)
+import           Data.Maybe.Strict (StrictMaybe (..))
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
@@ -86,8 +88,10 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
-                     ChainDbError (..), InvalidBlockReason, StreamFrom,
-                     StreamTo, UnknownRange)
+                     ChainDbError (..), ChainType, InvalidBlockReason,
+                     StreamFrom, StreamTo, UnknownRange)
+import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
+                     (InvalidBlockPunishment)
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB',
@@ -99,6 +103,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB,
                      VolatileDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.TentativeState (TentativeState (..))
 
 -- | All the serialisation related constraints needed by the ChainDB.
 class ( ImmutableDbSerialiseConstraints blk
@@ -195,6 +200,12 @@ data ChainDbEnv m blk = CDB
     --
     -- Note that the \"immutable\" block will /never/ be /more/ than @k@
     -- blocks back, as opposed to the anchor point of 'cdbChain'.
+  , cdbTentativeState  :: !(StrictTVar m (TentativeState blk))
+  , cdbTentativeHeader :: !(StrictTVar m (StrictMaybe (Header blk)))
+    -- ^ The tentative header, for diffusion pipelining.
+    --
+    -- INVARIANT: It fits on top of the current chain, and its body is not known
+    -- to be invalid, but might turn out to be.
   , cdbIterators       :: !(StrictTVar m (Map IteratorKey (m ())))
     -- ^ The iterators.
     --
@@ -243,7 +254,7 @@ data ChainDbEnv m blk = CDB
   , cdbCheckInFuture   :: !(CheckInFuture m blk)
   , cdbBlocksToAdd     :: !(BlocksToAdd m blk)
     -- ^ Queue of blocks that still have to be added.
-  , cdbFutureBlocks    :: !(StrictTVar m (FutureBlocks blk))
+  , cdbFutureBlocks    :: !(StrictTVar m (FutureBlocks m blk))
     -- ^ Blocks from the future
     --
     -- Blocks that were added to the ChainDB but that were from the future
@@ -331,7 +342,9 @@ newtype FollowerKey = FollowerKey Word
 -- blk@, etc.) parameter so 'Follower's with different' @b@s can be stored
 -- together in 'cdbFollowers'.
 data FollowerHandle m blk = FollowerHandle
-  { fhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
+  { fhChainType  :: ChainType
+    -- ^ Whether we follow the tentative chain.
+  , fhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
     -- ^ When we have switched to a fork, all open 'Follower's must be notified.
   , fhClose      :: m ()
     -- ^ When closing the ChainDB, we must also close all open 'Follower's, as
@@ -417,7 +430,7 @@ data InvalidBlockInfo blk = InvalidBlockInfo
 -- selection.
 --
 -- See 'cdbFutureBlocks' for more info.
-type FutureBlocks blk = Map (HeaderHash blk) (Header blk)
+type FutureBlocks m blk = Map (HeaderHash blk) (Header blk, InvalidBlockPunishment m)
 
 {-------------------------------------------------------------------------------
   Blocks to add
@@ -432,7 +445,10 @@ newtype BlocksToAdd m blk = BlocksToAdd (TBQueue m (BlockToAdd m blk))
 -- | Entry in the 'BlocksToAdd' queue: a block together with the 'TMVar's used
 -- to implement 'AddBlockPromise'.
 data BlockToAdd m blk = BlockToAdd
-  { blockToAdd            :: !blk
+  { blockPunish           :: !(InvalidBlockPunishment m)
+    -- ^ Executed immediately upon determining this block or one from its prefix
+    -- is invalid.
+  , blockToAdd            :: !blk
   , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
   , varBlockProcessed     :: !(StrictTMVar m (Point blk))
@@ -449,13 +465,15 @@ addBlockToAdd
   :: (IOLike m, HasHeader blk)
   => Tracer m (TraceAddBlockEvent blk)
   -> BlocksToAdd m blk
+  -> InvalidBlockPunishment m
   -> blk
   -> m (AddBlockPromise m blk)
-addBlockToAdd tracer (BlocksToAdd queue) blk = do
+addBlockToAdd tracer (BlocksToAdd queue) punish blk = do
     varBlockWrittenToDisk <- newEmptyTMVarIO
     varBlockProcessed     <- newEmptyTMVarIO
     let !toAdd = BlockToAdd
-          { blockToAdd = blk
+          { blockPunish           = punish
+          , blockToAdd            = blk
           , varBlockWrittenToDisk
           , varBlockProcessed
           }
@@ -627,6 +645,11 @@ data TraceAddBlockEvent blk =
     -- This is done for all blocks from the future each time a new block is
     -- added.
   | ChainSelectionForFutureBlock (RealPoint blk)
+
+    -- | The tentative header (in the context of diffusion pipelining) has been
+    -- updated.
+  | PipeliningEvent (TracePipeliningEvent blk)
+
   deriving (Generic)
 
 deriving instance
@@ -678,6 +701,18 @@ deriving instance
   ( Show (Header           blk)
   , LedgerSupportsProtocol blk
   ) => Show (TraceValidationEvent blk)
+
+data TracePipeliningEvent blk =
+    -- | A new tentative header got set.
+    SetTentativeHeader (Header blk)
+    -- | The body of tentative block turned out to be invalid.
+  | TrapTentativeHeader (Header blk)
+    -- | We selected a new (better) chain, which cleared the previous tentative
+    -- header.
+  | OutdatedTentativeHeader (Header blk)
+
+deriving stock instance Eq   (Header blk) => Eq   (TracePipeliningEvent blk)
+deriving stock instance Show (Header blk) => Show (TracePipeliningEvent blk)
 
 data TraceInitChainSelEvent blk =
     StartedInitChainSelection

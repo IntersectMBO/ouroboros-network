@@ -135,7 +135,7 @@ data PBftSelectView = PBftSelectView {
       pbftSelectViewBlockNo :: BlockNo
     , pbftSelectViewIsEBB   :: IsEBB
     }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NoThunks)
 
 mkPBftSelectView :: GetHeader blk => Header blk -> PBftSelectView
 mkPBftSelectView hdr = PBftSelectView {

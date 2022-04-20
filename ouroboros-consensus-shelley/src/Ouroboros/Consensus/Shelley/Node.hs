@@ -79,6 +79,7 @@ import qualified Cardano.Ledger.Shelley.LedgerState as SL
                      (incrementalStakeDistr, updateStakeDistribution)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.API as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Cardano.Protocol.TPraos.OCert as SL
 
@@ -435,10 +436,49 @@ instance ShelleyBasedEra era => NodeInitStorage (ShelleyBlock era) where
 -------------------------------------------------------------------------------}
 
 instance ShelleyBasedEra era => BlockSupportsMetrics (ShelleyBlock era) where
-  isSelfIssued cfg hdr =
-       case csvSelfIssued $ selectView cfg hdr of
-         SelfIssued    -> IsSelfIssued
-         NotSelfIssued -> IsNotSelfIssued
+  -- | Premature optimisation: we assume everywhere that metrics are
+  -- cheap, so micro-optimise checking whether the issuer vkey is one of our
+  -- own vkeys.
+  --
+  -- * Equality of vkeys takes roughly 40ns
+  -- * Hashing a vkey takes roughly 850ns
+  -- * Equality of hashes takes roughly 10ns
+  --
+  -- We want to avoid the hashing of a vkey as it is more expensive than
+  -- simply doing a linear search, comparing vkeys for equality. Only when
+  -- we have to do a linear search across a large number of vkeys does it
+  -- become more efficient to first hash the vkey and look up its hash in
+  -- the map.
+  --
+  -- We could try to be clever and estimate the number of keys after which
+  -- we switch from a linear search to hashing + a O(log n) map lookup, but
+  -- we keep it (relatively) simple and optimise for the common case: 0 or 1
+  -- key.
+  isSelfIssued cfg (ShelleyHeader shdr _) = case Map.size issuerVKeys of
+      -- The most common case: a non-block producing node
+      0 -> IsNotSelfIssued
+      -- A block producing node with a single set of credentials: just do an
+      -- equality check of the single VKey, skipping the more expensive
+      -- computation of the hash.
+      1 | SL.bheaderVk hdrBody `elem` issuerVKeys
+        -> IsSelfIssued
+        | otherwise
+        -> IsNotSelfIssued
+      -- When we are running with multiple sets of credentials, which should
+      -- only happen when benchmarking, do a hash lookup, as the number of
+      -- keys can grow to 100-250.
+      _ | SL.hashKey (SL.bheaderVk hdrBody) `Map.member` issuerVKeys
+        -> IsSelfIssued
+        | otherwise
+        -> IsNotSelfIssued
+    where
+      hdrBody :: SL.BHBody (EraCrypto era)
+      hdrBody = SL.bhbody shdr
+
+      issuerVKeys :: Map (SL.KeyHash 'SL.BlockIssuer (EraCrypto era))
+                         (SL.VKey 'SL.BlockIssuer (EraCrypto era))
+      issuerVKeys = shelleyBlockIssuerVKeys cfg
+
 
 instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
 

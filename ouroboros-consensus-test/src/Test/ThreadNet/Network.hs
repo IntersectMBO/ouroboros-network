@@ -104,6 +104,7 @@ import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
 
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
@@ -691,13 +692,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -- ^ block selection tracer
            -> Tracer m (LedgerUpdate blk)
               -- ^ ledger updates tracer
+           -> Tracer m (ChainDB.TracePipeliningEvent blk)
            -> NodeDBs (StrictTVar m MockFS)
            -> CoreNodeId
            -> ChainDbArgs Identity m blk
     mkArgs
       clock registry
       cfg initLedger
-      invalidTracer addTracer selTracer updatesTracer
+      invalidTracer addTracer selTracer updatesTracer pipeliningTracer
       nodeDBs _coreNodeId = ChainDbArgs {
           -- HasFS instances
           cdbHasFSImmutableDB       = SomeHasFS $ simHasFS (nodeDBsImm nodeDBs)
@@ -753,6 +755,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    mapM_ (traceWith updatesTracer) updates
                    traceWith selTracer (ChainDB.newTipPoint p, prj new)
 
+          ChainDB.TraceAddBlockEvent
+              (ChainDB.PipeliningEvent e)
+              -> traceWith pipeliningTracer e
+
           _   -> pure ()
 
     -- We don't expect any ledger warnings
@@ -793,9 +799,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
           wrapTracer tr   = Tracer $ \(p, bno) -> do
             s <- OracularClock.getCurrentSlot clock
             traceWith tr (s, p, bno)
-          addTracer       = wrapTracer $ nodeEventsAdds nodeInfoEvents
-          selTracer       = wrapTracer $ nodeEventsSelects nodeInfoEvents
-          headerAddTracer = wrapTracer $ nodeEventsHeaderAdds nodeInfoEvents
+          addTracer        = wrapTracer $ nodeEventsAdds nodeInfoEvents
+          selTracer        = wrapTracer $ nodeEventsSelects nodeInfoEvents
+          headerAddTracer  = wrapTracer $ nodeEventsHeaderAdds nodeInfoEvents
+          pipeliningTracer = nodeEventsPipelining nodeInfoEvents
       let chainDbArgs = mkArgs
             clock registry
             pInfoConfig pInfoInitLedger
@@ -803,6 +810,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             addTracer
             selTracer
             updatesTracer
+            pipeliningTracer
             nodeInfoDBs
             coreNodeId
       chainDB <- snd <$>
@@ -885,7 +893,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- ChainDB will reject it as invalid, and
                   -- 'Test.ThreadNet.General.prop_general' will eventually fail
                   -- because of a block rejection.
-                  void $ ChainDB.addBlock chainDB ebb
+                  void $ ChainDB.addBlock chainDB InvalidBlockPunishment.noPunishment ebb
                   pure blk
 
       origBlockForging <- pInfoBlockForging
@@ -1395,6 +1403,8 @@ data NodeEvents blk ev = NodeEvents
     -- ^ 'ChainDB.getTipBlockNo' for each node at the onset of each slot
   , nodeEventsUpdates     :: ev (LedgerUpdate blk)
     -- ^ Ledger updates every time we adopt a block/switch to a fork
+  , nodeEventsPipelining  :: ev (ChainDB.TracePipeliningEvent blk)
+    -- ^ Pipelining events tracking the tentative header
   }
 
 -- | A vector with an element for each database of a node
@@ -1422,9 +1432,10 @@ newNodeInfo = do
       (t5, m5) <- recordingTracerTVar
       (t6, m6) <- recordingTracerTVar
       (t7, m7) <- recordingTracerTVar
+      (t8, m8) <- recordingTracerTVar
       pure
-          ( NodeEvents     t1     t2     t3     t4     t5     t6     t7
-          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4 <*> m5 <*> m6 <*> m7
+          ( NodeEvents     t1     t2     t3     t4     t5     t6     t7     t8
+          , NodeEvents <$> m1 <*> m2 <*> m3 <*> m4 <*> m5 <*> m6 <*> m7 <*> m8
           )
 
   (nodeInfoDBs, readDBs) <- do
@@ -1460,6 +1471,7 @@ data NodeOutput blk = NodeOutput
   , nodeOutputNodeDBs      :: NodeDBs MockFS
   , nodeOutputSelects      :: Map SlotNo [(RealPoint blk, BlockNo)]
   , nodeOutputUpdates      :: [LedgerUpdate blk]
+  , nodePipeliningEvents   :: [ChainDB.TracePipeliningEvent blk]
   }
 
 data TestOutput blk = TestOutput
@@ -1493,6 +1505,7 @@ mkTestOutput vertexInfos = do
               , nodeEventsSelects
               , nodeEventsTipBlockNos
               , nodeEventsUpdates
+              , nodeEventsPipelining
               } = nodeInfoEvents
         let nodeOutput = NodeOutput
               { nodeOutputAdds        =
@@ -1519,6 +1532,7 @@ mkTestOutput vertexInfos = do
               , nodeOutputInvalids    = (:[]) <$> Map.fromList nodeEventsInvalids
               , nodeOutputNodeDBs     = nodeInfoDBs
               , nodeOutputUpdates     = nodeEventsUpdates
+              , nodePipeliningEvents  = nodeEventsPipelining
               }
 
         pure

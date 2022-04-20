@@ -32,15 +32,18 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 chainSyncHeaderServerFollower
     :: ChainDB m blk
+    -> ChainDB.ChainType
     -> ResourceRegistry m
     -> m (Follower m blk (WithPoint blk (SerialisedHeader blk)))
-chainSyncHeaderServerFollower chainDB registry = ChainDB.newFollower chainDB registry getSerialisedHeaderWithPoint
+chainSyncHeaderServerFollower chainDB chainType registry =
+  ChainDB.newFollower chainDB registry chainType getSerialisedHeaderWithPoint
 
 chainSyncBlockServerFollower
     :: ChainDB m blk
     -> ResourceRegistry m
     -> m (Follower m blk (WithPoint blk (Serialised blk)))
-chainSyncBlockServerFollower chainDB registry = ChainDB.newFollower chainDB registry getSerialisedBlockWithPoint
+chainSyncBlockServerFollower chainDB registry =
+  ChainDB.newFollower chainDB registry ChainDB.SelectedChain getSerialisedBlockWithPoint
 
 -- | Chain Sync Server for block headers for a given a 'ChainDB'.
 --

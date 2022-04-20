@@ -54,6 +54,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
     -- * Invalid block reason
   , InvalidBlockReason (..)
     -- * Followers
+  , ChainType (..)
   , Follower (..)
   , traverseFollower
     -- * Recovery
@@ -79,12 +80,15 @@ import           Ouroboros.Consensus.HeaderStateHistory
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 
+import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
+                     (InvalidBlockPunishment)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
@@ -132,7 +136,7 @@ data ChainDB m blk = ChainDB {
       -- use 'addBlock' to add the block synchronously.
       --
       -- NOTE: back pressure can be applied when overloaded.
-      addBlockAsync      :: blk -> m (AddBlockPromise m blk)
+      addBlockAsync      :: InvalidBlockPunishment m -> blk -> m (AddBlockPromise m blk)
 
       -- | Get the current chain fragment
       --
@@ -298,6 +302,7 @@ data ChainDB m blk = ChainDB {
       --
     , newFollower ::
            forall b. ResourceRegistry m
+        -> ChainType
         -> BlockComponent blk b
         -> m (Follower m blk b)
 
@@ -412,22 +417,22 @@ data AddBlockPromise m blk = AddBlockPromise
 
 -- | Add a block synchronously: wait until the block has been written to disk
 -- (see 'blockWrittenToDisk').
-addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk -> blk -> m Bool
-addBlockWaitWrittenToDisk chainDB blk = do
-    promise <- addBlockAsync chainDB blk
+addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m Bool
+addBlockWaitWrittenToDisk chainDB punish blk = do
+    promise <- addBlockAsync chainDB punish blk
     atomically $ blockWrittenToDisk promise
 
 -- | Add a block synchronously: wait until the block has been processed (see
 -- 'blockProcessed'). The new tip of the ChainDB is returned.
-addBlock :: IOLike m => ChainDB m blk -> blk -> m (Point blk)
-addBlock chainDB blk = do
-    promise <- addBlockAsync chainDB blk
+addBlock :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m (Point blk)
+addBlock chainDB punish blk = do
+    promise <- addBlockAsync chainDB punish blk
     atomically $ blockProcessed promise
 
 -- | Add a block synchronously. Variant of 'addBlock' that doesn't return the
 -- new tip of the ChainDB.
-addBlock_ :: IOLike m => ChainDB m blk -> blk -> m ()
-addBlock_  = void .: addBlock
+addBlock_ :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m ()
+addBlock_  = void ..: addBlock
 
 {-------------------------------------------------------------------------------
   Serialised block/header with its point
@@ -491,7 +496,7 @@ fromChain ::
   -> m (ChainDB m blk)
 fromChain openDB chain = do
     chainDB <- openDB
-    mapM_ (addBlock_ chainDB) $ Chain.toOldestFirst chain
+    mapM_ (addBlock_ chainDB InvalidBlockPunishment.noPunishment) $ Chain.toOldestFirst chain
     return chainDB
 
 {-------------------------------------------------------------------------------
@@ -617,6 +622,14 @@ instance LedgerSupportsProtocol blk
 {-------------------------------------------------------------------------------
   Followers
 -------------------------------------------------------------------------------}
+
+-- | Chain type
+--
+-- 'Follower's can choose to track changes to the "normal" 'SelectedChain', or
+-- track the 'TentativeChain', which might contain a pipelineable header at the
+-- tip.
+data ChainType = SelectedChain | TentativeChain
+  deriving (Eq, Show, Generic)
 
 -- | Follower
 --

@@ -32,6 +32,7 @@ import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.DeltaQ
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..))
 
 
 
@@ -47,7 +48,7 @@ import           Ouroboros.Network.DeltaQ
 data FetchClientRegistry peer header block m =
      FetchClientRegistry
        (StrictTMVar m (Tracer m (TraceLabelPeer peer (TraceFetchClientState header)),
-                 FetchClientPolicy header block m))
+                 WhetherReceivingTentativeBlocks -> STM m (FetchClientPolicy header block m)))
        (StrictTVar  m (Map peer (FetchClientStateVars m header)))
        (StrictTVar  m (Map peer (ThreadId m, StrictTMVar m ())))
        (StrictTVar  m (Map peer PeerGSV))
@@ -71,11 +72,12 @@ bracketFetchClient :: forall m a peer header block.
                       (MonadThrow m, MonadSTM m, MonadFork m, MonadMask m,
                        Ord peer)
                    => FetchClientRegistry peer header block m
+                   -> NodeToNodeVersion
                    -> peer
                    -> (FetchClientContext header block m -> m a)
                    -> m a
 bracketFetchClient (FetchClientRegistry ctxVar
-                      fetchRegistry syncRegistry dqRegistry keepRegistry) peer action = do
+                      fetchRegistry syncRegistry dqRegistry keepRegistry) version peer action = do
     ksVar <- newEmptyTMVarIO
     bracket (register ksVar) (uncurry (unregister ksVar)) (action . fst)
   where
@@ -86,7 +88,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
       tid <- myThreadId
       ctx <- atomically $ do
         -- blocks until setFetchClientContext is called
-        (tracer, policy) <- readTMVar ctxVar
+        (tracer, mkPolicy) <- readTMVar ctxVar
 
         -- wait for and register with keepAlive
         dqPeers <- readTVar dqRegistry
@@ -94,6 +96,13 @@ bracketFetchClient (FetchClientRegistry ctxVar
         modifyTVar keepRegistry $ \m ->
           assert (peer `Map.notMember` m) $
           Map.insert peer (tid, ksVar) m
+
+        -- allocate the policy specific for this peer's negotiated version
+        policy <- do
+          let pipeliningEnabled
+                | version >= NodeToNodeV_8 = ReceivingTentativeBlocks
+                | otherwise                = NotReceivingTentativeBlocks
+          mkPolicy pipeliningEnabled
 
         stateVars <- newFetchClientStateVars
         modifyTVar fetchRegistry $ \m ->
@@ -230,11 +239,13 @@ bracketKeepAliveClient(FetchClientRegistry _ctxVar
 setFetchClientContext :: MonadSTM m
                       => FetchClientRegistry peer header block m
                       -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                      -> FetchClientPolicy header block m
+                      -> (   WhetherReceivingTentativeBlocks
+                          -> STM m (FetchClientPolicy header block m)
+                         )
                       -> m ()
-setFetchClientContext (FetchClientRegistry ctxVar _ _ _ _) tracer policy =
+setFetchClientContext (FetchClientRegistry ctxVar _ _ _ _) tracer mkPolicy =
     atomically $ do
-      ok <- tryPutTMVar ctxVar (tracer, policy)
+      ok <- tryPutTMVar ctxVar (tracer, mkPolicy)
       unless ok $ error "setFetchClientContext: called more than once"
 
 -- | A read-only 'STM' action to get the current 'PeerFetchStatus' for all

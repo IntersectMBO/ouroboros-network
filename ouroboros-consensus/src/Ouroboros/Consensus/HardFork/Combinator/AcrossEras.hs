@@ -274,6 +274,9 @@ deriving via LiftNamedNS "OneEraHeader" Header xs
 deriving via LiftNamedNS "OneEraLedgerError" WrapLedgerErr xs
          instance CanHardFork xs => NoThunks (OneEraLedgerError xs)
 
+deriving via LiftNamedNS "OneEraSelectView" WrapSelectView xs
+         instance CanHardFork xs => NoThunks (OneEraSelectView xs)
+
 deriving via LiftNamedNS "OneEraTipInfo" WrapTipInfo xs
          instance CanHardFork xs => NoThunks (OneEraTipInfo xs)
 

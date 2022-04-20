@@ -186,6 +186,7 @@ library
                        Ouroboros.Consensus.Util.Singletons
                        Ouroboros.Consensus.Util.SOP
                        Ouroboros.Consensus.Util.STM
+                       Ouroboros.Consensus.Util.TentativeState
                        Ouroboros.Consensus.Util.Time
                        Ouroboros.Consensus.Util.TraceSize
                        Ouroboros.Consensus.Util.Versioned
@@ -193,6 +194,7 @@ library
                        -- Storing things on disk
                        Ouroboros.Consensus.Storage.ChainDB
                        Ouroboros.Consensus.Storage.ChainDB.API
+                       Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
                        Ouroboros.Consensus.Storage.ChainDB.Impl
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Args
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Background
