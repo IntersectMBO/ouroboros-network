@@ -528,24 +528,13 @@ applyBlock cfg ap db = case ap of
 data RewoundTableKeySets l =
     RewoundTableKeySets
       !(WithOrigin SlotNo)   -- ^ the slot to which the keys were rewounded
-      !(LedgerTables l RewoundMK)
+      !(LedgerTables l KeysMK)
 
 rewindTableKeySets ::
-     TableStuff l
-  => DbChangelog l -> LedgerTables l KeysMK -> RewoundTableKeySets l
-rewindTableKeySets dblog = \keys ->
+     DbChangelog l -> LedgerTables l KeysMK -> RewoundTableKeySets l
+rewindTableKeySets dblog =
       RewoundTableKeySets
         (changelogDiffAnchor dblog)
-    $ zipLedgerTables rewind keys
-    $ changelogDiffs dblog
-  where
-    rewind ::
-         Ord k
-      => ApplyMapKind KeysMK    k v
-      -> ApplyMapKind SeqDiffMK k v
-      -> ApplyMapKind RewoundMK k v
-    rewind (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
-      ApplyRewoundMK $ rewindKeys keys (cumulativeDiffSeqUtxoDiff diffs)
 
 data UnforwardedReadSets l = UnforwardedReadSets {
     -- | The Slot number of the anchor of the 'DbChangelog' that was used when
@@ -553,8 +542,7 @@ data UnforwardedReadSets l = UnforwardedReadSets {
     ursSeqNo  :: !(WithOrigin SlotNo)
     -- | The values that were found in the 'BackingStore'.
   , ursValues :: !(LedgerTables l ValuesMK)
-    -- | The values that were not present in the 'BackingStore' and are present
-    -- in the set of differences in the 'DbChangelog'.
+    -- | The values that were not present in the 'BackingStore'.
   , ursKeys   :: !(LedgerTables l KeysMK)
   }
 

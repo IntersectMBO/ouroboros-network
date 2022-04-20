@@ -28,12 +28,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , UtxoEntryDiff (..)
   , UtxoEntryDiffState (..)
     -- * Combinators
-  , RewoundKeys (..)
   , forwardValues
   , forwardValuesAndKeys
-  , mapRewoundKeys
   , restrictValues
-  , rewindKeys
     -- * Sequence of differences
   , SeqUtxoDiff (..)
   , cumulativeDiffSeqUtxoDiff
@@ -232,85 +229,6 @@ castUtxoKeys (UtxoKeys ks) = UtxoKeys ks
 restrictValues :: Ord k => UtxoValues k v -> UtxoKeys k v -> UtxoValues k v
 restrictValues (UtxoValues m) (UtxoKeys s) =
     UtxoValues (Map.restrictKeys m s)
-
--- | The result of rewinding keys through a valid 'UtxoDiff'
-data RewoundKeys k v = RewoundKeys {
-    -- | Keys inserted by the diff
-    --
-    -- Because the diff is valid, these keys are absent in the argument of the
-    -- diff.
-    rkAbsent  :: UtxoKeys k v
-    -- | The UTxO deleted by the diff
-    --
-    -- Because the diff is valid, these mappings are present in the argument of
-    -- the diff.
-  , rkPresent :: UtxoValues k v
-    -- | Keys whose presence or absence in the argument of the diff is not
-    -- determined by the diff
-  , rkUnknown :: UtxoKeys k v
-  }
-  deriving (Eq, Generic, NoThunks, Show)
-
-instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (RewoundKeys k v) where
-  toCBOR rew =
-        versionZeroProductToCBOR
-      $ map ($ rew)
-      $ [toCBOR . rkAbsent, toCBOR . rkPresent, toCBOR . rkUnknown]
-
-instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (RewoundKeys k v) where
-  fromCBOR =
-        versionZeroProductFromCBOR "RewoundKeys" 3
-      $ RewoundKeys <$> fromCBOR <*> fromCBOR <*> fromCBOR
-
-mapRewoundKeys :: (v -> v') -> RewoundKeys k v -> RewoundKeys k v'
-mapRewoundKeys f rew =
-    RewoundKeys {
-        rkAbsent  = castUtxoKeys    (rkAbsent  rew)
-      , rkPresent = mapUtxoValues f (rkPresent rew)
-      , rkUnknown = castUtxoKeys    (rkUnknown rew)
-      }
-
--- | Transport a set of keys backwards through a difference
---
--- Suppose @vs2 = 'forwardValues' vs1 diff@ and @rew = 'rewindKeys' ks diff@.
---
--- Then all:
---
--- * @'rkPresent' rew@ and @restrictKeys vs1 ('rkUnknown' rew)@ partition @vs1@.
---
--- * @'rkAbsent' rew `disjoint` keysSet vs1@.
---
--- * @'rkAbsent' rew@, @keysSet ('rkPresent' rew)@, and @('rkUnknown' rew)@
---   partition @ks@.
---
--- The practical benefit is that @'rkUnknown' rew@ is a possibly-empty subset of
--- @ks@, and so could avoid unnecessary reads from the backing store containing
--- @vs1@.
-rewindKeys :: forall k v. Ord k => UtxoKeys k v -> UtxoDiff k v -> RewoundKeys k v
-rewindKeys (UtxoKeys query) (UtxoDiff diffs) =
-    RewoundKeys {
-        rkAbsent  = UtxoKeys   $ Map.keysSet $ Map.filter isIns hits
-      , rkPresent = UtxoValues $ Map.mapMaybe justIfDel hits
-      , rkUnknown = UtxoKeys   misses
-      }
-  where
-    misses :: Set k
-    misses = query `Set.difference` Map.keysSet diffs
-
-    hits :: Map k (UtxoEntryDiff v)
-    hits = diffs `Map.restrictKeys` query
-
-    justIfDel :: UtxoEntryDiff v -> Maybe v
-    justIfDel (UtxoEntryDiff v diffstate) = case diffstate of
-      UedsIns       -> Nothing
-      UedsDel       -> Just v
-      UedsInsAndDel -> Nothing
-
-    isIns :: UtxoEntryDiff v -> Bool
-    isIns (UtxoEntryDiff _v diffstate) = case diffstate of
-      UedsIns       -> True
-      UedsDel       -> False
-      UedsInsAndDel -> True
 
 -- | Transport a set of values (eg 'rewindPresent' unioned with the fetch of
 -- 'rewoundUnknown' from backing store) by applying a valid difference
