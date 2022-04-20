@@ -90,8 +90,8 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
-                     (EnvelopeCheckError, envelopeChecks, mkHeaderView,
-                     untickLedgerView)
+                     (EnvelopeCheckError, envelopeChecks, mkHeaderView
+                     )
 
 {-------------------------------------------------------------------------------
   Ledger errors
@@ -459,7 +459,7 @@ instance ShelleyCompatible proto era => ValidateEnvelope (ShelleyBlock proto era
     EnvelopeCheckError proto
 
   additionalEnvelopeChecks cfg tlv hdr =
-    envelopeChecks (configConsensus cfg) (untickLedgerView (Proxy @proto) tlv) (shelleyHeaderRaw hdr)
+    envelopeChecks (configConsensus cfg) tlv (shelleyHeaderRaw hdr)
 
 {-------------------------------------------------------------------------------
   Auxiliary

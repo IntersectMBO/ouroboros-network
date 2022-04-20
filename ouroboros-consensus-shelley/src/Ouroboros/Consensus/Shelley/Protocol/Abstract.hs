@@ -117,22 +117,13 @@ class
 
   type EnvelopeCheckError proto :: Type
 
-  -- | Untick the ledger view.
-  --
-  --   This is needed to implement 'envelopeChecks', hence its inclusion here.
-  --   TODO Find a better place for this
-  untickLedgerView ::
-    proxy proto ->
-    Ticked (LedgerView proto) ->
-    LedgerView proto
-
   -- | Carry out any additional checks on the envelope, beyond those fundamental
   -- to a hash chain (e.g. previous hash being correct, slot number and block
   -- number increasing). For example, this might check things like maximum
   -- header size.
   envelopeChecks ::
     ConsensusConfig proto ->
-    LedgerView proto ->
+    Ticked (LedgerView proto) ->
     ShelleyProtocolHeader proto ->
     Except (EnvelopeCheckError proto) ()
 

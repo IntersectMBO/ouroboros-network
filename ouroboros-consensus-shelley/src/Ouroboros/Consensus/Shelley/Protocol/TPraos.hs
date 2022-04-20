@@ -46,9 +46,7 @@ instance PraosCrypto c => ProtocolHeaderSupportsEnvelope (TPraos c) where
 
   type EnvelopeCheckError _ = ChainPredicateFailure
 
-  untickLedgerView _ (TickedPraosLedgerView lv) = lv
-
-  envelopeChecks cfg lv hdr =
+  envelopeChecks cfg (TickedPraosLedgerView lv) hdr =
     SL.chainChecks
       maxPV
       (SL.lvChainChecks lv)
