@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -8,7 +9,6 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -32,6 +32,7 @@ import qualified Data.ByteString.Lazy.Char8 as BL.Char8
 import           Data.List (sortOn)
 import qualified Data.Map as Map
 import           Data.Ord (Down (..))
+import           Data.Singletons
 import qualified Data.Text as Text
 
 import           System.Directory (doesDirectoryExist)
@@ -42,6 +43,7 @@ import           System.IO.Temp (withTempFile)
 import           System.Process.ByteString.Lazy
 
 import           Network.TypedProtocol.Codec
+import qualified Network.TypedProtocol.Stateful.Codec as Stateful
 import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block (Point, SlotNo, Tip, decodeTip,
@@ -290,8 +292,10 @@ localTxMonitorCodec =
       Serialise.encode Serialise.decode
 
 
-localStateQueryCodec :: Codec (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
-                              CBOR.DeserialiseFailure IO BL.ByteString
+localStateQueryCodec :: Stateful.Codec
+                             (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
+                              CBOR.DeserialiseFailure
+                              LocalStateQuery.State IO BL.ByteString
 localStateQueryCodec =
     LocalStateQuery.codec True
 
@@ -304,26 +308,60 @@ localStateQueryCodec =
 -- | Validate mini-protocol codec against its cddl specification.
 --
 validateEncoder
-    :: ( forall (st :: ps). Show (ClientHasAgency st)
-       , forall (st :: ps). Show (ServerHasAgency st)
-       , forall (st :: ps) (st' :: ps). Show (Message ps st st')
+    :: forall ps.
+       ( forall (st :: ps) sing. sing ~ Sing st => Show sing
        )
     => CDDLSpec ps
     -> Codec ps CBOR.DeserialiseFailure IO BL.ByteString
-    -> AnyMessageAndAgency ps
+    -> AnyMessage ps
     -> Property
 validateEncoder spec
                 Codec { encode }
-                anyMsg@(AnyMessageAndAgency agency msg) =
-    counterexample (show anyMsg) $
-    counterexample (show terms) $
+                (AnyMessage msg) =
+    counterexample sterms $
     ioProperty $
       either (\err -> counterexample err False)
              (\_   -> property True)
       <$> validateCBOR spec blob
   where
-    blob  = encode agency msg
+    blob :: BL.ByteString
+    blob  = encode msg
+
+    terms :: Either CBOR.DeserialiseFailure (BL.ByteString, Term)
     terms = CBOR.deserialiseFromBytes CBOR.decodeTerm blob
+
+    -- Adding type signature forces a type error:
+    -- "Couldn't match kind ps1 with *"
+    -- sterms :: String
+    sterms = show terms
+
+validateEncoderSt
+    :: forall ps f.
+       ( forall (st :: ps) sing. sing ~ Sing st => Show sing
+       )
+    => CDDLSpec ps
+    -> Stateful.Codec ps CBOR.DeserialiseFailure f IO BL.ByteString
+    -> Stateful.AnyMessage ps f
+    -> Property
+validateEncoderSt spec
+                  Stateful.Codec { Stateful.encode }
+                  (Stateful.AnyMessage _ f msg) =
+    counterexample sterms $
+    ioProperty $
+      either (\err -> counterexample err False)
+             (\_   -> property True)
+      <$> validateCBOR spec blob
+  where
+    blob :: BL.ByteString
+    blob  = encode f msg
+
+    terms :: Either CBOR.DeserialiseFailure (BL.ByteString, Term)
+    terms = CBOR.deserialiseFromBytes CBOR.decodeTerm blob
+
+    -- Adding type signature forces a type error:
+    -- "Couldn't match kind ps1 with *"
+    -- sterms :: String
+    sterms = show terms
 
 
 -- | Match encoded cbor against cddl specifiction.
@@ -346,20 +384,20 @@ validateCBOR (CDDLSpec spec) blob =
 -- TODO: add our regular tests for `Handshake NodeToNodeVerision CBOR.Term`
 -- codec.
 --
-instance Arbitrary (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term)) where
+instance Arbitrary (AnyMessage (Handshake NodeToNodeVersion CBOR.Term)) where
     arbitrary = oneof
-        [     AnyMessageAndAgency (ClientAgency Handshake.TokPropose)
+        [     AnyMessage
             . Handshake.MsgProposeVersions
             . Map.fromList
             . map (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
           <$> listOf ((,) <$> genVersion <*> genData)
 
-        ,     AnyMessageAndAgency (ServerAgency Handshake.TokConfirm)
+        ,     AnyMessage
             . uncurry Handshake.MsgAcceptVersion
             . (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
           <$> ((,) <$> genVersion <*> genData)
 
-        ,     AnyMessageAndAgency (ServerAgency Handshake.TokConfirm)
+        ,     AnyMessage
             . Handshake.MsgRefuse
           <$> genRefuseReason
         ]
@@ -390,8 +428,8 @@ instance Arbitrary (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term))
 
 
 prop_encodeHandshakeNodeToNode
-    :: CDDLSpec            (Handshake NodeToNodeVersion CBOR.Term)
-    -> AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term)
+    :: CDDLSpec   (Handshake NodeToNodeVersion CBOR.Term)
+    -> AnyMessage (Handshake NodeToNodeVersion CBOR.Term)
     -> Property
 prop_encodeHandshakeNodeToNode spec = validateEncoder spec nodeToNodeHandshakeCodec
 
@@ -399,20 +437,20 @@ prop_encodeHandshakeNodeToNode spec = validateEncoder spec nodeToNodeHandshakeCo
 -- TODO: add our regular tests for `Handshake NodeToClientVerision CBOR.Term`
 -- codec.
 --
-instance Arbitrary (AnyMessageAndAgency (Handshake NodeToClientVersion CBOR.Term)) where
+instance Arbitrary (AnyMessage (Handshake NodeToClientVersion CBOR.Term)) where
     arbitrary = oneof
-        [     AnyMessageAndAgency (ClientAgency Handshake.TokPropose)
+        [     AnyMessage
             . Handshake.MsgProposeVersions
             . Map.fromList
             . map (\(v, d) -> (v, encodeTerm (nodeToClientCodecCBORTerm v) d))
           <$> listOf ((,) <$> genVersion <*> genData)
 
-        ,     AnyMessageAndAgency (ServerAgency Handshake.TokConfirm)
+        ,     AnyMessage
             . uncurry Handshake.MsgAcceptVersion
             . (\(v, d) -> (v, encodeTerm (nodeToClientCodecCBORTerm v) d))
           <$> ((,) <$> genVersion <*> genData)
 
-        ,     AnyMessageAndAgency (ServerAgency Handshake.TokConfirm)
+        ,     AnyMessage
             . Handshake.MsgRefuse
           <$> genRefuseReason
         ]
@@ -439,63 +477,66 @@ instance Arbitrary (AnyMessageAndAgency (Handshake NodeToClientVersion CBOR.Term
 
 
 prop_encodeHandshakeNodeToClient
-    :: CDDLSpec            (Handshake NodeToClientVersion CBOR.Term)
-    -> AnyMessageAndAgency (Handshake NodeToClientVersion CBOR.Term)
+    :: CDDLSpec   (Handshake NodeToClientVersion CBOR.Term)
+    -> AnyMessage (Handshake NodeToClientVersion CBOR.Term)
     -> Property
 prop_encodeHandshakeNodeToClient spec = validateEncoder spec nodeToClientHandshakeCodec
 
 
 prop_encodeChainSync
-    :: CDDLSpec            (ChainSync BlockHeader
-                                      (Point BlockHeader)
-                                      (Tip BlockHeader))
-    -> AnyMessageAndAgency (ChainSync BlockHeader
-                                      (Point BlockHeader)
-                                      (Tip BlockHeader))
+    :: CDDLSpec   (ChainSync BlockHeader
+                             (Point BlockHeader)
+                             (Tip BlockHeader))
+    -> AnyMessage (ChainSync BlockHeader
+                             (Point BlockHeader)
+                             (Tip BlockHeader))
     -> Property
 prop_encodeChainSync spec = validateEncoder spec chainSyncCodec
 
 
 prop_encodeBlockFetch
-    :: CDDLSpec            (BlockFetch Block (Point Block))
-    -> AnyMessageAndAgency (BlockFetch Block (Point Block))
+    :: CDDLSpec   (BlockFetch Block (Point Block))
+    -> AnyMessage (BlockFetch Block (Point Block))
     -> Property
 prop_encodeBlockFetch spec = validateEncoder spec blockFetchCodec
 
 
 prop_encodeTxSubmission2
-    :: CDDLSpec            (TxSubmission2 TxId Tx)
-    -> AnyMessageAndAgency (TxSubmission2 TxId Tx)
+    :: CDDLSpec   (TxSubmission2 TxId Tx)
+    -> AnyMessage (TxSubmission2 TxId Tx)
     -> Property
 prop_encodeTxSubmission2 spec = validateEncoder spec txSubmissionCodec2
 
 
 prop_encodeKeepAlive
-    :: CDDLSpec            KeepAlive
-    -> AnyMessageAndAgency KeepAlive
+    :: CDDLSpec   KeepAlive
+    -> AnyMessage KeepAlive
     -> Property
 prop_encodeKeepAlive spec = validateEncoder spec codecKeepAlive_v2
 
 
 prop_encodeLocalTxSubmission
-    :: CDDLSpec            (LocalTxSubmission LocalTxSubmission.Tx
-                                              LocalTxSubmission.Reject)
-    -> AnyMessageAndAgency (LocalTxSubmission LocalTxSubmission.Tx
-                                              LocalTxSubmission.Reject)
+    :: CDDLSpec   (LocalTxSubmission LocalTxSubmission.Tx
+                                     LocalTxSubmission.Reject)
+    -> AnyMessage (LocalTxSubmission LocalTxSubmission.Tx
+                                     LocalTxSubmission.Reject)
     -> Property
 prop_encodeLocalTxSubmission spec = validateEncoder spec localTxSubmissionCodec
 
 prop_encodeLocalTxMonitor
-    :: CDDLSpec            (LocalTxMonitor TxId Tx SlotNo)
-    -> AnyMessageAndAgency (LocalTxMonitor TxId Tx SlotNo)
+    :: CDDLSpec   (LocalTxMonitor TxId Tx SlotNo)
+    -> AnyMessage (LocalTxMonitor TxId Tx SlotNo)
     -> Property
 prop_encodeLocalTxMonitor spec = validateEncoder spec localTxMonitorCodec
 
 prop_encodeLocalStateQuery
-    :: CDDLSpec            (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
-    -> AnyMessageAndAgency (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
+    :: CDDLSpec   (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
+    -- TODO: find a better solution that using a 'Blind'
+    -> Blind (Stateful.AnyMessage (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
+                                   LocalStateQuery.State)
     -> Property
-prop_encodeLocalStateQuery spec = validateEncoder spec localStateQueryCodec
+prop_encodeLocalStateQuery spec (Blind msg) =
+    validateEncoderSt spec localStateQueryCodec msg
 
 
 --
@@ -504,7 +545,8 @@ prop_encodeLocalStateQuery spec = validateEncoder spec localStateQueryCodec
 
 
 data SomeAgency ps where
-    SomeAgency :: PeerHasAgency (pr :: PeerRole) (st :: ps)
+    SomeAgency :: SingI (PeerHasAgency st)
+               => SingPeerHasAgency (st :: ps)
                -> SomeAgency ps
 
 
@@ -548,6 +590,49 @@ validateDecoder transform (CDDLSpec spec) codec stoks rounds = do
             Nothing -> return ()
 
 
+data SomeAgencySt ps f where
+    SomeAgencySt :: SingI (PeerHasAgency st)
+                 => SingPeerHasAgency (st :: ps)
+                 -> f st
+                 -> SomeAgencySt ps f
+
+
+validateDecoderSt :: Maybe (CBOR.Term -> CBOR.Term)
+                  -- ^ transform a generated term
+                  -> CDDLSpec ps
+                  -> Stateful.Codec ps CBOR.DeserialiseFailure f IO BL.ByteString
+                  -> [SomeAgencySt ps f]
+                  -> Int
+                  -> Assertion
+validateDecoderSt transform (CDDLSpec spec) codec stoks rounds = do
+    eterms <- runExceptT $ generateCBORFromSpec spec rounds
+    case eterms of
+      Left err -> assertFailure err
+      Right terms ->
+        forM_ terms $ \(generated_term, encoded_term) -> do
+          let encoded_term' = case transform of
+                 Nothing -> encoded_term
+                 Just tr -> case CBOR.deserialiseFromBytes CBOR.decodeTerm encoded_term of
+                   Right (rest, term)  | BL.null rest
+                                      -> CBOR.toLazyByteString (CBOR.encodeTerm (tr term))
+                   Right _            -> error   "validateDecoder: trailing bytes"
+                   Left err           -> error $ "validateDecoder: decoding error: "
+                                              ++ show err
+              Right (_, decoded_term) =
+                CBOR.deserialiseFromBytes CBOR.decodeTerm encoded_term'
+          res <- decodeMsgSt codec stoks encoded_term'
+          case res of
+            Just errs -> assertFailure $ concat
+              [ "decoding failures:\n"
+              , unlines (map show errs)
+              , "while decoding:\n"
+              , show decoded_term
+              , "\n"
+              , BL.Char8.unpack generated_term
+              ]
+            Nothing -> return ()
+
+
 generateCBORFromSpec :: BL.ByteString -> Int -> ExceptT String IO [(BL.ByteString, BL.ByteString)]
 generateCBORFromSpec spec rounds = do
     terms <-
@@ -577,13 +662,28 @@ decodeMsg :: forall ps.
 decodeMsg codec stoks bs =
     -- sequence [Nothing, ...] = Nothing
     fmap (sequence :: [Maybe CBOR.DeserialiseFailure] -> Maybe [CBOR.DeserialiseFailure]) $
-    forM stoks $ \(SomeAgency stok) -> do
-        decoder <- decode codec stok
+    forM stoks $ \(SomeAgency (_ :: SingPeerHasAgency st)) -> do
+        decoder <- (decode codec :: IO (DecodeStep BL.ByteString CBOR.DeserialiseFailure IO (SomeMessage st)))
         res <- runDecoder [bs] decoder
         return $ case res of
-          Left err -> Just (err)
+          Left err -> Just err
           Right {} -> Nothing
 
+decodeMsgSt :: forall ps f.
+               Stateful.Codec ps CBOR.DeserialiseFailure f IO BL.ByteString
+            -> [SomeAgencySt ps f]
+            -- ^ list of all gencies to try
+            -> BL.ByteString
+            -> IO (Maybe [CBOR.DeserialiseFailure])
+decodeMsgSt codec stoks bs =
+    -- sequence [Nothing, ...] = Nothing
+    fmap (sequence :: [Maybe CBOR.DeserialiseFailure] -> Maybe [CBOR.DeserialiseFailure]) $
+    forM stoks $ \(SomeAgencySt (_ :: SingPeerHasAgency st) f) -> do
+        decoder <- (Stateful.decode codec f :: IO (DecodeStep BL.ByteString CBOR.DeserialiseFailure IO (SomeMessage st)))
+        res <- runDecoder [bs] decoder
+        return $ case res of
+          Left err -> Just err
+          Right {} -> Nothing
 
 unit_decodeHandshakeNodeToNode
     :: CDDLSpec (Handshake NodeToNodeVersion CBOR.Term)
@@ -591,8 +691,8 @@ unit_decodeHandshakeNodeToNode
 unit_decodeHandshakeNodeToNode spec =
     validateDecoder (Just handshakeFix)
       spec nodeToNodeHandshakeCodec
-      [ SomeAgency $ ClientAgency Handshake.TokPropose
-      , SomeAgency $ ServerAgency Handshake.TokConfirm
+      [ SomeAgency $ SingClientHasAgency Handshake.SingPropose
+      , SomeAgency $ SingServerHasAgency Handshake.SingConfirm
       ]
       100
 
@@ -603,8 +703,8 @@ unit_decodeHandshakeNodeToClient
 unit_decodeHandshakeNodeToClient spec =
     validateDecoder (Just handshakeFix)
       spec nodeToClientHandshakeCodec
-      [ SomeAgency $ ClientAgency Handshake.TokPropose
-      , SomeAgency $ ServerAgency Handshake.TokConfirm
+      [ SomeAgency $ SingClientHasAgency Handshake.SingPropose
+      , SomeAgency $ SingServerHasAgency Handshake.SingConfirm
       ]
       100
 
@@ -615,10 +715,10 @@ unit_decodeChainSync
 unit_decodeChainSync spec =
     validateDecoder Nothing
       spec chainSyncCodec
-      [ SomeAgency $ ClientAgency ChainSync.TokIdle
-      , SomeAgency $ ServerAgency (ChainSync.TokNext ChainSync.TokCanAwait)
-      , SomeAgency $ ServerAgency (ChainSync.TokNext ChainSync.TokMustReply)
-      , SomeAgency $ ServerAgency (ChainSync.TokIntersect)
+      [ SomeAgency $ SingClientHasAgency ChainSync.SingIdle
+      , SomeAgency $ SingServerHasAgency (ChainSync.SingNext ChainSync.SingCanAwait)
+      , SomeAgency $ SingServerHasAgency (ChainSync.SingNext ChainSync.SingMustReply)
+      , SomeAgency $ SingServerHasAgency (ChainSync.SingIntersect)
       ]
       100
 
@@ -629,9 +729,9 @@ unit_decodeBlockFetch
 unit_decodeBlockFetch spec =
     validateDecoder Nothing
       spec blockFetchCodec
-      [ SomeAgency $ ClientAgency BlockFetch.TokIdle
-      , SomeAgency $ ServerAgency BlockFetch.TokBusy
-      , SomeAgency $ ServerAgency BlockFetch.TokStreaming
+      [ SomeAgency $ SingClientHasAgency BlockFetch.SingBFIdle
+      , SomeAgency $ SingServerHasAgency BlockFetch.SingBFBusy
+      , SomeAgency $ SingServerHasAgency BlockFetch.SingBFStreaming
       ]
       100
 
@@ -643,19 +743,19 @@ unit_decodeTxSubmission2 spec =
     validateDecoder (Just txSubmissionFix)
       spec txSubmissionCodec2
       [ SomeAgency
-        $ ClientAgency TxSubmission2.TokInit
+        $ SingClientHasAgency TxSubmission2.SingInit
       , SomeAgency
-        $ ClientAgency
-        $ TxSubmission2.TokTxIds TxSubmission2.TokBlocking
+        $ SingClientHasAgency
+        $ TxSubmission2.SingTxIds TxSubmission2.SingBlocking
       , SomeAgency
-        $ ClientAgency
-        $ TxSubmission2.TokTxIds TxSubmission2.TokNonBlocking
+        $ SingClientHasAgency
+        $ TxSubmission2.SingTxIds TxSubmission2.SingNonBlocking
       , SomeAgency
-        $ ClientAgency
-        $ TxSubmission2.TokTxs
+        $ SingClientHasAgency
+        $ TxSubmission2.SingTxs
       , SomeAgency
-        $ ServerAgency
-        $ TxSubmission2.TokIdle
+        $ SingServerHasAgency
+        $ TxSubmission2.SingIdle
       ]
       100
 
@@ -666,8 +766,8 @@ unit_decodeKeepAlive
 unit_decodeKeepAlive spec =
     validateDecoder Nothing
       spec codecKeepAlive_v2
-      [ SomeAgency $ ClientAgency KeepAlive.TokClient
-      , SomeAgency $ ServerAgency KeepAlive.TokServer
+      [ SomeAgency $ SingClientHasAgency KeepAlive.SingClient
+      , SomeAgency $ SingServerHasAgency KeepAlive.SingServer
       ]
       100
 
@@ -678,8 +778,8 @@ unit_decodeLocalTxSubmission
 unit_decodeLocalTxSubmission spec =
     validateDecoder Nothing
       spec localTxSubmissionCodec
-      [ SomeAgency $ ClientAgency LocalTxSubmission.TokIdle
-      , SomeAgency $ ServerAgency LocalTxSubmission.TokBusy
+      [ SomeAgency $ SingClientHasAgency LocalTxSubmission.SingIdle
+      , SomeAgency $ SingServerHasAgency LocalTxSubmission.SingBusy
       ]
       100
 
@@ -690,12 +790,12 @@ unit_decodeLocalTxMonitor
 unit_decodeLocalTxMonitor spec =
     validateDecoder Nothing
       spec localTxMonitorCodec
-      [ SomeAgency $ ClientAgency LocalTxMonitor.TokIdle
-      , SomeAgency $ ClientAgency LocalTxMonitor.TokAcquired
-      , SomeAgency $ ServerAgency LocalTxMonitor.TokAcquiring
-      , SomeAgency $ ServerAgency (LocalTxMonitor.TokBusy LocalTxMonitor.TokNextTx)
-      , SomeAgency $ ServerAgency (LocalTxMonitor.TokBusy LocalTxMonitor.TokHasTx)
-      , SomeAgency $ ServerAgency (LocalTxMonitor.TokBusy LocalTxMonitor.TokGetSizes)
+      [ SomeAgency $ SingClientHasAgency LocalTxMonitor.SingIdle
+      , SomeAgency $ SingClientHasAgency LocalTxMonitor.SingAcquired
+      , SomeAgency $ SingServerHasAgency LocalTxMonitor.SingAcquiring
+      , SomeAgency $ SingServerHasAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingNextTx)
+      , SomeAgency $ SingServerHasAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingHasTx)
+      , SomeAgency $ SingServerHasAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingGetSizes)
       ]
       100
 
@@ -704,12 +804,16 @@ unit_decodeLocalStateQuery
     :: CDDLSpec (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
     -> Assertion
 unit_decodeLocalStateQuery spec =
-    validateDecoder Nothing
+    validateDecoderSt Nothing
       spec localStateQueryCodec
-      [ SomeAgency $ ClientAgency LocalStateQuery.TokIdle
-      , SomeAgency $ ClientAgency LocalStateQuery.TokAcquired
-      , SomeAgency $ ServerAgency LocalStateQuery.TokAcquiring
-      , SomeAgency $ ServerAgency (LocalStateQuery.TokQuerying LocalStateQuery.QueryPoint)
+      [ SomeAgencySt (SingClientHasAgency LocalStateQuery.SingIdle)
+                      LocalStateQuery.StateIdle
+      , SomeAgencySt (SingClientHasAgency LocalStateQuery.SingAcquired)
+                      LocalStateQuery.StateAcquired
+      , SomeAgencySt (SingServerHasAgency LocalStateQuery.SingAcquiring)
+                      LocalStateQuery.StateAcquiring
+      , SomeAgencySt (SingServerHasAgency LocalStateQuery.SingQuerying)
+                     (LocalStateQuery.StateQuerying LocalStateQuery.QueryPoint)
       ]
       100
 
