@@ -84,6 +84,7 @@ hardForkBlockForging ::
      -- ^ Used as the 'forgeLabel', the labels of the given 'BlockForging's will
      -- be ignored.
   -> OptNP 'False (BlockForging m) xs
+     -- ^ Note that an @'OptNP' False@ is non-empty
   -> BlockForging m (HardForkBlock xs)
 hardForkBlockForging forgeLabel blockForging =
     BlockForging {
