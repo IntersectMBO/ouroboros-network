@@ -21,7 +21,8 @@
 -- > import           Ouroboros.Consensus.Util.OptNP (OptNP (..), ViewOptNP (..))
 -- > import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 module Ouroboros.Consensus.Util.OptNP (
-    OptNP (..)
+    NonEmptyOptNP
+  , OptNP (..)
   , at
   , empty
   , fromNP
@@ -54,6 +55,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Util.SOP
 
+type NonEmptyOptNP = OptNP 'False
+
 -- | Like an 'NP', but with optional values
 data OptNP (empty :: Bool) (f :: k -> Type) (xs :: [k]) where
   OptNil  :: OptNP 'True f '[]
@@ -85,7 +88,7 @@ empty = case sList @xs of
     SNil  -> OptNil
     SCons -> OptSkip empty
 
-fromNonEmptyNP :: forall f xs. IsNonEmpty xs => NP f xs -> OptNP 'False f xs
+fromNonEmptyNP :: forall f xs. IsNonEmpty xs => NP f xs -> NonEmptyOptNP f xs
 fromNonEmptyNP xs = case isNonEmpty (Proxy @xs) of
     ProofNonEmpty {} ->
       case xs of
@@ -103,15 +106,15 @@ toNP = go
     go (OptCons x xs) = Comp (Just x) :* go xs
     go (OptSkip   xs) = Comp Nothing  :* go xs
 
-at :: SListI xs => f x -> Index xs x -> OptNP 'False f xs
+at :: SListI xs => f x -> Index xs x -> NonEmptyOptNP f xs
 at x IZ         = OptCons x empty
 at x (IS index) = OptSkip (at x index)
 
-singleton :: f x -> OptNP 'False f '[x]
+singleton :: f x -> NonEmptyOptNP f '[x]
 singleton x = OptCons x OptNil
 
 -- | If 'OptNP' is not empty, it must contain at least one value
-fromSingleton :: OptNP 'False f '[x] -> f x
+fromSingleton :: NonEmptyOptNP f '[x] -> f x
 fromSingleton (OptCons x _) = x
 
 ap ::
@@ -153,7 +156,7 @@ data ViewOptNP f xs where
   OptNP_ExactlyOne :: f x -> ViewOptNP f '[x]
   OptNP_AtLeastTwo ::        ViewOptNP f (x ': y ': zs)
 
-view :: forall f xs. OptNP 'False f xs -> ViewOptNP f xs
+view :: forall f xs. NonEmptyOptNP f xs -> ViewOptNP f xs
 view = \case
     OptCons x  OptNil       -> OptNP_ExactlyOne x
     OptCons _ (OptCons _ _) -> OptNP_AtLeastTwo
@@ -168,9 +171,9 @@ view = \case
 zipWith ::
      forall f g h xs.
      (forall a. These1 f g a -> h a)
-  -> OptNP 'False f xs
-  -> OptNP 'False g xs
-  -> OptNP 'False h xs
+  -> NonEmptyOptNP f xs
+  -> NonEmptyOptNP g xs
+  -> NonEmptyOptNP h xs
 zipWith = polyZipWith
 
 -- | NOT EXPORTED
@@ -195,9 +198,9 @@ polyZipWith f =
 combineWith ::
      SListI xs
   => (forall a. These1 f g a -> h a)
-  -> Maybe (OptNP 'False f xs)
-  -> Maybe (OptNP 'False g xs)
-  -> Maybe (OptNP 'False h xs)
+  -> Maybe (NonEmptyOptNP f xs)
+  -> Maybe (NonEmptyOptNP g xs)
+  -> Maybe (NonEmptyOptNP h xs)
 combineWith _ Nothing   Nothing   = Nothing
 combineWith f (Just xs) Nothing   = Just $ polyZipWith f xs    empty
 combineWith f Nothing   (Just ys) = Just $ polyZipWith f empty ys
@@ -210,9 +213,9 @@ combine ::
      forall (f :: Type -> Type) xs.
      -- 'These1' is not kind-polymorphic
      (SListI xs, HasCallStack)
-  => Maybe (OptNP 'False f xs)
-  -> Maybe (OptNP 'False f xs)
-  -> Maybe (OptNP 'False f xs)
+  => Maybe (NonEmptyOptNP f xs)
+  -> Maybe (NonEmptyOptNP f xs)
+  -> Maybe (NonEmptyOptNP f xs)
 combine = combineWith $ \case
     This1 x   -> x
     That1 y   -> y
