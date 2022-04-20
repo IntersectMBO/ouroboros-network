@@ -25,7 +25,7 @@ import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
                      MonadMask, MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
-import           Control.Tracer (nullTracer, Tracer, traceWith)
+import           Control.Tracer (Tracer, traceWith, nullTracer)
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.IP (IP (..), toIPv4, toIPv6)
@@ -66,6 +66,7 @@ import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
+import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket (BearerInfo (..), withSnocket, FD)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as Node
@@ -142,11 +143,11 @@ genDomainMap raps = do
 
 genCommands :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
-  commands <- vectorOf size (frequency [ (7, JoinNetwork <$> shortDelay)
+  commands <- vectorOf size (frequency [ (7, JoinNetwork <$> delay)
                                        , (4, Reconfigure
-                                              <$> shortDelay
+                                              <$> delay
                                               <*> subLocalRootPeers)
-                                       , (1, Kill <$> longDelay)
+                                       , (1, Kill <$> delay)
                                        ])
   return (fixupCommands commands)
   where
@@ -155,8 +156,10 @@ genCommands localRoots = sized $ \size -> do
       subLRP <- sublistOf localRoots
       mapM (mapM (fmap Map.fromList . sublistOf . Map.toList)) subLRP
 
-    shortDelay = fromInteger <$> choose (0, 60)
-    longDelay = fromInteger <$> choose (1 * 60 * 60, 10 * 60 * 60)
+    delay = frequency [ (3, genDelayWithPrecision 100)
+                      , (2, (* 10) <$> genDelayWithPrecision 100)
+                      , (1, (/ 10) <$> genDelayWithPrecision 100)
+                      ]
 
 fixupCommands :: [Command] -> [Command]
 fixupCommands [] = []
