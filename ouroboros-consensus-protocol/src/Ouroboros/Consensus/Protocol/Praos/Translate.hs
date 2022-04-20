@@ -63,25 +63,25 @@ instance
         praosEpochInfo = tpraosEpochInfo
       }
 
-  translateLedgerView SL.LedgerView {SL.lvPoolDistr, SL.lvChainChecks} =
-    Views.LedgerView
-      { Views.lvPoolDistr = coercePoolDistr lvPoolDistr,
-        lvMaxHeaderSize = SL.ccMaxBHSize lvChainChecks,
-        lvMaxBodySize = SL.ccMaxBBSize lvChainChecks
-      }
-    where
-      coercePoolDistr :: SL.PoolDistr c1 -> SL.PoolDistr c2
-      coercePoolDistr (SL.PoolDistr m) =
-        SL.PoolDistr
-          . Map.mapKeysMonotonic coerce
-          . Map.map coerceIndividualPoolStake
-          $ m
-      coerceIndividualPoolStake :: SL.IndividualPoolStake c1 -> SL.IndividualPoolStake c2
-      coerceIndividualPoolStake (SL.IndividualPoolStake stake vrf) =
-        SL.IndividualPoolStake stake $ coerce vrf
-
   translateTickedLedgerView (TPraos.TickedPraosLedgerView lv) =
-    TickedPraosLedgerView $ translateLedgerView @(TPraos c1) @(Praos c2) lv
+      TickedPraosLedgerView $ translateLedgerView lv
+    where
+      translateLedgerView SL.LedgerView {SL.lvPoolDistr, SL.lvChainChecks} =
+        Views.LedgerView
+          { Views.lvPoolDistr = coercePoolDistr lvPoolDistr,
+            lvMaxHeaderSize = SL.ccMaxBHSize lvChainChecks,
+            lvMaxBodySize = SL.ccMaxBBSize lvChainChecks
+          }
+        where
+          coercePoolDistr :: SL.PoolDistr c1 -> SL.PoolDistr c2
+          coercePoolDistr (SL.PoolDistr m) =
+            SL.PoolDistr
+              . Map.mapKeysMonotonic coerce
+              . Map.map coerceIndividualPoolStake
+              $ m
+          coerceIndividualPoolStake :: SL.IndividualPoolStake c1 -> SL.IndividualPoolStake c2
+          coerceIndividualPoolStake (SL.IndividualPoolStake stake vrf) =
+            SL.IndividualPoolStake stake $ coerce vrf
 
   translateChainDepState tpState =
     PraosState

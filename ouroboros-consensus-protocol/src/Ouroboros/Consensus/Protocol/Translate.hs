@@ -12,13 +12,7 @@ class TranslateProto protoFrom protoTo
   where
   translateConsensusConfig ::
     ConsensusConfig protoFrom -> ConsensusConfig protoTo
-  translateLedgerView ::
-    LedgerView protoFrom -> LedgerView protoTo
   -- | Translate the ticked ledger view.
-  --
-  -- In general, this function is trivially derivable from
-  -- 'translateLedgerView', but since there's no general @ a -> Ticked a @
-  -- class available, we include this funcion here.
   translateTickedLedgerView ::
     Ticked (LedgerView protoFrom) -> Ticked (LedgerView protoTo)
   translateChainDepState ::
@@ -28,6 +22,5 @@ class TranslateProto protoFrom protoTo
 instance TranslateProto singleProto singleProto
   where
   translateConsensusConfig = id
-  translateLedgerView = id
   translateTickedLedgerView = id
   translateChainDepState = id
