@@ -36,9 +36,6 @@ module Ouroboros.Consensus.Util.OptNP (
     -- * Combining
   , combine
   , combineWith
-  , optAppend
-  , optAppendSkip
-  , optConcat
   , zipWith
   ) where
 
@@ -220,30 +217,3 @@ combine = combineWith $ \case
     This1 x   -> x
     That1 y   -> y
     These1 {} -> error "combine: precondition violated"
-
-{-------------------------------------------------------------------------------
-  Concatenation and appending
--------------------------------------------------------------------------------}
-
--- | Concatenation of type-level lists
-type family Concat xs ys where
-  Concat '[] ys = ys
-  Concat (x:xs) ys = x ': Concat xs ys
-
--- | Type level append
-type (:|>) (xs :: [k]) x = Concat xs '[x]
-
-optConcat :: OptNP empty1 f xs -> OptNP empty2 f ys -> OptNP (empty1 && empty2) f (Concat xs ys)
-optConcat OptNil y         = y
-optConcat (OptSkip xs) y   = OptSkip $ optConcat xs y
-optConcat (OptCons x xs) y = OptCons x $ optConcat xs y
-
-optAppend :: OptNP empty f xs -> f x -> OptNP 'False f (xs :|> x)
-optAppend xs x = optConcat xs $ OptCons x OptNil
-
-optAppendSkip ::
-  forall a proxy (empty :: Bool) (f :: a -> Type) (xs :: [a]) (x :: a).
-  proxy x ->
-  OptNP empty f xs ->
-  OptNP empty f (xs :|> x)
-optAppendSkip _ xs = optConcat xs (OptSkip OptNil :: OptNP 'True f '[x])

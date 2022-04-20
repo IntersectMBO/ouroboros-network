@@ -51,7 +51,7 @@ import qualified Data.ByteString.Short as Short
 import           Data.Functor.These (These1 (..))
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict hiding (shape, shift)
-import           Data.Word (Word16)
+import           Data.Word (Word16, Word64)
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
 import           Cardano.Chain.Slotting (EpochSlots)
@@ -62,14 +62,16 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
+import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP (OptSkip), optAppendSkip)
+import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP (OptSkip))
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP (Index (..))
 
@@ -83,6 +85,8 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
+import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..), ocertKESPeriod)
+
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 
@@ -92,6 +96,7 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
+import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto)
 import           Ouroboros.Consensus.Shelley.ShelleyBased
 
 import qualified Cardano.Ledger.BaseTypes as SL
@@ -100,6 +105,7 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.ShelleyBased
 import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
+import           Ouroboros.Consensus.Protocol.Praos.Common (praosCanBeLeaderOpCert)
 import           Ouroboros.Consensus.Shelley.Node.Common
                      (shelleyBlockIssuerVKey)
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
@@ -473,16 +479,6 @@ data ProtocolTransitionParamsShelleyBased era = ProtocolTransitionParamsShelleyB
     , transitionTrigger            :: TriggerHardFork
     }
 
-type ShelleyTPraosEras c =
-  [ ShelleyEra c
-  , AllegraEra c
-  , MaryEra c
-  , AlonzoEra c
-  ]
-
--- | TODO Remove this copy of Alonzo and add Babbage
-type ShelleyPraosEras c = '[BabbageEra c]
-
 -- | Create a 'ProtocolInfo' for 'CardanoBlock'
 --
 -- NOTE: the initial staking and funds in the 'ShelleyGenesis' are ignored,
@@ -598,11 +594,13 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Shelley
 
     tpraosParams :: TPraosParams
-    tpraosParams@TPraosParams { tpraosSlotsPerKESPeriod } =
+    tpraosParams =
         Shelley.mkTPraosParams
           maxMajorProtVer
           initialNonceShelley
           genesisShelley
+
+    TPraosParams { tpraosSlotsPerKESPeriod, tpraosMaxKESEvo } = tpraosParams
 
     praosParams :: PraosParams
     praosParams = PraosParams
@@ -616,6 +614,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         praosNetworkId = SL.sgNetworkId genesisShelley,
         praosSystemStart = SystemStart $ SL.sgSystemStart genesisShelley
       }
+
+    PraosParams { praosSlotsPerKESPeriod, praosMaxKESEvo } = praosParams
 
     blockConfigShelley :: BlockConfig (ShelleyBlock (TPraos c) (ShelleyEra c))
     blockConfigShelley =
@@ -849,14 +849,13 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- threads for the remaining Shelley ones.
     blockForging :: m [BlockForging m (CardanoBlock c)]
     blockForging = do
-        shelleyBased <- blockForgingShelleyTPraosBased
-        praosBased <- blockForgingShelleyPraosBased
+        shelleyBased <- traverse blockForgingShelleyBased credssShelleyBased
         let blockForgings :: [NonEmptyOptNP (BlockForging m) (CardanoEras c)]
-            blockForgings = case (mBlockForgingByron, shelleyBased, praosBased) of
-              (Nothing,    shelley, praoses)         -> shelley <> praoses
-              (Just byron, [], [])              -> [byron]
-              (Just byron, shelley:shelleys, praoses) ->
-                  OptNP.zipWith merge byron shelley : (shelleys <> praoses)
+            blockForgings = case (mBlockForgingByron, shelleyBased) of
+              (Nothing,    shelleys)         -> shelleys
+              (Just byron, [])               -> [byron]
+              (Just byron, shelley:shelleys) ->
+                  OptNP.zipWith merge byron shelley : shelleys
                 where
                   -- When merging Byron with Shelley-based eras, we should never
                   -- merge two from the same era.
@@ -871,56 +870,51 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         creds <- mCredsByron
         return $ byronBlockForging maxTxCapacityOverridesByron creds `OptNP.at` IZ
 
-    blockForgingShelleyTPraosBased :: m [NonEmptyOptNP (BlockForging m) (CardanoEras c)]
-    blockForgingShelleyTPraosBased = do
-        shelleyBased <-
-          traverse
-            (\creds -> TPraos.shelleySharedBlockForging
-               (Proxy @(ShelleyTPraosEras c))
-               tpraosParams
-               creds
-               maxTxCapacityOverridess
-            )
-            credssShelleyBased
+    blockForgingShelleyBased ::
+         ShelleyLeaderCredentials c
+      -> m (NonEmptyOptNP (BlockForging m) (CardanoEras c))
+    blockForgingShelleyBased credentials = do
+        let ShelleyLeaderCredentials
+              { shelleyLeaderCredentialsInitSignKey = initSignKey
+              , shelleyLeaderCredentialsCanBeLeader = canBeLeader
+              } = credentials
 
-        return $ reassoc <$> shelleyBased
-      where
-        reassoc ::
-             NP (BlockForging m :.: ShelleyBlock (TPraos c)) (ShelleyTPraosEras c)
-          -> NonEmptyOptNP (BlockForging m) (CardanoEras c)
-        reassoc = optAppendSkip Proxy . OptSkip . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+        hotKey <- do
+          let maxKESEvo :: Word64
+              maxKESEvo = assert (tpraosMaxKESEvo == praosMaxKESEvo) praosMaxKESEvo
 
-        maxTxCapacityOverridess =
-          Comp maxTxCapacityOverridesShelley :*
-          Comp maxTxCapacityOverridesAllegra :*
-          Comp maxTxCapacityOverridesMary    :*
-          Comp maxTxCapacityOverridesAlonzo  :*
-          Nil
+              startPeriod :: Absolute.KESPeriod
+              startPeriod = Absolute.ocertKESPeriod $ praosCanBeLeaderOpCert canBeLeader
 
-    blockForgingShelleyPraosBased :: m [NonEmptyOptNP (BlockForging m) (CardanoEras c)]
-    blockForgingShelleyPraosBased = do
-        shelleyBased <-
-          traverse
-            (\creds -> Praos.praosSharedBlockForging
-               (Proxy @(ShelleyPraosEras c))
-               praosParams
-               creds
-               maxTxCapacityOverridess
-            )
-            credssShelleyBased
+          HotKey.mkHotKey @m @c initSignKey startPeriod maxKESEvo
 
-        return $ reassoc <$> shelleyBased
-      where
-        -- TODO This is rather ugly! Can we do this in a nicer way?
-        reassoc ::
-             NP (BlockForging m :.: ShelleyBlock (Praos c)) (ShelleyPraosEras c)
-          -> NonEmptyOptNP (BlockForging m) (CardanoEras c)
-        reassoc = OptSkip . OptSkip . OptSkip . OptSkip . OptSkip
-                . injectShelleyOptNP unComp . OptNP.fromNonEmptyNP
+        let slotToPeriod :: SlotNo -> Absolute.KESPeriod
+            slotToPeriod (SlotNo slot) = assert (tpraosSlotsPerKESPeriod == praosSlotsPerKESPeriod) $
+              Absolute.KESPeriod $ fromIntegral $ slot `div` praosSlotsPerKESPeriod
 
-        maxTxCapacityOverridess =
-          Comp maxTxCapacityOverridesBabbage :* Nil
+        let tpraos :: forall era.
+                 ShelleyEraWithCrypto c (TPraos c) era
+              => TxLimits.Overrides (ShelleyBlock (TPraos c) era)
+              -> BlockForging m     (ShelleyBlock (TPraos c) era)
+            tpraos maxTxCapacityOverrides =
+              TPraos.shelleySharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
 
+        let praos :: forall era.
+                 ShelleyEraWithCrypto c (Praos c) era
+              => TxLimits.Overrides (ShelleyBlock (Praos c) era)
+              -> BlockForging m     (ShelleyBlock (Praos c) era)
+            praos maxTxCapacityOverrides =
+              Praos.praosSharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
+
+        pure
+          $ OptSkip    -- Byron
+          $ OptNP.fromNonEmptyNP $
+            tpraos maxTxCapacityOverridesShelley :*
+            tpraos maxTxCapacityOverridesAllegra :*
+            tpraos maxTxCapacityOverridesMary    :*
+            tpraos maxTxCapacityOverridesAlonzo  :*
+            praos  maxTxCapacityOverridesBabbage :*
+            Nil
 
 protocolClientInfoCardano
   :: forall c.
