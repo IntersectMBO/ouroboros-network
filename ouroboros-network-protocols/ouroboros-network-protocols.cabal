@@ -267,6 +267,7 @@ test-suite cddl
                        tasty-quickcheck,
 
                        typed-protocols,
+                       typed-protocols-stateful,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,
@@ -297,6 +298,7 @@ test-suite bench
                        tasty-bench,
 
                        typed-protocols,
+                       typed-protocols-stateful,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-protocols,
