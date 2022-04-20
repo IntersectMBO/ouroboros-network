@@ -165,22 +165,27 @@ view = \case
   Combining
 -------------------------------------------------------------------------------}
 
-type family And (x :: Bool) (y :: Bool) :: Bool where
-  And 'True  y      = y
-  And 'False _      = 'False
-  And _      'False = 'False
-
 zipWith ::
+     forall f g h xs.
+     (forall a. These1 f g a -> h a)
+  -> OptNP 'False f xs
+  -> OptNP 'False g xs
+  -> OptNP 'False h xs
+zipWith = polyZipWith
+
+-- | NOT EXPORTED
+polyZipWith ::
      forall f g h empty1 empty2 xs.
      (forall a. These1 f g a -> h a)
-  -> OptNP empty1              f xs
-  -> OptNP empty2              g xs
-  -> OptNP (And empty1 empty2) h xs
-zipWith f = go
+  -> OptNP empty1             f xs
+  -> OptNP empty2             g xs
+  -> OptNP (empty1 && empty2) h xs
+polyZipWith f =
+    go
   where
-    go :: OptNP empty1'               f xs'
-       -> OptNP empty2'               g xs'
-       -> OptNP (And empty1' empty2') h xs'
+    go :: OptNP empty1'              f xs'
+       -> OptNP empty2'              g xs'
+       -> OptNP (empty1' && empty2') h xs'
     go OptNil         OptNil         = OptNil
     go (OptCons x xs) (OptSkip   ys) = OptCons (f (This1  x  )) (go xs ys)
     go (OptSkip   xs) (OptCons y ys) = OptCons (f (That1    y)) (go xs ys)
@@ -194,9 +199,9 @@ combineWith ::
   -> Maybe (OptNP 'False g xs)
   -> Maybe (OptNP 'False h xs)
 combineWith _ Nothing   Nothing   = Nothing
-combineWith f (Just xs) Nothing   = Just $ zipWith f xs    empty
-combineWith f Nothing   (Just ys) = Just $ zipWith f empty ys
-combineWith f (Just xs) (Just ys) = Just $ zipWith f xs    ys
+combineWith f (Just xs) Nothing   = Just $ polyZipWith f xs    empty
+combineWith f Nothing   (Just ys) = Just $ polyZipWith f empty ys
+combineWith f (Just xs) (Just ys) = Just $ polyZipWith f xs    ys
 
 -- | Precondition: there is no overlap between the two given lists: if there is
 -- a 'Just' at a given position in one, it must be 'Nothing' at the same
