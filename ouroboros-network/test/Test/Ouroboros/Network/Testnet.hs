@@ -65,7 +65,7 @@ import           TestLib.Utils (TestProperty(..), mkProperty, ppTransition,
                      classifyEffectiveDataFlow, classifyTermination,
                      classifyActivityType, classifyPrunings, groupConns)
 import           TestLib.ConnectionManager
-                     (verifyAbstractTransition, abstractStateIsFinalTransition)
+                     (verifyAbstractTransition, abstractStateIsFinalTransition, verifyAbstractTransitionOrder)
 
 tests :: TestTree
 tests =
@@ -85,6 +85,8 @@ tests =
                    prop_diffusion_target_active_local_above
     , testProperty "diffusion connection manager valid transitions"
                    prop_diffusion_cm_valid_transitions
+    , testProperty "diffusion connection manager valid transition order"
+                   prop_diffusion_cm_valid_transition_order
     ]
   ]
 
@@ -785,6 +787,70 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
         . groupConns id abstractStateIsFinalTransition
         $ abstractTransitionEvents
 
+
+-- | A variant of ouroboros-network-framework
+-- 'Test.Ouroboros.Network.Server2.prop_connection_manager_valid_transition_order'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+prop_diffusion_cm_valid_transition_order :: AbsBearerInfo
+                                         -> DiffusionScript
+                                         -> Property
+prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+        events = fmap (Trace.fromList ())
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 1000000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_cm_valid_transition_order
+          $ (\(WithName _ (WithTime _ b)) -> b)
+          <$> ev
+        )
+      <$> events
+  where
+    verify_cm_valid_transition_order :: Trace () DiffusionTestTrace -> Property
+    verify_cm_valid_transition_order events =
+      let abstractTransitionEvents :: Trace () (AbstractTransitionTrace NtNAddr)
+          abstractTransitionEvents =
+            selectDiffusionConnectionManagerTransitionEvents events
+
+       in getAllProperty
+         . bifoldMap
+            (const mempty)
+            (verifyAbstractTransitionOrder False)
+         . fmap (map ttTransition)
+         . groupConns id abstractStateIsFinalTransition
+         $ abstractTransitionEvents
 
 -- Utils
 --
