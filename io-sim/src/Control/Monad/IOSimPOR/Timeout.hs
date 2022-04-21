@@ -1,19 +1,22 @@
-module Control.Monad.IOSimPOR.Timeout ( Timeout, timeout, unsafeTimeout ) where
+module Control.Monad.IOSimPOR.Timeout
+  ( Timeout
+  , timeout
+  , unsafeTimeout
+  ) where
 
 -- This module provides a timeout function like System.Timeout, BUT
 -- garbage collection time is not included (provided GHC stats are
 -- enabled, +RTS -T -RTS). Thus this can be used more reliably to
 -- limit computation time.
 
-import Control.Monad
-import Control.Concurrent
-import Control.Exception   (Exception(..), handleJust, bracket,
-                            uninterruptibleMask_,
-                            asyncExceptionToException,
-                            asyncExceptionFromException)
-import Data.Unique         (Unique, newUnique)
-import GHC.Stats
-import System.IO.Unsafe
+import           Control.Concurrent
+import           Control.Exception (Exception (..), asyncExceptionFromException,
+                     asyncExceptionToException, bracket, handleJust,
+                     uninterruptibleMask_)
+import           Control.Monad
+import           Data.Unique (Unique, newUnique)
+import           GHC.Stats
+import           System.IO.Unsafe
 
 
 -- An internal type that is thrown as a dynamic exception to

@@ -61,11 +61,11 @@ import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 
 import           Network.Mux (HasInitiator, HasResponder,
+                     MiniProtocolBundle (..), MiniProtocolInfo,
                      MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
-                     MuxErrorType (..), MiniProtocolBundle (..),
-                     MiniProtocolInfo, MuxMode (..))
-import qualified Network.Mux.Types as Mux
+                     MuxErrorType (..), MuxMode (..))
 import qualified Network.Mux.Compat as Mux.Compat
+import qualified Network.Mux.Types as Mux
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId

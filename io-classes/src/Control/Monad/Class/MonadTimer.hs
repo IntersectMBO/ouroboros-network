@@ -22,12 +22,12 @@ import           Control.Monad (when)
 #endif
 import qualified Control.Monad.STM as STM
 
-import           Control.Monad.Trans  (lift)
-import           Control.Monad.Cont   (ContT (..))
+import           Control.Monad.Cont (ContT (..))
 import           Control.Monad.Except (ExceptT (..))
-import           Control.Monad.RWS    (RWST (..))
+import           Control.Monad.RWS (RWST (..))
 import           Control.Monad.Reader (ReaderT (..))
-import           Control.Monad.State  (StateT (..))
+import           Control.Monad.State (StateT (..))
+import           Control.Monad.Trans (lift)
 import           Control.Monad.Writer (WriterT (..))
 
 import           Data.Functor (void)
