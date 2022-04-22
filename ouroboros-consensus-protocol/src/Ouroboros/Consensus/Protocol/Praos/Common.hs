@@ -76,7 +76,7 @@ instance Crypto c => Ord (PraosChainSelectView c) where
     mconcat
       [ compare `on` csvChainLength,
         whenSame csvIssuer (compare `on` csvIssueNo),
-        compare `on` Down . csvLeaderVRF
+        whenWithinDeltaSlots (compare `on` Down . csvLeaderVRF)
       ]
     where
       -- When the @a@s are equal, use the given comparison function,
@@ -91,6 +91,27 @@ instance Crypto c => Ord (PraosChainSelectView c) where
             comp v1 v2
         | otherwise =
             EQ
+
+      -- When the chain tips are within Delta (5) slots of each other,
+      -- use the given comparison function, otherwise, no preference.
+      whenWithinDeltaSlots ::
+        (PraosChainSelectView c -> PraosChainSelectView c -> Ordering) ->
+        (PraosChainSelectView c -> PraosChainSelectView c -> Ordering)
+      whenWithinDeltaSlots comp v1 v2
+          -- slot numbers are unsigned, so have to take care with subtraction
+        | csvSlotNo v1 >= csvSlotNo v2
+        , csvSlotNo v1 - csvSlotNo v2 > 5 =
+            EQ
+
+        | csvSlotNo v2 >= csvSlotNo v1
+        , csvSlotNo v2 - csvSlotNo v1 > 5 =
+            EQ
+
+        | otherwise =
+            comp v1 v2
+
+
+
 data PraosCanBeLeader c = PraosCanBeLeader
   { -- | Certificate delegating rights from the stake pool cold key (or
     -- genesis stakeholder delegate cold key) to the online KES key.
