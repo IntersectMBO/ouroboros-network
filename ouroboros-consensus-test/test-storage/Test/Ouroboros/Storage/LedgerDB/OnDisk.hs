@@ -961,9 +961,8 @@ runDB standalone@DB{..} cmd =
           modifyTVar dbState (\(rs, _) -> (rs, db'))
           pure (toFlush, bs)
         flush bs toFlush
-        pure Flushed 
+        pure Flushed
     go hasFS Snap = do
-        _ <- go hasFS Flush
         (bs, db) <- atomically $ do
           bs <- readTVar dbBackingStore
           (_, db) <- readTVar dbState
