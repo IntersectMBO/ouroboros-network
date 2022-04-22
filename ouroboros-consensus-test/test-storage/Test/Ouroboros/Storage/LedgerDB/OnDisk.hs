@@ -305,7 +305,6 @@ instance ToExpr (ApplyMapKind' mk' Token TValue) where
                                                                , genericToExpr diffs
                                                                ]
   toExpr (ApplyValuesMK vals)         = App "ApplyValuesMK"    [genericToExpr vals]
-  toExpr (ApplyRewoundMK rkeys)       = App "ApplyRewoundMK"   [genericToExpr rkeys]
   toExpr ApplyQueryAllMK              = App "ApplyQueryAllMK"  []
   toExpr (ApplyQuerySomeMK keys)      = App "ApplyQuerySomeMK" [genericToExpr keys]
 

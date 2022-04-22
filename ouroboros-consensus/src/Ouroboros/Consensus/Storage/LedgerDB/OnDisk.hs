@@ -613,7 +613,7 @@ data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
 type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)
 
 readKeySets :: forall m l.
-     (IOLike m, TableStuff l)
+     IOLike m
   => LedgerBackingStore m l
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
@@ -621,30 +621,17 @@ readKeySets (LedgerBackingStore backingStore) rew = do
     readKeySetsVH (HD.bsRead backingStore) rew
 
 readKeySetsVH :: forall m l.
-     (IOLike m, TableStuff l)
+     IOLike m
   => (LedgerTables l KeysMK -> m (WithOrigin SlotNo, LedgerTables l ValuesMK))
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
 readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
-    (slot, values) <- readKeys (mapLedgerTables prj rew)
+    (slot, values) <- readKeys rew
     pure UnforwardedReadSets {
         ursSeqNo  = slot
-      , ursValues = zipLedgerTables comb rew values
-      , ursKeys   = mapLedgerTables
-                      (\(ApplyRewoundMK rew') -> ApplyKeysMK (HD.rkAbsent rew'))
-                      rew
+      , ursValues = values
+      , ursKeys   = rew
     }
-  where
-    prj :: ApplyMapKind RewoundMK k v -> ApplyMapKind KeysMK k v
-    prj (ApplyRewoundMK rew') = ApplyKeysMK (HD.rkUnknown rew')
-
-    comb ::
-         Ord k
-      => ApplyMapKind RewoundMK k v
-      -> ApplyMapKind ValuesMK k v
-      -> ApplyMapKind ValuesMK k v
-    comb (ApplyRewoundMK rew') (ApplyValuesMK vs) =
-          ApplyValuesMK (HD.rkPresent rew' <> vs)
 
 -- | Flush the immutable changes to the backing store
 --
