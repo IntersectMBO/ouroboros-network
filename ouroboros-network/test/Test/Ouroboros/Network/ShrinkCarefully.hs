@@ -8,9 +8,9 @@
 
 module Test.Ouroboros.Network.ShrinkCarefully where
 
-import Data.List
-import Text.Pretty.Simple
-import Test.QuickCheck
+import           Data.List
+import           Test.QuickCheck
+import           Text.Pretty.Simple
 
 newtype ShrinkCarefully a = ShrinkCarefully a
   deriving (Eq,Show)

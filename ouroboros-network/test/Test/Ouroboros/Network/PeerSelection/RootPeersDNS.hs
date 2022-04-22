@@ -29,7 +29,7 @@ import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
-import           Data.Proxy (Proxy(..))
+import           Data.Proxy (Proxy (..))
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
@@ -43,8 +43,8 @@ import           Network.Socket (SockAddr (..))
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, newTVarIO,
-                     readTVar, traceTVarIO, MonadTraceSTM, TraceValue(..))
+import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, MonadTraceSTM,
+                     TraceValue (..), newTVarIO, readTVar, traceTVarIO)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer
@@ -53,8 +53,8 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
-                     Script (Script), initScript', stepScript, singletonScript,
-                     scriptHead)
+                     Script (Script), initScript', scriptHead, singletonScript,
+                     stepScript)
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

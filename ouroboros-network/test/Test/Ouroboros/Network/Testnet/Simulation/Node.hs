@@ -13,18 +13,18 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   ) where
 
 import           Control.Monad (replicateM, (>=>))
-import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, cancel, wait, waitAny, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadTraceSTM, MonadSTM (STM), StrictTVar, atomically,
+                     MonadSTM (STM), MonadTraceSTM, StrictTVar, atomically,
                      modifyTVar, newTVarIO, readTVar)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
                      MonadMask, MonadThrow)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
+import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (nullTracer)
 
 import qualified Data.ByteString.Lazy as BL

@@ -36,7 +36,6 @@ module Ouroboros.Network.Diffusion.P2P
 
 
 import           Control.Exception (IOException)
-import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
@@ -44,6 +43,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (asum)
@@ -280,20 +280,20 @@ data ApplicationsExtra ntnAddr m =
     ApplicationsExtra {
     -- | /node-to-node/ rethrow policy
     --
-      daRethrowPolicy          :: RethrowPolicy
+      daRethrowPolicy      :: RethrowPolicy
 
     -- | /node-to-client/ rethrow policy
     --
-    , daLocalRethrowPolicy     :: RethrowPolicy
+    , daLocalRethrowPolicy :: RethrowPolicy
 
     -- | 'PeerMetrics' used by peer selection policy (see
     -- 'simplePeerSelectionPolicy')
     --
-    , daPeerMetrics            :: PeerMetrics m ntnAddr
+    , daPeerMetrics        :: PeerMetrics m ntnAddr
 
     -- | Used by churn-governor
     --
-    , daBlockFetchMode         :: STM m FetchMode
+    , daBlockFetchMode     :: STM m FetchMode
   }
 
 -- | Diffusion will always run initiator of node-to-node protocols, but in some

@@ -87,15 +87,7 @@ consensus layer. Start with the
 The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This
 is enforced by CI.
 
-Either enable editor integration or run the following command to manually
-format all of the consensus code (but not the network code):
-
-```bash
-stylish-haskell -i `git ls-files -- 'ouroboros-consensus*/*.hs' | grep -v Setup.hs`
-```
-
-Alternatively, call the script used by CI itself:
-https://github.com/input-output-hk/ouroboros-network/blob/master/scripts/ci/check-stylish.sh
+Either enable editor integration or call the script used by CI itself:
 
 ```bash
 ./scripts/ci/check-stylish.sh

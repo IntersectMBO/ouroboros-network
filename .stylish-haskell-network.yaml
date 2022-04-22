@@ -270,3 +270,4 @@ language_extensions:
   - ViewPatterns
   - ExplicitNamespaces
 
+exit_code: error_on_format

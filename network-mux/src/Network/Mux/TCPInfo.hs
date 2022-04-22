@@ -13,4 +13,3 @@ import Network.Mux.TCPInfo.Linux
 data StructTCPInfo = TCPInfoUnavailable
   deriving (Eq, Ord, Show)
 #endif
-

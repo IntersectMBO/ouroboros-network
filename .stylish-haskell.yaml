@@ -269,3 +269,5 @@ language_extensions:
   - TypeFamilies
   - ViewPatterns
   - ExplicitNamespaces
+
+exit_code: error_on_format

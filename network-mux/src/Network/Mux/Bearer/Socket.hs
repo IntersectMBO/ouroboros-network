@@ -30,7 +30,7 @@ import qualified Network.Mux.Trace as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
 #if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
-import           Network.Mux.TCPInfo (SocketOption(TCPInfoSocketOption))
+import           Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 #endif
 
 -- |
