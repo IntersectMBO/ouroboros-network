@@ -473,6 +473,11 @@ data Cmd ss =
     -- | Take a snapshot (write to disk)
   | Snap
 
+    -- | Flush the DbChangelog in the model.
+    --
+    -- Note that as the Mock doesn't have the notion of "flushed differences", it is a no-op on the mock.
+  | Flush
+
     -- | Restore the DB from on-disk, then return it along with the init log
   | Restore
 
@@ -503,6 +508,7 @@ data Success ss =
   | Ledger (ExtLedgerState TestBlock EmptyMK)
   | Snapped (Maybe (ss, RealPoint TestBlock))
   | Restored (MockInitLog ss, ExtLedgerState TestBlock EmptyMK)
+  | Flushed
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 -- | Currently we don't have any error responses
@@ -680,6 +686,9 @@ runMock cmd initMock =
       where
         initLog = mockInitLog mock
         mock'   = applyMockLog initLog mock
+    go Flush         mock =
+      -- The mock doesn't have the notion of flushing, so therefore this is a no-op. However, after executing the Flush command on the model, the states must still agree.
+      (Flushed, mock)
     go Snap          mock = case mbSnapshot of
         Just pt
           | let mockSnap = MockSnap (unSlotNo (realPointSlot pt))
@@ -943,29 +952,28 @@ runDB standalone@DB{..} cmd =
                 (const $ pure ())
                 (map ApplyVal bs)
                 db
-    go hasFS Snap = do
-        -- TODO: Maybe @Flush@ should be its own command but that would require
-        -- the implementation to change so that 'ledgerDbOldest' doesn't require
-        -- a 'flush' to happen just before it is called.
 
-        -- TODO: This duplicates too much logic of the flushing mechanisms. The
-        -- right thing to do would be to factor out the functions and here just
-        -- call one function that does all the job.
-        (toFlush, bs, db') <- atomically $ do
+    go _ Flush = do
+        (toFlush, bs) <- atomically $ do
           (_, db) <- readTVar dbState
           bs <- readTVar dbBackingStore
           let (toFlush, db') = ledgerDbFlush DbChangelogFlushAllImmutable db
           modifyTVar dbState (\(rs, _) -> (rs, db'))
-          pure (toFlush, bs, db')
+          pure (toFlush, bs)
         flush bs toFlush
-
+        pure Flushed
+    go hasFS Snap = do
+        (bs, db) <- atomically $ do
+          bs <- readTVar dbBackingStore
+          (_, db) <- readTVar dbState
+          pure (bs, db)
         Snapped <$>
           takeSnapshot
             nullTracer
             hasFS
             bs
             S.encode
-            db'
+            db
     go hasFS Restore = do
         (initLog, db, _replayed, backingStore) <-
           initLedgerDB
@@ -1155,6 +1163,7 @@ generator secParam (Model mock hs) = Just $ QC.oneof $ concat [
                                 (lastAppliedPoint . ledgerState . mockCurrent $ afterRollback)
             return $ Switch numRollback blocks
         , fmap At $ return Snap
+        , fmap At $ return Flush
         , fmap At $ return Restore
         , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
         ]
@@ -1189,6 +1198,7 @@ shrinker _ (At cmd) =
       Current      -> []
       Push _b      -> []
       Snap         -> []
+      Flush        -> []
       Restore      -> []
       Switch 0 [b] -> [At $ Push b]
       Switch n bs  -> if length bs > fromIntegral n
@@ -1209,6 +1219,7 @@ instance CommandNames (At Cmd) where
   cmdName (At Push{})    = "Push"
   cmdName (At Switch{})  = "Switch"
   cmdName (At Snap{})    = "Snap"
+  cmdName (At Flush{})   = "Flush"
   cmdName (At Restore{}) = "Restore"
   cmdName (At Corrupt{}) = "Corrupt"
   cmdName (At Drop{})    = "Drop"
@@ -1218,6 +1229,7 @@ instance CommandNames (At Cmd) where
     , "Push"
     , "Switch"
     , "Snap"
+    , "Flush"
     , "Restore"
     , "Corrupt"
     , "Drop"
