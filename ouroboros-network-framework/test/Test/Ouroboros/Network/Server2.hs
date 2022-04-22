@@ -36,7 +36,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), contramap, contramapM, nullTracer)
+import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.Bifoldable
@@ -117,8 +117,14 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
-import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision, nightlyTest)
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+                     (AbsAttenuation (..), AbsBearerInfo (..),
+                     AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
+                     AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
+                     absNoAttenuation, toNonFailingAbsBearerInfoScript)
+import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
+                     genDelayWithPrecision, sayTracer, tracerWithTime,
+                     nightlyTest)
 
 import           Test.Ouroboros.Network.ConnectionManager
                      (allValidTransitionsNames, validTransitionMap,
@@ -2797,8 +2803,6 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
            TerminatingSt         -> verifyTimeouts newState xs
            _                     -> verifyTimeouts Nothing xs
 
-    tracerWithTime :: MonadMonotonicTime m => Tracer m (WithTime a) -> Tracer m a
-    tracerWithTime = contramapM $ \a -> flip WithTime a <$> getMonotonicTime
 
     sim :: IOSim s ()
     sim = multiNodeSimTracer serverAcc dataFlow
@@ -2806,13 +2810,10 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
                              maxAcceptedConnectionsLimit
                              events
                              attenuationMap
-                             (Tracer traceM <> sayTracer)
-                             ( tracerWithTime (Tracer traceM)
-                             <> Tracer traceM
-                             <> sayTracer
-                             )
-                             (Tracer traceM <> sayTracer)
-                             (Tracer traceM <> sayTracer)
+                             dynamicTracer
+                             (tracerWithTime (Tracer traceM) <> dynamicTracer)
+                             dynamicTracer
+                             dynamicTracer
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -3554,9 +3555,6 @@ multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
              -> IOSim s ()
 multiNodeSim serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
-  let dynamicTracer :: (Typeable a, Show a) => Tracer (IOSim s) a
-      dynamicTracer = Tracer traceM <> sayTracer
-
   multiNodeSimTracer serverAcc dataFlow defaultBearerInfo acceptedConnLimit
                      events attenuationMap dynamicTracer dynamicTracer
                      dynamicTracer dynamicTracer
@@ -3707,22 +3705,13 @@ ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
 --
 
 
+dynamicTracer :: (Typeable a, Show a) => Tracer (IOSim s) a
+dynamicTracer = Tracer traceM <> sayTracer
+
 toNonFailing :: Script AbsBearerInfo -> Script AbsBearerInfo
 toNonFailing = unNFBIScript
              . toNonFailingAbsBearerInfoScript
              . AbsBearerInfoScript
-
-data WithName name event = WithName {
-    wnName  :: name,
-    wnEvent :: event
-  }
-  deriving (Show, Functor)
-
-data WithTime event = WithTime {
-  wtTime  :: Time,
-  wtEvent :: event
-  }
-  deriving (Show, Functor)
 
 traceWithNameTraceEvents :: forall b. Typeable b
                     => SimTrace () -> Trace (SimResult ()) b
@@ -3746,11 +3735,6 @@ withTimeNameTraceEvents = fmap (\(WithTime t (WithName _ e)) -> WithTime t e)
           . traceSelectTraceEventsDynamic
               @()
               @(WithTime (WithName (Name SimAddr) b))
-
-sayTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
-sayTracer = Tracer $
-  \msg -> (,msg) <$> getCurrentTime >>= say . show
-
 
 showConnectionEvents :: ConnectionEvent req peerAddr -> String
 showConnectionEvents (StartClient{})             = "StartClient"

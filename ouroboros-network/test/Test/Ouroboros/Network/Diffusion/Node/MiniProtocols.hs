@@ -257,8 +257,8 @@ applications nodeKernel
     chainSyncInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
       MuxPeerRaw $ \channel ->
-        bracket (registerClient nodeKernel remoteAddress)
-                (\_ -> unregisterClient nodeKernel remoteAddress)
+        bracket (registerClientChains nodeKernel remoteAddress)
+                (\_ -> unregisterClientChains nodeKernel remoteAddress)
                 (\chainVar ->
                   runPeerWithLimits
                     nullTracer
@@ -292,20 +292,24 @@ applications nodeKernel
     keepAliveInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
       MuxPeerRaw $ \channel ->
-        runPeerWithLimits
-          nullTracer
-          keepAliveCodec
-          (keepAliveSizeLimits limits)
-          (keepAliveTimeLimits limits)
-          channel
-          (keepAliveClientPeer $
-             keepAliveClient
-               nullTracer
-               aaKeepAliveStdGen
-               controlMessageSTM
-               remoteAddress
-               (nkKeepAliveCtx nodeKernel)
-               (KeepAliveInterval aaKeepAliveInterval))
+        bracket (registerClientKeepAlive nodeKernel remoteAddress)
+                (\_ -> unregisterClientKeepAlive nodeKernel remoteAddress)
+                (\ctxVar ->
+                    runPeerWithLimits
+                      nullTracer
+                      keepAliveCodec
+                      (keepAliveSizeLimits limits)
+                      (keepAliveTimeLimits limits)
+                      channel
+                      (keepAliveClientPeer $
+                         keepAliveClient
+                           nullTracer
+                           aaKeepAliveStdGen
+                           controlMessageSTM
+                           remoteAddress
+                           ctxVar
+                           (KeepAliveInterval aaKeepAliveInterval))
+                )
 
     keepAliveResponder
       :: MuxPeer ByteString m ()

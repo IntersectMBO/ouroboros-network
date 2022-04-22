@@ -244,7 +244,7 @@ isEmptyEnv GovernorMockEnvironment {
 prop_governor_nofail :: GovernorMockEnvironment -> Property
 prop_governor_nofail env =
     let ioSimTrace = runGovernorInMockEnvironment env
-        trace = take 5000 . 
+        trace = take 5000 .
                 selectPeerSelectionTraceEvents $
                 ioSimTrace
 
@@ -258,7 +258,7 @@ prop_governor_nofail env =
         `catch` \(AssertionFailed _) -> return False
       case r of
         True  -> return $ property True
-        False -> do 
+        False -> do
           bitraverse_ (putStrLn . show)
                       (putStrLn . ppSimEvent 20 20 20)
                       ioSimTrace
@@ -1753,6 +1753,12 @@ prop_governor_target_established_local env =
             (EstablishedPeers.toSet . Governor.establishedPeers)
             events
 
+        govInProgressPromoteColdSig :: Signal (Set PeerAddr)
+        govInProgressPromoteColdSig =
+          selectGovState
+            Governor.inProgressPromoteCold
+            events
+
         govEstablishedFailuresSig :: Signal (Set PeerAddr)
         govEstablishedFailuresSig =
             Signal.keyedLinger
@@ -1781,12 +1787,14 @@ prop_governor_target_established_local env =
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\local established recentFailures ->
+          (\local established recentFailures inProgressPromoteCold ->
               local Set.\\ established
                     Set.\\ recentFailures
+                    Set.\\ inProgressPromoteCold
           ) <$> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
+            <*> govInProgressPromoteColdSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
@@ -1800,10 +1808,11 @@ prop_governor_target_established_local env =
            "recent failures, opportunities, ignored too long)") $
 
         signalProperty 20 show
-          (\(_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,) <$> govLocalRootPeersSig
+          (\(_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,) <$> govLocalRootPeersSig
                   <*> govEstablishedPeersSig
                   <*> govEstablishedFailuresSig
+                  <*> govInProgressPromoteColdSig
                   <*> promotionOpportunities
                   <*> promotionOpportunitiesIgnoredTooLong)
 

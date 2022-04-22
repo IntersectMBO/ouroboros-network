@@ -19,8 +19,10 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , randomBlockGenerationArgs
   , NodeKernel (..)
   , newNodeKernel
-  , registerClient
-  , unregisterClient
+  , registerClientChains
+  , unregisterClientChains
+  , registerClientKeepAlive
+  , unregisterClientKeepAlive
   , withNodeKernelThread
   , NodeKernelError (..)
   ) where
@@ -64,7 +66,7 @@ import           Simulation.Network.Snocket (AddressType (..),
                      GlobalAddressScheme (..))
 
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, oneof)
+import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, oneof, frequency)
 
 
 -- | Node-to-node address type.
@@ -81,10 +83,10 @@ instance Arbitrary NtNAddr_ where
     a <- oneof [ IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
                , IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
                ]
-    oneof
-      [ EphemeralIPv4Addr <$> (fromInteger <$> arbitrary)
-      , EphemeralIPv6Addr <$> (fromInteger <$> arbitrary)
-      , IPAddr a          <$> (read . show <$> chooseInt (0, 9999))
+    frequency
+      [ (1 , EphemeralIPv4Addr <$> (fromInteger <$> arbitrary))
+      , (1 , EphemeralIPv6Addr <$> (fromInteger <$> arbitrary))
+      , (3 , IPAddr a          <$> (read . show <$> chooseInt (0, 9999)))
       ]
 
 instance Show NtNAddr_ where
@@ -105,6 +107,7 @@ instance GlobalAddressScheme NtNAddr_ where
 type NtNAddr        = TestAddress NtNAddr_
 type NtNVersion     = UnversionedProtocol
 data NtNVersionData = NtNVersionData { ntnDiffusionMode :: DiffusionMode }
+  deriving Show
 type NtCAddr        = TestAddress Int
 type NtCVersion     = UnversionedProtocol
 type NtCVersionData = UnversionedProtocolData
@@ -178,11 +181,11 @@ newNodeKernel = NodeKernel
 
 -- | Register a new upstream chain-sync client.
 --
-registerClient :: MonadSTM m
-               => NodeKernel block m
-               -> NtNAddr
-               -> m (StrictTVar m (Chain block))
-registerClient NodeKernel { nkClientChains } peerAddr = atomically $ do
+registerClientChains :: MonadSTM m
+                     => NodeKernel block m
+                     -> NtNAddr
+                     -> m (StrictTVar m (Chain block))
+registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
     chainVar <- newTVar Chain.Genesis
     modifyTVar nkClientChains (Map.insert peerAddr chainVar)
     return chainVar
@@ -190,12 +193,32 @@ registerClient NodeKernel { nkClientChains } peerAddr = atomically $ do
 
 -- | Unregister an upstream chain-sync client.
 --
-unregisterClient :: MonadSTM m
-                 => NodeKernel block m
-                 -> NtNAddr
-                 -> m ()
-unregisterClient NodeKernel { nkClientChains } peerAddr = atomically $
+unregisterClientChains :: MonadSTM m
+                       => NodeKernel block m
+                       -> NtNAddr
+                       -> m ()
+unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
     modifyTVar nkClientChains (Map.delete peerAddr)
+
+-- | Register a new keep alive state.
+--
+registerClientKeepAlive :: MonadSTM m
+                        => NodeKernel block m
+                        -> NtNAddr
+                        -> m (StrictTVar m (Map NtNAddr PeerGSV))
+registerClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $ do
+    modifyTVar nkKeepAliveCtx (Map.insert peerAddr defaultGSV)
+    return nkKeepAliveCtx
+
+
+-- | Unregister a keep alive state
+--
+unregisterClientKeepAlive :: MonadSTM m
+                          => NodeKernel block m
+                          -> NtNAddr
+                          -> m ()
+unregisterClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $
+    modifyTVar nkKeepAliveCtx (Map.delete peerAddr)
 
 
 withSlotTime :: forall m a.
@@ -227,7 +250,8 @@ withSlotTime slotDuration k = do
         go :: SlotNo -> m Void
         go next = do
           t <- getMonotonicTime
-          let delay = Time (slotDuration * fromIntegral (Block.unSlotNo next))
+          let delay = abs
+                    $ Time (slotDuration * fromIntegral (Block.unSlotNo next))
                       `diffTime` t
           threadDelay delay
           atomically $ writeTVar slotVar next
@@ -325,9 +349,10 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
                       let candidateChain = getSelectedChain
                                          $ foldMap SelectChain chains
                                         <> SelectChain (chainState cps)
+                          cps' = switchFork candidateChain cps
                       check $ Chain.headPoint (chainState cps)
                            /= Chain.headPoint candidateChain
-                      writeTVar nkChainProducerState cps { chainState = candidateChain }
+                      writeTVar nkChainProducerState cps'
                       -- do not update 'nextSlot'; This stm branch might run
                       -- multiple times within the current slot.
                       return (nextSlot, seed)
