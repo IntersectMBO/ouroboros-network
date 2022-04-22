@@ -1164,6 +1164,7 @@ generator secParam (Model mock hs) = Just $ QC.oneof $ concat [
                                 (lastAppliedPoint . ledgerState . mockCurrent $ afterRollback)
             return $ Switch numRollback blocks
         , fmap At $ return Snap
+        , fmap At $ return Flush
         , fmap At $ return Restore
         , fmap At $ Drop <$> QC.choose (0, mockChainLength mock)
         ]
