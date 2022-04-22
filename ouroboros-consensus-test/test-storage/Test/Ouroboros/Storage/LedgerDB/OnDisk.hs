@@ -1197,7 +1197,7 @@ shrinker _ (At cmd) =
     case cmd of
       Current      -> []
       Push _b      -> []
-      Snap         -> [At Flush]
+      Snap         -> []
       Flush        -> []
       Restore      -> []
       Switch 0 [b] -> [At $ Push b]
