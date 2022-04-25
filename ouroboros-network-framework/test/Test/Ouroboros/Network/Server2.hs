@@ -5,17 +5,14 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE ViewPatterns        #-}
 
 -- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -40,19 +37,18 @@ import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.Bifoldable
-import           Data.Bitraversable
 import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
-import           Data.List (delete, dropWhileEnd, find, foldl', intercalate,
+import           Data.List (delete, foldl', intercalate,
                      mapAccumL, nub, (\\))
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
+import           Data.Maybe (fromMaybe, isNothing)
 import           Data.Monoid (Sum (..))
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import qualified Data.Set as Set
@@ -88,8 +84,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
-                     RemoteSt (..))
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.InboundGovernor.State
@@ -108,8 +103,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2 (RemoteTransition,
-                     RemoteTransitionTrace, ServerArguments (..))
+import           Ouroboros.Network.Server2 (RemoteTransitionTrace, ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
 import           Ouroboros.Network.Snocket (Snocket, TestAddress (..),
                      socketSnocket)
@@ -126,11 +120,17 @@ import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
                      genDelayWithPrecision, sayTracer, tracerWithTime,
                      nightlyTest)
 
-import           Test.Ouroboros.Network.ConnectionManager
-                     (allValidTransitionsNames, validTransitionMap,
-                     verifyAbstractTransition)
 import           Test.Ouroboros.Network.Orphans ()
 import           Test.Simulation.Network.Snocket hiding (tests)
+
+import           TestLib.Utils
+import           TestLib.ConnectionManager
+                     (verifyAbstractTransition, validTransitionMap,
+                     allValidTransitionsNames, verifyAbstractTransitionOrder, abstractStateIsFinalTransition)
+import           TestLib.InboundGovernor
+                     (verifyRemoteTransition, validRemoteTransitionMap,
+                     allValidRemoteTransitionsNames, verifyRemoteTransitionOrder,
+                     remoteStrIsFinalTransition)
 
 tests :: TestTree
 tests =
@@ -1409,20 +1409,6 @@ instance Arbitrary req =>
       shrinkEvent (ShutdownClientServer d a) =
         shrinkDelay d <&> \ d' -> ShutdownClientServer d' a
 
-
--- | The concrete address type used by simulations.
---
-type SimAddr  = Snocket.TestAddress SimAddr_
-type SimAddr_ = Int
-
--- | We use a wrapper for test addresses since the Arbitrary instance for Snocket.TestAddress only
---   generates addresses between 1 and 4.
-newtype TestAddr = TestAddr { unTestAddr :: SimAddr }
-  deriving (Show, Eq, Ord)
-
-instance Arbitrary TestAddr where
-  arbitrary = TestAddr . Snocket.TestAddress <$> choose (1, 100)
-
 -- | Each node in the multi-node experiment is controlled by a thread responding to these messages.
 data ConnectionHandlerMessage peerAddr req
   = NewConnection peerAddr
@@ -1743,334 +1729,11 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                                              , remoteAddress = remoteAddr }
 
 
--- | Test property together with classification.
---
-data TestProperty = TestProperty {
-    tpProperty            :: !Property,
-    -- ^ 'True' if property is true
-
-    tpNumberOfTransitions :: !(Sum Int),
-    -- ^ number of all transitions
-
-    tpNumberOfConnections :: !(Sum Int),
-    -- ^ number of all connections
-
-    tpNumberOfPrunings    :: !(Sum Int),
-    -- ^ number of all connections
-
-    --
-    -- classification of connections
-    --
-    tpNegotiatedDataFlows :: ![NegotiatedDataFlow],
-    tpEffectiveDataFlows  :: ![EffectiveDataFlow],
-    tpTerminationTypes    :: ![TerminationType],
-    tpActivityTypes       :: ![ActivityType],
-
-    tpTransitions         :: ![AbstractTransition]
-
-  }
-
-instance Show TestProperty where
-    show tp =
-      concat [ "TestProperty "
-             , "{ tpNumberOfTransitions = " ++ show (tpNumberOfTransitions tp)
-             , ", tpNumberOfConnections = " ++ show (tpNumberOfConnections tp)
-             , ", tpNumberOfPrunings = "    ++ show (tpNumberOfPrunings tp)
-             , ", tpNegotiatedDataFlows = " ++ show (tpNegotiatedDataFlows tp)
-             , ", tpTerminationTypes = "    ++ show (tpTerminationTypes tp)
-             , ", tpActivityTypes = "       ++ show (tpActivityTypes tp)
-             , ", tpTransitions = "         ++ show (tpTransitions tp)
-             , "}"
-             ]
-
-instance Semigroup TestProperty where
-  (<>) (TestProperty a0 a1 a2 a3 a4 a5 a6 a7 a8)
-       (TestProperty b0 b1 b2 b3 b4 b5 b6 b7 b8) =
-      TestProperty (a0 .&&. b0)
-                   (a1 <> b1)
-                   (a2 <> b2)
-                   (a3 <> b3)
-                   (a4 <> b4)
-                   (a5 <> b5)
-                   (a6 <> b6)
-                   (a7 <> b7)
-                   (a8 <> b8)
-
-instance Monoid TestProperty where
-    mempty = TestProperty (property True)
-                          mempty mempty mempty mempty
-                          mempty mempty mempty mempty
-
-mkProperty :: TestProperty -> Property
-mkProperty TestProperty { tpProperty
-                        , tpNumberOfTransitions = Sum numberOfTransitions_
-                        , tpNumberOfConnections = Sum numberOfConnections_
-                        , tpNumberOfPrunings = Sum numberOfPrunings_
-                        , tpNegotiatedDataFlows
-                        , tpEffectiveDataFlows
-                        , tpTerminationTypes
-                        , tpActivityTypes
-                        , tpTransitions
-                        } =
-     label (concat [ "Number of transitions: "
-                   , within_ 10 numberOfTransitions_
-                   ]
-           )
-   . label (concat [ "Number of connections: "
-                   , show numberOfConnections_
-                   ]
-           )
-   . tabulate "Pruning"             [show numberOfPrunings_]
-   . tabulate "Negotiated DataFlow" (map show tpNegotiatedDataFlows)
-   . tabulate "Effective DataFLow"  (map show tpEffectiveDataFlows)
-   . tabulate "Termination"         (map show tpTerminationTypes)
-   . tabulate "Activity Type"       (map show tpActivityTypes)
-   . tabulate "Transitions"         (map ppTransition tpTransitions)
-   $ tpProperty
-
-mkPropertyPruning :: TestProperty -> Property
-mkPropertyPruning tp@TestProperty { tpNumberOfPrunings = Sum numberOfPrunings_ } =
-     cover 35 (numberOfPrunings_ > 0) "Prunings"
-   . mkProperty
-   $ tp
-
-newtype AllProperty = AllProperty { getAllProperty :: Property }
-
-instance Semigroup AllProperty where
-    AllProperty a <> AllProperty b = AllProperty (a .&&. b)
-
-instance Monoid AllProperty where
-    mempty = AllProperty (property True)
-
-newtype ArbDataFlow = ArbDataFlow DataFlow
-  deriving Show
-
-instance Arbitrary ArbDataFlow where
-    arbitrary = ArbDataFlow <$> frequency [ (3, pure Duplex)
-                                          , (1, pure Unidirectional)
-                                          ]
-    shrink (ArbDataFlow Duplex)         = [ArbDataFlow Unidirectional]
-    shrink (ArbDataFlow Unidirectional) = []
-
-data ActivityType
-    = IdleConn
-
-    -- | Active connections are once that reach any of the state:
-    --
-    -- - 'InboundSt'
-    -- - 'OutobundUniSt'
-    -- - 'OutboundDupSt'
-    -- - 'DuplexSt'
-    --
-    | ActiveConn
-    deriving (Eq, Show)
-
-data TerminationType
-    = ErroredTermination
-    | CleanTermination
-    deriving (Eq, Show)
-
-data NegotiatedDataFlow
-    = NotNegotiated
-
-    -- | Negotiated value of 'DataFlow'
-    | NegotiatedDataFlow DataFlow
-    deriving (Eq, Show)
-
-data EffectiveDataFlow
-    -- | Unlike the negotiated 'DataFlow' this indicates if the connection has
-    -- ever been in 'DuplexSt'
-    --
-    = EffectiveDataFlow DataFlow
-    deriving (Eq, Show)
-
-
--- | Pattern synonym which matches either 'RemoteHotEst' or 'RemoteWarmSt'.
---
-pattern RemoteEstSt :: RemoteSt
-pattern RemoteEstSt <- (( \ case
-                            RemoteHotSt  -> True
-                            RemoteWarmSt -> True
-                            _            -> False
-                         ) -> True
-                        )
-
-{-# COMPLETE RemoteEstSt, RemoteIdleSt, RemoteColdSt #-}
-
-
--- | Specification of the transition table of the inbound governor.
---
-verifyRemoteTransition :: RemoteTransition -> Bool
-verifyRemoteTransition Transition {fromState, toState} =
-    case (fromState, toState) of
-      -- The initial state must be 'RemoteIdleSt'.
-      (Nothing,           Just RemoteIdleSt) -> True
-
-      --
-      -- Promotions
-      --
-
-      (Just RemoteIdleSt, Just RemoteEstSt)  -> True
-      (Just RemoteColdSt, Just RemoteEstSt)  -> True
-      (Just RemoteWarmSt, Just RemoteHotSt)  -> True
-
-      --
-      -- Demotions
-      --
-
-      (Just RemoteHotSt,  Just RemoteWarmSt) -> True
-      -- demotion to idle state can happen from any established state
-      (Just RemoteEstSt,  Just RemoteIdleSt) -> True
-      -- demotion to cold can only be done from idle state; We explicitly rule
-      -- out demotions to cold from warm or hot states.
-      (Just RemoteEstSt,  Just RemoteColdSt) -> False
-      (Just RemoteIdleSt, Just RemoteColdSt) -> True
-      -- normal termination (if outbound side is not using that connection)
-      (Just RemoteIdleSt, Nothing)           -> True
-      -- This transition corresponds to connection manager's:
-      -- @
-      --   Commit^{Duplex}_{Local} : OutboundIdleState Duplex
-      --                           → TerminatingState
-      -- @
-      (Just RemoteColdSt, Nothing)           -> True
-      -- any of the mini-protocols errored
-      (Just RemoteEstSt, Nothing)            -> True
-
-      --
-      -- We are conservative to name all the identity transitions.
-      --
-
-      -- This might happen if starting any of the responders errored.
-      (Nothing,           Nothing)           -> True
-      -- @RemoteWarmSt → RemoteWarmSt@, @RemoteIdleSt → RemoteIdleSt@ and
-      -- @RemoteColdSt → RemoteColdSt@ transition are observed if a hot or
-      -- warm protocol terminates (which triggers @RemoteEstSt -> RemoteWarmSt@)
-      (Just RemoteWarmSt, Just RemoteWarmSt) -> True
-      (Just RemoteIdleSt, Just RemoteIdleSt) -> True
-      (Just RemoteColdSt, Just RemoteColdSt) -> True
-
-      (_,                 _)                 -> False
-
-
-
--- | Maps each valid remote transition into one number. Collapses all invalid
--- transition into a single number.
---
--- NOTE: Should be in sync with 'verifyRemoteTransition'
---
-validRemoteTransitionMap :: RemoteTransition -> (Int, String)
-validRemoteTransitionMap t@Transition { fromState, toState } =
-    case (fromState, toState) of
-      (Nothing          , Just RemoteIdleSt) -> (00, show t)
-      (Just RemoteIdleSt, Just RemoteEstSt)  -> (01, show t)
-      (Just RemoteColdSt, Just RemoteEstSt)  -> (02, show t)
-      (Just RemoteWarmSt, Just RemoteHotSt)  -> (03, show t)
-      (Just RemoteHotSt , Just RemoteWarmSt) -> (04, show t)
-      (Just RemoteEstSt , Just RemoteIdleSt) -> (05, show t)
-      (Just RemoteIdleSt, Just RemoteColdSt) -> (06, show t)
-      (Just RemoteIdleSt, Nothing)           -> (07, show t)
-      (Just RemoteColdSt, Nothing)           -> (08, show t)
-      (Just RemoteEstSt , Nothing)           -> (09, show t)
-      (Nothing          , Nothing)           -> (10, show t)
-      (Just RemoteWarmSt, Just RemoteWarmSt) -> (11, show t)
-      (Just RemoteIdleSt, Just RemoteIdleSt) -> (12, show t)
-      (Just RemoteColdSt, Just RemoteColdSt) -> (13, show t)
-      (_                , _)                 -> (99, show t)
-
--- | List of all valid transition's names.
---
--- NOTE: Should be in sync with 'verifyAbstractTransition'.
---
-allValidRemoteTransitionsNames :: [String]
-allValidRemoteTransitionsNames =
-  map show
-  [ Transition Nothing             (Just RemoteIdleSt)
-  , Transition (Just RemoteIdleSt) (Just RemoteWarmSt)
-  -- , Transition (Just RemoteIdleSt) (Just RemoteHotSt)
-  -- , Transition (Just RemoteColdSt) (Just RemoteWarmSt)
-  -- , Transition (Just RemoteColdSt) (Just RemoteHotSt)
-  , Transition (Just RemoteWarmSt) (Just RemoteHotSt)
-  , Transition (Just RemoteHotSt ) (Just RemoteWarmSt)
-  , Transition (Just RemoteWarmSt) (Just RemoteIdleSt)
-  -- , Transition (Just RemoteHotSt)  (Just RemoteIdleSt)
-  , Transition (Just RemoteIdleSt) (Just RemoteColdSt)
-  , Transition (Just RemoteIdleSt) Nothing
-  , Transition (Just RemoteColdSt) Nothing
-  , Transition (Just RemoteWarmSt) Nothing
-  , Transition (Just RemoteHotSt)  Nothing
-  , Transition Nothing             Nothing
-  -- , Transition (Just RemoteWarmSt) (Just RemoteWarmSt)
-  -- , Transition (Just RemoteIdleSt) (Just RemoteIdleSt)
-  -- , Transition (Just RemoteColdSt) (Just RemoteColdSt)
-  ]
-
 data Three a b c
     = First  a
     | Second b
     | Third  c
   deriving Show
-
-
--- Assuming all transitions in the transition list are valid, we only need to
--- look at the 'toState' of the current transition and the 'fromState' of the
--- next transition.
-verifyAbstractTransitionOrder :: [AbstractTransition]
-                              -> AllProperty
-verifyAbstractTransitionOrder [] = mempty
-verifyAbstractTransitionOrder (h:t) = go t h
-  where
-    go :: [AbstractTransition] -> AbstractTransition -> AllProperty
-    -- All transitions must end in the 'UnknownConnectionSt', and since we
-    -- assume that all transitions are valid we do not have to check the
-    -- 'fromState'.
-    go [] (Transition _ UnknownConnectionSt) = mempty
-    go [] tr@(Transition _ _)          =
-      AllProperty
-        $ counterexample
-            ("\nUnexpected last transition: " ++ show tr)
-            (property False)
-    -- All transitions have to be in a correct order, which means that the
-    -- current state we are looking at (current toState) needs to be equal to
-    -- the next 'fromState', in order for the transition chain to be correct.
-    go (next@(Transition nextFromState _) : ts)
-        curr@(Transition _ currToState) =
-         AllProperty
-           (counterexample
-              ("\nUnexpected transition order!\nWent from: "
-              ++ show curr ++ "\nto: " ++ show next)
-              (property (currToState == nextFromState)))
-         <> go ts next
-
--- Assuming all transitions in the transition list are valid, we only need to
--- look at the 'toState' of the current transition and the 'fromState' of the
--- next transition.
-verifyRemoteTransitionOrder :: [RemoteTransition]
-                            -> AllProperty
-verifyRemoteTransitionOrder [] = mempty
-verifyRemoteTransitionOrder (h:t) = go t h
-  where
-    go :: [RemoteTransition] -> RemoteTransition -> AllProperty
-    -- All transitions must end in the 'Nothing' (final) state, and since
-    -- we assume all transitions are valid we do not have to check the
-    -- 'fromState' .
-    go [] (Transition _ Nothing) = mempty
-    go [] tr@(Transition _ _)          =
-      AllProperty
-        $ counterexample
-            ("\nUnexpected last transition: " ++ show tr)
-            (property False)
-    -- All transitions have to be in a correct order, which means that the
-    -- current state we are looking at (current toState) needs to be equal to
-    -- the next 'fromState', in order for the transition chain to be correct.
-    go (next@(Transition nextFromState _) : ts)
-        curr@(Transition _ currToState) =
-         AllProperty
-           (counterexample
-              ("\nUnexpected transition order!\nWent from: "
-              ++ show curr ++ "\nto: " ++ show next)
-              (property (currToState == nextFromState)))
-         <> go ts next
-
 
 validate_transitions :: MultiNodeScript Int TestAddr
                      -> SimTrace ()
@@ -2114,7 +1777,7 @@ validate_transitions mns@(MultiNodeScript events _) trace =
           }
        )
     . fmap (map ttTransition)
-    . splitConns id
+    . groupConns id abstractStateIsFinalTransition
     $ abstractTransitionEvents
   where
     abstractTransitionEvents :: Trace (SimResult ())
@@ -2289,9 +1952,9 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
            MainReturn {} -> mempty
            _             -> AllProperty (property False)
        )
-       verifyAbstractTransitionOrder
+       (verifyAbstractTransitionOrder True)
     . fmap (map ttTransition)
-    . splitConns id
+    . groupConns id abstractStateIsFinalTransition
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -2329,9 +1992,9 @@ prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataF
                MainReturn {} -> mempty
                _             -> AllProperty (property False)
            )
-           verifyAbstractTransitionOrder
+           (verifyAbstractTransitionOrder True)
         . fmap (map ttTransition)
-        . splitConns id
+        . groupConns id abstractStateIsFinalTransition
         $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -2573,7 +2236,7 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
 
       transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace SimAddr)]
       transitionSignal = fmap (map ((,) <$> wtTime <*> wtEvent))
-                       . splitConns wtEvent
+                       . groupConns wtEvent abstractStateIsFinalTransition
                        . withTimeNameTraceEvents
                        $ trace
 
@@ -3036,7 +2699,8 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
            _             -> AllProperty (property False)
        )
        verifyRemoteTransitionOrder
-    . splitRemoteConns
+    . fmap (map ttTransition)
+    . groupConns id remoteStrIsFinalTransition
     $ remoteTransitionTraceEvents
   where
     sim :: IOSim s ()
@@ -3212,7 +2876,7 @@ prop_connection_manager_pruning serverAcc
           }
        )
     . fmap (map ttTransition)
-    . splitConns id
+    . groupConns id abstractStateIsFinalTransition
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
@@ -3601,73 +3265,6 @@ unit_connection_terminated_when_negotiating =
         0 arbDataFlow absBearerInfo
         multiNodeScript
 
-
--- | Split 'AbstractTransitionTrace' into separate connections.  This relies on
--- the property that every connection is terminated with 'UnknownConnectionSt'.
--- This property is verified by 'verifyAbstractTransitionOrder'.
---
-splitConns :: (a -> AbstractTransitionTrace SimAddr)
-           -> Trace (SimResult ()) a
-           -> Trace (SimResult ()) [a]
-splitConns getTransition =
-    fmap fromJust
-  . Trace.filter isJust
-  -- there might be some connections in the state, push them onto the 'Trace'
-  . (\(s, o) -> foldr (\a as -> Trace.Cons (Just a) as) o (Map.elems s))
-  . bimapAccumL
-      ( \ s a -> (s, a))
-      ( \ s a ->
-          let TransitionTrace { ttPeerAddr, ttTransition } = getTransition a
-           in case ttTransition of
-             Transition _ UnknownConnectionSt ->
-               case ttPeerAddr `Map.lookup` s of
-                 Nothing  -> ( Map.insert ttPeerAddr [a] s
-                             , Nothing
-                             )
-                 Just trs -> ( Map.delete ttPeerAddr s
-                             , Just (reverse $ a : trs)
-                             )
-             _ ->            ( Map.alter ( \ case
-                                               Nothing -> Just [a]
-                                               Just as -> Just (a : as)
-                                         ) ttPeerAddr s
-                             , Nothing
-                             )
-      )
-      Map.empty
-
-splitRemoteConns :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
-                 -> Trace (SimResult ()) [RemoteTransition]
-splitRemoteConns =
-    fmap fromJust
-  . Trace.filter isJust
-  -- there might be some connections in the state, push them onto the 'Trace'
-  . (\(s, o) -> foldr (\a as -> Trace.Cons (Just a) as) o (Map.elems s))
-  . bimapAccumL
-      ( \ s a -> ( s, a))
-      ( \ s TransitionTrace { ttPeerAddr, ttTransition } ->
-          case ttTransition of
-            Transition _ Nothing ->
-              case ttPeerAddr `Map.lookup` s of
-                Nothing  -> ( Map.insert ttPeerAddr [ttTransition] s
-                            , Nothing
-                            )
-                Just trs -> ( Map.delete ttPeerAddr s
-                            , Just (reverse $ ttTransition : trs)
-                            )
-            _ ->            ( Map.alter ( \ case
-                                              Nothing -> Just [ttTransition]
-                                              Just as -> Just (ttTransition : as)
-                                        ) ttPeerAddr s
-                            , Nothing
-                            )
-      )
-      Map.empty
-
-ppTransition :: AbstractTransition -> String
-ppTransition Transition {fromState, toState} =
-    printf "%-30s → %s" (show fromState) (show toState)
-
 ppScript :: (Show peerAddr, Show req) => MultiNodeScript peerAddr req -> String
 ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
   where
@@ -3748,70 +3345,6 @@ showConnectionEvents (CloseOutboundConnection{}) = "CloseOutboundConnection"
 showConnectionEvents (ShutdownClientServer{})    = "ShutdownClientServer"
 
 
--- classify negotiated data flow
-classifyPrunings :: [ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)] -> Sum Int
-classifyPrunings =
-  Sum
-  . length
-  . filter ( \ tr
-             -> case tr of
-                  x -> case x of
-                    TrPruneConnections _ _ _ -> True
-                    _                        -> False
-           )
-
--- classify negotiated data flow
-classifyNegotiatedDataFlow :: [AbstractTransition] -> NegotiatedDataFlow
-classifyNegotiatedDataFlow as =
-  case find ( \ tr
-             -> case toState tr of
-                  OutboundUniSt    -> True
-                  OutboundDupSt {} -> True
-                  InboundIdleSt {} -> True
-                  _                -> False
-            ) as of
-     Nothing -> NotNegotiated
-     Just tr ->
-       case toState tr of
-         OutboundUniSt      -> NegotiatedDataFlow Unidirectional
-         OutboundDupSt {}   -> NegotiatedDataFlow Duplex
-         (InboundIdleSt df) -> NegotiatedDataFlow df
-         _                  -> error "impossible happened!"
-
--- classify effective data flow
-classifyEffectiveDataFlow :: [AbstractTransition] -> EffectiveDataFlow
-classifyEffectiveDataFlow as =
-  case find ((== DuplexSt) . toState) as of
-    Nothing -> EffectiveDataFlow Unidirectional
-    Just _  -> EffectiveDataFlow Duplex
-
--- classify termination
-classifyTermination :: [AbstractTransition] -> TerminationType
-classifyTermination as =
-  case last $ dropWhileEnd
-                (== (Transition TerminatedSt TerminatedSt))
-            $ dropWhileEnd
-                (== (Transition TerminatedSt UnknownConnectionSt))
-            $ as of
-    Transition { fromState = TerminatingSt
-               , toState   = TerminatedSt
-               } -> CleanTermination
-    _            -> ErroredTermination
-
--- classify if a connection is active or not
-classifyActivityType :: [AbstractTransition] -> ActivityType
-classifyActivityType as =
-  case find ( \ tr
-             -> case toState tr of
-                  InboundSt     {} -> True
-                  OutboundUniSt    -> True
-                  OutboundDupSt {} -> True
-                  DuplexSt      {} -> True
-                  _                -> False
-            ) as of
-    Nothing -> IdleConn
-    Just {} -> ActiveConn
-
 -- | Redefine this tracer to get valuable tracing information from various
 -- components:
 --
@@ -3869,12 +3402,3 @@ prettyPrintTrace tr = concat
     , "\n"
     ]
 
-within_ :: Int -> Int -> String
-within_ _ 0 = "0"
-within_ a b = let x = b `div` a in
-              concat [ if b < a
-                         then "1"
-                         else show $ x * a
-                     , " - "
-                     , show $ x * a + a - 1
-                     ]

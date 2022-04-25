@@ -1,3 +1,4 @@
+cabal-version:       3.0
 name:                ouroboros-network
 version:             0.1.0.0
 synopsis:            A networking layer for the Ouroboros blockchain protocol
@@ -22,7 +23,6 @@ data-files:
   test-cddl/specs/keep-alive.cddl
   test-cddl/specs/local-tx-submission.cddl
   test-cddl/specs/local-state-query.cddl
-cabal-version:       >=1.10
 
 flag asserts
   description: Enable assertions
@@ -351,6 +351,7 @@ test-suite test
                        network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,
+                       ouroboros-network-framework:testlib,
                        ouroboros-network-testing,
                        ouroboros-protocol-tests,
                        strict-stm,

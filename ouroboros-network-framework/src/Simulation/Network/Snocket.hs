@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -771,10 +770,29 @@ mkSnocket state tr = Snocket { getLocalAddr
                                    (Just remoteAddress)
                                    (STBearerInfo bearerInfo))
             -- connection delay
-            unmask (threadDelay (biConnectionDelay bearerInfo `min` connectTimeout))
-                   `onException`
-                   atomically (modifyTVar (nsConnections state)
-                                          (Map.delete $ normaliseId connId))
+            --
+            -- We need a way for a node to detect if the other end failed so
+            -- we keep an eye on the network state while waiting the full amount
+            -- of connection delay
+            -- TODO: Improve this see #3628
+            connDelayTimeoutVar <-
+              registerDelay (biConnectionDelay bearerInfo `min` connectTimeout)
+            unmask
+              (atomically $ runFirstToFinish $
+                  FirstToFinish
+                    (LazySTM.readTVar connDelayTimeoutVar >>= check)
+                  <>
+                  FirstToFinish (do
+                    b <- not . Map.member (normaliseId connId)
+                      <$> readTVar (nsConnections state)
+                    check b
+                    throwSTM $ connectIOError connId
+                             $ "unknown connection: "
+                            ++ show (normaliseId connId))
+              )
+              `onException`
+                atomically (modifyTVar (nsConnections state)
+                                       (Map.delete (normaliseId connId)))
 
             when (biConnectionDelay bearerInfo >= connectTimeout) $ do
               traceWith' fd (STConnectTimeout WaitingToConnect)
