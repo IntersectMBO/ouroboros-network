@@ -347,7 +347,7 @@ getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 getCurrentLedger ::
      (Monad (STM m), IsLedger (LedgerState blk))
   => ChainDB m blk -> STM m (ExtLedgerState blk)
-getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
+getCurrentLedger = {-# SCC "getCurrentLedger" #-} fmap LedgerDB.ledgerDbCurrent . getLedgerDB
 
 -- | Get the immutable ledger, i.e., typically @k@ blocks back.
 getImmutableLedger ::
