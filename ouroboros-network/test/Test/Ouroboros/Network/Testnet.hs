@@ -208,7 +208,7 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript l) =
                                   tracerDiffusionSimWithTimeName
 
         trace :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
-        trace = take 1000000
+        trace = take 500000
               . traceEvents
               $ runSimTrace sim
 
@@ -295,7 +295,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 500000
                . traceEvents
                $ runSimTrace sim
 
@@ -456,7 +456,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 500000
                . traceEvents
                $ runSimTrace sim
 
@@ -608,7 +608,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 500000
                . traceEvents
                $ runSimTrace sim
 
@@ -731,7 +731,7 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 500000
                . traceEvents
                $ runSimTrace sim
 
@@ -834,7 +834,7 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 500000
                . traceEvents
                $ runSimTrace sim
 
@@ -898,7 +898,7 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 500000
                . traceEvents
                $ runSimTrace sim
 
@@ -970,7 +970,7 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 500000
                . traceEvents
                $ runSimTrace sim
 
