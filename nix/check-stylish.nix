@@ -8,5 +8,15 @@ runCommand "check-stylish" {
   unpackPhase
   cd $sourceRoot
   fd -p ouroboros-consensus -e hs -E Setup.hs -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs -X stylish-haskell -c .stylish-haskell.yaml -i
-  echo $? >> $out
+  diff -ru $src .
+
+  EXIT_CODE=$?
+  if [[ $EXIT_CODE != 0 ]]
+  then
+    diff -ru $src .
+    echo "*** Stylish-haskell found changes that need addressed first"
+    exit $EXIT_CODE
+  else
+    echo $EXIT_CODE > $out
+  fi
 ''
