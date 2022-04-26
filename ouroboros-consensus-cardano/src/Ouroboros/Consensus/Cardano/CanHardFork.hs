@@ -41,7 +41,6 @@ import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
-import           Cardano.Slotting.Slot (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
