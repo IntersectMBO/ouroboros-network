@@ -133,10 +133,13 @@ allValidRemoteTransitionsNames =
 -- Assuming all transitions in the transition list are valid, we only need to
 -- look at the 'toState' of the current transition and the 'fromState' of the
 -- next transition.
-verifyRemoteTransitionOrder :: [RemoteTransition]
+verifyRemoteTransitionOrder :: Bool -- ^ Check last transition: useful for
+                                    --    distinguish Diffusion layer tests
+                                    --    vs non-Diffusion ones.
+                            -> [RemoteTransition]
                             -> AllProperty
-verifyRemoteTransitionOrder [] = mempty
-verifyRemoteTransitionOrder (h:t) = go t h
+verifyRemoteTransitionOrder _ [] = mempty
+verifyRemoteTransitionOrder checkLast (h:t) = go t h
   where
     go :: [RemoteTransition] -> RemoteTransition -> AllProperty
     -- All transitions must end in the 'Nothing' (final) state, and since
@@ -147,7 +150,7 @@ verifyRemoteTransitionOrder (h:t) = go t h
       AllProperty
         $ counterexample
             ("\nUnexpected last transition: " ++ show tr)
-            (property False)
+            (property (not checkLast))
     -- All transitions have to be in a correct order, which means that the
     -- current state we are looking at (current toState) needs to be equal to
     -- the next 'fromState', in order for the transition chain to be correct.
