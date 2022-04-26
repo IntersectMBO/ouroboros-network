@@ -308,7 +308,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 1000000
+               . take 125000
                . traceEvents
                $ runSimTrace sim
 
