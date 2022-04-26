@@ -1,21 +1,21 @@
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE OverloadedStrings        #-}
-{-# LANGUAGE PatternSynonyms          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
-{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# OPTIONS_GHC -Wno-orphans
                 -Wno-incomplete-patterns
                 -Wno-incomplete-uni-patterns
                 -Wno-incomplete-record-updates
                 -Wno-overlapping-patterns #-}
-{-# LANGUAGE RankNTypes #-}
 module Ouroboros.Consensus.Cardano.Node (
     CardanoHardForkConstraints
   , MaxMajorProtVer (..)
@@ -85,7 +85,8 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
 import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Byron.Node
 
-import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..), ocertKESPeriod)
+import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..),
+                     ocertKESPeriod)
 
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -96,8 +97,8 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
-import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto)
-import           Ouroboros.Consensus.Shelley.ShelleyBased
+import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto,
+                     shelleyBlockIssuerVKey)
 
 import qualified Cardano.Ledger.BaseTypes as SL
 import           Cardano.Slotting.Time (SystemStart (SystemStart))
@@ -105,12 +106,12 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.ShelleyBased
 import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
-import           Ouroboros.Consensus.Protocol.Praos.Common (praosCanBeLeaderOpCert)
-import           Ouroboros.Consensus.Shelley.Node.Common
-                     (shelleyBlockIssuerVKey)
+import           Ouroboros.Consensus.Protocol.Praos.Common
+                     (praosCanBeLeaderOpCert)
+import           Ouroboros.Consensus.Shelley.Node.Praos
+                     (ProtocolParamsBabbage (..))
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 import qualified Ouroboros.Consensus.Shelley.Node.TPraos as TPraos
-import Ouroboros.Consensus.Shelley.Node.Praos (ProtocolParamsBabbage(..))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC

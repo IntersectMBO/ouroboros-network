@@ -7,7 +7,6 @@ module Ouroboros.Consensus.Cardano.Block (
     -- * Eras
     CardanoEras
   , module Ouroboros.Consensus.Shelley.Eras
-  , ShelleyErasAndProtos
     -- * Block
   , CardanoBlock
     -- Note: by exporting the pattern synonyms as part of the matching data
@@ -104,15 +103,6 @@ type CardanoEras c =
    , ShelleyBlock (TPraos c) (AlonzoEra c)
    , ShelleyBlock (Praos c)  (BabbageEra c)
    ]
-
--- | The Shelley-based eras in the Cardano chain
-type ShelleyErasAndProtos c =
-  [ '(TPraos c, ShelleyEra c)
-  , '(TPraos c, AllegraEra c)
-  , '(TPraos c, MaryEra c)
-  , '(TPraos c, AlonzoEra c)
-  , '(Praos c,  BabbageEra c)
-  ]
 
 {-------------------------------------------------------------------------------
   INTERNAL A tag function for each era
