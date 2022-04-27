@@ -1,22 +1,21 @@
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE LambdaCase #-}
 
 module TestLib.Utils where
 
 import           Control.Monad.IOSim
 
 import           Data.Bitraversable (bimapAccumL)
-import           Data.List (find, dropWhileEnd)
+import           Data.List (dropWhileEnd, find)
+import qualified Data.List.Trace as Trace
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust, isJust)
 import           Data.Monoid (Sum (Sum))
-import qualified Data.List.Trace as Trace
 
 import           Text.Printf (printf)
 
-import           Test.QuickCheck
-                     ((.&&.), Property, property, Arbitrary(..), shrink,
-                     frequency, cover, label, tabulate, choose)
+import           Test.QuickCheck (Arbitrary (..), Property, choose, cover,
+                     frequency, label, property, shrink, tabulate, (.&&.))
 
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionManager.Types

@@ -28,8 +28,8 @@ import           Data.Word
 import           GHC.Generics (Generic (..))
 import           Quiet (Quiet (..))
 
-import           Network.Mux.Types
 import           Network.Mux.TCPInfo
+import           Network.Mux.Types
 
 
 --

@@ -25,7 +25,6 @@ module Ouroboros.Network.ConnectionManager.Core
 
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when, (>=>))
-import           Control.Monad.Fix
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork, ThreadId, throwTo)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
@@ -33,6 +32,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Fix
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldMap', traverse_)
 import           Data.Function (on)
@@ -1678,7 +1678,7 @@ withConnectionManager ConnectionManagerArguments {
                   return (Nothing, Nothing)
                 TerminatedState {} ->
                   return (Nothing, Nothing)
-                _ -> 
+                _ ->
                   return ( Nothing
                          , Just (CM.TrUnexpectedlyFalseAssertion
                                    (RequestOutboundConnection

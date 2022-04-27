@@ -1135,7 +1135,7 @@ mkSnocket state tr = Snocket { getLocalAddr
               $ \ result ->
                 case result of
                   Left (err, mbLocalAddr, mbConnIdAndChann, fdType) -> do
-                    uninterruptibleMask_ $ 
+                    uninterruptibleMask_ $
                       traverse_ (\(connId, chann) -> do
                                    acClose chann
                                    atomically $ modifyTVar

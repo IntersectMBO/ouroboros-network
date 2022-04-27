@@ -17,9 +17,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-record-updates #-}
 {-# OPTIONS_GHC -Wno-name-shadowing            #-}
 
-module Test.Ouroboros.Network.ConnectionManager
-  ( tests
-  ) where
+module Test.Ouroboros.Network.ConnectionManager (tests) where
 
 import           Prelude hiding (read)
 

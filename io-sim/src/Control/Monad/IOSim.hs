@@ -27,8 +27,7 @@ module Control.Monad.IOSim
   , unshareClock
     -- * Simulation trace
   , type SimTrace
-  , Trace (Cons, Nil, Trace, SimTrace, SimPORTrace, TraceDeadlock, TraceLoop,
-           TraceMainReturn, TraceMainException, TraceRacesFound)
+  , Trace (Cons, Nil, Trace, SimTrace, SimPORTrace, TraceDeadlock, TraceLoop, TraceMainReturn, TraceMainException, TraceRacesFound)
   , SimResult (..)
   , SimEvent (..)
   , SimEventType (..)
@@ -93,16 +92,16 @@ import           Control.Monad.ST.Lazy
 import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 
-import           Control.Monad.IOSim.Types
 import           Control.Monad.IOSim.Internal
+import           Control.Monad.IOSim.Types
 import           Control.Monad.IOSimPOR.Internal (controlSimTraceST)
 import           Control.Monad.IOSimPOR.QuickCheckUtils
 
 import           Test.QuickCheck
 
 
-import           System.IO.Unsafe
 import           Data.IORef
+import           System.IO.Unsafe
 
 
 selectTraceEvents
@@ -360,7 +359,7 @@ runSimTrace mainAction = runST (runSimTraceST mainAction)
 controlSimTrace :: forall a.
                    Maybe Int
                 -> ScheduleControl
-                -- ^ note: must be either `ControlDefault` or `ControlAwait`. 
+                -- ^ note: must be either `ControlDefault` or `ControlAwait`.
                 -> (forall s. IOSim s a)
                 -> SimTrace a
 controlSimTrace limit control mainAction =

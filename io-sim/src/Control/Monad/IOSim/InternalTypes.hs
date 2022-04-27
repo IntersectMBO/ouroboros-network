@@ -40,9 +40,9 @@ data ControlStack s b a where
 instance Show (ControlStack s b a) where
   show = show . dash
     where dash :: ControlStack s' b' a' -> ControlStackDash
-          dash MainFrame = MainFrame'
-          dash ForkFrame = ForkFrame'
-          dash (MaskFrame _ m s) = MaskFrame' m (dash s)
+          dash MainFrame          = MainFrame'
+          dash ForkFrame          = ForkFrame'
+          dash (MaskFrame _ m s)  = MaskFrame' m (dash s)
           dash (CatchFrame _ _ s) = CatchFrame' (dash s)
 
 data ControlStackDash =
