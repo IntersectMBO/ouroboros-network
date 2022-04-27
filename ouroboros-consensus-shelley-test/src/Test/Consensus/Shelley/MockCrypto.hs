@@ -60,7 +60,7 @@ instance HashAlgorithm h => Praos.PraosCrypto (MockCrypto h)
 type Block h = ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)
 
 -- | Cryptography that can easily be mocked
-type CanMock era proto =
+type CanMock proto era =
   ( ShelleyCompatible proto era
   , LedgerSupportsProtocol (ShelleyBlock proto era)
   , SL.Mock (EraCrypto era)
