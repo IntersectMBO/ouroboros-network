@@ -7,6 +7,8 @@ module Ouroboros.Network.NodeToNode.Version
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
+  -- * Feature checks
+  , isPipeliningEnabled
   ) where
 
 import           Data.Text (Text)
@@ -120,3 +122,8 @@ nodeToNodeCodecCBORTerm _version
 
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
+
+-- | Check whether a version enabling diffusion pipelining has been
+-- negotiated.
+isPipeliningEnabled :: NodeToNodeVersion -> Bool
+isPipeliningEnabled v = v >= NodeToNodeV_8

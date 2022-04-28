@@ -56,6 +56,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
+import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (HeaderMetricsTracer)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
@@ -1012,7 +1013,7 @@ invalidBlockRejector tracer version getIsInvalidBlock getCandidate =
       -- it's explicit, only skip it if it's annotated as tentative
       mapM_ (uncurry disconnect) $ firstJust
         (\hdr -> (hdr,) <$> isInvalidBlock (headerHash hdr))
-        (  (if enablePipelining then drop 1 else id)
+        (  (if isPipeliningEnabled version then drop 1 else id)
          $ AF.toNewestFirst theirFrag
         )
 
@@ -1021,9 +1022,6 @@ invalidBlockRejector tracer version getIsInvalidBlock getCandidate =
       let ex = InvalidBlock (headerPoint invalidHeader) reason
       traceWith tracer $ TraceException ex
       throwIO ex
-
-    enablePipelining :: Bool
-    enablePipelining = version >= NodeToNodeV_8
 
 -- | Auxiliary data type used as an intermediary result in 'rollForward'.
 data IntersectCheck blk =

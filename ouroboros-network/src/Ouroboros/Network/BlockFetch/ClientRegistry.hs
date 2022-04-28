@@ -32,7 +32,8 @@ import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..))
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..),
+                     isPipeliningEnabled)
 
 
 
@@ -100,8 +101,8 @@ bracketFetchClient (FetchClientRegistry ctxVar
         -- allocate the policy specific for this peer's negotiated version
         policy <- do
           let pipeliningEnabled
-                | version >= NodeToNodeV_8 = ReceivingTentativeBlocks
-                | otherwise                = NotReceivingTentativeBlocks
+                | isPipeliningEnabled version = ReceivingTentativeBlocks
+                | otherwise                   = NotReceivingTentativeBlocks
           mkPolicy pipeliningEnabled
 
         stateVars <- newFetchClientStateVars
