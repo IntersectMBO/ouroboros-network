@@ -441,7 +441,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 , getPastLedger
                 , getIsInvalidBlock
                 }
-                _version
+                version
                 controlMessageSTM
                 headerMetricsTracer
                 varCandidate = ChainSyncClientPipelined $
@@ -726,12 +726,13 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     rollForward mkPipelineDecision n hdr theirTip
               = Stateful $ \kis -> traceException $ do
       now <- getMonotonicTime
-      -- Reject the block if invalid
       let hdrHash  = headerHash hdr
           hdrPoint = headerPoint hdr
-      isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
-      whenJust (isInvalidBlock hdrHash) $ \reason ->
-        disconnect $ InvalidBlock hdrPoint reason
+      unless (isPipeliningEnabled version) $ do
+        -- Reject the block if invalid
+        isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
+        whenJust (isInvalidBlock hdrHash) $ \reason ->
+          disconnect $ InvalidBlock hdrPoint reason
 
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
