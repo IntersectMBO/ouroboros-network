@@ -461,13 +461,13 @@ replayStartingWith ::
   -> LedgerDB' blk
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
 replayStartingWith tracer cfg backingStore streamAPI initDb = do
-    streamAll streamAPI (castPoint (ledgerDbTip initDb))
+    (\(a, b, _) -> (a, b)) <$> streamAll streamAPI (castPoint (ledgerDbTip initDb))
         InitFailureTooRecent
-        (initDb, 0)
+        (initDb, 0, 0)
         push
   where
-    push :: blk -> (LedgerDB' blk, Word64) -> m (LedgerDB' blk, Word64)
-    push blk !(!db, !replayed) = do
+    push :: blk -> (LedgerDB' blk, Word64, Word64) -> m (LedgerDB' blk, Word64, Word64)
+    push blk (!db, !replayed, !sinceLast) = do
         !db' <- defaultReadKeySets (readKeySets backingStore) $
                   ledgerDbPush cfg (ReapplyVal blk) db
 
@@ -476,11 +476,14 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
         -- It's OK to flush without a lock here, since the `LgrDB` has not
         -- finishined initializing: only this thread has access to the backing
         -- store.
-        db'' <- do
-          let (toFlush, toKeep) =
-                ledgerDbFlush DbChangelogFlushAllImmutable db'
-          flush backingStore toFlush
-          pure toKeep
+        (db'', sinceLast') <-
+          if sinceLast == 100
+          then do
+            let (toFlush, toKeep) =
+                  ledgerDbFlush DbChangelogFlushAllImmutable db'
+            flush backingStore toFlush
+            pure (toKeep, 0)
+          else (db', sinceLast + 1)
 
         -- TODO snapshot policy: create snapshots during replay?
 
@@ -494,7 +497,7 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
                        (ledgerState (ledgerDbCurrent db''))
 
         traceWith tracer (ReplayedBlock (blockRealPoint blk) events)
-        return (db'', replayed')
+        return (db'', replayed', sinceLast')
 
 {-------------------------------------------------------------------------------
   BackingStore utilities
