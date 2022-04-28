@@ -266,6 +266,10 @@ readDbSettings ::
   -> LMDB.Transaction mode DbState
 readDbSettings db = readDbSettingsMaybeNull db >>= \case
   Just x -> pure x
+  -- FIXME: if this (and other errors) are thrown, the async thread will die but
+  -- the main thread will be waiting on a TMVar, thus deadlocking the program.
+  --
+  -- This has to be fixed, properly handled.
   Nothing -> Exn.throw DbErrNoSettings
 
 readDbSettingsMaybeNull ::
@@ -357,6 +361,10 @@ lmdbCopy tracer dbEnv to = do
     --   liftIO $ Dir.copyFile f t
     Trace.traceWith tracer $ TDBCopied from to
 
+-- TODO We don't know how much time is spent in I/O
+
+-- TODO 50% of total time is spent somewhere else. Where?
+
 -- | Initialise a backing store
 newLMDBBackingStore :: forall m l. (TableStuff l, MonadIO m, IOLike m)
   => Trace.Tracer m TraceDb
@@ -373,6 +381,11 @@ newLMDBBackingStore tracer limits sfs init_db = do
   -- Since the tracer we were passed runs in m, we use this async to match the
   -- Tracer IO we want to use with the Tracer m we have
   -- TODO exception safety, we should trace_async 'onException'
+  --
+
+  -- TODO why are we using TBQueues?? is it really needed?
+
+  -- TODO This tracing logic also could use a review (perhaps use `natTracer` to transform the tracer?)
   trace_q <- liftIO $ IOLike.newTBQueueIO 1
   trace_async <- IOLike.async . void . runMaybeT . forever $ do
     t <- MaybeT . liftIO . IOLike.atomically $ IOLike.readTBQueue trace_q
@@ -404,8 +417,12 @@ newLMDBBackingStore tracer limits sfs init_db = do
   -- This transaction must be read-write because on initialisation it creates the database
   dbSettings <- liftIO $ LMDB.readWriteTransaction dbEnv $ LMDB.getDatabase (Just "_dbstate")
 
-    -- Here we get the LMDB.Databases for the tables of the ledger state
-    -- Must be read-write transaction because tables may need to be created
+  -- TODO: at some point Javier was able to get an LMDB which didn't have this
+  -- database. How is it possible? maybe some copy function is not copying this
+  -- one?
+
+  -- Here we get the LMDB.Databases for the tables of the ledger state
+  -- Must be read-write transaction because tables may need to be created
   dbBackingTables <- liftIO $ LMDB.readWriteTransaction dbEnv $
     traverseLedgerTables getDb namesLedgerTables
 
@@ -466,6 +483,7 @@ mkValueHandle tracer0 dbEnv dbOpenHandles = liftIO $ do
     let
       loop :: MaybeT (LMDB.Transaction LMDB.ReadOnly) ()
       loop = do
+        -- TODO It seems much time is spent in this (and other) atomically calls
         SomeDbSubmission t ret_tmvar <- MaybeT . liftIO $ IOLike.atomically (IOLike.readTBQueue q)
         r <- lift t
         liftIO . IOLike.atomically $ IOLike.putTMVar ret_tmvar (Just r)
