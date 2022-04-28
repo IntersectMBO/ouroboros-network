@@ -483,7 +483,7 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
                   ledgerDbFlush DbChangelogFlushAllImmutable db'
             flush backingStore toFlush
             pure (toKeep, 0)
-          else (db', sinceLast + 1)
+          else pure (db', sinceLast + 1)
 
         -- TODO snapshot policy: create snapshots during replay?
 
