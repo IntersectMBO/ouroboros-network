@@ -116,6 +116,8 @@ tests =
   , testGroup "coverage"
     [ testProperty "diffusion server trace coverage"
                    prop_server_trace_coverage
+    , testProperty "diffusion connection manager trace coverage"
+                   prop_connection_manager_trace_coverage
     ]
   ]
 
@@ -214,6 +216,91 @@ tracerDiffusionSimWithTimeName ntnAddr =
  . tracerWithTime
  $ dynamicTracer
 
+
+-- | This test coverage of ServerTrace constructors, namely accept errors.
+--
+prop_connection_manager_trace_coverage :: AbsBearerInfo
+                                       -> DiffusionScript
+                                       -> Property
+prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
+
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                tracersExtraWithTimeName
+                                tracerDiffusionSimWithTimeName
+
+      events :: [ConnectionManagerTrace
+                  NtNAddr
+                  (ConnectionHandlerTrace NtNVersion NtNVersionData)]
+      events = mapMaybe (\case DiffusionConnectionManagerTrace st -> Just st
+                               _                                  -> Nothing
+                        )
+             . Trace.toList
+             . fmap (\(WithTime _ (WithName _ b)) -> b)
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.fromList (MainReturn (Time 0) () [])
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 500000
+             . traceEvents
+             $ runSimTrace sim
+
+      connectionManagerTraceMap
+        :: ConnectionManagerTrace
+            NtNAddr
+            (ConnectionHandlerTrace NtNVersion NtNVersionData)
+        -> String
+      connectionManagerTraceMap (TrIncludeConnection p _)        =
+        "TrIncludeConnection " ++ show p
+      connectionManagerTraceMap (TrUnregisterConnection p _)     =
+        "TrUnregisterConnection " ++ show p
+      connectionManagerTraceMap (TrConnect _ _)                  =
+        "TrConnect"
+      connectionManagerTraceMap (TrConnectError _ _ _)          =
+        "TrConnectError"
+      connectionManagerTraceMap (TrTerminatingConnection p _)    =
+        "TrTerminatingConnection " ++ show p
+      connectionManagerTraceMap (TrTerminatedConnection p _)     =
+        "TrTerminatedConnection " ++ show p
+      connectionManagerTraceMap (TrConnectionHandler _ _)        =
+        "TrConnectionHandler"
+      connectionManagerTraceMap TrShutdown                       =
+        "TrShutdown"
+      connectionManagerTraceMap (TrConnectionExists p _ as)      =
+        "TrConnectionExists " ++ show p ++ " " ++ show as
+      connectionManagerTraceMap (TrForbiddenConnection _)        =
+        "TrForbiddenConnection"
+      connectionManagerTraceMap (TrImpossibleConnection _)       =
+        "TrImpossibleConnection"
+      connectionManagerTraceMap (TrConnectionFailure _)          =
+        "TrConnectionFailure"
+      connectionManagerTraceMap (TrConnectionNotFound p _)       =
+        "TrConnectionNotFound " ++ show p
+      connectionManagerTraceMap (TrForbiddenOperation _ as)      =
+        "TrForbiddenOperation" ++ show as
+      connectionManagerTraceMap (TrPruneConnections _ _ _)       =
+        "TrPruneConnections"
+      connectionManagerTraceMap (TrConnectionCleanup _)          =
+        "TrConnectionCleanup"
+      connectionManagerTraceMap (TrConnectionTimeWait _)         =
+        "TrConnectionTimeWait"
+      connectionManagerTraceMap (TrConnectionTimeWaitDone _)     =
+        "TrConnectionTimeWaitDone"
+      connectionManagerTraceMap (TrConnectionManagerCounters _)  =
+        "TrConnectionManagerCounters"
+      connectionManagerTraceMap (TrState _)                      =
+        "TrState"
+      connectionManagerTraceMap (TrUnknownConnection _)          =
+        "TrUnknownConnection"
+      connectionManagerTraceMap (TrUnexpectedlyFalseAssertion _) =
+        "TrUnexpectedlyFalseAssertion"
+
+      eventsSeenNames = map connectionManagerTraceMap events
+
+   in tabulate "connection manager trace" eventsSeenNames
+      True
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
 --
