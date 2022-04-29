@@ -55,7 +55,7 @@ import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
                      sayTracer, splitWithNameTrace, tracerWithName,
                      tracerWithTime)
-
+import           Ouroboros.Network.Server2 (ServerTrace(..))
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
@@ -113,6 +113,10 @@ tests =
     , testProperty "diffusion cm & ig timeouts enforced"
                    prop_diffusion_timeouts_enforced
     ]
+  , testGroup "coverage"
+    [ testProperty "diffusion server trace coverage"
+                   prop_server_trace_coverage
+    ]
   ]
 
 
@@ -136,6 +140,7 @@ data DiffusionTestTrace =
         (AbstractTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTransitionTrace
         (RemoteTransitionTrace NtNAddr)
+    | DiffusionServerTrace (ServerTrace NtNAddr)
     deriving (Show)
 
 tracersExtraWithTimeName
@@ -187,7 +192,10 @@ tracersExtraWithTimeName ntnAddr =
                                           . tracerWithName ntnAddr
                                           . tracerWithTime
                                           $ dynamicTracer
-    , dtServerTracer                      = nullTracer
+    , dtServerTracer                      = contramap DiffusionServerTrace
+                                          . tracerWithName ntnAddr
+                                          . tracerWithTime
+                                          $ dynamicTracer
     , dtInboundGovernorTracer             = nullTracer
     , dtInboundGovernorTransitionTracer   = contramap
                                               DiffusionInboundGovernorTransitionTrace
@@ -205,6 +213,48 @@ tracerDiffusionSimWithTimeName ntnAddr =
  . tracerWithName ntnAddr
  . tracerWithTime
  $ dynamicTracer
+
+
+-- | This test coverage of ServerTrace constructors, namely accept errors.
+--
+prop_server_trace_coverage :: AbsBearerInfo
+                           -> DiffusionScript
+                           -> Property
+prop_server_trace_coverage defaultBearerInfo diffScript =
+
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                tracersExtraWithTimeName
+                                tracerDiffusionSimWithTimeName
+
+      events :: [ServerTrace NtNAddr]
+      events = mapMaybe (\case DiffusionServerTrace st -> Just st
+                               _                       -> Nothing
+                        )
+             . Trace.toList
+             . fmap (\(WithTime _ (WithName _ b)) -> b)
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.fromList (MainReturn (Time 0) () [])
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 500000
+             . traceEvents
+             $ runSimTrace sim
+
+      serverTraceMap :: ServerTrace NtNAddr -> String
+      serverTraceMap (TrAcceptConnection _)     = "TrAcceptConnection"
+      serverTraceMap st@(TrAcceptError _)       = show st
+      serverTraceMap st@(TrAcceptPolicyTrace _) = show st
+      serverTraceMap (TrServerStarted _)        = "TrServerStarted"
+      serverTraceMap st@TrServerStopped         = show st
+      serverTraceMap st@(TrServerError _)       = show st
+
+      eventsSeenNames = map serverTraceMap events
+
+   in tabulate "server trace" eventsSeenNames
+      True
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.ConnectionHandler.Network.PeerSelection.prop_governor_nolivelock'
