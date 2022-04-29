@@ -726,13 +726,19 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     rollForward mkPipelineDecision n hdr theirTip
               = Stateful $ \kis -> traceException $ do
       now <- getMonotonicTime
-      let hdrHash  = headerHash hdr
-          hdrPoint = headerPoint hdr
-      unless (isPipeliningEnabled version) $ do
-        -- Reject the block if invalid
-        isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
-        whenJust (isInvalidBlock hdrHash) $ \reason ->
-          disconnect $ InvalidBlock hdrPoint reason
+      let hdrPoint = headerPoint hdr
+
+      isInvalidBlock <- atomically $ forgetFingerprint <$> getIsInvalidBlock
+      let disconnectWhenInvalid = \case
+            GenesisHash    -> pure ()
+            BlockHash hash ->
+              whenJust (isInvalidBlock hash) $ \reason ->
+                disconnect $ InvalidBlock hdrPoint hash reason
+      disconnectWhenInvalid $
+        if isPipeliningEnabled version
+        -- Disconnect if the parent block of `hdr` is known to be invalid.
+        then headerPrevHash hdr
+        else BlockHash (headerHash hdr)
 
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
@@ -1020,7 +1026,10 @@ invalidBlockRejector tracer version getIsInvalidBlock getCandidate =
 
     disconnect :: Header blk -> InvalidBlockReason blk -> m ()
     disconnect invalidHeader reason = do
-      let ex = InvalidBlock (headerPoint invalidHeader) reason
+      let ex = InvalidBlock
+                 (headerPoint invalidHeader)
+                 (headerHash invalidHeader)
+                 reason
       traceWith tracer $ TraceException ex
       throwIO ex
 
@@ -1165,7 +1174,11 @@ data ChainSyncClientException =
       -- | The upstream node's chain contained a block that we know is invalid.
     | forall blk. LedgerSupportsProtocol blk =>
         InvalidBlock
-          (Point blk)  -- ^ Invalid block
+          (Point blk)
+          -- ^ Block that triggered the validity check.
+          (HeaderHash blk)
+          -- ^ Invalid block. If pipelining was negotiated, this can be
+          -- different from the previous argument.
           (InvalidBlockReason blk)
 
 deriving instance Show ChainSyncClientException
@@ -1189,10 +1202,10 @@ instance Eq ChainSyncClientException where
       Just Refl -> (a, b, c, d) == (a', b', c', d')
   DoesntFit{} == _ = False
 
-  InvalidBlock (a :: Point blk) b == InvalidBlock (a' :: Point blk') b' =
+  InvalidBlock (a :: Point blk) b c == InvalidBlock (a' :: Point blk') b' c' =
     case eqT @blk @blk' of
       Nothing   -> False
-      Just Refl -> (a, b) == (a', b')
+      Just Refl -> (a, b, c) == (a', b', c')
   InvalidBlock{} == _ = False
 
 instance Exception ChainSyncClientException
