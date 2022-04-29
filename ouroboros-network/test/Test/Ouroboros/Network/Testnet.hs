@@ -65,8 +65,9 @@ import           Test.Ouroboros.Network.Testnet.Simulation.Node
                      diffusionSimulation,
                      prop_diffusionScript_commandScript_valid,
                      prop_diffusionScript_fixupCommands)
-import           Test.QuickCheck (Property, classify, conjoin, counterexample,
-                     property)
+import           Test.QuickCheck
+                     (Property, counterexample, conjoin, property, classify,
+                     tabulate, coverTable, checkCoverage)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -92,6 +93,10 @@ tests =
                    prop_diffusion_nolivelock
     , testProperty "diffusion dns can recover from fails"
                    prop_diffusion_dns_can_recover
+    , testProperty "diffusion target established public"
+                   prop_diffusion_target_established_public
+    , testProperty "diffusion target active public"
+                   prop_diffusion_target_active_public
     , testProperty "diffusion target established local"
                    prop_diffusion_target_established_local
     , testProperty "diffusion target active below"
@@ -382,6 +387,185 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
         DiffusionDiffusionSimulationTrace TrReconfigurionNode ->
           verify Map.empty recovered t evs
         _ -> verify toRecover recovered time evs
+
+-- | A variant of
+-- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_public'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+-- We do not need separate above and below variants of this property since it
+-- is not possible to exceed the target.
+--
+prop_diffusion_target_established_public :: AbsBearerInfo
+                                         -> DiffusionScript
+                                         -> Property
+prop_diffusion_target_established_public defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 500000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_established_public ev
+        )
+      <$> events
+  where
+    verify_target_established_public :: Events DiffusionTestTrace -> Property
+    verify_target_established_public events =
+      let govPublicRootPeersSig :: Signal (Set NtNAddr)
+          govPublicRootPeersSig =
+            selectDiffusionPeerSelectionState
+              Governor.publicRootPeers
+              events
+
+          govEstablishedPeersSig :: Signal (Set NtNAddr)
+          govEstablishedPeersSig =
+            selectDiffusionPeerSelectionState
+              (EstablishedPeers.toSet . Governor.establishedPeers)
+              events
+
+          govInProgressPromoteColdSig :: Signal (Set NtNAddr)
+          govInProgressPromoteColdSig =
+            selectDiffusionPeerSelectionState
+              Governor.inProgressPromoteCold
+              events
+
+          publicInEstablished :: Signal Bool
+          publicInEstablished =
+            (\publicPeers established inProgressPromoteCold ->
+              Set.size
+              (publicPeers `Set.intersection`
+                (established `Set.union` inProgressPromoteCold))
+                > 0
+            ) <$> govPublicRootPeersSig
+              <*> govEstablishedPeersSig
+              <*> govInProgressPromoteColdSig
+
+          meaning :: Bool -> String
+          meaning False = "No PublicPeers in Established Set"
+          meaning True = "PublicPeers in Established Set"
+
+          valuesList :: [String]
+          valuesList = map (meaning . snd)
+                     . Signal.eventsToList
+                     . Signal.toChangeEvents
+                     $ publicInEstablished
+
+       in checkCoverage
+        $ coverTable "established public peers"
+                     [("PublicPeers in Established Set", 1)]
+        $ tabulate "established public peers" valuesList
+        $ True
+
+-- | A variant of
+-- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_public'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+prop_diffusion_target_active_public :: AbsBearerInfo
+                                    -> DiffusionScript
+                                    -> Property
+prop_diffusion_target_active_public defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 500000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_public ev
+        )
+      <$> events
+  where
+    verify_target_active_public :: Events DiffusionTestTrace -> Property
+    verify_target_active_public events =
+        let govPublicRootPeersSig :: Signal (Set NtNAddr)
+            govPublicRootPeersSig =
+              selectDiffusionPeerSelectionState Governor.publicRootPeers events
+
+            govActivePeersSig :: Signal (Set NtNAddr)
+            govActivePeersSig =
+              selectDiffusionPeerSelectionState Governor.activePeers events
+
+            publicInActive :: Signal Bool
+            publicInActive =
+              (\publicPeers active ->
+                Set.size
+                (publicPeers `Set.intersection` active)
+                  > 0
+              ) <$> govPublicRootPeersSig
+                <*> govActivePeersSig
+
+            meaning :: Bool -> String
+            meaning False = "No PublicPeers in Active Set"
+            meaning True = "PublicPeers in Active Set"
+
+            valuesList :: [String]
+            valuesList = map (meaning . snd)
+                       . Signal.eventsToList
+                       . Signal.toChangeEvents
+                       $ publicInActive
+
+         in checkCoverage
+          $ coverTable "active public peers"
+                       [("PublicPeers in Active Set", 1)]
+          $ tabulate "active public peers" valuesList
+          $ True
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
