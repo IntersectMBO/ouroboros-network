@@ -5,12 +5,11 @@
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
-import           Control.Monad.Class.MonadTime (DiffTime, Time (Time), diffTime)
+import           Control.Monad.Class.MonadTime
+                    (DiffTime, Time(Time), diffTime, addTime )
 import           Control.Monad.IOSim
 import           Control.Monad.IOSim.Types (ThreadId)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
-
-import           Control.Monad.Class.MonadTime (addTime)
 import           Data.Bifoldable (bifoldMap)
 
 import           Data.Dynamic (Typeable)
@@ -31,31 +30,33 @@ import           System.Random (mkStdGen)
 
 import qualified Network.DNS.Types as DNS
 
-import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Diffusion.P2P (RemoteTransitionTrace,
-                     TracersExtra (..))
-import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.Governor
-                     (DebugPeerSelection (..), TracePeerSelection (..))
-import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (TraceLocalRootPeers (..), TracePublicRootPeers (..),
-                     dapDomain)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSorIOError (DNSError))
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
                      (AbsBearerInfo (..), attenuation, delay, toSduSize)
-import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
-                     eventsToList, signalProperty)
+import           Ouroboros.Network.PeerSelection.Governor
+                      (TracePeerSelection (..), DebugPeerSelection (..))
+import           Ouroboros.Network.Testing.Data.Signal
+                      (Events, Signal, eventsToList,
+                      signalProperty)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                      (TraceLocalRootPeers (..), TracePublicRootPeers (..), dapDomain)
+import           Ouroboros.Network.PeerSelection.Types (PeerStatus(..))
+import           Ouroboros.Network.Diffusion.P2P
+                      (TracersExtra(..))
+import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import           Ouroboros.Network.ConnectionManager.Types
+import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.Governor as Governor
+import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+                     (DNSorIOError (DNSError))
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
                      sayTracer, splitWithNameTrace, tracerWithName,
                      tracerWithTime)
 import           Ouroboros.Network.Server2 (ServerTrace(..))
+import           Ouroboros.Network.InboundGovernor hiding (TrUnexpectedlyFalseAssertion)
+import qualified Ouroboros.Network.InboundGovernor as IG
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
@@ -118,6 +119,8 @@ tests =
                    prop_server_trace_coverage
     , testProperty "diffusion connection manager trace coverage"
                    prop_connection_manager_trace_coverage
+    , testProperty "diffusion inbound governor trace coverage"
+                   prop_inbound_governor_trace_coverage
     ]
   ]
 
@@ -142,6 +145,7 @@ data DiffusionTestTrace =
         (AbstractTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTransitionTrace
         (RemoteTransitionTrace NtNAddr)
+    | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
     | DiffusionServerTrace (ServerTrace NtNAddr)
     deriving (Show)
 
@@ -198,7 +202,11 @@ tracersExtraWithTimeName ntnAddr =
                                           . tracerWithName ntnAddr
                                           . tracerWithTime
                                           $ dynamicTracer
-    , dtInboundGovernorTracer             = nullTracer
+    , dtInboundGovernorTracer             = contramap
+                                              DiffusionInboundGovernorTrace
+                                          . tracerWithName ntnAddr
+                                          . tracerWithTime
+                                          $ dynamicTracer
     , dtInboundGovernorTransitionTracer   = contramap
                                               DiffusionInboundGovernorTransitionTrace
                                           . tracerWithName ntnAddr
@@ -300,6 +308,75 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
       eventsSeenNames = map connectionManagerTraceMap events
 
    in tabulate "connection manager trace" eventsSeenNames
+      True
+
+-- | This test coverage of ServerTrace constructors, namely accept errors.
+--
+prop_inbound_governor_trace_coverage :: AbsBearerInfo
+                                     -> DiffusionScript
+                                     -> Property
+prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
+
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                tracersExtraWithTimeName
+                                tracerDiffusionSimWithTimeName
+
+      events :: [InboundGovernorTrace NtNAddr]
+      events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
+                               _                                -> Nothing
+                        )
+             . Trace.toList
+             . fmap (\(WithTime _ (WithName _ b)) -> b)
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.fromList (MainReturn (Time 0) () [])
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 500000
+             . traceEvents
+             $ runSimTrace sim
+
+      inboundGovernorTraceMap :: InboundGovernorTrace NtNAddr -> String
+      inboundGovernorTraceMap (TrNewConnection p _)            =
+        "TrNewConnection " ++ show p
+      inboundGovernorTraceMap (TrResponderRestarted _ mpn)         =
+        "TrResponderRestarted " ++ show mpn
+      inboundGovernorTraceMap (TrResponderStartFailure _ mpn se)   =
+        "TrResponderStartFailure " ++ show mpn ++ " " ++ show se
+      inboundGovernorTraceMap (TrResponderErrored _ mpn se)        =
+        "TrResponderErrored " ++ show mpn ++ " " ++ show se
+      inboundGovernorTraceMap (TrResponderStarted _ mpn)           =
+        "TrResponderStarted " ++ show mpn
+      inboundGovernorTraceMap (TrResponderTerminated _ mpn)        =
+        "TrResponderTerminated " ++ show mpn
+      inboundGovernorTraceMap (TrPromotedToWarmRemote _ ora)        =
+        "TrPromotedToWarmRemote " ++ show ora
+      inboundGovernorTraceMap (TrPromotedToHotRemote _)            =
+        "TrPromotedToHotRemote"
+      inboundGovernorTraceMap (TrDemotedToWarmRemote _)            =
+        "TrDemotedToWarmRemote"
+      inboundGovernorTraceMap (TrDemotedToColdRemote _ ora)         =
+        "TrDemotedToColdRemote " ++ show ora
+      inboundGovernorTraceMap (TrWaitIdleRemote _ ora)              =
+        "TrWaitIdleRemote " ++ show ora
+      inboundGovernorTraceMap (TrMuxCleanExit _)                   =
+        "TrMuxCleanExit"
+      inboundGovernorTraceMap (TrMuxErrored _ se)                  =
+        "TrMuxErrored " ++ show se
+      inboundGovernorTraceMap (TrInboundGovernorCounters _)       =
+        "TrInboundGovernorCounters"
+      inboundGovernorTraceMap (TrRemoteState _)                   =
+        "TrRemoteState"
+      inboundGovernorTraceMap (IG.TrUnexpectedlyFalseAssertion _) =
+        "TrUnexpectedlyFalseAssertion"
+      inboundGovernorTraceMap (TrInboundGovernorError se)           =
+        "TrInboundGovernorError " ++ show se
+
+      eventsSeenNames = map inboundGovernorTraceMap events
+
+   in tabulate "inbound governor trace" eventsSeenNames
       True
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
