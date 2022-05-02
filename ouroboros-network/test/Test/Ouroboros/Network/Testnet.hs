@@ -71,15 +71,16 @@ import           Test.QuickCheck (Property, checkCoverage, classify, conjoin,
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
-                     verifyAbstractTransition, verifyAbstractTransitionOrder)
-import           TestLib.InboundGovernor (remoteStrIsFinalTransition,
-                     verifyRemoteTransition, verifyRemoteTransitionOrder)
-import           TestLib.Utils (AllProperty (..), TestProperty (..),
-                     classifyActivityType, classifyEffectiveDataFlow,
-                     classifyNegotiatedDataFlow, classifyPrunings,
-                     classifyTermination, groupConns, mkProperty, ppTransition,
-                     verifyAllTimeouts)
+import           TestLib.Utils (TestProperty(..), mkProperty, ppTransition,
+                     AllProperty (..), classifyNegotiatedDataFlow,
+                     classifyEffectiveDataFlow, classifyTermination,
+                     classifyActivityType, classifyPrunings, groupConns, verifyAllTimeouts)
+import           TestLib.ConnectionManager
+                     (verifyAbstractTransition, abstractStateIsFinalTransition,
+                     verifyAbstractTransitionOrder, validTransitionMap)
+import           TestLib.InboundGovernor
+                     (verifyRemoteTransition, verifyRemoteTransitionOrder,
+                     remoteStrIsFinalTransition, validRemoteTransitionMap)
 
 tests :: TestTree
 tests =
@@ -121,8 +122,12 @@ tests =
                    prop_peer_selection_trace_coverage
     , testProperty "diffusion connection manager trace coverage"
                    prop_connection_manager_trace_coverage
+    , testProperty "diffusion connection manager transitions coverage"
+                   prop_connection_manager_transitions_coverage
     , testProperty "diffusion inbound governor trace coverage"
                    prop_inbound_governor_trace_coverage
+    , testProperty "diffusion inbound governor transitions coverage"
+                   prop_inbound_governor_transitions_coverage
     ]
   ]
 
@@ -312,6 +317,42 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
    in tabulate "connection manager trace" eventsSeenNames
       True
 
+-- | This tests coverage of ConnectionManager transitions.
+--
+prop_connection_manager_transitions_coverage :: AbsBearerInfo
+                                             -> DiffusionScript
+                                             -> Property
+prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
+
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                tracersExtraWithTimeName
+                                tracerDiffusionSimWithTimeName
+
+      events :: [AbstractTransitionTrace NtNAddr]
+      events = mapMaybe (\case DiffusionConnectionManagerTransitionTrace st ->
+                                   Just st
+                               _ -> Nothing
+                        )
+             . Trace.toList
+             . fmap (\(WithTime _ (WithName _ b)) -> b)
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.fromList (MainReturn (Time 0) () [])
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 500000
+             . traceEvents
+             $ runSimTrace sim
+
+
+      transitionsSeenNames = map (snd . validTransitionMap . ttTransition)
+                                 events
+
+   in tabulate "connection manager transitions" transitionsSeenNames
+      True
+
 -- | This test coverage of ServerTrace constructors, namely accept errors.
 --
 prop_inbound_governor_trace_coverage :: AbsBearerInfo
@@ -379,6 +420,40 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
       eventsSeenNames = map inboundGovernorTraceMap events
 
    in tabulate "inbound governor trace" eventsSeenNames
+      True
+
+-- | This test coverage of InboundGovernor transitions.
+--
+prop_inbound_governor_transitions_coverage :: AbsBearerInfo
+                                           -> DiffusionScript
+                                           -> Property
+prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                tracersExtraWithTimeName
+                                tracerDiffusionSimWithTimeName
+
+      events :: [RemoteTransitionTrace NtNAddr]
+      events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
+                                    Just st
+                               _ -> Nothing
+                        )
+             . Trace.toList
+             . fmap (\(WithTime _ (WithName _ b)) -> b)
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.fromList (MainReturn (Time 0) () [])
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 500000
+             . traceEvents
+             $ runSimTrace sim
+
+      transitionsSeenNames = map (snd . validRemoteTransitionMap . ttTransition)
+                                 events
+
+   in tabulate "inbound governor transitions" transitionsSeenNames
       True
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
