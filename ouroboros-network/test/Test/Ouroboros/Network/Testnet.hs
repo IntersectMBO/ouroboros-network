@@ -117,6 +117,8 @@ tests =
   , testGroup "coverage"
     [ testProperty "diffusion server trace coverage"
                    prop_server_trace_coverage
+    , testProperty "diffusion peer selection trace coverage"
+                   prop_peer_selection_trace_coverage
     , testProperty "diffusion connection manager trace coverage"
                    prop_connection_manager_trace_coverage
     , testProperty "diffusion inbound governor trace coverage"
@@ -418,6 +420,96 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
       eventsSeenNames = map serverTraceMap events
 
    in tabulate "server trace" eventsSeenNames
+      True
+
+-- | This test coverage of TracePeerSelection constructors.
+--
+prop_peer_selection_trace_coverage :: AbsBearerInfo
+                                   -> DiffusionScript
+                                   -> Property
+prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                tracersExtraWithTimeName
+                                tracerDiffusionSimWithTimeName
+
+      events :: [TracePeerSelection NtNAddr]
+      events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
+                               _                              -> Nothing
+                        )
+             . Trace.toList
+             . fmap (\(WithTime _ (WithName _ b)) -> b)
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.fromList (MainReturn (Time 0) () [])
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 500000
+             . traceEvents
+             $ runSimTrace sim
+
+      peerSelectionTraceMap :: TracePeerSelection NtNAddr -> String
+      peerSelectionTraceMap (TraceLocalRootPeersChanged _ _)    =
+        "TraceLocalRootPeersChanged"
+      peerSelectionTraceMap (TraceTargetsChanged _ _)           =
+        "TraceTargetsChanged"
+      peerSelectionTraceMap (TracePublicRootsRequest _ _)       =
+        "TracePublicRootsRequest"
+      peerSelectionTraceMap (TracePublicRootsResults _ _ _)     =
+        "TracePublicRootsResults"
+      peerSelectionTraceMap (TracePublicRootsFailure se _ _)    =
+        "TracePublicRootsFailure " ++ show se
+      peerSelectionTraceMap (TraceGossipRequests _ _ _ _)       =
+        "TraceGossipRequests"
+      peerSelectionTraceMap (TraceGossipResults _)              =
+        "TraceGossipResults"
+      peerSelectionTraceMap (TraceForgetColdPeers _ _ _)        =
+        "TraceForgetColdPeers"
+      peerSelectionTraceMap (TracePromoteColdPeers _ _ _)       =
+        "TracePromoteColdPeers"
+      peerSelectionTraceMap (TracePromoteColdLocalPeers _ _ _)  =
+        "TracePromoteColdLocalPeers"
+      peerSelectionTraceMap (TracePromoteColdFailed _ _ _ _ _) =
+        "TracePromoteColdFailed"
+      peerSelectionTraceMap (TracePromoteColdDone _ _ _)        =
+        "TracePromoteColdDone"
+      peerSelectionTraceMap (TracePromoteWarmPeers _ _ _)       =
+        "TracePromoteWarmPeers"
+      peerSelectionTraceMap (TracePromoteWarmLocalPeers _ _)    =
+        "TracePromoteWarmLocalPeers"
+      peerSelectionTraceMap (TracePromoteWarmFailed _ _ _ _)   =
+        "TracePromoteWarmFailed"
+      peerSelectionTraceMap (TracePromoteWarmDone _ _ _)        =
+        "TracePromoteWarmDone"
+      peerSelectionTraceMap (TracePromoteWarmAborted _ _ _)     =
+        "TracePromoteWarmAborted"
+      peerSelectionTraceMap (TraceDemoteWarmPeers _ _ _)        =
+        "TraceDemoteWarmPeers"
+      peerSelectionTraceMap (TraceDemoteWarmFailed _ _ _ _)    =
+        "TraceDemoteWarmFailed"
+      peerSelectionTraceMap (TraceDemoteWarmDone _ _ _)         =
+        "TraceDemoteWarmDone"
+      peerSelectionTraceMap (TraceDemoteHotPeers _ _ _)         =
+        "TraceDemoteHotPeers"
+      peerSelectionTraceMap (TraceDemoteLocalHotPeers _ _)      =
+        "TraceDemoteLocalHotPeers"
+      peerSelectionTraceMap (TraceDemoteHotFailed _ _ _ _)     =
+        "TraceDemoteHotFailed"
+      peerSelectionTraceMap (TraceDemoteHotDone _ _ _)          =
+        "TraceDemoteHotDone"
+      peerSelectionTraceMap (TraceDemoteAsynchronous _)         =
+        "TraceDemoteAsynchronous"
+      peerSelectionTraceMap TraceGovernorWakeup                 =
+        "TraceGovernorWakeup"
+      peerSelectionTraceMap (TraceChurnWait _)                  =
+        "TraceChurnWait"
+      peerSelectionTraceMap (TraceChurnMode cm)                 =
+        "TraceChurnMode " ++ show cm
+
+      eventsSeenNames = map peerSelectionTraceMap events
+
+   in tabulate "peer selection trace" eventsSeenNames
       True
 
 -- | A variant of
