@@ -271,33 +271,9 @@ forwardValues (UtxoValues values) (UtxoDiff diffs) =
 -- that is not present in the argument or inserts a key that is already in the
 -- argument.
 forwardValuesAndKeys :: forall k v. (Ord k, HasCallStack) => UtxoValues k v -> UtxoKeys k v -> UtxoDiff k v -> UtxoValues k v
-forwardValuesAndKeys (UtxoValues values) (UtxoKeys keys) (UtxoDiff diffs) =
-      UtxoValues
-     $ Map.mapMaybe id (Map.fromSet g keys) `Map.union` Map.mapMaybeWithKey f values
-   where
-     f :: k -> v -> Maybe v
-     f k v = case Map.lookup k diffs of
-       -- The value is in the backing store and not deleted by the differences
-       Nothing                              -> Just v
-       -- The value is inserted (or inserted and deleted) by the differences and
-       -- it was on the backing store. This is an error.
-       Just (UtxoEntryDiff _ UedsIns)       -> error "impossible! duplicate insert of key"
-       Just (UtxoEntryDiff _ UedsInsAndDel) -> error "impossible! duplicate insert of key"
-       -- The value was in the backing store but the differences delete it
-       Just (UtxoEntryDiff _ UedsDel)       -> Nothing
+forwardValuesAndKeys values@(UtxoValues v) (UtxoKeys keys) (UtxoDiff diffs) =
+  forwardValues values (UtxoDiff $ diffs `Map.restrictKeys` (Map.keysSet v `Set.union` keys))
 
-     g :: k -> Maybe v
-     g k = case Map.lookup k diffs of
-       -- The value is not created by the differences
-       Nothing                              -> Nothing
-       -- The value is created by the differences
-       Just (UtxoEntryDiff v UedsIns)       -> Just v
-       -- The value is created and deleted by the differences
-       Just (UtxoEntryDiff _ UedsInsAndDel) -> Nothing
-       -- The value is only deleted by the differences. This is an error as the
-       -- presence of the key in 'keys' means that it was already not in the
-       -- 'BackingStore'
-       Just (UtxoEntryDiff _ UedsDel)       -> error "impossible! deleted entry that was not in UTxO"
 {-------------------------------------------------------------------------------
   Sequence of diffs
 -------------------------------------------------------------------------------}
