@@ -307,6 +307,7 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
 
       -- The remaining cases
       | otherwise -> do
+        trace $ AddingBlockToVolatileDB (blockRealPoint b) (blockNo b) isEBB
         VolatileDB.putBlock cdbVolatileDB b
         trace $ AddedBlockToVolatileDB (blockRealPoint b) (blockNo b) isEBB
         deliverWrittenToDisk True
@@ -722,6 +723,12 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
          -- return the event to trace when we switched to the new chain.
       -> m (Point blk)
     switchTo vChainDiff varTentativeHeader mkTraceEvent = do
+        trace $
+            SwitchingSelection
+          $ castPoint
+          $ AF.headPoint
+          $ getSuffix
+          $ getChainDiff vChainDiff
         (curChain, newChain, events, prevTentativeHeader) <- atomically $ do
           curChain  <- readTVar         cdbChain -- Not Query.getCurrentChain!
           curLedger <- LgrDB.getCurrent cdbLgrDB
@@ -928,6 +935,7 @@ chainSelection chainSelEnv chainDiffs =
                   (\ts -> isPipelineable bcfg ts candidate)
               <$> readTVarIO varTentativeState
             whenJust mTentativeHeader $ \tentativeHeader -> do
+              tracePipelining $ SettingTentativeHeader (headerRealPoint tentativeHeader)
               atomically $
                 writeTVar varTentativeHeader $ Just $! tentativeHeader
               -- As we are only extending the existing chain, the intersection

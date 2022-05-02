@@ -532,5 +532,8 @@ addBlockRunner
   => ChainDbEnv m blk
   -> m Void
 addBlockRunner cdb@CDB{..} = forever $ do
-    blockToAdd <- getBlockToAdd cdbBlocksToAdd
-    addBlockSync cdb blockToAdd
+    let trace = traceWith cdbTracer . TraceAddBlockEvent
+    trace $ PoppingBlockFromQueue
+    blkToAdd <- getBlockToAdd cdbBlocksToAdd
+    trace $ PoppedBlockFromQueue $ blockRealPoint $ blockToAdd blkToAdd
+    addBlockSync cdb blkToAdd

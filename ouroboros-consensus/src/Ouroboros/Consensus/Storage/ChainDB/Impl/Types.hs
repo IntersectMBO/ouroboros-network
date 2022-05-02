@@ -476,6 +476,7 @@ addBlockToAdd tracer (BlocksToAdd queue) punish blk = do
           , varBlockWrittenToDisk
           , varBlockProcessed
           }
+    traceWith tracer $ AddingBlockToQueue (blockRealPoint blk)
     queueSize <- atomically $ do
       writeTBQueue  queue toAdd
       lengthTBQueue queue
@@ -600,6 +601,10 @@ data TraceAddBlockEvent blk =
     -- the background thread. The size of the queue is included.
   | AddedBlockToQueue (RealPoint blk) Word
 
+    -- | The block popped from the queue and will imminently be added to the
+    -- ChainDB.
+  | PoppedBlockFromQueue (RealPoint blk)
+
     -- | The block is from the future, i.e., its slot number is greater than
     -- the current slot (the second argument).
   | BlockInTheFuture (RealPoint blk) SlotNo
@@ -648,6 +653,18 @@ data TraceAddBlockEvent blk =
     -- | The tentative header (in the context of diffusion pipelining) has been
     -- updated.
   | PipeliningEvent (TracePipeliningEvent blk)
+
+    -- | Herald 'AddedBlockToQueue'.
+  | AddingBlockToQueue (RealPoint blk)
+
+    -- | Herald of 'PoppedBlockFromQueue'.
+  | PoppingBlockFromQueue
+
+    -- | Herald of 'AddedBlockToVolatileDB'.
+  | AddingBlockToVolatileDB (RealPoint blk) BlockNo IsEBB
+
+    -- | Heralds of 'AddedToCurrentChain' or 'SwitchedToAFork'. Lists the tip of the new chain.
+  | SwitchingSelection (Point blk)
 
   deriving (Generic)
 
@@ -709,9 +726,11 @@ data TracePipeliningEvent blk =
     -- | We selected a new (better) chain, which cleared the previous tentative
     -- header.
   | OutdatedTentativeHeader (Header blk)
+    -- | Herald of 'SetTentativeHeader'
+  | SettingTentativeHeader (RealPoint blk)
 
-deriving stock instance Eq   (Header blk) => Eq   (TracePipeliningEvent blk)
-deriving stock instance Show (Header blk) => Show (TracePipeliningEvent blk)
+deriving stock instance (StandardHash blk, Eq   (Header blk)) => Eq   (TracePipeliningEvent blk)
+deriving stock instance (StandardHash blk, Show (Header blk)) => Show (TracePipeliningEvent blk)
 
 data TraceInitChainSelEvent blk =
     StartedInitChainSelection
