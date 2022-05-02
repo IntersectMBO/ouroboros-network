@@ -32,10 +32,10 @@
         "homepage": "",
         "owner": "haskell",
         "repo": "haskell-language-server",
-        "rev": "1.6.1.1",
-        "sha256": "1rbdcl89y85cz31k4qk48zg8qdyywrzzjvh28q36bpm215qhgd74",
+        "rev": "1.7.0.0",
+        "sha256": "14dd0c7jm43yy7mhzsl7b92hz01l36ayq8rnch0q1p6a3xz2qb5s",
         "type": "tarball",
-        "url": "https://github.com/haskell/haskell-language-server/archive/1.6.1.1.tar.gz",
+        "url": "https://github.com/haskell/haskell-language-server/archive/1.7.0.0.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "iohk-nix": {
