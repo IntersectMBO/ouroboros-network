@@ -845,6 +845,7 @@ showsApplyMapKind = \case
     ApplyTrackingMK values diff -> showParen True $ showString "ApplyTrackingMK " . shows values . showString " " . shows diff
     ApplyDiffMK diff            -> showParen True $ showString "ApplyDiffMK " . shows diff
     ApplySeqDiffMK sq           -> showParen True $ showString "ApplySeqDiffMK " . shows sq
+
     ApplyQueryAllMK       -> showParen True $ showString "ApplyQueryAllMK"
     ApplyQuerySomeMK keys -> showParen True $ showString "ApplyQuerySomeMK " . shows keys
 

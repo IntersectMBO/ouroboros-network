@@ -20,11 +20,8 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
 
 import           Codec.Serialise
 import           Control.Monad.Except
-import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
-
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
@@ -35,7 +32,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
-import           Ouroboros.Consensus.Util.CBOR.Simple
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
@@ -161,15 +157,7 @@ instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
 instance StowableLedgerTables (LedgerState ByronSpecBlock) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = isCandidateForUnstowDefault
-
-instance Typeable mk => ToCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
-  toCBOR NoByronSpecLedgerTables = versionZeroProductToCBOR []
-
-instance Typeable mk => FromCBOR (LedgerTables (LedgerState ByronSpecBlock) mk) where
-  fromCBOR =
-        versionZeroProductFromCBOR "LedgerTables ByronSpec" 0
-      $ pure NoByronSpecLedgerTables
+  isCandidateForUnstow = const True
 
 {-------------------------------------------------------------------------------
   Applying blocks

@@ -579,7 +579,7 @@ instance TableStuff (LedgerState TestBlock) where
   zipLedgerTables2     _ NoTestLedgerTables NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
   foldLedgerTables     _                                       NoTestLedgerTables = mempty
   foldLedgerTables2    _                    NoTestLedgerTables NoTestLedgerTables = mempty
-  namesLedgerTables                                        = NoTestLedgerTables
+  namesLedgerTables                                                               = NoTestLedgerTables
 
 instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
     codecLedgerTables = NoTestLedgerTables

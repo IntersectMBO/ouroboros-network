@@ -174,6 +174,7 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
       -- | Network P2P Mode switch
     , rnEnableP2P :: NetworkP2PMode p2p
 
+      -- | Whether to use the LMDB or the in-memory backend for UTxO-HD.
     , rnBackingStoreSelector :: !(BackingStoreSelector m)
     }
 

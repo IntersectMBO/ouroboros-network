@@ -36,10 +36,9 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (BackingStoreSelector)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
-import Ouroboros.Consensus.Storage.LedgerDB.OnDisk (BackingStoreSelector)
-
 {-------------------------------------------------------------------------------
   Arguments
 -------------------------------------------------------------------------------}
@@ -78,7 +77,7 @@ data ChainDbArgs f m blk = ChainDbArgs {
       -- same time when the background thread processing the blocks can't keep
       -- up.
 
-    ,cdbBackingStoreSelector    :: !(BackingStoreSelector m)
+    , cdbBackingStoreSelector   :: !(BackingStoreSelector m)
     }
 
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or

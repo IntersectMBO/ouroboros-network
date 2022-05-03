@@ -381,7 +381,7 @@ instance TableStuff (LedgerState (HardForkBlock '[BlockA, BlockB])) where
   zipLedgerTables2     _f NoAbTables NoAbTables NoAbTables = NoAbTables
   foldLedgerTables     _f                       NoAbTables = mempty
   foldLedgerTables2    _f            NoAbTables NoAbTables = mempty
-  namesLedgerTables                         = NoAbTables
+  namesLedgerTables                                        = NoAbTables
 
 instance SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock '[BlockA, BlockB])) where
     codecLedgerTables = NoAbTables

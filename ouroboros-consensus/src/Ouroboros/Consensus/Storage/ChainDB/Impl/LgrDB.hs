@@ -160,13 +160,13 @@ type LgrDbSerialiseConstraints blk =
 
 
 data LgrDbArgs f m blk = LgrDbArgs {
-      lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
-    , lgrHasFS          :: SomeHasFS m
-    , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
-    , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
-    , lgrTracer         :: Tracer m (TraceEvent blk)
-    , lgrRunAlsoLegacy  :: RunAlsoLegacy
+      lgrDiskPolicy           :: DiskPolicy
+    , lgrGenesis              :: HKD f (m (ExtLedgerState blk ValuesMK))
+    , lgrHasFS                :: SomeHasFS m
+    , lgrTopLevelConfig       :: HKD f (TopLevelConfig blk)
+    , lgrTraceLedger          :: Tracer m (LedgerDB' blk)
+    , lgrTracer               :: Tracer m (TraceEvent blk)
+    , lgrRunAlsoLegacy        :: RunAlsoLegacy
     , lgrBackingStoreSelector :: !(BackingStoreSelector m)
     }
 
