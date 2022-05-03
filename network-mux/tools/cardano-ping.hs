@@ -460,14 +460,13 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
              Right (_, Left err) -> do
                  eprint $ printf "%s Protocol error %s\n" peerStr (show err)
              Right (_, Right version) -> do
-                 unless quiet $ do
-                   printf "%s Negotiated version %s\n" peerStr (show version)
-                   keepAlive bearer timeoutfn peerStr version (tdigest []) 0
-                   -- send terminating message
-                   _ <- write bearer timeoutfn $
-                          wrap keepaliveNum InitiatorDir (keepAliveDone version)
-                   -- protocol idle timeout
-                   threadDelay 5
+                unless quiet $ printf "%s Negotiated version %s\n" peerStr (show version)
+                keepAlive bearer timeoutfn peerStr version (tdigest []) 0
+                -- send terminating message
+                _ <- write bearer timeoutfn $
+                        wrap keepaliveNum InitiatorDir (keepAliveDone version)
+                -- protocol idle timeout
+                threadDelay 5
 
     )
   where
