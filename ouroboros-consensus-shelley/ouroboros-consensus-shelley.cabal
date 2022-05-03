@@ -26,7 +26,9 @@ library
   hs-source-dirs:      src
 
   exposed-modules:
+                       Ouroboros.Consensus.Shelley.Crypto
                        Ouroboros.Consensus.Shelley.Eras
+                       Ouroboros.Consensus.Shelley.HFEras
                        Ouroboros.Consensus.Shelley.Ledger
                        Ouroboros.Consensus.Shelley.Ledger.Block
                        Ouroboros.Consensus.Shelley.Ledger.Config
@@ -38,10 +40,16 @@ library
                        Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                        Ouroboros.Consensus.Shelley.Ledger.Query
                        Ouroboros.Consensus.Shelley.Ledger.PeerSelection
-                       Ouroboros.Consensus.Shelley.Ledger.TPraos
+                       Ouroboros.Consensus.Shelley.Ledger.Protocol
+                       Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol
                        Ouroboros.Consensus.Shelley.Node
+                       Ouroboros.Consensus.Shelley.Node.Common
+                       Ouroboros.Consensus.Shelley.Node.Praos
+                       Ouroboros.Consensus.Shelley.Node.TPraos
                        Ouroboros.Consensus.Shelley.Node.Serialisation
-                       Ouroboros.Consensus.Shelley.ShelleyBased
+                       Ouroboros.Consensus.Shelley.Protocol.Abstract
+                       Ouroboros.Consensus.Shelley.Protocol.Praos
+                       Ouroboros.Consensus.Shelley.Protocol.TPraos
                        Ouroboros.Consensus.Shelley.ShelleyHFC
 
   build-depends:       base              >=4.9   && <4.15
@@ -49,6 +57,7 @@ library
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
+                     , cardano-crypto-praos
                      , cardano-data
                      , cardano-ledger-core
                      , cardano-protocol-tpraos
@@ -70,6 +79,7 @@ library
 
                        -- cardano-ledger-specs
                      , cardano-ledger-alonzo
+                     , cardano-ledger-babbage
                      , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma
                      , small-steps

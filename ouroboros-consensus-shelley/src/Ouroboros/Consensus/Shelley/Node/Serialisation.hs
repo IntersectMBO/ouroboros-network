@@ -23,54 +23,66 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Protocol.TPraos.BHeader as SL
 
+import qualified Cardano.Protocol.TPraos.API as SL
+import           Ouroboros.Consensus.Protocol.Praos (PraosState)
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract
+                     (pHeaderBlockSize, pHeaderSize)
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => HasBinaryBlockInfo (ShelleyBlock era) where
+instance ShelleyCompatible proto era => HasBinaryBlockInfo (ShelleyBlock proto era) where
   getBinaryBlockInfo = shelleyBinaryBlockInfo
 
-instance ShelleyBasedEra era => SerialiseDiskConstraints (ShelleyBlock era)
+instance ShelleyCompatible proto era => SerialiseDiskConstraints (ShelleyBlock proto era)
 
-instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (ShelleyBlock era) where
+instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (ShelleyBlock proto era) where
   encodeDisk _ = encodeShelleyBlock
-instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (Lazy.ByteString -> ShelleyBlock era) where
+instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (Lazy.ByteString -> ShelleyBlock proto era) where
   decodeDisk _ = decodeShelleyBlock
 
-instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (Header (ShelleyBlock era)) where
+instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (Header (ShelleyBlock proto era)) where
   encodeDisk _ = encodeShelleyHeader
-instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (Lazy.ByteString -> Header (ShelleyBlock era)) where
+instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (Lazy.ByteString -> Header (ShelleyBlock proto era)) where
   decodeDisk _ = decodeShelleyHeader
 
-instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era)) where
+instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era)) where
   encodeDisk _ = encodeShelleyLedgerState
-instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era)) where
+instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era)) where
   decodeDisk _ = decodeShelleyLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
-instance (ShelleyBasedEra era, EraCrypto era ~ c) => EncodeDisk (ShelleyBlock era) (TPraosState c) where
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, SL.PraosCrypto c) => EncodeDisk (ShelleyBlock proto era) (TPraosState c) where
   encodeDisk _ = encode
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
-instance (ShelleyBasedEra era, EraCrypto era ~ c) => DecodeDisk (ShelleyBlock era) (TPraosState c) where
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, SL.PraosCrypto c) => DecodeDisk (ShelleyBlock proto era) (TPraosState c) where
   decodeDisk _ = decode
 
-instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (AnnTip (ShelleyBlock era)) where
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, Praos.PraosCrypto c) => EncodeDisk (ShelleyBlock proto era) (PraosState c) where
+  encodeDisk _ = encode
+-- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, Praos.PraosCrypto c) => DecodeDisk (ShelleyBlock proto era) (PraosState c) where
+  decodeDisk _ = decode
+instance ShelleyCompatible proto era
+  => EncodeDisk (ShelleyBlock proto era) (AnnTip (ShelleyBlock proto era)) where
   encodeDisk _ = encodeShelleyAnnTip
-instance ShelleyBasedEra era =>  DecodeDisk (ShelleyBlock era) (AnnTip (ShelleyBlock era)) where
+instance ShelleyCompatible proto era
+  =>  DecodeDisk (ShelleyBlock proto era) (AnnTip (ShelleyBlock proto era)) where
   decodeDisk _ = decodeShelleyAnnTip
 
 {-------------------------------------------------------------------------------
   SerialiseNodeToNode
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => SerialiseNodeToNodeConstraints (ShelleyBlock era) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToNodeConstraints (ShelleyBlock proto era) where
   estimateBlockSize hdr = overhead + hdrSize + bodySize
     where
       -- The maximum block size is 65536, the CBOR-in-CBOR tag for this block
@@ -81,36 +93,40 @@ instance ShelleyBasedEra era => SerialiseNodeToNodeConstraints (ShelleyBlock era
       --
       -- Which is 7 bytes, enough for up to 4294967295 bytes.
       overhead = 7 {- CBOR-in-CBOR -} + 1 {- encodeListLen -}
-      bodySize = fromIntegral . SL.bsize . SL.bhbody . shelleyHeaderRaw $ hdr
-      hdrSize  = fromIntegral . SL.bHeaderSize . shelleyHeaderRaw $ hdr
+      bodySize = fromIntegral . pHeaderBlockSize . shelleyHeaderRaw $ hdr
+      hdrSize  = fromIntegral . pHeaderSize . shelleyHeaderRaw $ hdr
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
-instance ShelleyBasedEra era => SerialiseNodeToNode (ShelleyBlock era) (ShelleyBlock era) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToNode (ShelleyBlock proto era) (ShelleyBlock proto era) where
   encodeNodeToNode _ _ = wrapCBORinCBOR   encodeShelleyBlock
   decodeNodeToNode _ _ = unwrapCBORinCBOR decodeShelleyBlock
 
 -- | 'Serialised' uses CBOR-in-CBOR by default.
-instance SerialiseNodeToNode (ShelleyBlock era) (Serialised (ShelleyBlock era))
+instance SerialiseNodeToNode (ShelleyBlock proto era) (Serialised (ShelleyBlock proto era))
   -- Default instance
 
 -- | CBOR-in-CBOR to be compatible with the wrapped ('Serialised') variant.
-instance ShelleyBasedEra era => SerialiseNodeToNode (ShelleyBlock era) (Header (ShelleyBlock era)) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToNode (ShelleyBlock proto era) (Header (ShelleyBlock proto era)) where
   encodeNodeToNode _ _ = wrapCBORinCBOR   encodeShelleyHeader
   decodeNodeToNode _ _ = unwrapCBORinCBOR decodeShelleyHeader
 
 -- | We use CBOR-in-CBOR
-instance SerialiseNodeToNode (ShelleyBlock era) (SerialisedHeader (ShelleyBlock era)) where
+instance SerialiseNodeToNode (ShelleyBlock proto era) (SerialisedHeader (ShelleyBlock proto era)) where
   encodeNodeToNode _ _ = encodeTrivialSerialisedHeader
   decodeNodeToNode _ _ = decodeTrivialSerialisedHeader
 
 -- | The @To/FromCBOR@ instances defined in @cardano-ledger-specs@ use
 -- CBOR-in-CBOR to get the annotation.
-instance ShelleyBasedEra era => SerialiseNodeToNode (ShelleyBlock era) (GenTx (ShelleyBlock era)) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToNode (ShelleyBlock proto era) (GenTx (ShelleyBlock proto era)) where
   encodeNodeToNode _ _ = toCBOR
   decodeNodeToNode _ _ = fromCBOR
 
-instance ShelleyBasedEra era => SerialiseNodeToNode (ShelleyBlock era) (GenTxId (ShelleyBlock era)) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToNode (ShelleyBlock proto era) (GenTxId (ShelleyBlock proto era)) where
   encodeNodeToNode _ _ = toCBOR
   decodeNodeToNode _ _ = fromCBOR
 
@@ -119,44 +135,49 @@ instance ShelleyBasedEra era => SerialiseNodeToNode (ShelleyBlock era) (GenTxId 
 -------------------------------------------------------------------------------}
 
 -- | Exception thrown in the encoders
-data ShelleyEncoderException era =
+data ShelleyEncoderException era proto =
     -- | A query was submitted that is not supported by the given
     -- 'ShelleyNodeToClientVersion'.
     ShelleyEncoderUnsupportedQuery
-         (SomeSecond BlockQuery (ShelleyBlock era))
+         (SomeSecond BlockQuery (ShelleyBlock proto era))
          ShelleyNodeToClientVersion
   deriving (Show)
 
-instance Typeable era => Exception (ShelleyEncoderException era)
+instance (Typeable era, Typeable proto)
+  => Exception (ShelleyEncoderException era proto)
 
-instance ShelleyBasedEra era => SerialiseNodeToClientConstraints (ShelleyBlock era)
+instance ShelleyCompatible proto era
+  => SerialiseNodeToClientConstraints (ShelleyBlock proto era)
 
 -- | CBOR-in-CBOR for the annotation. This also makes it compatible with the
 -- wrapped ('Serialised') variant.
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (ShelleyBlock era) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToClient (ShelleyBlock proto era) (ShelleyBlock proto era) where
   encodeNodeToClient _ _ = wrapCBORinCBOR   encodeShelleyBlock
   decodeNodeToClient _ _ = unwrapCBORinCBOR decodeShelleyBlock
 
 -- | 'Serialised' uses CBOR-in-CBOR by default.
-instance SerialiseNodeToClient (ShelleyBlock era) (Serialised (ShelleyBlock era))
+instance SerialiseNodeToClient (ShelleyBlock proto era) (Serialised (ShelleyBlock proto era))
   -- Default instance
 
 -- | Uses CBOR-in-CBOR in the @To/FromCBOR@ instances to get the annotation.
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (GenTx (ShelleyBlock era)) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToClient (ShelleyBlock proto era) (GenTx (ShelleyBlock proto era)) where
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (GenTxId (ShelleyBlock era)) where
+instance ShelleyCompatible proto era
+  => SerialiseNodeToClient (ShelleyBlock proto era) (GenTxId (ShelleyBlock proto era)) where
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
 -- | @'ApplyTxErr' '(ShelleyBlock era)'@
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (SL.ApplyTxError era) where
+instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock proto era) (SL.ApplyTxError era) where
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
-instance ShelleyBasedEra era
-      => SerialiseNodeToClient (ShelleyBlock era) (SomeSecond BlockQuery (ShelleyBlock era)) where
+instance ShelleyCompatible proto era
+      => SerialiseNodeToClient (ShelleyBlock proto era) (SomeSecond BlockQuery (ShelleyBlock proto era)) where
   encodeNodeToClient _ version (SomeSecond q)
     | querySupportedVersion q version
     = encodeShelleyQuery q
@@ -164,11 +185,11 @@ instance ShelleyBasedEra era
     = throw $ ShelleyEncoderUnsupportedQuery (SomeSecond q) version
   decodeNodeToClient _ _ = decodeShelleyQuery
 
-instance ShelleyBasedEra era => SerialiseResult (ShelleyBlock era) (BlockQuery (ShelleyBlock era)) where
+instance ShelleyCompatible proto era => SerialiseResult (ShelleyBlock proto era) (BlockQuery (ShelleyBlock proto era)) where
   encodeResult _ _ = encodeShelleyResult
   decodeResult _ _ = decodeShelleyResult
 
-instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) SlotNo where
+instance ShelleyCompatible proto era  => SerialiseNodeToClient (ShelleyBlock proto era) SlotNo where
   encodeNodeToClient _ _ = toCBOR
   decodeNodeToClient _ _ = fromCBOR
 
@@ -178,8 +199,8 @@ instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) SlotNo 
   Since 'NestedCtxt' for Shelley is trivial, these instances can use defaults.
 -------------------------------------------------------------------------------}
 
-instance ShelleyBasedEra era => ReconstructNestedCtxt Header (ShelleyBlock era)
-instance ShelleyBasedEra era => EncodeDiskDepIx (NestedCtxt Header) (ShelleyBlock era)
-instance ShelleyBasedEra era => EncodeDiskDep   (NestedCtxt Header) (ShelleyBlock era)
-instance ShelleyBasedEra era => DecodeDiskDepIx (NestedCtxt Header) (ShelleyBlock era)
-instance ShelleyBasedEra era => DecodeDiskDep   (NestedCtxt Header) (ShelleyBlock era)
+instance ShelleyBasedEra era => ReconstructNestedCtxt Header (ShelleyBlock proto era)
+instance ShelleyBasedEra era => EncodeDiskDepIx (NestedCtxt Header) (ShelleyBlock proto era)
+instance ShelleyCompatible proto era => EncodeDiskDep   (NestedCtxt Header) (ShelleyBlock proto era)
+instance ShelleyBasedEra era => DecodeDiskDepIx (NestedCtxt Header) (ShelleyBlock proto era)
+instance ShelleyCompatible proto era => DecodeDiskDep   (NestedCtxt Header) (ShelleyBlock proto era)

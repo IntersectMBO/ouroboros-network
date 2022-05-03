@@ -8,7 +8,6 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 -- | Transitional Praos.
@@ -17,9 +16,8 @@
 --   schedule determining slots to be produced by BFT
 module Ouroboros.Consensus.Protocol.TPraos (
     MaxMajorProtVer (..)
+  , PraosChainSelectView (..)
   , TPraos
-  , TPraosCanBeLeader (..)
-  , TPraosChainSelectView (..)
   , TPraosFields (..)
   , TPraosIsLeader (..)
   , TPraosParams (..)
@@ -45,9 +43,7 @@ import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except (Except, runExcept, throwError,
                      withExceptT)
 import           Data.Coerce (coerce)
-import           Data.Function (on)
 import qualified Data.Map.Strict as Map
-import           Data.Ord (Down (..))
 import qualified Data.Text as T (pack)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -67,12 +63,11 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
-import           Cardano.Ledger.Crypto (StandardCrypto, VRF)
+import           Cardano.Ledger.Crypto (StandardCrypto)
 import qualified Cardano.Ledger.Keys as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.API as SL
-import qualified Cardano.Protocol.TPraos.BHeader as SL (BHeader, mkSeed,
-                     seedEta, seedL)
+import qualified Cardano.Protocol.TPraos.BHeader as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import qualified Cardano.Protocol.TPraos.Rules.Overlay as SL
@@ -81,6 +76,7 @@ import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Ledger.Util
+import           Ouroboros.Consensus.Protocol.Praos.Common
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header
@@ -135,7 +131,7 @@ forgeTPraosFields ::
   -> IsLeader (TPraos c)
   -> (TPraosToSign c -> toSign)
   -> m (TPraosFields c toSign)
-forgeTPraosFields hotKey TPraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
+forgeTPraosFields hotKey PraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
     signature <- HotKey.sign hotKey toSign
     return TPraosFields {
         tpraosSignature = signature
@@ -145,11 +141,11 @@ forgeTPraosFields hotKey TPraosCanBeLeader{..} TPraosIsLeader{..} mkToSign = do
     toSign = mkToSign signedFields
 
     signedFields = TPraosToSign {
-        tpraosToSignIssuerVK = tpraosCanBeLeaderColdVerKey
-      , tpraosToSignVrfVK    = VRF.deriveVerKeyVRF tpraosCanBeLeaderSignKeyVRF
+        tpraosToSignIssuerVK = praosCanBeLeaderColdVerKey
+      , tpraosToSignVrfVK    = VRF.deriveVerKeyVRF praosCanBeLeaderSignKeyVRF
       , tpraosToSignEta      = tpraosIsLeaderEta
       , tpraosToSignLeader   = tpraosIsLeaderProof
-      , tpraosToSignOCert    = tpraosCanBeLeaderOpCert
+      , tpraosToSignOCert    = praosCanBeLeaderOpCert
       }
 
 -- | Because we are using the executable spec, rather than implementing the
@@ -160,15 +156,6 @@ type TPraosValidateView c = SL.BHeader c
 {-------------------------------------------------------------------------------
   Protocol proper
 -------------------------------------------------------------------------------}
-
--- | The maximum major protocol version.
---
--- Must be at least the current major protocol version. For Cardano mainnet, the
--- Shelley era has major protocol verison __2__.
-newtype MaxMajorProtVer = MaxMajorProtVer {
-      getMaxMajorProtVer :: Natural
-    }
-  deriving (Eq, Show, Generic, NoThunks)
 
 data TPraos c
 
@@ -230,18 +217,6 @@ mkTPraosParams maxMajorPV initialNonce genesis = TPraosParams {
     securityParam = SecurityParam $ SL.sgSecurityParam genesis
     systemStart   = SystemStart   $ SL.sgSystemStart   genesis
 
-data TPraosCanBeLeader c = TPraosCanBeLeader {
-      -- | Certificate delegating rights from the stake pool cold key (or
-      -- genesis stakeholder delegate cold key) to the online KES key.
-      tpraosCanBeLeaderOpCert     :: !(SL.OCert c)
-      -- | Stake pool cold key or genesis stakeholder delegate cold key.
-    , tpraosCanBeLeaderColdVerKey :: !(SL.VKey 'SL.BlockIssuer c)
-    , tpraosCanBeLeaderSignKeyVRF :: !(SL.SignKeyVRF c)
-    }
-  deriving (Generic)
-
-instance SL.PraosCrypto c => NoThunks (TPraosCanBeLeader c)
-
 -- | Assembled proof that the issuer has the right to issue a block in the
 -- selected slot.
 data TPraosIsLeader c = TPraosIsLeader {
@@ -268,43 +243,6 @@ data instance ConsensusConfig (TPraos c) = TPraosConfig {
   deriving (Generic)
 
 instance SL.PraosCrypto c => NoThunks (ConsensusConfig (TPraos c))
-
--- | View of the ledger tip for chain selection.
---
--- We order between chains as follows:
---
--- 1. By chain length, with longer chains always preferred.
--- 2. If the tip of each chain was issued by the same agent, then we prefer
---    the chain whose tip has the highest ocert issue number.
--- 3. By the leader value of the chain tip, with lower values preferred.
-data TPraosChainSelectView c = TPraosChainSelectView {
-    csvChainLength :: BlockNo
-  , csvSlotNo      :: SlotNo
-  , csvIssuer      :: SL.VKey 'SL.BlockIssuer c
-  , csvIssueNo     :: Word64
-  , csvLeaderVRF   :: VRF.OutputVRF (VRF c)
-  } deriving (Show, Eq, Generic, NoThunks)
-
-instance SL.PraosCrypto c => Ord (TPraosChainSelectView c) where
-  compare =
-      mconcat [
-          compare `on` csvChainLength
-        , whenSame csvIssuer (compare `on` csvIssueNo)
-        , compare `on` Down . csvLeaderVRF
-        ]
-    where
-      -- | When the @a@s are equal, use the given comparison function,
-      -- otherwise, no preference.
-      whenSame ::
-           Eq a
-        => (view -> a)
-        -> (view -> view -> Ordering)
-        -> (view -> view -> Ordering)
-      whenSame f comp v1 v2
-        | f v1 == f v2
-        = comp v1 v2
-        | otherwise
-        = EQ
 
 -- | Ledger view at a particular slot
 newtype instance Ticked (SL.LedgerView c) = TickedPraosLedgerView {
@@ -352,15 +290,15 @@ data instance Ticked (TPraosState c) = TickedChainDepState {
 instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
   type ChainDepState (TPraos c) = TPraosState c
   type IsLeader      (TPraos c) = TPraosIsLeader c
-  type CanBeLeader   (TPraos c) = TPraosCanBeLeader c
-  type SelectView    (TPraos c) = TPraosChainSelectView c
+  type CanBeLeader   (TPraos c) = PraosCanBeLeader c
+  type SelectView    (TPraos c) = PraosChainSelectView c
   type LedgerView    (TPraos c) = SL.LedgerView c
   type ValidationErr (TPraos c) = SL.ChainTransitionError c
   type ValidateView  (TPraos c) = TPraosValidateView c
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 
-  checkIsLeader cfg TPraosCanBeLeader{..} slot cs = do
+  checkIsLeader cfg PraosCanBeLeader{..} slot cs = do
       -- First, check whether we're in the overlay schedule
       case SL.lookupInOverlaySchedule firstSlot gkeys d asc slot of
         -- Slot isn't in the overlay schedule, so we're in Praos
@@ -405,12 +343,12 @@ instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
             slot
       gkeys      = Map.keysSet dlgMap
       eta0       = SL.ticknStateEpochNonce $ SL.csTickn chainState
-      vkhCold    = SL.hashKey tpraosCanBeLeaderColdVerKey
+      vkhCold    = SL.hashKey praosCanBeLeaderColdVerKey
       rho'       = SL.mkSeed SL.seedEta slot eta0
       y'         = SL.mkSeed SL.seedL   slot eta0
 
-      rho = VRF.evalCertified () rho' tpraosCanBeLeaderSignKeyVRF
-      y   = VRF.evalCertified () y'   tpraosCanBeLeaderSignKeyVRF
+      rho = VRF.evalCertified () rho' praosCanBeLeaderSignKeyVRF
+      y   = VRF.evalCertified () y'   praosCanBeLeaderSignKeyVRF
 
       SL.GenDelegs dlgMap = SL.lvGenDelegs lv
 

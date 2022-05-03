@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -15,42 +17,42 @@ module Block.Cardano (
   , CardanoBlockArgs
   ) where
 
-import qualified Data.Aeson as Aeson
-import qualified Data.Map.Strict as Map
-import           Data.SOP.Strict
-import           Options.Applicative
-
+import           Block.Alonzo (Args (..))
+import           Block.Byron (Args (..), openGenesisByron)
+import           Block.Shelley (Args (..))
 import qualified Cardano.Chain.Genesis as Byron.Genesis
 import qualified Cardano.Chain.Update as Byron.Update
-
+import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
+import           Cardano.Ledger.Crypto
+import qualified Data.Aeson as Aeson
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromJust)
+import           Data.SOP.Strict
+import           HasAnalysis
+import           Options.Applicative
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
+import           Ouroboros.Consensus.Cardano
+import           Ouroboros.Consensus.Cardano.Block (CardanoEras)
+import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
+                     protocolInfoCardano)
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..), getHardForkState,
                      hardForkLedgerStatePerEra)
 import           Ouroboros.Consensus.HardFork.Combinator.State (currentState)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.HeaderValidation (HasAnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
-
-import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
-import           Cardano.Ledger.Crypto
-
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-
-import           Ouroboros.Consensus.Cardano
-import           Ouroboros.Consensus.Cardano.Block (CardanoEras)
-import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
-                     protocolInfoCardano)
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo,
                      StandardShelley)
+import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
-
-import           Block.Alonzo (Args (..))
-import           Block.Byron (Args (..), openGenesisByron)
-import           Block.Shelley (Args (..))
-import           Data.Maybe (fromJust)
-import           HasAnalysis
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Ouroboros.Consensus.Shelley.Node.Praos
 
 analyseBlock ::
      (forall blk. HasAnalysis blk => blk -> a)
@@ -101,8 +103,8 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
   data Args (CardanoBlock StandardCrypto) =
     CardanoBlockArgs {
         byronArgs   :: Args ByronBlock
-      , shelleyArgs :: Args (ShelleyBlock StandardShelley)
-      , alonzoArgs  :: Args (ShelleyBlock StandardAlonzo)
+      , shelleyArgs :: Args (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
+      , alonzoArgs  :: Args (ShelleyBlock (TPraos StandardCrypto) StandardAlonzo)
       }
   argsParser _ = parseCardanoArgs
   mkProtocolInfo CardanoBlockArgs {..} = do
@@ -116,7 +118,7 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
       Aeson.eitherDecodeFileStrict' configFileAlonzo
     return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley genesisAlonzo initialNonce
 
-instance HasAnalysis (CardanoBlock StandardCrypto) where
+instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
   blockTxSizes   = analyseBlock blockTxSizes
   knownEBBs _    =
@@ -171,6 +173,10 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
           alonzoProtVer                 = ProtVer 6 0
         , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
+      ProtocolParamsBabbage {
+          babbageProtVer                 = ProtVer 7 0
+        , babbageMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+        }
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = ()
         , transitionTrigger            = TriggerHardForkAtVersion 2
@@ -186,6 +192,10 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = genesisAlonzo
         , transitionTrigger            = TriggerHardForkAtVersion 5
+        }
+      ProtocolTransitionParamsShelleyBased {
+          transitionTranslationContext = genesisAlonzo
+        , transitionTrigger            = TriggerHardForkAtVersion 6
         }
 
 castHeaderHash ::

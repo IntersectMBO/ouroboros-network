@@ -1,3 +1,4 @@
+cabal-version:         3.0
 name:                  ouroboros-consensus-shelley-test
 version:               0.1.0.0
 synopsis:              Test infrastructure for Shelley
@@ -11,7 +12,6 @@ author:                IOHK Engineering Team
 maintainer:            operations@iohk.io
 category:              Network
 build-type:            Simple
-cabal-version:         >=1.10
 
 source-repository head
   type:     git
@@ -45,6 +45,8 @@ library
                        -- cardano-ledger-specs
                      , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
+                     , cardano-ledger-babbage
+                     , cardano-ledger-babbage-test
                      , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma
                      , cardano-ledger-shelley-ma-test
@@ -55,6 +57,7 @@ library
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol
+                     , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test
                      , ouroboros-consensus-test
                      , ouroboros-consensus-shelley
 
@@ -99,6 +102,7 @@ test-suite test
 
                      , ouroboros-network
                      , ouroboros-consensus
+                     , ouroboros-consensus-protocol
                      , ouroboros-consensus-test
                      , ouroboros-consensus-shelley
                      , ouroboros-consensus-shelley-test

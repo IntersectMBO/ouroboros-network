@@ -1,32 +1,33 @@
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) where
 
-import           Data.SOP.Strict
-
-import           Ouroboros.Consensus.HardFork.Combinator
-
-import           Cardano.Ledger.Hashes (EraIndependentTxBody)
-import           Cardano.Ledger.Keys (DSignable, Hash)
+import           Data.SOP.Strict hiding (All2)
 import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto)
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
-import           Ouroboros.Consensus.Shelley.ShelleyBased
+import           Ouroboros.Consensus.HardFork.Combinator
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
+import           Ouroboros.Consensus.Shelley.HFEras ()
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
+                     ShelleyCompatible)
 
 -- | When the given ledger state corresponds to a Shelley-based era, apply the
 -- given function to it.
 overShelleyBasedLedgerState ::
      forall c.
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
-  => (   forall era. (EraCrypto era ~ c, ShelleyBasedEra era)
-      => LedgerState (ShelleyBlock era)
-      -> LedgerState (ShelleyBlock era)
+     (TPraos.PraosCrypto c, Praos.PraosCrypto c)
+  => (   forall era proto. (EraCrypto era ~ c, ShelleyCompatible proto era)
+      => LedgerState (ShelleyBlock proto era)
+      -> LedgerState (ShelleyBlock proto era)
      )
   -> LedgerState (CardanoBlock c)
   -> LedgerState (CardanoBlock c)
@@ -36,17 +37,16 @@ overShelleyBasedLedgerState f (HardForkLedgerState st) =
     fs :: NP (LedgerState -.-> LedgerState)
              (CardanoEras c)
     fs = fn id
-        :* injectShelleyNP
-             reassoc
-             (hcpure
-               (Proxy @(And (HasCrypto c) ShelleyBasedEra))
-               (fn (Comp . f . unComp)))
+        :* injectSingleEra
+        :* injectSingleEra
+        :* injectSingleEra
+        :* injectSingleEra
+        :* injectSingleEra
+        :* Nil
 
-    reassoc ::
-         (     LedgerState :.: ShelleyBlock
-          -.-> LedgerState :.: ShelleyBlock
-         ) shelleyEra
-      -> (     LedgerState
-          -.-> LedgerState
-         ) (ShelleyBlock shelleyEra)
-    reassoc g = fn $ unComp . apFn g . Comp
+    injectSingleEra ::
+      ( ShelleyCompatible proto era, EraCrypto era ~ c
+      , shelleyEra ~ ShelleyBlock proto era
+      )
+      => (LedgerState -.-> LedgerState) shelleyEra
+    injectSingleEra = fn f

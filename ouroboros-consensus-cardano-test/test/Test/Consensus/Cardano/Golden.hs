@@ -12,6 +12,8 @@ import           Ouroboros.Consensus.Ledger.Query (QueryVersion)
 
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.Shelley.HFEras ()
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 
 import           Test.Tasty
 
@@ -31,17 +33,19 @@ instance CardanoHardForkConstraints c
     CardanoNodeToNodeVersion3 -> "CardanoNodeToNodeVersion3"
     CardanoNodeToNodeVersion4 -> "CardanoNodeToNodeVersion4"
     CardanoNodeToNodeVersion5 -> "CardanoNodeToNodeVersion5"
+    CardanoNodeToNodeVersion6 -> "CardanoNodeToNodeVersion6"
     _                         -> error $ "Unknown version: " <> show v
 
 instance CardanoHardForkConstraints c
       => ToGoldenDirectory (QueryVersion, HardForkNodeToClientVersion (CardanoEras c)) where
   toGoldenDirectory (queryVersion, blockVersion) = show queryVersion </> case blockVersion of
-    CardanoNodeToClientVersion1 -> "CardanoNodeToClientVersion1"
-    CardanoNodeToClientVersion2 -> "CardanoNodeToClientVersion2"
-    CardanoNodeToClientVersion3 -> "CardanoNodeToClientVersion3"
-    CardanoNodeToClientVersion4 -> "CardanoNodeToClientVersion4"
-    CardanoNodeToClientVersion5 -> "CardanoNodeToClientVersion5"
-    CardanoNodeToClientVersion6 -> "CardanoNodeToClientVersion6"
-    CardanoNodeToClientVersion7 -> "CardanoNodeToClientVersion7"
-    CardanoNodeToClientVersion8 -> "CardanoNodeToClientVersion8"
-    _                           -> error $ "Unknown version: " <> show blockVersion
+    CardanoNodeToClientVersion1  -> "CardanoNodeToClientVersion1"
+    CardanoNodeToClientVersion2  -> "CardanoNodeToClientVersion2"
+    CardanoNodeToClientVersion3  -> "CardanoNodeToClientVersion3"
+    CardanoNodeToClientVersion4  -> "CardanoNodeToClientVersion4"
+    CardanoNodeToClientVersion5  -> "CardanoNodeToClientVersion5"
+    CardanoNodeToClientVersion6  -> "CardanoNodeToClientVersion6"
+    CardanoNodeToClientVersion7  -> "CardanoNodeToClientVersion7"
+    CardanoNodeToClientVersion8  -> "CardanoNodeToClientVersion8"
+    CardanoNodeToClientVersion9  -> "CardanoNodeToClientVersion9"
+    _                            -> error $ "Unknown version: " <> show blockVersion

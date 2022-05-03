@@ -69,6 +69,7 @@ module Ouroboros.Network.NodeToNode
   , Handshake
   , LocalAddresses (..)
   , Socket
+  , isPipeliningEnabled
     -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , remoteNetworkErrorPolicy

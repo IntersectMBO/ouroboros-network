@@ -2,16 +2,13 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveGeneric            #-}
-{-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TupleSections            #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
@@ -29,6 +26,7 @@ module Ouroboros.Consensus.Cardano.CanHardFork (
 
 import           Control.Monad
 import           Control.Monad.Except (runExcept, throwError)
+import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
@@ -85,6 +83,13 @@ import qualified Cardano.Protocol.TPraos.Rules.Prtcl as SL
 import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
 
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Protocol.Praos (Praos)
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
+import           Ouroboros.Consensus.Protocol.Translate (TranslateProto)
+import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -248,11 +253,19 @@ instance HasPartialLedgerConfig ByronBlock where
 -------------------------------------------------------------------------------}
 
 type CardanoHardForkConstraints c =
-  ( PraosCrypto c
-  , ShelleyBasedEra (ShelleyEra c)
-  , ShelleyBasedEra (AllegraEra c)
-  , ShelleyBasedEra (MaryEra    c)
-  , ShelleyBasedEra (AlonzoEra  c)
+  ( TPraos.PraosCrypto c
+  , Praos.PraosCrypto c
+  , TranslateProto (TPraos c) (Praos c)
+  , ShelleyCompatible (TPraos c) (ShelleyEra c)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (ShelleyEra c))
+  , ShelleyCompatible (TPraos c) (AllegraEra c)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (AllegraEra c))
+  , ShelleyCompatible (TPraos c) (MaryEra    c)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (MaryEra c))
+  , ShelleyCompatible (TPraos c) (AlonzoEra  c)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (AlonzoEra c))
+  , ShelleyCompatible (Praos c) (BabbageEra  c)
+  , LedgerSupportsProtocol (ShelleyBlock (Praos c) (BabbageEra c))
     -- These equalities allow the transition from Byron to Shelley, since
     -- @cardano-ledger-shelley@ requires Ed25519 for Byron bootstrap addresses and
     -- the current Byron-to-Shelley translation requires a 224-bit hash for
@@ -269,9 +282,11 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
         $ PCons translateLedgerStateShelleyToAllegraWrapper
         $ PCons translateLedgerStateAllegraToMaryWrapper
         $ PCons translateLedgerStateMaryToAlonzoWrapper
+        $ PCons translateLedgerStateAlonzoToBabbageWrapper
         $ PNil
     , translateChainDepState =
           PCons translateChainDepStateByronToShelleyWrapper
+        $ PCons translateChainDepStateAcrossShelley
         $ PCons translateChainDepStateAcrossShelley
         $ PCons translateChainDepStateAcrossShelley
         $ PCons translateChainDepStateAcrossShelley
@@ -281,24 +296,37 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
         $ PCons translateLedgerViewAcrossShelley
         $ PCons translateLedgerViewAcrossShelley
         $ PCons translateLedgerViewAcrossShelley
+        $ PCons translateLedgerViewAcrossShelley
         $ PNil
     }
   hardForkChainSel =
         -- Byron <-> Shelley, ...
-        TCons (   CompareBlockNo
-               :* CompareBlockNo
-               :* CompareBlockNo
-               :* CompareBlockNo
-               :* Nil)
+        TCons (  CompareBlockNo
+              :* CompareBlockNo
+              :* CompareBlockNo
+              :* CompareBlockNo
+              :* CompareBlockNo
+              :* Nil)
         -- Shelley <-> Allegra, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* SelectSameProtocol :* Nil)
+      $ TCons (SelectSameProtocol :* SelectSameProtocol :* SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
         -- Allegra <-> Mary, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* Nil)
+      $ TCons (SelectSameProtocol :* SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
         -- Mary <-> Alonzo, ...
-      $ TCons (SelectSameProtocol :* Nil)
-        -- Alonzo <-> ...
+      $ TCons (SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
+        -- Alonzo <-> Babbage, ...
+      $ TCons (alonzoBabbageEraSelection :* Nil)
+        -- Babbage <-> ...
       $ TCons Nil
       $ TNil
+    where
+      -- Across alonzo and Babbage, the protocol changes, but the select view
+      -- remains the same.
+      alonzoBabbageEraSelection :: AcrossEraSelection
+        (ShelleyBlock (TPraos c) e1)
+        (ShelleyBlock (Praos c) e2)
+      alonzoBabbageEraSelection = CustomChainSel (
+          \l r -> compare l (coerce r)
+        )
   hardForkInjectTxs =
         PCons (ignoringBoth $ Pair2 cannotInjectTx cannotInjectValidatedTx)
       $ PCons (   ignoringBoth
@@ -312,11 +340,18 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
                     translateValidatedTxAllegraToMaryWrapper
               )
       $ PCons (RequireBoth $ \_cfgMary cfgAlonzo ->
-                 let ctxt = getAlonzoTranslationContext cfgAlonzo
-                 in
-                 Pair2
-                   (translateTxMaryToAlonzoWrapper          ctxt)
-                   (translateValidatedTxMaryToAlonzoWrapper ctxt)
+                let ctxt = getAlonzoTranslationContext cfgAlonzo
+                in
+                Pair2
+                  (translateTxMaryToAlonzoWrapper          ctxt)
+                  (translateValidatedTxMaryToAlonzoWrapper ctxt)
+              )
+      $ PCons (RequireBoth $ \_cfgAlonzo cfgBabbage ->
+                let ctxt = getBabbageTranslationContext cfgBabbage
+                in
+                Pair2
+                  (translateTxAlonzoToBabbageWrapper          ctxt)
+                  (translateValidatedTxAlonzoToBabbageWrapper ctxt)
               )
       $ PNil
 
@@ -326,25 +361,25 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
 
 translateHeaderHashByronToShelley ::
      forall c.
-     ( ShelleyBasedEra (ShelleyEra c)
+     ( ShelleyCompatible (TPraos c) (ShelleyEra c)
      , HASH c ~ Blake2b_256
      )
   => HeaderHash ByronBlock
-  -> HeaderHash (ShelleyBlock (ShelleyEra c))
+  -> HeaderHash (ShelleyBlock (TPraos c) (ShelleyEra c))
 translateHeaderHashByronToShelley =
-      fromShortRawHash (Proxy @(ShelleyBlock (ShelleyEra c)))
+      fromShortRawHash (Proxy @(ShelleyBlock (TPraos c) (ShelleyEra c)))
     . toShortRawHash   (Proxy @ByronBlock)
   where
     -- Byron uses 'Blake2b_256' for header hashes
     _ = keepRedundantConstraint (Proxy @(HASH c ~ Blake2b_256))
 
 translatePointByronToShelley ::
-     ( ShelleyBasedEra (ShelleyEra c)
+     ( ShelleyCompatible (TPraos c) (ShelleyEra c)
      , HASH c ~ Blake2b_256
      )
   => Point ByronBlock
   -> WithOrigin BlockNo
-  -> WithOrigin (ShelleyTip (ShelleyEra c))
+  -> WithOrigin (ShelleyTip (TPraos c) (ShelleyEra c))
 translatePointByronToShelley point bNo =
     case (point, bNo) of
       (GenesisPoint, Origin) ->
@@ -358,7 +393,7 @@ translatePointByronToShelley point bNo =
         error "translatePointByronToShelley: invalid Byron state"
 
 translateLedgerStateByronToShelleyWrapper ::
-     ( ShelleyBasedEra (ShelleyEra c)
+     ( ShelleyCompatible (TPraos c) (ShelleyEra c)
      , HASH     c ~ Blake2b_256
      , ADDRHASH c ~ Blake2b_224
      )
@@ -366,7 +401,7 @@ translateLedgerStateByronToShelleyWrapper ::
        WrapLedgerConfig
        (Translate LedgerState)
        ByronBlock
-       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (TPraos c) (ShelleyEra c))
 translateLedgerStateByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
     Translate   $ \epochNo ledgerByron ->
@@ -389,7 +424,7 @@ translateChainDepStateByronToShelleyWrapper ::
        WrapConsensusConfig
        (Translate WrapChainDepState)
        ByronBlock
-       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (TPraos c) (ShelleyEra c))
 translateChainDepStateByronToShelleyWrapper =
     RequireBoth $ \_ (WrapConsensusConfig cfgShelley) ->
       Translate $ \_ (WrapChainDepState pbftState) ->
@@ -433,7 +468,7 @@ translateLedgerViewByronToShelleyWrapper ::
        WrapLedgerConfig
        (TranslateForecast LedgerState WrapLedgerView)
        ByronBlock
-       (ShelleyBlock (ShelleyEra c))
+       (ShelleyBlock (TPraos c) (ShelleyEra c))
 translateLedgerViewByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
       TranslateForecast (forecast cfgShelley)
@@ -452,7 +487,7 @@ translateLedgerViewByronToShelleyWrapper =
       -> LedgerState ByronBlock
       -> Except
            OutsideForecastRange
-           (Ticked (WrapLedgerView (ShelleyBlock (ShelleyEra c))))
+           (Ticked (WrapLedgerView (ShelleyBlock (TPraos c) (ShelleyEra c))))
     forecast cfgShelley bound forecastFor currentByronState
         | forecastFor < maxFor
         = return $
@@ -490,8 +525,8 @@ translateLedgerStateShelleyToAllegraWrapper ::
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
-       (ShelleyBlock (ShelleyEra c))
-       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (TPraos c) (ShelleyEra c))
+       (ShelleyBlock (TPraos c) (AllegraEra c))
 translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
       Translate $ \_epochNo ->
@@ -500,16 +535,16 @@ translateLedgerStateShelleyToAllegraWrapper =
 translateTxShelleyToAllegraWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => InjectTx
-       (ShelleyBlock (ShelleyEra c))
-       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (TPraos c) (ShelleyEra c))
+       (ShelleyBlock (TPraos c) (AllegraEra c))
 translateTxShelleyToAllegraWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 translateValidatedTxShelleyToAllegraWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => InjectValidatedTx
-       (ShelleyBlock (ShelleyEra c))
-       (ShelleyBlock (AllegraEra c))
+       (ShelleyBlock (TPraos c) (ShelleyEra c))
+       (ShelleyBlock (TPraos c) (AllegraEra c))
 translateValidatedTxShelleyToAllegraWrapper = InjectValidatedTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
@@ -522,8 +557,8 @@ translateLedgerStateAllegraToMaryWrapper ::
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
-       (ShelleyBlock (AllegraEra c))
-       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (TPraos c) (AllegraEra c))
+       (ShelleyBlock (TPraos c) (MaryEra c))
 translateLedgerStateAllegraToMaryWrapper =
     ignoringBoth $
       Translate $ \_epochNo ->
@@ -536,16 +571,16 @@ translateLedgerStateAllegraToMaryWrapper =
 translateTxAllegraToMaryWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => InjectTx
-       (ShelleyBlock (AllegraEra c))
-       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (TPraos c) (AllegraEra c))
+       (ShelleyBlock (TPraos c) (MaryEra c))
 translateTxAllegraToMaryWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 translateValidatedTxAllegraToMaryWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => InjectValidatedTx
-       (ShelleyBlock (AllegraEra c))
-       (ShelleyBlock (MaryEra c))
+       (ShelleyBlock (TPraos c) (AllegraEra c))
+       (ShelleyBlock (TPraos c) (MaryEra c))
 translateValidatedTxAllegraToMaryWrapper = InjectValidatedTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
@@ -558,15 +593,15 @@ translateLedgerStateMaryToAlonzoWrapper ::
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
-       (ShelleyBlock (MaryEra c))
-       (ShelleyBlock (AlonzoEra c))
+       (ShelleyBlock (TPraos c) (MaryEra c))
+       (ShelleyBlock (TPraos c) (AlonzoEra c))
 translateLedgerStateMaryToAlonzoWrapper =
     RequireBoth $ \_cfgMary cfgAlonzo ->
       Translate $ \_epochNo ->
         unComp . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo) . Comp
 
 getAlonzoTranslationContext ::
-     WrapLedgerConfig (ShelleyBlock (AlonzoEra c))
+     WrapLedgerConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
   -> Alonzo.AlonzoGenesis
 getAlonzoTranslationContext =
     shelleyLedgerTranslationContext . unwrapLedgerConfig
@@ -575,8 +610,8 @@ translateTxMaryToAlonzoWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => Alonzo.AlonzoGenesis
   -> InjectTx
-       (ShelleyBlock (MaryEra c))
-       (ShelleyBlock (AlonzoEra c))
+       (ShelleyBlock (TPraos c) (MaryEra c))
+       (ShelleyBlock (TPraos c) (AlonzoEra c))
 translateTxMaryToAlonzoWrapper ctxt = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
 
@@ -585,7 +620,75 @@ translateValidatedTxMaryToAlonzoWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => Alonzo.AlonzoGenesis
   -> InjectValidatedTx
-       (ShelleyBlock (MaryEra c))
-       (ShelleyBlock (AlonzoEra c))
+       (ShelleyBlock (TPraos c) (MaryEra c))
+       (ShelleyBlock (TPraos c) (AlonzoEra c))
 translateValidatedTxMaryToAlonzoWrapper ctxt = InjectValidatedTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
+
+{-------------------------------------------------------------------------------
+  Translation from Alonzo to Babbage
+-------------------------------------------------------------------------------}
+
+translateLedgerStateAlonzoToBabbageWrapper ::
+     (Praos.PraosCrypto c, TPraos.PraosCrypto c)
+  => RequiringBoth
+       WrapLedgerConfig
+       (Translate LedgerState)
+       (ShelleyBlock (TPraos c) (AlonzoEra c))
+       (ShelleyBlock (Praos c) (BabbageEra c))
+translateLedgerStateAlonzoToBabbageWrapper =
+    RequireBoth $ \_cfgAlonzo cfgBabbage ->
+      Translate $ \_epochNo ->
+        unComp . SL.translateEra' (getBabbageTranslationContext cfgBabbage) . Comp . transPraosLS
+  where
+    transPraosLS ::
+      LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) ->
+      LedgerState (ShelleyBlock (Praos c)  (AlonzoEra c))
+    transPraosLS (ShelleyLedgerState wo nes st) =
+      ShelleyLedgerState
+        { shelleyLedgerTip        = fmap castShelleyTip wo
+        , shelleyLedgerState      = nes
+        , shelleyLedgerTransition = st
+        }
+
+getBabbageTranslationContext ::
+     WrapLedgerConfig (ShelleyBlock (Praos c) (BabbageEra c))
+  -> Alonzo.AlonzoGenesis
+getBabbageTranslationContext =
+    shelleyLedgerTranslationContext . unwrapLedgerConfig
+
+translateTxAlonzoToBabbageWrapper ::
+     (Praos.PraosCrypto c)
+  => Alonzo.AlonzoGenesis
+  -> InjectTx
+       (ShelleyBlock (TPraos c) (AlonzoEra c))
+       (ShelleyBlock (Praos c) (BabbageEra c))
+translateTxAlonzoToBabbageWrapper ctxt = InjectTx $
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp . transPraosTx
+  where
+    transPraosTx
+      :: GenTx (ShelleyBlock (TPraos c) (AlonzoEra c))
+      -> GenTx (ShelleyBlock (Praos c) (AlonzoEra c))
+    transPraosTx (ShelleyTx ti tx) = ShelleyTx ti (coerce tx)
+
+translateValidatedTxAlonzoToBabbageWrapper ::
+     forall c.
+     (Praos.PraosCrypto c)
+  => Alonzo.AlonzoGenesis
+  -> InjectValidatedTx
+       (ShelleyBlock (TPraos c) (AlonzoEra c))
+       (ShelleyBlock (Praos c) (BabbageEra c))
+translateValidatedTxAlonzoToBabbageWrapper ctxt = InjectValidatedTx $
+  fmap unComp
+    . eitherToMaybe
+    . runExcept
+    . SL.translateEra ctxt
+    . Comp
+    . transPraosValidatedTx
+ where
+  transPraosValidatedTx
+    :: WrapValidatedGenTx (ShelleyBlock (TPraos c) (AlonzoEra c))
+    -> WrapValidatedGenTx (ShelleyBlock (Praos c) (AlonzoEra c))
+  transPraosValidatedTx (WrapValidatedGenTx x) = case x of
+    ShelleyValidatedTx txid vtx -> WrapValidatedGenTx $
+      ShelleyValidatedTx txid (SL.coerceValidated vtx)

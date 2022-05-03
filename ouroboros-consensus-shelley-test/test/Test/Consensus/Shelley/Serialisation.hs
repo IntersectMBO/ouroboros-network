@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.Shelley.Serialisation (tests) where
 
 import qualified Codec.CBOR.Write as CBOR
@@ -14,7 +15,9 @@ import           Cardano.Crypto.Hash (ShortHash)
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (Dict (..))
 
+import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 
@@ -25,6 +28,8 @@ import           Test.Util.Corruption
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
 
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Test.Consensus.Shelley.Generators ()
 import           Test.Consensus.Shelley.MockCrypto
 
@@ -46,15 +51,15 @@ tests = testGroup "Shelley"
         ]
     ]
   where
-    pReal :: Proxy (ShelleyBlock (MockShelley ShortHash))
+    pReal :: Proxy (Block ShortHash)
     pReal = Proxy
 
-    testCodecCfg :: CodecConfig (ShelleyBlock (MockShelley ShortHash))
+    testCodecCfg :: CodecConfig (Block ShortHash)
     testCodecCfg = ShelleyCodecConfig
 
     dictNestedHdr ::
-         forall a era. ShelleyBasedEra era
-      => NestedCtxt_ (ShelleyBlock era) Header a -> Dict (Eq a, Show a)
+         forall a era proto. ShelleyCompatible proto era
+      => NestedCtxt_ (ShelleyBlock proto era) Header a -> Dict (Eq a, Show a)
     dictNestedHdr CtxtShelley = Dict
 
 {-------------------------------------------------------------------------------
@@ -93,7 +98,9 @@ prop_blockIntegrity =
 
 -- | Test that the block we generate pass the 'verifyHeaderIntegrity' check
 prop_headerIntegrity :: Header (Block ShortHash) -> Bool
-prop_headerIntegrity = verifyHeaderIntegrity testTPraosSlotsPerKESPeriod
+prop_headerIntegrity =
+  verifyHeaderIntegrity @(TPraos (MockCrypto ShortHash)) testTPraosSlotsPerKESPeriod
+    . shelleyHeaderRaw
 
 -- | Test that we can detect random bitflips in blocks.
 prop_detectCorruption_Block :: Coherent (Block ShortHash) -> Corruption -> Property
@@ -110,4 +117,5 @@ prop_detectCorruption_Header =
     detectCorruption
       encodeShelleyHeader
       decodeShelleyHeader
-      (verifyHeaderIntegrity testTPraosSlotsPerKESPeriod)
+      (verifyHeaderIntegrity @(TPraos (MockCrypto ShortHash)) testTPraosSlotsPerKESPeriod
+        . shelleyHeaderRaw)

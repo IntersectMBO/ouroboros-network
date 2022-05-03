@@ -539,7 +539,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       bracketWithPrivateRegistry
         (chainSyncHeaderServerFollower
            (getChainDB kernel)
-           ( if version >= NodeToNodeV_8
+           ( if isPipeliningEnabled version
              then ChainDB.TentativeChain
              else ChainDB.SelectedChain
            )

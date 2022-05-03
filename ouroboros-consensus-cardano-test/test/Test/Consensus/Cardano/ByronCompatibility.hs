@@ -131,6 +131,7 @@ toCardanoCodecConfig codecConfigByron =
       ShelleyCodecConfig
       ShelleyCodecConfig
       ShelleyCodecConfig
+      ShelleyCodecConfig
 
 {------------------------------------------------------------------------------
   Byron to Cardano

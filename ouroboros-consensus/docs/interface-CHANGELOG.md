@@ -56,12 +56,46 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-04-26
+
+### Added
+
+- New 'Praos' protocol implemented in `Ouroboros.Consensus.Protocol.Praos`. This
+  uses only a single VRF proof in the header, and drops support for the overlay
+  schedule (so drops support for changing the decentralisation parameter). All
+  of the relevant keys etc remain the same.
+- A new era `BabbageEra` has been created, and included in the structure of
+  `CardanoEras`. Anything using `CardanoEras` will now need an additional case
+  for Babbage. Suitable pattern synonyms (for e.g. `BlockBabbage`,
+  `HeaderBabbage`) have been added to `Ouroboros.Consensus.Cardano.Block`.
+
+### Changed
+
+- `ShelleyBlock` now takes two type arguments: `ShelleyBlock era` becomes
+  `ShelleyBlock proto era`. Since 'ShelleyBasedEra' now governs constraints from
+  only one axis of variance, a new class `ShelleyCompatible` is introduced in
+  Ouroboros/Consensus/Shelley/Ledger/Block.hs. This should be used in place of
+  `ShelleyBasedEra` in almost all uses.
+- `LedgerSupportsProtocol` instances are now moved to their own module, in
+  Ouroboros/Consensus/Shelley/Ledger/SupportsProtocol.hs. While we have
+  generally striven to retain universal instances over `ShelleyBlock era
+  proto`, this is not possible for `LedgerSupportsProtocol`, since it is the
+  one place that binds the ledger and the protocol together. This module
+  therefore defines instances both for Praos and TPraos. Since these instances
+  rely on `ShelleyCompatible`, they themselves cannot be included in it, and
+  hence bubble up to `RunNode`.
+
+  To obtain `ShelleyCompatible` instances for various eras, you may need to
+  import the `Ouroboros.Consensus.Shelley.HFEras` module.
+- Add a new supported node to client version `NodeToClientV_13` and node to node
+  version `NodeToNodeV_10` supporting the new Babbage era.
+
 ## Circa 2021-12-16
 
 ### Added
 
 - New supported node to client version `NodeToClientV_12` with a new mini-protocol:
-  - `LocalTxMonitor`: Query information about the node's local mempool. 
+  - `LocalTxMonitor`: Query information about the node's local mempool.
 
 ## Circa 2021-10-13
 

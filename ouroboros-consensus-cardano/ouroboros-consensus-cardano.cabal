@@ -44,6 +44,7 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-ledger-alonzo
+                     , cardano-ledger-babbage
                      , cardano-ledger-byron
                      , cardano-ledger-core
                      , cardano-ledger-shelley
@@ -95,6 +96,7 @@ executable db-analyser
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-cardano
+                     , ouroboros-consensus-protocol
                      , ouroboros-consensus-shelley
                      , ouroboros-network
                      , plutus-ledger-api

@@ -31,9 +31,12 @@ import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
-import           Ouroboros.Consensus.Shelley.Eras (ShelleyBasedEra,
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Eras (StandardCrypto,
                      StandardShelley)
-import           Ouroboros.Consensus.Shelley.Ledger (shelleyLedgerState)
+import           Ouroboros.Consensus.Shelley.HFEras ()
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyCompatible,
+                     shelleyLedgerState)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
@@ -44,9 +47,9 @@ import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
 import           HasAnalysis
 
 -- | Usable for each Shelley-based era
-instance ( ShelleyBasedEra era
+instance ( ShelleyCompatible proto era
          , HasField "outputs" (Core.TxBody era) (StrictSeq (Core.TxOut era))
-         ) => HasAnalysis (ShelleyBlock era) where
+         ) => HasAnalysis (ShelleyBlock proto era) where
 
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body -> sum $ fmap countOutputs (CL.fromTxSeq @era body)
@@ -80,8 +83,8 @@ instance ( ShelleyBasedEra era
 
 
 -- | Shelley-era specific
-instance HasProtocolInfo (ShelleyBlock StandardShelley) where
-  data Args (ShelleyBlock StandardShelley) = ShelleyBlockArgs {
+instance HasProtocolInfo (ShelleyBlock (TPraos StandardCrypto) StandardShelley) where
+  data Args (ShelleyBlock (TPraos StandardCrypto) StandardShelley) = ShelleyBlockArgs {
         configFileShelley :: FilePath
       , initialNonce      :: Nonce
       }
@@ -93,12 +96,12 @@ instance HasProtocolInfo (ShelleyBlock StandardShelley) where
       Aeson.eitherDecodeFileStrict' configFileShelley
     return $ mkShelleyProtocolInfo config initialNonce
 
-type ShelleyBlockArgs = Args (ShelleyBlock StandardShelley)
+type ShelleyBlockArgs = Args (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
 
 mkShelleyProtocolInfo ::
      ShelleyGenesis StandardShelley
   -> Nonce
-  -> ProtocolInfo IO (ShelleyBlock StandardShelley)
+  -> ProtocolInfo IO (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
 mkShelleyProtocolInfo genesis initialNonce =
     protocolInfoShelley
       ProtocolParamsShelleyBased {

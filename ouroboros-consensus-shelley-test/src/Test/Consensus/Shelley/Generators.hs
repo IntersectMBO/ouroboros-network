@@ -1,13 +1,9 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -24,10 +20,11 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Cardano.Ledger.Shelley.API as SL
 
-import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto,
+import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos,
                      TPraosState (..))
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 
 import           Generic.Random (genericArbitraryU)
 import           Test.QuickCheck hiding (Result)
@@ -36,7 +33,12 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      SomeResult (..), WithVersion (..))
 
+import           Cardano.Ledger.Era (toTxSeq)
 import qualified Cardano.Protocol.TPraos.API as SL
+import           Ouroboros.Consensus.Protocol.Praos (Praos)
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import qualified Ouroboros.Consensus.Protocol.Praos.Header as Praos
+import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
@@ -46,7 +48,11 @@ import           Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators
                      (genCoherentBlock)
 import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
+import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import Cardano.Ledger.Crypto (Crypto)
+import Data.Coerce (coerce)
 
 {-------------------------------------------------------------------------------
   Generators
@@ -57,27 +63,70 @@ import           Test.Consensus.Shelley.MockCrypto (CanMock)
 
 -- | The upstream 'Arbitrary' instance for Shelley blocks does not generate
 -- coherent blocks, so neither does this.
-instance CanMock era => Arbitrary (ShelleyBlock era) where
+instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
+  => Arbitrary (ShelleyBlock (TPraos crypto) era) where
   arbitrary = mkShelleyBlock <$> arbitrary
+
+instance (Praos.PraosCrypto crypto, CanMock (Praos crypto) era, crypto ~ EraCrypto era)
+    =>  Arbitrary (ShelleyBlock (Praos crypto) era) where
+  arbitrary = mkShelleyBlock <$> blk
+    where blk = SL.Block <$> arbitrary <*> (toTxSeq @era <$> arbitrary)
 
 -- | This uses a different upstream generator to ensure the header and block
 -- body relate as expected.
-instance CanMock era => Arbitrary (Coherent (ShelleyBlock era)) where
+instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
+  => Arbitrary (Coherent (ShelleyBlock (TPraos crypto) era)) where
   arbitrary = Coherent . mkShelleyBlock <$> genCoherentBlock
 
-instance CanMock era => Arbitrary (Header (ShelleyBlock era)) where
+-- | Create a coherent Praos block
+--
+--   TODO Establish a coherent block without doing this translation from a
+--   TPraos header.
+instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
+  => Arbitrary (Coherent (ShelleyBlock (Praos crypto) era)) where
+  arbitrary = Coherent . mkBlk <$> genCoherentBlock
+    where
+      mkBlk sleBlock = mkShelleyBlock $ let
+        SL.Block hdr1 bdy = sleBlock in SL.Block (translateHeader hdr1) bdy
+
+      translateHeader :: Crypto c => SL.BHeader c -> Praos.Header c
+      translateHeader (SL.BHeader bhBody bhSig) =
+          Praos.Header hBody hSig
+        where
+          hBody = Praos.HeaderBody {
+            Praos.hbBlockNo = SL.bheaderBlockNo bhBody,
+            Praos.hbSlotNo = SL.bheaderSlotNo bhBody,
+            Praos.hbPrev = SL.bheaderPrev bhBody,
+            Praos.hbVk = SL.bheaderVk bhBody,
+            Praos.hbVrfVk = SL.bheaderVrfVk bhBody,
+            Praos.hbVrfRes = coerce $ SL.bheaderEta bhBody,
+            Praos.hbBodySize = fromIntegral $ SL.bsize bhBody,
+            Praos.hbBodyHash = SL.bhash bhBody,
+            Praos.hbOCert = SL.bheaderOCert bhBody,
+            Praos.hbProtVer = SL.bprotver bhBody
+          }
+          hSig = coerce bhSig
+
+instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
+  => Arbitrary (Header (ShelleyBlock (TPraos crypto) era)) where
   arbitrary = getHeader <$> arbitrary
+
+instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
+  => Arbitrary (Header (ShelleyBlock (Praos crypto) era)) where
+  arbitrary = do
+    hdr <- arbitrary
+    pure $ ShelleyHeader hdr (ShelleyHash $ Praos.headerHash hdr)
 
 instance SL.Mock c => Arbitrary (ShelleyHash c) where
   arbitrary = ShelleyHash <$> arbitrary
 
-instance CanMock era => Arbitrary (GenTx (ShelleyBlock era)) where
+instance CanMock proto era => Arbitrary (GenTx (ShelleyBlock proto era)) where
   arbitrary = mkShelleyTx <$> arbitrary
 
-instance CanMock era => Arbitrary (GenTxId (ShelleyBlock era)) where
+instance CanMock proto era => Arbitrary (GenTxId (ShelleyBlock proto era)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock era)) where
+instance CanMock proto era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock proto era)) where
   arbitrary = oneof
     [ pure $ SomeSecond GetLedgerTip
     , pure $ SomeSecond GetEpochNo
@@ -92,7 +141,7 @@ instance CanMock era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock era)) whe
     , pure $ SomeSecond DebugNewEpochState
     ]
 
-instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
+instance CanMock proto era => Arbitrary (SomeResult (ShelleyBlock proto era)) where
   arbitrary = oneof
     [ SomeResult GetLedgerTip <$> arbitrary
     , SomeResult GetEpochNo <$> arbitrary
@@ -112,7 +161,7 @@ instance CanMock era => Arbitrary (SomeResult (ShelleyBlock era)) where
 instance PraosCrypto c => Arbitrary (NonMyopicMemberRewards c) where
   arbitrary = NonMyopicMemberRewards <$> arbitrary
 
-instance CanMock era => Arbitrary (Point (ShelleyBlock era)) where
+instance CanMock proto era => Arbitrary (Point (ShelleyBlock proto era)) where
   arbitrary = BlockPoint <$> arbitrary <*> arbitrary
 
 instance PraosCrypto c => Arbitrary (TPraosState c) where
@@ -123,7 +172,7 @@ instance PraosCrypto c => Arbitrary (TPraosState c) where
         ]
       TPraosState lastSlot <$> arbitrary
 
-instance CanMock era => Arbitrary (ShelleyTip era) where
+instance CanMock proto era=> Arbitrary (ShelleyTip proto era) where
   arbitrary = ShelleyTip
     <$> arbitrary
     <*> arbitrary
@@ -132,13 +181,13 @@ instance CanMock era => Arbitrary (ShelleyTip era) where
 instance Arbitrary ShelleyTransition where
   arbitrary = ShelleyTransitionInfo <$> arbitrary
 
-instance CanMock era => Arbitrary (LedgerState (ShelleyBlock era)) where
+instance CanMock proto era => Arbitrary (LedgerState (ShelleyBlock proto era)) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
 
-instance CanMock era => Arbitrary (AnnTip (ShelleyBlock era)) where
+instance CanMock proto era => Arbitrary (AnnTip (ShelleyBlock proto era)) where
   arbitrary = AnnTip
     <$> arbitrary
     <*> (BlockNo <$> arbitrary)
@@ -151,7 +200,7 @@ instance Arbitrary ShelleyNodeToClientVersion where
   arbitrary = arbitraryBoundedEnum
 
 instance ShelleyBasedEra era
-      => Arbitrary (SomeSecond (NestedCtxt f) (ShelleyBlock era)) where
+      => Arbitrary (SomeSecond (NestedCtxt f) (ShelleyBlock proto era)) where
   arbitrary = return (SomeSecond indexIsTrivial)
 
 {-------------------------------------------------------------------------------
@@ -173,8 +222,8 @@ instance PraosCrypto c => Arbitrary (SL.ChainDepState c) where
 -- | Some 'Query's are only supported by 'ShelleyNodeToClientVersion2', so we
 -- make sure to not generate those queries in combination with
 -- 'ShelleyNodeToClientVersion1'.
-instance CanMock era
-      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock era))) where
+instance CanMock proto era
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock proto era))) where
   arbitrary = do
       query@(SomeSecond q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q

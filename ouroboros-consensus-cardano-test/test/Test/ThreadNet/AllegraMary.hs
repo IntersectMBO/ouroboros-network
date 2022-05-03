@@ -47,6 +47,7 @@ import qualified Cardano.Ledger.Shelley.PParams as SL
 import qualified Cardano.Protocol.TPraos.OCert as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node
                      (ProtocolParamsShelleyBased (..), ShelleyGenesis (..))
 
@@ -54,6 +55,7 @@ import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
                      (ProtocolTransitionParamsShelleyBased (..),
                      TriggerHardFork (..))
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network (NodeOutput (..),
@@ -82,7 +84,7 @@ import           Test.ThreadNet.Infra.TwoEras
 type Crypto = MockCrypto ShortHash
 
 type AllegraMaryBlock =
-  ShelleyBasedHardForkBlock (AllegraEra Crypto) (MaryEra Crypto)
+  ShelleyBasedHardForkBlock (TPraos Crypto) (AllegraEra Crypto) (TPraos Crypto) (MaryEra Crypto)
 
 -- | The varying data of this test
 --
