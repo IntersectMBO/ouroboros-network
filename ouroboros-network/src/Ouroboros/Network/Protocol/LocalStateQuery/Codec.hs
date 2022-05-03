@@ -9,7 +9,6 @@
 module Ouroboros.Network.Protocol.LocalStateQuery.Codec
   ( codecLocalStateQuery
   , codecLocalStateQueryId
-  , Some (..)
   ) where
 
 import           Control.Monad.Class.MonadST
@@ -18,7 +17,6 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Kind (Type)
 import           Data.Type.Equality ((:~:) (..))
 import           Text.Printf
 
@@ -26,9 +24,6 @@ import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
-
-data Some (f :: k -> Type) where
-    Some :: f a -> Some f
 
 codecLocalStateQuery
   :: forall block point query m.
@@ -38,10 +33,10 @@ codecLocalStateQuery
   => Bool -- allow @Maybe 'Point'@ in 'MsgAcquire' and 'MsgReAcquire'.
   -> (point -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s point)
-  -> (forall result . query result -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Some query))
-  -> (forall result . query result -> result -> CBOR.Encoding)
-  -> (forall result . query result -> forall s . CBOR.Decoder s result)
+  -> (forall fp result . query fp result -> CBOR.Encoding)
+  -> (forall s . CBOR.Decoder s (SomeQuery query))
+  -> (forall fp result . query fp result -> result -> CBOR.Encoding)
+  -> (forall fp result . query fp result -> forall s . CBOR.Decoder s result)
   -> Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure m ByteString
 codecLocalStateQuery canAcquireTip
                      encodePoint  decodePoint
@@ -142,7 +137,7 @@ codecLocalStateQuery canAcquireTip
           return (SomeMessage (MsgFailure failure))
 
         (ClientAgency TokAcquired, 2, 3) -> do
-          Some query <- decodeQuery
+          SomeQuery query <- decodeQuery
           return (SomeMessage (MsgQuery query))
 
         (ServerAgency (TokQuerying query), 2, 4) -> do
@@ -180,17 +175,12 @@ codecLocalStateQuery canAcquireTip
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
 codecLocalStateQueryId
-  :: forall block point (query :: Type -> Type) m.
-     Monad m
-  => (forall result1 result2.
-          query result1
-       -> query result2
-       -> Maybe (result1 :~: result2)
-     )
-  -> Codec (LocalStateQuery block point query)
+  :: forall block point query m.
+     (Monad m, EqQuery query)
+  => Codec (LocalStateQuery block point query)
            CodecFailure m
            (AnyMessage (LocalStateQuery block point query))
-codecLocalStateQueryId eqQuery =
+codecLocalStateQueryId =
   Codec encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.

@@ -1,8 +1,10 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Mempool.API (
@@ -15,6 +17,7 @@ module Ouroboros.Consensus.Mempool.API (
     -- * Mempool Snapshot
   , ForgeLedgerState (..)
   , MempoolSnapshot (..)
+  , withLedgerTablesFLS
     -- * Mempool size and capacity
   , MempoolCapacityBytes (..)
   , MempoolCapacityBytesOverride (..)
@@ -32,8 +35,9 @@ import           Data.Word (Word32)
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
-import           Ouroboros.Consensus.Block (SlotNo)
+import           Ouroboros.Consensus.Block (Point, SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -171,10 +175,13 @@ data Mempool m blk idx = Mempool {
     , getSnapshot    :: STM m (MempoolSnapshot blk idx)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
-      -- the given ledger state
+      -- the returned ledger state when it's ticked to the given slot
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk idx)
+    , getLedgerAndSnapshotFor ::
+           Point blk
+        -> SlotNo
+        -> m (Maybe (ExtLedgerState blk EmptyMK, MempoolSnapshot blk idx))
 
       -- | Get the mempool's capacity in bytes.
       --
@@ -296,13 +303,12 @@ addTxsHelper mempool wti = \txs -> do
 -- ledger: the update system might be updated, scheduled delegations might be
 -- applied, etc., and such changes should take effect before we validate any
 -- transactions.
-data ForgeLedgerState blk =
+data ForgeLedgerState blk mk =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
-    -- and we are actually producing a block. It is the caller's responsibility
-    -- to call 'applyChainTick' and produce the ticked ledger state.
-    ForgeInKnownSlot SlotNo (TickedLedgerState blk)
+    -- and we are actually producing a block.
+    ForgeInKnownSlot SlotNo (TickedLedgerState blk mk)
 
     -- | The slot number of the block is not yet known
     --
@@ -310,7 +316,18 @@ data ForgeLedgerState blk =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | ForgeInUnknownSlot (LedgerState blk)
+  | ForgeInUnknownSlot (LedgerState blk mk)
+
+withLedgerTablesFLS ::
+     (TickedTableStuff (LedgerState blk), IsApplyMapKind mk)
+  => ForgeLedgerState blk any
+  -> LedgerTables (LedgerState blk) mk
+  -> ForgeLedgerState blk mk
+withLedgerTablesFLS flst tables = case flst of
+    ForgeInKnownSlot slot tickedLst ->
+      ForgeInKnownSlot slot $ withLedgerTablesTicked tickedLst tables
+    ForgeInUnknownSlot lst ->
+      ForgeInUnknownSlot $ withLedgerTables lst tables
 
 {-------------------------------------------------------------------------------
   Mempool capacity in bytes
@@ -338,7 +355,7 @@ data MempoolCapacityBytesOverride
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
+  => TickedLedgerState blk mk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity st = \case
@@ -390,7 +407,7 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
   , snapshotSlotNo      :: SlotNo
 
     -- | The ledger state after all transactions in the snapshot
-  , snapshotLedgerState :: TickedLedgerState blk
+  , snapshotLedgerState :: TickedLedgerState blk ValuesMK
   }
 
 {-------------------------------------------------------------------------------

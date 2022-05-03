@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.HardFork.History.Summary (Bound, Summary,
                      initBound, neverForksSummary)
+import           Ouroboros.Consensus.Ledger.Basics (FootprintL (..))
 import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -38,19 +39,19 @@ import qualified Ouroboros.Consensus.HardFork.History.Qry as Qry
 
 -- | Version of @Query (HardForkBlock xs)@ without the restriction to have
 -- at least two eras
-data HardForkCompatQuery blk :: Type -> Type where
+data HardForkCompatQuery blk :: FootprintL -> Type -> Type where
   CompatIfCurrent ::
-       BlockQuery blk result
-    -> HardForkCompatQuery blk result
+       BlockQuery          blk fp result
+    -> HardForkCompatQuery blk fp result
 
   CompatAnytime ::
-       QueryAnytime result
+       QueryAnytime            SmallL result
     -> EraIndex (HardForkIndices blk)
-    -> HardForkCompatQuery blk result
+    -> HardForkCompatQuery blk SmallL result
 
   CompatHardFork ::
-       QueryHardFork (HardForkIndices blk) result
-    -> HardForkCompatQuery blk result
+       QueryHardFork (HardForkIndices blk) SmallL result
+    -> HardForkCompatQuery blk             SmallL result
 
 {-------------------------------------------------------------------------------
   Convenience constructors for 'HardForkCompatQuery'
@@ -58,21 +59,21 @@ data HardForkCompatQuery blk :: Type -> Type where
 
 -- | Submit query to underlying ledger
 compatIfCurrent ::
-     BlockQuery blk result
-  -> HardForkCompatQuery blk result
+     BlockQuery          blk fp result
+  -> HardForkCompatQuery blk fp result
 compatIfCurrent = CompatIfCurrent
 
 -- | Get the start of the specified era, if known
 compatGetEraStart ::
      EraIndex (HardForkIndices blk)
-  -> HardForkCompatQuery blk (Maybe Bound)
+  -> HardForkCompatQuery blk SmallL (Maybe Bound)
 compatGetEraStart = CompatAnytime GetEraStart
 
 -- | Get an interpreter for history queries
 --
 -- I.e., this can be used for slot/epoch/time conversions.
 compatGetInterpreter ::
-    HardForkCompatQuery blk (Qry.Interpreter (HardForkIndices blk))
+    HardForkCompatQuery blk SmallL (Qry.Interpreter (HardForkIndices blk))
 compatGetInterpreter = CompatHardFork GetInterpreter
 
 {-------------------------------------------------------------------------------
@@ -83,12 +84,12 @@ compatGetInterpreter = CompatHardFork GetInterpreter
 -- at least two eras
 forwardCompatQuery ::
        forall m x xs. IsNonEmpty xs
-    => (forall result. BlockQuery (HardForkBlock (x ': xs)) result -> m result)
+    => (forall fp result. BlockQuery (HardForkBlock (x ': xs)) fp result -> m result)
     -- ^ Submit a query through the LocalStateQuery protocol.
-    -> (forall result. HardForkCompatQuery (HardForkBlock (x ': xs)) result -> m result)
+    -> (forall fp result. HardForkCompatQuery (HardForkBlock (x ': xs)) fp result -> m result)
 forwardCompatQuery f = go
   where
-    go :: HardForkCompatQuery (HardForkBlock (x ': xs)) result -> m result
+    go :: HardForkCompatQuery (HardForkBlock (x ': xs)) fp result -> m result
     go (CompatIfCurrent qry)    = f qry
     go (CompatAnytime   qry ix) = f (QueryAnytime qry ix)
     go (CompatHardFork  qry)    = f (QueryHardFork qry)
@@ -99,20 +100,20 @@ singleEraCompatQuery ::
        forall m blk era. (Monad m, HardForkIndices blk ~ '[era])
     => EpochSize
     -> SlotLength
-    -> (forall result. BlockQuery blk result -> m result)
+    -> (forall fp result. BlockQuery blk fp result -> m result)
     -- ^ Submit a query through the LocalStateQuery protocol.
-    -> (forall result. HardForkCompatQuery blk result -> m result)
+    -> (forall fp result. HardForkCompatQuery blk fp result -> m result)
 singleEraCompatQuery epochSize slotLen f = go
   where
-    go :: HardForkCompatQuery blk result -> m result
+    go :: HardForkCompatQuery blk fp result -> m result
     go (CompatIfCurrent qry)    = f qry
     go (CompatAnytime   qry ix) = const (goAnytime qry) (trivialIndex ix)
     go (CompatHardFork  qry)    = goHardFork qry
 
-    goAnytime :: QueryAnytime result -> m result
+    goAnytime :: QueryAnytime fp result -> m result
     goAnytime GetEraStart = return $ Just initBound
 
-    goHardFork :: QueryHardFork '[era] result -> m result
+    goHardFork :: QueryHardFork '[era] fp result -> m result
     goHardFork GetInterpreter = return $ Qry.mkInterpreter summary
     goHardFork GetCurrentEra  = return $ eraIndexZero
 

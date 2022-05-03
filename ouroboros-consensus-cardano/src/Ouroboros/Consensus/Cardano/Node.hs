@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -682,21 +683,22 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- When the initial ledger state is not in the Byron era, register the
     -- initial staking and initial funds (if provided in the genesis config) in
     -- the ledger state.
-    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c)
+    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c) ValuesMK
     initExtLedgerStateCardano = ExtLedgerState {
           headerState = initHeaderState
         , ledgerState = overShelleyBasedLedgerState register initLedgerState
         }
       where
         initHeaderState :: HeaderState (CardanoBlock c)
-        initLedgerState :: LedgerState (CardanoBlock c)
+        initLedgerState :: LedgerState (CardanoBlock c) ValuesMK
         ExtLedgerState initLedgerState initHeaderState =
-          injectInitialExtLedgerState cfg initExtLedgerStateByron
+            injectInitialExtLedgerState cfg
+          $ initExtLedgerStateByron
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
-          => LedgerState (ShelleyBlock era)
-          -> LedgerState (ShelleyBlock era)
+          => LedgerState (ShelleyBlock era) mk
+          -> LedgerState (ShelleyBlock era) mk
         register st = st {
               Shelley.shelleyLedgerState =
                 -- We must first register the initial funds, because the stake

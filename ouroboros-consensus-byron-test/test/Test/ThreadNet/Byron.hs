@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -39,6 +40,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Basics
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -974,7 +976,7 @@ prop_simple_real_pbft_convergence TestSetup
     finalChains :: [(NodeId, Chain ByronBlock)]
     finalChains = Map.toList $ nodeOutputFinalChain <$> testOutputNodes testOutput
 
-    finalLedgers :: [(NodeId, Byron.LedgerState ByronBlock)]
+    finalLedgers :: [(NodeId, Byron.LedgerState ByronBlock EmptyMK)]
     finalLedgers = Map.toList $ nodeOutputFinalLedger <$> testOutputNodes testOutput
 
     pvuLabels :: [(NodeId, ProtocolVersionUpdateLabel)]

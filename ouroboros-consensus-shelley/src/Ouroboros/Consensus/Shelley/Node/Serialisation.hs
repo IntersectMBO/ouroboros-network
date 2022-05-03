@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -17,6 +18,7 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -49,9 +51,9 @@ instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (Header (ShelleyBl
 instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (Lazy.ByteString -> Header (ShelleyBlock era)) where
   decodeDisk _ = decodeShelleyHeader
 
-instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era)) where
+instance ShelleyBasedEra era => EncodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era) EmptyMK) where
   encodeDisk _ = encodeShelleyLedgerState
-instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era)) where
+instance ShelleyBasedEra era => DecodeDisk (ShelleyBlock era) (LedgerState (ShelleyBlock era) EmptyMK) where
   decodeDisk _ = decodeShelleyLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
@@ -123,7 +125,7 @@ data ShelleyEncoderException era =
     -- | A query was submitted that is not supported by the given
     -- 'ShelleyNodeToClientVersion'.
     ShelleyEncoderUnsupportedQuery
-         (SomeSecond BlockQuery (ShelleyBlock era))
+         (SomeQuery (BlockQuery (ShelleyBlock era)))
          ShelleyNodeToClientVersion
   deriving (Show)
 
@@ -156,12 +158,12 @@ instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock era) (SL.App
   decodeNodeToClient _ _ = fromCBOR
 
 instance ShelleyBasedEra era
-      => SerialiseNodeToClient (ShelleyBlock era) (SomeSecond BlockQuery (ShelleyBlock era)) where
-  encodeNodeToClient _ version (SomeSecond q)
+      => SerialiseNodeToClient (ShelleyBlock era) (SomeQuery (BlockQuery (ShelleyBlock era))) where
+  encodeNodeToClient _ version (SomeQuery q)
     | querySupportedVersion q version
     = encodeShelleyQuery q
     | otherwise
-    = throw $ ShelleyEncoderUnsupportedQuery (SomeSecond q) version
+    = throw $ ShelleyEncoderUnsupportedQuery (SomeQuery q) version
   decodeNodeToClient _ _ = decodeShelleyQuery
 
 instance ShelleyBasedEra era => SerialiseResult (ShelleyBlock era) (BlockQuery (ShelleyBlock era)) where

@@ -95,7 +95,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB,
+                     ReadsKeySets, RunAlsoLegacy (..), ledgerDbFlush)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
@@ -268,7 +269,7 @@ type TestConstraints blk =
   , LedgerSupportsProtocol            blk
   , InspectLedger                     blk
   , Eq (ChainDepState  (BlockProtocol blk))
-  , Eq (LedgerState                   blk)
+  , Eq (LedgerState                   blk EmptyMK)
   , Eq                                blk
   , Show                              blk
   , HasHeader                         blk
@@ -280,6 +281,10 @@ type TestConstraints blk =
   , ConvertRawHash                    blk
   , HasHardForkHistory                blk
   , SerialiseDiskConstraints          blk
+  , Show (LedgerState                 blk EmptyMK)
+  , InMemory (LedgerState             blk)
+  , ReadsKeySets Identity (LedgerState blk)
+  , Eq (LedgerTables (LedgerState blk) SeqDiffMK)
   )
 
 deriving instance (TestConstraints blk, Eq   it, Eq   flr)
@@ -347,7 +352,7 @@ run env@ChainDBEnv { varDB, .. } cmd =
       AddBlock blk             -> Point               <$> (advanceAndAdd st (blockSlot blk) blk)
       AddFutureBlock blk s     -> Point               <$> (advanceAndAdd st s               blk)
       GetCurrentChain          -> Chain               <$> atomically getCurrentChain
-      GetLedgerDB              -> LedgerDB            <$> atomically getLedgerDB
+      GetLedgerDB              -> LedgerDB . flush    <$> atomically getLedgerDB
       GetTipBlock              -> MbBlock             <$> getTipBlock
       GetTipHeader             -> MbHeader            <$> getTipHeader
       GetTipPoint              -> Point               <$> atomically getTipPoint
@@ -393,6 +398,33 @@ run env@ChainDBEnv { varDB, .. } cmd =
     giveWithEq :: a -> m (WithEq a)
     giveWithEq a =
       fmap (`WithEq` a) $ atomically $ stateTVar varNextId $ \i -> (i, succ i)
+
+-- | When the model is asked for the ledger DB, it reconstructs it by applying
+-- the blocks in the current chain, starting from the initial ledger state.
+-- Before the introduction of UTxO HD, this approach resulted in a ledger DB
+-- equivalent to the one maintained by the SUT. However, after UTxO HD, this is
+-- no longer the case since the ledger DB can be altered as the result of taking
+-- snapshots or opening the ledger DB (for instance when we process the
+-- 'WipeVolatileDB' command). Taking snapshots or opening the ledger DB cause
+-- the ledger DB to be flushed, which modifies its sequence of volatile and
+-- immutable states.
+--
+-- The model does not have information about when the flushes occur and it
+-- cannot infer that information in a reliable way since this depends on the low
+-- level details of operations such as opening the ledger DB. Therefore, we
+-- assume that the 'GetLedgerDB' command should return a flushed ledger DB, and
+-- we use this function to implement such command both in the SUT and in the
+-- model.
+--
+-- When we compare the SUT and model's ledger DBs, by flushing we are not
+-- comparing the immutable parts of the SUT and model's ledger DBs. However,
+-- this was already the case in before the introduction of UTxO HD: if the
+-- current chain contained more than K blocks, then the ledger states before the
+-- immutable tip were not compared by the 'GetLedgerDB' command.
+flush ::
+     (LedgerSupportsProtocol blk)
+  => LedgerDB (ExtLedgerState blk) -> LedgerDB (ExtLedgerState blk)
+flush = snd . ledgerDbFlush DbChangelogFlushAllImmutable
 
 persistBlks :: IOLike m => ShouldGarbageCollect -> ChainDB.Internal m blk -> m ()
 persistBlks collectGarbage ChainDB.Internal{..} = do
@@ -575,7 +607,7 @@ runPure cfg = \case
     AddBlock blk             -> ok  Point               $ update  (advanceAndAdd (blockSlot blk) blk)
     AddFutureBlock blk s     -> ok  Point               $ update  (advanceAndAdd s               blk)
     GetCurrentChain          -> ok  Chain               $ query   (Model.volatileChain k getHeader)
-    GetLedgerDB              -> ok  LedgerDB            $ query   (Model.getLedgerDB cfg)
+    GetLedgerDB              -> ok  LedgerDB            $ query   (flush . Model.getLedgerDB cfg)
     GetTipBlock              -> ok  MbBlock             $ query    Model.tipBlock
     GetTipHeader             -> ok  MbHeader            $ query   (fmap getHeader . Model.tipBlock)
     GetTipPoint              -> ok  Point               $ query    Model.tipPoint
@@ -688,7 +720,7 @@ deriving instance (TestConstraints blk, Show1 r) => Show (Model blk m r)
 
 -- | Initial model
 initModel :: TopLevelConfig blk
-          -> ExtLedgerState blk
+          -> ExtLedgerState blk EmptyMK
           -> MaxClockSkew
           -> Model blk m r
 initModel cfg initLedger (MaxClockSkew maxClockSkew) = Model
@@ -1117,7 +1149,7 @@ sm :: TestConstraints blk
    => ChainDBEnv IO blk
    -> BlockGen                  blk IO
    -> TopLevelConfig            blk
-   -> ExtLedgerState            blk
+   -> ExtLedgerState            blk     EmptyMK
    -> MaxClockSkew
    -> StateMachine (Model       blk IO)
                    (At Cmd      blk IO)
@@ -1188,7 +1220,7 @@ deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
                   , ToExpr (ChainDepState (BlockProtocol blk))
                   , ToExpr (TipInfo blk)
-                  , ToExpr (LedgerState blk)
+                  , ToExpr (LedgerState blk EmptyMK) -- TODO why not mk?
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (DBModel blk)
@@ -1196,7 +1228,7 @@ deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash  blk)
                   , ToExpr (ChainDepState (BlockProtocol blk))
                   , ToExpr (TipInfo blk)
-                  , ToExpr (LedgerState blk)
+                  , ToExpr (LedgerState blk EmptyMK) -- TODO why not mk?
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (Model blk IO Concrete)
@@ -1214,7 +1246,7 @@ deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
 deriving instance ToExpr (TipInfoIsEBB Blk)
-deriving instance ToExpr (LedgerState Blk)
+deriving instance ToExpr (LedgerState Blk EmptyMK)
 deriving instance ToExpr (HeaderError Blk)
 deriving instance ToExpr TestBlockOtherHeaderEnvelopeError
 deriving instance ToExpr (HeaderEnvelopeError Blk)
@@ -1616,7 +1648,7 @@ mkArgs :: IOLike m
        => TopLevelConfig Blk
        -> MaxClockSkew
        -> ImmutableDB.ChunkInfo
-       -> ExtLedgerState Blk
+       -> ExtLedgerState Blk EmptyMK
        -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
        -> StrictTVar m SlotNo
@@ -1640,7 +1672,7 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
     , cdbTopLevelConfig         = cfg
     , cdbChunkInfo              = chunkInfo
     , cdbCheckIntegrity         = testBlockIsValid
-    , cdbGenesis                = return initLedger
+    , cdbGenesis                = return (convertMapKind initLedger)
     , cdbCheckInFuture          = InFuture.miracle
                                     (readTVar varCurSlot)
                                     maxClockSkew
@@ -1654,6 +1686,9 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
       -- We don't run the background threads, so these are not used
     , cdbGcDelay                = 1
     , cdbGcInterval             = 1
+
+      -- UTxO HD scaffolding
+    , cdbLedgerRunAlsoLegacy    = RunBoth
     }
 
 tests :: TestTree

@@ -132,6 +132,9 @@ data HasFS m h = HasFS {
     -- | Check if the path exists and is a file
   , doesFileExist            :: HasCallStack => FsPath -> m Bool
 
+    -- | Remove the directory (which must exist) and its contents
+  , removeDirectoryRecursive :: HasCallStack => FsPath -> m ()
+
     -- | Remove the file (which must exist)
   , removeFile               :: HasCallStack => FsPath -> m ()
 
@@ -140,7 +143,7 @@ data HasFS m h = HasFS {
     -- the new one.
     --
     -- NOTE: only works for files within the same folder.
-  , renameFile                 :: HasCallStack => FsPath -> FsPath -> m ()
+  , renameFile               :: HasCallStack => FsPath -> FsPath -> m ()
 
     -- | Useful for better error reporting
   , mkFsErrorPath            :: FsPath -> FsErrorPath
