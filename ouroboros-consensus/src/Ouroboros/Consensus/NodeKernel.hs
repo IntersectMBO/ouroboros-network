@@ -572,6 +572,9 @@ forkBlockForging IS{..} blockForging =
                 currentSlot
                 (ledgerState unticked)
 
+        _ <- evaluate tickedLedgerState
+        trace $ TraceForgeTickedLedgerState currentSlot bcPrevPoint
+
         -- Get a snapshot of the mempool that is consistent with the ledger
         --
         -- NOTE: It is possible that due to adoption of new blocks the
@@ -579,13 +582,24 @@ forkBlockForging IS{..} blockForging =
         -- produce a block that fits onto the ledger we got above; if the
         -- ledger in the meantime changes, the block we produce here may or
         -- may not be adopted, but it won't be invalid.
-        mempoolSnapshot <- lift $ atomically $
-                             getSnapshotFor
-                               mempool
-                               (ForgeInKnownSlot
-                                  currentSlot
-                                  tickedLedgerState)
+        (mempoolHash, mempoolSlotNo, mempoolSnapshot) <- lift $ atomically $ do
+            (mempoolHash, mempoolSlotNo) <- do
+              snap <- getSnapshot mempool   -- only used for its tip-like information
+              let h :: ChainHash blk
+                  h = castHash $ getTipHash $ snapshotLedgerState snap
+              pure (h, snapshotSlotNo snap)
+
+            snap <- getSnapshotFor
+                      mempool
+                      (ForgeInKnownSlot currentSlot tickedLedgerState)
+            pure (mempoolHash, mempoolSlotNo, snap)
+
         let txs = map fst $ snapshotTxs mempoolSnapshot
+
+        -- force the mempool's computation before the tracer event
+        _ <- evaluate (length txs)
+        _ <- evaluate (snapshotLedgerState mempoolSnapshot)
+        trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
 
         -- Actually produce the block
         newBlock <- lift $

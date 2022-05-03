@@ -287,6 +287,18 @@ data TraceForgeEvent blk
     -- Mempool. This will be followed by TraceForgedBlock.
   | TraceNodeIsLeader SlotNo
 
+    -- | We ticked the ledger state for the slot of the to-be-forged block.
+    --
+    -- We record the current slot number and the point of the block we attempt
+    -- to connect the new block to.
+  | TraceForgeTickedLedgerState SlotNo (Point blk)
+
+    -- | We acquired a mempool snapshot.
+    --
+    -- We record the the point of the state we are starting from (ie the point
+    -- from 'TraceLedgerState') and point the mempool had most last synced wrt.
+  | TraceForgingMempoolSnapshot SlotNo (Point blk) (ChainHash blk) SlotNo
+
     -- | We forged a block
     --
     -- We record the current slot number, the point of the predecessor, the block
