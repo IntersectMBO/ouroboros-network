@@ -280,11 +280,11 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/haskell-lmdb
-  tag: 774fee77940591108a7142f8f1d3d41a1afd6e06
-  --sha256: sha256-JRqYxbHZbOHXF4PqAairfQD7T00sTN+YtjOO6oKojH0=
+  tag: d9ba8e382161aec999de12ae46e98c0eb83096b9
+  --sha256: 173dbqpn9czyjib6lnqa8f7ai66n3r4k44h5hvyl321ljychn5fm
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/lmdb-simple
   tag: 5b2c622c1cf43deca081139b2d1d1eb9fc991064
-  --sha256: sha256-xb/YBlhc4M3UZSV08fr9YioBTskYAw1uCI3a06s3d3w=
+  --sha256: 0n96rzj4901y0q2l1fb6ffjp1kvgqchliig9id6jaq05xn4v386s
