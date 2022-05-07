@@ -1,0 +1,50 @@
+name:                typed-protocols-stateful
+version:             0.1.0.0
+synopsis:            A framework for strongly typed protocols
+-- description:
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+copyright:           2022 Input Output (Hong Kong) Ltd.
+author:              Marcin Szamotulski
+maintainer:          marcin.szamotulski@iohk.io
+category:            Control
+build-type:          Simple
+
+-- These should probably be added at some point.
+-- extra-source-files:  ChangeLog.md, README.md
+
+cabal-version:       >=1.10
+
+library
+  exposed-modules:   Network.TypedProtocol.Stateful.Peer
+                   , Network.TypedProtocol.Stateful.Peer.Client
+                   , Network.TypedProtocol.Stateful.Peer.Server
+                   , Network.TypedProtocol.Stateful.Driver
+                   , Network.TypedProtocol.Stateful.Proofs
+                   , Network.TypedProtocol.Stateful.Codec
+
+  other-extensions:  GADTs
+                   , RankNTypes
+                   , PolyKinds
+                   , DataKinds
+                   , ScopedTypeVariables
+                   , TypeFamilies
+                   , TypeOperators
+                   , BangPatterns
+  build-depends:     base,
+                     singletons >= 3.0,
+                     io-classes,
+                     typed-protocols
+
+  hs-source-dirs:    src
+  default-language:  Haskell2010
+  ghc-options:       -Wall
+                     -Wno-unticked-promoted-constructors
+                     -Wcompat
+                     -Wincomplete-uni-patterns
+                     -Wincomplete-record-updates
+                     -Wpartial-fields
+                     -Widentities
+                     -Wredundant-constraints

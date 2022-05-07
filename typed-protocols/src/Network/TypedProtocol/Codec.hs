@@ -34,6 +34,9 @@ module Network.TypedProtocol.Codec
   , DecodeStep (..)
   , runDecoder
   , runDecoderPure
+  , hoistDecodeStep
+  , isoDecodeStep
+  , mapFailureDecodeStep
     -- ** Codec properties
   , AnyMessage (..)
   , prop_codecM
