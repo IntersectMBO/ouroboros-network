@@ -23,6 +23,7 @@ module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
   , chainSyncClientPeerPipelined
   , chainSyncClientPeerSender
   , mapChainSyncClientPipelined
+  , mapChainSyncClientPipelinedSt
   , F (..)
   , PipelinedTr
   , singPipelinedTr
@@ -51,8 +52,10 @@ newtype ChainSyncClientPipelined header point tip m a =
   }
 
 
+type PipelinedTr :: StNextKind -> Trans (ChainSync header point tip)
 type PipelinedTr k = Tr (StNext k) StIdle
-singPipelinedTr :: SingTrans (Tr (StNext StCanAwait) StIdle)
+
+singPipelinedTr :: SingTrans (PipelinedTr StCanAwait)
 singPipelinedTr = SingTr
 
 -- | Pipelined sender which starts in 'StIdle' state.  It can either
@@ -161,11 +164,11 @@ lemma_cons_snoc_proof _ (SingCons _) = Refl
 type        MapSt :: ChainSync header  point  tip
                   -> ChainSync header' point' tip'
 type family MapSt st = r where
-  MapSt  StIdle                = StIdle
-  MapSt (StNext (StCanAwait))  = StNext (StCanAwait)
-  MapSt (StNext (StMustReply)) = StNext (StMustReply)
-  MapSt  StIntersect           = StIntersect
-  MapSt  StDone                = StDone
+  MapSt  StIdle              = StIdle
+  MapSt (StNext StCanAwait)  = StNext (StCanAwait)
+  MapSt (StNext StMustReply) = StNext (StMustReply)
+  MapSt  StIntersect         = StIntersect
+  MapSt  StDone              = StDone
 
 type        MapTr :: Trans (ChainSync header  point  tip)
                   -> Trans (ChainSync header' point' tip')
@@ -360,6 +363,90 @@ mapChainSyncClientPipelined toPoint' toPoint toHeader toTip (ChainSyncClientPipe
             goIdle SingEmptyF <$> recvMsgIntersectNotFound (toTip tip')
         }
 
+
+-- | A stateful transition of a 'ChainSyncClientPipelined' client.
+--
+mapChainSyncClientPipelinedSt
+  :: forall header header' point point' tip tip' (m :: Type -> Type) state a.
+     Functor m
+  => (point -> point')
+  -> (point' -> point)
+  -> (tip' -> tip)
+  -> (state -> header' -> (header, state))
+  -- ^ called on very 'MsgRollForward'
+  -> (state -> point'  -> state)
+  -- ^ called on very 'MsgRollBackward'
+  -> state
+  -> ChainSyncClientPipelined header  point  tip  m a
+  -> ChainSyncClientPipelined header' point' tip' m a
+mapChainSyncClientPipelinedSt toPoint' toPoint toTip forwardStFn backwardStFn state0 (ChainSyncClientPipelined mInitialIdleClient)
+  = ChainSyncClientPipelined (goIdle SingEmptyF state0 <$> mInitialIdleClient)
+  where
+    goIdle :: forall (q :: Queue (ChainSync header point tip)).
+              SingQueueF F q
+           -> state
+           -> ClientPipelinedStIdle header  point  tip            q  m a
+           -> ClientPipelinedStIdle header' point' tip' (MapQueue q) m a
+
+    goIdle q state (SendMsgRequestNext next mNext) =
+        SendMsgRequestNext (goNext q state next) (goNext q state <$> mNext)
+
+    goIdle q state (SendMsgRequestNextPipelined idle) =
+          let idle'  :: ClientPipelinedStIdle
+                           header' point' tip'
+                           (MapQueue (q |> PipelinedTr StCanAwait))
+                           m a
+              idle' = goIdle (q |> FCanAwait) state idle
+
+              idle'' :: ClientPipelinedStIdle
+                           header' point' tip'
+                           (MapQueue q |> PipelinedTr StCanAwait)
+                           m a
+              idle'' = coerceClientPipelinedStIdle
+                         (toSingQueue q) singPipelinedTr idle'
+
+          in SendMsgRequestNextPipelined idle''
+    goIdle _ state (SendMsgFindIntersect points inter) =
+        SendMsgFindIntersect (toPoint' <$> points) (goIntersect state inter)
+
+    goIdle q@(SingConsF FCanAwait q') state (CollectResponse idleMay next) =
+        let idleMay' = fmap (goIdle q state) <$> idleMay
+            next'    = goNext q' state next
+        in CollectResponse idleMay' next'
+
+    goIdle q@(SingConsF FMustReply q') state (CollectResponse idleMay next) =
+        let idleMay'  = fmap (goIdle q state) <$> idleMay
+            next'     = goNext q' state next
+        in CollectResponse idleMay' next'
+
+    goIdle SingEmptyF _state (SendMsgDone a) = SendMsgDone a
+
+
+    goNext :: forall (q :: Queue (ChainSync header point tip)).
+              SingQueueF F q
+           -> state
+           -> ClientStNext header  point  tip            q  m a
+           -> ClientStNext header' point' tip' (MapQueue q) m a
+
+    goNext q state ClientStNext{ recvMsgRollForward, recvMsgRollBackward } = ClientStNext
+      { recvMsgRollForward = \header' tip' ->
+          case forwardStFn state header' of
+            (header, state') -> goIdle q state' <$> recvMsgRollForward header (toTip tip')
+      , recvMsgRollBackward = \point' tip' ->
+          let state' = backwardStFn state point' in
+          goIdle q state' <$> recvMsgRollBackward (toPoint point') (toTip tip')
+      }
+
+    goIntersect :: state
+                -> ClientPipelinedStIntersect header  point  tip  m a
+                -> ClientPipelinedStIntersect header' point' tip' m a
+    goIntersect state ClientPipelinedStIntersect{ recvMsgIntersectFound, recvMsgIntersectNotFound } =
+      ClientPipelinedStIntersect
+        { recvMsgIntersectFound = \point' tip' ->
+            goIdle SingEmptyF state <$> recvMsgIntersectFound (toPoint point') (toTip tip')
+        , recvMsgIntersectNotFound = \tip' ->
+            goIdle SingEmptyF state <$> recvMsgIntersectNotFound (toTip tip')
+        }
 
 --
 -- Pipelined Peer
