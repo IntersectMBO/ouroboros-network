@@ -9,6 +9,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
@@ -25,7 +26,6 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
     ChainDbView (..)
   , ChainSyncClientException (..)
   , ChainSyncClientResult (..)
-  , Consensus
   , Our (..)
   , Their (..)
   , bracketChainSyncClient
@@ -39,7 +39,6 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Client (
 import           Control.Monad
 import           Control.Monad.Except
 import           Control.Tracer
-import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
@@ -49,9 +48,10 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (unsafeNoThunks)
 
-import           Network.TypedProtocol.Pipelined
+import           Data.Type.Nat
+import           Data.Type.Queue
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
-                     AnchoredSeq (..))
+                     AnchoredSeq ((:>)))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
@@ -59,6 +59,7 @@ import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (HeaderMetricsTracer)
+import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
@@ -83,8 +84,13 @@ import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
                      InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
-type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
-   client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
+type ConsensusChainSync blk = ChainSync (Header blk) (Point blk) (Tip blk)
+
+type ClientPipelinedIdle blk q m
+  = ClientPipelinedStIdle (Header blk) (Point blk) (Tip blk) q m ChainSyncClientResult
+
+type ClientNext blk q m
+  = ClientStNext (Header blk) (Point blk) (Tip blk) q m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView {
@@ -433,7 +439,8 @@ chainSyncClient
     -> ControlMessageSTM m
     -> HeaderMetricsTracer m
     -> StrictTVar m (AnchoredFragment (Header blk))
-    -> Consensus ChainSyncClientPipelined blk m
+    -> ChainSyncClientPipelined (Header blk) (Point blk) (Tip blk) m
+                                ChainSyncClientResult
 chainSyncClient mkPipelineDecision0 tracer cfg
                 ChainDbView
                 { getCurrentChain
@@ -449,7 +456,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
   where
     -- | Start ChainSync by looking for an intersection between our current
     -- chain fragment and their chain.
-    initialise :: Stateful m blk () (ClientPipelinedStIdle 'Z)
+    initialise :: Stateful m () (ClientPipelinedIdle blk 'Empty m)
     initialise = findIntersection (ForkTooDeep GenesisPoint)
 
     -- | Try to find an intersection by sending points of our current chain to
@@ -460,7 +467,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     findIntersection
       :: (Our (Tip blk) -> Their (Tip blk) -> ChainSyncClientResult)
          -- ^ Exception to throw when no intersection is found.
-      -> Stateful m blk () (ClientPipelinedStIdle 'Z)
+      -> Stateful m () (ClientPipelinedIdle blk 'Empty m)
     findIntersection mkResult = Stateful $ \() -> do
       (ourFrag, ourHeaderStateHistory) <- atomically $ (,)
         <$> getCurrentChain
@@ -493,9 +500,9 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     -- point will become the new tip of the candidate chain.
     intersectFound :: Point blk  -- ^ Intersection
                    -> Their (Tip blk)
-                   -> Stateful m blk
+                   -> Stateful m
                         (UnknownIntersectionState blk)
-                        (ClientPipelinedStIdle 'Z)
+                        (ClientPipelinedIdle blk 'Empty m)
     intersectFound intersection theirTip
                  = Stateful $ \UnknownIntersectionState
                      { ourFrag
@@ -540,7 +547,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
                 , ourFrag                 = ourFrag
                 , mostRecentIntersection  = intersection
                 }
-        continueWithState kis $ nextStep mkPipelineDecision0 Zero theirTip
+        continueWithState kis $ nextStep mkPipelineDecision0 SingEmptyF theirTip
 
     -- | Look at the current chain fragment that may have been updated in the
     -- background. Check whether the candidate fragment still intersects with
@@ -620,11 +627,11 @@ chainSyncClient mkPipelineDecision0 tracer cfg
     -- This is also the place where we checked whether we're asked to terminate
     -- by the mux layer.
     nextStep :: MkPipelineDecision
-             -> Nat n
+             -> SingQueueF F q
              -> Their (Tip blk)
-             -> Stateful m blk
+             -> Stateful m
                   (KnownIntersectionState blk)
-                  (ClientPipelinedStIdle n)
+                  (ClientPipelinedIdle blk q m)
     nextStep mkPipelineDecision n theirTip = Stateful $ \kis -> do
       atomically controlMessageSTM >>= \case
         -- We have been asked to terminate the client
@@ -651,58 +658,71 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
     -- | "Drain the pipe": collect and discard all in-flight responses and
     -- finally execute the given action.
-    drainThePipe :: forall s n. NoThunks s
-                 => Nat n
-                 -> Stateful m blk s (ClientPipelinedStIdle 'Z)
-                 -> Stateful m blk s (ClientPipelinedStIdle n)
-    drainThePipe n0 m = Stateful $ go n0
+    drainThePipe :: forall s (q :: Queue (ConsensusChainSync blk)). NoThunks s
+                 => SingQueueF F q
+                 -> Stateful m s (ClientPipelinedIdle blk 'Empty m)
+                 -> Stateful m s (ClientPipelinedIdle blk q      m)
+    drainThePipe q0 m = Stateful $ go q0
       where
-        go :: forall n'. Nat n'
+        go :: forall q'. SingQueueF F q'
            -> s
-           -> m (Consensus (ClientPipelinedStIdle n') blk m)
-        go n s = case n of
-          Zero    -> continueWithState s m
-          Succ n' -> return $ CollectResponse Nothing $ ClientStNext
-            { recvMsgRollForward  = \_hdr _tip -> go n' s
-            , recvMsgRollBackward = \_pt  _tip -> go n' s
+           -> m (ClientPipelinedIdle blk q' m)
+        go q s = case q of
+          SingEmptyF     -> continueWithState s m
+          SingConsF FCanAwait q' -> return $ CollectResponse Nothing $ ClientStNext
+            { recvMsgRollForward  = \_hdr _tip -> go q' s
+            , recvMsgRollBackward = \_pt  _tip -> go q' s
+            }
+          SingConsF FMustReply q' -> return $ CollectResponse Nothing $ ClientStNext
+            { recvMsgRollForward  = \_hdr _tip -> go q' s
+            , recvMsgRollBackward = \_pt  _tip -> go q' s
             }
 
     requestNext :: KnownIntersectionState blk
                 -> MkPipelineDecision
-                -> Nat n
+                -> SingQueueF F q
                 -> Their (Tip blk)
                 -> WithOrigin BlockNo
-                -> Consensus (ClientPipelinedStIdle n) blk m
-    requestNext kis mkPipelineDecision n theirTip candTipBlockNo =
-        case (n, decision) of
-          (Zero, (Request, mkPipelineDecision')) ->
+                -> ClientPipelinedIdle blk q m
+    requestNext kis mkPipelineDecision q theirTip candTipBlockNo =
+        case (q, decision) of
+          (SingEmptyF, (Request, mkPipelineDecision')) ->
             SendMsgRequestNext
-              (handleNext kis mkPipelineDecision' Zero)
-              (return $ handleNext kis mkPipelineDecision' Zero) -- when we have to wait
+              (handleNext kis mkPipelineDecision' q)
+              (return $ handleNext kis mkPipelineDecision' q) -- when we have to wait
           (_, (Pipeline, mkPipelineDecision')) ->
             SendMsgRequestNextPipelined
-              (requestNext kis mkPipelineDecision' (Succ n) theirTip candTipBlockNo)
-          (Succ n', (CollectOrPipeline, mkPipelineDecision')) ->
+              (requestNext kis mkPipelineDecision' (q |> FCanAwait) theirTip candTipBlockNo)
+          (SingConsF FCanAwait q', (CollectOrPipeline, mkPipelineDecision')) ->
             CollectResponse
               (Just $ pure $ SendMsgRequestNextPipelined $
-                requestNext kis mkPipelineDecision' (Succ n) theirTip candTipBlockNo)
-              (handleNext kis mkPipelineDecision' n')
-          (Succ n', (Collect, mkPipelineDecision')) ->
+                requestNext kis mkPipelineDecision' (q |> FCanAwait) theirTip candTipBlockNo)
+              (handleNext kis mkPipelineDecision' q')
+          (SingConsF FMustReply q', (CollectOrPipeline, mkPipelineDecision')) ->
+            CollectResponse
+              (Just $ pure $ SendMsgRequestNextPipelined $
+                requestNext kis mkPipelineDecision' (q |> FCanAwait) theirTip candTipBlockNo)
+              (handleNext kis mkPipelineDecision' q')
+          (SingConsF FCanAwait q', (Collect, mkPipelineDecision')) ->
             CollectResponse
               Nothing
-              (handleNext kis mkPipelineDecision' n')
+              (handleNext kis mkPipelineDecision' q')
+          (SingConsF FMustReply q', (Collect, mkPipelineDecision')) ->
+            CollectResponse
+              Nothing
+              (handleNext kis mkPipelineDecision' q')
       where
         theirTipBlockNo = getTipBlockNo (unTheir theirTip)
         decision = runPipelineDecision
           mkPipelineDecision
-          n
+          (queueFDepthNat q)
           candTipBlockNo
           theirTipBlockNo
 
     handleNext :: KnownIntersectionState blk
                -> MkPipelineDecision
-               -> Nat n
-               -> Consensus (ClientStNext n) blk m
+               -> SingQueueF F q
+               -> ClientNext blk q m
     handleNext kis mkPipelineDecision n = ClientStNext
       { recvMsgRollForward  = \hdr theirTip -> do
           traceWith tracer $ TraceDownloadedHeader hdr
@@ -717,12 +737,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg
       }
 
     rollForward :: MkPipelineDecision
-                -> Nat n
+                -> SingQueueF F q
                 -> Header blk
                 -> Their (Tip blk)
-                -> Stateful m blk
+                -> Stateful m
                      (KnownIntersectionState blk)
-                     (ClientPipelinedStIdle n)
+                     (ClientPipelinedIdle blk q m)
     rollForward mkPipelineDecision n hdr theirTip
               = Stateful $ \kis -> traceException $ do
       now <- getMonotonicTime
@@ -835,12 +855,12 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           continueWithState kis'' $ nextStep mkPipelineDecision n theirTip
 
     rollBackward :: MkPipelineDecision
-                 -> Nat n
+                 -> SingQueueF F q
                  -> Point blk
                  -> Their (Tip blk)
-                 -> Stateful m blk
+                 -> Stateful m
                       (KnownIntersectionState blk)
-                      (ClientPipelinedStIdle n)
+                      (ClientPipelinedIdle blk q m)
     rollBackward mkPipelineDecision n rollBackPoint
                  theirTip
                = Stateful $ \KnownIntersectionState
@@ -904,13 +924,13 @@ chainSyncClient mkPipelineDecision0 tracer cfg
 
     -- | Gracefully terminate the connection with the upstream node with the
     -- given result.
-    terminate :: ChainSyncClientResult -> m (Consensus (ClientPipelinedStIdle 'Z) blk m)
+    terminate :: ChainSyncClientResult -> m (ClientPipelinedIdle blk 'Empty m)
     terminate res = do
       traceWith tracer (TraceTermination res)
       pure (SendMsgDone res)
 
     -- | Same as 'terminate', but first 'drainThePipe'.
-    terminateAfterDrain :: Nat n -> ChainSyncClientResult -> m (Consensus (ClientPipelinedStIdle n) blk m)
+    terminateAfterDrain :: SingQueueF F q -> ChainSyncClientResult -> m (ClientPipelinedIdle blk q m)
     terminateAfterDrain n result =
           continueWithState ()
         $ drainThePipe n
@@ -1057,10 +1077,10 @@ data IntersectCheck blk =
 -- at all times, but since we don't use a TVar to store it, we cannot reuse
 -- the existing infrastructure for checking TVars for NF. Instead, we make
 -- the state explicit in the types and do the check in 'continueWithState'.
-newtype Stateful m blk s st = Stateful (s -> m (Consensus st blk m))
+newtype Stateful m s a = Stateful (s -> m a)
 
-continueWithState :: forall m blk s st. NoThunks s
-                  => s -> Stateful m blk s st -> m (Consensus st blk m)
+continueWithState :: forall m s a. NoThunks s
+                  => s -> Stateful m s a -> m a
 continueWithState !s (Stateful f) =
     checkInvariant (show <$> unsafeNoThunks s) $ f s
 

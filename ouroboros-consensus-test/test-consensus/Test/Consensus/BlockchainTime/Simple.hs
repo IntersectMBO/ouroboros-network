@@ -441,6 +441,17 @@ instance MonadSTM m => MonadSTM (OverrideDelay m) where
   isFullTBQueue  = OverrideDelaySTM . lift . LazySTM.isFullTBQueue
   flushTBQueue   = OverrideDelaySTM . lift . LazySTM.flushTBQueue
 
+instance MonadLabelledSTM m => MonadLabelledSTM (OverrideDelay m) where
+  labelTVar v    = OverrideDelaySTM . lift . LazySTM.labelTVar v
+  labelTMVar v   = OverrideDelaySTM . lift . LazySTM.labelTMVar v
+  labelTQueue v  = OverrideDelaySTM . lift . LazySTM.labelTQueue v
+  labelTBQueue v = OverrideDelaySTM . lift . LazySTM.labelTBQueue v
+
+  labelTVarIO v    = OverrideDelay . lift . LazySTM.labelTVarIO v
+  labelTMVarIO v   = OverrideDelay . lift . LazySTM.labelTMVarIO v
+  labelTQueueIO v  = OverrideDelay . lift . LazySTM.labelTQueueIO v
+  labelTBQueueIO v = OverrideDelay . lift . LazySTM.labelTBQueueIO v
+
 newtype OverrideDelayAsync m a = OverrideDelayAsync {
     unOverrideDelayAsync :: Async m a
   }

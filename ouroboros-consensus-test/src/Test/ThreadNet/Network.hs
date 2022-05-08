@@ -48,6 +48,7 @@ import qualified Data.List as List
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Singletons
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
@@ -1319,8 +1320,10 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
     -- first step in process of one node diffusing a block to another node.
     chainSyncMiddle :: Lazy.ByteString -> m ()
     chainSyncMiddle bs = do
-        let tok = Codec.ServerAgency $ CS.TokNext CS.TokMustReply
-        decodeStep <- Codec.decode codec tok
+        decodeStep :: Codec.DecodeStep
+                        Lazy.ByteString DeserialiseFailure m
+                        (Codec.SomeMessage ('CS.StNext 'CS.StMustReply))
+          <- Codec.decode codec
         Codec.runDecoder [bs] decodeStep >>= \case
           Right (Codec.SomeMessage (CS.MsgRollForward hdr _tip)) -> do
               s <- OracularClock.getCurrentSlot clock
@@ -1370,8 +1373,9 @@ createConnectedChannelsWithDelay registry (client, server, proto) middle = do
           atomically $ MonadSTM.putTMVar b x
 
     chan q b = Channel
-        { recv = fmap Just $ atomically $ MonadSTM.takeTMVar b
-        , send = atomically . MonadSTM.writeTQueue q
+        { recv    = fmap Just $ atomically $ MonadSTM.takeTMVar b
+        , send    = atomically . MonadSTM.writeTQueue q
+        , tryRecv = fmap Just <$> (atomically $ MonadSTM.tryTakeTMVar b)
         }
 
 {-------------------------------------------------------------------------------

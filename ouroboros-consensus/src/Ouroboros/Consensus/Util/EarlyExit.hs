@@ -126,6 +126,17 @@ instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   newTMVarIO      = lift . newTMVarIO
   newEmptyTMVarIO = lift   newEmptyTMVarIO
 
+instance MonadLabelledSTM m => MonadLabelledSTM (WithEarlyExit m) where
+  labelTVar    = lift .: labelTVar
+  labelTMVar   = lift .: labelTMVar
+  labelTQueue  = lift .: labelTQueue
+  labelTBQueue = lift .: labelTBQueue
+
+  labelTVarIO    = lift .: labelTVarIO
+  labelTMVarIO   = lift .: labelTMVarIO
+  labelTQueueIO  = lift .: labelTQueueIO
+  labelTBQueueIO = lift .: labelTBQueueIO
+
 instance MonadCatch m => MonadThrow (WithEarlyExit m) where
   throwIO = lift . throwIO
 

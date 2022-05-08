@@ -328,6 +328,7 @@ library
 
                      , io-classes        >=0.2   && <0.3
                      , typed-protocols
+                     , typed-protocols-stateful
                      , network-mux
                      , ouroboros-network-framework
                      , ouroboros-network

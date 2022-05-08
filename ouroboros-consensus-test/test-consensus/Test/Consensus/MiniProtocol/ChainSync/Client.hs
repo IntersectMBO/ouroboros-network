@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -286,9 +287,12 @@ runChainSync securityParam (ClientUpdates clientUpdates)
           }
 
         client :: StrictTVar m (AnchoredFragment (Header TestBlock))
-               -> Consensus ChainSyncClientPipelined
-                    TestBlock
+               -> ChainSyncClientPipelined
+                    (Header TestBlock)
+                    (Point  TestBlock)
+                    (Tip    TestBlock)
                     m
+                    ChainSyncClientResult
         client = chainSyncClient
                    (pipelineDecisionLowHighMark 10 20)
                    chainSyncTracer
@@ -360,7 +364,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
              atomically $ modifyTVar varFinalCandidates $
                Map.insert serverId varCandidate
              (result, _) <-
-               runPipelinedPeer protocolTracer codecChainSyncId clientChannel $
+               runPeer protocolTracer codecChainSyncId clientChannel $
                  chainSyncClientPeerPipelined $ client varCandidate
              atomically $ writeTVar varClientResult (Just (Right result))
              return ()
