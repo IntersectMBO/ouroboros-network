@@ -20,6 +20,7 @@ import           Data.Time.Clock (DiffTime, NominalDiffTime, UTCTime,
                      addUTCTime, diffUTCTime)
 import qualified Data.Time.Clock as Time
 import           Data.Word (Word64)
+import           GHC.Clock (getMonotonicTimeNSec)
 import           GHC.Generics (Generic (..))
 
 -- | A point in time in a monotonic clock.
@@ -59,16 +60,13 @@ class MonadMonotonicTime m => MonadTime m where
 
 instance MonadMonotonicTime IO where
   getMonotonicTime =
-      fmap conv getMonotonicNSec
+      fmap conv getMonotonicTimeNSec
     where
       conv :: Word64 -> Time
       conv = Time . Time.picosecondsToDiffTime . (* 1000) . toInteger
 
 instance MonadTime IO where
   getCurrentTime = Time.getCurrentTime
-
-foreign import ccall unsafe "getMonotonicNSec"
-    getMonotonicNSec :: IO Word64
 
 --
 -- Instance for ReaderT
