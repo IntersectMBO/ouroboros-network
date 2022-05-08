@@ -1,8 +1,9 @@
 index-state: 2022-02-18T00:00:00Z
 
 packages: ./typed-protocols
-          ./typed-protocols-stateful
           ./typed-protocols-cborg
+          ./typed-protocols-stateful
+          ./typed-protocols-stateful-cborg
           ./typed-protocols-examples
           ./ouroboros-network-testing
           ./monoidal-synchronisation
