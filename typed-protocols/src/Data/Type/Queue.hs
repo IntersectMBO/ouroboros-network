@@ -10,12 +10,31 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
-{-# LANGUAGE TypeSynonymInstances     #-}
 {-# LANGUAGE ViewPatterns             #-}
 
 -- | Type level queues.
 --
-module Data.Type.Queue where
+module Data.Type.Queue
+  ( -- * Transitions
+    Trans (..)
+  , SingTrans (..)
+    -- * Queue
+  , Queue (..)
+  , type (|>)
+  , type (<|)
+    -- ** SingQueue singleton
+  , SingQueue (SingCons, SingEmpty, UnsafeSingQueue)
+  , singSingleton
+  , snoc
+  , uncons
+  , queueDepth
+    -- ** SingQueueF singleton
+  , SingQueueF (..)
+  , (|>)
+  , (<|)
+  , queueFDepth
+  , toSingQueue
+  ) where
 
 import           Data.Kind (Type)
 import           Unsafe.Coerce (unsafeCoerce)
