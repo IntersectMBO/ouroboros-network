@@ -27,6 +27,7 @@ library
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
                        Ouroboros.Network.Driver.Limits
+                       Ouroboros.Network.Driver.Stateful
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux
@@ -99,6 +100,8 @@ library
                      , ouroboros-network-testing
                      , strict-stm      >=0.1   && < 0.2
                      , typed-protocols >=0.1   && < 0.2
+                     , typed-protocols-stateful
+                                       >=0.1   && < 0.2
                      , typed-protocols-cborg
                                        >=0.1   && < 0.2
                      , Win32-network   >=0.1   && < 0.2
