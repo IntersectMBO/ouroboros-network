@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -10,6 +11,7 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Server (
   , chainSyncHeaderServerFollower
   , chainSyncHeadersServer
     -- * Trace events
+  , BlockingType (..)
   , TraceChainSyncServerEvent (..)
   ) where
 
@@ -26,6 +28,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.Enclose (Enclosing, Enclosing' (..),
+                     pattern FallingEdge)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
@@ -112,26 +116,31 @@ chainSyncServerForFollower tracer chainDB flr =
     handleRequestNext = ChainDB.followerInstruction flr >>= \case
       Just update -> do
         tip <- atomically $ ChainDB.getCurrentTip chainDB
-        traceWith tracer $
-          TraceChainSyncServerRead tip (point <$> update)
-        Left <$> sendNext tip update
+        let mkTraceEvent =
+              TraceChainSyncServerUpdate tip (point <$> update) NonBlocking
+        traceWith tracer $ mkTraceEvent RisingEdge
+        return $ Left $ sendNext mkTraceEvent tip update
       Nothing     -> return $ Right $ do
         -- Follower is at the head, we have to block and wait for the chain to
         -- change.
         update <- ChainDB.followerInstructionBlocking flr
         tip    <- atomically $ ChainDB.getCurrentTip chainDB
-        traceWith tracer $
-          TraceChainSyncServerReadBlocked tip (point <$> update)
-        sendNext tip update
+        let mkTraceEvent =
+              TraceChainSyncServerUpdate tip (point <$> update) Blocking
+        traceWith tracer $ mkTraceEvent RisingEdge
+        return $ sendNext mkTraceEvent tip update
 
-    sendNext :: Tip blk
+    sendNext :: (Enclosing -> TraceChainSyncServerEvent blk)
+             -> Tip blk
              -> ChainUpdate blk (WithPoint blk b)
-             -> m (ServerStNext b (Point blk) (Tip blk) m ())
-    sendNext tip update = case update of
-      AddBlock hdr -> do
-        traceWith tracer (TraceChainSyncRollForward (point hdr))
-        return $ SendMsgRollForward (withoutPoint hdr) tip idle'
-      RollBack pt  -> return $ SendMsgRollBackward pt tip idle'
+             -> ServerStNext b (Point blk) (Tip blk) m ()
+    sendNext mkTraceEvent tip = \case
+        AddBlock hdr -> SendMsgRollForward (withoutPoint hdr) tip traceThenIdle
+        RollBack pt  -> SendMsgRollBackward pt tip traceThenIdle
+      where
+        traceThenIdle = ChainSyncServer $ do
+          traceWith tracer $ mkTraceEvent FallingEdge
+          return idle
 
     handleFindIntersect :: [Point blk]
                         -> m (ServerStIntersect b (Point blk) (Tip blk) m ())
@@ -148,12 +157,19 @@ chainSyncServerForFollower tracer chainDB flr =
 -------------------------------------------------------------------------------}
 
 -- | Events traced by the Chain Sync Server.
---
--- The whole headers/blocks in the traced 'ChainUpdate' are substituted with
--- their corresponding 'Point'.
-data TraceChainSyncServerEvent blk
-  = TraceChainSyncServerRead        (Tip blk) (ChainUpdate blk (Point blk))
-  | TraceChainSyncServerReadBlocked (Tip blk) (ChainUpdate blk (Point blk))
-  | TraceChainSyncRollForward       (Point blk)
-  | TraceChainSyncRollBackward      (Point blk)
+data TraceChainSyncServerEvent blk =
+    -- | Send a 'ChainUpdate' message.
+    TraceChainSyncServerUpdate
+      (Tip blk)
+      -- ^ Tip of the currently selected chain.
+      (ChainUpdate blk (Point blk))
+      -- ^ The whole headers/blocks in the traced 'ChainUpdate' are substituted
+      -- with their corresponding 'Point'.
+      BlockingType
+      Enclosing
   deriving (Eq, Show)
+
+-- | Whether reading a ChainSync server update instruction was blocking or
+-- non-blocking.
+data BlockingType = Blocking | NonBlocking
+  deriving (Eq, Ord, Show)
