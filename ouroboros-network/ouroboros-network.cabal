@@ -212,7 +212,7 @@ library
                        text              >=1.2 && <1.3,
                        time              >=1.9.1 && <1.11
 
-library ouroboros-protocol-tests
+library protocol-tests
   hs-source-dirs:      protocol-tests
   default-language:    Haskell2010
   exposed-modules:     Ouroboros.Network.Protocol.BlockFetch.Direct
@@ -346,7 +346,7 @@ test-suite test
                        ouroboros-network-framework,
                        ouroboros-network-framework:testlib,
                        ouroboros-network-testing,
-                       ouroboros-protocol-tests,
+                       protocol-tests,
                        strict-stm,
                        typed-protocols,
                        typed-protocols-examples
@@ -395,7 +395,7 @@ test-suite cddl
                        typed-protocols,
                        ouroboros-network-framework,
                        ouroboros-network,
-                       ouroboros-protocol-tests
+                       protocol-tests
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
