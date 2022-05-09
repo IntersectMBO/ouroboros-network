@@ -221,11 +221,8 @@ library
 library protocol-tests
   hs-source-dirs:      protocol-tests
   default-language:    Haskell2010
-  exposed-modules:     Ouroboros.Network.Protocol.BlockFetch.Direct
-                       Ouroboros.Network.Protocol.BlockFetch.Examples
+  exposed-modules:     Ouroboros.Network.Protocol.BlockFetch.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Test
-                       Ouroboros.Network.Protocol.ChainSync.Direct
-                       Ouroboros.Network.Protocol.ChainSync.DirectPipelined
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
                        Ouroboros.Network.Protocol.Handshake.Direct
@@ -238,7 +235,6 @@ library protocol-tests
                        Ouroboros.Network.Protocol.LocalTxMonitor.Direct
                        Ouroboros.Network.Protocol.LocalTxMonitor.Examples
                        Ouroboros.Network.Protocol.LocalTxMonitor.Test
-                       Ouroboros.Network.Protocol.TxSubmission2.Direct
                        Ouroboros.Network.Protocol.TxSubmission2.Test
                        Ouroboros.Network.Protocol.TxSubmission2.Examples
                        Ouroboros.Network.Protocol.KeepAlive.Direct
@@ -257,6 +253,7 @@ library protocol-tests
                        QuickCheck,
                        quickcheck-instances,
                        serialise,
+                       singletons,
                        strict-containers,
                        tasty,
                        tasty-quickcheck,

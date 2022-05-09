@@ -14,6 +14,7 @@ import qualified Codec.Serialise as S
 import           Control.Monad (unless, void)
 import qualified Control.Monad.ST as ST
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Singletons
 import           Data.Word
 
 import           Control.Monad.Class.MonadAsync
@@ -26,8 +27,9 @@ import           Control.Tracer (nullTracer)
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Proofs (connect, connectPipelined)
+import           Network.TypedProtocol.Proofs (connect)
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
@@ -43,8 +45,6 @@ import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Protocol.ChainSync.Direct
-import           Ouroboros.Network.Protocol.ChainSync.DirectPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Examples (Client)
 import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
 import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as ChainSyncExamples
@@ -65,14 +65,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Protocol"
   [ testGroup "ChainSync"
-    [ testProperty "direct ST" propChainSyncDirectST
-    , testProperty "direct IO" propChainSyncDirectIO
-    , testProperty "connect ST" propChainSyncConnectST
+    [ testProperty "connect ST" propChainSyncConnectST
     , testProperty "connect IO" propChainSyncConnectIO
-    , testProperty "directPipelinedMax ST" propChainSyncPipeliendMaxDirectST
-    , testProperty "directPipelinedMax IO" propChainSyncPipeliendMaxDirectIO
-    , testProperty "directPipelinedMin ST" propChainSyncPipeliendMinDirectST
-    , testProperty "directPipelinedMin IO" propChainSyncPipeliendMinDirectIO
     , testProperty "connectPipelinedMax ST" propChainSyncPipelinedMaxConnectST
     , testProperty "connectPipelinedMin ST" propChainSyncPipelinedMinConnectST
     , testProperty "connectPipelinedMax IO" propChainSyncPipelinedMaxConnectIO
@@ -156,22 +150,13 @@ chainSyncForkExperiment run (ChainProducerStateForkTest cps chain) = do
   cchain <- atomically $ readTVar chainVar
   return (pchain === cchain)
 
-propChainSyncDirectST :: ChainProducerStateForkTest -> Property
-propChainSyncDirectST cps =
-    runSimOrThrow $
-      chainSyncForkExperiment ((fmap . fmap) void direct) cps
-
-propChainSyncDirectIO :: ChainProducerStateForkTest -> Property
-propChainSyncDirectIO cps =
-    ioProperty $
-      chainSyncForkExperiment ((fmap . fmap) void direct) cps
 
 propChainSyncConnectST :: ChainProducerStateForkTest -> Property
 propChainSyncConnectST cps =
     runSimOrThrow $
       chainSyncForkExperiment
         (\ser cli ->
-            void $ connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
+            void $ connect [] [] (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps
 
 propChainSyncConnectIO :: ChainProducerStateForkTest -> Property
@@ -179,7 +164,7 @@ propChainSyncConnectIO cps =
     ioProperty $
       chainSyncForkExperiment
         (\ser cli ->
-            void $  connect (chainSyncClientPeer cli) (chainSyncServerPeer ser)
+            void $  connect [] [] (chainSyncClientPeer cli) (chainSyncServerPeer ser)
         ) cps
 
 
@@ -222,46 +207,6 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
 -- Pipelined direct tests
 --
 
-propChainSyncPipeliendMaxDirectST :: ChainProducerStateForkTest
-                                  -> Positive Word32
-                                  -> Bool
-propChainSyncPipeliendMaxDirectST cps (Positive omax) =
-    runSimOrThrow $
-      chainSyncPipelinedForkExperiment
-        ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
-        cps
-
-propChainSyncPipeliendMaxDirectIO :: ChainProducerStateForkTest
-                                  -> Positive Word32
-                                  -> Property
-propChainSyncPipeliendMaxDirectIO cps (Positive omax) =
-    ioProperty $
-      chainSyncPipelinedForkExperiment
-        ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
-        cps
-
-propChainSyncPipeliendMinDirectST :: ChainProducerStateForkTest
-                                  -> Positive Word32
-                                  -> Bool
-propChainSyncPipeliendMinDirectST cps (Positive omax) =
-    runSimOrThrow $
-      chainSyncPipelinedForkExperiment
-        ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
-        cps
-
-propChainSyncPipeliendMinDirectIO :: ChainProducerStateForkTest
-                                  -> Positive Word32
-                                  -> Property
-propChainSyncPipeliendMinDirectIO cps (Positive omax) =
-    ioProperty $
-      chainSyncPipelinedForkExperiment
-        ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
-        cps
-
 --
 -- Pipelined connect tests
 --
@@ -274,8 +219,8 @@ propChainSyncPipelinedMaxConnectST cps choices (Positive omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
-            void $ connectPipelined
-              choices
+            void $ connect
+              choices []
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
@@ -291,8 +236,8 @@ propChainSyncPipelinedMinConnectST cps choices (Positive omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
-            void $ connectPipelined
-              choices
+            void $ connect
+              choices []
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
@@ -307,8 +252,8 @@ propChainSyncPipelinedMaxConnectIO cps choices (Positive omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
-            void $ connectPipelined
-              choices
+            void $ connect
+              choices []
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
@@ -323,49 +268,54 @@ propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
-            void $ connectPipelined
-              choices
+            void $ connect
+              choices []
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
         cps
 
-genChainSync :: Gen point
+genChainSync :: forall header point tip.
+                Gen point
              -> Gen header
              -> Gen tip
-             -> Gen (AnyMessageAndAgency (ChainSync header point tip))
+             -> Gen (AnyMessage (ChainSync header point tip))
 genChainSync genPoint genHeader genTip = oneof
-    [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
-    , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
+    [ return $ AnyMessage MsgRequestNext
+    , return $ AnyMessage MsgAwaitReply
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
+    , AnyMessage
         <$> (MsgRollForward <$> genHeader
-                            <*> genTip)
+                            <*> genTip
+              :: Gen (Message (ChainSync header point tip) (StNext StCanAwait) StIdle))
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
+    , AnyMessage 
         <$> (MsgRollForward <$> genHeader
-                            <*> genTip)
+                            <*> genTip
+              :: Gen (Message (ChainSync header point tip) (StNext StMustReply) StIdle))
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
+    , AnyMessage
         <$> (MsgRollBackward <$> genPoint
-                             <*> genTip)
+                             <*> genTip
+              :: Gen (Message (ChainSync header point tip) (StNext StCanAwait) StIdle))
 
-    , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
+    , AnyMessage
         <$> (MsgRollBackward <$> genPoint
-                             <*> genTip)
+                             <*> genTip
+              :: Gen (Message (ChainSync header point tip) (StNext StMustReply) StIdle))
 
-    , AnyMessageAndAgency (ClientAgency TokIdle) . MsgFindIntersect
+    , AnyMessage . MsgFindIntersect
         <$> listOf genPoint
 
-    , AnyMessageAndAgency (ServerAgency TokIntersect)
+    , AnyMessage
         <$> (MsgIntersectFound <$> genPoint
                                <*> genTip)
 
-    , AnyMessageAndAgency (ServerAgency TokIntersect)
+    , AnyMessage
         <$> (MsgIntersectNotFound <$> genTip)
 
-    , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
+    , return $ AnyMessage MsgDone
     ]
 
 
@@ -376,7 +326,7 @@ type ChainSync_BlockHeader =
 type ChainSync_Serialised_BlockHeader =
      ChainSync (Serialised BlockHeader) (Point BlockHeader) (Tip BlockHeader)
 
-instance Arbitrary (AnyMessageAndAgency ChainSync_BlockHeader) where
+instance Arbitrary (AnyMessage ChainSync_BlockHeader) where
   arbitrary = genChainSync arbitrary arbitrary genTip
     where
       genTip = f <$> arbitrary <*> arbitrary
@@ -384,7 +334,7 @@ instance Arbitrary (AnyMessageAndAgency ChainSync_BlockHeader) where
       f GenesisPoint _     = TipGenesis
       f (BlockPoint s h) b = Tip s h b
 
-instance Arbitrary (AnyMessageAndAgency ChainSync_Serialised_BlockHeader) where
+instance Arbitrary (AnyMessage ChainSync_Serialised_BlockHeader) where
   arbitrary = genChainSync (castPoint <$> genPoint)
                            (serialiseBlock <$> arbitrary)
                            genTip
@@ -439,13 +389,13 @@ codecWrapped =
                    (encodeTip S.encode)      (decodeTip S.decode)
 
 prop_codec_ChainSync
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_ChainSync msg =
     ST.runST $ prop_codecM codec msg
 
 prop_codec_splits2_ChainSync
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_splits2_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -454,7 +404,7 @@ prop_codec_splits2_ChainSync msg =
       msg
 
 prop_codec_splits3_ChainSync
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_splits3_ChainSync msg =
     ST.runST $ prop_codec_splitsM
@@ -463,13 +413,13 @@ prop_codec_splits3_ChainSync msg =
       msg
 
 prop_codec_cbor
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_cbor msg =
     ST.runST (prop_codec_cborM codec msg)
 
 prop_codec_valid_cbor
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 
@@ -486,13 +436,13 @@ codecSerialised = codecChainSync
     (encodeTip S.encode) (decodeTip S.decode)
 
 prop_codec_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_ChainSyncSerialised msg =
     ST.runST $ prop_codecM codecSerialised msg
 
 prop_codec_splits2_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_splits2_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
@@ -501,7 +451,7 @@ prop_codec_splits2_ChainSyncSerialised msg =
       msg
 
 prop_codec_splits3_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_splits3_ChainSyncSerialised msg =
     ST.runST $ prop_codec_splitsM
@@ -510,49 +460,58 @@ prop_codec_splits3_ChainSyncSerialised msg =
       msg
 
 prop_codec_cbor_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_cbor_ChainSyncSerialised msg =
     ST.runST (prop_codec_cborM codecSerialised msg)
 
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised
-  :: AnyMessageAndAgency ChainSync_BlockHeader
+  :: AnyMessage ChainSync_BlockHeader
   -> Bool
 prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
     ST.runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
       :: forall pr (stA :: ChainSync_BlockHeader).
-         PeerHasAgency pr stA
+         Sing (PeerHasAgency stA)
       -> SamePeerHasAgency pr ChainSync_Serialised_BlockHeader
-    stokEq (ClientAgency ca) = case ca of
-      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
-    stokEq (ServerAgency sa) = case sa of
-      TokNext k    -> SamePeerHasAgency $ ServerAgency (TokNext k)
-      TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
+    stokEq (SingClientHasAgency SingIdle) =
+      SamePeerHasAgency SingIdle
+    stokEq (SingServerHasAgency (SingNext SingCanAwait)) =
+      SamePeerHasAgency (SingNext SingCanAwait)
+    stokEq (SingServerHasAgency (SingNext SingMustReply)) =
+      SamePeerHasAgency (SingNext SingMustReply)
+    stokEq (SingServerHasAgency SingIntersect) =
+      SamePeerHasAgency SingIntersect
 
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync
-  :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader
+  :: AnyMessage ChainSync_Serialised_BlockHeader
   -> Bool
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
     ST.runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
       :: forall pr (stA :: ChainSync_Serialised_BlockHeader).
-         PeerHasAgency pr stA
+         Sing (PeerHasAgency stA)
       -> SamePeerHasAgency pr ChainSync_BlockHeader
-    stokEq (ClientAgency ca) = case ca of
-      TokIdle -> SamePeerHasAgency $ ClientAgency TokIdle
-    stokEq (ServerAgency sa) = case sa of
-      TokNext k    -> SamePeerHasAgency $ ServerAgency (TokNext k)
-      TokIntersect -> SamePeerHasAgency $ ServerAgency TokIntersect
+    stokEq (SingClientHasAgency SingIdle) =
+      SamePeerHasAgency SingIdle
+    stokEq (SingServerHasAgency (SingNext SingCanAwait)) =
+      SamePeerHasAgency (SingNext SingCanAwait)
+    stokEq (SingServerHasAgency (SingNext SingMustReply)) =
+      SamePeerHasAgency (SingNext SingMustReply)
+    stokEq (SingServerHasAgency SingIntersect) =
+      SamePeerHasAgency SingIntersect
 
 chainSyncDemo
   :: forall m.
-     ( MonadST m
+     ( MonadAsync m
+     , MonadMask m
+     , MonadST m
      , MonadSTM m
      , MonadFork m
      , MonadThrow m
+     , MonadThrow (STM m)
      )
   => Channel m ByteString
   -> Channel m ByteString
@@ -612,11 +571,13 @@ propChainSyncPipe cps =
 
 chainSyncDemoPipelined
   :: forall m.
-     ( MonadST    m
+     ( MonadMask  m
+     , MonadST    m
      , MonadSTM   m
      , MonadFork  m
      , MonadAsync m
      , MonadThrow m
+     , MonadThrow (STM m)
      , MonadSay   m
      )
   => Channel m ByteString
@@ -641,7 +602,7 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
 
   void $ forkIO (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))
-  void $ forkIO (void $ runPipelinedPeer nullTracer codec clientChan (chainSyncClientPeerPipelined client))
+  void $ forkIO (void $ runPeer nullTracer codec clientChan (chainSyncClientPeerPipelined client))
 
   atomically $ do
     done <- readTVar doneVar

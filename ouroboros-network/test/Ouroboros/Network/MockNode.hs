@@ -24,6 +24,7 @@ import           Data.Maybe (catMaybes)
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
+import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
@@ -33,6 +34,7 @@ import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Server (Server)
 
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Channel
@@ -269,10 +271,13 @@ forkRelayKernel upstream cpsVar = do
 -- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
 -- node to a core node.
 relayNode :: forall m block.
-             ( MonadSTM m
+             ( MonadAsync m
+             , MonadSTM m
              , MonadFork m
+             , MonadMask m
              , MonadTimer m
              , MonadThrow m
+             , MonadThrow (STM m)
              , MonadSay m
              , HasFullHeader block
              , Show block
@@ -314,7 +319,7 @@ relayNode _nid initChain chans = do
                                    consumer
       return chainVar
 
-    startProducer :: Peer (ChainSync block (Point block) (Tip block)) AsServer StIdle m ()
+    startProducer :: Server (ChainSync block (Point block) (Tip block)) pl Empty StIdle m (STM m) ()
                   -> Int
                   -> Channel m (AnyMessage (ChainSync block (Point block) (Tip block)))
                   -> m ()
@@ -385,9 +390,12 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 -- occupied, it will replace it with its block.
 --
 coreNode :: forall m.
-        ( MonadSTM m
+        ( MonadAsync m
+        , MonadSTM m
         , MonadFork m
+        , MonadMask m
         , MonadThrow m
+        , MonadThrow (STM m)
         , MonadTimer m
         , MonadSay m
         )

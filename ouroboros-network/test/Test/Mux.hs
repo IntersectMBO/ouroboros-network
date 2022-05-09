@@ -28,6 +28,8 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Peer.Client (Client)
+import           Network.TypedProtocol.Peer.Server (Server)
 
 import           Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
 import           Ouroboros.Network.ConnectionId
@@ -121,8 +123,8 @@ demo chain0 updates delay = do
                (encodeTip encode) (decodeTip decode))
             consumerPeer
 
-        consumerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
-                             AsClient ChainSync.StIdle m ()
+        consumerPeer :: Client (ChainSync.ChainSync block (Point block) (Tip block))
+                               'NonPipelined Empty ChainSync.StIdle m (STM m) ()
         consumerPeer = ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar))
@@ -139,8 +141,8 @@ demo chain0 updates delay = do
                (encodeTip encode) (decodeTip decode))
             producerPeer
 
-        producerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
-                        AsServer ChainSync.StIdle m ()
+        producerPeer :: Server (ChainSync.ChainSync block (Point block) (Tip block))
+                               'NonPipelined Empty ChainSync.StIdle m (STM m) ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
 
     let clientBearer = Mx.queuesAsMuxBearer activeTracer client_w client_r sduLen

@@ -228,7 +228,7 @@ txSubmissionSimulation maxUnacked outboundTxs
                 (txSubmissionClientPeer (outboundPeer outboundMempool))
 
     inboundAsync <-
-      async $ runPipelinedPeerWithLimits
+      async $ runPeerWithLimits
                 (("INBOUND",) `contramap` verboseTracer)
                 txSubmissionCodec2
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))

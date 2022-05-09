@@ -1,11 +1,14 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Test
@@ -22,7 +25,9 @@ import qualified Data.Map as Map
 
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Control.Monad.Class.MonadSTM (MonadLabelledSTM, STM)
+import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
+                   MonadThrow)
 import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
@@ -30,11 +35,14 @@ import           Control.Tracer (nullTracer)
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Codec hiding (prop_codec)
-import           Network.TypedProtocol.Proofs
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Codec (AnyMessage (..))
+import           Network.TypedProtocol.Stateful.Codec (Codec (..))
+import qualified Network.TypedProtocol.Stateful.Codec as Stateful
+import           Network.TypedProtocol.Stateful.Proofs as Stateful
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Driver.Stateful (runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.MockChain.Chain (Point)
@@ -48,8 +56,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Test.ChainGenerators ()
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_st_cborM,
+                     prop_codec_st_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck as QC hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -165,13 +173,15 @@ prop_connect :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (P
              -> Property
 prop_connect input =
     case runSimOrThrow
-           (connect
+           (connect [] [] StateIdle
              (localStateQueryClientPeer $
               localStateQueryClient clientInput)
              (localStateQueryServerPeer $
               localStateQueryServer serverAcquire serverAnswer)) of
 
-      (result, (), TerminalStates TokDone TokDone) -> result === expected
+      (result, (), TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
+                                  (SingProtocolState SingDone) ReflNobodyAgency) ->
+        result === expected
   where
     Setup { clientInput, serverAcquire, serverAnswer, expected } = mkSetup input
 
@@ -184,23 +194,28 @@ prop_connect input =
 --
 prop_channel :: ( MonadAsync m
                 , MonadCatch m
+                , MonadLabelledSTM m
                 , MonadST m
+                , MonadMask  m
+                , MonadThrow m
+                , MonadThrow (STM m)
                 )
              => m (Channel m ByteString, Channel m ByteString)
              -> Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
              -> m Property
-prop_channel createChannels input =
-
-    ((expected, ()) ===) <$>
-
-    runConnectedPeers
-      createChannels
-      nullTracer
-      (codec True)
-      (localStateQueryClientPeer $
-       localStateQueryClient clientInput)
-      (localStateQueryServerPeer $
-       localStateQueryServer serverAcquire serverAnswer)
+prop_channel createChannels input = do
+    r <-
+      runConnectedPeers
+        createChannels
+        nullTracer
+        (codec True)
+        StateIdle
+        (localStateQueryClientPeer $
+         localStateQueryClient clientInput)
+        (localStateQueryServerPeer $
+         localStateQueryServer serverAcquire serverAnswer)
+    return $ case r of
+      (result, ()) -> result === expected
   where
     Setup { clientInput, serverAcquire, serverAnswer, expected } = mkSetup input
 
@@ -240,50 +255,42 @@ instance Arbitrary AcquireFailure where
 instance Arbitrary (Query (Maybe (Point Block))) where
   arbitrary = pure QueryPoint
 
-instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)) where
+instance Arbitrary (Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State) where
   arbitrary = oneof
-    [ getAnyMessageAndAgencyV7 <$> arbitrary
+    [ getAnyMessageV7 <$> arbitrary
 
-    , pure $ AnyMessageAndAgency (ClientAgency TokIdle)
-        (MsgAcquire Nothing)
+    , pure $ Stateful.AnyMessage StateIdle StateAcquiring (MsgAcquire Nothing)
 
-    , pure $ AnyMessageAndAgency (ClientAgency TokAcquired)
-        (MsgReAcquire Nothing)
+    , pure $ Stateful.AnyMessage StateAcquired StateAcquiring (MsgReAcquire Nothing)
     ]
 
 -- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
 --
-newtype AnyMessageAndAgencyV7 = AnyMessageAndAgencyV7 {
-    getAnyMessageAndAgencyV7
-      :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+newtype AnyMessageV7 = AnyMessageV7 {
+    getAnyMessageV7
+      :: Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State
   }
-  deriving Show
 
-instance Arbitrary AnyMessageAndAgencyV7 where
-  arbitrary = AnyMessageAndAgencyV7 <$> oneof
-    [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        (MsgAcquire . Just <$> arbitrary)
+instance Arbitrary AnyMessageV7 where
+  arbitrary = AnyMessageV7 <$> oneof
+    [ Stateful.AnyMessage StateIdle StateAcquiring <$> (MsgAcquire . Just <$> arbitrary)
 
-    , AnyMessageAndAgency (ServerAgency TokAcquiring) <$>
-        pure MsgAcquired
+    , pure (Stateful.AnyMessage StateAcquiring StateAcquired MsgAcquired)
 
-    , AnyMessageAndAgency (ServerAgency TokAcquiring) <$>
-        (MsgFailure <$> arbitrary)
+    , Stateful.AnyMessage StateAcquiring StateIdle <$> (MsgFailure <$> arbitrary)
 
-    , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgQuery <$> (arbitrary :: Gen (Query (Maybe (Point Block)))))
+    , (\query -> Stateful.AnyMessage StateAcquired (StateQuerying query) (MsgQuery query))
+      <$> (arbitrary :: Gen (Query (Maybe (Point Block))))
 
-    , AnyMessageAndAgency (ServerAgency (TokQuerying QueryPoint)) <$>
-        (MsgResult QueryPoint <$> arbitrary)
+    , Stateful.AnyMessage (StateQuerying QueryPoint) StateAcquired
+      <$> (MsgResult QueryPoint <$> arbitrary)
 
-    , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        pure MsgRelease
+    , pure (Stateful.AnyMessage StateAcquired StateIdle MsgRelease)
 
-    , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgReAcquire . Just <$> arbitrary)
+    , Stateful.AnyMessage StateAcquired StateAcquiring
+      <$> (MsgReAcquire . Just <$> arbitrary)
 
-    , AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        pure MsgDone
+    , pure (Stateful.AnyMessage StateIdle StateDone MsgDone)
     ]
 
 
@@ -327,6 +334,7 @@ codec :: MonadST m
       => Bool
       -> Codec (LocalStateQuery Block (Point Block) Query)
                 DeserialiseFailure
+                State
                 m ByteString
 codec canAcquireTip =
     codecLocalStateQuery
@@ -352,42 +360,42 @@ codec canAcquireTip =
 -- | Check the codec round trip property.
 --
 prop_codec
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: Blind (Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State)
   -> Bool
-prop_codec msg =
-  runST (prop_codecM (codec True) msg)
+prop_codec (Blind msg) =
+  runST (Stateful.prop_codecM (codec True) msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
 prop_codec_splits2
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: Blind (Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State)
   -> Bool
-prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 (codec True) msg)
+prop_codec_splits2 (Blind msg) =
+  runST (Stateful.prop_codec_splitsM splits2 (codec True) msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
 prop_codec_splits3
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: Blind (Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State)
   -> Bool
-prop_codec_splits3 msg =
-  runST (prop_codec_splitsM splits3 (codec True) msg)
+prop_codec_splits3 (Blind msg) =
+  runST (Stateful.prop_codec_splitsM splits3 (codec True) msg)
 
 prop_codec_cbor
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: Blind (Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State)
   -> Bool
-prop_codec_cbor msg =
-  runST (prop_codec_cborM (codec True) msg)
+prop_codec_cbor (Blind msg) =
+  runST (prop_codec_st_cborM (codec True) msg)
 
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: Blind (Stateful.AnyMessage (LocalStateQuery Block (Point Block) Query) State)
   -> Property
-prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codec True)
+prop_codec_valid_cbor (Blind msg) = prop_codec_st_valid_cbor_encoding (codec True) msg
 
 prop_codec_V7_compatible
-  :: AnyMessageAndAgencyV7
+  :: Blind AnyMessageV7
   -> Bool
-prop_codec_V7_compatible (AnyMessageAndAgencyV7 msg) =
-    runST (prop_codecs_compatM (codec False) (codec True) msg)
+prop_codec_V7_compatible (Blind (AnyMessageV7 msg)) =
+    runST (Stateful.prop_codecs_compatM (codec False) (codec True) msg)

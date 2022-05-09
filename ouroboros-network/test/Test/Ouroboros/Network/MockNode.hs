@@ -25,6 +25,7 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
@@ -127,9 +128,12 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
     slotDuration' :: DiffTime
     slotDuration' = fromIntegral slotDuration
 
-coreToRelaySim :: ( MonadSTM m
+coreToRelaySim :: ( MonadAsync m
+                  , MonadSTM m
                   , MonadFork m
+                  , MonadMask m
                   , MonadThrow m
+                  , MonadThrow (STM m)
                   , MonadSay m
                   , MonadTime m
                   , MonadTimer m
@@ -207,9 +211,12 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
       else mchain1 === Just chain
 
 -- Node graph: c → r → r
-coreToRelaySim2 :: ( MonadSTM m
+coreToRelaySim2 :: ( MonadAsync m
+                   , MonadSTM m
                    , MonadFork m
+                   , MonadMask m
                    , MonadThrow m
+                   , MonadThrow (STM m)
                    , MonadSay m
                    , MonadTime m
                    , MonadTimer m
@@ -304,9 +311,12 @@ instance Arbitrary TestNetworkGraph where
         [ TestNetworkGraph g cs' | cs' <- shrinkList (:[]) cs, not (null cs') ]
 
 networkGraphSim :: forall m.
-                  ( MonadSTM m
+                  ( MonadAsync m
+                 ,  MonadSTM m
                   , MonadFork m
+                  , MonadMask m
                   , MonadThrow m
+                  , MonadThrow (STM m)
                   , MonadSay m
                   , MonadTime m
                   , MonadTimer m
