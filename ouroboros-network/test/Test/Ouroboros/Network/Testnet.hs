@@ -267,7 +267,7 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
                 @NtNAddr
              . Trace.fromList (MainReturn (Time 0) () [])
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 500000
+             . take 125000
              . traceEvents
              $ runSimTrace sim
 
@@ -351,7 +351,7 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
                 @NtNAddr
              . Trace.fromList (MainReturn (Time 0) () [])
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 500000
+             . take 125000
              . traceEvents
              $ runSimTrace sim
 
@@ -386,7 +386,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
                 @NtNAddr
              . Trace.fromList (MainReturn (Time 0) () [])
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 500000
+             . take 125000
              . traceEvents
              $ runSimTrace sim
 
@@ -455,7 +455,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
                 @NtNAddr
              . Trace.fromList (MainReturn (Time 0) () [])
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 500000
+             . take 125000
              . traceEvents
              $ runSimTrace sim
 
@@ -489,7 +489,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
                 @NtNAddr
              . Trace.fromList (MainReturn (Time 0) () [])
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 500000
+             . take 125000
              . traceEvents
              $ runSimTrace sim
 
@@ -529,7 +529,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
                 @NtNAddr
              . Trace.fromList (MainReturn (Time 0) () [])
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 500000
+             . take 125000
              . traceEvents
              $ runSimTrace sim
 
@@ -571,7 +571,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
                 @NtNAddr
              . Trace.fromList (MainReturn (Time 0) () [])
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 500000
+             . take 125000
              . traceEvents
              $ runSimTrace sim
 
