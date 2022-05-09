@@ -203,8 +203,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 20bd513b7ac9dcf0749f0ceb1df3d6b07a1b57c8
-  --sha256: 0pkcd3k2fpk76igfyaf7cqrcglnjs3rs9pka68wpkyp6z7qkixmz
+  tag: 8fe904d629194b1fbaaf2d0a4e0ccd17052e9103
+  --sha256: sha256-5B5lJFfUm4jbCBQtqTMvtiY2AWtnsN/1TYftAglT38A=
   subdir:
     base-deriving-via
     binary
@@ -219,8 +219,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 8bc5ee79af8617777845d7c5ff5c5ebedef8dac3
-  --sha256: sha256-yxtnSZSJefkxXgVJqySMfFk++ebU7LZzlfZpn9K3Oz8=
+  tag: f93968eb84bdf248bbff85f3bb6632d51dd679e8
+  --sha256: 0fjjf8vmcqhm37sdr6nrcbg5w2s4ybppg53fgnxjz7pygvm0pagl
   subdir:
     eras/alonzo/impl
     eras/alonzo/test-suite
