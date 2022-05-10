@@ -87,7 +87,7 @@ import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 
 {-------------------------------------------------------------------------------
-  The eras of the Cardano bock chain
+  The eras of the Cardano blockchain
 -------------------------------------------------------------------------------}
 
 -- | The eras in the Cardano blockchain.
