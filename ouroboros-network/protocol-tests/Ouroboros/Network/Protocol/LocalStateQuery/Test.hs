@@ -179,8 +179,8 @@ prop_connect input =
              (localStateQueryServerPeer $
               localStateQueryServer serverAcquire serverAnswer)) of
 
-      (result, (), TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
-                                  (SingProtocolState SingDone) ReflNobodyAgency) ->
+      (result, (), TerminalStates SingDone ReflNobodyAgency
+                                  SingDone ReflNobodyAgency) ->
         result === expected
   where
     Setup { clientInput, serverAcquire, serverAnswer, expected } = mkSetup input

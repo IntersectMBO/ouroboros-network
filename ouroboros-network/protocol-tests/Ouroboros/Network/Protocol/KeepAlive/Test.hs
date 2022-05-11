@@ -90,8 +90,8 @@ prop_connect f (NonNegative n) =
             (keepAliveServerPeer   keepAliveServerCount)
             (keepAliveClientPeer $ keepAliveClientApply f 0 n))
 
-     of (s, c, TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
-                              (SingProtocolState SingDone) ReflNobodyAgency) ->
+     of (s, c, TerminalStates SingDone ReflNobodyAgency
+                              SingDone ReflNobodyAgency) ->
           (s, c) == (n, foldr (.) id (replicate n f) 0)
 
 --
@@ -171,7 +171,7 @@ prop_byteLimits :: AnyMessage KeepAlive
                 -> Bool
 prop_byteLimits (AnyMessage (msg :: Message KeepAlive st st')) =
         dataSize (encode msg)
-     <= sizeLimitForState (sing :: SingPeerHasAgency st)
+     <= sizeLimitForState (sing :: Sing st)
   where
     Codec { encode } = (codecKeepAlive_v2 :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString)
     ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive (fromIntegral . BL.length)

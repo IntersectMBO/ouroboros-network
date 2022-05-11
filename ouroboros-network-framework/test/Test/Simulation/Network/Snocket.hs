@@ -134,22 +134,24 @@ codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
       <> CBOR.encodeWord 3
 
     decodeMsg :: forall s (st :: ReqResp req resp).
-                 SingI (PeerHasAgency st)
-              => CBOR.Decoder s (SomeMessage st)
-    decodeMsg = do
+                 ActiveState st
+              => Sing st
+              -> CBOR.Decoder s (SomeMessage st)
+    decodeMsg stok = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
-      case (sing :: Sing (PeerHasAgency st), len, key) of
-        (SingClientHasAgency SingIdle, 2, 1) -> do
+      case (stok, len, key) of
+        (SingIdle, 2, 1) -> do
           payload <- Serialise.decode
           return (SomeMessage $ MsgReq payload)
-        (SingServerHasAgency SingBusy, 2, 2) -> do
+        (SingBusy, 2, 2) -> do
           payload <- Serialise.decode
           return (SomeMessage $ MsgResp payload)
-        (SingClientHasAgency SingIdle, 1, 3) ->
+        (SingIdle, 1, 3) ->
           return (SomeMessage MsgDone)
-        (SingClientHasAgency SingIdle, _, _) -> fail (printf "codecReqResp.StIdle: unexpected key (%d, %d)" key len)
-        (SingServerHasAgency SingBusy, _, _) -> fail (printf "codecReqResp.StBusy: unexpected key (%d, %d)" key len)
+        (SingIdle, _, _) -> fail (printf "codecReqResp.StIdle: unexpected key (%d, %d)" key len)
+        (SingBusy, _, _) -> fail (printf "codecReqResp.StBusy: unexpected key (%d, %d)" key len)
+        (SingDone, _, _) -> notActiveState stok
 
 
 untilSuccess :: ( MonadCatch m

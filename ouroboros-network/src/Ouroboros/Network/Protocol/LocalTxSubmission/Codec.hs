@@ -60,27 +60,31 @@ codecLocalTxSubmission encodeTx decodeTx encodeReject decodeReject =
 
 
     decode :: forall s (st :: LocalTxSubmission tx reject).
-              SingI (PeerHasAgency st)
-           => CBOR.Decoder s (SomeMessage st)
-    decode = do
+              ActiveState st
+           => Sing st
+           -> CBOR.Decoder s (SomeMessage st)
+    decode stok = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
-      case (sing :: Sing (PeerHasAgency st), len, key) of
-        (SingClientHasAgency SingIdle, 2, 0) -> do
+      case (stok, len, key) of
+        (SingIdle, 2, 0) -> do
           tx <- decodeTx
           return (SomeMessage (MsgSubmitTx tx))
 
-        (SingServerHasAgency SingBusy, 1, 1) ->
+        (SingBusy, 1, 1) ->
           return (SomeMessage MsgAcceptTx)
 
-        (SingServerHasAgency SingBusy, 2, 2) -> do
+        (SingBusy, 2, 2) -> do
           reject <- decodeReject
           return (SomeMessage (MsgRejectTx reject))
 
-        (SingClientHasAgency SingIdle, 1, 3) ->
+        (SingIdle, 1, 3) ->
           return (SomeMessage MsgDone)
 
-        (stok, _, _) -> fail (printf "codecLocalTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        (SingDone, _, _) -> notActiveState stok
+
+        (_, _, _) -> fail (printf "codecLocalTxSubmission (%s, %s) unexpected key (%d, %d)"
+                                  (show (activeAgency :: ActiveAgency st)) (show stok) key len)
 
 codecLocalTxSubmissionId
   :: forall tx reject m.
@@ -92,20 +96,23 @@ codecLocalTxSubmissionId =
     Codec encode decode
   where
     encode :: forall st st'.
-              SingI (PeerHasAgency st)
+              ActiveState st
+           => SingI st
            => Message (LocalTxSubmission tx reject) st st'
            -> AnyMessage (LocalTxSubmission tx reject)
     encode = AnyMessage
 
     decode :: forall (st :: LocalTxSubmission tx reject).
-              SingI (PeerHasAgency st)
-           => m (DecodeStep (AnyMessage (LocalTxSubmission tx reject))
+              ActiveState st
+           => Sing st
+           -> m (DecodeStep (AnyMessage (LocalTxSubmission tx reject))
                             CodecFailure m (SomeMessage st))
-    decode = return $ DecodePartial $ \bytes -> case (sing :: Sing (PeerHasAgency st), bytes) of
-      (SingClientHasAgency SingIdle, Just (AnyMessage msg@(MsgSubmitTx{}))) -> res msg
-      (SingServerHasAgency SingBusy, Just (AnyMessage msg@(MsgAcceptTx{}))) -> res msg
-      (SingServerHasAgency SingBusy, Just (AnyMessage msg@(MsgRejectTx{}))) -> res msg
-      (SingClientHasAgency SingIdle, Just (AnyMessage msg@(MsgDone{})))     -> res msg
+    decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
+      (SingIdle, Just (AnyMessage msg@(MsgSubmitTx{}))) -> res msg
+      (SingBusy, Just (AnyMessage msg@(MsgAcceptTx{}))) -> res msg
+      (SingBusy, Just (AnyMessage msg@(MsgRejectTx{}))) -> res msg
+      (SingIdle, Just (AnyMessage msg@(MsgDone{})))     -> res msg
+      (SingDone, _)                                     -> notActiveState stok
       (_, Nothing) -> return (DecodeFail CodecFailureOutOfInput)
       (_, _)       -> return (DecodeFail (CodecFailure failmsg))
     res msg = return (DecodeDone (SomeMessage msg) Nothing)

@@ -545,8 +545,8 @@ prop_encodeLocalStateQuery spec (Blind msg) =
 
 
 data SomeAgency ps where
-    SomeAgency :: SingI (PeerHasAgency st)
-               => SingPeerHasAgency (st :: ps)
+    SomeAgency :: ActiveState st
+               => Sing (st :: ps)
                -> SomeAgency ps
 
 
@@ -591,8 +591,8 @@ validateDecoder transform (CDDLSpec spec) codec stoks rounds = do
 
 
 data SomeAgencySt ps f where
-    SomeAgencySt :: SingI (PeerHasAgency st)
-                 => SingPeerHasAgency (st :: ps)
+    SomeAgencySt :: ActiveState st
+                 => Sing (st :: ps)
                  -> f st
                  -> SomeAgencySt ps f
 
@@ -662,8 +662,8 @@ decodeMsg :: forall ps.
 decodeMsg codec stoks bs =
     -- sequence [Nothing, ...] = Nothing
     fmap (sequence :: [Maybe CBOR.DeserialiseFailure] -> Maybe [CBOR.DeserialiseFailure]) $
-    forM stoks $ \(SomeAgency (_ :: SingPeerHasAgency st)) -> do
-        decoder <- (decode codec :: IO (DecodeStep BL.ByteString CBOR.DeserialiseFailure IO (SomeMessage st)))
+    forM stoks $ \(SomeAgency (stok :: Sing st)) -> do
+        decoder <- (decode codec stok :: IO (DecodeStep BL.ByteString CBOR.DeserialiseFailure IO (SomeMessage st)))
         res <- runDecoder [bs] decoder
         return $ case res of
           Left err -> Just err
@@ -678,8 +678,8 @@ decodeMsgSt :: forall ps f.
 decodeMsgSt codec stoks bs =
     -- sequence [Nothing, ...] = Nothing
     fmap (sequence :: [Maybe CBOR.DeserialiseFailure] -> Maybe [CBOR.DeserialiseFailure]) $
-    forM stoks $ \(SomeAgencySt (_ :: SingPeerHasAgency st) f) -> do
-        decoder <- (Stateful.decode codec f :: IO (DecodeStep BL.ByteString CBOR.DeserialiseFailure IO (SomeMessage st)))
+    forM stoks $ \(SomeAgencySt (stok :: Sing st) f) -> do
+        decoder <- (Stateful.decode codec stok f :: IO (DecodeStep BL.ByteString CBOR.DeserialiseFailure IO (SomeMessage st)))
         res <- runDecoder [bs] decoder
         return $ case res of
           Left err -> Just err
@@ -691,8 +691,8 @@ unit_decodeHandshakeNodeToNode
 unit_decodeHandshakeNodeToNode spec =
     validateDecoder (Just handshakeFix)
       spec nodeToNodeHandshakeCodec
-      [ SomeAgency $ SingClientHasAgency Handshake.SingPropose
-      , SomeAgency $ SingServerHasAgency Handshake.SingConfirm
+      [ SomeAgency Handshake.SingPropose
+      , SomeAgency Handshake.SingConfirm
       ]
       100
 
@@ -703,8 +703,8 @@ unit_decodeHandshakeNodeToClient
 unit_decodeHandshakeNodeToClient spec =
     validateDecoder (Just handshakeFix)
       spec nodeToClientHandshakeCodec
-      [ SomeAgency $ SingClientHasAgency Handshake.SingPropose
-      , SomeAgency $ SingServerHasAgency Handshake.SingConfirm
+      [ SomeAgency Handshake.SingPropose
+      , SomeAgency Handshake.SingConfirm
       ]
       100
 
@@ -715,10 +715,10 @@ unit_decodeChainSync
 unit_decodeChainSync spec =
     validateDecoder Nothing
       spec chainSyncCodec
-      [ SomeAgency $ SingClientHasAgency ChainSync.SingIdle
-      , SomeAgency $ SingServerHasAgency (ChainSync.SingNext ChainSync.SingCanAwait)
-      , SomeAgency $ SingServerHasAgency (ChainSync.SingNext ChainSync.SingMustReply)
-      , SomeAgency $ SingServerHasAgency (ChainSync.SingIntersect)
+      [ SomeAgency ChainSync.SingIdle
+      , SomeAgency (ChainSync.SingNext ChainSync.SingCanAwait)
+      , SomeAgency (ChainSync.SingNext ChainSync.SingMustReply)
+      , SomeAgency (ChainSync.SingIntersect)
       ]
       100
 
@@ -729,9 +729,9 @@ unit_decodeBlockFetch
 unit_decodeBlockFetch spec =
     validateDecoder Nothing
       spec blockFetchCodec
-      [ SomeAgency $ SingClientHasAgency BlockFetch.SingBFIdle
-      , SomeAgency $ SingServerHasAgency BlockFetch.SingBFBusy
-      , SomeAgency $ SingServerHasAgency BlockFetch.SingBFStreaming
+      [ SomeAgency BlockFetch.SingBFIdle
+      , SomeAgency BlockFetch.SingBFBusy
+      , SomeAgency BlockFetch.SingBFStreaming
       ]
       100
 
@@ -742,20 +742,11 @@ unit_decodeTxSubmission2
 unit_decodeTxSubmission2 spec =
     validateDecoder (Just txSubmissionFix)
       spec txSubmissionCodec2
-      [ SomeAgency
-        $ SingClientHasAgency TxSubmission2.SingInit
-      , SomeAgency
-        $ SingClientHasAgency
-        $ TxSubmission2.SingTxIds TxSubmission2.SingBlocking
-      , SomeAgency
-        $ SingClientHasAgency
-        $ TxSubmission2.SingTxIds TxSubmission2.SingNonBlocking
-      , SomeAgency
-        $ SingClientHasAgency
-        $ TxSubmission2.SingTxs
-      , SomeAgency
-        $ SingServerHasAgency
-        $ TxSubmission2.SingIdle
+      [ SomeAgency TxSubmission2.SingInit
+      , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingBlocking
+      , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingNonBlocking
+      , SomeAgency $ TxSubmission2.SingTxs
+      , SomeAgency $ TxSubmission2.SingIdle
       ]
       100
 
@@ -766,8 +757,8 @@ unit_decodeKeepAlive
 unit_decodeKeepAlive spec =
     validateDecoder Nothing
       spec codecKeepAlive_v2
-      [ SomeAgency $ SingClientHasAgency KeepAlive.SingClient
-      , SomeAgency $ SingServerHasAgency KeepAlive.SingServer
+      [ SomeAgency KeepAlive.SingClient
+      , SomeAgency KeepAlive.SingServer
       ]
       100
 
@@ -778,8 +769,8 @@ unit_decodeLocalTxSubmission
 unit_decodeLocalTxSubmission spec =
     validateDecoder Nothing
       spec localTxSubmissionCodec
-      [ SomeAgency $ SingClientHasAgency LocalTxSubmission.SingIdle
-      , SomeAgency $ SingServerHasAgency LocalTxSubmission.SingBusy
+      [ SomeAgency LocalTxSubmission.SingIdle
+      , SomeAgency LocalTxSubmission.SingBusy
       ]
       100
 
@@ -790,12 +781,12 @@ unit_decodeLocalTxMonitor
 unit_decodeLocalTxMonitor spec =
     validateDecoder Nothing
       spec localTxMonitorCodec
-      [ SomeAgency $ SingClientHasAgency LocalTxMonitor.SingIdle
-      , SomeAgency $ SingClientHasAgency LocalTxMonitor.SingAcquired
-      , SomeAgency $ SingServerHasAgency LocalTxMonitor.SingAcquiring
-      , SomeAgency $ SingServerHasAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingNextTx)
-      , SomeAgency $ SingServerHasAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingHasTx)
-      , SomeAgency $ SingServerHasAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingGetSizes)
+      [ SomeAgency LocalTxMonitor.SingIdle
+      , SomeAgency LocalTxMonitor.SingAcquired
+      , SomeAgency LocalTxMonitor.SingAcquiring
+      , SomeAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingNextTx)
+      , SomeAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingHasTx)
+      , SomeAgency (LocalTxMonitor.SingBusy LocalTxMonitor.SingGetSizes)
       ]
       100
 
@@ -806,14 +797,14 @@ unit_decodeLocalStateQuery
 unit_decodeLocalStateQuery spec =
     validateDecoderSt Nothing
       spec localStateQueryCodec
-      [ SomeAgencySt (SingClientHasAgency LocalStateQuery.SingIdle)
-                      LocalStateQuery.StateIdle
-      , SomeAgencySt (SingClientHasAgency LocalStateQuery.SingAcquired)
-                      LocalStateQuery.StateAcquired
-      , SomeAgencySt (SingServerHasAgency LocalStateQuery.SingAcquiring)
-                      LocalStateQuery.StateAcquiring
-      , SomeAgencySt (SingServerHasAgency LocalStateQuery.SingQuerying)
-                     (LocalStateQuery.StateQuerying LocalStateQuery.QueryPoint)
+      [ SomeAgencySt LocalStateQuery.SingIdle
+                     LocalStateQuery.StateIdle
+      , SomeAgencySt LocalStateQuery.SingAcquired
+                     LocalStateQuery.StateAcquired
+      , SomeAgencySt LocalStateQuery.SingAcquiring
+                     LocalStateQuery.StateAcquiring
+      , SomeAgencySt LocalStateQuery.SingQuerying
+                    (LocalStateQuery.StateQuerying LocalStateQuery.QueryPoint)
       ]
       100
 

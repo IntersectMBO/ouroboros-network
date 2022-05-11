@@ -143,8 +143,8 @@ prop_connect (slot, txs) =
              (localTxMonitorServerPeer $
                 localTxMonitorServer txId (slot, txs))) of
 
-      ((txs', _), (), TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
-                                     (SingProtocolState SingDone) ReflNobodyAgency) ->
+      ((txs', _), (), TerminalStates SingDone ReflNobodyAgency
+                                     SingDone ReflNobodyAgency) ->
         txs' == [ (tx, True) | tx <- txs ]
 
 -- | Run a local tx-monitor client and server using connected channels.

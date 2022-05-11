@@ -55,45 +55,51 @@ import           Ouroboros.Network.Util.ShowProxy
 
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
-       sizeLimitForState :: forall (st :: ps).
-                            SingPeerHasAgency st -> Word,
+       sizeLimitForState :: forall (st :: ps). ActiveState st
+                         => Sing st -> Word,
 
        dataSize          :: bytes -> Word
      }
 
 data ProtocolTimeLimits ps = ProtocolTimeLimits {
-       timeLimitForState :: forall  (st :: ps).
-                            SingPeerHasAgency st -> Maybe DiffTime
+       timeLimitForState :: forall  (st :: ps). ActiveState st
+                         => Sing st -> Maybe DiffTime
      }
 
 data ProtocolLimitFailure where
     ExceededSizeLimit :: forall ps (st :: ps).
                          ( Show (Sing st)
                          , ShowProxy ps
+                         , ActiveState st
                          )
-                      => SingPeerHasAgency st
+                      => Sing st
                       -> ProtocolLimitFailure
     ExceededTimeLimit :: forall ps (st :: ps).
                          ( Show (Sing st)
                          , ShowProxy ps
+                         , ActiveState st
                          )
-                      => SingPeerHasAgency st
+                      => Sing st
                       -> ProtocolLimitFailure
 
 instance Show ProtocolLimitFailure where
-    show (ExceededSizeLimit (stok :: SingPeerHasAgency (st :: ps))) =
+    show (ExceededSizeLimit (stok :: Sing (st :: ps))) =
       concat
         [ "ExceededSizeLimit ("
         , showProxy (Proxy :: Proxy ps)
-        , ") ("
+        , ") "
+        , show (activeAgency :: ActiveAgency st)
+        , " ("
         , show stok
         , ")"
         ]
-    show (ExceededTimeLimit (stok :: SingPeerHasAgency (st :: ps))) =
+    show (ExceededTimeLimit (stok :: Sing (st :: ps))) =
       concat
         [ "ExceededTimeLimit ("
         , showProxy (Proxy :: Proxy ps)
-        , ") ("
+        , ") "
+        , show (activeAgency :: ActiveAgency st)
+        , " ("
         , show stok
         , ")"
         ]
@@ -149,7 +155,8 @@ driverWithLimits tracer timeoutFn
             )
   where
     sendMessage :: forall (st :: ps) (st' :: ps).
-                   SingI (PeerHasAgency st)
+                   SingI st
+                => ActiveState st
                 => (ReflRelativeAgency (StateAgency st)
                                         WeHaveAgency
                                        (Relative pr (StateAgency st)))
@@ -161,14 +168,15 @@ driverWithLimits tracer timeoutFn
 
 
     recvMessage :: forall (st :: ps).
-                   SingI (PeerHasAgency st)
+                   SingI st
+                => ActiveState st
                 => (ReflRelativeAgency (StateAgency st)
                                         TheyHaveAgency
                                        (Relative pr (StateAgency st)))
                 -> DriverState ps pr st bytes failure (DState bytes) m
                 -> m (SomeMessage st, DState bytes)
     recvMessage _ state = do
-      let tok = sing @(PeerHasAgency st)
+      let tok = sing @st
           sizeLimit = sizeLimitForState tok
       t <- getMonotonicTime
       result <- case state of
@@ -185,7 +193,7 @@ driverWithLimits tracer timeoutFn
             Just timeLimit ->
               timeoutFn timeLimit $
                 runDecoderWithLimit sizeLimit dataSize
-                                    channel dstate     =<< decode
+                                    channel dstate     =<< decode sing
 
         DriverStateSTM recvMsgSTM dstate ->
           case timeLimitFn t tok dstate of
@@ -202,7 +210,8 @@ driverWithLimits tracer timeoutFn
 
 
     tryRecvMessage :: forall (st :: ps).
-                      SingI (PeerHasAgency st)
+                      SingI st
+                   => ActiveState st
                    => (ReflRelativeAgency (StateAgency st)
                                            TheyHaveAgency
                                           (Relative pr (StateAgency st)))
@@ -210,7 +219,7 @@ driverWithLimits tracer timeoutFn
                    -> m (Either (DriverState ps pr st bytes failure (DState bytes) m)
                                 (SomeMessage st, DState bytes))
     tryRecvMessage _ state = do
-      let tok = sing @(PeerHasAgency st)
+      let tok = sing @st
           sizeLimit = sizeLimitForState tok
       t <- getMonotonicTime
       result <-
@@ -231,7 +240,7 @@ driverWithLimits tracer timeoutFn
                     swizzle (uncurry DecoderState)
                 <$>
                     (tryRunDecoderWithLimit sizeLimit dataSize
-                                            channel dstate     =<< decode)
+                                            channel dstate     =<< decode sing)
 
           DriverStateSTM recvMsgSTM dstate ->
             case timeLimitFn t tok dstate of
@@ -260,7 +269,8 @@ driverWithLimits tracer timeoutFn
 
     -- TODO: we trace received message
     recvMessageSTM :: forall (st :: ps).
-                      SingI (PeerHasAgency st)
+                      SingI st
+                   => ActiveState st
                    => StrictTVar m (Maybe (SomeAsync m))
                    -> (ReflRelativeAgency (StateAgency st)
                                            TheyHaveAgency
@@ -268,7 +278,7 @@ driverWithLimits tracer timeoutFn
                    -> DriverState ps pr st bytes failure (DState bytes) m
                    -> m (STM m (SomeMessage st, DState bytes))
     recvMessageSTM v _ (DecoderState decoder dstate) = mask_ $ do
-      let tok = sing @(PeerHasAgency st)
+      let tok = sing @st
           sizeLimit = sizeLimitForState tok
 
       -- stm timeout
@@ -294,7 +304,7 @@ driverWithLimits tracer timeoutFn
                    Nothing                    -> throwSTM (ExceededTimeLimit tok)
              )
     recvMessageSTM v _ (DriverState dstate) = mask_ $ do
-      let tok = sing @(PeerHasAgency st)
+      let tok = sing @st
           sizeLimit = sizeLimitForState tok
 
       -- stm timeout
@@ -307,7 +317,7 @@ driverWithLimits tracer timeoutFn
 
       hndl <- asyncWithUnmask $ \unmask ->
         unmask (runDecoderWithLimit sizeLimit dataSize channel
-                                    dstate                     =<< decode)
+                                    dstate                     =<< decode sing)
         `finally`
         atomically (writeTVar v Nothing)
       atomically (writeTVar v (Just $! SomeAsync hndl))
@@ -325,9 +335,9 @@ driverWithLimits tracer timeoutFn
       return stmRecvMessage
 
 
-    timeLimitFn :: forall (st :: ps).
-                   Time
-                -> SingPeerHasAgency st
+    timeLimitFn :: forall (st :: ps). ActiveState st
+                => Time
+                -> Sing st
                 -> DState bytes
                 -> Maybe DiffTime
     timeLimitFn t tok dstate =

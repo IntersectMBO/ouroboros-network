@@ -16,6 +16,7 @@ module Test.Ouroboros.Network.Driver (tests) where
 import           Data.Bifunctor (bimap)
 import           Data.List (intercalate)
 import qualified Data.List as List
+import           Data.Singletons
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Core
@@ -85,10 +86,11 @@ byteLimitsReqResp
   -> ProtocolSizeLimits (ReqResp req resp) String
 byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit (fromIntegral . length)
   where
-    stateToLimit :: forall (st  :: ReqResp req resp).
-                    SingPeerHasAgency st -> Word
-    stateToLimit (SingClientHasAgency SingIdle) = limit
-    stateToLimit (SingServerHasAgency SingBusy) = limit
+    stateToLimit :: forall (st  :: ReqResp req resp).  ActiveState st
+                 => Sing st -> Word
+    stateToLimit SingIdle = limit
+    stateToLimit SingBusy = limit
+    stateToLimit a@SingDone = notActiveState a
 
 
 serverTimeout :: DiffTime
@@ -99,18 +101,22 @@ timeLimitsReqResp :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 timeLimitsReqResp = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (st  :: ReqResp req resp).
-                    SingPeerHasAgency st -> Maybe DiffTime
-    stateToLimit (SingClientHasAgency SingIdle) = Just serverTimeout
-    stateToLimit (SingServerHasAgency SingBusy) = Just serverTimeout
+                    ActiveState st
+                 => Sing st -> Maybe DiffTime
+    stateToLimit SingIdle   = Just serverTimeout
+    stateToLimit SingBusy   = Just serverTimeout
+    stateToLimit a@SingDone = notActiveState a
 
 -- Unlimited Time
 timeUnLimitsReqResp :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 timeUnLimitsReqResp = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (st  :: ReqResp req resp).
-                    SingPeerHasAgency st -> Maybe DiffTime
-    stateToLimit (SingClientHasAgency SingIdle) = Nothing
-    stateToLimit (SingServerHasAgency SingBusy) = Nothing
+                    ActiveState st
+                 => Sing st -> Maybe DiffTime
+    stateToLimit SingIdle   = Nothing
+    stateToLimit SingBusy   = Nothing
+    stateToLimit a@SingDone = notActiveState a
 
 
 --

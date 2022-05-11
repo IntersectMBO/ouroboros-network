@@ -431,8 +431,8 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
                 (cborTermVersionDataCodec dataCodecCBORTerm)
                 acceptableVersion
                 serverVersions)) of
-      (clientRes', serverRes', TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
-                                              (SingProtocolState SingDone) ReflNobodyAgency) ->
+      (clientRes', serverRes', TerminalStates SingDone ReflNobodyAgency
+                                              SingDone ReflNobodyAgency) ->
            fromMaybe False clientRes === either (const False) (\(a,_,_) -> a) clientRes'
         .&&.
            fromMaybe False serverRes === either (const False) (\(a,_,_) -> a) serverRes'

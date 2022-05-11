@@ -155,8 +155,8 @@ prop_connect1 params@TxSubmissionTestParams{testTransactions} =
              (txSubmissionServerPeerPipelined $
               testServer nullTracer params)) of
 
-      ((), txs', TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
-                                (SingProtocolState SingDone) ReflNobodyAgency) ->
+      ((), txs', TerminalStates SingDone ReflNobodyAgency
+                                SingDone ReflNobodyAgency) ->
         txs' == fromDistinctList testTransactions
 
 
@@ -176,8 +176,8 @@ prop_connect2 params@TxSubmissionTestParams{testTransactions}
              (txSubmissionServerPeerPipelined $
               testServer nullTracer params)) of
 
-      ((), txs', TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
-                                (SingProtocolState SingDone) ReflNobodyAgency) ->
+      ((), txs', TerminalStates SingDone ReflNobodyAgency
+                                SingDone ReflNobodyAgency) ->
         txs' == fromDistinctList testTransactions
 
 --

@@ -28,7 +28,6 @@ import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeListLen,
 import qualified Codec.CBOR.Read as CBOR
 
 import           Network.TypedProtocol.Codec.CBOR
-import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.KeepAlive.Type
@@ -57,40 +56,47 @@ codecKeepAlive_v2 = mkCodecCborLazyBS encodeMsg decodeMsg
        <> CBOR.encodeWord 2
 
      decodeMsg :: forall s (st :: KeepAlive).
-                  SingI (PeerHasAgency st)
-               => CBOR.Decoder s (SomeMessage st)
-     decodeMsg = do
+                  ActiveState st
+               => Sing st
+               -> CBOR.Decoder s (SomeMessage st)
+     decodeMsg stok = do
        len <- CBOR.decodeListLen
        key <- CBOR.decodeWord
-       case (sing :: SingPeerHasAgency st, len, key) of
-         (SingClientHasAgency SingClient, 2, 0) -> do
+       case (stok, len, key) of
+         (SingClient, 2, 0) -> do
              cookie <- CBOR.decodeWord16
              return (SomeMessage $ MsgKeepAlive $ Cookie cookie)
-         (SingServerHasAgency SingServer, 2, 1) -> do
+         (SingServer, 2, 1) -> do
              cookie <- CBOR.decodeWord16
              return (SomeMessage $ MsgKeepAliveResponse $ Cookie cookie)
-         (SingClientHasAgency SingClient, 1, 2) -> pure (SomeMessage MsgDone)
+         (SingClient, 1, 2) -> pure (SomeMessage MsgDone)
 
-         (stok, _, _) ->
-           fail (printf "codecKeepAlive (%s) unexpected key (%d, %d)" (show stok) key len)
+         (SingDone, _, _) -> notActiveState stok
+
+         (_, _, _) ->
+           fail (printf "codecKeepAlive (%s, %s) unexpected key (%d, %d)" (show (activeAgency :: ActiveAgency st)) (show stok) key len)
 
 
 byteLimitsKeepAlive :: (bytes -> Word) -> ProtocolSizeLimits KeepAlive bytes
 byteLimitsKeepAlive = ProtocolSizeLimits sizeLimitForState
   where
-    sizeLimitForState :: SingPeerHasAgency (st :: KeepAlive)
+    sizeLimitForState :: ActiveState st
+                      => Sing (st :: KeepAlive)
                       -> Word
-    sizeLimitForState (SingClientHasAgency SingClient) = smallByteLimit
-    sizeLimitForState (SingServerHasAgency SingServer) = smallByteLimit
+    sizeLimitForState SingClient = smallByteLimit
+    sizeLimitForState SingServer = smallByteLimit
+    sizeLimitForState a@SingDone = notActiveState a
 
 
 timeLimitsKeepAlive :: ProtocolTimeLimits KeepAlive
 timeLimitsKeepAlive = ProtocolTimeLimits { timeLimitForState }
   where
-    timeLimitForState :: SingPeerHasAgency (st :: KeepAlive)
+    timeLimitForState :: ActiveState st
+                      => Sing (st :: KeepAlive)
                       -> Maybe DiffTime
-    timeLimitForState (SingClientHasAgency SingClient) = waitForever
-    timeLimitForState (SingServerHasAgency SingServer) = Just 60 -- TODO: #2505 should be 10s.
+    timeLimitForState SingClient = waitForever
+    timeLimitForState SingServer = Just 60 -- TODO: #2505 should be 10s.
+    timeLimitForState a@SingDone = notActiveState a
 
 
 codecKeepAliveId
@@ -101,21 +107,25 @@ codecKeepAliveId
 codecKeepAliveId = Codec encodeMsg decodeMsg
    where
      encodeMsg :: forall st st'.
-                  SingI (PeerHasAgency st)
+                  SingI st
+               => ActiveState st
                => Message KeepAlive st st'
                -> AnyMessage KeepAlive
      encodeMsg = AnyMessage
 
      decodeMsg :: forall (st :: KeepAlive).
-                  SingI (PeerHasAgency st)
-               => m (DecodeStep (AnyMessage KeepAlive)
+                  ActiveState st
+               => Sing st
+               -> m (DecodeStep (AnyMessage KeepAlive)
                                 CodecFailure m (SomeMessage st))
-     decodeMsg = return $ DecodePartial $ \bytes -> return $
-        case (sing :: SingPeerHasAgency st, bytes) of
-         (SingClientHasAgency SingClient, Just (AnyMessage msg@(MsgKeepAlive {})))
+     decodeMsg stok = return $ DecodePartial $ \bytes -> return $
+        case (stok, bytes) of
+         (SingClient, Just (AnyMessage msg@(MsgKeepAlive {})))
              -> DecodeDone (SomeMessage msg) Nothing
-         (SingServerHasAgency SingServer, Just (AnyMessage msg@(MsgKeepAliveResponse {})))
+         (SingServer, Just (AnyMessage msg@(MsgKeepAliveResponse {})))
              -> DecodeDone (SomeMessage msg) Nothing
-         (SingClientHasAgency SingClient, Just (AnyMessage msg@(MsgDone)))
+         (SingClient, Just (AnyMessage msg@(MsgDone)))
              -> DecodeDone (SomeMessage msg) Nothing
+         (SingDone, _)
+             -> notActiveState stok
          (_, _) -> DecodeFail (CodecFailure "codecKeepAliveId: no matching message")

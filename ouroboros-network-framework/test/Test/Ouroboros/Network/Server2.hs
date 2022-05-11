@@ -51,6 +51,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isNothing)
 import           Data.Monoid (Sum (..))
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
+import           Data.Singletons
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
@@ -76,6 +77,7 @@ import           Network.TypedProtocol.ReqResp.Codec.CBOR
 import           Network.TypedProtocol.ReqResp.Examples
 import           Network.TypedProtocol.ReqResp.Server
 import           Network.TypedProtocol.ReqResp.Type
+import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
 import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
@@ -668,16 +670,18 @@ reqRespSizeLimits = ProtocolSizeLimits
     }
   where
     sizeLimitForState :: forall (st :: ReqResp req resp).
-                         SingPeerHasAgency st -> Word
+                         Sing st -> Word
     sizeLimitForState _ = maxBound
 
 reqRespTimeLimits :: forall req resp. ProtocolTimeLimits (ReqResp req resp)
 reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
   where
     timeLimitForState :: forall (st :: ReqResp req resp).
-                         SingPeerHasAgency st -> Maybe DiffTime
-    timeLimitForState (SingClientHasAgency SingIdle) = Nothing
-    timeLimitForState (SingServerHasAgency SingBusy) = Just 60
+                         ActiveState st
+                      => Sing st -> Maybe DiffTime
+    timeLimitForState SingIdle = Nothing
+    timeLimitForState SingBusy = Just 60
+    timeLimitForState a@ReqResp.SingDone = notActiveState a
 
 
 
@@ -2297,8 +2301,8 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
             handshakeTimeout = case timeLimitsHandshake of
               (ProtocolTimeLimits stLimit) ->
                 -- Should be the same but we bias to the shorter one
-                let time = min (fromMaybe 0 (stLimit (SingClientHasAgency SingPropose)))
-                               (fromMaybe 0 (stLimit (SingServerHasAgency SingConfirm)))
+                let time = min (fromMaybe 0 (stLimit SingPropose))
+                               (fromMaybe 0 (stLimit SingConfirm))
                  in time + (0.1 * time)
 
          in case state of

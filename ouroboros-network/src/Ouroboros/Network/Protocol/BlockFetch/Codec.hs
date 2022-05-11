@@ -38,10 +38,11 @@ byteLimitsBlockFetch :: forall bytes block point.
 byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (st :: BlockFetch block point).
-                    SingPeerHasAgency st -> Word
-    stateToLimit (SingClientHasAgency SingBFIdle)      = smallByteLimit
-    stateToLimit (SingServerHasAgency SingBFBusy)      = smallByteLimit
-    stateToLimit (SingServerHasAgency SingBFStreaming) = largeByteLimit
+                    ActiveState st => Sing st -> Word
+    stateToLimit SingBFIdle      = smallByteLimit
+    stateToLimit SingBFBusy      = smallByteLimit
+    stateToLimit SingBFStreaming = largeByteLimit
+    stateToLimit a@SingBFDone    = notActiveState a
 
 -- | Time Limits
 --
@@ -53,10 +54,11 @@ timeLimitsBlockFetch :: forall block point.
 timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (st :: BlockFetch block point).
-                    SingPeerHasAgency st -> Maybe DiffTime
-    stateToLimit (SingClientHasAgency SingBFIdle)      = waitForever
-    stateToLimit (SingServerHasAgency SingBFBusy)      = longWait
-    stateToLimit (SingServerHasAgency SingBFStreaming) = longWait
+                    ActiveState st => Sing st -> Maybe DiffTime
+    stateToLimit SingBFIdle      = waitForever
+    stateToLimit SingBFBusy      = longWait
+    stateToLimit SingBFStreaming = longWait
+    stateToLimit a@SingBFDone    = notActiveState a
 
 -- | Codec for chain sync that encodes/decodes blocks
 --
@@ -92,33 +94,39 @@ codecBlockFetch encodeBlock decodeBlock
     CBOR.encodeListLen 1 <> CBOR.encodeWord 5
 
   decode :: forall s (st :: BlockFetch block point).
-            SingI (PeerHasAgency st)
-         => CBOR.Decoder s (SomeMessage st)
-  decode = do
+            ActiveState st
+         => Sing st
+         -> CBOR.Decoder s (SomeMessage st)
+  decode stok = do
     len <- CBOR.decodeListLen
     key <- CBOR.decodeWord
-    case (sing :: SingPeerHasAgency st, key, len) of
-      (SingClientHasAgency SingBFIdle, 0, 3) -> do
+    case (stok, key, len) of
+      (SingBFIdle, 0, 3) -> do
         from <- decodePoint
         to   <- decodePoint
         return $ SomeMessage $ MsgRequestRange (ChainRange from to)
-      (SingClientHasAgency SingBFIdle, 1, 1) -> return $ SomeMessage MsgClientDone
-      (SingServerHasAgency SingBFBusy, 2, 1) -> return $ SomeMessage MsgStartBatch
-      (SingServerHasAgency SingBFBusy, 3, 1) -> return $ SomeMessage MsgNoBlocks
-      (SingServerHasAgency SingBFStreaming, 4, 2) -> SomeMessage . MsgBlock
+      (SingBFIdle, 1, 1) -> return $ SomeMessage MsgClientDone
+      (SingBFBusy, 2, 1) -> return $ SomeMessage MsgStartBatch
+      (SingBFBusy, 3, 1) -> return $ SomeMessage MsgNoBlocks
+      (SingBFStreaming, 4, 2) -> SomeMessage . MsgBlock
                                                  <$> decodeBlock
-      (SingServerHasAgency SingBFStreaming, 5, 1) -> return $ SomeMessage MsgBatchDone
+      (SingBFStreaming, 5, 1) -> return $ SomeMessage MsgBatchDone
 
       --
       -- failures per protocol state
       --
 
-      (stok@(SingClientHasAgency SingBFIdle), _, _) ->
-        fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
-      (stok@(SingServerHasAgency SingBFStreaming), _ , _) ->
-        fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
-      (stok@(SingServerHasAgency SingBFBusy), _, _) ->
-        fail (printf "codecBlockFetch (%s) unexpected key (%d, %d)" (show stok) key len)
+      (SingBFIdle, _, _) ->
+        fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
+                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+      (SingBFStreaming, _ , _) ->
+        fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
+                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+      (SingBFBusy, _, _) ->
+        fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
+                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+
+      (SingBFDone, _, _) -> notActiveState stok
 
 
 codecBlockFetchId
@@ -129,22 +137,25 @@ codecBlockFetchId
 codecBlockFetchId = Codec encode decode
  where
   encode :: forall st st'.
-            SingI (PeerHasAgency st)
+            SingI st
+         => ActiveState st
          => Message (BlockFetch block point) st st'
          -> AnyMessage (BlockFetch block point)
   encode = AnyMessage
 
   decode :: forall (st :: BlockFetch block point).
-            SingI (PeerHasAgency st)
-         => m (DecodeStep (AnyMessage (BlockFetch block point))
+            ActiveState st
+         => Sing st
+         -> m (DecodeStep (AnyMessage (BlockFetch block point))
                           CodecFailure m (SomeMessage st))
-  decode = return $ DecodePartial $ \bytes ->
-    case (sing :: SingPeerHasAgency st, bytes) of
+  decode stok = return $ DecodePartial $ \bytes ->
+    case (stok, bytes) of
       (_, Nothing) -> return $ DecodeFail CodecFailureOutOfInput
-      (SingClientHasAgency SingBFIdle,      Just (AnyMessage msg@(MsgRequestRange {}))) -> return (DecodeDone (SomeMessage msg) Nothing)
-      (SingClientHasAgency SingBFIdle,      Just (AnyMessage msg@(MsgClientDone {})))   -> return (DecodeDone (SomeMessage msg) Nothing)
-      (SingServerHasAgency SingBFBusy,      Just (AnyMessage msg@(MsgStartBatch {})))   -> return (DecodeDone (SomeMessage msg) Nothing)
-      (SingServerHasAgency SingBFBusy,      Just (AnyMessage msg@(MsgNoBlocks {})))     -> return (DecodeDone (SomeMessage msg) Nothing)
-      (SingServerHasAgency SingBFStreaming, Just (AnyMessage msg@(MsgBlock {})))        -> return (DecodeDone (SomeMessage msg) Nothing)
-      (SingServerHasAgency SingBFStreaming, Just (AnyMessage msg@(MsgBatchDone {})))    -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingBFIdle,      Just (AnyMessage msg@(MsgRequestRange {}))) -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingBFIdle,      Just (AnyMessage msg@(MsgClientDone {})))   -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingBFBusy,      Just (AnyMessage msg@(MsgStartBatch {})))   -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingBFBusy,      Just (AnyMessage msg@(MsgNoBlocks {})))     -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingBFStreaming, Just (AnyMessage msg@(MsgBlock {})))        -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingBFStreaming, Just (AnyMessage msg@(MsgBatchDone {})))    -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingBFDone,      _)                                          -> notActiveState stok
       (_, _) -> return $ DecodeFail (CodecFailure "codecBlockFetchId: no matching message")

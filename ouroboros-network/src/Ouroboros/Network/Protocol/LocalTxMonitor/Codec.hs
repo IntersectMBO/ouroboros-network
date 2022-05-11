@@ -82,44 +82,45 @@ codecLocalTxMonitor encodeTxId decodeTxId
 
     decode ::
          forall s (st :: ptcl).
-         SingI (PeerHasAgency st)
-      => CBOR.Decoder s (SomeMessage st)
-    decode = do
+         ActiveState st
+      => Sing st
+      -> CBOR.Decoder s (SomeMessage st)
+    decode stok = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
-      case (sing :: SingPeerHasAgency st, len, key) of
-        (SingClientHasAgency SingIdle, 1, 0) ->
+      case (stok, len, key) of
+        (SingIdle, 1, 0) ->
           return (SomeMessage MsgDone)
-        (SingClientHasAgency SingIdle, 1, 1) ->
+        (SingIdle, 1, 1) ->
           return (SomeMessage MsgAcquire)
 
-        (SingClientHasAgency SingAcquired, 1, 1) ->
+        (SingAcquired, 1, 1) ->
           return (SomeMessage MsgAwaitAcquire)
-        (SingClientHasAgency SingAcquired, 1, 3) ->
+        (SingAcquired, 1, 3) ->
           return (SomeMessage MsgRelease)
-        (SingClientHasAgency SingAcquired, 1, 5) ->
+        (SingAcquired, 1, 5) ->
           return (SomeMessage MsgNextTx)
-        (SingClientHasAgency SingAcquired, 2, 7) -> do
+        (SingAcquired, 2, 7) -> do
           txid <- decodeTxId
           return (SomeMessage (MsgHasTx txid))
-        (SingClientHasAgency SingAcquired, 1, 9) ->
+        (SingAcquired, 1, 9) ->
           return (SomeMessage MsgGetSizes)
 
-        (SingServerHasAgency SingAcquiring, 2, 2) -> do
+        (SingAcquiring, 2, 2) -> do
           slot <- decodeSlot
           return (SomeMessage (MsgAcquired slot))
 
-        (SingServerHasAgency (SingBusy SingNextTx), 1, 6) ->
+        (SingBusy SingNextTx, 1, 6) ->
           return (SomeMessage (MsgReplyNextTx Nothing))
-        (SingServerHasAgency (SingBusy SingNextTx), 2, 6) -> do
+        (SingBusy SingNextTx, 2, 6) -> do
           tx <- decodeTx
           return (SomeMessage (MsgReplyNextTx (Just tx)))
 
-        (SingServerHasAgency (SingBusy SingHasTx), 2, 8) -> do
+        (SingBusy SingHasTx, 2, 8) -> do
           has <- CBOR.decodeBool
           return (SomeMessage (MsgReplyHasTx has))
 
-        (SingServerHasAgency (SingBusy SingGetSizes), 2, 10) -> do
+        (SingBusy SingGetSizes, 2, 10) -> do
           _len <- CBOR.decodeListLen
           capacityInBytes <- CBOR.decodeWord32
           sizeInBytes <- CBOR.decodeWord32
@@ -127,8 +128,11 @@ codecLocalTxMonitor encodeTxId decodeTxId
           let sizes = MempoolSizeAndCapacity { capacityInBytes, sizeInBytes, numberOfTxs }
           return (SomeMessage (MsgReplyGetSizes sizes))
 
-        (stok, _, _) ->
-          fail (printf "codecLocalTxMonitor (%s) unexpected key (%d, %d)" (show stok) key len)
+        (SingDone, _, _) -> notActiveState stok
+
+        (_, _, _) ->
+          fail (printf "codecLocalTxMonitor (%s, %s) unexpected key (%d, %d)"
+                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
 
 -- | An identity 'Codec' for the 'LocalTxMonitor' protocol. It does not do
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
@@ -144,35 +148,33 @@ codecLocalTxMonitorId =
   where
     encode ::
          forall st st'.
-         SingI (PeerHasAgency st)
+         SingI st
+      => ActiveState st
       => Message ptcl st st'
       -> AnyMessage ptcl
     encode = AnyMessage
 
     decode ::
          forall (st :: ptcl).
-         SingI (PeerHasAgency st)
-      => m (DecodeStep (AnyMessage ptcl) CodecFailure m (SomeMessage st))
-    decode =
-      let res :: ( SingI st
-                 , SingI st'
-                 , SingI (StateAgency st)
-                 , SingI (StateAgency st')
-                 )
+         ActiveState st
+      => Sing st
+      -> m (DecodeStep (AnyMessage ptcl) CodecFailure m (SomeMessage st))
+    decode stok =
+      let res :: (SingI st, SingI st')
               => Message ptcl st st' -> m (DecodeStep bytes failure m (SomeMessage st))
           res msg = return (DecodeDone (SomeMessage msg) Nothing)
-          stok :: SingPeerHasAgency st
-          stok = sing
       in return $ DecodePartial $ \bytes -> case (stok, bytes) of
-        (SingClientHasAgency SingIdle,     Just (AnyMessage msg@MsgAcquire{}))      -> res msg
-        (SingClientHasAgency SingIdle,     Just (AnyMessage msg@MsgDone{}))         -> res msg
-        (SingClientHasAgency SingAcquired, Just (AnyMessage msg@MsgAwaitAcquire{})) -> res msg
-        (SingClientHasAgency SingAcquired, Just (AnyMessage msg@MsgNextTx{}))       -> res msg
-        (SingClientHasAgency SingAcquired, Just (AnyMessage msg@MsgHasTx{}))        -> res msg
-        (SingClientHasAgency SingAcquired, Just (AnyMessage msg@MsgRelease{}))      -> res msg
-        (SingServerHasAgency SingAcquiring,         Just (AnyMessage msg@MsgAcquired{}))    -> res msg
-        (SingServerHasAgency (SingBusy SingNextTx), Just (AnyMessage msg@MsgReplyNextTx{})) -> res msg
-        (SingServerHasAgency (SingBusy SingHasTx),  Just (AnyMessage msg@MsgReplyHasTx{}))  -> res msg
+        (SingIdle,     Just (AnyMessage msg@MsgAcquire{}))      -> res msg
+        (SingIdle,     Just (AnyMessage msg@MsgDone{}))         -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgAwaitAcquire{})) -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgNextTx{}))       -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgHasTx{}))        -> res msg
+        (SingAcquired, Just (AnyMessage msg@MsgRelease{}))      -> res msg
+        (SingAcquiring,       Just (AnyMessage msg@MsgAcquired{}))    -> res msg
+        (SingBusy SingNextTx, Just (AnyMessage msg@MsgReplyNextTx{})) -> res msg
+        (SingBusy SingHasTx,  Just (AnyMessage msg@MsgReplyHasTx{}))  -> res msg
+
+        (SingDone, _) -> notActiveState stok
 
         (_, Nothing) ->
           return (DecodeFail CodecFailureOutOfInput)

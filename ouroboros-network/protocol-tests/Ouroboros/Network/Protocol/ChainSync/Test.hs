@@ -472,17 +472,19 @@ prop_codec_binary_compat_ChainSync_ChainSyncSerialised msg =
     ST.runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: ChainSync_BlockHeader).
-         Sing (PeerHasAgency stA)
-      -> SamePeerHasAgency pr ChainSync_Serialised_BlockHeader
-    stokEq (SingClientHasAgency SingIdle) =
-      SamePeerHasAgency SingIdle
-    stokEq (SingServerHasAgency (SingNext SingCanAwait)) =
-      SamePeerHasAgency (SingNext SingCanAwait)
-    stokEq (SingServerHasAgency (SingNext SingMustReply)) =
-      SamePeerHasAgency (SingNext SingMustReply)
-    stokEq (SingServerHasAgency SingIntersect) =
-      SamePeerHasAgency SingIntersect
+      :: forall (stA :: ChainSync_BlockHeader).
+         ActiveState stA
+      => Sing stA
+      -> SomeState ChainSync_Serialised_BlockHeader
+    stokEq SingIdle =
+      SomeState SingIdle
+    stokEq (SingNext SingCanAwait) =
+      SomeState (SingNext SingCanAwait)
+    stokEq (SingNext SingMustReply) =
+      SomeState (SingNext SingMustReply)
+    stokEq SingIntersect =
+      SomeState SingIntersect
+    stokEq a@SingDone = notActiveState a
 
 prop_codec_binary_compat_ChainSyncSerialised_ChainSync
   :: AnyMessage ChainSync_Serialised_BlockHeader
@@ -491,17 +493,19 @@ prop_codec_binary_compat_ChainSyncSerialised_ChainSync msg =
     ST.runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: ChainSync_Serialised_BlockHeader).
-         Sing (PeerHasAgency stA)
-      -> SamePeerHasAgency pr ChainSync_BlockHeader
-    stokEq (SingClientHasAgency SingIdle) =
-      SamePeerHasAgency SingIdle
-    stokEq (SingServerHasAgency (SingNext SingCanAwait)) =
-      SamePeerHasAgency (SingNext SingCanAwait)
-    stokEq (SingServerHasAgency (SingNext SingMustReply)) =
-      SamePeerHasAgency (SingNext SingMustReply)
-    stokEq (SingServerHasAgency SingIntersect) =
-      SamePeerHasAgency SingIntersect
+      :: forall (stA :: ChainSync_Serialised_BlockHeader).
+         ActiveState stA
+      => Sing stA
+      -> SomeState ChainSync_BlockHeader
+    stokEq SingIdle =
+      SomeState SingIdle
+    stokEq (SingNext SingCanAwait) =
+      SomeState (SingNext SingCanAwait)
+    stokEq (SingNext SingMustReply) =
+      SomeState (SingNext SingMustReply)
+    stokEq SingIntersect =
+      SomeState SingIntersect
+    stokEq a@SingDone = notActiveState a
 
 chainSyncDemo
   :: forall m.

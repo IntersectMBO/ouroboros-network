@@ -84,11 +84,13 @@ byteLimitsHandshake :: forall vNumber. ProtocolSizeLimits (Handshake vNumber CBO
 byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
   where
     stateToLimit :: forall (st  :: Handshake vNumber CBOR.Term).
-                    SingPeerHasAgency st -> Word
-    stateToLimit (SingClientHasAgency SingPropose) =
+                    ActiveState st
+                 => Sing st -> Word
+    stateToLimit SingPropose =
       maxTransmissionUnit
-    stateToLimit (SingServerHasAgency SingConfirm) =
+    stateToLimit SingConfirm =
       maxTransmissionUnit
+    stateToLimit a@SingDone = notActiveState a
 
 -- | Time limits.
 --
@@ -96,18 +98,22 @@ timeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBO
 timeLimitsHandshake = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (st  :: Handshake vNumber CBOR.Term).
-                    SingPeerHasAgency st -> Maybe DiffTime
-    stateToLimit (SingClientHasAgency SingPropose) = shortWait
-    stateToLimit (SingServerHasAgency SingConfirm) = shortWait
+                    ActiveState st
+                 => Sing st -> Maybe DiffTime
+    stateToLimit SingPropose = shortWait
+    stateToLimit SingConfirm = shortWait
+    stateToLimit a@SingDone  = notActiveState a
 
 
 noTimeLimitsHandshake :: forall vNumber. ProtocolTimeLimits (Handshake vNumber CBOR.Term)
 noTimeLimitsHandshake = ProtocolTimeLimits stateToLimit
   where
     stateToLimit :: forall (st  :: Handshake vNumber CBOR.Term).
-                    SingPeerHasAgency st -> Maybe DiffTime
-    stateToLimit (SingClientHasAgency SingPropose) = Nothing
-    stateToLimit (SingServerHasAgency SingConfirm) = Nothing
+                    ActiveState st
+                 => Sing st -> Maybe DiffTime
+    stateToLimit SingPropose = Nothing
+    stateToLimit SingConfirm = Nothing
+    stateToLimit a@SingDone  = notActiveState a
 
 
 -- |
@@ -156,21 +162,22 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
         <> encodeRefuseReason versionNumberCodec vReason
 
       decodeMsg :: forall s (st :: Handshake vNumber CBOR.Term).
-                   SingI (PeerHasAgency st)
-                => CBOR.Decoder s (SomeMessage st)
-      decodeMsg = do
+                   ActiveState st
+                => Sing st
+                -> CBOR.Decoder s (SomeMessage st)
+      decodeMsg stok = do
         len <- CBOR.decodeListLen
         key <- CBOR.decodeWord
-        case (sing @(PeerHasAgency st), key, len) of
-          (SingClientHasAgency SingPropose, 0, 2) -> do
+        case (stok, key, len) of
+          (SingPropose, 0, 2) -> do
             l  <- CBOR.decodeMapLen
             vMap <- decodeVersions versionNumberCodec l
             pure $ SomeMessage $ MsgProposeVersions vMap
-          (SingServerHasAgency SingConfirm, 0, 2) -> do
+          (SingConfirm, 0, 2) -> do
             l  <- CBOR.decodeMapLen
             vMap <- decodeVersions versionNumberCodec l
             pure $ SomeMessage $ MsgReplyVersions vMap
-          (SingServerHasAgency SingConfirm, 1, 3) -> do
+          (SingConfirm, 1, 3) -> do
             v <- decodeTerm versionNumberCodec <$> CBOR.decodeTerm
             case v of
               -- at this stage we can throw exception when decoding
@@ -179,13 +186,14 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
               Left e -> fail ("codecHandshake.MsgAcceptVersion: not recognized version: " ++ show e)
               Right vNumber ->
                 SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
-          (SingServerHasAgency SingConfirm, 2, 2) ->
+          (SingConfirm, 2, 2) ->
             SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
 
-          (SingClientHasAgency stok@SingPropose, _, _) ->
+          (SingPropose, _, _) ->
             fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
-          (SingServerHasAgency stok@SingConfirm, _, _) ->
+          (SingConfirm, _, _) ->
             fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
+          (SingDone, _, _) -> notActiveState stok
 
 
 -- | Encode version map preserving the ascending order of keys.

@@ -138,8 +138,8 @@ prop_connect (TestChainAndPoints chain points) =
            (connect [] []
              (blockFetchClientPeer (testClient chain points))
              (blockFetchServerPeer (testServer chain))) of
-      (bodies, (), TerminalStates (SingProtocolState SingBFDone) ReflNobodyAgency
-                                  (SingProtocolState SingBFDone) ReflNobodyAgency) ->
+      (bodies, (), TerminalStates SingBFDone ReflNobodyAgency
+                                  SingBFDone ReflNobodyAgency) ->
         reverse bodies == concat (receivedBlockBodies chain points)
 
 
@@ -154,8 +154,8 @@ connect_pipelined :: ( MonadSTM  m
                   -> [Bool]
                   -> m [Either (ChainRange (Point Block)) Block]
 connect_pipelined client chain cs = do
-    (res, _, TerminalStates (SingProtocolState SingBFDone) ReflNobodyAgency
-                            (SingProtocolState SingBFDone) ReflNobodyAgency)
+    (res, _, TerminalStates SingBFDone ReflNobodyAgency
+                            SingBFDone ReflNobodyAgency)
       <- connect cs []
            (blockFetchClientPeerPipelined client)
            (blockFetchServerPeer (testServer chain))
@@ -406,12 +406,14 @@ prop_codec_binary_compat_BlockFetch_BlockFetchSerialised msg =
     runST (prop_codec_binary_compatM codecWrapped codecSerialised stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: BlockFetch Block (Point Block)).
-         Sing (PeerHasAgency stA)
-      -> SamePeerHasAgency pr (BlockFetch (Serialised Block) (Point Block))
-    stokEq (SingClientHasAgency SingBFIdle)      = SamePeerHasAgency SingBFIdle
-    stokEq (SingServerHasAgency SingBFBusy)      = SamePeerHasAgency SingBFBusy
-    stokEq (SingServerHasAgency SingBFStreaming) = SamePeerHasAgency SingBFStreaming
+      :: forall (stA :: BlockFetch Block (Point Block)).
+         ActiveState stA
+      => Sing stA
+      -> SomeState (BlockFetch (Serialised Block) (Point Block))
+    stokEq SingBFIdle      = SomeState SingBFIdle
+    stokEq SingBFBusy      = SomeState SingBFBusy
+    stokEq SingBFStreaming = SomeState SingBFStreaming
+    stokEq a@SingBFDone    = notActiveState a
 
 prop_codec_binary_compat_BlockFetchSerialised_BlockFetch
   :: AnyMessage (BlockFetch (Serialised Block) (Point Block))
@@ -420,12 +422,14 @@ prop_codec_binary_compat_BlockFetchSerialised_BlockFetch msg =
     runST (prop_codec_binary_compatM codecSerialised codecWrapped stokEq msg)
   where
     stokEq
-      :: forall pr (stA :: BlockFetch (Serialised Block) (Point Block)).
-         Sing (PeerHasAgency stA)
-      -> SamePeerHasAgency pr (BlockFetch Block (Point Block))
-    stokEq (SingClientHasAgency SingBFIdle)      = SamePeerHasAgency SingBFIdle
-    stokEq (SingServerHasAgency SingBFBusy)      = SamePeerHasAgency SingBFBusy
-    stokEq (SingServerHasAgency SingBFStreaming) = SamePeerHasAgency SingBFStreaming
+      :: forall (stA :: BlockFetch (Serialised Block) (Point Block)).
+         ActiveState stA
+      => Sing stA
+      -> SomeState (BlockFetch Block (Point Block))
+    stokEq SingBFIdle      = SomeState SingBFIdle
+    stokEq SingBFBusy      = SomeState SingBFBusy
+    stokEq SingBFStreaming = SomeState SingBFStreaming
+    stokEq a@SingBFDone    = notActiveState a
 
 --
 -- Auxiliary functions

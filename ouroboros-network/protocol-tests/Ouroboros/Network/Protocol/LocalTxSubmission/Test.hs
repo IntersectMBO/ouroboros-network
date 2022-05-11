@@ -129,8 +129,8 @@ prop_connect p txs =
              (localTxSubmissionServerPeer $ pure $
               localTxSubmissionServer p)) of
 
-      (a, b, TerminalStates (SingProtocolState SingDone) ReflNobodyAgency
-                            (SingProtocolState SingDone) ReflNobodyAgency) ->
+      (a, b, TerminalStates SingDone ReflNobodyAgency
+                            SingDone ReflNobodyAgency) ->
         (a, b) == (txs', txs')
   where
     txs' = [ (tx, p tx) | tx <- txs ]

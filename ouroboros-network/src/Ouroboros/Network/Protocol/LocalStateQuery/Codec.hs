@@ -129,62 +129,63 @@ codecLocalStateQuery canAcquireTip
      <> CBOR.encodeWord 7
 
     decodeMsg :: forall s (st :: LocalStateQuery block point query).
-                 SingI (PeerHasAgency st)
-              => State st
+                 ActiveState st
+              => Sing st
+              -> State st
               -> CBOR.Decoder s (SomeMessage st)
-    decodeMsg f = do
-      let stok :: SingPeerHasAgency st
-          stok = sing
+    decodeMsg stok f = do
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
       case (stok, f, len, key) of
-        (SingClientHasAgency SingIdle, _, 2, 0) ->
+        (SingIdle, _, 2, 0) ->
           SomeMessage . MsgAcquire . Just <$> decodePoint
 
-        (SingClientHasAgency SingIdle, _, 1, 8) | canAcquireTip -> do
+        (SingIdle, _, 1, 8) | canAcquireTip -> do
           return (SomeMessage (MsgAcquire Nothing))
 
-        (SingServerHasAgency SingAcquiring, _, 1, 1) ->
+        (SingAcquiring, _, 1, 1) ->
           return (SomeMessage MsgAcquired)
 
-        (SingServerHasAgency SingAcquiring, _, 2, 2) ->
+        (SingAcquiring, _, 2, 2) ->
           SomeMessage . MsgFailure <$> decodeFailure
 
-        (SingClientHasAgency SingAcquired, _, 2, 3) -> do
+        (SingAcquired, _, 2, 3) -> do
           Some query <- decodeQuery
           return $ SomeMessage (MsgQuery query)
 
-        (SingServerHasAgency SingQuerying, StateQuerying query, 2, 4) -> do
+        (SingQuerying, StateQuerying query, 2, 4) -> do
           result <- decodeResult query
           return $ SomeMessage (MsgResult query result)
 
-        (SingClientHasAgency SingAcquired, _, 1, 5) ->
+        (SingAcquired, _, 1, 5) ->
           return (SomeMessage MsgRelease)
 
-        (SingClientHasAgency SingAcquired, _, 2, 6) ->
+        (SingAcquired, _, 2, 6) ->
           SomeMessage . MsgReAcquire . Just <$> decodePoint
 
-        (SingClientHasAgency SingAcquired, _, 1, 9) | canAcquireTip -> do
+        (SingAcquired, _, 1, 9) | canAcquireTip -> do
           return (SomeMessage (MsgReAcquire Nothing))
 
-        (SingClientHasAgency SingIdle, _, 1, 7) ->
+        (SingIdle, _, 1, 7) ->
           return (SomeMessage MsgDone)
 
         --
         -- failures per protocol state
         --
 
-        (SingClientHasAgency SingIdle, _, _, _) ->
+        (SingIdle, _, _, _) ->
           fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
 
-        (SingClientHasAgency SingAcquired, _, _, _) ->
+        (SingAcquired, _, _, _) ->
           fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
 
-        (SingServerHasAgency SingAcquiring, _, _, _) ->
+        (SingAcquiring, _, _, _) ->
           fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
 
-        (SingServerHasAgency SingQuerying, _, _, _) ->
+        (SingQuerying, _, _, _) ->
           fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
+
+        (SingDone, _, _, _) -> notActiveState stok
 
 
 -- | An identity 'Codec' for the 'LocalStateQuery' protocol. It does not do
@@ -206,30 +207,33 @@ codecLocalStateQueryId eqQuery =
   Stateful.Codec encodeMsg decodeMsg
  where
   encodeMsg :: forall st st'.
-            SingI (PeerHasAgency st)
+            ActiveState st
+         => SingI st
          => State st'
          -> Message (LocalStateQuery block point query) st st'
          -> AnyMessage (LocalStateQuery block point query)
   encodeMsg _ = AnyMessage
 
   decodeMsg :: forall (st :: LocalStateQuery block point query).
-               SingI (PeerHasAgency st)
-            => State st
+               ActiveState st
+            => Sing st
+            -> State st
             -> m (DecodeStep (AnyMessage (LocalStateQuery block point query))
                              CodecFailure m (SomeMessage st))
-  decodeMsg f = return $ DecodePartial $ \bytes ->
-    case (sing :: SingPeerHasAgency st, f, bytes) of
-      (SingClientHasAgency SingIdle,      _, Just (AnyMessage msg@MsgAcquire{}))   -> rewrapMsg msg
-      (SingClientHasAgency SingIdle,      _, Just (AnyMessage msg@MsgDone{}))      -> rewrapMsg msg
-      (SingClientHasAgency SingAcquired,  _, Just (AnyMessage msg@(MsgQuery {})))  -> rewrapMsg msg
-      (SingClientHasAgency SingAcquired,  _, Just (AnyMessage msg@MsgReAcquire{})) -> rewrapMsg msg
-      (SingClientHasAgency SingAcquired,  _, Just (AnyMessage msg@MsgRelease{}))   -> rewrapMsg msg
-      (SingServerHasAgency SingAcquiring, _, Just (AnyMessage msg@MsgAcquired{}))  -> rewrapMsg msg
-      (SingServerHasAgency SingAcquiring, _, Just (AnyMessage msg@MsgFailure{}))   -> rewrapMsg msg
-      (SingServerHasAgency SingQuerying, StateQuerying q, Just (AnyMessage msg@(MsgResult query _)))
+  decodeMsg stok f = return $ DecodePartial $ \bytes ->
+    case (stok, f, bytes) of
+      (SingIdle,      _, Just (AnyMessage msg@MsgAcquire{}))   -> rewrapMsg msg
+      (SingIdle,      _, Just (AnyMessage msg@MsgDone{}))      -> rewrapMsg msg
+      (SingAcquired,  _, Just (AnyMessage msg@(MsgQuery {})))  -> rewrapMsg msg
+      (SingAcquired,  _, Just (AnyMessage msg@MsgReAcquire{})) -> rewrapMsg msg
+      (SingAcquired,  _, Just (AnyMessage msg@MsgRelease{}))   -> rewrapMsg msg
+      (SingAcquiring, _, Just (AnyMessage msg@MsgAcquired{}))  -> rewrapMsg msg
+      (SingAcquiring, _, Just (AnyMessage msg@MsgFailure{}))   -> rewrapMsg msg
+      (SingQuerying, StateQuerying q, Just (AnyMessage msg@(MsgResult query _)))
           | Just Refl <- eqQuery q query
           -> rewrapMsg msg
 
+      (SingDone, _, _) -> notActiveState stok
       (_, _, Nothing) -> return (DecodeFail CodecFailureOutOfInput)
       (_, _, _)       -> return (DecodeFail (CodecFailure failmsg))
 
@@ -242,8 +246,7 @@ rewrapMsg :: forall block point query
              ( Monad m
              , SingI st
              , SingI st'
-             , SingI (StateAgency st)
-             , SingI (StateAgency st')
+             , ActiveState st
              )
           => Message (LocalStateQuery block point query) st st'
           -> m (DecodeStep bytes failure m (SomeMessage st))
