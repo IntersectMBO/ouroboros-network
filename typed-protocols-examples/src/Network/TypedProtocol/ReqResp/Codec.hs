@@ -34,17 +34,18 @@ codecReqResp =
 
     decode :: forall req' resp' m'
                      (st :: ReqResp req' resp')
-           .  (Monad m', SingI (PeerHasAgency st), Read req', Read resp')
-           => m' (DecodeStep String CodecFailure m' (SomeMessage st))
-    decode =
+           .  (Monad m', Read req', Read resp', ActiveState st)
+           => Sing st
+           -> m' (DecodeStep String CodecFailure m' (SomeMessage st))
+    decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
-        case (sing :: Sing (PeerHasAgency st), break (==' ') str) of
-          (SingClientHasAgency SingIdle, ("MsgReq", str'))
+        case (stok, break (==' ') str) of
+          (SingIdle, ("MsgReq", str'))
              | Just resp <- readMaybe str'
             -> DecodeDone (SomeMessage (MsgReq resp)) trailing
-          (SingClientHasAgency SingIdle, ("MsgDone", ""))
+          (SingIdle, ("MsgDone", ""))
             -> DecodeDone (SomeMessage MsgDone) trailing
-          (SingServerHasAgency SingBusy, ("MsgResp", str'))
+          (SingBusy, ("MsgResp", str'))
              | Just resp <- readMaybe str'
             -> DecodeDone (SomeMessage (MsgResp resp)) trailing
 
@@ -61,31 +62,34 @@ codecReqRespId =
   where
     encode :: forall (st  :: ReqResp req resp)
                      (st' :: ReqResp req resp)
-           .  SingI (PeerHasAgency st)
+           .  SingI st
+           => ActiveState st
            => Message (ReqResp req resp) st st'
            -> AnyMessage (ReqResp req resp)
     encode msg = AnyMessage msg
 
     decode :: forall (st :: ReqResp req resp)
-           .  SingI (PeerHasAgency st)
-           => m (DecodeStep (AnyMessage (ReqResp req resp)) CodecFailure m (SomeMessage st))
-    decode =
-      let stok :: Sing (PeerHasAgency st)
-          stok = sing in
+           .  ActiveState st
+           => Sing st
+           -> m (DecodeStep (AnyMessage (ReqResp req resp)) CodecFailure m (SomeMessage st))
+    decode stok =
       pure $ DecodePartial $ \mb ->
         case mb of
           Nothing -> return $ DecodeFail (CodecFailure "expected more data")
           Just (AnyMessage msg) -> return $
             case (stok, msg) of
-              (SingClientHasAgency SingIdle, MsgReq{})
+              (SingIdle, MsgReq{})
                 -> DecodeDone (SomeMessage msg) Nothing
-              (SingClientHasAgency SingIdle, MsgDone)
+              (SingIdle, MsgDone)
                 -> DecodeDone (SomeMessage msg) Nothing
-              (SingServerHasAgency SingBusy, MsgResp{})
+              (SingBusy, MsgResp{})
                 -> DecodeDone (SomeMessage msg) Nothing
 
-              (SingServerHasAgency _      , _     ) -> DecodeFail failure
-                where failure = CodecFailure ("unexpected server message: " ++ show msg)
-              (SingClientHasAgency _      , _     ) -> DecodeFail failure
-                where failure = CodecFailure ("unexpected client message: " ++ show msg)
+              (SingIdle, _) ->
+                DecodeFail failure
+                  where failure = CodecFailure ("unexpected client message: " ++ show msg)
+              (SingBusy, _) ->
+                DecodeFail failure
+                  where failure = CodecFailure ("unexpected server message: " ++ show msg)
 
+              (a@SingDone, _) -> notActiveState a

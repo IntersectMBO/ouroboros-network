@@ -60,8 +60,8 @@ pattern Effect mclient = TP.Effect mclient
 pattern Yield :: forall ps pl st f m stm a.
                  ()
               => forall st'.
-                 ( SingI (PeerHasAgency st)
-                 , SingI (ProtocolState st')
+                 ( SingI st
+                 , SingI st'
                  , StateAgency st ~ ServerAgency
                  )
               => f st'
@@ -77,7 +77,7 @@ pattern Yield f msg k = TP.Yield ReflServerAgency f msg k
 --
 pattern Await :: forall ps pl st f m stm a.
                  ()
-              => ( SingI (PeerHasAgency st)
+              => ( SingI st
                  , StateAgency st ~ ClientAgency
                  )
               => (forall st'.
@@ -96,7 +96,7 @@ pattern Await k = TP.Await ReflClientAgency k
 --
 pattern Done :: forall ps pl st f m stm a.
                 ()
-             => ( SingI (ProtocolState st)
+             => ( SingI st
                 , StateAgency st ~ NobodyAgency
                 )
              => a
@@ -110,8 +110,8 @@ pattern Done a = TP.Done ReflNobodyAgency a
 pattern YieldPipelined :: forall ps st q f m stm a.
                           ()
                        => forall st' st''.
-                          ( SingI (PeerHasAgency st)
-                          , SingI (ProtocolState st')
+                          ( SingI st
+                          , SingI st'
                           , StateAgency st ~ ServerAgency
                           )
                        => f st'
@@ -127,7 +127,7 @@ pattern YieldPipelined f msg k = TP.YieldPipelined ReflServerAgency f msg k
 --
 pattern Collect :: forall ps st' st'' q st f m stm a.
                    ()
-                => ( SingI (PeerHasAgency st')
+                => ( SingI st'
                    , StateAgency st' ~ ClientAgency
                    )
                 => Maybe (Server ps 'Pipelined (Tr st' st'' <| q) st f m stm a)
@@ -148,7 +148,7 @@ pattern Collect k' k = TP.Collect ReflClientAgency k' k
 --
 pattern CollectSTM :: forall ps st' st'' q st f m stm a.
                       ()
-                   => ( SingI (PeerHasAgency st')
+                   => ( SingI st'
                       , StateAgency st' ~ ClientAgency
                       )
                    => stm (Server ps 'Pipelined (Tr st' st'' <| q) st f m stm a)

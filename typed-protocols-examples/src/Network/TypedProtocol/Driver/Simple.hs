@@ -122,7 +122,9 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} = do
       )
   where
     sendMessage :: forall (st :: ps) (st' :: ps).
-                   SingI (PeerHasAgency st)
+                   ( SingI st
+                   , ActiveState st
+                   )
                 => (ReflRelativeAgency (StateAgency st)
                                         WeHaveAgency
                                        (Relative pr (StateAgency st)))
@@ -133,7 +135,9 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} = do
       traceWith tracer (TraceSendMsg (AnyMessage msg))
 
     recvMessage :: forall (st :: ps).
-                   SingI (PeerHasAgency st)
+                   ( SingI st
+                   , ActiveState st
+                   )
                 => (ReflRelativeAgency (StateAgency st)
                                         TheyHaveAgency
                                        (Relative pr (StateAgency st)))
@@ -144,7 +148,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} = do
         DecoderState decoder trailing ->
           runDecoderWithChannel channel trailing decoder
         DriverState trailing ->
-          runDecoderWithChannel channel trailing =<< decode
+          runDecoderWithChannel channel trailing =<< decode sing
         DriverStateSTM stmRecvMessage _trailing ->
           Right <$> atomically stmRecvMessage
       case result of
@@ -155,7 +159,9 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} = do
           throwIO failure
 
     tryRecvMessage :: forall (st :: ps).
-                      SingI (PeerHasAgency st)
+                      ( SingI st
+                      , ActiveState st
+                      )
                    => (ReflRelativeAgency (StateAgency st)
                                            TheyHaveAgency
                                           (Relative pr (StateAgency st)))
@@ -168,7 +174,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} = do
             DecoderState decoder trailing ->
               tryRunDecoderWithChannel channel trailing decoder
             DriverState trailing ->
-              tryRunDecoderWithChannel channel trailing =<< decode
+              tryRunDecoderWithChannel channel trailing =<< decode sing
             DriverStateSTM stmRecvMessage _trailing ->
               atomically $
                     Right . Right <$> stmRecvMessage
@@ -184,7 +190,9 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} = do
             throwIO failure
 
     recvMessageSTM :: forall (st :: ps).
-                      SingI (PeerHasAgency st)
+                      ( SingI st
+                      , ActiveState st
+                      )
                    => StrictTVar m (Maybe (SomeAsync m))
                    -> (ReflRelativeAgency (StateAgency st)
                                            TheyHaveAgency
@@ -206,7 +214,7 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} = do
     recvMessageSTM v _ (DriverState trailing) = mask_ $ do
       hndl <- asyncWithUnmask $ \unmask ->
         do labelThisThread "recv-stm"
-           unmask (runDecoderWithChannel channel trailing =<< decode)
+           unmask (runDecoderWithChannel channel trailing =<< decode sing)
         `finally`
         atomically (writeTVar v Nothing)
       atomically (writeTVar v (Just $! SomeAsync hndl))

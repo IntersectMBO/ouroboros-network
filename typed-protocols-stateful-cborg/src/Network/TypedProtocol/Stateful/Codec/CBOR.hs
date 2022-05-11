@@ -47,19 +47,21 @@ mkCodecCborStrictBS
   :: forall ps f m. MonadST m
 
   => (forall (st :: ps) (st' :: ps).
-             SingI (PeerHasAgency st)
+             SingI st
+          => ActiveState st
           => f st' -> Message ps st st' -> CBOR.Encoding)
 
   -> (forall (st :: ps) s.
-             SingI (PeerHasAgency st)
-          => f st
+             ActiveState st
+          => Sing st
+          -> f st
           -> CBOR.Decoder s (SomeMessage st))
 
   -> Codec ps DeserialiseFailure f m BS.ByteString
 mkCodecCborStrictBS cborMsgEncode cborMsgDecode =
     Codec {
-      encode = \f msg -> convertCborEncoder (cborMsgEncode f) msg,
-      decode = \f     -> convertCborDecoder (cborMsgDecode f)
+      encode = \f msg  -> convertCborEncoder (cborMsgEncode f) msg,
+      decode = \stok f -> convertCborDecoder (cborMsgDecode stok f)
     }
   where
     convertCborEncoder :: (a -> CBOR.Encoding) -> a -> BS.ByteString
@@ -85,20 +87,22 @@ mkCodecCborLazyBS
   :: forall ps f m. MonadST m
 
   => (forall (st :: ps) (st' :: ps).
-             SingI (PeerHasAgency st)
+             SingI st
+          => ActiveState st
           => f st'
           -> Message ps st st' -> CBOR.Encoding)
 
   -> (forall (st :: ps) s.
-             SingI (PeerHasAgency st)
-          => f st
+             ActiveState st
+          => Sing st
+          -> f st
           -> CBOR.Decoder s (SomeMessage st))
 
   -> Codec ps CBOR.DeserialiseFailure f m LBS.ByteString
 mkCodecCborLazyBS cborMsgEncode cborMsgDecode =
     Codec {
-      encode = \f msg -> convertCborEncoder (cborMsgEncode f) msg,
-      decode = \f     -> convertCborDecoder (cborMsgDecode f)
+      encode = \f msg  -> convertCborEncoder (cborMsgEncode f) msg,
+      decode = \stok f -> convertCborDecoder (cborMsgDecode stok f)
     }
   where
     convertCborEncoder :: (a -> CBOR.Encoding) -> a -> LBS.ByteString

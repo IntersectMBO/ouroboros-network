@@ -97,9 +97,9 @@ connectNonPipelined = go
     go (Done reflA a)  (Done reflB b)  = return (a, b, terminals)
       where
         terminals :: TerminalStates ps pr
-        terminals = TerminalStates (sing :: Sing (ProtocolState st))
+        terminals = TerminalStates (sing :: Sing st)
                                     reflA
-                                   (sing :: Sing (ProtocolState st))
+                                   (sing :: Sing st)
                                     reflB
     go (Effect a )      b              = a >>= \a' -> go a' b
     go  a              (Effect b)      = b >>= \b' -> go a  b'
@@ -139,11 +139,11 @@ connectNonPipelined = go
 data TerminalStates ps (pr :: PeerRole) where
      TerminalStates
        :: forall ps pr (st :: ps) (st' :: ps).
-          Sing (ProtocolState st)
+          Sing st
        -> ReflRelativeAgency (StateAgency st)
                               NobodyHasAgency
                              (Relative             pr  (StateAgency st))
-       -> Sing (ProtocolState st')
+       -> Sing st'
        -> ReflRelativeAgency (StateAgency st')
                               NobodyHasAgency
                              (Relative (FlipAgency pr) (StateAgency st'))
@@ -167,8 +167,9 @@ data STrans tr where
 -- instance
 type SQueue :: forall ps -> PeerRole -> ps -> Queue ps -> ps -> Type
 data SQueue ps pr st q st' where
-  ConsMsgQ :: ( SingI (PeerHasAgency st)
-              , SingI (ProtocolState st')
+  ConsMsgQ :: ( SingI st
+              , SingI st'
+              , ActiveState st
               )
            => (ReflRelativeAgency (StateAgency st)
                                    WeHaveAgency
@@ -185,8 +186,9 @@ data SQueue ps pr st q st' where
 
 -- | Push a `ConsMsgQ` to the back of `SQueue`.
 --
-snocMsgQ :: ( SingI (PeerHasAgency st')
-            , SingI (ProtocolState st'')
+snocMsgQ :: ( SingI st'
+            , SingI st''
+            , ActiveState st'
             )
          => (ReflRelativeAgency (StateAgency st')
                                  WeHaveAgency
@@ -203,7 +205,7 @@ snocMsgQ stok msg EmptyQ =
 
 -- | Push a `STrans (Tr st st')` to the back of `SQueue`.
 --
-snocTrQ :: SingI (ProtocolState st')
+snocTrQ :: SingI st'
         => STrans (Tr st' st'')
         -> SQueue ps pr st  q                 st'
         -> SQueue ps pr st (q |> Tr st' st'') st''

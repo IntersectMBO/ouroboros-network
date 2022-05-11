@@ -102,8 +102,9 @@ data Peer ps pr pl q st f m stm a where
   --
   Yield
     :: forall ps pr pl (st :: ps) (st' :: ps) f m stm a.
-       ( SingI (PeerHasAgency st)
-       , SingI (ProtocolState st')
+       ( SingI st
+       , SingI st'
+       , ActiveState st
        )
     => (ReflRelativeAgency (StateAgency st)
                             WeHaveAgency
@@ -136,7 +137,9 @@ data Peer ps pr pl q st f m stm a where
   --
   Await
     :: forall ps pr pl (st :: ps) f m stm a.
-       SingI (PeerHasAgency st)
+       ( SingI st
+       , ActiveState st
+       )
     => (ReflRelativeAgency (StateAgency st)
                             TheyHaveAgency
                            (Relative pr (StateAgency st)))
@@ -163,7 +166,7 @@ data Peer ps pr pl q st f m stm a where
   --
   Done
     :: forall ps pr pl (st :: ps) f m stm a.
-       SingI (ProtocolState st)
+       SingI st
     => (ReflRelativeAgency (StateAgency st)
                             NobodyHasAgency
                            (Relative pr (StateAgency st)))
@@ -182,8 +185,9 @@ data Peer ps pr pl q st f m stm a where
   --
   YieldPipelined
     :: forall ps pr (st :: ps) (st' :: ps) q st'' f m stm a.
-       ( SingI (PeerHasAgency st)
-       , SingI (ProtocolState st')
+       ( SingI st
+       , SingI st'
+       , ActiveState st
        )
     => (ReflRelativeAgency (StateAgency st)
                             WeHaveAgency
@@ -200,7 +204,9 @@ data Peer ps pr pl q st f m stm a where
   --
   Collect
     :: forall ps pr (st' :: ps) (st'' :: ps) q st f m stm a.
-       SingI (PeerHasAgency st')
+       ( SingI st'
+       , ActiveState st'
+       )
     => (ReflRelativeAgency (StateAgency st')
                             TheyHaveAgency
                            (Relative pr (StateAgency st')))
@@ -238,7 +244,9 @@ data Peer ps pr pl q st f m stm a where
   --
   CollectSTM
     :: forall ps pr (st' :: ps) (st'' :: ps) q (st :: ps) f m stm a.
-       SingI (PeerHasAgency st')
+       ( SingI st'
+       , ActiveState st'
+       )
     => (ReflRelativeAgency (StateAgency st')
                             TheyHaveAgency
                            (Relative pr (StateAgency st')))

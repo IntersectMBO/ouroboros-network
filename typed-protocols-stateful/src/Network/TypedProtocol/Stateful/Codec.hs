@@ -21,12 +21,9 @@ module Network.TypedProtocol.Stateful.Codec
   , isoCodec
   , mapFailureCodec
     -- ** Related types
+  , ActiveState
   , PeerRole (..)
   , SomeMessage (..)
-  , PeerHasAgency
-  , PeerHasAgency' (..)
-  , SingPeerHasAgency
-  , SingPeerHasAgency' (..)
   , CodecFailure (..)
     -- ** Incremental decoding
   , DecodeStep (..)
@@ -59,14 +56,16 @@ import qualified Network.TypedProtocol.Codec as TP
 --
 data Codec ps failure (f :: ps -> Type) m bytes = Codec {
        encode :: forall (st :: ps) (st' :: ps).
-                 SingI (PeerHasAgency st)
+                 SingI st
+              => ActiveState st
               => f st'
               -> Message ps st st'
               -> bytes,
 
        decode :: forall (st :: ps).
-                 SingI (PeerHasAgency st)
-              => f st
+                 ActiveState st
+              => Sing st
+              -> f st
               -> m (DecodeStep bytes failure m (SomeMessage st))
      }
 
@@ -76,7 +75,7 @@ hoistCodec
   -> Codec ps failure f m bytes
   -> Codec ps failure f n bytes
 hoistCodec nat codec = codec
-  { decode = \f -> fmap (hoistDecodeStep nat) . nat $ decode codec f
+  { decode = \stok f -> fmap (hoistDecodeStep nat) . nat $ decode codec stok f
   }
 
 isoCodec :: Functor m
@@ -86,7 +85,7 @@ isoCodec :: Functor m
          -> Codec ps failure f m bytes'
 isoCodec g finv Codec {encode, decode} = Codec {
       encode = \f msg -> g $ encode f msg,
-      decode = \f -> isoDecodeStep g finv <$> decode f
+      decode = \stok f -> isoDecodeStep g finv <$> decode stok f
     }
 
 mapFailureCodec
@@ -96,7 +95,7 @@ mapFailureCodec
   -> Codec ps failure' f m bytes
 mapFailureCodec g Codec {encode, decode} = Codec {
     encode = encode,
-    decode = \f -> mapFailureDecodeStep g <$> decode f
+    decode = \stok f -> mapFailureDecodeStep g <$> decode stok f
   }
 
 
@@ -112,7 +111,9 @@ mapFailureCodec g Codec {encode, decode} = Codec {
 --
 data AnyMessage ps (f :: ps -> Type) where
   AnyMessage :: forall ps f (st :: ps) (st' :: ps).
-                SingI (PeerHasAgency st)
+                ( SingI st
+                , ActiveState st
+                )
              => f st
              -> f st'
              -> Message ps (st :: ps) (st' :: ps)
@@ -131,7 +132,7 @@ prop_codecM
   -> AnyMessage ps f
   -> m Bool
 prop_codecM Codec {encode, decode} (AnyMessage f f' (msg :: Message ps st st')) = do
-    r <- decode f >>= runDecoder [encode f' msg]
+    r <- decode (sing :: Sing st) f >>= runDecoder [encode f' msg]
     case r :: Either failure (SomeMessage st) of
       Right (SomeMessage msg') -> return $ TP.AnyMessage msg' == TP.AnyMessage msg
       Left _                   -> return False
@@ -170,7 +171,7 @@ prop_codec_splitsM
 prop_codec_splitsM splits
                    Codec {encode, decode} (AnyMessage f f' (msg :: Message ps st st')) = do
     and <$> sequence
-      [ do r <- decode f >>= runDecoder bytes'
+      [ do r <- decode (sing :: Sing st) f >>= runDecoder bytes'
            case r :: Either failure (SomeMessage st) of
              Right (SomeMessage msg') -> return $ TP.AnyMessage msg' == TP.AnyMessage msg
              Left _                   -> return False
@@ -209,11 +210,11 @@ prop_codecs_compatM
   -> m Bool
 prop_codecs_compatM codecA codecB
                     (AnyMessage f f' (msg :: Message ps st st')) =
-    getAll <$> do r <- decode codecB f >>= runDecoder [encode codecA f' msg]
+    getAll <$> do r <- decode codecB (sing :: Sing st) f >>= runDecoder [encode codecA f' msg]
                   case r :: Either failure (SomeMessage st) of
                     Right (SomeMessage msg') -> return $ All $ TP.AnyMessage msg' == TP.AnyMessage msg
                     Left _                   -> return $ All False
-            <> do r <- decode codecA f >>= runDecoder [encode codecB f' msg]
+            <> do r <- decode codecA (sing :: Sing st) f >>= runDecoder [encode codecB f' msg]
                   case r :: Either failure (SomeMessage st) of
                     Right (SomeMessage msg') -> return $ All $ TP.AnyMessage msg' == TP.AnyMessage msg
                     Left _                   -> return $ All False

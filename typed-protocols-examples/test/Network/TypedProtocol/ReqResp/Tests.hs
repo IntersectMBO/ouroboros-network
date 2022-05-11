@@ -168,9 +168,9 @@ prop_connect f xs =
              (reqRespClientPeer (reqRespClientMap xs))
              (reqRespServerPeer (reqRespServerMapAccumL (\a -> pure . f a) 0)))
 
-      of (c, s, TerminalStates (SingProtocolState SingDone)
+      of (c, s, TerminalStates SingDone
                                ReflNobodyAgency
-                               (SingProtocolState SingDone)
+                               SingDone
                                ReflNobodyAgency) ->
            (s, c) == mapAccumL f 0 xs
 
@@ -183,9 +183,9 @@ prop_connectPipelined cs f xs =
              (reqRespServerPeer          (reqRespServerMapAccumL
                                             (\a -> pure . f a) 0)))
 
-      of (c, s, TerminalStates (SingProtocolState SingDone)
+      of (c, s, TerminalStates SingDone
                                ReflNobodyAgency
-                               (SingProtocolState SingDone)
+                               SingDone
                                ReflNobodyAgency) ->
            (s, c) == mapAccumL f 0 xs
 

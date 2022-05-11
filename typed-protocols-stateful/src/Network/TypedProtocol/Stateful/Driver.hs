@@ -40,9 +40,9 @@ data Driver ps (pr :: PeerRole) bytes failure dstate f m =
           -- | Send a message.
           --
           sendMessage    :: forall (st :: ps) (st' :: ps).
-                            ( SingI (PeerHasAgency st)
-                            , SingI (ProtocolState st')
-                            )
+                            SingI st
+                         => SingI st'
+                         => ActiveState st
                          => ReflRelativeAgency (StateAgency st)
                                                 WeHaveAgency
                                                (Relative pr (StateAgency st))
@@ -60,7 +60,8 @@ data Driver ps (pr :: PeerRole) bytes failure dstate f m =
           -- implementation.
           --
           recvMessage    :: forall (st :: ps).
-                            SingI (PeerHasAgency st)
+                            SingI st
+                         => ActiveState st
                          => ReflRelativeAgency (StateAgency st)
                                                 TheyHaveAgency
                                                (Relative pr (StateAgency st))
@@ -80,7 +81,8 @@ data Driver ps (pr :: PeerRole) bytes failure dstate f m =
           -- relay on non-blocking IO.
           --
           tryRecvMessage :: forall (st :: ps).
-                            SingI (PeerHasAgency st)
+                            SingI st
+                         => ActiveState st
                          => ReflRelativeAgency (StateAgency st)
                                                 TheyHaveAgency
                                                (Relative pr (StateAgency st))
@@ -95,7 +97,8 @@ data Driver ps (pr :: PeerRole) bytes failure dstate f m =
           -- message.
           --
           recvMessageSTM :: forall (st :: ps).
-                            SingI (PeerHasAgency st)
+                            SingI st
+                         => ActiveState st
                          => ReflRelativeAgency (StateAgency st)
                                                 TheyHaveAgency
                                                (Relative pr (StateAgency st))

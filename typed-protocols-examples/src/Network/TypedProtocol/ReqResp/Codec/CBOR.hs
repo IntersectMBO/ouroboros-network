@@ -45,17 +45,19 @@ codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
     CBOR.encodeListLen 1 <> CBOR.encodeWord 2
 
   decodeMsg :: forall s (st :: ReqResp req resp).
-               SingI (PeerHasAgency st)
-            => CBOR.Decoder s (SomeMessage st)
-  decodeMsg = do
+               ActiveState st
+            => Sing st
+            -> CBOR.Decoder s (SomeMessage st)
+  decodeMsg stok = do
     _ <- CBOR.decodeListLen
     key <- CBOR.decodeWord
-    case (sing :: Sing (PeerHasAgency st), key) of
-      (SingClientHasAgency SingIdle, 0) -> SomeMessage . MsgReq  <$> CBOR.decode
-      (SingServerHasAgency SingBusy, 1) -> SomeMessage . MsgResp <$> CBOR.decode
-      (SingClientHasAgency SingIdle, 2) -> return $ SomeMessage MsgDone
+    case (stok, key) of
+      (SingIdle, 0) -> SomeMessage . MsgReq  <$> CBOR.decode
+      (SingBusy, 1) -> SomeMessage . MsgResp <$> CBOR.decode
+      (SingIdle, 2) -> return $ SomeMessage MsgDone
 
       -- TODO proper exceptions
-      (SingClientHasAgency SingIdle, _) -> fail "codecReqResp.StIdle: unexpected key"
-      (SingServerHasAgency SingBusy, _) -> fail "codecReqResp.StBusy: unexpected key"
+      (SingIdle, _) -> fail "codecReqResp.StIdle: unexpected key"
+      (SingBusy, _) -> fail "codecReqResp.StBusy: unexpected key"
+      (a@SingDone, _) -> notActiveState a
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds          #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveFunctor            #-}
 {-# LANGUAGE EmptyCase                #-}
@@ -7,12 +8,12 @@
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE QuantifiedConstraints    #-}
 {-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilyDependencies   #-}
 {-# LANGUAGE TypeInType               #-}
--- need for 'Show' instance of 'ProtocolState'
-{-# LANGUAGE UndecidableInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 
 -- | This module defines the core of the typed protocol framework.
@@ -43,16 +44,11 @@ module Network.TypedProtocol.Core
   , type (|>)
   , SingQueueF (..)
   , (|>)
-  , ProtocolState
-  , ProtocolState' (..)
-  , SingProtocolState
-  , SingProtocolState' (..)
-  , psAgency
-  , PeerHasAgency
-  , PeerHasAgency' (..)
-  , SingPeerHasAgency
-  , SingPeerHasAgency' (..)
-  , phaAgency
+  , ActiveAgency
+  , ActiveAgency' (..)
+  , IsActiveState (..)
+  , ActiveState
+  , notActiveState
     -- * Protocol proofs and tests
     -- $tests
     -- $lemmas
@@ -62,7 +58,7 @@ module Network.TypedProtocol.Core
   , ReflNobodyHasAgency (..)
   ) where
 
-import           Data.Kind (Type)
+import           Data.Kind (Constraint, Type)
 import           Data.Type.Queue
 
 import           Data.Singletons
@@ -370,104 +366,44 @@ class Protocol ps where
   --
   type StateAgency (st :: ps) :: Agency
 
+type ActiveAgency' :: ps -> Agency -> Type
+data ActiveAgency' st agency where
+  ClientHasAgency :: StateAgency st ~ ClientAgency
+                  => ActiveAgency' st ClientAgency
+  ServerHasAgency :: StateAgency st ~ ServerAgency
+                  => ActiveAgency' st ServerAgency
 
--- | 'ProtocolState' is a type level tuple which consists of state type and its
--- agency.  This is just a short cut which allows us to give access to both
--- through a single singleton type 'SingProtocolState'.
+deriving instance Show (ActiveAgency' st agency)
+
+type ActiveAgency :: ps -> Type
+type ActiveAgency st = ActiveAgency' st (StateAgency st)
+
+-- | A type class which restricts states to ones that have `ClientAgency` or
+-- `ServerAgency`, excluding `NobodyAgency`.
 --
-type ProtocolState (st :: ps) = 'PS st (StateAgency st)
-data ProtocolState' ps agency =  PS ps agency
-
-
--- | 'ProtocolState' singleton type. It's type is more general that what we
--- need, see 'SingProtocolState' type alias.
+-- One can use `notActive' to eliminate cases, which is useful when writing
+-- a 'Codec'.
 --
--- 'SingProtocolState' provides @'Sing' st@ explicitly and @'SingAgency'
--- ('AgencyState' st)@ implicitly using 'SingI' type class constraint.  The
--- 'SingAgency' singleton is available using 'psAgency'.
---
-type SingProtocolState' :: ProtocolState' ps Agency -> Type
-data SingProtocolState' x where
-  SingProtocolState :: ( StateAgency st ~ a
-                       , SingI a
-                       )
-                    => { psState :: !(Sing st) }
-                    -> SingProtocolState' (ProtocolState st)
+class IsActiveState st (agency :: Agency) where
+  activeAgency :: ActiveAgency' st agency
 
-deriving instance Show (Sing st)
-               => Show (SingProtocolState' ('PS st agency))
+instance ClientAgency ~ StateAgency st
+      => IsActiveState st ClientAgency where
+  activeAgency = ClientHasAgency
+instance ServerAgency ~ StateAgency st
+      => IsActiveState st ServerAgency where
+  activeAgency = ServerHasAgency
 
+type ActiveState :: ps -> Constraint
+type ActiveState st = IsActiveState st (StateAgency st)
 
-psAgency :: forall ps (st :: ps).
-            SingProtocolState st
-         -> SingAgency (StateAgency st)
-psAgency SingProtocolState {} = sing
-
--- | A convenient type alias.
---
-type SingProtocolState (st :: ps) = SingProtocolState' (ProtocolState st)
-
--- | 'Peer' type provides access to 'SingProtocolState' constructors thought
--- the 'SingI' type class.  At a given state one can pattern match on it to
--- branch on possible 'ProtocolState's:
---
--- @
--- case sing :: Sing (SingProtocolState st) of -- @st@ must be in scope
---    tok ->
--- @
---
-type instance Sing = SingProtocolState'
-instance ( SingI st
-         , SingI (a :: Agency)
-         , a ~ StateAgency st
-         )
-      => SingI ('PS st a) where
-    sing = SingProtocolState sing
-
-
-type PeerHasAgency  (st :: ps) = 'PeerHasAgency st (StateAgency st)
-data PeerHasAgency'  ps agency =  PeerHasAgency ps agency
-
-
--- | Singletons for active states in which one of the sides has agency.
---
-type SingPeerHasAgency' :: PeerHasAgency' ps Agency -> Type
-data SingPeerHasAgency' x where
-    SingClientHasAgency :: StateAgency st ~ ClientAgency
-                        => { phaState :: Sing st }
-                        -> SingPeerHasAgency' (PeerHasAgency st)
-
-    SingServerHasAgency :: StateAgency st ~ ServerAgency
-                        => { phaState :: Sing st }
-                        -> SingPeerHasAgency' (PeerHasAgency st)
-
--- | 'SingActiveState' is a convenient type alias for the `SingActiveState'`
--- type.
---
-type SingPeerHasAgency (st :: ps) = SingPeerHasAgency' (PeerHasAgency st)
-
-
-deriving instance Show (Sing st)
-               => Show (SingPeerHasAgency' ('PeerHasAgency st agency))
-
-type instance Sing = SingPeerHasAgency'
-instance ( SingI st
-         , ClientAgency ~ StateAgency st
-         )
-      => SingI ('PeerHasAgency st ClientAgency) where
-    sing = SingClientHasAgency sing
-instance ( SingI st
-         , ServerAgency ~ StateAgency st
-         )
-      => SingI ('PeerHasAgency st ServerAgency) where
-    sing = SingServerHasAgency sing
-
-
--- | Extract @'Sing' 'StateAgency' st@ from @'SingPeerHasAgency' st@.
---
-phaAgency :: SingPeerHasAgency st -> Sing (StateAgency st)
-phaAgency (SingClientHasAgency _) = SingClientAgency
-phaAgency (SingServerHasAgency _) = SingServerAgency
+notActiveState :: forall ps (st :: ps).
+                  StateAgency st ~ NobodyAgency
+               => ActiveState st
+               => Sing st
+               -> forall a. a
+notActiveState (_ :: Sing st) =
+  case activeAgency :: ActiveAgency st of {}
 
 
 -- | A type function to flip the client and server roles.

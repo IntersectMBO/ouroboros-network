@@ -28,16 +28,17 @@ codecPingPong =
     encode MsgPong = "pong\n"
 
     decode :: forall (st :: PingPong).
-              SingI (PeerHasAgency st)
-           => m (DecodeStep String CodecFailure m (SomeMessage st))
-    decode =
+              ActiveState st
+           => Sing st
+           -> m (DecodeStep String CodecFailure m (SomeMessage st))
+    decode stok =
       decodeTerminatedFrame '\n' $ \str trailing ->
-        case (sing :: Sing (PeerHasAgency st), str) of
-          (SingServerHasAgency SingBusy, "pong") ->
+        case (stok, str) of
+          (SingBusy, "pong") ->
             DecodeDone (SomeMessage MsgPong) trailing
-          (SingClientHasAgency SingIdle, "ping") ->
+          (SingIdle, "ping") ->
             DecodeDone (SomeMessage MsgPing) trailing
-          (SingClientHasAgency SingIdle, "done") ->
+          (SingIdle, "done") ->
             DecodeDone (SomeMessage MsgDone) trailing
 
           (_       , _     ) -> DecodeFail failure
@@ -71,30 +72,35 @@ codecPingPongId =
     Codec{encode,decode}
   where
     encode :: forall (st :: PingPong) (st' :: PingPong)
-           .  SingI (PeerHasAgency st)
+           .  ( SingI st
+              , ActiveState st
+              )
            => Message PingPong st st'
            -> AnyMessage PingPong
     encode msg = AnyMessage msg
 
     decode :: forall (st :: PingPong).
-              SingI (PeerHasAgency st)
-           => m (DecodeStep (AnyMessage PingPong) CodecFailure m (SomeMessage st))
-    decode =
-      let stok :: Sing (PeerHasAgency st)
-          stok = sing in
+              ActiveState st
+           => Sing st
+           -> m (DecodeStep (AnyMessage PingPong) CodecFailure m (SomeMessage st))
+    decode stok =
       pure $ DecodePartial $ \mb ->
         case mb of
           Nothing -> return $ DecodeFail (CodecFailure "expected more data")
           Just (AnyMessage msg) -> return $
             case (stok, msg) of
-              (SingServerHasAgency SingBusy, MsgPong) ->
+              (SingBusy, MsgPong) ->
                 DecodeDone (SomeMessage msg) Nothing
-              (SingClientHasAgency SingIdle, MsgPing) ->
+              (SingIdle, MsgPing) ->
                 DecodeDone (SomeMessage msg) Nothing
-              (SingClientHasAgency SingIdle, MsgDone) ->
+              (SingIdle, MsgDone) ->
                 DecodeDone (SomeMessage msg) Nothing
 
-              (SingServerHasAgency _      , _     ) -> DecodeFail failure
-                where failure = CodecFailure ("unexpected server message: " ++ show msg)
-              (SingClientHasAgency _      , _     ) -> DecodeFail failure
-                where failure = CodecFailure ("unexpected client message: " ++ show msg )
+              (SingIdle, _) ->
+                DecodeFail failure
+                  where failure = CodecFailure ("unexpected client message: " ++ show msg)
+              (SingBusy, _) ->
+                DecodeFail failure
+                  where failure = CodecFailure ("unexpected server message: " ++ show msg)
+
+              (a@SingDone, _) -> notActiveState a
