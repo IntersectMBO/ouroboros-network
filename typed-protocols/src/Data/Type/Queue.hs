@@ -6,11 +6,14 @@
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE QuantifiedConstraints    #-}
 {-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE ViewPatterns             #-}
+
+{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 
 -- | Type level queues.
 --
@@ -29,7 +32,7 @@ module Data.Type.Queue
   , uncons
   , queueDepth
     -- ** SingQueueF singleton
-  , SingQueueF (..)
+  , SingQueueF (SingConsF, SingEmptyF, UnsafeSingQueueF)
   , (|>)
   , (<|)
   , queueFDepth
@@ -80,15 +83,91 @@ infixr 5 |>
 -- | Singleton data type which allows to track the types of kind
 -- @'Queue' ps@ and store a value which depends on a queued transition.
 --
--- TODO: an optimised version of 'SingQueueF' which does not recurs.
+-- Based on `BatchedQueue`, Okasaki, p.186 
 --
 type SingQueueF :: (ps -> ps -> Type) -> Queue ps -> Type
 data SingQueueF f q where
-    SingEmptyF :: SingQueueF f Empty
-    SingConsF  :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
-                  !(f st st')
-               -> !(SingQueueF f q)
-               -> SingQueueF f (Tr st st' <| q)
+  -- invariant: if head is empty then tail is empty as well
+  UnsafeSingQueueF :: [SomeF f] -- ^ head
+                   -> [SomeF f] -- ^ tail
+                   -> SingQueueF f q
+
+data SomeF f where
+  SomeF :: !(f st st') -> SomeF f
+
+instance (forall (st :: ps) (st' :: ps). Show (f st st'))
+      => Show (SomeF f) where
+  show (SomeF f) = show f
+
+--
+-- primitive SingQueueF operations
+--
+
+consF :: f st st'
+      -> SingQueueF f q
+      -> SingQueueF f (Tr st st' <| q)
+consF f (UnsafeSingQueueF h t) = UnsafeSingQueueF (SomeF f : h) t
+
+checkF :: SingQueueF f q -> SingQueueF f q
+checkF (UnsafeSingQueueF [] t) = UnsafeSingQueueF (reverse t) []
+checkF q                       = q
+
+unconsF :: SingQueueF f (Tr st st' <| q) -> (f st st, SingQueueF f q)
+unconsF (UnsafeSingQueueF h t) =
+    case (t, h) of
+      (SomeF f : t', _) -> unsafeCoerce (f, checkF $ UnsafeSingQueueF t' h)
+      ([], _)           -> error "impossible happened!"
+
+snocF :: SingQueueF f q
+      -> f st st'
+      -> SingQueueF f (q |> Tr st st')
+snocF (UnsafeSingQueueF h  t) f = checkF (UnsafeSingQueueF h (SomeF f : t))
+
+--
+-- SingQueueF patterns
+--
+
+type IsQueueF :: (ps -> ps -> Type) -> Queue ps -> Type
+data IsQueueF f q where
+    IsEmptyF :: IsQueueF f Empty
+    IsConsF  :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
+                f st st'
+             -> SingQueueF f                 q
+             -> IsQueueF   f   (Tr st st' <| q)
+
+toIsQueueF :: forall ps (f :: ps -> ps -> Type) (q :: Queue ps).
+              SingQueueF f q -> IsQueueF f q
+toIsQueueF (UnsafeSingQueueF [] []) = unsafeCoerce IsEmptyF
+toIsQueueF q = case unconsF (coerce q) of
+     (f, q') -> coerce' (IsConsF f q')
+   where
+     coerce :: SingQueueF f q -> SingQueueF f (Tr st st' <| q')
+     coerce = unsafeCoerce
+
+     coerce' :: IsQueueF f (Tr st st' <| q') -> IsQueueF f q
+     coerce' = unsafeCoerce
+
+pattern SingEmptyF :: ()
+                   => (q ~ Empty)
+                   => SingQueueF f q
+pattern SingEmptyF <- (toIsQueueF -> IsEmptyF)
+  where
+    SingEmptyF = UnsafeSingQueueF [] []
+
+pattern SingConsF :: forall ps f (q :: Queue ps).
+                    ()
+                 => forall (st :: ps) (st' :: ps) (q' :: Queue ps).
+                    (q ~ (Tr st st' <| q'))
+                 => f st st'
+                 -> SingQueueF f q'
+                    -- ^ singleton for the remaining part of the queue
+                 -> SingQueueF f q
+pattern SingConsF f q <- (toIsQueueF -> IsConsF f q)
+  where
+    SingConsF f q = consF f q
+
+{-# COMPLETE SingEmptyF, SingConsF #-}
+
 
 deriving instance
          (forall (st :: ps) (st' :: ps). Show (f st st'))
@@ -110,13 +189,11 @@ deriving instance
         SingQueueF f q
      -> f st st'
      -> SingQueueF f (q |> Tr st st')
-(|>)  SingEmptyF     !f  = SingConsF f SingEmptyF
-(|>) (SingConsF f q) !f' = SingConsF f (q |> f')
+(|>)  = snocF
 
 
 queueFDepth :: SingQueueF f q -> Int
-queueFDepth  SingEmptyF      = 0
-queueFDepth (SingConsF _ q') = 1 + queueFDepth q'
+queueFDepth (UnsafeSingQueueF h t) = length h + length t
 
 -- | A space efficient singleton for a non-empty 'Queue' type.  It has two
 -- public constructors 'SingSingleton' and 'SingCons'.

@@ -114,27 +114,9 @@ data Driver ps (pr :: PeerRole) bytes failure dstate f m =
 -- Running peers
 --
 
-
--- | A queue singleton which allows at the same time track information about
--- the protocol state.  We could use `SingQueueF`, however this removes one
--- level of indirection.
--- 
---
-type SingQueueS :: (ps -> Type) -> Queue ps -> Type
-data SingQueueS f q where
-    SingEmptyS :: SingQueueS f Empty
-    SingConsS  :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
-                  !(f st) 
-               -> !(SingQueueS f q)
-               -> SingQueueS f (Tr st st' <| q)
-
-snocS :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps).
-         SingQueueS f q
-      -> f st
-      -> Proxy st'
-      -> SingQueueS f (q |> Tr st st')
-snocS  SingEmptyS     !f  _  = SingConsS f SingEmptyS
-snocS (SingConsS f q) !f' p = SingConsS f (snocS q f' p)
+type F :: forall ps. (ps -> Type) -> ps -> ps -> Type
+data F f st st' where
+  F :: !(f st) -> F f st st'
 
 -- | Run a peer with the given driver.
 --
@@ -175,11 +157,11 @@ runPeerWithDriver Driver{ sendMessage
 
     goEmpty !dstate  _ (YieldPipelined refl f msg k) = do
       sendMessage refl f msg
-      go (SingConsS f SingEmptyS) (DriverState dstate) k
+      go (SingConsF (F f) SingEmptyF) (DriverState dstate) k
 
 
     go :: forall st1 st2 st3 q'.
-          SingQueueS f (Tr st1 st2 <| q')
+          SingQueueF (F f) (Tr st1 st2 <| q')
        -> DriverState ps pr st1 bytes failure dstate m
        -> Peer ps pr pl (Tr st1 st2 <| q') st3 f m (STM m) a
        -> m (a, dstate)
@@ -191,24 +173,24 @@ runPeerWithDriver Driver{ sendMessage
                   (k   :: Peer ps pr pl ((Tr st1 st2 <| q') |> Tr st' st'') st'' f m (STM m) a))
                 = do
       sendMessage refl f msg
-      go (snocS q f (Proxy :: Proxy st''))
+      go (q |> (F f :: F f st' st''))
          dstate k
 
-    go (SingConsS f q) !dstate (Collect refl Nothing k) = do
+    go (SingConsF (F f) q) !dstate (Collect refl Nothing k) = do
       (SomeMessage msg, dstate') <- recvMessage refl f dstate
       case k f msg of
-        (k', f') -> go (SingConsS f' q) (DriverState dstate') k'
+        (k', f') -> go (SingConsF (F f') q) (DriverState dstate') k'
 
-    go q@(SingConsS f q') !dstate (Collect refl (Just k') k) = do
+    go q@(SingConsF (F f) q') !dstate (Collect refl (Just k') k) = do
       r <- tryRecvMessage refl f dstate
       case r of
         Left dstate' ->
           go q dstate' k'
         Right (SomeMessage msg, dstate') ->
           case k f msg of
-            (k'', f'') -> go (SingConsS f'' q') (DriverState dstate') k''
+            (k'', f'') -> go (SingConsF (F f'') q') (DriverState dstate') k''
 
-    go (SingConsS (f :: f stX) SingEmptyS)
+    go (SingConsF (F (f :: f stX)) SingEmptyF)
        (DriverState dstate)
        (CollectDone k :: Peer ps pr pl (Cons (Tr stX stY) Empty) stZ f m stm a) =
       -- we collected all messages, which means that we reached the type:
@@ -220,10 +202,10 @@ runPeerWithDriver Driver{ sendMessage
           coerce :: f stA -> f stZ
           coerce = unsafeCoerce
 
-    go (SingConsS _ (q@SingConsS {})) (DriverState dstate) (CollectDone k) =
+    go (SingConsF _ q@SingConsF {}) (DriverState dstate) (CollectDone k) =
       go q (DriverState dstate) k
 
-    go q@(SingConsS f q') !dstate (CollectSTM refl k' k) = do
+    go q@(SingConsF (F f) q') !dstate (CollectSTM refl k' k) = do
       stm <- recvMessageSTM refl f dstate
       -- Note that the 'stm' action also returns next @dstate@.  For this
       -- reason, using a simpler 'CollectSTM' which takes `STM m Message` as an
@@ -234,7 +216,7 @@ runPeerWithDriver Driver{ sendMessage
       case r of
         Left (SomeMessage msg, dstate') ->
           case k f msg of
-            (k'', f'') -> go (SingConsS f'' q') (DriverState dstate') k''
+            (k'', f'') -> go (SingConsF (F f'') q') (DriverState dstate') k''
         Right k'' ->
           go q (DriverStateSTM stm (getDState dstate)) k''
 
