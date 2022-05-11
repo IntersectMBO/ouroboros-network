@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.MiniProtocol.ChainSync.Client (tests) where
 
+import           Control.Monad.Class.MonadThrow (Handler (..), catches)
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import           Data.Bifunctor (first)
@@ -364,8 +365,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
                  chainSyncClientPeerPipelined $ client varCandidate
              atomically $ writeTVar varClientResult (Just (Right result))
              return ()
-        `catch` \(ex :: ChainSyncClientException) -> do
-          -- TODO: Is this necessary? Wouldn't the Async's internal MVar do?
+        `catchAlsoLinked` \ex -> do
           atomically $ writeTVar varClientResult (Just (Left ex))
           -- Rethrow, but it will be ignored anyway.
           throwIO ex
@@ -434,6 +434,12 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     addTick clock tr = Tracer $ \ev -> do
       tick <- atomically $ LogicalClock.getCurrentTick clock
       traceWith tr (tick, ev)
+
+    catchAlsoLinked :: Exception e => m a -> (e -> m a) -> m a
+    catchAlsoLinked ma handler = ma `catches`
+      [ Handler handler
+      , Handler $ \(ExceptionInLinkedThread _ ex) -> throwIO ex `catch` handler
+      ]
 
 updateClientState :: [ChainUpdate] -> Chain TestBlock -> Chain TestBlock
 updateClientState chainUpdates chain =
