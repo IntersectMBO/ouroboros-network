@@ -78,7 +78,7 @@ import           Test.Util.Tracer (recordingTracerTVar)
 tests :: TestTree
 tests = testGroup "ChainSyncClient"
     [ testProperty "chainSync"                 $ prop_chainSync
-    , testProperty "joinUpdates/spreadUpdates" $ prop_joinUpdates_spreadUpdates k
+    , testProperty "joinSchedule/genSchedule"  $ prop_joinSchedule_genSchedule
     , testProperty "genChainUpdates"           $ prop_genChainUpdates           k updatesToGenerate
     ]
   where
@@ -180,7 +180,7 @@ serverId = CoreNodeId 1
 -- TODO Note that a schedule can't express delays between the messages sent
 -- over the chain sync protocol. Generating such delays may expose more (most
 -- likely concurrency-related) bugs.
-type Schedule a = Map Tick [ChainUpdate]
+type Schedule a = Map Tick [a]
 
 -- | Return the last tick at which an update is planned, if no updates are
 -- planned, return 0.
@@ -201,11 +201,11 @@ toChainUpdates = concatMap $ \case
     AddBlock b       -> Chain.AddBlock b  : []
 
 newtype ClientUpdates =
-  ClientUpdates { getClientUpdates :: Schedule [ChainUpdate] }
+  ClientUpdates { getClientUpdates :: Schedule ChainUpdate }
   deriving (Show)
 
 newtype ServerUpdates =
-  ServerUpdates { getServerUpdates :: Schedule [ChainUpdate] }
+  ServerUpdates { getServerUpdates :: Schedule ChainUpdate }
   deriving (Show)
 
 type TraceEvent = (Tick, Either
@@ -530,7 +530,7 @@ instance Arbitrary ChainSyncClientSetup where
                           clientUpdates
       , startTick     = startTick'
       }
-    | serverUpdates' <- shrinkUpdateSchedule (getServerUpdates serverUpdates)
+    | serverUpdates' <- shrinkSchedule (getServerUpdates serverUpdates)
     , let maxStartTick = maximum
             [ 1
             , lastTick (getClientUpdates clientUpdates) - 1
@@ -544,7 +544,7 @@ instance Arbitrary ChainSyncClientSetup where
       }
     | clientUpdates' <-
         removeLateClientUpdates serverUpdates . ClientUpdates <$>
-        shrinkUpdateSchedule (getClientUpdates clientUpdates)
+        shrinkSchedule (getClientUpdates clientUpdates)
     , let maxStartTick = maximum
             [ 1
             , lastTick (getClientUpdates clientUpdates') - 1
@@ -558,9 +558,9 @@ instance Show ChainSyncClientSetup where
       [ "ChainSyncClientSetup:"
       , "securityParam: " <> show (maxRollbacks securityParam)
       , "clientUpdates:"
-      , ppUpdates (getClientUpdates clientUpdates) <> "--"
+      , ppSchedule ppChainUpdate (getClientUpdates clientUpdates) <> "--"
       , "serverUpdates:"
-      , ppUpdates (getServerUpdates serverUpdates) <> "--"
+      , ppSchedule ppChainUpdate (getServerUpdates serverUpdates) <> "--"
       , "startTick: " <> show startTick
       ]
 
@@ -591,53 +591,48 @@ removeLateClientUpdates (ServerUpdates sus)
 
 genUpdateSchedule
   :: SecurityParam
-  -> StateT ChainUpdateState Gen (Schedule [ChainUpdate])
+  -> StateT ChainUpdateState Gen (Schedule ChainUpdate)
 genUpdateSchedule securityParam = do
     cus  <- get
     cus' <- lift $ genChainUpdates securityParam 10 cus
     put cus'
     let chainUpdates = getChainUpdates cus'
-    lift $ spreadUpdates chainUpdates
+    lift $ genSchedule chainUpdates
 
 -- | Repeatedly remove the last entry (highest 'Tick')
-shrinkUpdateSchedule :: Schedule [ChainUpdate]
-                     -> [Schedule [ChainUpdate]]
-shrinkUpdateSchedule = unfoldr (fmap (\(_, m) -> (m, m)) . Map.maxView)
+shrinkSchedule :: Schedule a -> [Schedule a]
+shrinkSchedule = unfoldr (fmap (\(_, m) -> (m, m)) . Map.maxView)
 
--- | Spread out updates over a schedule, i.e. schedule a number of updates to
--- be executed on each tick. Most ticks will have no planned updates.
---
--- Each roll back of @x@ blocks will be immediately followed (in the same
--- tick) by adding @y@ blocks, where @y >= x@.
-spreadUpdates :: [ChainUpdate]
-              -> Gen (Schedule [ChainUpdate])
-spreadUpdates = go Map.empty 1
+-- | Spread out elements over a schedule, i.e. schedule a number of elements to
+-- be processed on each tick. Most ticks will have no associated elements.
+genSchedule :: [a] -> Gen (Schedule a)
+genSchedule = go Map.empty 1
   where
-    go :: Map Tick [ChainUpdate]
+    go :: Schedule a
        -> Tick
-       -> [ChainUpdate]
-       -> Gen (Map Tick [ChainUpdate])
-    go !schedule tick updates
-      | null updates = return schedule
+       -> [a]
+       -> Gen (Schedule a)
+    go !schedule tick as
+      | null as = return schedule
       | otherwise    = do
-        nbUpdates <- frequency [ (2, return 0), (1, choose (1, 5)) ]
-        let (this, rest) = splitAt nbUpdates updates
+        nbAs <- frequency [ (2, return 0), (1, choose (1, 5)) ]
+        let (this, rest) = splitAt nbAs as
         go (Map.insert tick this schedule) (succ tick) rest
 
--- | Inverse of 'spreadUpdates'
-joinUpdates :: Schedule [ChainUpdate] -> [ChainUpdate]
-joinUpdates = concatMap snd . Map.toAscList
+-- | Inverse of 'genSchedule'
+joinSchedule :: Schedule a -> [a]
+joinSchedule = concatMap snd . Map.toAscList
 
-prop_joinUpdates_spreadUpdates :: SecurityParam -> Property
-prop_joinUpdates_spreadUpdates securityParam =
-    forAll genUpdatesAndSpread $ \(updates, spread) ->
-      joinUpdates spread === updates
+prop_joinSchedule_genSchedule :: Property
+prop_joinSchedule_genSchedule =
+    forAll genUpdatesAndSpread $ \(as, spread) ->
+      joinSchedule spread === as
   where
     genUpdatesAndSpread = do
-      updates <- getChainUpdates <$>
-                 genChainUpdates securityParam updatesToGenerate emptyUpdateState
-      spread  <- spreadUpdates updates
-      return (updates, spread)
+      -- generate elements of some type with an Ord instance
+      as :: [Int] <- arbitrary
+      spread      <- genSchedule as
+      return (as, spread)
 
 {-------------------------------------------------------------------------------
   Generating ChainUpdates
@@ -750,21 +745,21 @@ ppFragment f = ppBlocks (AF.anchorPoint f) (AF.toOldestFirst f)
 ppBlocks :: Point TestBlock -> [TestBlock] -> String
 ppBlocks a bs = ppPoint a <> " ] " <> intercalate " :> " (map ppBlock bs)
 
-ppUpdates :: Schedule [ChainUpdate] -> String
-ppUpdates = unlines
-          . map (uncurry showEntry)
-          . filter (not . null . snd)
-          . Map.toAscList
-  where
-    showEntry :: Tick -> [ChainUpdate] -> String
-    showEntry (Tick tick) updates = show tick <> ": " <>
-      intercalate ", " (map showChainUpdate updates)
+ppChainUpdate :: ChainUpdate -> String
+ppChainUpdate u = case u of
+  AddBlock b -> "AddBlock " <> ppBlock b
+  SwitchFork p bs -> "SwitchFork <- " <> ppPoint p <> " -> " <>
+    unwords (map ppBlock bs)
 
-    showChainUpdate :: ChainUpdate -> String
-    showChainUpdate u = case u of
-      AddBlock b -> "AddBlock " <> ppBlock b
-      SwitchFork p bs -> "SwitchFork <- " <> ppPoint p <> " -> " <>
-        unwords (map ppBlock bs)
+ppSchedule :: (a -> String) -> Schedule a -> String
+ppSchedule ppA =
+      unlines
+    . map (uncurry showEntry)
+    . filter (not . null . snd)
+    . Map.toAscList
+  where
+    showEntry (Tick tick) as = show tick <> ": " <>
+      intercalate ", " (map ppA as)
 
 ppTraceEvent :: TraceEvent -> String
 ppTraceEvent (Tick n, ev) = show n <> " | " <> case ev of
