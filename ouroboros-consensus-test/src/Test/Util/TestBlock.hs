@@ -28,8 +28,9 @@ module Test.Util.TestBlock (
   , Header (..)
   , StorageConfig (..)
   , TestBlockError (..)
-  , TestBlockWith (tbPayload)
+  , TestBlockWith (tbPayload, tbValid)
   , TestHash (TestHash)
+  , Validity (..)
   , firstBlockWithPayload
   , forkBlock
   , modifyFork
@@ -182,6 +183,10 @@ instance Show TestHash where
 instance Condense TestHash where
   condense = condense . reverse . NE.toList . unTestHash
 
+data Validity = Valid | Invalid
+  deriving stock    (Show, Eq, Ord, Enum, Bounded, Generic)
+  deriving anyclass (Serialise, NoThunks, ToExpr)
+
 -- | Test block parametrized on the payload type
 --
 -- For blocks without payload see the 'TestBlock' type alias.
@@ -197,7 +202,7 @@ data TestBlockWith ptype = TestBlockWith {
       --
       -- Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same slot number.
-    , tbValid   :: Bool
+    , tbValid   :: Validity
       -- ^ Note that when generating a 'TestBlock', you must make sure that
       -- blocks with the same 'TestHash' have the same value for 'tbValid'.
     , tbPayload :: ptype
@@ -211,7 +216,7 @@ firstBlockWithPayload :: Word64 -> ptype -> TestBlockWith ptype
 firstBlockWithPayload forkNo payload = TestBlockWith
     { tbHash    = TestHash (forkNo NE.:| [])
     , tbSlot    = 1
-    , tbValid   = True
+    , tbValid   = Valid
     , tbPayload = payload
     }
 
@@ -224,7 +229,7 @@ successorBlockWithPayload ::
 successorBlockWithPayload hash slot payload = TestBlockWith
     { tbHash    = TestHash (NE.cons 0 (unTestHash hash))
     , tbSlot    = succ slot
-    , tbValid   = True
+    , tbValid   = Valid
     , tbPayload = payload
     }
 
@@ -414,7 +419,7 @@ instance PayloadSemantics ptype
   applyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
     = throwError $ InvalidHash (pointHash lastAppliedPoint) (blockPrevHash tb)
-    | not tbValid
+    | tbValid == Invalid
     = throwError $ InvalidBlock
     | otherwise
     = case applyPayload payloadDependentState tbPayload of
