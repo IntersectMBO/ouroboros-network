@@ -156,6 +156,7 @@ mkShelleyLedgerConfig genesis transCtxt epochInfo mmpv =
       , shelleyLedgerGlobals            =
           SL.mkShelleyGlobals
             genesis
+            0   -- a dummy
             (HardFork.toPureEpochInfo epochInfo)
             maxMajorPV
       , shelleyLedgerTranslationContext = transCtxt
