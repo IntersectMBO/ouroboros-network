@@ -31,6 +31,8 @@ import           Prelude hiding (sequence)
 import           Data.Functor.Product
 import           Data.SOP.Strict hiding (shape)
 
+import qualified Cardano.Slotting.Time as C
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..), SafeZone (..))
@@ -174,6 +176,14 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
         NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss t
     go (ExactlyCons params ExactlyNil) (TZ Current{..}) =
         -- The current era is the last. We assume it lasts until all eternity.
+        NonEmptyOne (EraSummary currentStart EraUnbounded params)
+    go (ExactlyCons params (ExactlyCons _ ExactlyNil)) (TZ Current{..})
+      | currentStart == Bound (C.RelativeTime 125280000) (SlotNo 39916800) (EpochNo 290)
+      , params       == EraParams (EpochSize 432000) (C.slotLengthFromSec 1) (StandardSafeZone 129600)
+        -- TODO add a disjunct for the testnet's Alonzo era
+      =
+        -- The current era is Cardano mainnet Alonzo. As a temporary workaround,
+        -- assume it lasts until all eternity.
         NonEmptyOne (EraSummary currentStart EraUnbounded params)
     go (ExactlyCons params (ExactlyCons nextParams _)) (TZ Current{..}) =
         case transition of
