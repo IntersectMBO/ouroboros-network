@@ -63,18 +63,17 @@ import           Network.TypedProtocol.Core as Core
 -- 'Network.TypedProtocol.Peer.Client' or 'Network.TypedProtocol.Peer.Server'
 -- pattern synonyms provide this evidence automatically.
 --
-type Peer :: forall ps
+type Peer :: forall ps (st :: ps)
           -> PeerRole
           -> Pipelined
-          -> Queue ps
-          -> ps
+          -> Queue ps st
           -> (Type -> Type)
           -- ^ monad's kind
           -> (Type -> Type)
           -- ^ stm monad's kind, usually @'STM' m@
           -> Type
           -> Type
-data Peer ps pr pl q st m stm a where
+data Peer ps st pr pl q m stm a where
 
   -- | Perform a local monadic effect and then continue.
   --
@@ -85,10 +84,10 @@ data Peer ps pr pl q st m stm a where
   -- >   return $ ... -- another Peer value
   --
   Effect
-    :: forall ps pr pl q st m stm a.
-       m (Peer ps pr pl q st m stm a)
+    :: forall ps st pr pl q m stm a.
+       m (Peer ps st pr pl q m stm a)
     -- ^ monadic continuation
-    ->    Peer ps pr pl q st m stm a
+    ->    Peer ps st pr pl q m stm a
 
   -- | Send a message to the other peer and then continue. This takes the
   -- message and the continuation. It also requires evidence that we have
@@ -110,9 +109,9 @@ data Peer ps pr pl q st m stm a where
     -- ^ agency singleton
     -> Message ps st st'
     -- ^ protocol message
-    -> Peer ps pr pl Empty st' m stm a
+    -> Peer ps st' pr pl Empty m stm a
     -- ^ continuation
-    -> Peer ps pr pl Empty st  m stm a
+    -> Peer ps st  pr pl Empty m stm a
 
   -- | Waits to receive a message from the other peer and then continues.
   -- This takes the continuation that is supplied with the received message. It
@@ -141,9 +140,9 @@ data Peer ps pr pl q st m stm a where
                            (Relative pr (StateAgency st)))
     -- ^ agency singleton
     -> (forall (st' :: ps). Message ps st st'
-        -> Peer ps pr pl Empty st' m stm a)
+        -> Peer ps st' pr pl Empty m stm a)
     -- ^ continuation
-    -> Peer     ps pr pl Empty st  m stm a
+    -> Peer     ps st  pr pl Empty m stm a
 
   -- | Terminate with a result. A state token must be provided from the
   -- 'NobodyHasAgency' states, so show that this is a state in which we can
@@ -164,7 +163,7 @@ data Peer ps pr pl q st m stm a where
     -- ^ (no) agency singleton
     -> a
     -- ^ returned value
-    -> Peer ps pr pl Empty st m stm a
+    -> Peer ps st pr pl Empty m stm a
 
   --
   -- Pipelining primitives
@@ -175,7 +174,24 @@ data Peer ps pr pl q st m stm a where
   -- the queue.
   --
   YieldPipelined
-    :: forall ps pr (st :: ps) (st' :: ps) q st'' m stm a.
+    -- The following GHC error:
+    -- ```
+    -- <no location info>: error:
+    --     ghc: panic! (the 'impossible' happened)
+    --   (GHC version 8.10.7:
+    --         metaTyVarRef
+    --   st_a1Rj[sk:1]
+    --   Call stack:
+    --       CallStack (from HasCallStack):
+    --         callStackDoc, called at compiler/utils/Outputable.hs:1179:37 in ghc:Outputable
+    --         pprPanic, called at compiler/typecheck/TcType.hs:1032:14 in ghc:TcType
+
+    -- Please report this as a GHC bug:  https://www.haskell.org/ghc/reportabug
+    -- ```
+    -- is triggered by:
+    -- :: forall ps pr (st :: ps) (st' :: ps) q st'' m stm a.
+    -- the correct one is (actually swapping `q` and `st''` is enough):
+    :: forall ps pr (st :: ps) (st' :: ps) (st'' :: ps) (q :: Queue ps st) m stm a.
        ( SingI st
        , SingI st'
        , ActiveState st
@@ -186,14 +202,14 @@ data Peer ps pr pl q st m stm a where
     -- ^ agency singleton
     -> Message ps st st'
     -- ^ protocol message
-    -> Peer ps pr 'Pipelined (q |> Tr st' st'') st'' m stm a
+    -> Peer ps st'' pr 'Pipelined (q |> Tr st' st'') m stm a
     -- ^ continuation
-    -> Peer ps pr 'Pipelined  q                 st   m stm a
+    -> Peer ps st   pr 'Pipelined  q                 m stm a
 
   -- | Partially collect promised transition.
   --
   Collect
-    :: forall ps pr (st' :: ps) (st'' :: ps) q st m stm a.
+    :: forall ps pr (st :: ps) (st' :: ps) (st'' :: ps) (q :: Queue ps st) m stm a.
        ( SingI st'
        , ActiveState st'
        )
@@ -201,12 +217,12 @@ data Peer ps pr pl q st m stm a where
                             TheyHaveAgency
                            (Relative pr (StateAgency st')))
     -- ^ agency singleton
-    -> Maybe (Peer ps pr 'Pipelined (Tr st' st'' <| q) st m stm a)
+    -> Maybe (Peer ps st pr 'Pipelined (Tr st' st'' <| q) m stm a)
     -- ^ continuation, executed if no message has arrived so far
     -> (forall (stNext :: ps). Message ps st' stNext
-        -> Peer ps pr 'Pipelined (Tr stNext st'' <| q) st m stm a)
+        -> Peer ps st pr 'Pipelined (Tr stNext st'' <| q) m stm a)
     -- ^ continuation
-    -> Peer     ps pr 'Pipelined (Tr st'    st'' <| q) st m stm a
+    -> Peer     ps st pr 'Pipelined (Tr st'    st'' <| q) m stm a
 
   -- | Collect the identity transition.
   --
@@ -215,10 +231,10 @@ data Peer ps pr pl q st m stm a where
   -- which needs to know the transition type at compile time.
   --
   CollectDone
-    :: forall ps pr (st :: ps) q (st' :: ps) m stm a.
-       Peer ps pr 'Pipelined              q  st' m stm a
+    :: forall ps pr (st :: ps) (st' :: ps) (q :: Queue ps st') m stm a.
+       Peer ps st' pr 'Pipelined              q  m stm a
     -- ^ continuation
-    -> Peer ps pr 'Pipelined (Tr st st <| q) st' m stm a
+    -> Peer ps st' pr 'Pipelined (Tr st st <| q) m stm a
 
   -- The 'Peer' driver will race two transactions, the peer continuation versus
   -- next message.
@@ -228,7 +244,7 @@ data Peer ps pr pl q st m stm a where
   -- responsible for
   --
   CollectSTM
-    :: forall ps pr (st' :: ps) (st'' :: ps) q (st :: ps) m stm a.
+    :: forall ps pr (st :: ps) (st' :: ps) (st'' :: ps) (q :: Queue ps st) m stm a.
        ( SingI st'
        , ActiveState st'
        )
@@ -236,13 +252,13 @@ data Peer ps pr pl q st m stm a where
                             TheyHaveAgency
                            (Relative pr (StateAgency st')))
     -- ^ agency singleton
-    -> stm (Peer ps pr 'Pipelined (Tr st' st'' <| q) st m stm a)
+    -> stm (Peer ps st pr 'Pipelined (Tr st' st'' <| q) m stm a)
     -- ^ continuation, which is executed if it wins the race with the next
     -- message.
     -> (forall stNext. Message ps st' stNext
-        -> Peer ps pr 'Pipelined (Tr stNext st'' <| q) st m stm a)
+        -> Peer ps st pr 'Pipelined (Tr stNext st'' <| q) m stm a)
     -- ^ continuation
-    -> Peer     ps pr 'Pipelined (Tr st'    st'' <| q) st m stm a
+    -> Peer     ps st pr 'Pipelined (Tr st'    st'' <| q) m stm a
 
 
-deriving instance (Functor m, Functor stm) => Functor (Peer ps (pr :: PeerRole) pl q (st :: ps) m stm)
+deriving instance (Functor m, Functor stm) => Functor (Peer ps (st :: ps) (pr :: PeerRole) pl (q :: Queue ps st) m stm)

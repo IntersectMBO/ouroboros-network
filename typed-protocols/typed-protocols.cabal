@@ -21,11 +21,11 @@ library
   exposed-modules:   Network.TypedProtocol
                    , Network.TypedProtocol.Core
                    , Network.TypedProtocol.Peer
-                   , Network.TypedProtocol.Peer.Client
-                   , Network.TypedProtocol.Peer.Server
-                   , Network.TypedProtocol.Codec
-                   , Network.TypedProtocol.Driver
-                   , Network.TypedProtocol.Proofs
+                   -- , Network.TypedProtocol.Peer.Client
+                   -- , Network.TypedProtocol.Peer.Server
+                   -- , Network.TypedProtocol.Codec
+                   -- , Network.TypedProtocol.Driver
+                   -- , Network.TypedProtocol.Proofs
                    , Data.Type.Queue
 
   other-extensions:  GADTs
