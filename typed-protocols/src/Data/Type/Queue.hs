@@ -127,7 +127,7 @@ unconsF (UnsafeSingQueueF h t) =
 snocF :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps st).
          SingQueueF f q st
       -> f st st'
-      -> SingQueueF f (q |> Tr st st') st'
+      -> SingQueueF f (q |> Tr st st' :: Queue ps st') st'
 snocF (UnsafeSingQueueF h  t) f = coerce $ checkF (UnsafeSingQueueF h (SomeF f : t))
   where
     coerce :: SingQueueF f (q |> Tr st st') st -> SingQueueF f (q |> Tr st st') st'
@@ -199,7 +199,7 @@ deriving instance
 (|>) :: forall ps f (st :: ps) (st' :: ps) (q :: Queue ps st).
         SingQueueF f  q               st
      -> f st st'
-     -> SingQueueF f (q |> Tr st st') st'
+     -> SingQueueF f (q |> Tr st st' :: Queue ps st') st'
 (|>)  = snocF
 
 
