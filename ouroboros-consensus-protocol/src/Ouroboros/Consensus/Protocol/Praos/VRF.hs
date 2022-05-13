@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | This module implements VRF range extension as described in
@@ -21,7 +22,7 @@ module Ouroboros.Consensus.Protocol.Praos.VRF (
 
 import           Cardano.Binary (ToCBOR)
 import           Cardano.Crypto.Hash (Blake2b_256, Hash, castHash, hashToBytes,
-                     hashWith)
+                     hashWith, sizeHash)
 import qualified Cardano.Crypto.Hash as Hash
 import           Cardano.Crypto.Util
                      (SignableRepresentation (getSignableRepresentation),
@@ -36,6 +37,8 @@ import qualified Data.ByteString.Builder.Extra as BS
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
+import Cardano.Protocol.TPraos.BHeader (BoundedNatural, assertBoundedNatural)
+import Data.Proxy (Proxy(Proxy))
 
 -- | Input to the verifiable random function. Consists of the hash of the slot
 -- and the epoch nonce.
@@ -100,9 +103,11 @@ vrfLeaderValue ::
   Crypto c =>
   proxy c ->
   CertifiedVRF (VRF c) InputVRF ->
-  Natural
-vrfLeaderValue p =
-  bytesToNatural . hashToBytes . hashVRF p SVRFLeader
+  BoundedNatural
+vrfLeaderValue p cvrf =
+  assertBoundedNatural
+    ((2 :: Natural) ^ (8 * sizeHash (Proxy @(HASH c))))
+    (bytesToNatural . hashToBytes $ hashVRF p SVRFLeader cvrf)
 
 -- | Range-extend a VRF output to be used for the evolving nonce. See section
 -- 2.1 of the linked paper for details.

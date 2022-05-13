@@ -48,8 +48,8 @@ import           Cardano.Ledger.PoolDistr
 import           Cardano.Ledger.Shelley.API (computeStabilityWindow)
 import qualified Cardano.Ledger.Shelley.API as SL
 import           Cardano.Ledger.Slot (Duration (Duration), (+*))
-import           Cardano.Protocol.TPraos.BHeader (checkLeaderNatValue,
-                     prevHashToNonce)
+import           Cardano.Protocol.TPraos.BHeader (BoundedNatural (bvValue),
+                     checkLeaderNatValue, prevHashToNonce)
 import           Cardano.Protocol.TPraos.OCert (KESPeriod (KESPeriod),
                      OCert (OCert), OCertSignable)
 import qualified Cardano.Protocol.TPraos.OCert as OCert
@@ -510,7 +510,6 @@ meetsLeaderThreshold
   keyHash
   rho =
     checkLeaderNatValue
-      (Proxy @(VRF c))
       (vrfLeaderValue (Proxy @c) rho)
       r
       (praosLeaderF praosParams)
@@ -541,8 +540,8 @@ validateVRFSignature eta0 (Views.lvPoolDistr -> SL.PoolDistr pd) f b = do
         (mkInputVRF slot eta0)
         vrfCert
         ?! VRFKeyBadProof slot eta0 vrfCert
-      checkLeaderNatValue (Proxy @(VRF c)) vrfLeaderVal sigma f
-        ?! VRFLeaderValueTooBig vrfLeaderVal sigma f
+      checkLeaderNatValue vrfLeaderVal sigma f
+        ?! VRFLeaderValueTooBig (bvValue vrfLeaderVal) sigma f
   where
     hk = coerceKeyRole . hashKey . Views.hvVK $ b
     vrfK = Views.hvVrfVK b
