@@ -388,8 +388,7 @@ initLedgerDB replayTracer
             case runAlsoLegacy of
               RunBoth    -> ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
               RunOnlyNew -> ledgerDbWithAnchor runAlsoLegacy (forgetLedgerTables genesisLedger)
-          lmdbTracer    = LMDBEvent `contramap` tracer
-      backingStore <- newBackingStore lmdbTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
+      backingStore <- newBackingStore nullTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
                             cfg
