@@ -34,9 +34,9 @@ import           Ouroboros.Consensus.Shelley.Ledger.Config
                      (shelleyProtocolVersion)
 import           Ouroboros.Consensus.Shelley.Ledger.Integrity
 import           Ouroboros.Consensus.Shelley.Ledger.Mempool
-import           Ouroboros.Consensus.Shelley.Protocol.Abstract
-                     (ProtocolHeaderSupportsKES (configSlotsPerKESPeriod),
-                     mkHeader, ProtoCrypto)
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto,
+                     ProtocolHeaderSupportsKES (configSlotsPerKESPeriod),
+                     mkHeader)
 
 {-------------------------------------------------------------------------------
   Forging

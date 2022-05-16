@@ -64,13 +64,13 @@ module Control.Monad.Class.MonadSTM.Strict
 
 import           Control.Monad.Class.MonadSTM as X hiding (LazyTMVar, LazyTVar,
                      TMVar, TVar, isEmptyTMVar, labelTMVar, labelTMVarIO,
-                     traceTMVar, traceTMVarIO, labelTVar, labelTVarIO,
-                     traceTVar, traceTVarIO, modifyTVar, newEmptyTMVar,
+                     labelTVar, labelTVarIO, modifyTVar, newEmptyTMVar,
                      newEmptyTMVarIO, newEmptyTMVarM, newTMVar, newTMVarIO,
                      newTMVarM, newTVar, newTVarIO, newTVarM, putTMVar,
                      readTMVar, readTVar, readTVarIO, stateTVar, swapTMVar,
-                     swapTVar, takeTMVar, tryPutTMVar, tryReadTMVar,
-                     tryTakeTMVar, writeTVar)
+                     swapTVar, takeTMVar, traceTMVar, traceTMVarIO, traceTVar,
+                     traceTVarIO, tryPutTMVar, tryReadTMVar, tryTakeTMVar,
+                     writeTVar)
 import qualified Control.Monad.Class.MonadSTM as Lazy
 import           GHC.Stack
 
@@ -105,7 +105,7 @@ labelTVarIO v = atomically . labelTVar v
 
 traceTVar :: MonadTraceSTM m
           => proxy m
-          -> StrictTVar m a 
+          -> StrictTVar m a
           -> (Maybe a -> a -> InspectMonad m TraceValue)
           -> STM m ()
 traceTVar p StrictTVar {tvar} = Lazy.traceTVar p tvar
@@ -229,7 +229,7 @@ labelTMVarIO v = atomically . labelTMVar v
 
 traceTMVar :: MonadTraceSTM m
            => proxy m
-           -> StrictTMVar m a 
+           -> StrictTMVar m a
            -> (Maybe (Maybe a) -> (Maybe a) -> InspectMonad m TraceValue)
            -> STM m ()
 traceTMVar p (StrictTMVar var) = Lazy.traceTMVar p var

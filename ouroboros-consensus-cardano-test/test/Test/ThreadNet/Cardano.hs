@@ -74,9 +74,10 @@ import           Test.Util.Nightly
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import           Ouroboros.Consensus.Shelley.Node.Praos
+                     (ProtocolParamsBabbage (..))
 import           Test.ThreadNet.Infra.TwoEras
-import Ouroboros.Consensus.Shelley.Node.Praos (ProtocolParamsBabbage(..))
-import Ouroboros.Consensus.Protocol.Praos.Translate ()
 
 -- | Use 'MockCryptoCompatByron' so that bootstrap addresses and
 -- bootstrap witnesses are supported.

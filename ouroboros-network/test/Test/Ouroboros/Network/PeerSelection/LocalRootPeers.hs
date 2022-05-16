@@ -6,7 +6,7 @@ module Test.Ouroboros.Network.PeerSelection.LocalRootPeers
   ( arbitraryLocalRootPeers
   , restrictKeys
   , tests
-  , LocalRootPeers(..)  -- for tests
+  , LocalRootPeers (..)
   ) where
 
 import           Data.Map.Strict (Map)
@@ -14,7 +14,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers (..))
+import           Ouroboros.Network.PeerSelection.LocalRootPeers
+                     (LocalRootPeers (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.PeerSelection.Governor

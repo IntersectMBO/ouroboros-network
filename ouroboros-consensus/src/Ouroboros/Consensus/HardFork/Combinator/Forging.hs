@@ -25,7 +25,8 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP, ViewOptNP (..))
+import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP,
+                     ViewOptNP (..))
 import qualified Ouroboros.Consensus.Util.OptNP as OptNP
 import           Ouroboros.Consensus.Util.SOP
 

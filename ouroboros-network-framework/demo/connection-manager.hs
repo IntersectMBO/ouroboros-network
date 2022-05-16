@@ -20,7 +20,6 @@
 module Main (main) where
 
 import           Control.Exception (IOException)
-import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST (MonadST)
@@ -30,6 +29,7 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (MonadTime (..))
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)

@@ -3,8 +3,8 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE UndecidableInstances  #-}
-{-# LANGUAGE TupleSections #-}
 
 module Test.Ouroboros.Network.Diffusion.Node
   ( -- * run a node
@@ -28,18 +28,18 @@ module Test.Ouroboros.Network.Diffusion.Node
   , UseLedgerAfter (..)
   ) where
 
-import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, wait, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadTraceSTM, MonadSTM (STM, atomically), newTVar)
+                     MonadSTM (STM, atomically), MonadTraceSTM, newTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
+import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (nullTracer)
 
 import           Data.IP (IP (..))
@@ -84,7 +84,8 @@ import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                      TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
-import           Ouroboros.Network.Testing.Data.Script (Script (..), singletonScript)
+import           Ouroboros.Network.Testing.Data.Script (Script (..),
+                     singletonScript)
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 

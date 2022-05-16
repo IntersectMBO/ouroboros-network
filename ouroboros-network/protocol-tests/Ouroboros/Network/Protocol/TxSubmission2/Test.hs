@@ -41,10 +41,10 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
 import           Ouroboros.Network.Util.ShowProxy
 
+import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
 import           Ouroboros.Network.Protocol.TxSubmission2.Direct
 import           Ouroboros.Network.Protocol.TxSubmission2.Examples
-import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 

@@ -7,7 +7,7 @@ module Ouroboros.Network.NodeToNode.Version
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
-  -- * Feature checks
+    -- * Feature checks
   , isPipeliningEnabled
   ) where
 
@@ -48,9 +48,9 @@ data NodeToNodeVersion
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
-    encodeTerm NodeToNodeV_7 = CBOR.TInt 7
-    encodeTerm NodeToNodeV_8 = CBOR.TInt 8
-    encodeTerm NodeToNodeV_9 = CBOR.TInt 9
+    encodeTerm NodeToNodeV_7  = CBOR.TInt 7
+    encodeTerm NodeToNodeV_8  = CBOR.TInt 8
+    encodeTerm NodeToNodeV_9  = CBOR.TInt 9
     encodeTerm NodeToNodeV_10 = CBOR.TInt 10
 
     decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7

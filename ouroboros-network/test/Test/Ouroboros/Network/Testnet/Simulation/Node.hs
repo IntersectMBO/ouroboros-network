@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Test.Ouroboros.Network.Testnet.Simulation.Node
-  ( SimArgs(..)
+  ( SimArgs (..)
   , DiffusionScript (..)
   , DiffusionSimulationTrace (..)
   , prop_diffusionScript_fixupCommands
@@ -13,23 +13,24 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   , diffusionSimulation
   ) where
 
-import           Control.Monad (replicateM, (>=>), forM)
-import           Control.Monad.Fix (MonadFix)
+import           Control.Monad (forM, replicateM, (>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, cancel, waitAny, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadTraceSTM, MonadSTM (STM), StrictTVar, atomically, newTVarIO, readTVar, writeTVar)
+                     MonadSTM (STM), MonadTraceSTM, StrictTVar, atomically,
+                     newTVarIO, readTVar, writeTVar)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
                      MonadMask, MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
-import           Control.Tracer (Tracer, traceWith, nullTracer)
+import           Control.Monad.Fix (MonadFix)
+import           Control.Tracer (Tracer, nullTracer, traceWith)
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Data.List ((\\), nub)
+import           Data.List (nub, (\\))
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -40,6 +41,7 @@ import           System.Random (StdGen, mkStdGen)
 
 import           Network.DNS (Domain)
 
+import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
                      ProtocolTimeLimits (..))
 import           Ouroboros.Network.Mux (MiniProtocolLimits (..))
@@ -61,19 +63,18 @@ import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Snocket (TestAddress (..), Snocket)
-import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import           Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
-import           Simulation.Network.Snocket (BearerInfo (..), withSnocket, FD)
+import           Simulation.Network.Snocket (BearerInfo (..), FD, withSnocket)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-                     (BlockGeneratorArgs, NtNAddr, randomBlockGenerationArgs,
-                     NtNVersion, NtCVersion, NtCAddr, NtCVersionData,
-                     NtNVersionData)
+                     (BlockGeneratorArgs, NtCAddr, NtCVersion, NtCVersionData,
+                     NtNAddr, NtNVersion, NtNVersionData,
+                     randomBlockGenerationArgs)
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay, DNSTimeout)

@@ -61,8 +61,8 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.Alonzo.PParams
-import           Cardano.Ledger.Babbage.PParams
 import           Cardano.Ledger.Alonzo.Tx (totExUnits)
+import           Cardano.Ledger.Babbage.PParams
 import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL

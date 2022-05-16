@@ -79,7 +79,7 @@ codecPingPongId =
       pure $ DecodePartial $ \mb ->
         case mb of
           Nothing -> return $ DecodeFail (CodecFailure "expected more data")
-          Just (AnyMessage msg) -> return $ 
+          Just (AnyMessage msg) -> return $
             case (stok, msg) of
               (ServerAgency TokBusy, MsgPong) ->
                 DecodeDone (SomeMessage msg) Nothing

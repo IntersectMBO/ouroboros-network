@@ -66,7 +66,8 @@ import           Simulation.Network.Snocket (AddressType (..),
                      GlobalAddressScheme (..))
 
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, oneof, frequency)
+import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
+                     oneof)
 
 
 -- | Node-to-node address type.

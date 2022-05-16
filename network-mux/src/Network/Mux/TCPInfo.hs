@@ -8,7 +8,7 @@ module Network.Mux.TCPInfo
   ) where
 
 #if os_HOST_linux
-import Network.Mux.TCPInfo.Linux
+import           Network.Mux.TCPInfo.Linux
 #else
 data StructTCPInfo = TCPInfoUnavailable
   deriving (Eq, Ord, Show)
