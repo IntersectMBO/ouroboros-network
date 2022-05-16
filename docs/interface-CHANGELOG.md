@@ -5,6 +5,13 @@ team.  See [consensus
 CHANGELOG](../ouroboros-consensus/docs/interface-CHANGELOG.md) file for how
 this changelog is supposed to be used.
 
+## Circa 2022-05-16
+
+- `io-classes`, `io-sim` and `strict-stm` were moved to
+  https://github.com/input-output-hk/io-sim
+
+- `typed-protocols`, `typed-protocols-cborg` and `typed-protocols` were moved
+  to https://github.com/input-output-hk/typed-protocols
 
 ## Circa 2022-04-06
 
