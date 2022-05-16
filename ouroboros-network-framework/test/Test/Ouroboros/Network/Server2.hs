@@ -21,7 +21,6 @@ module Test.Ouroboros.Network.Server2 (tests) where
 
 import           Control.Exception (AssertionFailed, SomeAsyncException (..))
 import           Control.Monad (replicateM, when, (>=>))
-import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST (MonadST)
@@ -32,6 +31,7 @@ import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
@@ -42,8 +42,7 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
-import           Data.List (delete, foldl', intercalate,
-                     mapAccumL, nub, (\\))
+import           Data.List (delete, foldl', intercalate, mapAccumL, nub, (\\))
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
@@ -95,14 +94,14 @@ import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec, noTimeLimitsHandshake,
                      timeLimitsHandshake)
-import           Ouroboros.Network.Protocol.Handshake.Type
-                     (Handshake)
+import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2 (RemoteTransitionTrace, ServerArguments (..))
+import           Ouroboros.Network.Server2 (RemoteTransitionTrace,
+                     ServerArguments (..))
 import qualified Ouroboros.Network.Server2 as Server
 import           Ouroboros.Network.Snocket (Snocket, TestAddress (..),
                      socketSnocket)
@@ -116,20 +115,19 @@ import           Ouroboros.Network.Testing.Data.AbsBearerInfo
                      AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
                      absNoAttenuation, toNonFailingAbsBearerInfoScript)
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     genDelayWithPrecision, sayTracer, tracerWithTime,
-                     nightlyTest)
+                     genDelayWithPrecision, nightlyTest, sayTracer,
+                     tracerWithTime)
 
 import           Test.Ouroboros.Network.Orphans ()
 import           Test.Simulation.Network.Snocket hiding (tests)
 
+import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
+                     allValidTransitionsNames, validTransitionMap,
+                     verifyAbstractTransition, verifyAbstractTransitionOrder)
+import           TestLib.InboundGovernor (allValidRemoteTransitionsNames,
+                     remoteStrIsFinalTransition, validRemoteTransitionMap,
+                     verifyRemoteTransition, verifyRemoteTransitionOrder)
 import           TestLib.Utils
-import           TestLib.ConnectionManager
-                     (verifyAbstractTransition, validTransitionMap,
-                     allValidTransitionsNames, verifyAbstractTransitionOrder, abstractStateIsFinalTransition)
-import           TestLib.InboundGovernor
-                     (verifyRemoteTransition, validRemoteTransitionMap,
-                     allValidRemoteTransitionsNames, verifyRemoteTransitionOrder,
-                     remoteStrIsFinalTransition)
 
 tests :: TestTree
 tests =

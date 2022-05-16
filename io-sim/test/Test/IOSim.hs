@@ -25,12 +25,12 @@ import           Control.Monad.Fix
 import           System.IO.Error (ioeGetErrorString, isUserError)
 
 import           Control.Monad.Class.MonadFork
+import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
-import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 
 import           Test.STM

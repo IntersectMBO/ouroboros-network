@@ -11,8 +11,8 @@ import           Control.Monad.Class.MonadSTM (TraceValue)
 import           Control.Monad.ST.Lazy
 
 import           Data.Map (Map)
-import           Data.Set (Set)
 import           Data.STRef.Lazy
+import           Data.Set (Set)
 
 data ThreadId = RacyThreadId [Int]
               | ThreadId     [Int]    -- non racy threads have higher priority
@@ -67,11 +67,11 @@ data TVar s a = TVar {
 
        -- | The vector clock of the current value.
        --
-       tvarVClock :: !(STRef s VectorClock),
+       tvarVClock  :: !(STRef s VectorClock),
 
        -- | Callback to construct a trace which will be attached to the dynamic
        -- trace.
-       tvarTrace  :: !(STRef s (Maybe (Maybe a -> a -> ST s TraceValue)))
+       tvarTrace   :: !(STRef s (Maybe (Maybe a -> a -> ST s TraceValue)))
      }
 
 instance Eq (TVar s a) where

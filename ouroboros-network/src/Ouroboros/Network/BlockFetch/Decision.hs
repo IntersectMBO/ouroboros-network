@@ -46,8 +46,7 @@ import           Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
 import           Ouroboros.Network.BlockFetch.DeltaQ
                      (PeerFetchInFlightLimits (..), PeerGSV (..), SizeInBytes,
                      calculatePeerFetchInFlightLimits, comparePeerGSV,
-                     comparePeerGSV',
-                     estimateExpectedResponseDuration,
+                     comparePeerGSV', estimateExpectedResponseDuration,
                      estimateResponseDeadlineProbability)
 
 

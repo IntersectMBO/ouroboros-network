@@ -2,9 +2,9 @@
 
 module Control.Monad.IOSimPOR.QuickCheckUtils where
 
-import Test.QuickCheck.Property
-import Test.QuickCheck.Gen
-import Control.Parallel
+import           Control.Parallel
+import           Test.QuickCheck.Gen
+import           Test.QuickCheck.Property
 
 -- Take the conjunction of several properties, in parallel This is a
 -- modification of code from Test.QuickCheck.Property, to run non-IO
@@ -37,7 +37,7 @@ conjoinSpeculate spec ps =
   do roses <- mapM (fmap unProp . unProperty . propertyNoCatch) ps
      return (MkProp $ conj id (spec roses))
  where
-          
+
   conj k [] =
     MkRose (k succeeded) []
 
@@ -53,9 +53,9 @@ conjoinSpeculate spec ps =
         result2 <- rest
         -- Nasty work to make sure we use the right callbacks
         case ok result2 of
-          Just True -> MkRose (result2 { ok = Nothing }) []
+          Just True  -> MkRose (result2 { ok = Nothing }) []
           Just False -> rest
-          Nothing -> rest
+          Nothing    -> rest
 
   addCallbacksAndCoverage result r =
     r { callbacks = callbacks result ++ callbacks r,

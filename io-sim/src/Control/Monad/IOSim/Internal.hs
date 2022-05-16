@@ -53,25 +53,24 @@ module Control.Monad.IOSim.Internal
 
 import           Prelude hiding (read)
 
-import           Deque.Strict (Deque)
-import qualified Deque.Strict as Deque
-import           Data.Foldable (traverse_, toList)
+import           Data.Dynamic
+import           Data.Foldable (toList, traverse_)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
-import           Data.Maybe (mapMaybe)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (mapMaybe)
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (UTCTime (..), fromGregorian)
-import           Data.Dynamic
+import           Deque.Strict (Deque)
+import qualified Deque.Strict as Deque
 
 import           GHC.Exts (fromList)
 
-import           Control.Exception (NonTermination (..),
-                   assert, throw)
+import           Control.Exception (NonTermination (..), assert, throw)
 import           Control.Monad (join)
 
 import           Control.Monad (when)
@@ -84,10 +83,10 @@ import           Control.Monad.Class.MonadThrow hiding (getMaskingState)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Control.Monad.IOSim.Types (SimEvent)
-import           Control.Monad.IOSim.Types hiding (SimEvent (SimPOREvent),
-                   Trace(SimPORTrace))
 import           Control.Monad.IOSim.InternalTypes
+import           Control.Monad.IOSim.Types hiding (SimEvent (SimPOREvent),
+                     Trace (SimPORTrace))
+import           Control.Monad.IOSim.Types (SimEvent)
 
 --
 -- Simulation interpreter
@@ -1093,7 +1092,7 @@ traceTVarST TVar{tvarCurrent, tvarUndo, tvarTrace} new = do
         case (new, vs) of
           (True, _) -> f Nothing v
           (_, _:_)  -> f (Just $ last vs) v
-          _ -> error "traceTVarST: unexpected tvar state"
+          _         -> error "traceTVarST: unexpected tvar state"
 
 
 

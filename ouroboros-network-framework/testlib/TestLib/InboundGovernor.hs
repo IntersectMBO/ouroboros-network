@@ -1,7 +1,7 @@
+{-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE NamedFieldPuns  #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ViewPatterns    #-}
 module TestLib.InboundGovernor where
 
 import           Test.QuickCheck
@@ -10,7 +10,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.InboundGovernor (RemoteSt (..))
 import           Ouroboros.Network.Server2 (RemoteTransition)
 
-import TestLib.Utils
+import           TestLib.Utils
 
 -- | Pattern synonym which matches either 'RemoteHotEst' or 'RemoteWarmSt'.
 --

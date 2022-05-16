@@ -39,15 +39,15 @@ import           System.Random (mkStdGen)
 
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTest
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
-import           Control.Monad.IOSim
 import qualified Control.Monad.Fail as Fail
+import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
 import           Ouroboros.Network.PeerSelection.Governor hiding
@@ -63,7 +63,8 @@ import           Ouroboros.Network.Testing.Utils (arbitrarySubset,
                      prop_shrink_nonequal, prop_shrink_valid)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
-import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding (tests)
+import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
+                     (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Test.Ouroboros.Network.ShrinkCarefully
 

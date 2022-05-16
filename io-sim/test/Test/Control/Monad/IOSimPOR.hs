@@ -1,30 +1,30 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes       #-}
-{-# LANGUAGE DeriveGeneric    #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Test.Control.Monad.IOSimPOR where
 
-import Control.Monad
-import Control.Monad.IOSim
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadTimer
-import Control.Monad.Class.MonadTest
+import           Control.Monad
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTest
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.IOSim
 
-import GHC.Generics
+import           GHC.Generics
 
-import System.Exit
-import System.IO.Unsafe
+import           System.Exit
+import           System.IO.Unsafe
 
-import Test.QuickCheck
-import Data.List
-import Data.Map(Map)
+import           Control.Exception (SomeException, evaluate, try)
+import           Control.Parallel
+import           Data.IORef
+import           Data.List
+import           Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Exception(try, evaluate, SomeException)
-import Control.Parallel
-import Data.IORef
+import           Test.QuickCheck
 
 data Step =
     WhenSet Int Int

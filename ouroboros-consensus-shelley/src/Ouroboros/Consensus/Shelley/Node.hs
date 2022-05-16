@@ -41,18 +41,18 @@ import           Ouroboros.Consensus.Node.Run
 
 import qualified Cardano.Ledger.Shelley.API as SL
 
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Protocol.TPraos
+import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect ()
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Node.TPraos
-import qualified Data.Map.Strict as Map
-import Ouroboros.Consensus.Shelley.Eras (EraCrypto)
-import Data.Map.Strict (Map)
-import Ouroboros.Consensus.Shelley.Protocol.Abstract (pHeaderIssuer)
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract (pHeaderIssuer)
 {-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}

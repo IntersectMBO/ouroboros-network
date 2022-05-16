@@ -33,8 +33,11 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      SomeResult (..), WithVersion (..))
 
+import           Cardano.Ledger.Crypto (Crypto)
 import           Cardano.Ledger.Era (toTxSeq)
 import qualified Cardano.Protocol.TPraos.API as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import           Data.Coerce (coerce)
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import qualified Ouroboros.Consensus.Protocol.Praos.Header as Praos
@@ -50,9 +53,6 @@ import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
-import qualified Cardano.Protocol.TPraos.BHeader as SL
-import Cardano.Ledger.Crypto (Crypto)
-import Data.Coerce (coerce)
 
 {-------------------------------------------------------------------------------
   Generators

@@ -27,18 +27,20 @@ import qualified Cardano.Crypto.Hash as Hash
 import           Cardano.Crypto.Util
                      (SignableRepresentation (getSignableRepresentation),
                      bytesToNatural)
-import           Cardano.Crypto.VRF (OutputVRF (..), getOutputVRFBytes, CertifiedVRF (certifiedOutput))
+import           Cardano.Crypto.VRF (CertifiedVRF (certifiedOutput),
+                     OutputVRF (..), getOutputVRFBytes)
 import           Cardano.Ledger.BaseTypes (Nonce (NeutralNonce, Nonce))
 import           Cardano.Ledger.Crypto (Crypto (HASH, VRF))
 import           Cardano.Ledger.Serialization (runByteBuilder)
 import           Cardano.Ledger.Slot (SlotNo (SlotNo))
+import           Cardano.Protocol.TPraos.BHeader (BoundedNatural,
+                     assertBoundedNatural)
 import qualified Data.ByteString.Builder as BS
 import qualified Data.ByteString.Builder.Extra as BS
+import           Data.Proxy (Proxy (Proxy))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
-import Cardano.Protocol.TPraos.BHeader (BoundedNatural, assertBoundedNatural)
-import Data.Proxy (Proxy(Proxy))
 
 -- | Input to the verifiable random function. Consists of the hash of the slot
 -- and the epoch nonce.

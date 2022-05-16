@@ -75,7 +75,7 @@ codecReqRespId =
       pure $ DecodePartial $ \mb ->
         case mb of
           Nothing -> return $ DecodeFail (CodecFailure "expected more data")
-          Just (AnyMessage msg) -> return $ 
+          Just (AnyMessage msg) -> return $
             case (stok, msg) of
               (ClientAgency TokIdle, MsgReq{})
                 -> DecodeDone (SomeMessage msg) Nothing

@@ -22,12 +22,12 @@ module Test.Ouroboros.Network.PeerSelection
   , unfHydra
   ) where
 
-import qualified Data.ByteString.Char8 as BS
 import           Data.Bifoldable (bitraverse_)
+import qualified Data.ByteString.Char8 as BS
+import           Data.Foldable (traverse_)
 import           Data.Function (on)
 import qualified Data.IP as IP
-import           Data.List (groupBy, foldl', intercalate)
-import           Data.Foldable (traverse_)
+import           Data.List (foldl', groupBy, intercalate)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe, isNothing, listToMaybe)
@@ -35,15 +35,15 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
 
-import qualified Data.OrdPSQ as PSQ
 import qualified Data.List.Trace as Trace
+import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
+import           Control.Exception (AssertionFailed (..), catch, evaluate)
 import           Control.Monad.Class.MonadSTM.Strict (STM)
 import           Control.Monad.Class.MonadTime
-import           Control.Tracer (Tracer (..))
-import           Control.Exception (AssertionFailed (..), catch, evaluate)
 import           Control.Monad.IOSim.Types hiding (STM)
+import           Control.Tracer (Tracer (..))
 
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
@@ -63,7 +63,8 @@ import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils (nightlyTest)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
-import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
+import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding
+                     (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Test.QuickCheck
@@ -131,7 +132,7 @@ tests =
   , testProperty "governor gossip reachable in 1hr" prop_governor_gossip_1hr
   , testProperty "governor connection status"       prop_governor_connstatus
   , testProperty "governor no livelock"             prop_governor_nolivelock
-  
+
   , testGroup "races"
     [ nightlyTest $ testProperty "governor no livelock"       $ prop_explore_governor_nolivelock
     ,               testProperty "governor connection status" $ prop_explore_governor_connstatus
@@ -297,9 +298,9 @@ prop_explore_governor_nolivelock =
     -- checks that a newly promoted warm peer is a member of the set
     -- of established peers. This may not be true if the promotion is
     -- delayed by a race condition.
-    
+
     prop'_explore_governor_nolivelock id 500
-    
+
 prop'_explore_governor_nolivelock :: ExplorationSpec -> Int -> GovernorMockEnvironment -> Property
 prop'_explore_governor_nolivelock spec len env =
     exploreGovernorInMockEnvironment spec env $ \_ trace ->
@@ -712,7 +713,7 @@ prop'_explore_governor_connstatus opts env =
   exploreGovernorInMockEnvironment opts env check_governor_connstatus
 
 check_governor_connstatus :: Maybe (SimTrace a) -> SimTrace a -> Property
-check_governor_connstatus _ trace0 = 
+check_governor_connstatus _ trace0 =
     let trace = takeFirstNHours 1
               . selectPeerSelectionTraceEvents $ trace0
         --TODO: check any actually get a true status output and try some deliberate bugs

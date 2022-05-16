@@ -13,10 +13,10 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE StandaloneDeriving         #-}
- 
+
 {-# OPTIONS_GHC -Wno-orphans            #-}
 -- incomplete uni patterns in 'schedule' (when interpreting 'StmTxCommitted')
 -- and 'reschedule'.
@@ -56,13 +56,13 @@ module Control.Monad.IOSimPOR.Internal
 import           Prelude hiding (read)
 
 import           Data.Dynamic
-import           Data.Ord
 import           Data.Foldable (traverse_)
 import qualified Data.List as List
 import qualified Data.List.Trace as Trace
-import           Data.Maybe (mapMaybe)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (mapMaybe)
+import           Data.Ord
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
@@ -82,12 +82,12 @@ import           Control.Monad.Class.MonadThrow as MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
-import           Control.Monad.IOSim.Types (SimEvent)
-import           Control.Monad.IOSim.Types hiding (SimEvent (SimEvent),
-                   Trace(SimTrace))
 import           Control.Monad.IOSim.InternalTypes
+import           Control.Monad.IOSim.Types hiding (SimEvent (SimEvent),
+                     Trace (SimTrace))
+import           Control.Monad.IOSim.Types (SimEvent)
+import           Control.Monad.IOSimPOR.Timeout (unsafeTimeout)
 import           Control.Monad.IOSimPOR.Types
-import           Control.Monad.IOSimPOR.Timeout(unsafeTimeout)
 
 --
 -- Simulation interpreter
@@ -167,24 +167,24 @@ type RunQueue = OrdPSQ (Down ThreadId) (Down ThreadId) ()
 -- | Internal state.
 --
 data SimState s a = SimState {
-       runqueue :: !RunQueue,
+       runqueue         :: !RunQueue,
        -- | All threads other than the currently running thread: both running
        -- and blocked threads.
-       threads  :: !(Map ThreadId (Thread s a)),
+       threads          :: !(Map ThreadId (Thread s a)),
        -- | current time
-       curTime  :: !Time,
+       curTime          :: !Time,
        -- | ordered list of timers
-       timers   :: !(OrdPSQ TimeoutId Time (TimerVars s)),
+       timers           :: !(OrdPSQ TimeoutId Time (TimerVars s)),
        -- | list of clocks
-       clocks   :: !(Map ClockId UTCTime),
-       nextVid  :: !TVarId,     -- ^ next unused 'TVarId'
-       nextTmid :: !TimeoutId,  -- ^ next unused 'TimeoutId'
+       clocks           :: !(Map ClockId UTCTime),
+       nextVid          :: !TVarId,     -- ^ next unused 'TVarId'
+       nextTmid         :: !TimeoutId,  -- ^ next unused 'TimeoutId'
        -- | previous steps (which we may race with).
        -- Note this is *lazy*, so that we don't compute races we will not reverse.
-       races    :: Races,
+       races            :: Races,
        -- | control the schedule followed, and initial value
-       control  :: !ScheduleControl,
-       control0 :: !ScheduleControl,
+       control          :: !ScheduleControl,
+       control0         :: !ScheduleControl,
        -- | limit on the computation time allowed per scheduling step, for
        -- catching infinite loops etc
        perStepTimeLimit :: Maybe Int
@@ -1303,7 +1303,7 @@ traceTVarST TVar{tvarCurrent, tvarUndo, tvarTrace} new = do
         case (new, vs) of
           (True, _) -> f Nothing v
           (_, _:_)  -> f (Just $ last vs) v
-          _ -> error "traceTVarST: unexpected tvar state"
+          _         -> error "traceTVarST: unexpected tvar state"
 
 
 
@@ -1624,7 +1624,7 @@ stepInfoToScheduleMods
   -- It is actually possible for a later step that races with an earlier one
   -- not to *depend* on it in a happens-before sense. But we don't want to try
   -- to follow any steps *after* the later one.
-  [ ScheduleMod 
+  [ ScheduleMod
       { scheduleModTarget    = stepStepId step
       , scheduleModControl   = control
       , scheduleModInsertion = takeWhile (/=stepStepId step')

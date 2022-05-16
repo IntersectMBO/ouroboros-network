@@ -1,4 +1,4 @@
-module Control.Monad.Class.MonadTest ( MonadTest (..) ) where
+module Control.Monad.Class.MonadTest (MonadTest (..)) where
 
 import           Control.Monad.Reader
 

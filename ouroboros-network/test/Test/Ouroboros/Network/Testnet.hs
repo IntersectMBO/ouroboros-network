@@ -1,77 +1,76 @@
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
+import           Control.Monad.Class.MonadTime (DiffTime, Time (Time), diffTime)
 import           Control.Monad.IOSim
 import           Control.Monad.IOSim.Types (ThreadId)
-import           Control.Monad.Class.MonadTime (Time (Time), DiffTime, diffTime)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
 import           Data.Bifoldable (bifoldMap)
-import           Data.Void (Void)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Monoid (Sum(..))
 import           Data.Dynamic (Typeable)
 import           Data.Functor (void)
 import           Data.List (intercalate)
 import qualified Data.List.Trace as Trace
+import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Monoid (Sum (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Time (secondsToDiffTime)
+import           Data.Void (Void)
 
-import           System.Random (mkStdGen)
 import           GHC.Exception.Type (SomeException)
+import           System.Random (mkStdGen)
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
-import           Ouroboros.Network.PeerSelection.Governor
-                      (TracePeerSelection (..), DebugPeerSelection (..))
-import           Ouroboros.Network.Testing.Data.Signal
-                      (Events, Signal, eventsToList,
-                      signalProperty)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                      (TraceLocalRootPeers, TracePublicRootPeers)
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus(..))
-import           Ouroboros.Network.Diffusion.P2P
-                      (TracersExtra(..), RemoteTransitionTrace)
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionManager.Types
-import qualified Ouroboros.Network.Testing.Data.Signal as Signal
+import           Ouroboros.Network.Diffusion.P2P (RemoteTransitionTrace,
+                     TracersExtra (..))
+import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.Governor
+                     (DebugPeerSelection (..), TracePeerSelection (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
-import           Ouroboros.Network.Testing.Utils
-                      (WithTime(..), WithName(..), tracerWithTime,
-                      tracerWithName, sayTracer, splitWithNameTrace)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (TraceLocalRootPeers, TracePublicRootPeers)
+import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
+import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
+                     eventsToList, signalProperty)
+import qualified Ouroboros.Network.Testing.Data.Signal as Signal
+import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
+                     sayTracer, splitWithNameTrace, tracerWithName,
+                     tracerWithTime)
 
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
-import           Test.Ouroboros.Network.Testnet.Simulation.Node
-                     (DiffusionScript (..), diffusionSimulation,
-                     prop_diffusionScript_commandScript_valid,
-                     prop_diffusionScript_fixupCommands,
-                     DiffusionSimulationTrace (..))
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import           Test.QuickCheck
-                     (Property, counterexample, conjoin, property, classify)
+import           Test.Ouroboros.Network.Testnet.Simulation.Node
+                     (DiffusionScript (..), DiffusionSimulationTrace (..),
+                     diffusionSimulation,
+                     prop_diffusionScript_commandScript_valid,
+                     prop_diffusionScript_fixupCommands)
+import           Test.QuickCheck (Property, classify, conjoin, counterexample,
+                     property)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           TestLib.Utils (TestProperty(..), mkProperty, ppTransition,
-                     AllProperty (..), classifyNegotiatedDataFlow,
-                     classifyEffectiveDataFlow, classifyTermination,
-                     classifyActivityType, classifyPrunings, groupConns, verifyAllTimeouts)
-import           TestLib.ConnectionManager
-                     (verifyAbstractTransition, abstractStateIsFinalTransition, verifyAbstractTransitionOrder)
-import           TestLib.InboundGovernor
-                     (verifyRemoteTransition, verifyRemoteTransitionOrder,
-                     remoteStrIsFinalTransition)
+import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
+                     verifyAbstractTransition, verifyAbstractTransitionOrder)
+import           TestLib.InboundGovernor (remoteStrIsFinalTransition,
+                     verifyRemoteTransition, verifyRemoteTransitionOrder)
+import           TestLib.Utils (AllProperty (..), TestProperty (..),
+                     classifyActivityType, classifyEffectiveDataFlow,
+                     classifyNegotiatedDataFlow, classifyPrunings,
+                     classifyTermination, groupConns, mkProperty, ppTransition,
+                     verifyAllTimeouts)
 
 tests :: TestTree
 tests =
@@ -261,9 +260,9 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript l) =
           | countdown threshold h = go t
           | otherwise = Just h
 
-        countdown 0 (_ : _) = False
-        countdown _ []      = True
-        countdown n (_ : es)  = countdown (n-1) es
+        countdown 0 (_ : _)  = False
+        countdown _ []       = True
+        countdown n (_ : es) = countdown (n-1) es
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
