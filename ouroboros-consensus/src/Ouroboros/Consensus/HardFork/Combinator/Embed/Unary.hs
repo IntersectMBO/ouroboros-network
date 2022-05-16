@@ -347,7 +347,7 @@ instance Isomorphic (Ticked :.: LedgerState) where
 
   inject =
         Comp
-      . TickedHardForkLedgerState TransitionImpossible
+      . TickedHardForkLedgerState TransitionNone
       . HardForkState
       . Telescope.TZ
       . State.Current History.initBound
@@ -564,7 +564,7 @@ instance Isomorphic WrapForgeStateInfo where
 instance Isomorphic WrapLedgerView where
   project = State.fromTZ . hardForkLedgerViewPerEra . unwrapLedgerView
   inject  = WrapLedgerView
-          . HardForkLedgerView TransitionImpossible
+          . HardForkLedgerView TransitionNone
           . HardForkState
           . Telescope.TZ
           . Current History.initBound

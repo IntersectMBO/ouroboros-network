@@ -423,7 +423,7 @@ forecastFinalEra sno (Current start AnnForecast{..}) =
         -> Ticked (HardForkLedgerView_ view (blk : blks))
     aux view = TickedHardForkLedgerView {
           tickedHardForkLedgerViewTransition =
-            TransitionImpossible
+            TransitionUnknowable
         , tickedHardForkLedgerViewPerEra = HardForkState $
             TZ (Current start (Comp view))
         }
@@ -475,7 +475,7 @@ forecastNotFinal sno translate (Current start AnnForecast{..})
           tickedHardForkLedgerViewTransition =
             -- We assume that we only ever have to translate to the /next/ era
             -- (as opposed to /any/ subsequent era)
-            TransitionImpossible
+            TransitionUnknowable
         , tickedHardForkLedgerViewPerEra = HardForkState $
             TS (K (Past start end)) $
             TZ (Current end (Comp view))
