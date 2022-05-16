@@ -177,9 +177,10 @@ applyHelper mode
         --    epoch that starts the new era; this information similarly won't
         --    halfway a block (it can only change, in fact, when we do transition
         --    to that new era).
-        -- o 'TransitionImpossible'. Two subcases: we are in the final era (in
-        --    which we will remain to be) or we are forecasting, which is not
-        --    applicable here.
+        -- o 'TransitionNone'. We are in the final era (in which we will remain
+        --   to be).
+        -- o 'TransitionUnknowable'. We are forecasting, which is not applicable
+        --   here.
         do
           result <-
               hsequence'

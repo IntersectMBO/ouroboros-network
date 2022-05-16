@@ -112,13 +112,18 @@ data TransitionInfo =
     -- | Transition to the next era is known to happen at this 'EpochNo'
   | TransitionKnown !EpochNo
 
-    -- | The transition is impossible
+    -- | The transition is impossible because this is the chain's final era; not
+    -- merely the last era we know about, but the last era /there will ever be/.
+    -- For example, this is an ephemeral testnet that will only ever run this
+    -- one era.
+  | TransitionNone
+
+    -- | The transition is impossible because we're forecasting and the "
+    -- current " era actually hasn't started yet. In this case, we cannot look
+    -- past the safe zone of this era and hence, by definition, the transition
+    -- to the /next/ era cannot happen.
     --
-    -- This can be due to one of two reasons:
-    --
-    -- * We are in the final era
-    -- * This era has not actually begun yet (we are forecasting). In this case,
-    --   we cannot look past the safe zone of this era and hence, by definition,
-    --   the transition to the /next/ era cannot happen.
-  | TransitionImpossible
+    -- (We're assuming here that a transition in the current era can only take
+    -- us to the next era in the list of known eras.)
+  | TransitionUnknowable
   deriving (Show, Generic, NoThunks)

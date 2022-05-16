@@ -140,9 +140,9 @@ instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
             --   (This does mean however that it is important to use the
             --   /extended/ ledger state, not the original, to determine the
             --   'TransitionInfo'.)
-            -- o 'TransitionImpossible'. This has two subcases: either we are
-            --   in the final era, in which case ticking certainly won't be able
-            --   to change that, or we're forecasting, which is simply not
+            -- o 'TransitionNone'. We are in the final era, in which case
+            --   ticking certainly won't be able to change that.
+            -- o 'TransitionUnknowable'. We're forecasting, which is simply not
             --   applicable here.
             State.mostRecentTransitionInfo cfg extended
         , tickedHardForkLedgerStatePerEra = l'
@@ -423,7 +423,7 @@ forecastFinalEra sno (Current start AnnForecast{..}) =
         -> Ticked (HardForkLedgerView_ view (blk : blks))
     aux view = TickedHardForkLedgerView {
           tickedHardForkLedgerViewTransition =
-            TransitionImpossible
+            TransitionUnknowable
         , tickedHardForkLedgerViewPerEra = HardForkState $
             TZ (Current start (Comp view))
         }
@@ -475,7 +475,7 @@ forecastNotFinal sno translate (Current start AnnForecast{..})
           tickedHardForkLedgerViewTransition =
             -- We assume that we only ever have to translate to the /next/ era
             -- (as opposed to /any/ subsequent era)
-            TransitionImpossible
+            TransitionUnknowable
         , tickedHardForkLedgerViewPerEra = HardForkState $
             TS (K (Past start end)) $
             TZ (Current end (Comp view))
