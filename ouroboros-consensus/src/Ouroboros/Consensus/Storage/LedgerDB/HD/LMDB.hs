@@ -1,16 +1,13 @@
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE Rank2Types                 #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
   ( newLMDBBackingStore
@@ -54,7 +51,7 @@ import           Ouroboros.Consensus.Util (foldlM')
 import qualified Database.LMDB.Raw as LMDB
 import qualified Database.LMDB.Simple as LMDB
 import qualified Database.LMDB.Simple.Extra as LMDB
-import qualified Database.LMDB.Simple.Internal as LMDB (Environment(Env))
+import qualified Database.LMDB.Simple.Internal as LMDB (Environment(Env), Transaction(Txn), isReadOnlyEnvironment)
 
 {-------------------------------------------------------------------------------
  Backing Store interface
@@ -157,7 +154,7 @@ coerceDatabase = unsafeCoerce
 -- | ValueHandles hold an Async which is holding a transaction open.
 data ValueHandle = ValueHandle
   { vhClose :: !(IO ())
-  , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadOnly a -> IO (Maybe a))
+  , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> IO (Maybe a))
   -- , vhRefCount :: !(IOLike.TVar IO Int)
   }
 
@@ -213,7 +210,7 @@ lmdbRangeReadTable :: LedgerConstraint k v
 lmdbRangeReadTable count db0 (HD.UtxoKeys keys) = case Set.lookupMax keys of
   -- This is inadequate. We are folding over the whole table, the
   -- fiddling with either is to short circuit as best we can.
-  -- TODO improve llvm-simple bindings to give better access to cursors
+  -- TODO improve lmdb-simple bindings to give better access to cursors
   Nothing -> pure $ HD.UtxoValues Map.empty
   Just last_excluded_key ->
     let
@@ -250,7 +247,7 @@ readLMDBTable          :: LedgerConstraint k v =>        LMDBMK k v -> KeysMK   
 initRangeReadLMDBTable :: LedgerConstraint k v => Int -> LMDBMK k v                 -> LMDB.Transaction mode           (ValuesMK k v)
 rangeReadLMDBTable     :: LedgerConstraint k v => Int -> LMDBMK k v -> KeysMK   k v -> LMDB.Transaction mode           (ValuesMK k v)
 
-getDb                                                  (NameMK   name) = LMDBMK name <$> LMDB.getDatabase (Just name)
+getDb                                                  (NameMK   name) = LMDBMK name      <$> LMDB.getDatabase (Just name)
 initLMDBTable                (LMDBMK tbl_name db) (ApplyValuesMK vals) = ApplyEmptyMK     <$  lmdbInitTable  tbl_name db vals
 writeLMDBTable               (LMDBMK _        db) (ApplyDiffMK   diff) = ApplyEmptyMK     <$  lmdbWriteTable          db diff
 readLMDBTable                (LMDBMK _        db) (ApplyKeysMK   keys) = ApplyValuesMK    <$> lmdbReadTable           db keys
@@ -260,17 +257,6 @@ rangeReadLMDBTable     count (LMDBMK _        db) (ApplyKeysMK   keys) = ApplyVa
 {-------------------------------------------------------------------------------
  Db settings
 -------------------------------------------------------------------------------}
-
-readDbSettings ::
-     LMDB.Database () DbState
-  -> LMDB.Transaction mode DbState
-readDbSettings db = readDbSettingsMaybeNull db >>= \case
-  Just x -> pure x
-  -- FIXME: if this (and other errors) are thrown, the async thread will die but
-  -- the main thread will be waiting on a TMVar, thus deadlocking the program.
-  --
-  -- This has to be fixed, properly handled.
-  Nothing -> Exn.throw DbErrNoSettings
 
 readDbSettingsMaybeNull ::
      LMDB.Database () DbState
@@ -340,7 +326,6 @@ initFromLMDBs tracer shfs from0 to0 = do
   liftIO $ Exn.bracket
     (LMDB.openEnvironment from defaultLMDBLimits) -- TODO assess limits, in particular this could fail if the db is too big
     LMDB.closeEnvironment $ \e -> lmdbCopy tracer e to
-
 
 lmdbCopy :: MonadIO m
   => Trace.Tracer m TraceDb
@@ -461,9 +446,6 @@ newLMDBBackingStore tracer limits sfs init_db = do
   pure HD.BackingStore{..}
 
 
-data SomeDbSubmission where
-  SomeDbSubmission :: forall a. LMDB.Transaction LMDB.ReadOnly a -> IOLike.TMVar IO (Maybe a) -> SomeDbSubmission
-
 data TraceValueHandle
   = TVHOpened
   | TVHClosing
@@ -478,39 +460,36 @@ mkValueHandle :: (MonadIO m)
   -> IOLike.TVar IO (Map Int ValueHandle)
   -> m ValueHandle
 mkValueHandle tracer0 dbEnv dbOpenHandles = liftIO $ do
-  q <- IOLike.newTBQueueIO 1 -- TODO 1?
-  the_async <- IOLike.async $ LMDB.readOnlyTransaction dbEnv $ do
+  let LMDB.Env env = dbEnv
+  readOnlyTx <- LMDB.mdb_txn_begin env Nothing (LMDB.isReadOnlyEnvironment dbEnv)
+
+  (r, traces) <- IOLike.atomically $ IOLike.stateTVar dbOpenHandles $ \x0 ->
     let
-      loop :: MaybeT (LMDB.Transaction LMDB.ReadOnly) ()
-      loop = do
-        -- TODO It seems much time is spent in this (and other) atomically calls
-        SomeDbSubmission t ret_tmvar <- MaybeT . liftIO $ IOLike.atomically (IOLike.readTBQueue q)
-        r <- lift t
-        liftIO . IOLike.atomically $ IOLike.putTMVar ret_tmvar (Just r)
-    void . runMaybeT $ forever loop
-    LMDB.abort
+      vh_id = maybe 0 ((+1) . fst) $ Map.lookupMax x0
+      tracer = Trace.contramap (TDBValueHandle vh_id) tracer0
 
-  (r, traces) <- IOLike.atomically $ IOLike.stateTVar dbOpenHandles $ \x0 -> let
+      vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> IO (Maybe a)
+      vhSubmit (LMDB.Txn t) = do
+        present <- Map.member vh_id <$> IOLike.atomically (IOLike.readTVar dbOpenHandles)
+        unless present $ Exn.throw DbErrBadRead
+        flip Exn.onException vhClose $ do
+          Trace.traceWith tracer TVHSubmissionStarted
+          r <- t readOnlyTx
+          Trace.traceWith tracer TVHSubmissionEnded
+          pure r
 
-    vh_id = maybe 0 ((+1) . fst) $ Map.lookupMax x0
-    tracer = Trace.contramap (TDBValueHandle vh_id) tracer0
-
-    vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly a -> IO (Maybe a)
-    vhSubmit t = do
-      Trace.traceWith tracer TVHSubmissionStarted
-      ret_tmvar <- IOLike.newEmptyTMVarIO
-      IOLike.atomically . IOLike.writeTBQueue q . Just $ SomeDbSubmission t ret_tmvar
-      r <- IOLike.atomically $ IOLike.takeTMVar ret_tmvar
-      Trace.traceWith tracer TVHSubmissionEnded
-      pure r
-
-    vhClose = do
-      Trace.traceWith tracer TVHClosing
-      IOLike.cancel the_async
-      IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vh_id)
-      Trace.traceWith tracer TVHClosed
-    vh = ValueHandle{..}
-    in ((vh, [TDBValueHandle vh_id TVHOpened] ), Map.insert vh_id vh x0)
+      vhClose = do
+        Trace.traceWith tracer TVHClosing
+        -- Read-only transactions can be either committed or aborted with the
+        -- same result. We chose commit for readability but they perform the
+        -- same operations in this case.
+        LMDB.mdb_txn_commit readOnlyTx
+        IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vh_id)
+        Trace.traceWith tracer TVHClosed
+      vh = ValueHandle{..}
+    in
+      ( (vh, [TDBValueHandle vh_id TVHOpened] )
+      , Map.insert vh_id vh x0 )
   for_ traces $ Trace.traceWith tracer0
   pure r
 
@@ -521,22 +500,20 @@ mkLMDBBackingStoreValueHandle Db{..} = do
   let
     dbe = LMDB.readOnlyEnvironment dbEnv
   vh <- mkValueHandle dbTracer dbe dbOpenHandles
-  mb_init_slot <- liftIO $ vhSubmit vh $ do
-    DbState{dbsSeq} <- readDbSettings dbSettings
-    pure dbsSeq
-  init_slot <- liftIO $ maybe (Exn.throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") pure mb_init_slot
+  mb_init_slot <- liftIO $ vhSubmit vh $ readDbSettingsMaybeNull dbSettings
+  init_slot <- liftIO $ maybe (Exn.throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mb_init_slot
   let
     bsvhClose :: m ()
     bsvhClose = liftIO $ vhClose vh
 
     bsvhRead :: LedgerTables l KeysMK -> m (LedgerTables l ValuesMK)
-    bsvhRead keys = liftIO $ vhSubmit vh (zipLedgerTablesA readLMDBTable dbBackingTables keys) >>= \case
+    bsvhRead keys = liftIO $ vhSubmit vh (Just <$> zipLedgerTablesA readLMDBTable dbBackingTables keys) >>= \case
       Nothing -> Exn.throw DbErrBadRead
       Just x -> pure x
 
     bsvhRangeRead :: HD.RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK)
     bsvhRangeRead HD.RangeQuery{rqPrev, rqCount} = let
-      transaction = case rqPrev of
+      transaction = Just <$> case rqPrev of
         Nothing -> traverseLedgerTables (initRangeReadLMDBTable rqCount) dbBackingTables
         Just keys -> zipLedgerTablesA (rangeReadLMDBTable rqCount) dbBackingTables keys
       in liftIO $ vhSubmit vh transaction >>= \case
