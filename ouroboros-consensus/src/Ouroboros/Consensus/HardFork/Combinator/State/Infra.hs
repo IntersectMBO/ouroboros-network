@@ -170,56 +170,84 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
     go :: Exactly xs' EraParams
        -> Telescope (K Past) (Current f) xs'
        -> NonEmpty xs' EraSummary
+    go ExactlyNil t = case t of {}
     go (ExactlyCons params ss) (TS (K Past{..}) t) =
         NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss t
-    go (ExactlyCons params ExactlyNil) (TZ Current{..}) =
-        -- The current era is the last. We assume it lasts until all eternity.
-        NonEmptyOne (EraSummary currentStart EraUnbounded params)
-    go (ExactlyCons params (ExactlyCons nextParams _)) (TZ Current{..}) =
-        case transition of
-          TransitionKnown epoch ->
-            -- We haven't reached the next era yet, but the transition is
-            -- already known. The safe zone applies from the start of the
-            -- next era.
-            let currentEnd = History.mkUpperBound params currentStart epoch
-                nextStart  = currentEnd
-            in NonEmptyCons EraSummary {
-                   eraStart  = currentStart
-                 , eraParams = params
-                 , eraEnd    = EraEnd currentEnd
-                 }
-             $ NonEmptyOne EraSummary {
-                   eraStart  = nextStart
-                 , eraParams = nextParams
-                 , eraEnd    = applySafeZone
-                                 nextParams
-                                 nextStart
-                                 (boundSlot nextStart)
-                 }
-          TransitionUnknown ledgerTip -> NonEmptyOne $ EraSummary {
-                eraStart  = currentStart
-              , eraParams = params
-              , eraEnd    = applySafeZone
-                              params
-                              currentStart
-                              -- Even if the safe zone is 0, the first slot at
-                              -- which the next era could begin is the /next/
-                              (next ledgerTip)
-              }
-          -- 'TransitionImpossible' is used in one of two cases: we are in the
-          -- final era (clearly not the case here) or this era is a future era
-          -- that hasn't begun yet, in which case the safe zone must start at
-          -- the beginning of this era.
-          TransitionImpossible -> NonEmptyOne $ EraSummary {
-                eraStart  = currentStart
-              , eraParams = params
-              , eraEnd    = applySafeZone
-                              params
-                              currentStart
-                              (boundSlot currentStart)
-              }
-
-    go ExactlyNil t = case t of {}
+    go (ExactlyCons params ss) (TZ Current{..}) = case (ss, transition) of
+        (_, TransitionUnknown ledgerTip) ->
+          -- We don't yet know when the next era transition will happen. Even
+          -- if this is the last era that the code knows about, there may be a
+          -- next era on this chain (eg after a code update).
+          NonEmptyOne $ EraSummary {
+              eraStart  = currentStart
+            , eraParams = params
+            , eraEnd    = applySafeZone
+                            params
+                            currentStart
+                            -- Even if the safe zone is 0, the first slot at
+                            -- which the next era could begin is the /next/
+                            (next ledgerTip)
+            }
+        (ExactlyNil, TransitionKnown epoch) ->
+          -- We haven't reached the next era yet, but the transition is
+          -- already known, even though this code is not aware of a next
+          -- era.
+          --
+          -- This is actually a reachable case! A user who forgot to update
+          -- their node code could reach this in the hours preceding an era
+          -- transition, after which their node would not longer be able to
+          -- follow the network's chain (which continues to exist if enough
+          -- other nodes did update). I haven't double-checked, but I would
+          -- anticipate that this node could not even forge blocks, because
+          -- it'd know that the wallclock is beyond the end of last era that
+          -- it is aware of.
+          let currentEnd = History.mkUpperBound params currentStart epoch
+          in NonEmptyOne EraSummary {
+                 eraStart  = currentStart
+               , eraParams = params
+               , eraEnd    = EraEnd currentEnd
+               }
+        (ExactlyCons nextParams _, TransitionKnown epoch) ->
+          -- We haven't reached the next era yet, but the transition is
+          -- already known. The safe zone applies from the start of the
+          -- next era.
+          let currentEnd = History.mkUpperBound params currentStart epoch
+              nextStart  = currentEnd
+          in NonEmptyCons EraSummary {
+                 eraStart  = currentStart
+               , eraParams = params
+               , eraEnd    = EraEnd currentEnd
+               }
+           $ NonEmptyOne EraSummary {
+                 eraStart  = nextStart
+               , eraParams = nextParams
+               , eraEnd    = applySafeZone
+                               nextParams
+                               nextStart
+                               (boundSlot nextStart)
+               }
+        -- 'TransitionImpossible' is used in one of two cases: we are in the
+        -- final era or this era is a future era that hasn't begun yet, in
+        -- which case the safe zone must start at the beginning of this era.
+        (ExactlyNil, TransitionImpossible) ->
+          -- We are in the chain's final era; not just the last era we know
+          -- about, but the last era /there will ever be/. For example, this is
+          -- an ephemeral testnet that will only ever run one era.
+          NonEmptyOne EraSummary {
+              eraStart  = currentStart
+            , eraParams = params
+            , eraEnd    = EraUnbounded
+            }
+        (ExactlyCons{}, TransitionImpossible) ->
+          -- This is a future era that has not yet begun.
+          NonEmptyOne $ EraSummary {
+            eraStart  = currentStart
+          , eraParams = params
+          , eraEnd    = applySafeZone
+                          params
+                          currentStart
+                          (boundSlot currentStart)
+          }
 
     -- Apply safe zone from the specified 'SlotNo'
     --
