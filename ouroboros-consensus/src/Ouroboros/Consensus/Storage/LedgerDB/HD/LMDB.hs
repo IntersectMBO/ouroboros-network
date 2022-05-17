@@ -22,12 +22,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
 
 import qualified Codec.Serialise as S (Serialise(..))
 import qualified Control.Exception as Exn
-import qualified Control.Monad.Class.MonadAsync as IOLike
 import qualified Control.Monad.Class.MonadSTM as IOLike
 import           Control.Monad.IO.Class (MonadIO(liftIO))
-import           Control.Monad.Trans.Maybe
-import           Control.Monad.Trans.Class
-import           Control.Monad (forever, unless, when, void)
+import           Control.Monad (unless, when, void)
 import           Data.Functor ( ($>), (<&>) )
 import           Data.Foldable (for_)
 import           Data.Map (Map)
@@ -45,7 +42,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
-import           Ouroboros.Consensus.Util.IOLike (IOLike)
+import           Ouroboros.Consensus.Util.IOLike (IOLike, bracket, onException)
 import           Ouroboros.Consensus.Util (foldlM')
 
 import qualified Database.LMDB.Raw as LMDB
@@ -117,13 +114,13 @@ instance Exn.Exception DbErr
   Database definition
 -------------------------------------------------------------------------------}
 
-data Db l = Db
+data Db m l = Db
   { dbEnv           :: !(LMDB.Environment LMDB.ReadWrite) -- ^ The LMDB environment is a pointer to the directory that contains the DB.
   , dbSettings      :: !(LMDB.Database () DbState) -- ^ A database with only one key and one value, for the current sequence number on the DB.
   , dbBackingTables :: !(LedgerTables l LMDBMK) -- ^ The LMDB database with the key-value store
   , dbFilePath      :: !FilePath
-  , dbTracer        :: !(Trace.Tracer IO TraceDb)
-  , dbOpenHandles   :: !(IOLike.TVar IO (Map Int ValueHandle))
+  , dbTracer        :: !(Trace.Tracer m TraceDb)
+  , dbOpenHandles   :: !(IOLike.TVar m (Map Int (ValueHandle m)))
   }
 
 type LMDBLimits = LMDB.Limits
@@ -152,9 +149,9 @@ coerceDatabase :: LMDB.Database k v -> LMDB.Database (LmdbBox k) (LmdbBox v)
 coerceDatabase = unsafeCoerce
 
 -- | ValueHandles hold an Async which is holding a transaction open.
-data ValueHandle = ValueHandle
-  { vhClose :: !(IO ())
-  , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> IO (Maybe a))
+data ValueHandle m = ValueHandle
+  { vhClose :: !(m ())
+  , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> m (Maybe a))
   -- , vhRefCount :: !(IOLike.TVar IO Int)
   }
 
@@ -303,29 +300,30 @@ data LMDBInit l
 
 -- | Initialize the LMDB from these provided values
 initFromVals ::
-     TableStuff l
+     (TableStuff l, MonadIO m)
   => WithOrigin SlotNo
   -> LedgerTables l ValuesMK
-  -> Db l
-  -> IO ()
-initFromVals dbsSeq vals Db{..} = LMDB.readWriteTransaction dbEnv $
+  -> Db m l
+  -> m ()
+initFromVals dbsSeq vals Db{..} = liftIO $ LMDB.readWriteTransaction dbEnv $
   withDbSettingsRWMaybeNull dbSettings $ \case
     Nothing -> zipLedgerTablesA initLMDBTable dbBackingTables vals $> ((), DbState{dbsSeq})
     Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
 
-initFromLMDBs :: MonadIO m
-  => Trace.Tracer IO TraceDb
+initFromLMDBs :: (MonadIO m, IOLike m)
+  => Trace.Tracer m TraceDb
   -> FS.SomeHasFS m
   -> FS.FsPath
   -> FS.FsPath
   -> m ()
 initFromLMDBs tracer shfs from0 to0 = do
-  liftIO $ Trace.traceWith tracer $ TDBInitialisingFromLMDB from0
+  Trace.traceWith tracer $ TDBInitialisingFromLMDB from0
   from <- guardDbDir GDDMustExist shfs from0
   to <- guardDbDir GDDMustNotExist shfs to0
-  liftIO $ Exn.bracket
-    (LMDB.openEnvironment from defaultLMDBLimits) -- TODO assess limits, in particular this could fail if the db is too big
-    LMDB.closeEnvironment $ \e -> lmdbCopy tracer e to
+  bracket
+    (liftIO $ LMDB.openEnvironment from defaultLMDBLimits) -- TODO assess limits, in particular this could fail if the db is too big
+    (liftIO . LMDB.closeEnvironment)
+    (flip (lmdbCopy tracer) to)
 
 lmdbCopy :: MonadIO m
   => Trace.Tracer m TraceDb
@@ -357,36 +355,18 @@ newLMDBBackingStore :: forall m l. (TableStuff l, MonadIO m, IOLike m)
   -> FS.SomeHasFS m
   -> LMDBInit l
   -> m (LMDBBackingStore l m)
-newLMDBBackingStore tracer limits sfs init_db = do
+newLMDBBackingStore dbTracer limits sfs init_db = do
+  Trace.traceWith dbTracer TDBOpening
+
+  dbOpenHandles <- IOLike.newTVarIO Map.empty
   let
     path = FS.mkFsPath ["tables"]
-  Trace.traceWith tracer TDBOpening
 
-  -- Operations invoked on the returned LMDBBackingStore end up running in IO
-  -- Since the tracer we were passed runs in m, we use this async to match the
-  -- Tracer IO we want to use with the Tracer m we have
-  -- TODO exception safety, we should trace_async 'onException'
-  --
-
-  -- TODO why are we using TBQueues?? is it really needed?
-
-  -- TODO This tracing logic also could use a review (perhaps use `natTracer` to transform the tracer?)
-  trace_q <- liftIO $ IOLike.newTBQueueIO 1
-  trace_async <- IOLike.async . void . runMaybeT . forever $ do
-    t <- MaybeT . liftIO . IOLike.atomically $ IOLike.readTBQueue trace_q
-    lift $ Trace.traceWith tracer t
-
-  let
-    dbTracer :: Trace.Tracer IO TraceDb
-    dbTracer = Trace.Tracer $ IOLike.atomically . IOLike.writeTBQueue trace_q . Just
-
-  dbOpenHandles <- liftIO $ IOLike.newTVarIO Map.empty
-  let
-    (gdd, copy_db_action :: m (), init_action :: Db l -> m ()) = case init_db of
+    (gdd, copy_db_action :: m (), init_action :: Db m l -> m ()) = case init_db of
       LIInitialiseFromLMDB fp
         -- If fp == path then this is the LINoInitialise case
         | fp /= path -> (GDDMustNotExist, initFromLMDBs dbTracer sfs fp path, \_ -> pure ())
-      LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), liftIO . initFromVals slot vals)
+      LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), initFromVals slot vals)
       _ -> (GDDMustExist, pure (), \_ -> pure ())
 
   -- get the filepath for this db creates the directory if appropriate
@@ -415,24 +395,21 @@ newLMDBBackingStore tracer limits sfs init_db = do
     db = Db{..}
     bsClose :: m ()
     bsClose = do
-      Trace.traceWith tracer $ TDBClosing dbFilePath
-      liftIO $ do
-        open_handles <- IOLike.atomically $ IOLike.readTVar dbOpenHandles
-        for_ open_handles vhClose
-        IOLike.atomically $ IOLike.writeTBQueue trace_q Nothing
-      IOLike.wait trace_async
+      Trace.traceWith dbTracer $ TDBClosing dbFilePath
+      open_handles <- IOLike.atomically $ IOLike.readTVar dbOpenHandles
+      for_ open_handles vhClose
       liftIO $ LMDB.closeEnvironment dbEnv
-      Trace.traceWith tracer $ TDBClosed dbFilePath
+      Trace.traceWith dbTracer $ TDBClosed dbFilePath
 
     bsCopy shfs (HD.BackingStorePath to0) = do
       to <- guardDbDir GDDMustNotExist shfs to0
-      liftIO $ lmdbCopy dbTracer dbEnv to
+      lmdbCopy dbTracer dbEnv to
 
     bsValueHandle = mkLMDBBackingStoreValueHandle db
 
     bsWrite :: SlotNo -> LedgerTables l DiffMK -> m ()
-    bsWrite slot diffs = liftIO $ do
-      old_slot <- LMDB.readWriteTransaction dbEnv $ withDbSettingsRW dbSettings $ \s@DbState{dbsSeq} -> do
+    bsWrite slot diffs = do
+      old_slot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbSettingsRW dbSettings $ \s@DbState{dbsSeq} -> do
         -- TODO This should be <. However the test harness does call bsWrite with the same slot
         unless (dbsSeq <= At slot) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
         void $ zipLedgerTablesA writeLMDBTable dbBackingTables diffs
@@ -442,7 +419,7 @@ newLMDBBackingStore tracer limits sfs init_db = do
   -- now initialise those tables if appropriate
   init_action db
 
-  Trace.traceWith tracer $ TDBOpened dbFilePath
+  Trace.traceWith dbTracer $ TDBOpened dbFilePath
   pure HD.BackingStore{..}
 
 
@@ -454,27 +431,27 @@ data TraceValueHandle
   | TVHSubmissionEnded
   deriving stock(Show, Eq)
 
-mkValueHandle :: (MonadIO m)
-  => Trace.Tracer IO TraceDb
+mkValueHandle :: forall m. (MonadIO m, IOLike m)
+  => Trace.Tracer m TraceDb
   -> LMDB.Environment LMDB.ReadOnly
-  -> IOLike.TVar IO (Map Int ValueHandle)
-  -> m ValueHandle
-mkValueHandle tracer0 dbEnv dbOpenHandles = liftIO $ do
+  -> IOLike.TVar m (Map Int (ValueHandle m))
+  -> m (ValueHandle m)
+mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
   let LMDB.Env env = dbEnv
-  readOnlyTx <- LMDB.mdb_txn_begin env Nothing (LMDB.isReadOnlyEnvironment dbEnv)
+  readOnlyTx <- liftIO $ LMDB.mdb_txn_begin env Nothing (LMDB.isReadOnlyEnvironment dbEnv)
 
   (r, traces) <- IOLike.atomically $ IOLike.stateTVar dbOpenHandles $ \x0 ->
     let
       vh_id = maybe 0 ((+1) . fst) $ Map.lookupMax x0
-      tracer = Trace.contramap (TDBValueHandle vh_id) tracer0
+      tracer = Trace.contramap (TDBValueHandle vh_id) dbTracer0
 
-      vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> IO (Maybe a)
+      vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> m (Maybe a)
       vhSubmit (LMDB.Txn t) = do
         present <- Map.member vh_id <$> IOLike.atomically (IOLike.readTVar dbOpenHandles)
         unless present $ Exn.throw DbErrBadRead
-        flip Exn.onException vhClose $ do
+        flip onException vhClose $ do
           Trace.traceWith tracer TVHSubmissionStarted
-          r <- t readOnlyTx
+          r <- liftIO $ t readOnlyTx
           Trace.traceWith tracer TVHSubmissionEnded
           pure r
 
@@ -483,31 +460,31 @@ mkValueHandle tracer0 dbEnv dbOpenHandles = liftIO $ do
         -- Read-only transactions can be either committed or aborted with the
         -- same result. We chose commit for readability but they perform the
         -- same operations in this case.
-        LMDB.mdb_txn_commit readOnlyTx
+        liftIO $ LMDB.mdb_txn_commit readOnlyTx
         IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vh_id)
         Trace.traceWith tracer TVHClosed
       vh = ValueHandle{..}
     in
       ( (vh, [TDBValueHandle vh_id TVHOpened] )
       , Map.insert vh_id vh x0 )
-  for_ traces $ Trace.traceWith tracer0
+  for_ traces $ Trace.traceWith dbTracer0
   pure r
 
-mkLMDBBackingStoreValueHandle :: forall l m. (MonadIO m, TableStuff l)
-  => Db l
+mkLMDBBackingStoreValueHandle :: forall l m. (MonadIO m, TableStuff l, IOLike m)
+  => Db m l
   -> m (WithOrigin SlotNo, LMDBValueHandle l m)
 mkLMDBBackingStoreValueHandle Db{..} = do
   let
     dbe = LMDB.readOnlyEnvironment dbEnv
   vh <- mkValueHandle dbTracer dbe dbOpenHandles
-  mb_init_slot <- liftIO $ vhSubmit vh $ readDbSettingsMaybeNull dbSettings
+  mb_init_slot <- vhSubmit vh $ readDbSettingsMaybeNull dbSettings
   init_slot <- liftIO $ maybe (Exn.throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mb_init_slot
   let
     bsvhClose :: m ()
-    bsvhClose = liftIO $ vhClose vh
+    bsvhClose = vhClose vh
 
     bsvhRead :: LedgerTables l KeysMK -> m (LedgerTables l ValuesMK)
-    bsvhRead keys = liftIO $ vhSubmit vh (Just <$> zipLedgerTablesA readLMDBTable dbBackingTables keys) >>= \case
+    bsvhRead keys = vhSubmit vh (Just <$> zipLedgerTablesA readLMDBTable dbBackingTables keys) >>= \case
       Nothing -> Exn.throw DbErrBadRead
       Just x -> pure x
 
@@ -516,7 +493,7 @@ mkLMDBBackingStoreValueHandle Db{..} = do
       transaction = Just <$> case rqPrev of
         Nothing -> traverseLedgerTables (initRangeReadLMDBTable rqCount) dbBackingTables
         Just keys -> zipLedgerTablesA (rangeReadLMDBTable rqCount) dbBackingTables keys
-      in liftIO $ vhSubmit vh transaction >>= \case
+      in vhSubmit vh transaction >>= \case
         Nothing -> Exn.throw DbErrBadRangeRead
         Just x -> pure x
   pure (init_slot, HD.BackingStoreValueHandle{..})
