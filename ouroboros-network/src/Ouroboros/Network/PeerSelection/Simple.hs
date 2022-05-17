@@ -57,7 +57,7 @@ withPeerSelectionActions
       -> PeerSelectionActions peeraddr peerconn m
       -> m a)
   -- ^ continuation, recieves a handle to the local roots peer provider thread
-  -- (only if local root peers where non-empty).
+  -- (only if local root peers were non-empty).
   -> m a
 withPeerSelectionActions
   localRootTracer
@@ -88,7 +88,7 @@ withPeerSelectionActions
         localRootsVar)
       (\thread -> k (Just thread) peerSelectionActions)
   where
-    -- We first try to get poublic root peers from the ledger, but if it fails
+    -- We first try to get public root peers from the ledger, but if it fails
     -- (for example because the node hasn't synced far enough) we fall back
     -- to using the manually configured bootstrap root peers.
     requestPublicRootPeers :: Int -> m (Set peeraddr, DiffTime)

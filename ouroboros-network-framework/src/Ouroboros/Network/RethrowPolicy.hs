@@ -7,7 +7,7 @@
 -- | Rethrow policy for 'MuxConnectionHandler'.
 --
 -- Connection manager has a centralised way of handling exceptions.
--- 'RethrowPolicy' is a way to decided wheather it is enough to shutdown
+-- 'RethrowPolicy' is a way to decided whether it is enough to shutdown
 -- connection or the node should shut down itself.  Theis mechanism is affected
 -- by the design choices in the mutliplexer.
 --
@@ -70,9 +70,9 @@ instance Monoid ErrorCommand where
     mempty = ShutdownPeer
 
 
--- | Weather an exception happend on outbound or inbound connection.
+-- | Whether an exception happend on outbound or inbound connection.
 --
--- TODO: It would be more useful to have access weather the exception happend
+-- TODO: It would be more useful to have access whether the exception happend
 -- on initiator or responder. The easiest way to fix this is make mux throw the
 -- exception together with context.  This allows to keep error handling be done
 -- only by the connection manager (rather than by server and

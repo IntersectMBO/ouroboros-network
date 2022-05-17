@@ -58,25 +58,22 @@ import           Ouroboros.Network.ConnectionManager.Types
 -- $doc
 -- = Introduction
 --
--- This module implements 'PeerStateActions', which provide the following
--- capabilities::
+-- This module implements 'withPeerStateActions', giving the user access to the
+-- 'PeerStateActions' API, which provides the following capabilities:
 --
--- [synchronous promotions / demotions]:
+--   [synchronous promotions / demotions]:
+--        * 'establishPeerConnection'
+--        * 'activatePeerConnection'
+--        * 'deactivatePeerConnection'
+--        * 'closePeerConnection'
+-- 
+--   [monitoring]: 'monitorPeerConnection' - returns the state of the connection.
 --
---      * 'establishPeerConnection'
---      * 'activatePeerConnection'
---      * 'deactivatePeerConnection'
---      * 'closePeerConnection'
---
--- [asynchronous demotions]:
---
--- Monitor mini-protocols and act on mini-protocol state changes done via
--- 'monitorPeerConnection'.
---
+--   [asynchronous demotions]: happens when a mini-protocol terminates or errors.
 --
 -- = Synchronous promotions / demotions
 --
--- Synchronous promotions / demotions are directly used by
+-- Synchronous promotions / demotions are used by
 -- 'Ouroboros.Network.PeerSelection.Governor.peerSelectionGovernor'.
 --
 -- [synchronous /cold → warm/ transition]:
@@ -86,11 +83,11 @@ import           Ouroboros.Network.ConnectionManager.Types
 --    below.
 --
 -- [synchronous /warm → hot/ transition]:
---    This transition quiesce warm protocols and starts hot protocols.  There
+--    This transition quiesces warm protocols and starts hot protocols.  There
 --    is no timeout to quiesce warm mini-protocols.  The tip-sample protocol
 --    which is the only planned warm protocol has some states that have
 --    a longer timeout when the remote peer has agency, but it does not
---    transfers much data.
+--    transfer much data.
 --
 -- [synchronous /hot → warm/ transition]:
 --    Within a timeout, stop hot protocols and let the warm protocols continue
@@ -110,10 +107,11 @@ import           Ouroboros.Network.ConnectionManager.Types
 -- = Monitoring Loop
 --
 -- The monitoring loop is responsible for taking an action when one of the
--- mini-protocols either terminates or errors.  Except termination of a hot
--- protocols we shall close the connection.  When one of the hot protocols
--- terminates we trigger a synchronous /hot → warm/ transition.
---
+-- mini-protocols either terminates or errors.  When a mini-protocol terminates
+-- 
+--    * if (mini-protocol was hot): trigger a synchronous /hot → warm/ transition.
+--    * otherwise: close the connection.
+--  
 -- The monitoring loop is supposed to stop when the multiplexer stops.
 --
 -- Note that the monitoring loop must act as soon as one of the mini-protocols
@@ -142,7 +140,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 -- 'PeerStateActions' are build on top of 'ConnectionManager' which provides
 -- a primitive to present us a negotiated connection (i.e. after running
 -- the handshake) and the multiplexer api which allows to start mini-protocols
--- and track their termination via an 'STM' interface.  Each connection has
+-- and track their termination via an 'STM' interface.  Each connection has an
 -- associated 'PeerConnectionHandle' which holds all the data associated with
 -- a connection.
 --
@@ -158,7 +156,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 -- us to terminate, quiesce or re-enable mini-protocols.
 --
 --
--- Bellow is a schematic illustration of function calls / threads and shared
+-- Below is a schematic illustration of function calls / threads and shared
 -- state variables.  Reads done just make assertions are not included.  The
 -- diagram does not include 'establishPeerConnection'.
 --
@@ -332,7 +330,7 @@ instance Semigroup FirstToFinishResult where
     res@MiniProtocolSuccess{} <> MiniProtocolSuccess{} = res
 
 
--- | Await for first result from any of any of the protocols which belongs to
+-- | Await first result from any of any of the protocols which belongs to
 -- the indicated bundle.
 --
 awaitFirstResult :: MonadSTM m
@@ -575,8 +573,8 @@ withPeerStateActions PeerStateActionsArguments {
       :: PeerConnectionHandle muxMode peerAddr ByteString m a b
       -> m ()
     peerMonitoringLoop pch@PeerConnectionHandle { pchConnectionId, pchPeerState, pchAppHandles } = do
-        -- A first to finish synchronisation on all the bundles; As a result
-        -- this is a first to finish synchronisation between all the
+        -- A first-to-finish synchronisation on all the bundles; As a result
+        -- this is a first-to-finish synchronisation between all the
         -- mini-protocols runs toward the given peer.
         r <-
           atomically $
@@ -601,6 +599,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- thread terminated abruptly and the connection state will be
           -- updated by the finally handler of a connection handler.
           --
+
           WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
             traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
             atomically (writeTVar pchPeerState (PeerStatus PeerCold))
@@ -630,9 +629,9 @@ withPeerStateActions PeerStateActionsArguments {
             peerMonitoringLoop pch
 
           -- If an /established/ or /warm/ we demote the peer to 'PeerCold'.
-          -- Warm protocols are quieced when a peer becomes hot, but never
+          -- Warm protocols are quiesced when a peer becomes hot, but never
           -- terminated by 'PeerStateActions' (with the obvious exception of
-          -- 'closePeerConnection'); also established mini-protocols are not
+          -- 'closePeerConnection'); also, established mini-protocols are not
           -- supposed to terminate (unless the remote peer did something
           -- wrong).
           WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {}) ->
@@ -705,7 +704,7 @@ withPeerStateActions PeerStateActionsArguments {
                                         throwIO e)
                                      (peerMonitoringLoop connHandle $> Nothing))
                                    (return . Just)
-                                   ()
+                                   ()  -- unit group, not using JobPool to group jobs.
                                    ("peerMonitoringLoop " ++ show remoteAddress))
               pure connHandle
 
@@ -903,8 +902,9 @@ withPeerStateActions PeerStateActionsArguments {
                     <*> awaitAllResults TokWarm pchAppHandles
                     <*> awaitAllResults TokEstablished pchAppHandles)
       -- 'unregisterOutboundConnection' could only fail to demote the peer if
-      -- connection manager would simultanously promoted it, but this is not
+      -- connection manager would simultaneously promote it, but this is not
       -- posible.
+        -- GR-FIXME[D2]: Don't understand, why this comment here.
       case res of
         Nothing -> do
           -- timeout fired
@@ -918,7 +918,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- some mini-protocol errored
           --
           -- we don't need to notify the connection manager, we can instead
-          -- relay on mux property: if any of the mini-protocols errors, mux
+          -- rely on mux property: if any of the mini-protocols errors, mux
           -- throws an exception as well.
           atomically (writeTVar pchPeerState (PeerStatus PeerCold))
           traceWith spsTracer (PeerStatusChangeFailure

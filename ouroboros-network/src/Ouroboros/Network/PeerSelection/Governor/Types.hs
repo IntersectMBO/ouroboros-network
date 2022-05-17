@@ -18,7 +18,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerStateActions (..)
   , PeerSelectionActions (..)
   , ChurnMode (..)
-    -- * P2P govnernor internals
+    -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
   , assertPeerSelectionState
@@ -201,7 +201,6 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        peerStateActions         :: PeerStateActions peeraddr peerconn m
      }
 
-
 -- | Callbacks which are performed to change peer state.
 --
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
@@ -209,7 +208,7 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     --
     monitorPeerConnection    :: peerconn -> STM m PeerStatus,
 
-    -- | Establish new connection.
+    -- | Establish new connection: cold to warm.
     --
     establishPeerConnection  :: peeraddr -> m peerconn,
 

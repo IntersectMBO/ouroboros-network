@@ -107,7 +107,7 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
 inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                 connectionManager observableStateVar = do
     -- State needs to be a TVar, otherwise, when catching the exception inside
-    -- the loop we do not have access to the most recentversion of the state
+    -- the loop we do not have access to the most recent version of the state
     -- and might be truncating transitions.
     st <- atomically $ newTVar emptyState
     inboundGovernorLoop st

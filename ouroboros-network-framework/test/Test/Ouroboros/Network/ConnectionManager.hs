@@ -376,7 +376,7 @@ instance Exception TestError
 -- which the kernel would forbid, e.g. the two connections with the same
 -- four-tuples.
 --
--- Note: we don't track all the connection in the system, but rather relay on
+-- Note: we don't track all the connection in the system, but rather rely on
 -- the event schedule.  If the execution environment (test runtime) is in sync
 -- with the snocket, it will pass the right 'ScheduleEntry' to the test
 -- runtime, both for outbound ('connect' call) and inbound ('accept' call).
