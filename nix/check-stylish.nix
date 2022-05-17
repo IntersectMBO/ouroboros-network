@@ -10,7 +10,7 @@ runCommand "check-stylish" {
 } ''
   unpackPhase
   cd $sourceRoot
-  fd -p ouroboros-consensus -e hs -E Setup.hs -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs -X stylish-haskell -c .stylish-haskell.yaml -i
+  bash ./scripts/ci/check-stylish.sh
   diff -ru $src .
 
   EXIT_CODE=$?
