@@ -157,7 +157,7 @@ instance Eq (MutableConnState peerAddr handle handleError version m) where
 newtype FreshIdSupply m = FreshIdSupply { getFreshId :: STM m Int }
 
 
--- | Create a 'FreshIdSupply' inside and 'STM' monad.
+-- | Create a 'FreshIdSupply' inside an 'STM' monad.
 --
 newFreshIdSupply :: forall m. MonadSTM m
                  => Proxy m -> STM m (FreshIdSupply m)
@@ -184,7 +184,7 @@ newMutableConnState freshIdSupply connState = do
 
 
 -- | 'ConnectionManager' state: for each peer we keep a 'ConnectionState' in
--- a mutable variable, which reduce congestion on the 'TMVar' which keeps
+-- a mutable variable, which reduces congestion on the 'TMVar' which keeps
 -- 'ConnectionManagerState'.
 --
 -- It is important we can lookup by remote @peerAddr@; this way we can find if

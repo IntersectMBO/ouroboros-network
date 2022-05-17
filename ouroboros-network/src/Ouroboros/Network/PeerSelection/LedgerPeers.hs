@@ -293,7 +293,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
         (Set.insert addr addrs, domains)
 
 
--- | For a LederPeers worker thread and submit request and receive responses.
+-- | For a LedgerPeers worker thread and submit request and receive responses.
 --
 withLedgerPeers :: forall peerAddr m a.
                    ( MonadAsync m

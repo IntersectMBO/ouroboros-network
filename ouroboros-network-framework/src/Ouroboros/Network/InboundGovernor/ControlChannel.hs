@@ -28,7 +28,7 @@ import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Types
 
 
--- | Announcment message for a new connection.
+-- | Announcement message for a new connection.
 --
 data NewConnection peerAddr handle
 
@@ -57,12 +57,12 @@ instance Show peerAddr
 
 -- | Server control channel.  It allows to pass 'STM' transactions which will
 -- resolve to 'NewConnection'.   Server's monitoring thread is the consumer
--- of this messages; there are two produceres: accept loop and connection
+-- of these messages; there are two producers: accept loop and connection
 -- handler for outbound connections.
 --
 data ControlChannel m msg =
   ControlChannel {
-    -- | Read a single 'NewConnection' instructrion from the channel.
+    -- | Read a single 'NewConnection' instruction from the channel.
     --
     readMessage  :: STM m msg,
 
@@ -80,8 +80,9 @@ newControlChannel :: forall m srvCntrlMsg.
                      MonadLabelledSTM m
                   => m (ControlChannel m srvCntrlMsg)
 newControlChannel = do
-    -- Queue size: events will come eihter from the accept loop or from the
-    -- connection manager (when it included an outbound duplex connection).
+    -- Queue size: events will come either from the accept loop or from the
+    -- connection manager (when it includes an outbound duplex connection).
+    -- GR-FIXME[D2]: above comment is DOU (see code-review-doc)
     channel <-
       atomically $
         newTBQueue 10

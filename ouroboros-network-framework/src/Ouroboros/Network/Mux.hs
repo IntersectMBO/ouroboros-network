@@ -133,7 +133,7 @@ newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
 
 
 -- |  There are three kinds of applications: warm, hot and established (ones
--- that run in for both warm and hot peers).
+-- that run in both warm and hot peers).
 --
 data ProtocolTemperature = Established | Warm | Hot
   deriving (Eq, Ord, Show)
@@ -153,7 +153,7 @@ data SomeTokProtocolTemperature where
 
 
 -- | We keep hot, warm and established application (or their context) distinct.
--- It's only needed for a handly 'projectBundle' map.
+-- It's only needed for a handy 'projectBundle' map.
 --
 data WithProtocolTemperature (pt :: ProtocolTemperature) a where
     WithHot         :: !a -> WithProtocolTemperature Hot  a

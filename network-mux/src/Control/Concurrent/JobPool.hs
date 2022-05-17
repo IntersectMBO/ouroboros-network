@@ -3,6 +3,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
+-- | This module allows the management of a multiple Async jobs which
+-- are grouped by an 'Ord group => group' type.
+--
 module Control.Concurrent.JobPool
   ( JobPool
   , Job (..)
@@ -24,7 +27,6 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadThread (..))
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-
 
 data JobPool group m a = JobPool {
        jobsVar         :: !(TVar m (Map (group, ThreadId m) (Async m ()))),

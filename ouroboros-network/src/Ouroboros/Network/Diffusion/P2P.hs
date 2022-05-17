@@ -273,7 +273,7 @@ socketAddressType addr                    =
 
 -- | P2P Applications Extras
 --
--- TODO: we need initiator only mode for Deadalus, there's no reason why it
+-- TODO: we need initiator only mode for Daedalus, there's no reason why it
 -- should run a node-to-node server side.
 --
 data ApplicationsExtra ntnAddr m =
@@ -1200,7 +1200,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 --
 
 -- | For Node-To-Node protocol, any connection which negotiated at least
--- 'NodeToNodeV_9' version and did not declared 'InitiatorOnlyDiffusionMode'
+-- 'NodeToNodeV_9' version and did not declare 'InitiatorOnlyDiffusionMode'
 -- will run in 'Duplex' mode.   All connections from lower versions or one that
 -- declared themselves as 'InitiatorOnly' will run in 'UnidirectionalMode'
 --
