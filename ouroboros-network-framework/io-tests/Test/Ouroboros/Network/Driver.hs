@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -11,6 +12,10 @@
 
 
 module Test.Ouroboros.Network.Driver (tests) where
+
+import           Data.Bifunctor (bimap)
+import           Data.List (intercalate)
+import qualified Data.List as List
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Core
@@ -20,6 +25,7 @@ import           Network.TypedProtocol.Peer.Server (Server)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Driver.Limits
+import           Ouroboros.Network.Driver.Simple
 
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Codec
@@ -27,10 +33,19 @@ import           Network.TypedProtocol.ReqResp.Examples
 import           Network.TypedProtocol.ReqResp.Server
 import           Network.TypedProtocol.ReqResp.Type
 
+import           Network.TypedProtocol.PingPong.Client
+import           Network.TypedProtocol.PingPong.Codec
+import           Network.TypedProtocol.PingPong.Examples
+import           Network.TypedProtocol.PingPong.Server
+import           Network.TypedProtocol.PingPong.Type (PingPong)
+
 import           Control.Applicative (Alternative)
+import           Control.Exception (throw)
 import           Control.Monad (replicateM, void)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
@@ -50,10 +65,15 @@ import           Text.Show.Functions ()
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Driver.Limits"
-  [ testProperty "runPeerWithLimits ST"
-                                       prop_runPeerWithLimits_ST
-  , testProperty "runPeerWithLimits IO"
-                                       prop_runPeerWithLimits_IO
+  [ testProperty "channel ReqResp ST"              prop_channel_reqresp_ST
+  , testProperty "channel ReqResp IO"              prop_channel_reqresp_IO
+  , testProperty "channel PingPong ST"             prop_channel_ping_pong_ST
+  , testProperty "channel PingPong IO"             prop_channel_ping_pong_IO
+  , testProperty "channel PingPong STM ST"         prop_channel_ping_pong_stm_ST
+  , testProperty "channel PingPong STM IO"         prop_channel_ping_pong_stm_IO
+  , testProperty "channel PingPong with limits ST" prop_channel_ping_pong_with_limits_ST
+  , testProperty "channel PingPong with limits STM ST"
+                  prop_channel_ping_pong_with_limits_stm_ST
   ]
 
 
@@ -113,16 +133,16 @@ data ShouldFail
 -- Run the server peer using @runPeerWithByteLimit@, which will receive requests
 -- with the given payloads.
 --
-prop_runPeerWithLimits
-  :: forall m. ( Alternative (STM m), MonadAsync m, MonadDelay m, MonadFork m,
-                 MonadMask m, MonadThrow (STM m), MonadTimer m)
+prop_channel_reqresp
+  :: forall m. ( Alternative (STM m), MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
+                 MonadThrow (STM m), MonadTime m, MonadTimer m)
   => Tracer m (TraceSendRecv (ReqResp String ()))
   -> Word
   -- ^ byte limit
   -> [(String, DiffTime)]
   -- ^ request payloads
   -> m Bool
-prop_runPeerWithLimits tracer limit reqPayloads = do
+prop_channel_reqresp tracer limit reqPayloads = do
       (c1, c2) <- createConnectedChannels
 
       res <- try $
@@ -152,7 +172,7 @@ prop_runPeerWithLimits tracer limit reqPayloads = do
       recvPeer :: Server (ReqResp String ()) NonPipelined Empty StIdle m stm [DiffTime]
       recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
         (\a _ -> case a of
-          [] -> error "prop_runPeerWithLimits: empty list"
+          [] -> error "prop_channel_reqresp: empty list"
           delay : acc -> do
             threadDelay delay
             return (acc, ()))
@@ -215,12 +235,16 @@ instance Arbitrary ReqRespPayloadWithLimit where
 -- TODO: This test could be improved: it will not test the case in which
 -- @runDecoderWithByteLimit@ receives trailing bytes.
 --
-prop_runPeerWithLimits_ST
+prop_channel_reqresp_ST
   :: ReqRespPayloadWithLimit
   -> Property
-prop_runPeerWithLimits_ST (ReqRespPayloadWithLimit limit payload) =
+prop_channel_reqresp_ST (ReqRespPayloadWithLimit limit payload) =
       tabulate "Limit Boundaries" (labelExamples limit payload) $
-        runSimOrThrow (prop_runPeerWithLimits nullTracer limit [payload])
+        let trace = runSimTrace (prop_channel_reqresp (Tracer (say . show)) limit [payload])
+        in counterexample (intercalate "\n" $ map show $ traceEvents trace)
+           $ case traceResult True trace of
+               Left e  -> throw e
+               Right x -> x
     where
       labelExamples :: Word -> (String, DiffTime) -> [String]
       labelExamples l (p,_) =
@@ -234,9 +258,340 @@ prop_runPeerWithLimits_ST (ReqRespPayloadWithLimit limit payload) =
             then ["CloseToTheLimit"]
             else []
 
-prop_runPeerWithLimits_IO
+prop_channel_reqresp_IO
   :: ReqRespPayloadWithLimit
   -> Property
-prop_runPeerWithLimits_IO (ReqRespPayloadWithLimit limit payload) =
-  ioProperty  (prop_runPeerWithLimits nullTracer limit [payload])
+prop_channel_reqresp_IO (ReqRespPayloadWithLimit limit payload) =
+  ioProperty  (prop_channel_reqresp nullTracer limit [payload])
 
+
+prop_channel_ping_pong
+  :: ( Alternative (STM m)
+     , MonadAsync       m
+     , MonadDelay       m
+     , MonadMask        m
+     , MonadTest        m
+     , MonadThrow  (STM m)
+     )
+  => DiffTime
+  -> DiffTime
+  -> Int
+  -> Tracer m (Role, TraceSendRecv PingPong)
+  -> m Bool
+prop_channel_ping_pong a b n tr = do
+    exploreRaces
+    (_, r) <- runConnectedPeers (bimap (delayChannel a)
+                                       (delayChannel b)
+                                  <$> createConnectedBufferedChannelsUnbounded)
+                                tr
+                                codecPingPong client server
+    return (r == n)
+  where
+    client = pingPongClientPeerPipelined (pingPongClientPipelinedMin n)
+    server = pingPongServerPeer  pingPongServerCount
+
+
+prop_channel_ping_pong_ST
+  :: NonNegative Int
+  -- delay in simulated seconds
+  -> NonNegative Int
+  -- delay in simulated seconds
+  -> NonNegative Int
+  -> Property
+prop_channel_ping_pong_ST (NonNegative a) (NonNegative b) (NonNegative n) =
+    let trace = runSimTrace sim in
+        counterexample (ppTrace trace)
+      $ case traceResult True trace of
+          Left e  -> counterexample (show e) False
+          Right r -> property r
+  where
+    sim :: IOSim s Bool
+    sim = prop_channel_ping_pong (fromIntegral a)
+                                 (fromIntegral b)
+                                 n
+                                 nullTracer
+
+prop_channel_ping_pong_IO
+  :: NonNegative Int
+  -- delay in micro seconds
+  -> NonNegative Int
+  -- delay in micro seconds
+  -> NonNegative Int
+  -> Property
+prop_channel_ping_pong_IO (NonNegative a) (NonNegative b) (NonNegative n) =
+    ioProperty (prop_channel_ping_pong (fromIntegral a / 1_000_000)
+                                       (fromIntegral b / 1_000_000)
+                                       n nullTracer)
+
+
+
+prop_channel_ping_pong_stm
+  :: ( Alternative (STM m)
+     , MonadAsync      m
+     , MonadDelay      m
+     , MonadMask       m
+     , MonadTest       m
+     , MonadThrow (STM m)
+     )
+  => DiffTime
+  -> DiffTime
+  -> Int -- ^ pipelining depth
+  -> Int
+  -> Tracer m (Role, TraceSendRecv PingPong)
+  -> m Bool
+prop_channel_ping_pong_stm a b omax n tr = do
+    exploreRaces
+    (_, r) <- runConnectedPeers (bimap (delayChannel a)
+                                       (delayChannel b)
+                                  <$> createConnectedBufferedChannels
+                                       (fromIntegral omax))
+                                tr
+                                codecPingPong client server
+    return (r == n)
+  where
+    client = pingPongClientPeerPipelinedSTM (pingPongClientPipelinedLimited omax n)
+    server = pingPongServerPeer  pingPongServerCount
+
+prop_channel_ping_pong_stm_ST
+  :: NonNegative Int
+  -- ^ delay in simulated seconds
+  -> NonNegative Int
+  -- ^ delay in simulated seconds
+  -> Positive    Int
+  -- ^ maximal pipelining depth
+  -> NonNegative Int
+  -> Property
+prop_channel_ping_pong_stm_ST (NonNegative a) (NonNegative b)
+                              (Positive omax) (NonNegative n) =
+    exploreSimTrace id sim $ \_ trace ->
+    counterexample (ppTrace trace)
+      $ case traceResult True trace of
+          Left e  -> counterexample (show e) False
+          Right r -> property r
+  where
+    sim :: IOSim s Bool
+    sim = prop_channel_ping_pong_stm (fromIntegral a)
+                                     (fromIntegral b)
+                                     omax
+                                     n
+                                     (Tracer $ say . show)
+
+
+prop_channel_ping_pong_stm_IO
+  :: NonNegative Int
+  -- delay in micro seconds
+  -> NonNegative Int
+  -- delay in micro seconds
+  -> Positive Int
+  -- ^ pipelining depth
+  -> NonNegative Int
+  -> Property
+prop_channel_ping_pong_stm_IO (NonNegative a) (NonNegative b)
+                              (Positive omax) (NonNegative n) =
+    ioProperty (prop_channel_ping_pong_stm (fromIntegral a / 1_000_000)
+                                           (fromIntegral b / 1_000_000)
+                                           omax n nullTracer)
+
+prop_channel_ping_pong_with_limits
+  :: ( Alternative (STM m)
+     , MonadAsync       m
+     , MonadDelay       m
+     , MonadFork        m
+     , MonadMask        m
+     , MonadTest        m
+     , MonadThrow  (STM m)
+     , MonadTimer       m
+     )
+  => DiffTime
+  -> DiffTime
+  -> Int
+  -> Tracer m (Role, TraceSendRecv PingPong)
+  -> ProtocolSizeLimits PingPong String
+  -> ProtocolTimeLimits PingPong
+  -> m Bool
+prop_channel_ping_pong_with_limits a b n tr slimits tlimits = do
+    exploreRaces
+    (_, r) <- runConnectedPeersWithLimits
+                                (bimap (delayChannel a)
+                                       (delayChannel b)
+                                  <$> createConnectedBufferedChannelsUnbounded)
+                                tr
+                                codecPingPong
+                                slimits tlimits
+                                client server
+    return (r == n)
+  where
+    client = pingPongClientPeerPipelined (pingPongClientPipelinedMin n)
+    server = pingPongServerPeer  pingPongServerCount
+
+
+prop_channel_ping_pong_with_limits_stm
+  :: ( Alternative (STM m)
+     , MonadAsync       m
+     , MonadDelay       m
+     , MonadFork        m
+     , MonadMask        m
+     , MonadTest        m
+     , MonadThrow  (STM m)
+     , MonadTimer       m
+     )
+  => DiffTime
+  -> DiffTime
+  -> Int
+  -> Tracer m (Role, TraceSendRecv PingPong)
+  -> ProtocolSizeLimits PingPong String
+  -> ProtocolTimeLimits PingPong
+  -> m Bool
+prop_channel_ping_pong_with_limits_stm a b n tr slimits tlimits = do
+    exploreRaces
+    (_, r) <- runConnectedPeersWithLimits
+                                (bimap (delayChannel a)
+                                       (delayChannel b)
+                                  <$> createConnectedBufferedChannelsUnbounded)
+                                tr
+                                codecPingPong
+                                slimits tlimits
+                                client server
+    return (r == n)
+  where
+    client = pingPongClientPeerPipelinedSTM (pingPongClientPipelinedMin n)
+    server = pingPongServerPeer  pingPongServerCount
+
+
+data ArbDelaysAndTimeouts = ArbDelaysAndTimeouts DiffTime -- ^ channel delay
+                                                 DiffTime -- ^ channel delay
+                                                 DiffTime -- ^ timeout limit
+  deriving Show
+
+instance Arbitrary ArbDelaysAndTimeouts where
+    arbitrary = do
+      NonNegative delay   <- arbitrary
+      NonNegative delay'  <- arbitrary
+      tlimit <-
+        frequency
+          [ (1, getPositive <$> resize (delay + delay') arbitrary)
+          , (9, (\(Positive t) -> delay + delay' + t) <$> arbitrary)
+          ]
+      return $ ArbDelaysAndTimeouts (fromIntegral delay  / 1_000_000)
+                                    (fromIntegral delay  / 1_000_000)
+                                    (fromIntegral tlimit / 1_000_000)
+
+
+expectExceedTimeLimit :: ArbDelaysAndTimeouts -> Bool
+expectExceedTimeLimit (ArbDelaysAndTimeouts delay delay' timelimit) =
+    let rtt = delay + delay' in timelimit <= rtt
+
+
+data ArbSizeLimit = ArbExceedSize
+                  | ArbEnoughSize
+  deriving Show
+
+instance Arbitrary ArbSizeLimit where
+    arbitrary = frequency [ (1, pure ArbExceedSize)
+                          , (9, pure ArbEnoughSize)
+                          ]
+
+toSize :: ArbSizeLimit -> Word
+toSize ArbExceedSize = 4
+toSize ArbEnoughSize = 5
+
+
+labelLimits :: ArbDelaysAndTimeouts
+            -> ArbSizeLimit
+            -> Property
+            -> Property
+labelLimits timelimit sizelimit =
+    tabulate "Limit Boundaries" $
+         if expectExceedTimeLimit timelimit
+            then ["AboveTimeLimit"]
+            else ["BelowTimeLimit"]
+      ++ if closeToTheTimeLimit
+            then ["CloseToTimeLimit"]
+            else []
+      ++ if toSize sizelimit >= 5
+            then ["AboveSizeLimit"]
+            else ["BelowSizeLimit"]
+  where
+    closeToTheTimeLimit =
+      case timelimit of
+        ArbDelaysAndTimeouts delay delay' tlimit ->
+          let rtt = delay + delay' in
+              abs (rtt - tlimit) >= rtt / 10
+
+
+prop_channel_ping_pong_with_limits_ST
+  :: ArbDelaysAndTimeouts
+  -> ArbSizeLimit
+  -> NonNegative Int
+  -> Property
+prop_channel_ping_pong_with_limits_ST a@(ArbDelaysAndTimeouts delay delay' timelimit)
+                                        sizelimit
+                                        (NonNegative n) =
+    labelLimits a sizelimit $
+    let trace = runSimTrace sim in
+        counterexample (ppTrace trace)
+      $ case traceResult True trace of
+          Left (FailureException e)
+                  | Just ExceededTimeLimit {} <- fromException e
+                  , expectExceedTimeLimit a
+                  -> property True
+                  | Just ExceededSizeLimit {} <- fromException e
+                  , ArbExceedSize <- sizelimit
+                  -> property True
+          Left  e -> counterexample (show e) False
+          Right r -> property r
+  where
+    sim :: IOSim s Bool
+    sim = prop_channel_ping_pong_with_limits delay delay'
+                                             n (Tracer $ say . show)
+                                             slimits tlimits
+
+    slimits :: ProtocolSizeLimits PingPong String
+    slimits = ProtocolSizeLimits {
+        sizeLimitForState = \_ -> toSize sizelimit,
+        dataSize = fromIntegral . List.length
+      }
+
+    tlimits :: ProtocolTimeLimits PingPong
+    tlimits = ProtocolTimeLimits {
+        timeLimitForState = \_ -> Just timelimit
+      }
+
+
+prop_channel_ping_pong_with_limits_stm_ST
+  :: ArbDelaysAndTimeouts
+  -> ArbSizeLimit
+  -> NonNegative Int
+  -> Property
+prop_channel_ping_pong_with_limits_stm_ST a@(ArbDelaysAndTimeouts delay delay' timelimit)
+                                          sizelimit
+                                          (NonNegative n) =
+    labelLimits a sizelimit $
+    let trace = runSimTrace sim in
+        counterexample (ppTrace trace)
+      $ case traceResult True trace of
+          Left (FailureException e)
+                  | Just ExceededTimeLimit {} <- fromException e
+                  , expectExceedTimeLimit a
+                  -> property True
+                  | Just ExceededSizeLimit {} <- fromException e
+                  , ArbExceedSize <- sizelimit
+                  -> property True
+          Left  e -> counterexample (show e) False
+          Right r -> property r
+  where
+    sim :: IOSim s Bool
+    sim = prop_channel_ping_pong_with_limits_stm delay delay'
+                                                 n (Tracer $ say . show)
+                                                 slimits tlimits
+
+    slimits :: ProtocolSizeLimits PingPong String
+    slimits = ProtocolSizeLimits {
+        sizeLimitForState = \_ -> toSize sizelimit,
+        dataSize = fromIntegral . List.length
+      }
+
+    tlimits :: ProtocolTimeLimits PingPong
+    tlimits = ProtocolTimeLimits {
+        timeLimitForState = \_ -> Just timelimit
+      }
