@@ -766,8 +766,9 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
               )
           }
       , topLevelConfigLedger = HardForkLedgerConfig {
-            hardForkLedgerConfigShape  = shape
-          , hardForkLedgerConfigPerEra = PerEraLedgerConfig
+            hardForkLedgerConfigShape      = shape
+          , hardForkLedgerConfigExtensible = EraExtensible
+          , hardForkLedgerConfigPerEra     = PerEraLedgerConfig
               (  WrapPartialLedgerConfig partialLedgerConfigByron
               :* WrapPartialLedgerConfig partialLedgerConfigShelley
               :* WrapPartialLedgerConfig partialLedgerConfigAllegra

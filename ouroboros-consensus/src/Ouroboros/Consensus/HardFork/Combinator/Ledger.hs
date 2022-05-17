@@ -340,6 +340,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
   ledgerViewForecastAt ledgerCfg@HardForkLedgerConfig{..}
                        (HardForkLedgerState ledgerSt) =
       mkHardForkForecast
+        hardForkLedgerConfigExtensible
         (InPairs.requiringBoth cfgs $ translateLedgerView hardForkEraTranslation)
         annForecast
     where
@@ -393,10 +394,11 @@ data AnnForecast state view blk = AnnForecast {
 mkHardForkForecast ::
      forall state view xs.
      SListI xs
-  => InPairs (TranslateForecast state view) xs
+  => Bool   -- ^ extensible eras?
+  -> InPairs (TranslateForecast state view) xs
   -> HardForkState (AnnForecast state view) xs
   -> Forecast (HardForkLedgerView_ view xs)
-mkHardForkForecast translations st = Forecast {
+mkHardForkForecast extensible translations st = Forecast {
       forecastAt  = hcollapse (hmap (K . forecastAt . annForecast) st)
     , forecastFor = \sno -> go sno translations (getHardForkState st)
     }
@@ -405,9 +407,12 @@ mkHardForkForecast translations st = Forecast {
        -> InPairs (TranslateForecast state view) xs'
        -> Telescope (K Past) (Current (AnnForecast state view)) xs'
        -> Except OutsideForecastRange (Ticked (HardForkLedgerView_ view xs'))
-    go sno PNil         (TZ cur)       = oneForecast sno NoNextEra         cur
-    go sno (PCons t _)  (TZ cur)       = oneForecast sno (NextEraExists t) cur
-    go sno (PCons _ ts) (TS past rest) = shiftView past <$> go sno ts rest
+    go sno PNil         (TZ cur)       =
+      oneForecast extensible sno NoNextEra         cur
+    go sno (PCons t _)  (TZ cur)       =
+      oneForecast extensible sno (NextEraExists t) cur
+    go sno (PCons _ ts) (TS past rest) =
+      shiftView past <$> go sno ts rest
 
 -- | Internal helper for 'mkHardForkForecast'
 data ThisPair f blk blks where
@@ -417,13 +422,14 @@ data ThisPair f blk blks where
 -- | Internal helper for 'mkHardForkForecast'
 oneForecast ::
      forall state view blk blks.
-     SlotNo
+     Bool   -- ^ extensible eras?
+  -> SlotNo
   -> ThisPair (TranslateForecast state view) blk blks
   -> Current (AnnForecast state view) blk
   -> Except
        OutsideForecastRange
        (Ticked (HardForkLedgerView_ view (blk : blks)))
-oneForecast sno mbTranslate (Current start AnnForecast{..}) =
+oneForecast extensible sno mbTranslate (Current start AnnForecast{..}) =
     case annForecastEnd of
       Nothing  -> endUnknown <$> forecastFor annForecast sno
       Just end ->
@@ -445,9 +451,12 @@ oneForecast sno mbTranslate (Current start AnnForecast{..}) =
          Ticked (f blk)
       -> Ticked (HardForkLedgerView_ f (blk : blks))
     endUnknown view = TickedHardForkLedgerView {
-          -- TODO when should this be TransitionNone?
           tickedHardForkLedgerViewTransition =
-            TransitionUnknown annForecastTip
+            case mbTranslate of
+              NextEraExists{} -> TransitionUnknown annForecastTip
+              NoNextEra       ->
+                if not extensible then TransitionNone else
+                TransitionUnknown annForecastTip
         , tickedHardForkLedgerViewPerEra = HardForkState $
             TZ (Current start (Comp view))
         }
@@ -457,6 +466,8 @@ oneForecast sno mbTranslate (Current start AnnForecast{..}) =
       -> Ticked (f blk)
       -> Ticked (HardForkLedgerView_ f (blk : blks))
     beforeKnownEnd end view = TickedHardForkLedgerView {
+          -- TODO the forecast range should be TransitionNone if blk' is the
+          -- last era and the chain is not extensible
           tickedHardForkLedgerViewTransition =
             TransitionKnown (boundEpoch end)
         , tickedHardForkLedgerViewPerEra = HardForkState $
@@ -468,7 +479,8 @@ oneForecast sno mbTranslate (Current start AnnForecast{..}) =
       -> Ticked (f blk')
       -> Ticked (HardForkLedgerView_ f (blk : blk' : blks'))
     afterKnownEnd end view = TickedHardForkLedgerView {
-          -- TODO when should this be TransitionNone?
+          -- TODO the forecast range should be TransitionNone if blk' is the
+          -- last era and the chain is not extensible
           tickedHardForkLedgerViewTransition =
             -- We assume that we only ever have to translate to the /next/ era
             -- (as opposed to /any/ subsequent era)

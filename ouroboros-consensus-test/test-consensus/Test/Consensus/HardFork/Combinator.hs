@@ -100,6 +100,7 @@ data TestSetup = TestSetup {
     , testSetupSeed       :: Seed
     , testSetupSlotLength :: AB SlotLength
     , testSetupTxSlot     :: SlotNo
+    , testSetupExtensible :: Bool
     }
   deriving (Show)
 
@@ -112,6 +113,9 @@ instance Arbitrary TestSetup where
 
       testSetupSeed       <- arbitrary
       testSetupSlotLength <- abM arbitrary
+
+      testSetupExtensible <- arbitrary
+
       return TestSetup{..}
     where
       abM :: Monad m => m a -> m (AB a)
@@ -264,11 +268,12 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                 :* Nil
             }
         , topLevelConfigLedger = HardForkLedgerConfig {
-              hardForkLedgerConfigShape  = shape
-            , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
+              hardForkLedgerConfigShape      = shape
+            , hardForkLedgerConfigPerEra     = PerEraLedgerConfig $
                    (WrapPartialLedgerConfig $ ledgerConfigA nid)
                 :* (WrapPartialLedgerConfig $ ledgerConfigB nid)
                 :* Nil
+            , hardForkLedgerConfigExtensible = testSetupExtensible
             }
         , topLevelConfigBlock = HardForkBlockConfig {
               hardForkBlockConfigPerEra = PerEraBlockConfig $

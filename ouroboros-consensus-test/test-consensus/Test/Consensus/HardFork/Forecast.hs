@@ -272,7 +272,10 @@ acrossErasForecast :: forall xs.
   -> Forecast LedgerView
 acrossErasForecast setup@TestSetup{..} ledgerStates =
     mapForecast aux $
-      mkHardForkForecast (translations setup) (HardForkState (go testEras))
+      mkHardForkForecast
+        testExtensible
+        (translations setup)
+        (HardForkState (go testEras))
   where
     TestForecastParams{..} = testForecastParams
 
@@ -533,6 +536,9 @@ data TestSetup xs = (SListI xs, IsNonEmpty xs) => TestSetup {
 
       -- | The forecast we're constructing
     , testForecastParams :: TestForecastParams
+
+      -- | Whether the list of eras is extensible
+    , testExtensible     :: Bool
     }
 
 type MaxLookahead = Word64

@@ -302,10 +302,13 @@ instance Isomorphic TopLevelConfig where
 
       auxLedger :: LedgerConfig blk -> LedgerConfig (HardForkBlock '[blk])
       auxLedger cfg = HardForkLedgerConfig {
-            hardForkLedgerConfigShape  = History.singletonShape eraParams
-          , hardForkLedgerConfigPerEra = PerEraLedgerConfig $
+            hardForkLedgerConfigShape      = History.singletonShape eraParams
+          , hardForkLedgerConfigPerEra     = PerEraLedgerConfig $
                  WrapPartialLedgerConfig (toPartialLedgerConfig (Proxy @blk) cfg )
               :* Nil
+          , hardForkLedgerConfigExtensible = False
+              -- This Unary interface is used for degenerate use of HFC. Thus
+              -- there is no intent to ever have another era.
           }
 
       auxConsensus :: ConsensusConfig (BlockProtocol blk)

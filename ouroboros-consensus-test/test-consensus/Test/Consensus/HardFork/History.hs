@@ -264,6 +264,7 @@ data ArbitraryParams xs = ArbitraryParams {
       arbitraryChainEvents :: [Event]
     , arbitraryChainEras   :: Eras     xs
     , arbitraryChainShape  :: HF.Shape xs
+    , arbitraryExtensible  :: Bool
 
       -- | Index into the events
       --
@@ -407,6 +408,7 @@ deriving instance Show ArbitraryChain
 instance Arbitrary ArbitraryChain where
   arbitrary = chooseEras $ \eras -> do
       shape  <- genShape eras
+      ext    <- arbitrary
       events <- genEvents eras shape `suchThat` (not . null)
       split  <- choose (0, length events - 1)
       rawIx  <- choose (0, length events - 1)
@@ -415,6 +417,7 @@ instance Arbitrary ArbitraryChain where
           arbitraryChainEvents = events
         , arbitraryChainEras   = eras
         , arbitraryChainShape  = shape
+        , arbitraryExtensible  = ext
         , arbitraryRawEventIx  = rawIx
         , arbitraryChainSplit  = split
         , arbitraryDiffTime    = diff
@@ -793,6 +796,7 @@ splitSafeZone tipEpoch = \(mTransition, safeZone) events ->
 hardForkEpochInfo :: ArbitraryChain -> SlotNo -> (EpochInfo Identity, String, String)
 hardForkEpochInfo ArbitraryChain{..} for =
     let forecast = mockHardForkLedgerView
+                     arbitraryExtensible
                      arbitraryChainShape
                      arbitraryTransitions
                      arbitraryChain
@@ -822,12 +826,14 @@ hardForkEpochInfo ArbitraryChain{..} for =
     ArbitraryParams{..} = arbitraryParams
 
 mockHardForkLedgerView :: SListI xs
-                       => HF.Shape xs
+                       => Bool   -- ^ is xs extensible?
+                       -> HF.Shape xs
                        -> HF.Transitions xs
                        -> Chain xs
                        -> Forecast (HardForkLedgerView_ (K ()) xs)
-mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
+mockHardForkLedgerView = \ext (HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
     mkHardForkForecast
+      ext
       (InPairs.hpure $ TranslateForecast $ \_epoch _slot _ -> return $
          TickedK TickedTrivial)
       (HardForkState (mockState HF.initBound pss ts ess))

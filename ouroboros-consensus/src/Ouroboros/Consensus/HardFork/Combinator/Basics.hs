@@ -137,8 +137,11 @@ newtype instance StorageConfig (HardForkBlock xs) = HardForkStorageConfig {
 -------------------------------------------------------------------------------}
 
 data HardForkLedgerConfig xs = HardForkLedgerConfig {
-      hardForkLedgerConfigShape  :: !(History.Shape xs)
-    , hardForkLedgerConfigPerEra :: !(PerEraLedgerConfig xs)
+      hardForkLedgerConfigShape      :: !(History.Shape xs)
+    , hardForkLedgerConfigPerEra     :: !(PerEraLedgerConfig xs)
+      -- | Is the last era in @xs@ the last era there ever will be on this
+      -- chain?
+    , hardForkLedgerConfigExtensible :: !Bool
     }
   deriving (Generic)
 

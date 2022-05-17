@@ -56,12 +56,15 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
                   )
               }
           , topLevelConfigLedger = HardForkLedgerConfig {
-                hardForkLedgerConfigShape  = shape
-              , hardForkLedgerConfigPerEra = PerEraLedgerConfig
+                hardForkLedgerConfigShape      = shape
+              , hardForkLedgerConfigPerEra     = PerEraLedgerConfig
                   (  WrapPartialLedgerConfig (toPartialLedgerConfig1 ledgerConfig1)
                   :* WrapPartialLedgerConfig (toPartialLedgerConfig2 ledgerConfig2)
                   :* Nil
                   )
+              , hardForkLedgerConfigExtensible = True
+                  -- We use this to test individual transitions of the mainnet
+                  -- Cardano chain; hence True here since we use True there.
               }
           , topLevelConfigBlock =
               HardForkBlockConfig $
