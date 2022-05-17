@@ -31,7 +31,7 @@ module Ouroboros.Consensus.Protocol.Praos (
   , praosCheckCanForge
   ) where
 
-import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import qualified Cardano.Crypto.DSIGN as DSIGN
 import qualified Cardano.Crypto.KES as KES
 import           Cardano.Crypto.VRF (hashVerKeyVRF)
@@ -264,6 +264,12 @@ data PraosState c = PraosState
   deriving (Generic, Show, Eq)
 
 instance PraosCrypto c => NoThunks (PraosState c)
+
+instance PraosCrypto c => ToCBOR (PraosState c) where
+  toCBOR = encode
+
+instance PraosCrypto c => FromCBOR (PraosState c) where
+  fromCBOR = decode
 
 instance PraosCrypto c => Serialise (PraosState c) where
   encode

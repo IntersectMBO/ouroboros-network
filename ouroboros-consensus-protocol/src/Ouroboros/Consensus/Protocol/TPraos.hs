@@ -50,7 +50,7 @@ import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 import           Numeric.Natural (Natural)
 
-import           Cardano.Binary (enforceSize, fromCBOR, toCBOR)
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Slotting.EpochInfo
 import           Cardano.Slotting.Time (SystemStart (..))
@@ -265,6 +265,12 @@ instance SL.PraosCrypto c => NoThunks (TPraosState c)
 -- | Version 0 supported rollback, removed in #2575.
 serialisationFormatVersion1 :: VersionNumber
 serialisationFormatVersion1 = 1
+
+instance SL.PraosCrypto c => ToCBOR (TPraosState c) where
+  toCBOR = encode
+
+instance SL.PraosCrypto c => FromCBOR (TPraosState c) where
+  fromCBOR = decode
 
 instance SL.PraosCrypto c => Serialise (TPraosState c) where
   encode (TPraosState slot chainDepState) =
