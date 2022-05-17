@@ -142,17 +142,26 @@ jobs:
 
     - uses: actions/checkout@v2
 
-    - name: Cache cabal store
-      uses: actions/cache@v2
-      with:
-        path: ${{ steps.setup-haskell.outputs.cabal-store }}
-        key: cabal-store-${{ env.CACHE_VERSION }}-${{ matrix.ghc }}-${{ matrix.os }}
-
     - name: Update Hackage index
       run: cabal update
 
     - name: Cabal Configure
       run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
+
+    - name: Record dependencies
+      run: |
+        cabal build all --dry-run
+        cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
+        date > date.txt
+
+    - uses: actions/cache@v2
+      name: Cache cabal store
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        restore-keys: |
+          cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+          cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - name: Use cabal.project.local.ci
       run: |
