@@ -1,4 +1,5 @@
 */Setup.hs
+ouroboros-network-api/src/Ouroboros/Network/Protocol/Type.hs
 ouroboros-network/src/Ouroboros/Network/PeerSelection/Governor/Types.hs
 network-mux/src/Network/Mux/TCPInfo.hs
 network-mux/src/Network/Mux/Bearer.hs
