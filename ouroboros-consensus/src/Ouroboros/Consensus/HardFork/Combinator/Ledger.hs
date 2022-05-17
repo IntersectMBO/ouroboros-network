@@ -5,6 +5,7 @@
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -404,52 +405,47 @@ mkHardForkForecast translations st = Forecast {
        -> InPairs (TranslateForecast state view) xs'
        -> Telescope (K Past) (Current (AnnForecast state view)) xs'
        -> Except OutsideForecastRange (Ticked (HardForkLedgerView_ view xs'))
-    go sno PNil         (TZ cur)       = forecastFinalEra sno   cur
-    go sno (PCons t _)  (TZ cur)       = forecastNotFinal sno t cur
+    go sno PNil         (TZ cur)       = oneForecast sno NoNextEra         cur
+    go sno (PCons t _)  (TZ cur)       = oneForecast sno (NextEraExists t) cur
     go sno (PCons _ ts) (TS past rest) = shiftView past <$> go sno ts rest
 
--- | Construct forecast when we're in the final era.
---
--- Since we're in the final era, no translation is required.
-forecastFinalEra ::
+-- | Internal helper for 'mkHardForkForecast'
+data ThisPair f blk blks where
+  NoNextEra     ::               ThisPair f blk '[]
+  NextEraExists :: f blk blk' -> ThisPair f blk (blk' : blks')
+
+-- | Internal helper for 'mkHardForkForecast'
+oneForecast ::
      forall state view blk blks.
      SlotNo
+  -> ThisPair (TranslateForecast state view) blk blks
   -> Current (AnnForecast state view) blk
-  -> Except OutsideForecastRange (Ticked (HardForkLedgerView_ view (blk : blks)))
-forecastFinalEra sno (Current start AnnForecast{..}) =
-    aux <$> forecastFor annForecast sno
-  where
-    aux :: Ticked (view blk)
-        -> Ticked (HardForkLedgerView_ view (blk : blks))
-    aux view = TickedHardForkLedgerView {
-          tickedHardForkLedgerViewTransition =
-            TransitionUnknowable
-        , tickedHardForkLedgerViewPerEra = HardForkState $
-            TZ (Current start (Comp view))
-        }
-
--- | Make forecast with potential need to translate to next era
-forecastNotFinal ::
-     forall state view blk blk' blks.
-     SlotNo
-  -> TranslateForecast state view blk blk'
-  -> Current (AnnForecast state view) blk
-  -> Except OutsideForecastRange (Ticked (HardForkLedgerView_ view (blk : blk' : blks)))
-forecastNotFinal sno translate (Current start AnnForecast{..})
-  | Nothing <- annForecastEnd =
-      endUnknown <$>
-        forecastFor annForecast sno
-  | Just end <- annForecastEnd, sno < boundSlot end =
-      beforeKnownEnd end <$>
-        forecastFor annForecast sno
-  | Just end <- annForecastEnd, otherwise =
-      afterKnownEnd end <$>
-        translateForecastWith translate end sno annForecastState
+  -> Except
+       OutsideForecastRange
+       (Ticked (HardForkLedgerView_ view (blk : blks)))
+oneForecast sno mbTranslate (Current start AnnForecast{..}) =
+    case annForecastEnd of
+      Nothing  -> endUnknown <$> forecastFor annForecast sno
+      Just end ->
+        if sno < boundSlot end
+        then beforeKnownEnd end <$> forecastFor annForecast sno
+        else case mbTranslate of
+          NextEraExists t ->
+                afterKnownEnd end
+            <$> translateForecastWith t end sno annForecastState
+          NoNextEra       ->
+            -- The requested slot is after the last era the code knows about.
+            throwError OutsideForecastRange {
+                outsideForecastAt     = forecastAt annForecast
+              , outsideForecastMaxFor = boundSlot end
+              , outsideForecastFor    = sno
+              }
   where
     endUnknown ::
          Ticked (f blk)
-      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks))
+      -> Ticked (HardForkLedgerView_ f (blk : blks))
     endUnknown view = TickedHardForkLedgerView {
+          -- TODO when should this be TransitionNone?
           tickedHardForkLedgerViewTransition =
             TransitionUnknown annForecastTip
         , tickedHardForkLedgerViewPerEra = HardForkState $
@@ -459,7 +455,7 @@ forecastNotFinal sno translate (Current start AnnForecast{..})
     beforeKnownEnd ::
          Bound
       -> Ticked (f blk)
-      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks))
+      -> Ticked (HardForkLedgerView_ f (blk : blks))
     beforeKnownEnd end view = TickedHardForkLedgerView {
           tickedHardForkLedgerViewTransition =
             TransitionKnown (boundEpoch end)
@@ -470,8 +466,9 @@ forecastNotFinal sno translate (Current start AnnForecast{..})
     afterKnownEnd ::
          Bound
       -> Ticked (f blk')
-      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks))
+      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks'))
     afterKnownEnd end view = TickedHardForkLedgerView {
+          -- TODO when should this be TransitionNone?
           tickedHardForkLedgerViewTransition =
             -- We assume that we only ever have to translate to the /next/ era
             -- (as opposed to /any/ subsequent era)
