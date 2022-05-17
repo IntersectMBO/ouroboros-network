@@ -5,6 +5,7 @@ module TestLib.ConnectionManager where
 import           Prelude hiding (read)
 
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 
 import           Test.QuickCheck (counterexample, property)
 
@@ -252,3 +253,54 @@ allValidTransitionsNames =
 abstractStateIsFinalTransition :: Transition' AbstractState -> Bool
 abstractStateIsFinalTransition (Transition _ UnknownConnectionSt) = True
 abstractStateIsFinalTransition _                                  = False
+
+
+connectionManagerTraceMap
+  :: ConnectionManagerTrace
+      ntnAddr
+      (ConnectionHandlerTrace ntnVersion ntnVersionData)
+  -> String
+connectionManagerTraceMap (TrIncludeConnection p _)        =
+  "TrIncludeConnection " ++ show p
+connectionManagerTraceMap (TrUnregisterConnection p _)     =
+  "TrUnregisterConnection " ++ show p
+connectionManagerTraceMap (TrConnect _ _)                  =
+  "TrConnect"
+connectionManagerTraceMap (TrConnectError _ _ _)          =
+  "TrConnectError"
+connectionManagerTraceMap (TrTerminatingConnection p _)    =
+  "TrTerminatingConnection " ++ show p
+connectionManagerTraceMap (TrTerminatedConnection p _)     =
+  "TrTerminatedConnection " ++ show p
+connectionManagerTraceMap (TrConnectionHandler _ _)        =
+  "TrConnectionHandler"
+connectionManagerTraceMap TrShutdown                       =
+  "TrShutdown"
+connectionManagerTraceMap (TrConnectionExists p _ as)      =
+  "TrConnectionExists " ++ show p ++ " " ++ show as
+connectionManagerTraceMap (TrForbiddenConnection _)        =
+  "TrForbiddenConnection"
+connectionManagerTraceMap (TrImpossibleConnection _)       =
+  "TrImpossibleConnection"
+connectionManagerTraceMap (TrConnectionFailure _)          =
+  "TrConnectionFailure"
+connectionManagerTraceMap (TrConnectionNotFound p _)       =
+  "TrConnectionNotFound " ++ show p
+connectionManagerTraceMap (TrForbiddenOperation _ as)      =
+  "TrForbiddenOperation" ++ show as
+connectionManagerTraceMap (TrPruneConnections _ _ _)       =
+  "TrPruneConnections"
+connectionManagerTraceMap (TrConnectionCleanup _)          =
+  "TrConnectionCleanup"
+connectionManagerTraceMap (TrConnectionTimeWait _)         =
+  "TrConnectionTimeWait"
+connectionManagerTraceMap (TrConnectionTimeWaitDone _)     =
+  "TrConnectionTimeWaitDone"
+connectionManagerTraceMap (TrConnectionManagerCounters _)  =
+  "TrConnectionManagerCounters"
+connectionManagerTraceMap (TrState _)                      =
+  "TrState"
+connectionManagerTraceMap (TrUnknownConnection _)          =
+  "TrUnknownConnection"
+connectionManagerTraceMap (TrUnexpectedlyFalseAssertion _) =
+  "TrUnexpectedlyFalseAssertion"

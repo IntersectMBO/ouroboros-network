@@ -58,7 +58,6 @@ import           Ouroboros.Network.PeerSelection.PeerStateActions
                       (PeerSelectionActionsTrace(..))
 import           Ouroboros.Network.Server2 (ServerTrace(..))
 import           Ouroboros.Network.InboundGovernor hiding (TrUnexpectedlyFalseAssertion)
-import qualified Ouroboros.Network.InboundGovernor as IG
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
@@ -79,10 +78,10 @@ import           TestLib.Utils (TestProperty(..), mkProperty, ppTransition,
                      classifyActivityType, classifyPrunings, groupConns, verifyAllTimeouts)
 import           TestLib.ConnectionManager
                      (verifyAbstractTransition, abstractStateIsFinalTransition,
-                     verifyAbstractTransitionOrder, validTransitionMap)
+                     verifyAbstractTransitionOrder, validTransitionMap, connectionManagerTraceMap)
 import           TestLib.InboundGovernor
                      (verifyRemoteTransition, verifyRemoteTransitionOrder,
-                     remoteStrIsFinalTransition, validRemoteTransitionMap)
+                     remoteStrIsFinalTransition, validRemoteTransitionMap, inboundGovernorTraceMap, serverTraceMap)
 
 tests :: TestTree
 tests =
@@ -271,58 +270,9 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
              . traceEvents
              $ runSimTrace sim
 
-      connectionManagerTraceMap
-        :: ConnectionManagerTrace
-            NtNAddr
-            (ConnectionHandlerTrace NtNVersion NtNVersionData)
-        -> String
-      connectionManagerTraceMap (TrIncludeConnection p _)        =
-        "TrIncludeConnection " ++ show p
-      connectionManagerTraceMap (TrUnregisterConnection p _)     =
-        "TrUnregisterConnection " ++ show p
-      connectionManagerTraceMap (TrConnect _ _)                  =
-        "TrConnect"
-      connectionManagerTraceMap (TrConnectError _ _ _)          =
-        "TrConnectError"
-      connectionManagerTraceMap (TrTerminatingConnection p _)    =
-        "TrTerminatingConnection " ++ show p
-      connectionManagerTraceMap (TrTerminatedConnection p _)     =
-        "TrTerminatedConnection " ++ show p
-      connectionManagerTraceMap (TrConnectionHandler _ _)        =
-        "TrConnectionHandler"
-      connectionManagerTraceMap TrShutdown                       =
-        "TrShutdown"
-      connectionManagerTraceMap (TrConnectionExists p _ as)      =
-        "TrConnectionExists " ++ show p ++ " " ++ show as
-      connectionManagerTraceMap (TrForbiddenConnection _)        =
-        "TrForbiddenConnection"
-      connectionManagerTraceMap (TrImpossibleConnection _)       =
-        "TrImpossibleConnection"
-      connectionManagerTraceMap (TrConnectionFailure _)          =
-        "TrConnectionFailure"
-      connectionManagerTraceMap (TrConnectionNotFound p _)       =
-        "TrConnectionNotFound " ++ show p
-      connectionManagerTraceMap (TrForbiddenOperation _ as)      =
-        "TrForbiddenOperation" ++ show as
-      connectionManagerTraceMap (TrPruneConnections _ _ _)       =
-        "TrPruneConnections"
-      connectionManagerTraceMap (TrConnectionCleanup _)          =
-        "TrConnectionCleanup"
-      connectionManagerTraceMap (TrConnectionTimeWait _)         =
-        "TrConnectionTimeWait"
-      connectionManagerTraceMap (TrConnectionTimeWaitDone _)     =
-        "TrConnectionTimeWaitDone"
-      connectionManagerTraceMap (TrConnectionManagerCounters _)  =
-        "TrConnectionManagerCounters"
-      connectionManagerTraceMap (TrState _)                      =
-        "TrState"
-      connectionManagerTraceMap (TrUnknownConnection _)          =
-        "TrUnknownConnection"
-      connectionManagerTraceMap (TrUnexpectedlyFalseAssertion _) =
-        "TrUnexpectedlyFalseAssertion"
-
       eventsSeenNames = map connectionManagerTraceMap events
 
+   -- TODO: Add checkCoverage here
    in tabulate "connection manager trace" eventsSeenNames
       True
 
@@ -359,6 +309,7 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
       transitionsSeenNames = map (snd . validTransitionMap . ttTransition)
                                  events
 
+   -- TODO: Add checkCoverage here
    in tabulate "connection manager transitions" transitionsSeenNames
       True
 
@@ -390,44 +341,9 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
              . traceEvents
              $ runSimTrace sim
 
-      inboundGovernorTraceMap :: InboundGovernorTrace NtNAddr -> String
-      inboundGovernorTraceMap (TrNewConnection p _)            =
-        "TrNewConnection " ++ show p
-      inboundGovernorTraceMap (TrResponderRestarted _ mpn)         =
-        "TrResponderRestarted " ++ show mpn
-      inboundGovernorTraceMap (TrResponderStartFailure _ mpn se)   =
-        "TrResponderStartFailure " ++ show mpn ++ " " ++ show se
-      inboundGovernorTraceMap (TrResponderErrored _ mpn se)        =
-        "TrResponderErrored " ++ show mpn ++ " " ++ show se
-      inboundGovernorTraceMap (TrResponderStarted _ mpn)           =
-        "TrResponderStarted " ++ show mpn
-      inboundGovernorTraceMap (TrResponderTerminated _ mpn)        =
-        "TrResponderTerminated " ++ show mpn
-      inboundGovernorTraceMap (TrPromotedToWarmRemote _ ora)        =
-        "TrPromotedToWarmRemote " ++ show ora
-      inboundGovernorTraceMap (TrPromotedToHotRemote _)            =
-        "TrPromotedToHotRemote"
-      inboundGovernorTraceMap (TrDemotedToWarmRemote _)            =
-        "TrDemotedToWarmRemote"
-      inboundGovernorTraceMap (TrDemotedToColdRemote _ ora)         =
-        "TrDemotedToColdRemote " ++ show ora
-      inboundGovernorTraceMap (TrWaitIdleRemote _ ora)              =
-        "TrWaitIdleRemote " ++ show ora
-      inboundGovernorTraceMap (TrMuxCleanExit _)                   =
-        "TrMuxCleanExit"
-      inboundGovernorTraceMap (TrMuxErrored _ se)                  =
-        "TrMuxErrored " ++ show se
-      inboundGovernorTraceMap (TrInboundGovernorCounters _)       =
-        "TrInboundGovernorCounters"
-      inboundGovernorTraceMap (TrRemoteState _)                   =
-        "TrRemoteState"
-      inboundGovernorTraceMap (IG.TrUnexpectedlyFalseAssertion _) =
-        "TrUnexpectedlyFalseAssertion"
-      inboundGovernorTraceMap (TrInboundGovernorError se)           =
-        "TrInboundGovernorError " ++ show se
-
       eventsSeenNames = map inboundGovernorTraceMap events
 
+   -- TODO: Add checkCoverage here
    in tabulate "inbound governor trace" eventsSeenNames
       True
 
@@ -462,6 +378,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
       transitionsSeenNames = map (snd . validRemoteTransitionMap . ttTransition)
                                  events
 
+   -- TODO: Add checkCoverage here
    in tabulate "inbound governor transitions" transitionsSeenNames
       True
 
@@ -493,16 +410,9 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
              . traceEvents
              $ runSimTrace sim
 
-      serverTraceMap :: ServerTrace NtNAddr -> String
-      serverTraceMap (TrAcceptConnection _)     = "TrAcceptConnection"
-      serverTraceMap st@(TrAcceptError _)       = show st
-      serverTraceMap st@(TrAcceptPolicyTrace _) = show st
-      serverTraceMap (TrServerStarted _)        = "TrServerStarted"
-      serverTraceMap st@TrServerStopped         = show st
-      serverTraceMap st@(TrServerError _)       = show st
-
       eventsSeenNames = map serverTraceMap events
 
+   -- TODO: Add checkCoverage here
    in tabulate "server trace" eventsSeenNames
       True
 
@@ -545,6 +455,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
 
+   -- TODO: Add checkCoverage here
    in tabulate "peer selection actions trace" eventsSeenNames
       True
 
@@ -635,6 +546,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 
       eventsSeenNames = map peerSelectionTraceMap events
 
+   -- TODO: Add checkCoverage here
    in tabulate "peer selection trace" eventsSeenNames
       True
 
