@@ -198,6 +198,7 @@ applyHelper mode
     pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
     cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
     ei    = State.epochInfoPrecomputedTransitionInfo
+              hardForkLedgerConfigExtensible
               hardForkLedgerConfigShape
               transition
               hardForkState

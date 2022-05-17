@@ -16,6 +16,7 @@ module Test.Consensus.HardFork.History (tests) where
 import           Control.Exception (throw)
 import           Control.Monad.Except
 import           Data.Bifunctor
+import           Data.Bool (bool)
 import           Data.Foldable (toList)
 import           Data.Function (on)
 import           Data.Functor.Identity
@@ -39,6 +40,8 @@ import           Ouroboros.Consensus.Util (nTimes)
 import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.SOP
 
+import           Ouroboros.Consensus.HardFork.Combinator.Basics
+                     (EraExtensibility (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
@@ -264,7 +267,7 @@ data ArbitraryParams xs = ArbitraryParams {
       arbitraryChainEvents :: [Event]
     , arbitraryChainEras   :: Eras     xs
     , arbitraryChainShape  :: HF.Shape xs
-    , arbitraryExtensible  :: Bool
+    , arbitraryExtensible  :: EraExtensibility
 
       -- | Index into the events
       --
@@ -408,7 +411,7 @@ deriving instance Show ArbitraryChain
 instance Arbitrary ArbitraryChain where
   arbitrary = chooseEras $ \eras -> do
       shape  <- genShape eras
-      ext    <- arbitrary
+      ext    <- bool EraExtensible NotEraExtensible <$> arbitrary
       events <- genEvents eras shape `suchThat` (not . null)
       split  <- choose (0, length events - 1)
       rawIx  <- choose (0, length events - 1)
@@ -814,6 +817,7 @@ hardForkEpochInfo ArbitraryChain{..} for =
            )
          Right view@TickedHardForkLedgerView{..} ->
            let reconstructed = State.reconstructSummary
+                                 arbitraryExtensible
                                  arbitraryChainShape
                                  tickedHardForkLedgerViewTransition
                                  tickedHardForkLedgerViewPerEra
@@ -826,7 +830,7 @@ hardForkEpochInfo ArbitraryChain{..} for =
     ArbitraryParams{..} = arbitraryParams
 
 mockHardForkLedgerView :: SListI xs
-                       => Bool   -- ^ is xs extensible?
+                       => EraExtensibility
                        -> HF.Shape xs
                        -> HF.Transitions xs
                        -> Chain xs

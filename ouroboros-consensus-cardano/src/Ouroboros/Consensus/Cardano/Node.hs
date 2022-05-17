@@ -753,9 +753,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     cfg :: TopLevelConfig (CardanoBlock c)
     cfg = TopLevelConfig {
         topLevelConfigProtocol = HardForkConsensusConfig {
-            hardForkConsensusConfigK      = k
-          , hardForkConsensusConfigShape  = shape
-          , hardForkConsensusConfigPerEra = PerEraConsensusConfig
+            hardForkConsensusConfigK          = k
+          , hardForkConsensusConfigShape      = shape
+          , hardForkConsensusConfigExtensible = EraExtensible
+          , hardForkConsensusConfigPerEra     = PerEraConsensusConfig
               (  WrapPartialConsensusConfig partialConsensusConfigByron
               :* WrapPartialConsensusConfig partialConsensusConfigShelley
               :* WrapPartialConsensusConfig partialConsensusConfigAllegra

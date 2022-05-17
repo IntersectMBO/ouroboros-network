@@ -318,7 +318,8 @@ hardForkForgeBlock blockForging
   where
     cfgs = distribTopLevelConfig ei cfg
     ei   = State.epochInfoPrecomputedTransitionInfo
-             (hardForkLedgerConfigShape (configLedger cfg))
+             (hardForkLedgerConfigExtensible (configLedger cfg))
+             (hardForkLedgerConfigShape      (configLedger cfg))
              transition
              ledgerState
 

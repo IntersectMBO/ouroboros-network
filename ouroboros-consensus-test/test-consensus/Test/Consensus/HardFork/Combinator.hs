@@ -21,6 +21,7 @@
 
 module Test.Consensus.HardFork.Combinator (tests) where
 
+import           Data.Bool (bool)
 import qualified Data.Map as Map
 import           Data.SOP.Strict hiding (shape)
 import           Data.Word
@@ -100,7 +101,7 @@ data TestSetup = TestSetup {
     , testSetupSeed       :: Seed
     , testSetupSlotLength :: AB SlotLength
     , testSetupTxSlot     :: SlotNo
-    , testSetupExtensible :: Bool
+    , testSetupExtensible :: EraExtensibility
     }
   deriving (Show)
 
@@ -114,7 +115,7 @@ instance Arbitrary TestSetup where
       testSetupSeed       <- arbitrary
       testSetupSlotLength <- abM arbitrary
 
-      testSetupExtensible <- arbitrary
+      testSetupExtensible <- bool EraExtensible NotEraExtensible <$> arbitrary
 
       return TestSetup{..}
     where
@@ -260,9 +261,10 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
     topLevelConfig :: CoreNodeId -> TopLevelConfig TestBlock
     topLevelConfig nid = TopLevelConfig {
           topLevelConfigProtocol = HardForkConsensusConfig {
-              hardForkConsensusConfigK      = k
-            , hardForkConsensusConfigShape  = shape
-            , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
+              hardForkConsensusConfigK          = k
+            , hardForkConsensusConfigShape      = shape
+            , hardForkConsensusConfigExtensible = testSetupExtensible
+            , hardForkConsensusConfigPerEra     = PerEraConsensusConfig $
                    (WrapPartialConsensusConfig $ consensusConfigA nid)
                 :* (WrapPartialConsensusConfig $ consensusConfigB nid)
                 :* Nil

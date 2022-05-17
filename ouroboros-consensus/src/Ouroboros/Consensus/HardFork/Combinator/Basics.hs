@@ -23,6 +23,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , BlockConfig (..)
   , CodecConfig (..)
   , ConsensusConfig (..)
+  , EraExtensibility (..)
   , HardForkLedgerConfig (..)
   , StorageConfig (..)
     -- ** Functions on config
@@ -97,7 +98,8 @@ data instance ConsensusConfig (HardForkProtocol xs) = HardForkConsensusConfig {
       -- We require this in the consensus config because consensus might need
       -- access to 'EpochInfo', and in order to compute that, we need the
       -- 'EraParams' of all eras.
-    , hardForkConsensusConfigShape :: !(History.Shape xs)
+    , hardForkConsensusConfigShape      :: !(History.Shape xs)
+    , hardForkConsensusConfigExtensible :: !EraExtensibility
 
       -- | Config for each era
     , hardForkConsensusConfigPerEra :: !(PerEraConsensusConfig xs)
@@ -136,12 +138,15 @@ newtype instance StorageConfig (HardForkBlock xs) = HardForkStorageConfig {
   Ledger config
 -------------------------------------------------------------------------------}
 
+data EraExtensibility = EraExtensible | NotEraExtensible
+  deriving (Generic, NoThunks, Show)
+
 data HardForkLedgerConfig xs = HardForkLedgerConfig {
       hardForkLedgerConfigShape      :: !(History.Shape xs)
     , hardForkLedgerConfigPerEra     :: !(PerEraLedgerConfig xs)
       -- | Is the last era in @xs@ the last era there ever will be on this
       -- chain?
-    , hardForkLedgerConfigExtensible :: !Bool
+    , hardForkLedgerConfigExtensible :: !EraExtensibility
     }
   deriving (Generic)
 

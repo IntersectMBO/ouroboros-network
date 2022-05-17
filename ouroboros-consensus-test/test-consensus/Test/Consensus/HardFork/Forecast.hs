@@ -18,6 +18,7 @@ module Test.Consensus.HardFork.Forecast (
 
 import           Control.Exception (assert)
 import           Control.Monad.Except
+import           Data.Bool (bool)
 import           Data.Either (isRight)
 import           Data.Foldable (toList)
 import           Data.List (intercalate)
@@ -35,6 +36,8 @@ import           Test.Tasty.QuickCheck hiding (elements)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HardFork.Combinator.Basics
+                     (EraExtensibility (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
                      (AnnForecast (..), mkHardForkForecast)
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
@@ -538,7 +541,7 @@ data TestSetup xs = (SListI xs, IsNonEmpty xs) => TestSetup {
     , testForecastParams :: TestForecastParams
 
       -- | Whether the list of eras is extensible
-    , testExtensible     :: Bool
+    , testExtensible     :: EraExtensibility
     }
 
 type MaxLookahead = Word64
@@ -650,10 +653,12 @@ instance Arbitrary (Some TestSetup) where
                       genTestEra <$> summary
                                  <*> exactlyWeakenNonEmpty lookahead
       forecast  <- genForecastParams (toList eras)
+      ext       <- bool EraExtensible NotEraExtensible <$> arbitrary
       return $ Some TestSetup{
           testLookahead      = lookahead
         , testEras           = eras
         , testForecastParams = forecast
+        , testExtensible     = ext
         }
     where
       genMaxLookahead ::

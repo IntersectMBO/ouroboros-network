@@ -230,6 +230,7 @@ cardanoShape = History.Shape $ Exactly $
 summary :: History.Summary (CardanoEras Crypto)
 summary =
     State.reconstructSummary
+      EraExtensible
       cardanoShape
       (State.TransitionKnown shelleyTransitionEpoch)
       (hardForkLedgerStatePerEra (ledgerStateByron byronLedger))

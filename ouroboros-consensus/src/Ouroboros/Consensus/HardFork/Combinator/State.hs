@@ -140,6 +140,7 @@ reconstructSummaryLedger :: All SingleEraBlock xs
                          -> History.Summary xs
 reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
     reconstructSummary
+      hardForkLedgerConfigExtensible
       hardForkLedgerConfigShape
       (mostRecentTransitionInfo cfg st)
       st
@@ -158,13 +159,14 @@ epochInfoLedger cfg st =
 
 -- | Construct 'EpochInfo' given precomputed 'TransitionInfo'
 epochInfoPrecomputedTransitionInfo ::
-     History.Shape xs
+     EraExtensibility
+  -> History.Shape xs
   -> TransitionInfo
   -> HardForkState f xs
   -> EpochInfo (Except PastHorizonException)
-epochInfoPrecomputedTransitionInfo shape transition st =
+epochInfoPrecomputedTransitionInfo ext shape transition st =
     History.summaryToEpochInfo $
-      reconstructSummary shape transition st
+      reconstructSummary ext shape transition st
 
 {-------------------------------------------------------------------------------
   Extending

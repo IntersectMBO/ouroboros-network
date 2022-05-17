@@ -306,7 +306,7 @@ instance Isomorphic TopLevelConfig where
           , hardForkLedgerConfigPerEra     = PerEraLedgerConfig $
                  WrapPartialLedgerConfig (toPartialLedgerConfig (Proxy @blk) cfg )
               :* Nil
-          , hardForkLedgerConfigExtensible = False
+          , hardForkLedgerConfigExtensible = NotEraExtensible
               -- This Unary interface is used for degenerate use of HFC. Thus
               -- there is no intent to ever have another era.
           }
@@ -314,11 +314,12 @@ instance Isomorphic TopLevelConfig where
       auxConsensus :: ConsensusConfig (BlockProtocol blk)
                    -> ConsensusConfig (BlockProtocol (HardForkBlock '[blk]))
       auxConsensus cfg = HardForkConsensusConfig {
-            hardForkConsensusConfigK      = protocolSecurityParam cfg
-          , hardForkConsensusConfigShape  = History.singletonShape eraParams
-          , hardForkConsensusConfigPerEra = PerEraConsensusConfig $
+            hardForkConsensusConfigK         = protocolSecurityParam cfg
+          , hardForkConsensusConfigShape     = History.singletonShape eraParams
+          , hardForkConsensusConfigPerEra    = PerEraConsensusConfig $
                  WrapPartialConsensusConfig (toPartialConsensusConfig (Proxy @(BlockProtocol blk)) cfg)
               :* Nil
+          , hardForkConsensusConfigExtensible = NotEraExtensible   -- same as in auxLedger above
           }
 
 {-------------------------------------------------------------------------------

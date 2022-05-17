@@ -192,7 +192,8 @@ instance CanHardFork xs
     where
       cfgs = distribLedgerConfig ei cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
-               (hardForkLedgerConfigShape cfg)
+               (hardForkLedgerConfigExtensible cfg)
+               (hardForkLedgerConfigShape      cfg)
                transition
                st
 
@@ -211,7 +212,8 @@ instance CanHardFork xs
     where
       cfgs = distribLedgerConfig ei cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
-               (hardForkLedgerConfigShape cfg)
+               (hardForkLedgerConfigExtensible cfg)
+               (hardForkLedgerConfigShape      cfg)
                transition
                st
 
@@ -285,7 +287,8 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
     where
       ei :: EpochInfo (Except PastHorizonException)
       ei = State.epochInfoPrecomputedTransitionInfo
-             (hardForkLedgerConfigShape $ configLedger tlc)
+             (hardForkLedgerConfigExtensible $ configLedger tlc)
+             (hardForkLedgerConfigShape      $ configLedger tlc)
              transition
              hardForkView
 
@@ -325,6 +328,7 @@ instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
     where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
       ei   = State.epochInfoPrecomputedTransitionInfo
+               hardForkLedgerConfigExtensible
                hardForkLedgerConfigShape
                transition
                ticked
@@ -394,7 +398,7 @@ data AnnForecast state view blk = AnnForecast {
 mkHardForkForecast ::
      forall state view xs.
      SListI xs
-  => Bool   -- ^ extensible eras?
+  => EraExtensibility
   -> InPairs (TranslateForecast state view) xs
   -> HardForkState (AnnForecast state view) xs
   -> Forecast (HardForkLedgerView_ view xs)
@@ -422,7 +426,7 @@ data ThisPair f blk blks where
 -- | Internal helper for 'mkHardForkForecast'
 oneForecast ::
      forall state view blk blks.
-     Bool   -- ^ extensible eras?
+     EraExtensibility
   -> SlotNo
   -> ThisPair (TranslateForecast state view) blk blks
   -> Current (AnnForecast state view) blk
@@ -455,8 +459,9 @@ oneForecast extensible sno mbTranslate (Current start AnnForecast{..}) =
             case mbTranslate of
               NextEraExists{} -> TransitionUnknown annForecastTip
               NoNextEra       ->
-                if not extensible then TransitionNone else
-                TransitionUnknown annForecastTip
+                case extensible of
+                  NotEraExtensible -> TransitionNone
+                  EraExtensible    -> TransitionUnknown annForecastTip
         , tickedHardForkLedgerViewPerEra = HardForkState $
             TZ (Current start (Comp view))
         }

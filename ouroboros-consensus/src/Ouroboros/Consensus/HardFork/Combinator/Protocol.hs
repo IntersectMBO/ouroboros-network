@@ -169,6 +169,7 @@ tick cfg@HardForkConsensusConfig{..}
   where
     cfgs = getPerEraConsensusConfig hardForkConsensusConfigPerEra
     ei   = State.epochInfoPrecomputedTransitionInfo
+             hardForkConsensusConfigExtensible
              hardForkConsensusConfigShape
              transition
              ledgerView

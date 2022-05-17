@@ -47,9 +47,10 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = HardForkConsensusConfig {
-                hardForkConsensusConfigK      = k
-              , hardForkConsensusConfigShape  = shape
-              , hardForkConsensusConfigPerEra = PerEraConsensusConfig
+                hardForkConsensusConfigK          = k
+              , hardForkConsensusConfigShape      = shape
+              , hardForkConsensusConfigExtensible = eraExtensible
+              , hardForkConsensusConfigPerEra     = PerEraConsensusConfig
                   (  WrapPartialConsensusConfig (toPartialConsensusConfig1 consensusConfig1)
                   :* WrapPartialConsensusConfig (toPartialConsensusConfig2 consensusConfig2)
                   :* Nil
@@ -62,9 +63,7 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
                   :* WrapPartialLedgerConfig (toPartialLedgerConfig2 ledgerConfig2)
                   :* Nil
                   )
-              , hardForkLedgerConfigExtensible = True
-                  -- We use this to test individual transitions of the mainnet
-                  -- Cardano chain; hence True here since we use True there.
+              , hardForkLedgerConfigExtensible = eraExtensible
               }
           , topLevelConfigBlock =
               HardForkBlockConfig $
@@ -93,6 +92,11 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
           alignWith alignBlockForging <$> blockForging1 <*> blockForging2
       }
   where
+    eraExtensible :: EraExtensibility
+    eraExtensible = EraExtensible
+      -- We use this to test individual transitions of the mainnet Cardano
+      -- chain; hence extensible here since extensible there.
+
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = consensusConfig1

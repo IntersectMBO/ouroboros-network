@@ -38,6 +38,8 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Util.Counting
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
+import           Ouroboros.Consensus.HardFork.Combinator.Basics
+                     (EraExtensibility (..))
 import           Ouroboros.Consensus.HardFork.Combinator.State.Lift
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
@@ -160,11 +162,12 @@ align fs updTip (HardForkState alignWith) (HardForkState toAlign) =
   Summary/EpochInfo
 -------------------------------------------------------------------------------}
 
-reconstructSummary :: History.Shape xs
+reconstructSummary :: EraExtensibility
+                   -> History.Shape xs
                    -> TransitionInfo         -- ^ At the tip
                    -> HardForkState f xs
                    -> History.Summary xs
-reconstructSummary (History.Shape shape) transition (HardForkState st) =
+reconstructSummary ext (History.Shape shape) transition (HardForkState st) =
     History.Summary $ go shape st
   where
     go :: Exactly xs' EraParams
@@ -173,22 +176,62 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
     go ExactlyNil t = case t of {}
     go (ExactlyCons params ss) (TS (K Past{..}) t) =
         NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss t
-    go (ExactlyCons params ss) (TZ Current{..}) = case (transition, ss) of
-        (TransitionUnknown ledgerTip, _) ->
+    go (ExactlyCons params ss) (TZ Current{..}) = case (transition, ss, ext) of
+
+        (TransitionNone, ExactlyCons{}, _ext)       ->
+          error "TransitionNone should only arise in the last known era"
+        (TransitionNone, ExactlyNil, EraExtensible) ->
+          error "TransitionNone should not arise if the chain is era-extensible"
+
+        (_transition, ExactlyNil, NotEraExtensible) ->
+          -- Since the last era in xs is the last era this chain will ever have,
+          -- we can translate any future slot/time.
+          one EraUnbounded
+
+        -- Note: the above covered all possible TransitionNone cases
+
+        (TransitionUnknowable, _ss, _ext) ->
+          one $ applySafeZone
+                  params
+                  currentStart
+                  (boundSlot currentStart)
+
+        (TransitionUnknown ledgerTip, _ss, _ext) ->
           -- We don't yet know when the next era transition will happen. Even
           -- if this is the last era that the code knows about, there may be a
           -- next era on this chain (eg after a code update).
-          NonEmptyOne $ EraSummary {
-              eraStart  = currentStart
-            , eraParams = params
-            , eraEnd    = applySafeZone
-                            params
-                            currentStart
-                            -- Even if the safe zone is 0, the first slot at
-                            -- which the next era could begin is the /next/
-                            (next ledgerTip)
-            }
-        (TransitionKnown epoch, ExactlyNil) ->
+          one $ applySafeZone
+                  params
+                  currentStart
+                  -- Even if the safe zone is 0, the first slot at -- which the
+                  -- next era could begin is the /next/
+                  (next ledgerTip)
+
+        -- Note: the above covered all ExactlyNil and NotEraExtensible cases
+
+        (TransitionKnown epoch, ExactlyCons nextParams ss', _ext) ->
+          -- We haven't reached the next era yet, but the transition is
+          -- already known. The safe zone applies from the start of the
+          -- next era.
+          let currentEnd = curEnd epoch
+              nextStart  = curEnd epoch
+              unbounded  = case ext of
+                EraExtensible    -> False
+                NotEraExtensible -> case ss' of
+                  ExactlyNil     -> True
+                  ExactlyCons{}  -> False
+          in cons (EraEnd currentEnd)
+           $ NonEmptyOne EraSummary {
+                 eraStart  = nextStart
+               , eraParams = nextParams
+               , eraEnd    =
+                   if unbounded then EraUnbounded else
+                   applySafeZone
+                     nextParams
+                     nextStart
+                     (boundSlot nextStart)
+               }
+        (TransitionKnown epoch, ExactlyNil, EraExtensible)        ->
           -- We haven't reached the next era yet, but the transition is
           -- already known, even though this code is not aware of a next
           -- era.
@@ -201,48 +244,24 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
           -- anticipate that this node could not even forge blocks, because
           -- it'd know that the wallclock is beyond the end of last era that
           -- it is aware of.
-          let currentEnd = History.mkUpperBound params currentStart epoch
-          in NonEmptyOne EraSummary {
-                 eraStart  = currentStart
-               , eraParams = params
-               , eraEnd    = EraEnd currentEnd
-               }
-        (TransitionKnown epoch, ExactlyCons nextParams _) ->
-          -- We haven't reached the next era yet, but the transition is
-          -- already known. The safe zone applies from the start of the
-          -- next era.
-          let currentEnd = History.mkUpperBound params currentStart epoch
-              nextStart  = currentEnd
-          in NonEmptyCons EraSummary {
-                 eraStart  = currentStart
-               , eraParams = params
-               , eraEnd    = EraEnd currentEnd
-               }
-           $ NonEmptyOne EraSummary {
-                 eraStart  = nextStart
-               , eraParams = nextParams
-               , eraEnd    = applySafeZone
-                               nextParams
-                               nextStart
-                               (boundSlot nextStart)
-               }
-        (TransitionUnknowable, _) ->
-          NonEmptyOne $ EraSummary {
-            eraStart  = currentStart
-          , eraParams = params
-          , eraEnd    = applySafeZone
-                          params
-                          currentStart
-                          (boundSlot currentStart)
-          }
-        (TransitionNone, ExactlyNil) ->
-          NonEmptyOne EraSummary {
-              eraStart  = currentStart
-            , eraParams = params
-            , eraEnd    = EraUnbounded
-            }
-        (TransitionNone, ExactlyCons{}) ->
-          error "TransitionNone should only arise in the last known era"
+          one $ EraEnd $ curEnd epoch
+
+      where
+        one :: EraEnd -> NonEmpty (x : dummy) EraSummary
+        one = NonEmptyOne . curSummary
+
+        cons ::
+             EraEnd
+          -> NonEmpty      xs'  EraSummary
+          -> NonEmpty (x : xs') EraSummary
+        cons = NonEmptyCons . curSummary
+
+        curEnd epoch   = History.mkUpperBound params currentStart epoch
+        curSummary end = EraSummary {
+             eraStart  = currentStart
+           , eraParams = params
+           , eraEnd    = end
+           }
 
     -- Apply safe zone from the specified 'SlotNo'
     --
