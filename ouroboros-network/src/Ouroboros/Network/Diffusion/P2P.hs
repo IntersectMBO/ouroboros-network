@@ -1221,6 +1221,8 @@ localDataFlow :: ntcVersion
 localDataFlow _ _ = Unidirectional
 
 
+-- GR:FIXME[C]: might the following functions be moved out of module?
+
 --
 -- Socket utility functions
 --

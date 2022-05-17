@@ -138,14 +138,26 @@ newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
 data ProtocolTemperature = Established | Warm | Hot
   deriving (Eq, Ord, Show)
 
+-- GR-FIXME[C3]: A name a little more specific, less misleading?
+--   The word "Temperature" makes one think Cold, Warm, or Hot.  But that's
+--   not the idea here.
+--   E.g.,
+--   data ProtocolRunsInTheTemperatureSet =
+--          WarmAndHot  / ProtocolsForWarmAndHot
+--        | WarmOnly    / ProtocolsForWarmOnly
+--        | HotOnly     / ProtocolsForHotOnly
+--   or, 
+--   data ProtocolCategories = ...
 
--- | Singletons for 'AppKind'
+-- GR-FIXME[D2]: AppKind is what?
+-- | Singletons for 'AppKind' 
 --
 data TokProtocolTemperature (pt :: ProtocolTemperature) where
     TokHot         :: TokProtocolTemperature Hot
     TokWarm        :: TokProtocolTemperature Warm
     TokEstablished :: TokProtocolTemperature Established
 
+-- GR-FIXME[C3]: What does 'Tok' signify?
 
 data SomeTokProtocolTemperature where
     SomeTokProtocolTemperature :: TokProtocolTemperature pt
@@ -206,9 +218,17 @@ deriving instance Functor WithSomeProtocolTemperature
 withoutSomeProtocolTemperature :: WithSomeProtocolTemperature a -> a
 withoutSomeProtocolTemperature (WithSomeProtocolTemperature a) = withoutProtocolTemperature a
 
-
 -- | A bundle of 'HotApp', 'WarmApp' and 'EstablishedApp'.
 --
+
+-- GR-FIXME[C3]: This is a very specific type with a very generic name.
+--   Possibly a more descriptive name?
+--   (see also notes on 'ProtocolTemperature' above
+--  
+--   ProtocolTemperatureMap?
+--   ProtocolsByTemperature?
+--   WithEachProtocolTemperature / TempertureSet?
+
 data Bundle a =
       Bundle {
           -- | hot mini-protocols

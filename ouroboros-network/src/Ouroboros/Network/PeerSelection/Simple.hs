@@ -87,6 +87,11 @@ withPeerSelectionActions
         readLocalRootPeers
         localRootsVar)
       (\thread -> k (Just thread) peerSelectionActions)
+      
+    -- GR-FIXME[R3]: withPeerSelectionActions always returns (Just thread) to
+    --   the first argument of the continuation, so should we change the type
+    --   of 'withPeerSelectionActions' (and the calls in P2P.hs)?
+
   where
     -- We first try to get public root peers from the ledger, but if it fails
     -- (for example because the node hasn't synced far enough) we fall back

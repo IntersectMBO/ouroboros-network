@@ -101,7 +101,10 @@ readGroupSize JobPool{jobsVar} group =
 
 collect :: MonadSTM m => JobPool group m a -> STM m a
 collect JobPool{completionQueue} = readTQueue completionQueue
-
+  -- GR-FIXME[C2]: better name?
+  --  - 'collect' gives the impression getting many and NOT blocking
+  --  - how about 'getCompletedJob'?
+  
 cancelGroup :: ( MonadAsync m
                , Eq group
                )
