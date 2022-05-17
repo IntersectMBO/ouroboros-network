@@ -158,7 +158,10 @@ connections PeerSelectionActions{
              &&    Map.keysSet
                      (EstablishedPeers.toMap establishedPeers')
                 == establishedPeersSet')
-
+              -- GR-FIXME[F3]: the right hand side of '&&' is equivalent to
+              --   establishedPeersSet' == establishedPeersSet'
+              --   i.e., True
+          
             Decision {
               decisionTrace = TraceDemoteAsynchronous demotions,
               decisionJobs  = [],

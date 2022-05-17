@@ -226,6 +226,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerAfter
                                   then 30
                                   else 1847 -- Close to but not exactly 30min.
+                                  -- GR-FIXME[R2]: move magic numbers to ...?
 
         traceWith tracer WaitingOnRequest
         numRequested <- atomically getReq
@@ -284,6 +285,8 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
 
     -- Divide the picked peers form the ledger into addresses we can use directly and
     -- domain names that we need to resolve.
+      -- FIXME[C]: change name to 'partitionPeer' as this is handling just
+      --           one peer.
     splitPeers :: (Set peerAddr, [DomainAccessPoint])
                -> RelayAccessPoint
                -> (Set peerAddr, [DomainAccessPoint])

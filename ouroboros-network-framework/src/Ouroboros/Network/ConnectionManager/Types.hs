@@ -79,6 +79,10 @@
 -- Termination procedure as well as connection state machine is not described in
 -- this haddock, see associated specification.
 --
+
+-- GR-FIXME[D]: references to PeerStateActions and P2P Governor feel misplaced
+-- as these are defined in a calling package! (DOU)
+
 module Ouroboros.Network.ConnectionManager.Types
   ( -- * Connection manager core types
     -- ** Connection Types

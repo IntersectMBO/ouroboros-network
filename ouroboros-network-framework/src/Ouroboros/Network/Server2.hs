@@ -193,6 +193,8 @@ run ServerArguments {
     iseCONNABORTED _ = False
 #endif
 
+    -- GR-FIXME[C]: this called just 1x, inline??
+    -- GR-FIXME[R]: easy to replace with Data.List.NonEmpty?
     raceAll :: [m x] -> m x
     raceAll []       = error "raceAll: invariant violation"
     raceAll [t]      = t
@@ -240,6 +242,7 @@ run ServerArguments {
                  Just ioErr ->
                    if iseCONNABORTED ioErr
                       then threadDelay 0.5 >> go unmask acceptNext
+                           -- GR-FIXME[R]: can we remove this magic number?
                       else throwIO ioErr
                  Nothing -> throwIO err
 
@@ -278,3 +281,4 @@ data ServerTrace peerAddr
     -- ^ similar to 'TrAcceptConnection' but it is logged once the connection is
     -- handed to inbound connection manager, e.g. after handshake negotiation.
   deriving Show
+

@@ -138,7 +138,10 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
 -- TODO: we need initiator only mode for blockchain explorer or a similar
 -- application, there's no reason why one should run a node-to-node server for
 -- it.
---
+-- GR-FIXME[D2]: The haddock doc here seems misplaced/wrong?
+
+-- GR-FIXME[D3]: Add haddock doc for the Applications.
+
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
                   m =

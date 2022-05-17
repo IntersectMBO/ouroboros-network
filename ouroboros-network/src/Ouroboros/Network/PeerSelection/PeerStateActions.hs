@@ -55,6 +55,9 @@ import           Ouroboros.Network.ConnectionHandler (Handle (..),
                      HandleError (..), MuxConnectionManager)
 import           Ouroboros.Network.ConnectionManager.Types
 
+-- GR-FIXME[D3]: The results of the haddock are odd, the TOC is odd and not matching
+-- the sections in the page.
+
 -- $doc
 -- = Introduction
 --
@@ -391,6 +394,11 @@ awaitAllResults tok bundle = do
 -- Internals: peer state & connection handle
 --
 
+-- GR-FIXME[R]: 'PeerState' is never read except through 'getCurrentState', so 
+-- the point of using this (rather than PeerStatus) is what: ?
+--   A. future use?
+--   B. used for tracing? (is it?)
+--   C. am I missing something?
 
 data PeerState
   = PeerStatus      !PeerStatus
@@ -399,6 +407,7 @@ data PeerState
   | DemotingToWarm
   | DemotingToCold  !PeerStatus
   -- ^ 'DemotingToCold' also contains the initial state of the peer.
+     -- GR-FIXME[D]: not seeing this to be the case
   deriving Eq
 
 
@@ -411,7 +420,7 @@ getCurrentState PromotingToWarm             = PeerCold
 getCurrentState PromotingToHot              = PeerWarm
 getCurrentState DemotingToWarm              = PeerHot
 getCurrentState (DemotingToCold peerStatus) = peerStatus
-
+  -- GR-FIXME[C2]: Suggestion: rename to getPeerStatus
 
 -- |  Each established connection has access to 'PeerConnectionHandle'.  It
 -- allows to promote / demote or close the connection, by having access to

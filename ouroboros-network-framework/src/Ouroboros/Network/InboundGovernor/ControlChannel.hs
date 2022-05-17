@@ -60,6 +60,10 @@ instance Show peerAddr
 -- of these messages; there are two producers: accept loop and connection
 -- handler for outbound connections.
 --
+-- GR-FIXME[D2]: Last sentence is DOU (see code-review-doc)
+type ServerControlChannel (muxMode :: MuxMode) peerAddr bytes m a b =
+    ControlChannel m (NewConnection peerAddr (Handle muxMode peerAddr bytes m a b))
+
 data ControlChannel m msg =
   ControlChannel {
     -- | Read a single 'NewConnection' instruction from the channel.
@@ -70,10 +74,9 @@ data ControlChannel m msg =
     --
     writeMessage :: msg -> STM m ()
   }
-
-
-type ServerControlChannel (muxMode :: MuxMode) peerAddr bytes m a b =
-    ControlChannel m (NewConnection peerAddr (Handle muxMode peerAddr bytes m a b))
+  -- GR-FIXME[C2]: the 'msg' tyvar appears to be always instantiated to
+  --   'NewConnection ...'
+  --   i.e., unnecessary polymorphism: reason for? to avoid dup of (NewConnection ...)?
 
 
 newControlChannel :: forall m srvCntrlMsg.
@@ -85,7 +88,7 @@ newControlChannel = do
     -- GR-FIXME[D2]: above comment is DOU (see code-review-doc)
     channel <-
       atomically $
-        newTBQueue 10
+        newTBQueue 10                             -- G-FIXME[R]: magic number
         >>= \q -> labelTBQueue q "server-cc" $> q
     pure $ ControlChannel {
         readMessage  = readMessage channel,
@@ -123,3 +126,6 @@ newInboundConnection
 newInboundConnection channel connId dataFlow handle =
     writeMessage channel
                  (NewConnection Inbound connId dataFlow handle)
+
+-- GR-FIXME[C3]: Possibly inline the last two at their call sites, each
+--  is just called 1 time in ....ConnectionManager.Core
