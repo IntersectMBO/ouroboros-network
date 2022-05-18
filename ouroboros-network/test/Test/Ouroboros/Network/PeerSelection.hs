@@ -866,7 +866,7 @@ prop_governor_target_established_public env =
 
         meaning :: Bool -> String
         meaning False = "No PublicPeers in Established Set"
-        meaning True = "PublicPeers in Established Set"
+        meaning True  = "PublicPeers in Established Set"
 
         valuesList :: [String]
         valuesList = map (meaning . snd)
@@ -910,7 +910,7 @@ prop_governor_target_active_public env =
 
         meaning :: Bool -> String
         meaning False = "No PublicPeers in Active Set"
-        meaning True = "PublicPeers in Active Set"
+        meaning True  = "PublicPeers in Active Set"
 
         valuesList :: [String]
         valuesList = map (meaning . snd)

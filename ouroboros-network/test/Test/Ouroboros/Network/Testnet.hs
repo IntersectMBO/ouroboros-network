@@ -65,9 +65,8 @@ import           Test.Ouroboros.Network.Testnet.Simulation.Node
                      diffusionSimulation,
                      prop_diffusionScript_commandScript_valid,
                      prop_diffusionScript_fixupCommands)
-import           Test.QuickCheck
-                     (Property, counterexample, conjoin, property, classify,
-                     tabulate, coverTable, checkCoverage)
+import           Test.QuickCheck (Property, checkCoverage, classify, conjoin,
+                     counterexample, coverTable, property, tabulate)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -471,7 +470,7 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
 
           meaning :: Bool -> String
           meaning False = "No PublicPeers in Established Set"
-          meaning True = "PublicPeers in Established Set"
+          meaning True  = "PublicPeers in Established Set"
 
           valuesList :: [String]
           valuesList = map (meaning . snd)
@@ -553,7 +552,7 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
 
             meaning :: Bool -> String
             meaning False = "No PublicPeers in Active Set"
-            meaning True = "PublicPeers in Active Set"
+            meaning True  = "PublicPeers in Active Set"
 
             valuesList :: [String]
             valuesList = map (meaning . snd)
