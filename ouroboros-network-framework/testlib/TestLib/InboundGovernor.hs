@@ -7,10 +7,10 @@ module TestLib.InboundGovernor where
 import           Test.QuickCheck
 
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
+                     RemoteSt (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
-import           Ouroboros.Network.InboundGovernor
-                     (RemoteSt (..), InboundGovernorTrace(..))
-import           Ouroboros.Network.Server2 (RemoteTransition, ServerTrace(..))
+import           Ouroboros.Network.Server2 (RemoteTransition, ServerTrace (..))
 
 import           TestLib.Utils
 

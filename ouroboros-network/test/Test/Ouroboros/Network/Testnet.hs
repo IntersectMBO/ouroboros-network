@@ -5,8 +5,8 @@
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
-import           Control.Monad.Class.MonadTime
-                    (DiffTime, Time(Time), diffTime, addTime )
+import           Control.Monad.Class.MonadTime (DiffTime, Time (Time), addTime,
+                     diffTime)
 import           Control.Monad.IOSim
 import           Control.Monad.IOSim.Types (ThreadId)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
@@ -30,34 +30,34 @@ import           System.Random (mkStdGen)
 
 import qualified Network.DNS.Types as DNS
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
-import           Ouroboros.Network.PeerSelection.Governor
-                      (TracePeerSelection (..), DebugPeerSelection (..))
-import           Ouroboros.Network.Testing.Data.Signal
-                      (Events, Signal, eventsToList,
-                      signalProperty)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                      (TraceLocalRootPeers (..), TracePublicRootPeers (..), dapDomain)
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus(..))
-import           Ouroboros.Network.Diffusion.P2P
-                      (TracersExtra(..))
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.Diffusion.P2P (TracersExtra (..))
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import           Ouroboros.Network.InboundGovernor hiding
+                     (TrUnexpectedlyFalseAssertion)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.Governor
+                     (DebugPeerSelection (..), TracePeerSelection (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.PeerStateActions
+                     (PeerSelectionActionsTrace (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (TraceLocalRootPeers (..), TracePublicRootPeers (..),
+                     dapDomain)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSorIOError (DNSError))
+import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import           Ouroboros.Network.Server2 (ServerTrace (..))
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
+import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
+                     eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
                      sayTracer, splitWithNameTrace, tracerWithName,
                      tracerWithTime)
-import           Ouroboros.Network.PeerSelection.PeerStateActions
-                      (PeerSelectionActionsTrace(..))
-import           Ouroboros.Network.Server2 (ServerTrace(..))
-import           Ouroboros.Network.InboundGovernor hiding (TrUnexpectedlyFalseAssertion)
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
@@ -72,16 +72,18 @@ import           Test.QuickCheck (Property, checkCoverage, classify, conjoin,
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           TestLib.Utils (TestProperty(..), mkProperty, ppTransition,
-                     AllProperty (..), classifyNegotiatedDataFlow,
-                     classifyEffectiveDataFlow, classifyTermination,
-                     classifyActivityType, classifyPrunings, groupConns, verifyAllTimeouts)
-import           TestLib.ConnectionManager
-                     (verifyAbstractTransition, abstractStateIsFinalTransition,
-                     verifyAbstractTransitionOrder, validTransitionMap, connectionManagerTraceMap)
-import           TestLib.InboundGovernor
-                     (verifyRemoteTransition, verifyRemoteTransitionOrder,
-                     remoteStrIsFinalTransition, validRemoteTransitionMap, inboundGovernorTraceMap, serverTraceMap)
+import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
+                     connectionManagerTraceMap, validTransitionMap,
+                     verifyAbstractTransition, verifyAbstractTransitionOrder)
+import           TestLib.InboundGovernor (inboundGovernorTraceMap,
+                     remoteStrIsFinalTransition, serverTraceMap,
+                     validRemoteTransitionMap, verifyRemoteTransition,
+                     verifyRemoteTransitionOrder)
+import           TestLib.Utils (AllProperty (..), TestProperty (..),
+                     classifyActivityType, classifyEffectiveDataFlow,
+                     classifyNegotiatedDataFlow, classifyPrunings,
+                     classifyTermination, groupConns, mkProperty, ppTransition,
+                     verifyAllTimeouts)
 
 tests :: TestTree
 tests =

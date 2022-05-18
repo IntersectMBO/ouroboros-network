@@ -4,8 +4,8 @@ module TestLib.ConnectionManager where
 
 import           Prelude hiding (read)
 
-import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import           Ouroboros.Network.ConnectionManager.Types
 
 import           Test.QuickCheck (counterexample, property)
 
