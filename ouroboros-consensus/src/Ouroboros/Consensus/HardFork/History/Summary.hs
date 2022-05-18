@@ -503,16 +503,7 @@ instance SListI xs => Serialise (Summary xs) where
   --
   -- - @|xs| > |ys|@: we know about more eras than the server does. The server
   --   will send us era summaries for @1 <= n <= |ys|@ eras. For sure @n <
-  --   |xs|@, so decoding will be unproblematic. The only slightly strange case
-  --   is when @n == |ys|@: in this case, the server thinks we are in the final
-  --   era, whereas in fact that era isn't actually final; consequently, the
-  --   server will give us an unbounded summary for that "final" era. However,
-  --   if we are following that particular server, treating that era as
-  --   unbounded is okay, since we anyway won't be transitioning to the next
-  --   era.
-  --
-  --   [TODO: Won't we be making any decisions that we might regret if we do
-  --   eventually switch server..?]
+  --   |xs|@, so decoding will be unproblematic.
   --
   -- - @|xs| < |ys|@: we know about fewer eras than the server does. This will
   --   happen when the server has been upgraded for the next hard fork, but the
@@ -525,18 +516,11 @@ instance SListI xs => Serialise (Summary xs) where
   --     not yet known; the summary sent to us by the server is fine as is.
   --
   --   o @n == |xs|@: The server does not yet know about the transition out of
-  --     what (we believe to be) the final era. In principle we could decide to
-  --     leave the era summaries as-is; however, since _we_ consider that era to
-  --     be the final one, we should regard it as unbounded (it does not make
-  --     sense to have a bounded final era). We must therefore modify the final
-  --     era summary. Of course this will mean that we will make some incorrect
-  --     decisions; but as long as we aren't updated, we will anyway be unable
-  --     to deal with the next era.
+  --     what (we believe to be) the final era.
   --
   --   o @n > |xs|@: the server already knows about the transition to the next
   --     era after our final era. In this case we must drop all eras that we
-  --     don't know about, and then modify again the final era to be unbounded,
-  --     just like in the case above.
+  --     don't know about.
   --
   -- Since we do not know @|ys|@, we cannot actually implement the outermost
   -- case statement. However:
@@ -544,31 +528,15 @@ instance SListI xs => Serialise (Summary xs) where
   -- - If @|xs| > |ys|@, by definition @n < |xs|@, and hence we will not modify
   --   the era summary: this is what we wanted.
   --
-  -- - If @|xs| == |ys|@, then at most @n == |xs|@, in which case we might
-  --   "modify" the final era to be unbounded. But in this case, the server will
-  --   consider that era to be final as well, and so it will _already_ be
-  --   unbounded: effectively this means that this means we will leave the
-  --   summary unchanged.
+  -- - If @|xs| == |ys|@, then at most @n == |xs|@.
   decode = do
       -- Drop all eras we don't know about
       eraSummaries <- take nbXs <$> decode
 
-      let n = length eraSummaries
-          go
-            -- @n == |xs|@
-            | n == nbXs = fixEndBound
-            -- @n <  |xs|@
-            | otherwise = id
-
-      case Summary . go <$> nonEmptyFromList eraSummaries of
+      case Summary <$> nonEmptyFromList eraSummaries of
         Just summary -> return summary
         Nothing      -> fail "Summary: expected at least one era summary"
     where
       -- @|xs|@
       nbXs :: Int
       nbXs = lengthSList (Proxy @xs)
-
-      -- | Make the last era's end bound unbounded.
-      fixEndBound :: NonEmpty xs' EraSummary -> NonEmpty xs' EraSummary
-      fixEndBound (NonEmptyCons e es) = NonEmptyCons e (fixEndBound es)
-      fixEndBound (NonEmptyOne  e)    = NonEmptyOne  e { eraEnd = EraUnbounded }
