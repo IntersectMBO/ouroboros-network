@@ -41,10 +41,9 @@ import           Ouroboros.Consensus.Node.Run
 
 import qualified Cardano.Ledger.Shelley.API as SL
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-                     (LedgerSupportsProtocol)
+import qualified Data.UMap as UM
+import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
+import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -113,5 +112,164 @@ instance ShelleyCompatible proto era => BlockSupportsMetrics (ShelleyBlock proto
       issuerVKeys = shelleyBlockIssuerVKeys cfg
 
 
-instance (ShelleyCompatible proto era, LedgerSupportsProtocol (ShelleyBlock proto era))
-  => RunNode (ShelleyBlock proto era)
+instance ShelleyBasedEra era => RunNode (ShelleyBlock era)
+
+{-------------------------------------------------------------------------------
+  Register genesis staking
+-------------------------------------------------------------------------------}
+
+-- | Register the initial staking information in the 'SL.NewEpochState'.
+--
+-- HERE BE DRAGONS! This function is intended to help in testing.
+--
+-- In production, the genesis should /not/ contain any initial staking.
+--
+-- Any existing staking information is overridden, but the UTxO is left
+-- untouched.
+--
+-- TODO adapt and reuse @registerGenesisStaking@ from @cardano-ledger-specs@.
+registerGenesisStaking ::
+     forall era. ShelleyBasedEra era
+  => SL.ShelleyGenesisStaking (EraCrypto era)
+  -> SL.NewEpochState era
+  -> SL.NewEpochState era
+registerGenesisStaking staking nes = nes {
+      SL.nesEs = epochState {
+          SL.esLState = ledgerState {
+          SL.lsDPState = dpState {
+              SL.dpsDState = dState'
+            , SL.dpsPState = pState'
+            }
+        }
+        , SL.esSnapshots = (SL.esSnapshots epochState) {
+              SL._pstakeMark = initSnapShot
+            }
+        }
+
+    -- Note that this is only applicable in the initial configuration where
+    -- there is no existing stake distribution, since it would completely
+    -- overwrite any such thing.
+    , SL.nesPd = SL.calculatePoolDistr initSnapShot
+    }
+  where
+    SL.ShelleyGenesisStaking { sgsPools, sgsStake } = staking
+    SL.NewEpochState { nesEs = epochState } = nes
+    ledgerState = SL.esLState epochState
+    dpState = SL.lsDPState ledgerState
+
+    -- New delegation state. Since we're using base addresses, we only care
+    -- about updating the '_delegations' field.
+    --
+    -- See STS DELEG for details
+    dState' :: SL.DState (EraCrypto era)
+    dState' = (SL.dpsDState dpState) {
+          SL._unified = UM.unify
+            ( Map.map (const $ SL.Coin 0)
+                      . Map.mapKeys SL.KeyHashObj
+                      $ sgsStake)
+            ( Map.mapKeys SL.KeyHashObj sgsStake )
+            mempty
+        }
+    -- We consider pools as having been registered in slot 0
+    -- See STS POOL for details
+    pState' :: SL.PState (EraCrypto era)
+    pState' = (SL.dpsPState dpState) {
+          SL._pParams = sgsPools
+        }
+
+    -- The new stake distribution is made on the basis of a snapshot taken
+    -- during the previous epoch. We create a "fake" snapshot in order to
+    -- establish an initial stake distribution.
+    initSnapShot :: SL.SnapShot (EraCrypto era)
+    initSnapShot =
+        -- Since we build a stake from nothing, we first initialise an
+        -- 'IncrementalStake' as empty, and then:
+        --
+        -- 1. Add the initial UTxO, whilst deleting nothing.
+        -- 2. Update the stake map given the initial delegation.
+        SL.incrementalStakeDistr
+          -- Note that 'updateStakeDistribution' takes first the set of UTxO to
+          -- delete, and then the set to add. In our case, there is nothing to
+          -- delete, since this is an initial UTxO set.
+          (SL.updateStakeDistribution mempty mempty (SL._utxo (SL.lsUTxOState ledgerState)))
+          dState'
+          pState'
+
+-- | Register the initial funds in the 'SL.NewEpochState'.
+--
+-- HERE BE DRAGONS! This function is intended to help in testing.
+--
+-- In production, the genesis should /not/ contain any initial funds.
+--
+-- The given funds are /added/ to the existing UTxO.
+--
+-- PRECONDITION: the given funds must not be part of the existing UTxO.
+-- > forall (addr, _) in initialFunds.
+-- >    Map.notElem (SL.initialFundsPseudoTxIn addr) existingUTxO
+--
+-- PROPERTY:
+-- >    genesisUTxO genesis
+-- > == <genesisUTxO'> (sgInitialFunds genesis)
+-- > == <extractUTxO> (registerInitialFunds (sgInitialFunds genesis)
+-- >                                        <empty NewEpochState>)
+--
+-- TODO move to @cardano-ledger-specs@.
+registerInitialFunds ::
+     forall era.
+     ( ShelleyBasedEra era
+     , HasCallStack
+     )
+  => Map (SL.Addr (EraCrypto era)) SL.Coin
+  -> SL.NewEpochState era
+  -> SL.NewEpochState era
+registerInitialFunds initialFunds nes = nes {
+      SL.nesEs = epochState {
+          SL.esAccountState = accountState'
+        , SL.esLState       = ledgerState'
+        }
+    }
+  where
+    epochState   = SL.nesEs          nes
+    accountState = SL.esAccountState epochState
+    ledgerState  = SL.esLState       epochState
+    utxoState    = SL.lsUTxOState    ledgerState
+    utxo         = SL._utxo          utxoState
+    reserves     = SL._reserves      accountState
+
+    initialFundsUtxo :: SL.UTxO era
+    initialFundsUtxo = SL.UTxO $ Map.fromList [
+          (txIn, txOut)
+        | (addr, amount) <- Map.toList initialFunds
+        ,  let txIn  = SL.initialFundsPseudoTxIn addr
+               txOut = SL.makeTxOut (Proxy @era) addr (inject amount)
+        ]
+
+    utxo' = mergeUtxoNoOverlap utxo initialFundsUtxo
+
+    -- Update the reserves
+    accountState' = accountState {
+          SL._reserves = reserves <-> coin (SL.balance initialFundsUtxo)
+        }
+
+    -- Since we only add entries to our UTxO, rather than spending them, there
+    -- is nothing to delete in the incremental update.
+    utxoToDel     = SL.UTxO mempty
+    ledgerState'  = ledgerState {
+          SL.lsUTxOState = utxoState {
+              SL._utxo        = utxo',
+              -- Normally we would incrementally update here. But since we pass
+              -- the full UTxO as "toAdd" rather than a delta, we simply
+              -- reinitialise the full incremental stake.
+              SL._stakeDistro = SL.updateStakeDistribution mempty utxoToDel utxo'
+            }
+        }
+
+    -- | Merge two UTxOs, throw an 'error' in case of overlap
+    mergeUtxoNoOverlap ::
+         HasCallStack
+      => SL.UTxO era -> SL.UTxO era -> SL.UTxO era
+    mergeUtxoNoOverlap (SL.UTxO m1) (SL.UTxO m2) = SL.UTxO $
+        Map.unionWithKey
+          (\k _ _ -> error $ "initial fund part of UTxO: " <> show k)
+          m1
+          m2
