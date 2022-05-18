@@ -37,7 +37,6 @@ library
                      , cardano-crypto-wrapper
                      , cardano-slotting
                      , containers
-                     , compact-map
                      , mtl
                      , QuickCheck
                      , sop-core
