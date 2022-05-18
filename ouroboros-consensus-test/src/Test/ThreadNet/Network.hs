@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -111,6 +112,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
@@ -739,7 +741,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
               -> traceWith invalidTracer (p, e)
 
           ChainDB.TraceAddBlockEvent
-              (ChainDB.AddedBlockToVolatileDB p bno IsNotEBB)
+              (ChainDB.AddedBlockToVolatileDB p bno IsNotEBB FallingEdge)
               -> traceWith addTracer (p, bno)
 
           ChainDB.TraceAddBlockEvent

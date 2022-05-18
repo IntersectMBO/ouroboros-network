@@ -61,6 +61,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.RedundantConstraints
@@ -870,7 +871,7 @@ prop_general_internal syncity pga testOutput =
         , CoreId cnid <- [nid]
         , let tentativePoints = Set.fromList
                 [ headerPoint hdr
-                | ChainDB.SetTentativeHeader hdr <- nodePipeliningEvents
+                | ChainDB.SetTentativeHeader hdr FallingEdge <- nodePipeliningEvents
                 ]
               forgedAsSoleLeaderPoints = Set.fromList $
                 [ blockPoint blk

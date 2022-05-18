@@ -103,6 +103,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB,
                      VolatileDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.Enclose (Enclosing, Enclosing' (..))
 import           Ouroboros.Consensus.Util.TentativeState (TentativeState (..))
 
 -- | All the serialisation related constraints needed by the ChainDB.
@@ -477,11 +478,12 @@ addBlockToAdd tracer (BlocksToAdd queue) punish blk = do
           , varBlockWrittenToDisk
           , varBlockProcessed
           }
+    traceWith tracer $ AddedBlockToQueue (blockRealPoint blk) RisingEdge
     queueSize <- atomically $ do
       writeTBQueue  queue toAdd
       lengthTBQueue queue
     traceWith tracer $
-      AddedBlockToQueue (blockRealPoint blk) (fromIntegral queueSize)
+      AddedBlockToQueue (blockRealPoint blk) (FallingEdgeWith (fromIntegral queueSize))
     return AddBlockPromise
       { blockWrittenToDisk      = readTMVar varBlockWrittenToDisk
       , blockProcessed          = readTMVar varBlockProcessed
@@ -599,14 +601,18 @@ data TraceAddBlockEvent blk =
 
     -- | The block was added to the queue and will be added to the ChainDB by
     -- the background thread. The size of the queue is included.
-  | AddedBlockToQueue (RealPoint blk) Word
+  | AddedBlockToQueue (RealPoint blk) (Enclosing' Word)
+
+    -- | The block popped from the queue and will imminently be added to the
+    -- ChainDB.
+  | PoppedBlockFromQueue (Enclosing' (RealPoint blk))
 
     -- | The block is from the future, i.e., its slot number is greater than
     -- the current slot (the second argument).
   | BlockInTheFuture (RealPoint blk) SlotNo
 
     -- | A block was added to the Volatile DB
-  | AddedBlockToVolatileDB (RealPoint blk) BlockNo IsEBB
+  | AddedBlockToVolatileDB (RealPoint blk) BlockNo IsEBB Enclosing
 
     -- | The block fits onto the current chain, we'll try to use it to extend
     -- our chain.
@@ -649,6 +655,10 @@ data TraceAddBlockEvent blk =
     -- | The tentative header (in the context of diffusion pipelining) has been
     -- updated.
   | PipeliningEvent (TracePipeliningEvent blk)
+
+    -- | Herald of 'AddedToCurrentChain' or 'SwitchedToAFork'. Lists the tip of
+    -- the new chain.
+  | ChangingSelection (Point blk)
 
   deriving (Generic)
 
@@ -704,7 +714,7 @@ deriving instance
 
 data TracePipeliningEvent blk =
     -- | A new tentative header got set.
-    SetTentativeHeader (Header blk)
+    SetTentativeHeader (Header blk) Enclosing
     -- | The body of tentative block turned out to be invalid.
   | TrapTentativeHeader (Header blk)
     -- | We selected a new (better) chain, which cleared the previous tentative

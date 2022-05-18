@@ -87,6 +87,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.Enclose (encloseWith)
 
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.
@@ -309,9 +310,9 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
 
       -- The remaining cases
       | otherwise -> do
-        VolatileDB.putBlock cdbVolatileDB b
-        traceWith addBlockTracer $
-          AddedBlockToVolatileDB (blockRealPoint b) (blockNo b) isEBB
+        let traceEv = AddedBlockToVolatileDB (blockRealPoint b) (blockNo b) isEBB
+        encloseWith (traceEv >$< addBlockTracer) $
+          VolatileDB.putBlock cdbVolatileDB b
         deliverWrittenToDisk True
 
         let blockCache = BlockCache.singleton b
@@ -723,6 +724,12 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
       -> ChainSwitchType
       -> m (Point blk)
     switchTo vChainDiff varTentativeHeader chainSwitchType = do
+        traceWith addBlockTracer $
+            ChangingSelection
+          $ castPoint
+          $ AF.headPoint
+          $ getSuffix
+          $ getChainDiff vChainDiff
         (curChain, newChain, events, prevTentativeHeader) <- atomically $ do
           curChain  <- readTVar         cdbChain -- Not Query.getCurrentChain!
           curLedger <- LgrDB.getCurrent cdbLgrDB
@@ -941,11 +948,12 @@ chainSelection chainSelEnv chainDiffs =
                   (\ts -> isPipelineable bcfg ts candidate)
               <$> readTVarIO varTentativeState
             whenJust (strictMaybeToMaybe mTentativeHeader) $ \tentativeHeader -> do
-              atomically $ writeTVar varTentativeHeader $ SJust tentativeHeader
-              -- As we are only extending the existing chain, the intersection
-              -- point is not receding, in which case fhSwitchFork is not
-              -- necessary.
-              traceWith pipeliningTracer $ SetTentativeHeader tentativeHeader
+              let setTentative = SetTentativeHeader tentativeHeader
+              encloseWith (setTentative >$< pipeliningTracer) $
+                atomically $ writeTVar varTentativeHeader $ SJust tentativeHeader
+                -- As we are only extending the existing chain, the intersection
+                -- point is not receding, in which case fhSwitchFork is not
+                -- necessary.
             pure mTentativeHeader
 
         -- | Clear a tentative header that turned out to be invalid. Also, roll
