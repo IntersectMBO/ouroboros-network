@@ -3,8 +3,8 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
 
 module Test.Ouroboros.Network.Testnet.Simulation.Node
   ( SimArgs (..)
@@ -33,7 +33,7 @@ import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Data.List ((\\), nub, delete)
+import           Data.List (delete, nub, (\\))
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -75,9 +75,9 @@ import           Simulation.Network.Snocket (BearerInfo (..), FD, withSnocket)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-                     (BlockGeneratorArgs, NtNAddr, randomBlockGenerationArgs,
-                     NtNVersion, NtCVersion, NtCAddr, NtCVersionData,
-                     NtNVersionData, NtNAddr_ (IPAddr))
+                     (BlockGeneratorArgs, NtCAddr, NtCVersion, NtCVersionData,
+                     NtNAddr, NtNAddr_ (IPAddr), NtNVersion, NtNVersionData,
+                     randomBlockGenerationArgs)
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay, DNSTimeout)

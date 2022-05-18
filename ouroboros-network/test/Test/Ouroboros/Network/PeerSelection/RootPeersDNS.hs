@@ -18,7 +18,7 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 
-import           Control.Monad (replicateM_, forever)
+import           Control.Monad (forever, replicateM_)
 import           Data.ByteString.Char8 (pack)
 import           Data.Dynamic (Typeable, fromDynamic)
 import           Data.Foldable (foldl', toList)
@@ -43,9 +43,9 @@ import           Network.Socket (SockAddr (..))
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
-                     (MonadSTM, MonadTraceSTM, TraceValue(..), newTVarIO,
-                     readTVar, traceTVarIO, StrictTVar, atomically, writeTVar)
+import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, MonadTraceSTM,
+                     StrictTVar, TraceValue (..), atomically, newTVarIO,
+                     readTVar, traceTVarIO, writeTVar)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer
@@ -54,8 +54,8 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
-                     Script (Script), initScript', stepScript, singletonScript,
-                     scriptHead, stepScript')
+                     Script (Script), initScript', scriptHead, singletonScript,
+                     stepScript, stepScript')
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

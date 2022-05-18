@@ -10,52 +10,51 @@ import           Control.Monad.IOSim
 import           Control.Monad.IOSim.Types (ThreadId)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
+import           Control.Monad.Class.MonadTime (addTime)
 import           Data.Bifoldable (bifoldMap)
-import           Control.Monad.Class.MonadTime
-                     (addTime)
 
-import           Data.Void (Void)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import qualified Data.Map as Map
-import           Data.Map (Map)
-import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Monoid (Sum(..))
 import           Data.Dynamic (Typeable)
 import           Data.Functor (void)
 import           Data.List (intercalate)
 import qualified Data.List.Trace as Trace
+import           Data.Map (Map)
+import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Monoid (Sum (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Time (secondsToDiffTime)
+import           Data.Void (Void)
 
 import           GHC.Exception.Type (SomeException)
 import           System.Random (mkStdGen)
 
 import qualified Network.DNS.Types as DNS
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
-import           Ouroboros.Network.PeerSelection.Governor
-                      (TracePeerSelection (..), DebugPeerSelection (..))
-import           Ouroboros.Network.Testing.Data.Signal
-                      (Events, Signal, eventsToList,
-                      signalProperty)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                      (TraceLocalRootPeers (..), TracePublicRootPeers (..), dapDomain)
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus(..))
-import           Ouroboros.Network.Diffusion.P2P
-                      (TracersExtra(..), RemoteTransitionTrace)
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.Diffusion.P2P (RemoteTransitionTrace,
+                     TracersExtra (..))
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.Governor
+                     (DebugPeerSelection (..), TracePeerSelection (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (TraceLocalRootPeers (..), TracePublicRootPeers (..),
+                     dapDomain)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+                     (DNSorIOError (DNSError))
+import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
+import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
+                     eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
                      sayTracer, splitWithNameTrace, tracerWithName,
                      tracerWithTime)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                      (DNSorIOError(DNSError))
 
 
 import           Simulation.Network.Snocket (BearerInfo (..))
@@ -66,8 +65,8 @@ import           Test.Ouroboros.Network.Testnet.Simulation.Node
                      diffusionSimulation,
                      prop_diffusionScript_commandScript_valid,
                      prop_diffusionScript_fixupCommands)
-import           Test.QuickCheck
-                     (Property, classify, conjoin, counterexample, property)
+import           Test.QuickCheck (Property, classify, conjoin, counterexample,
+                     property)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 

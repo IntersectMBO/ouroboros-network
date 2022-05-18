@@ -34,8 +34,8 @@ import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM, atomically), MonadTraceSTM, newTVar,
-                     MonadSTM (STM, atomically), StrictTVar)
+                     MonadSTM (STM, atomically), MonadTraceSTM, StrictTVar,
+                     newTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -85,7 +85,7 @@ import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                      TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
-import           Ouroboros.Network.Testing.Data.Script (Script(..))
+import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
