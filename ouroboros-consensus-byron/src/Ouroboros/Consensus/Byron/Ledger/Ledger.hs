@@ -191,18 +191,20 @@ instance TableStuff (LedgerState ByronBlock) where
   data LedgerTables (LedgerState ByronBlock) mk = NoByronLedgerTables
     deriving (Generic, Eq, Show, NoThunks)
 
-  projectLedgerTables _st                 = NoByronLedgerTables
-  withLedgerTables st NoByronLedgerTables = convertMapKind st
+  projectLedgerTables _st                     = NoByronLedgerTables
+  withLedgerTables     st NoByronLedgerTables = convertMapKind st
 
   pureLedgerTables     _f                                                             = NoByronLedgerTables
   mapLedgerTables      _f                                         NoByronLedgerTables = NoByronLedgerTables
   traverseLedgerTables _f                                         NoByronLedgerTables = pure NoByronLedgerTables
   zipLedgerTables      _f                     NoByronLedgerTables NoByronLedgerTables = NoByronLedgerTables
-  zipLedgerTablesA     _f                     NoByronLedgerTables NoByronLedgerTables = pure NoByronLedgerTables
   zipLedgerTables2     _f NoByronLedgerTables NoByronLedgerTables NoByronLedgerTables = NoByronLedgerTables
+  zipLedgerTablesA     _f                     NoByronLedgerTables NoByronLedgerTables = pure NoByronLedgerTables
+  zipLedgerTables2A    _f NoByronLedgerTables NoByronLedgerTables NoByronLedgerTables = pure NoByronLedgerTables
   foldLedgerTables     _f                                         NoByronLedgerTables = mempty
   foldLedgerTables2    _f                     NoByronLedgerTables NoByronLedgerTables = mempty
-  namesLedgerTables                                           = NoByronLedgerTables
+
+  namesLedgerTables = NoByronLedgerTables
 
 instance SufficientSerializationForAnyBackingStore (LedgerState ByronBlock) where
     codecLedgerTables = NoByronLedgerTables

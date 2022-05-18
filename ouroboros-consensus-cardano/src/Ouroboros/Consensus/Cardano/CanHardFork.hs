@@ -109,7 +109,8 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC
 
-import           Cardano.Ledger.Allegra.Translation (shelleyToAllegraAVVMsToDelete)
+import           Cardano.Ledger.Allegra.Translation
+                     (shelleyToAllegraAVVMsToDelete)
 import qualified Cardano.Ledger.Alonzo.Genesis as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
 import qualified Cardano.Ledger.Core as Core
@@ -505,8 +506,9 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
   mapLedgerTables      f                                                 (CardanoLedgerTables x) = CardanoLedgerTables (f x)
   traverseLedgerTables f                                                 (CardanoLedgerTables x) = CardanoLedgerTables <$> f x
   zipLedgerTables      f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
-  zipLedgerTablesA     f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l r
   zipLedgerTables2     f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables (f l c r)
+  zipLedgerTablesA     f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l r
+  zipLedgerTables2A    f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l c r
   foldLedgerTables     f                                                 (CardanoLedgerTables x) = f x
   foldLedgerTables2    f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = f l r
 

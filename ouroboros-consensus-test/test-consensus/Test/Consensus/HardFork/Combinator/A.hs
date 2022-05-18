@@ -219,8 +219,9 @@ instance TableStuff (LedgerState BlockA) where
   mapLedgerTables      _f                     NoATables = NoATables
   traverseLedgerTables _f                     NoATables = pure NoATables
   zipLedgerTables      _f           NoATables NoATables = NoATables
-  zipLedgerTablesA     _f           NoATables NoATables = pure NoATables
   zipLedgerTables2     _f NoATables NoATables NoATables = NoATables
+  zipLedgerTablesA     _f           NoATables NoATables = pure NoATables
+  zipLedgerTables2A    _f NoATables NoATables NoATables = pure NoATables
   foldLedgerTables     _f                     NoATables = mempty
   foldLedgerTables2    _f           NoATables NoATables = mempty
   namesLedgerTables                                     = NoATables

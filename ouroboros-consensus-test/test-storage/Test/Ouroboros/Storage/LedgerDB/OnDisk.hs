@@ -38,6 +38,7 @@ import           Control.Monad.State (StateT (..))
 import qualified Control.Monad.State as State
 import qualified Control.Monad.Trans as Trans
 import           Control.Tracer (nullTracer)
+import qualified Control.Tracer as Trace
 import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Classes
@@ -51,11 +52,9 @@ import           Data.TreeDiff.Class (genericToExpr)
 import           Data.TreeDiff.Expr (Expr (App))
 import           Data.Word
 import           GHC.Generics (Generic)
-import           System.Random (getStdRandom, randomR)
 import qualified System.Directory as Dir
 import qualified System.IO.Temp as Temp
-
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           System.Random (getStdRandom, randomR)
 
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
@@ -65,6 +64,9 @@ import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
+import qualified Test.Tasty.Traceable as TTT
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -74,26 +76,23 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
-import qualified Ouroboros.Consensus.Storage.FS.IO as FSIO
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import qualified Ouroboros.Consensus.Storage.FS.IO as FSIO
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 import qualified Test.Util.Classify as C
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
 import           Test.Util.Range
 import           Test.Util.TestBlock hiding (TestBlock, TestBlockCodecConfig,
                      TestBlockStorageConfig)
-
 -- For the Arbitrary instance of 'MemPolicy'
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
-import qualified Control.Tracer as Trace
 
-import qualified Test.Tasty.Traceable as TTT
 {-------------------------------------------------------------------------------
   Top-level tests
 -------------------------------------------------------------------------------}
@@ -251,12 +250,12 @@ instance TableStuff (LedgerState TestBlock) where
   mapLedgerTables      f                                     (TokenToTValue x) = TokenToTValue    (f x)
   traverseLedgerTables f                                     (TokenToTValue x) = TokenToTValue <$> f x
   zipLedgerTables      f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
-  zipLedgerTablesA     f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue <$> f x y
   zipLedgerTables2     f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue    (f x y z)
+  zipLedgerTablesA     f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue <$> f x y
+  zipLedgerTables2A    f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue <$> f x y z
   foldLedgerTables     f                                     (TokenToTValue x) =                   f x
   foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
-
-  namesLedgerTables = TokenToTValue $ NameMK "testblocktables"
+  namesLedgerTables                                                            = TokenToTValue $ NameMK "testblocktables"
 
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) EmptyMK)
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) DiffMK)
@@ -791,11 +790,11 @@ runMock cmd initMock =
 
 -- | Arguments required by 'StandaloneDB'
 data DbEnv m = DbEnv {
-      dbHasFS    :: !(SomeHasFS m)
-    , dbSecParam :: !SecurityParam
+      dbHasFS                :: !(SomeHasFS m)
+    , dbSecParam             :: !SecurityParam
     , dbBackingStoreSelector :: !(BackingStoreSelector m)
-    , dbTracer   :: !(Trace.Tracer m LMDB.TraceDb)
-    , dbCleanup :: !(m ())
+    , dbTracer               :: !(Trace.Tracer m LMDB.TraceDb)
+    , dbCleanup              :: !(m ())
     }
 
 -- | Standalone ledger DB
@@ -1002,7 +1001,7 @@ runDB standalone@DB{..} cmd =
             nullTracer
             (Trace.Tracer $ \case
                LMDBEvent e -> Trace.runTracer (dbTracer dbEnv) e
-               _ -> pure ()) -- TODO gross
+               _           -> pure ()) -- TODO gross
             hasFS
             S.decode
             S.decode
@@ -1382,7 +1381,7 @@ lmdbDbEnv show_trace limits dbSecParam = do
     dbBackingStoreSelector = LMDBBackingStore limits
     dbTracer = mkDbTracer show_trace
   pure DbEnv{..}
-  
+
 -- Ideally we'd like to use @IOSim s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
 propCmds :: DbEnv IO
