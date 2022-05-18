@@ -471,8 +471,6 @@ oneForecast extensible sno mbTranslate (Current start AnnForecast{..}) =
       -> Ticked (f blk)
       -> Ticked (HardForkLedgerView_ f (blk : blks))
     beforeKnownEnd end view = TickedHardForkLedgerView {
-          -- TODO the forecast range should be TransitionNone if blk' is the
-          -- last era and the chain is not extensible
           tickedHardForkLedgerViewTransition =
             TransitionKnown (boundEpoch end)
         , tickedHardForkLedgerViewPerEra = HardForkState $
@@ -484,8 +482,6 @@ oneForecast extensible sno mbTranslate (Current start AnnForecast{..}) =
       -> Ticked (f blk')
       -> Ticked (HardForkLedgerView_ f (blk : blk' : blks'))
     afterKnownEnd end view = TickedHardForkLedgerView {
-          -- TODO the forecast range should be TransitionNone if blk' is the
-          -- last era and the chain is not extensible
           tickedHardForkLedgerViewTransition =
             -- We assume that we only ever have to translate to the /next/ era
             -- (as opposed to /any/ subsequent era)
