@@ -34,6 +34,7 @@ module Ouroboros.Consensus.HardFork.History.Qry (
   , epochToSlot'
   , slotToEpoch
   , slotToEpoch'
+  , slotToSlotLength
   , slotToWallclock
   , wallclockToSlot
   ) where
@@ -480,6 +481,11 @@ slotToWallclock :: SlotNo -> Qry (RelativeTime, SlotLength)
 slotToWallclock absSlot =
     qryFromExpr (slotToWallclockExpr absSlot)
 
+-- | Acquire a slot's length
+slotToSlotLength :: SlotNo -> Qry SlotLength
+slotToSlotLength absSlot =
+    qryFromExpr (slotToSlotLengthExpr absSlot)
+
 -- | Convert 'SlotNo' to 'EpochNo' and the relative slot within the epoch
 slotToEpoch' :: SlotNo -> Qry (EpochNo, Word64)
 slotToEpoch' absSlot =
@@ -532,6 +538,9 @@ slotToWallclockExpr absSlot =
     EPair
       (ERelToAbsTime (ERelSlotToTime (EAbsToRelSlot (ELit absSlot))))
       (ESlotLength (ELit absSlot))
+
+slotToSlotLengthExpr :: SlotNo -> Expr f SlotLength
+slotToSlotLengthExpr absSlot = ESlotLength (ELit absSlot)
 
 slotToEpochExpr' :: SlotNo -> Expr f (EpochNo, SlotInEpoch)
 slotToEpochExpr' absSlot =

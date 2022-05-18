@@ -56,7 +56,6 @@ import           Ouroboros.Consensus.Cardano.Block (CardanoEras, GenTx (..),
 import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 
-import qualified Data.Compact.SplitMap as SplitMap
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.TxGen
 
@@ -142,8 +141,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
     | Just utxo <- mbUTxO =
 
     let picked :: Map (SL.TxIn c) (SL.TxOut (ShelleyEra c))
-        picked = SplitMap.toMap $
-            SplitMap.filter pick $ SL.unUTxO utxo
+        picked = Map.filter pick $ SL.unUTxO utxo
           where
             pick (SL.TxOut addr _) =
                 addr == SL.AddrBootstrap (SL.BootstrapAddress byronAddr)
