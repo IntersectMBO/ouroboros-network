@@ -404,51 +404,37 @@ mkHardForkForecast translations st = Forecast {
        -> InPairs (TranslateForecast state view) xs'
        -> Telescope (K Past) (Current (AnnForecast state view)) xs'
        -> Except OutsideForecastRange (Ticked (HardForkLedgerView_ view xs'))
-    go sno PNil         (TZ cur)       = forecastFinalEra sno   cur
-    go sno (PCons t _)  (TZ cur)       = forecastNotFinal sno t cur
+    go sno pairs        (TZ cur)       = oneForecast sno pairs cur
     go sno (PCons _ ts) (TS past rest) = shiftView past <$> go sno ts rest
 
--- | Construct forecast when we're in the final era.
---
--- Since we're in the final era, no translation is required.
-forecastFinalEra ::
+oneForecast ::
      forall state view blk blks.
      SlotNo
+  -> InPairs (TranslateForecast state view) (blk : blks)
+     -- ^ this function uses at most the first translation
   -> Current (AnnForecast state view) blk
   -> Except OutsideForecastRange (Ticked (HardForkLedgerView_ view (blk : blks)))
-forecastFinalEra sno (Current start AnnForecast{..}) =
-    aux <$> forecastFor annForecast sno
-  where
-    aux :: Ticked (view blk)
-        -> Ticked (HardForkLedgerView_ view (blk : blks))
-    aux view = TickedHardForkLedgerView {
-          tickedHardForkLedgerViewTransition =
-            TransitionImpossible
-        , tickedHardForkLedgerViewPerEra = HardForkState $
-            TZ (Current start (Comp view))
-        }
-
--- | Make forecast with potential need to translate to next era
-forecastNotFinal ::
-     forall state view blk blk' blks.
-     SlotNo
-  -> TranslateForecast state view blk blk'
-  -> Current (AnnForecast state view) blk
-  -> Except OutsideForecastRange (Ticked (HardForkLedgerView_ view (blk : blk' : blks)))
-forecastNotFinal sno translate (Current start AnnForecast{..})
-  | Nothing <- annForecastEnd =
-      endUnknown <$>
-        forecastFor annForecast sno
-  | Just end <- annForecastEnd, sno < boundSlot end =
-      beforeKnownEnd end <$>
-        forecastFor annForecast sno
-  | Just end <- annForecastEnd, otherwise =
-      afterKnownEnd end <$>
-        translateForecastWith translate end sno annForecastState
+oneForecast sno pairs (Current start AnnForecast{..}) =
+    case annForecastEnd of
+      Nothing  -> endUnknown <$> forecastFor annForecast sno
+      Just end ->
+        if sno < boundSlot end
+        then beforeKnownEnd end <$> forecastFor annForecast sno
+        else case pairs of
+          PCons translate _ ->
+                afterKnownEnd end
+            <$> translateForecastWith translate end sno annForecastState
+          PNil              ->
+            -- The requested slot is after the last era the code knows about.
+            throwError OutsideForecastRange {
+                outsideForecastAt     = forecastAt annForecast
+              , outsideForecastMaxFor = boundSlot end
+              , outsideForecastFor    = sno
+              }
   where
     endUnknown ::
          Ticked (f blk)
-      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks))
+      -> Ticked (HardForkLedgerView_ f (blk : blks))
     endUnknown view = TickedHardForkLedgerView {
           tickedHardForkLedgerViewTransition =
             TransitionUnknown annForecastTip
@@ -459,7 +445,7 @@ forecastNotFinal sno translate (Current start AnnForecast{..})
     beforeKnownEnd ::
          Bound
       -> Ticked (f blk)
-      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks))
+      -> Ticked (HardForkLedgerView_ f (blk : blks))
     beforeKnownEnd end view = TickedHardForkLedgerView {
           tickedHardForkLedgerViewTransition =
             TransitionKnown (boundEpoch end)
@@ -470,7 +456,7 @@ forecastNotFinal sno translate (Current start AnnForecast{..})
     afterKnownEnd ::
          Bound
       -> Ticked (f blk')
-      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks))
+      -> Ticked (HardForkLedgerView_ f (blk : blk' : blks'))
     afterKnownEnd end view = TickedHardForkLedgerView {
           tickedHardForkLedgerViewTransition =
             -- We assume that we only ever have to translate to the /next/ era
