@@ -15,6 +15,7 @@ import           Control.Monad.Except (Except, runExcept, throwError)
 import           GHC.Stack
 
 import           Cardano.Slotting.EpochInfo.API
+import           Cardano.Slotting.Time
 
 import           Ouroboros.Consensus.HardFork.History.Qry
 import           Ouroboros.Consensus.HardFork.History.Summary
@@ -37,6 +38,7 @@ interpreterToEpochInfo i = EpochInfo {
 
     , epochInfoSlotToRelativeTime_ = \s ->
         interpretQuery' (fst <$> slotToWallclock s)
+    , epochInfoSlotLength_ = \_ -> pure $ slotLengthFromSec 0
     }
   where
     interpretQuery' :: HasCallStack => Qry a -> Except PastHorizonException a
@@ -51,6 +53,7 @@ dummyEpochInfo = EpochInfo {
     , epochInfoFirst_              = \_ -> error "dummyEpochInfo used"
     , epochInfoEpoch_              = \_ -> error "dummyEpochInfo used"
     , epochInfoSlotToRelativeTime_ = \_ -> error "dummyEpochInfo used"
+    , epochInfoSlotLength_         = \_ -> error "dummyEpochInfo used"
     }
 
 -- | Interpret the 'PastHorizonException' as a _pure exception_ via 'throw'
