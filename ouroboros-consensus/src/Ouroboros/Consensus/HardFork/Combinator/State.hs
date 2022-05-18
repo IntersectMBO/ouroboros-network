@@ -157,6 +157,9 @@ epochInfoLedger cfg st =
       reconstructSummaryLedger cfg st
 
 -- | Construct 'EpochInfo' given precomputed 'TransitionInfo'
+--
+-- The transition and state arguments are acquired either from a ticked ledger
+-- state or a ticked ledger view.
 epochInfoPrecomputedTransitionInfo ::
      History.Shape xs
   -> TransitionInfo
