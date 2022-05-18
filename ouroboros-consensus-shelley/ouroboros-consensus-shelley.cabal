@@ -64,7 +64,7 @@ library
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
-                     , compact-map
+                     , vector-map
                      , containers        >=0.5   && <0.7
                      , data-default-class
                      , deepseq
