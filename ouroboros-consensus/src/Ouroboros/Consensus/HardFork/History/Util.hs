@@ -12,6 +12,7 @@ import           Data.Word
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.RedundantConstraints
 
 {-------------------------------------------------------------------------------
   Adding and subtracting slots/epochs
@@ -29,7 +30,11 @@ addEpochs n (EpochNo x) = EpochNo (x + n)
 -- | @countSlots to fr@ counts the slots from @fr@ to @to@ (@to >= fr@)
 countSlots :: HasCallStack => SlotNo -> SlotNo -> Word64
 countSlots (SlotNo to) (SlotNo fr) = assert (to >= fr) $ to - fr
+  where
+    _ = keepRedundantConstraint (Proxy :: Proxy HasCallStack)
 
 -- | @countEpochs to fr@ counts the epochs from @fr@ to @to@ (@to >= fr@)
 countEpochs :: HasCallStack => EpochNo -> EpochNo -> Word64
 countEpochs (EpochNo to) (EpochNo fr) = assert (to >= fr) $ to - fr
+  where
+    _ = keepRedundantConstraint (Proxy :: Proxy HasCallStack)
