@@ -173,8 +173,12 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , TraceEvent (..)
   , TraceReplayEvent (..)
   , decorateReplayTracerWithGoal
+  , decorateReplayTracerWithStart
     -- * For testing
   , newBackingStore
+  , streamAll
+  , replayStartingWith
+  , restoreBackingStore
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
@@ -238,14 +242,14 @@ data NextBlock blk = NoMoreBlocks | NextBlock blk
 -- tip to bring the ledger up to date with the tip of the immutable DB.
 --
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
-data StreamAPI m blk = StreamAPI {
+data StreamAPI m blk a = StreamAPI {
       -- | Start streaming after the specified block
-      streamAfter :: forall a. HasCallStack
+      streamAfter :: forall b. HasCallStack
         => Point blk
         -- Reference to the block corresponding to the snapshot we found
         -- (or 'GenesisPoint' if we didn't find any)
 
-        -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+        -> (Either (RealPoint blk) (m (NextBlock a)) -> m b)
         -- Get the next block (by value)
         --
         -- Should be @Left pt@ if the snapshot we found is more recent than the
@@ -254,17 +258,17 @@ data StreamAPI m blk = StreamAPI {
         -- got truncated due to disk corruption. The returned @pt@ is a
         -- 'RealPoint', not a 'Point', since it must always be possible to
         -- stream after genesis.
-        -> m a
+        -> m b
     }
 
 -- | Stream all blocks
 streamAll ::
-     forall m blk e a. (Monad m, HasCallStack)
-  => StreamAPI m blk
+     forall m blk e b a. (Monad m, HasCallStack)
+  => StreamAPI m blk b
   -> Point blk             -- ^ Starting point for streaming
   -> (RealPoint blk -> e)  -- ^ Error when tip not found
   -> a                     -- ^ Starting point when tip /is/ found
-  -> (blk -> a -> m a)     -- ^ Update function for each block
+  -> (b -> a -> m a)     -- ^ Update function for each block
   -> ExceptT e m a
 streamAll StreamAPI{..} tip notFound e f = ExceptT $
     streamAfter tip $ \case
@@ -356,7 +360,7 @@ initLedgerDB ::
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
-  -> StreamAPI m blk
+  -> StreamAPI m blk blk
   -> RunAlsoLegacy
   -> BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
@@ -461,7 +465,7 @@ replayStartingWith ::
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
   -> LedgerBackingStore' m blk
-  -> StreamAPI m blk
+  -> StreamAPI m blk blk
   -> LedgerDB' blk
   -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
 replayStartingWith tracer cfg backingStore streamAPI initDb = do

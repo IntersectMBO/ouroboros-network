@@ -4,14 +4,11 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 -- | Database analyse tool.
 module Main (main) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.Serialise (Serialise (decode))
-import           Control.Monad.Except (runExceptT)
 import           Data.Foldable (asum)
-import qualified Debug.Trace as Debug
 import           Options.Applicative
 import           System.IO
 
@@ -20,12 +17,9 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
-import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
-import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -35,8 +29,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
-                     readSnapshot, BackingStoreSelector(..))
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (defaultLMDBLimits)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..), BackingStoreSelector(..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Analysis
@@ -57,6 +51,9 @@ data SelectDB =
     SelectChainDB
   | SelectImmutableDB (Maybe DiskSnapshot)
 
+data BackingStore = LMDB | MEM
+  deriving Eq
+
 data CmdLine = CmdLine {
     dbDir      :: FilePath
   , verbose    :: Bool
@@ -64,7 +61,8 @@ data CmdLine = CmdLine {
   , validation :: Maybe ValidateBlocks
   , blockType  :: BlockType
   , analysis   :: AnalysisName
-  , limit      :: Limit
+  , limit      :: Maybe Int
+  , bsSelector :: BackingStore
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation
@@ -94,6 +92,13 @@ parseCmdLine = CmdLine
     <*> blockTypeParser
     <*> parseAnalysis
     <*> parseLimit
+    <*> parseSelector
+
+parseSelector :: Parser BackingStore
+parseSelector = (\x -> if x == "MEM" then MEM else LMDB) <$> strOption
+  (  long "backend"
+  <> metavar "BACKEND"
+  <> help "Choose a backend for the LedgerDB (MEM|LMDB), default: LMDB" )
 
 parseSelectDB :: Parser SelectDB
 parseSelectDB = asum [
@@ -175,14 +180,14 @@ checkNoThunksParser = (CheckNoThunksEvery . read) <$> strOption
   <> metavar "BLOCK_COUNT"
   <> help "Check the ledger state for thunks every n blocks" )
 
-parseLimit :: Parser Limit
+parseLimit :: Parser (Maybe Int)
 parseLimit = asum [
-    Limit . read <$> strOption (mconcat [
+    read <$> strOption (mconcat [
         long "num-blocks-to-process"
       , help "Maximum number of blocks we want to process"
       , metavar "INT"
       ])
-  , pure Unlimited
+  , pure Nothing
   ]
 
 blockTypeParser :: Parser BlockType
@@ -253,30 +258,23 @@ analyse CmdLine {..} args =
 
       case selectDB of
         SelectImmutableDB initializeFrom -> do
-          initLedgerErr <- runExceptT $ case initializeFrom of
-            Nothing       -> pure genesisLedger
-            Just snapshot ->
-                fmap (error "UTxO HD TODO")   -- unstowLedgerTables?
-              $ readSnapshot
-                  ledgerDbFS
-                  (decodeExtLedgerState' cfg)
-                  decode
-                  snapshot
-          initLedger <- either (error . show) pure initLedgerErr
-          -- This marker divides the "loading" phase of the program, where the
-          -- system is principally occupied with reading snapshot data from
-          -- disk, from the "processing" phase, where we are streaming blocks
-          -- and running the ledger processing on them.
-          Debug.traceMarkerIO "SNAPSHOT_LOADED"
+          let initLedger = case initializeFrom of
+                                Nothing       -> Right genesisLedger
+                                Just snapshot -> Left snapshot
+
+          let bs = case bsSelector of
+                MEM -> InMemoryBackingStore
+                _   -> LMDBBackingStore defaultLMDBLimits
+
           ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs runWithTempRegistry) $ \immutableDB -> do
             runAnalysis analysis $ AnalysisEnv {
                 cfg
               , initLedger
               , db = Left immutableDB
-              , registry
               , ledgerDbFS = ledgerDbFS
               , limit = limit
               , tracer = analysisTracer
+              , backing = bs
               }
             tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
             putStrLn $ "ImmutableDB tip: " ++ show tipPoint
@@ -284,12 +282,12 @@ analyse CmdLine {..} args =
           ChainDB.withDB chainDbArgs $ \chainDB -> do
             runAnalysis analysis $ AnalysisEnv {
                 cfg
-              , initLedger = genesisLedger
+              , initLedger = Right genesisLedger
               , db = Right chainDB
-              , registry
               , ledgerDbFS = ledgerDbFS
               , limit = limit
               , tracer = analysisTracer
+              , backing = undefined
               }
             tipPoint <- atomically $ ChainDB.getTipPoint chainDB
             putStrLn $ "ChainDB tip: " ++ show tipPoint
@@ -314,11 +312,3 @@ analyse CmdLine {..} args =
       (_, Just MinimumBlockValidation) -> VolatileDB.NoValidation
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
-
-    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk EmptyMK)
-    decodeExtLedgerState' cfg =
-      let ccfg = configCodec cfg
-      in decodeExtLedgerState
-           (decodeDisk ccfg)
-           (decodeDisk ccfg)
-           (decodeDisk ccfg)
