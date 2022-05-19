@@ -77,6 +77,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (TimeSinceLast (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.Enclose (Enclosing' (..))
 
 {-------------------------------------------------------------------------------
   Launch background tasks
@@ -532,5 +533,9 @@ addBlockRunner
   => ChainDbEnv m blk
   -> m Void
 addBlockRunner cdb@CDB{..} = forever $ do
-    blockToAdd <- getBlockToAdd cdbBlocksToAdd
-    addBlockSync cdb blockToAdd
+    let trace = traceWith cdbTracer . TraceAddBlockEvent
+    trace $ PoppedBlockFromQueue RisingEdge
+    blkToAdd <- getBlockToAdd cdbBlocksToAdd
+    trace $ PoppedBlockFromQueue $ FallingEdgeWith $
+      blockRealPoint $ blockToAdd blkToAdd
+    addBlockSync cdb blkToAdd
