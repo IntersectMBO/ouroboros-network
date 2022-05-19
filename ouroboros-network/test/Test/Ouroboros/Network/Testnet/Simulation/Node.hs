@@ -148,20 +148,20 @@ genIP ips =
 genCommands :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
   port <- fromIntegral <$> (arbitrary :: Gen Int)
-  commands <- vectorOf size (frequency [ (7, JoinNetwork
+  commands <- vectorOf size (frequency [ (10, JoinNetwork
                                               <$> delay
                                               <*> ( Just
                                                   . TestAddress
                                                   . flip IPAddr port
                                                   <$> genIP []
                                                   ))
-                                       , (7, JoinNetwork
+                                       , (10, JoinNetwork
                                               <$> delay
                                               <*> pure Nothing)
-                                       , (4, Reconfigure
+                                       , (6, Reconfigure
                                               <$> delay
                                               <*> subLocalRootPeers)
-                                       , (1, Kill <$> delay)
+                                       , (3, Kill <$> delay)
                                        ])
   return (fixupCommands commands)
   where
@@ -203,7 +203,7 @@ instance Arbitrary DiffusionScript where
   arbitrary = do
     -- Limit the number of nodes to run in Simulation otherwise it is going
     -- to take very long time for tests to run
-    size <- chooseInt (0, 3)
+    size <- chooseInt (0, 5)
     raps <- nub <$> vectorOf size arbitrary
 
     let toRunRaps = [ r | r@(RelayAccessAddress _ _) <- raps ]

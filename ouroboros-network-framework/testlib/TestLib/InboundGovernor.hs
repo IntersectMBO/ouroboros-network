@@ -7,8 +7,10 @@ module TestLib.InboundGovernor where
 import           Test.QuickCheck
 
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.InboundGovernor (RemoteSt (..))
-import           Ouroboros.Network.Server2 (RemoteTransition)
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
+                     RemoteSt (..))
+import qualified Ouroboros.Network.InboundGovernor as IG
+import           Ouroboros.Network.Server2 (RemoteTransition, ServerTrace (..))
 
 import           TestLib.Utils
 
@@ -166,3 +168,49 @@ verifyRemoteTransitionOrder checkLast (h:t) = go t h
 remoteStrIsFinalTransition :: Transition' (Maybe RemoteSt) -> Bool
 remoteStrIsFinalTransition (Transition _ Nothing) = True
 remoteStrIsFinalTransition _                      = False
+
+inboundGovernorTraceMap :: InboundGovernorTrace ntnAddr -> String
+inboundGovernorTraceMap (TrNewConnection p _)            =
+  "TrNewConnection " ++ show p
+inboundGovernorTraceMap (TrResponderRestarted _ mpn)         =
+  "TrResponderRestarted " ++ show mpn
+inboundGovernorTraceMap (TrResponderStartFailure _ mpn se)   =
+  "TrResponderStartFailure " ++ show mpn ++ " " ++ show se
+inboundGovernorTraceMap (TrResponderErrored _ mpn se)        =
+  "TrResponderErrored " ++ show mpn ++ " " ++ show se
+inboundGovernorTraceMap (TrResponderStarted _ mpn)           =
+  "TrResponderStarted " ++ show mpn
+inboundGovernorTraceMap (TrResponderTerminated _ mpn)        =
+  "TrResponderTerminated " ++ show mpn
+inboundGovernorTraceMap (TrPromotedToWarmRemote _ ora)        =
+  "TrPromotedToWarmRemote " ++ show ora
+inboundGovernorTraceMap (TrPromotedToHotRemote _)            =
+  "TrPromotedToHotRemote"
+inboundGovernorTraceMap (TrDemotedToWarmRemote _)            =
+  "TrDemotedToWarmRemote"
+inboundGovernorTraceMap (TrDemotedToColdRemote _ ora)         =
+  "TrDemotedToColdRemote " ++ show ora
+inboundGovernorTraceMap (TrWaitIdleRemote _ ora)              =
+  "TrWaitIdleRemote " ++ show ora
+inboundGovernorTraceMap (TrMuxCleanExit _)                   =
+  "TrMuxCleanExit"
+inboundGovernorTraceMap (TrMuxErrored _ se)                  =
+  "TrMuxErrored " ++ show se
+inboundGovernorTraceMap (TrInboundGovernorCounters _)       =
+  "TrInboundGovernorCounters"
+inboundGovernorTraceMap (TrRemoteState _)                   =
+  "TrRemoteState"
+inboundGovernorTraceMap (IG.TrUnexpectedlyFalseAssertion _) =
+  "TrUnexpectedlyFalseAssertion"
+inboundGovernorTraceMap (TrInboundGovernorError se)           =
+  "TrInboundGovernorError " ++ show se
+
+
+serverTraceMap :: Show ntnAddr => ServerTrace ntnAddr -> String
+serverTraceMap (TrAcceptConnection _)     = "TrAcceptConnection"
+serverTraceMap st@(TrAcceptError _)       = show st
+serverTraceMap st@(TrAcceptPolicyTrace _) = show st
+serverTraceMap (TrServerStarted _)        = "TrServerStarted"
+serverTraceMap st@TrServerStopped         = show st
+serverTraceMap st@(TrServerError _)       = show st
+
