@@ -34,7 +34,8 @@ import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM, atomically), MonadTraceSTM, newTVar)
+                     MonadSTM (STM, atomically), MonadTraceSTM, StrictTVar,
+                     newTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -52,7 +53,7 @@ import           System.Random (StdGen, split)
 
 import qualified Codec.CBOR.Term as CBOR
 
-import           Network.DNS (Domain)
+import           Network.DNS (Domain, TTL)
 
 import           Ouroboros.Network.BlockFetch.Decision (FetchMode (..))
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
@@ -84,8 +85,7 @@ import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                      TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
-import           Ouroboros.Network.Testing.Data.Script (Script (..),
-                     singletonScript)
+import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
@@ -104,7 +104,7 @@ data Interfaces m = Interfaces
     , iNtnDomainResolver :: LookupReqs -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
     , iNtcSnocket        :: Snocket m (NtCFD m) NtCAddr
     , iRng               :: StdGen
-    , iDomainMap         :: Map Domain [IP]
+    , iDomainMap         :: StrictTVar m (Map Domain [(IP, TTL)])
     , iLedgerPeersConsensusInterface
                          :: LedgerPeersConsensusInterface m
     }
@@ -163,8 +163,6 @@ run :: forall resolver m.
 run blockGeneratorArgs limits ni na tracersExtra =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
-        dnsMapScriptVar <- LazySTM.newTVarIO
-                        $ singletonScript (fmap (, 0) <$> iDomainMap ni)
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
         peerMetrics  <- atomically $ PeerMetrics
@@ -205,7 +203,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.diRng                   = diffStgGen
               , Diff.P2P.diInstallSigUSR1Handler = \_ -> pure ()
               , Diff.P2P.diDnsActions            = const (mockDNSActions
-                                                     dnsMapScriptVar
+                                                     (iDomainMap ni)
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
               }
