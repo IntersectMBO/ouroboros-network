@@ -98,8 +98,13 @@ tests =
     testGroup "progress"
     [ testProperty "gossip reachable"    prop_governor_gossip_1hr
 
---  , testProperty "progresses towards public root peers target (from below)"
---                 prop_governor_target_publicroots
+    , testProperty "progresses towards root peers target (from below)"
+                   prop_governor_target_root_below
+
+    , testProperty "progresses towards established public root peers"
+                   prop_governor_target_established_public
+    , testProperty "progresses towards active public root peers"
+                   prop_governor_target_active_public
 
     , testProperty "progresses towards known peers target (from below)"
                    prop_governor_target_known_below
@@ -752,6 +757,172 @@ check_governor_connstatus _ trace0 =
 --
 -- Progress properties
 --
+
+-- | A variant of 'prop_governor_target_established_below' but for the target
+-- number of root peers.
+--
+-- Check that the governor can hit (but not overshoot) its target for the
+-- number of root peers. This has to be bounded by what is possible: we cannot
+-- always find enough peers, and when we can, some of them fail.
+--
+prop_governor_target_root_below :: GovernorMockEnvironment -> Property
+prop_governor_target_root_below env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        envTargetsSig :: Signal Int
+        envTargetsSig =
+          selectEnvTargets targetNumberOfRootPeers events
+
+        govLocalRootPeersSig :: Signal (Set PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers) events
+
+        govPublicRootPeersSig :: Signal (Set PeerAddr)
+        govPublicRootPeersSig =
+          selectGovState Governor.publicRootPeers events
+
+        govRootPeersSig :: Signal (Set PeerAddr)
+        govRootPeersSig = Set.union <$> govLocalRootPeersSig <*> govPublicRootPeersSig
+
+        -- There are no opportunities if we're at or above target
+        --
+        requestOpportunity target public roots
+          | Set.size roots >= target
+          = Set.empty
+
+          | otherwise
+          = public Set.\\ roots
+
+        requestOpportunities :: Signal (Set PeerAddr)
+        requestOpportunities =
+          requestOpportunity
+            <$> envTargetsSig
+            <*> govPublicRootPeersSig
+            <*> govRootPeersSig
+
+        requestOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        requestOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            requestOpportunities
+
+     in counterexample
+          ("\nSignal key: (target, local peers, public peers, root peers, " ++
+           "opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,) <$> envTargetsSig
+                   <*> govLocalRootPeersSig
+                   <*> govPublicRootPeersSig
+                   <*> govRootPeersSig
+                   <*> requestOpportunities
+                   <*> requestOpportunitiesIgnoredTooLong)
+
+-- | A variant of 'prop_governor_target_established_below' but for the target
+-- that any public root peers should become established.
+--
+-- We do not need separate above and below variants of this property since it
+-- is not possible to exceed the target.
+--
+prop_governor_target_established_public :: GovernorMockEnvironment -> Property
+prop_governor_target_established_public env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govPublicRootPeersSig :: Signal (Set PeerAddr)
+        govPublicRootPeersSig =
+          selectGovState Governor.publicRootPeers
+                         events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState
+            (EstablishedPeers.toSet . Governor.establishedPeers)
+            events
+
+        govInProgressPromoteColdSig :: Signal (Set PeerAddr)
+        govInProgressPromoteColdSig =
+          selectGovState
+            Governor.inProgressPromoteCold
+            events
+
+        publicInEstablished :: Signal Bool
+        publicInEstablished =
+          (\publicPeers established inProgressPromoteCold ->
+            Set.size
+            (publicPeers `Set.intersection`
+              (established `Set.union` inProgressPromoteCold))
+              > 0
+          ) <$> govPublicRootPeersSig
+            <*> govEstablishedPeersSig
+            <*> govInProgressPromoteColdSig
+
+        meaning :: Bool -> String
+        meaning False = "No PublicPeers in Established Set"
+        meaning True  = "PublicPeers in Established Set"
+
+        valuesList :: [String]
+        valuesList = map (meaning . snd)
+                   . Signal.eventsToList
+                   . Signal.toChangeEvents
+                   $ publicInEstablished
+
+     in checkCoverage
+      $ coverTable "established public peers"
+                   [("PublicPeers in Established Set", 1)]
+      $ tabulate "established public peers" valuesList
+      $ True
+
+-- | A variant of 'prop_governor_target_active_below' but for checking if any
+-- number of public root peers becomes active, since there's no target for
+-- how many public root peers should be active.
+--
+prop_governor_target_active_public :: GovernorMockEnvironment -> Property
+prop_governor_target_active_public env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govPublicRootPeersSig :: Signal (Set PeerAddr)
+        govPublicRootPeersSig =
+          selectGovState Governor.publicRootPeers events
+
+        govActivePeersSig :: Signal (Set PeerAddr)
+        govActivePeersSig =
+          selectGovState Governor.activePeers events
+
+        publicInActive :: Signal Bool
+        publicInActive =
+          (\publicPeers active ->
+            Set.size
+            (publicPeers `Set.intersection` active)
+              > 0
+          ) <$> govPublicRootPeersSig
+            <*> govActivePeersSig
+
+        meaning :: Bool -> String
+        meaning False = "No PublicPeers in Active Set"
+        meaning True  = "PublicPeers in Active Set"
+
+        valuesList :: [String]
+        valuesList = map (meaning . snd)
+                   . Signal.eventsToList
+                   . Signal.toChangeEvents
+                   $ publicInActive
+
+     in checkCoverage
+      $ coverTable "active public peers"
+                   [("PublicPeers in Active Set", 1)]
+      $ tabulate "active public peers" valuesList
+      $ True
 
 -- | The main progress property for known peers: that we make progress towards
 -- the target for known peers from below. See 'prop_governor_target_known_above'
