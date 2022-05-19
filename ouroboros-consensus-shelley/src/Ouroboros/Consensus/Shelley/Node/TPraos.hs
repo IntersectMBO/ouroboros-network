@@ -74,7 +74,6 @@ import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 
 import qualified Cardano.Protocol.TPraos.OCert as SL
-import qualified Data.Compact.SplitMap as SplitMap
 import qualified Data.UMap as UM
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
@@ -466,7 +465,7 @@ registerInitialFunds initialFunds nes = nes {
     reserves     = SL._reserves      accountState
 
     initialFundsUtxo :: SL.UTxO era
-    initialFundsUtxo = SL.UTxO $ SplitMap.fromList [
+    initialFundsUtxo = SL.UTxO $ Map.fromList [
           (txIn, txOut)
         | (addr, amount) <- Map.toList initialFunds
         ,  let txIn  = SL.initialFundsPseudoTxIn addr
@@ -498,7 +497,7 @@ registerInitialFunds initialFunds nes = nes {
          HasCallStack
       => SL.UTxO era -> SL.UTxO era -> SL.UTxO era
     mergeUtxoNoOverlap (SL.UTxO m1) (SL.UTxO m2) = SL.UTxO $
-        SplitMap.unionWithKey
+        Map.unionWithKey
           (\k _ _ -> error $ "initial fund part of UTxO: " <> show k)
           m1
           m2

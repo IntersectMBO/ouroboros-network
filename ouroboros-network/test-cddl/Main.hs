@@ -293,7 +293,7 @@ localTxMonitorCodec =
 localStateQueryCodec :: Codec (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
                               CBOR.DeserialiseFailure IO BL.ByteString
 localStateQueryCodec =
-    LocalStateQuery.codec True
+    LocalStateQuery.codec
 
 
 --
@@ -418,7 +418,7 @@ instance Arbitrary (AnyMessageAndAgency (Handshake NodeToClientVersion CBOR.Term
         ]
       where
         genVersion :: Gen NodeToClientVersion
-        genVersion = elements [NodeToClientV_1 ..]
+        genVersion = elements [minBound .. maxBound]
 
         genData :: Gen NodeToClientVersionData
         genData = NodeToClientVersionData

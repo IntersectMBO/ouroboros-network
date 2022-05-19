@@ -43,18 +43,10 @@ instance SupportedNetworkProtocolVersion (ShelleyBlock proto era) where
       , (NodeToNodeV_8, ShelleyNodeToNodeVersion1)
       ]
   supportedNodeToClientVersions _ = Map.fromList [
-        (NodeToClientV_1, ShelleyNodeToClientVersion1)
-        -- Enable the LocalStateQuery protocol, no serialisation changes
-      , (NodeToClientV_2, ShelleyNodeToClientVersion1)
-        -- V_3 enables the hard fork to Shelley, which didn't affect
-        -- Shelley-only when introduced. However, we have retroactively claimed
-        -- V_3 to enable 'ShelleyNodeToClientVersion2'.
-      , (NodeToClientV_3, ShelleyNodeToClientVersion2)
-        -- V_4 enables the hard fork to Allegra, which didn't affect
-        -- Shelley-only when introduced. However, we have retroactively claimed
-        -- V_4 to enable 'ShelleyNodeToClientVersion3'.
-      , (NodeToClientV_4, ShelleyNodeToClientVersion3)
-      , (NodeToClientV_5, ShelleyNodeToClientVersion5)
+        (NodeToClientV_9,  ShelleyNodeToClientVersion5)
+      , (NodeToClientV_10, ShelleyNodeToClientVersion5)
+      , (NodeToClientV_11, ShelleyNodeToClientVersion5)
+      , (NodeToClientV_12, ShelleyNodeToClientVersion5)
       ]
 
   latestReleasedNodeVersion = latestReleasedNodeVersionDefault

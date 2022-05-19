@@ -206,7 +206,6 @@ defaultCodecs ccfg version networkVersion = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
           (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
@@ -266,7 +265,6 @@ clientCodecs ccfg version networkVersion = Codecs {
 
     , cStateQueryCodec =
         codecLocalStateQuery
-          (networkVersion >= NodeToClientV_8)
           (encodePoint (encodeRawHash p))
           (decodePoint (decodeRawHash p))
           (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
