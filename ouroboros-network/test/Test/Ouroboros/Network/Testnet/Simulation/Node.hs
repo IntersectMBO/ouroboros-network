@@ -128,14 +128,14 @@ data Command = JoinNetwork DiffTime (Maybe NtNAddr)
   deriving (Show, Eq)
 
 -- | Generate DNS table
-genDomainMap :: [RelayAccessPoint] -> Gen (Map Domain [IP])
-genDomainMap raps = do
+genDomainMap :: [RelayAccessPoint] -> IP -> Gen (Map Domain [IP])
+genDomainMap raps selfIP = do
   let domains = [ d | RelayAccessDomain d _ <- raps ]
       ips     = [ ip | RelayAccessAddress ip _ <- raps ]
   m <- mapM (\d -> do
     size <- chooseInt (1, 5)
     ips' <- nub <$> vectorOf size (genIP ips)
-    return (d, ips')) domains
+    return (d, delete selfIP ips')) domains
 
   return (Map.fromList m)
 
@@ -256,9 +256,10 @@ instance Arbitrary DiffusionScript where
             bgaSlotDuration = secondsToDiffTime 1
             numberOfNodes   = length [ r | r@(RelayAccessAddress _ _) <- raps ]
             quota = 20 `div` numberOfNodes
+            (RelayAccessAddress rapIP _) = rap
         bgaSeed <- mkStdGen <$> arbitrary
 
-        dMap <- genDomainMap rapsWithoutSelf
+        dMap <- genDomainMap rapsWithoutSelf rapIP
 
         -- These values approximately correspond to false positive
         -- thresholds for streaks of empty slots with 99% probability,
