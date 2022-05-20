@@ -804,6 +804,7 @@ hardForkEpochInfo ArbitraryChain{..} for =
                , epochInfoEpoch_ = \_ -> throw err
 
                , epochInfoSlotToRelativeTime_ = \_ -> throw err
+               , epochInfoSlotLength_         = \_ -> throw err
                }
            , "<out of range>"
            , "<out of range>"

@@ -37,6 +37,8 @@ interpreterToEpochInfo i = EpochInfo {
 
     , epochInfoSlotToRelativeTime_ = \s ->
         interpretQuery' (fst <$> slotToWallclock s)
+
+    , epochInfoSlotLength_ = \s -> interpretQuery' (slotToSlotLength s)
     }
   where
     interpretQuery' :: HasCallStack => Qry a -> Except PastHorizonException a
@@ -51,6 +53,7 @@ dummyEpochInfo = EpochInfo {
     , epochInfoFirst_              = \_ -> error "dummyEpochInfo used"
     , epochInfoEpoch_              = \_ -> error "dummyEpochInfo used"
     , epochInfoSlotToRelativeTime_ = \_ -> error "dummyEpochInfo used"
+    , epochInfoSlotLength_         = \_ -> error "dummyEpochInfo used"
     }
 
 -- | Interpret the 'PastHorizonException' as a _pure exception_ via 'throw'
