@@ -170,12 +170,10 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
     go :: Exactly xs' EraParams
        -> Telescope (K Past) (Current f) xs'
        -> NonEmpty xs' EraSummary
+    go ExactlyNil              t                   = case t of {}
     go (ExactlyCons params ss) (TS (K Past{..}) t) =
         NonEmptyCons (EraSummary pastStart (EraEnd pastEnd) params) $ go ss t
-    go (ExactlyCons params ExactlyNil) (TZ Current{..}) =
-        -- The current era is the last. We assume it lasts until all eternity.
-        NonEmptyOne (EraSummary currentStart EraUnbounded params)
-    go (ExactlyCons params (ExactlyCons nextParams _)) (TZ Current{..}) =
+    go (ExactlyCons params ss) (TZ Current{..}) =
         case transition of
           TransitionKnown epoch ->
             -- We haven't reached the next era yet, but the transition is
@@ -183,19 +181,42 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
             -- next era.
             let currentEnd = History.mkUpperBound params currentStart epoch
                 nextStart  = currentEnd
-            in NonEmptyCons EraSummary {
-                   eraStart  = currentStart
-                 , eraParams = params
-                 , eraEnd    = EraEnd currentEnd
-                 }
-             $ NonEmptyOne EraSummary {
-                   eraStart  = nextStart
-                 , eraParams = nextParams
-                 , eraEnd    = applySafeZone
-                                 nextParams
-                                 nextStart
-                                 (boundSlot nextStart)
-                 }
+            in case ss of
+              ExactlyCons nextParams _ ->
+                  NonEmptyCons EraSummary {
+                      eraStart  = currentStart
+                    , eraParams = params
+                    , eraEnd    = EraEnd currentEnd
+                    }
+                $ NonEmptyOne EraSummary {
+                      eraStart  = nextStart
+                    , eraParams = nextParams
+                    , eraEnd    = applySafeZone
+                                    nextParams
+                                    nextStart
+                                    (boundSlot nextStart)
+                    }
+              ExactlyNil               ->
+                -- HOWEVER, this code doesn't know what that next era is! This
+                -- can arise when a node has not updated its code despite an
+                -- imminent hard fork.
+                --
+                -- In the specific case of 'ShelleyBlock' and 'CardanoBlock', a
+                -- lot would have to go wrong in the PR review process for
+                -- 'TransitionKnown' to arise during the last known era in the
+                -- code. The 'ShelleyBlock' 'singleEraTransition' method leads
+                -- to 'TransitionKnown' here only based on the
+                -- 'shelleyTriggerHardFork' field of its ledger config, which is
+                -- statically set by a quite obvious pattern in
+                -- 'protocolInfoCardano', which is passed concrete arguments by
+                -- a similarly obvious pattern in
+                -- 'mkSomeConsensusProtocolCardano' defined in the
+                -- @cardano-node@ repo.
+                NonEmptyOne EraSummary {
+                    eraStart  = currentStart
+                  , eraParams = params
+                  , eraEnd    = EraEnd currentEnd
+                  }
           TransitionUnknown ledgerTip -> NonEmptyOne $ EraSummary {
                 eraStart  = currentStart
               , eraParams = params
@@ -207,9 +228,10 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
                               (next ledgerTip)
               }
           -- 'TransitionImpossible' is used in one of two cases: we are in the
-          -- final era (clearly not the case here) or this era is a future era
-          -- that hasn't begun yet, in which case the safe zone must start at
-          -- the beginning of this era.
+          -- final era this chain will ever have (handled by the corresponding
+          -- 'UnsafeIndefiniteSafeZone' case within 'applySafeZone' below) or
+          -- this era is a future era that hasn't begun yet, in which case the
+          -- safe zone must start at the beginning of this era.
           TransitionImpossible -> NonEmptyOne $ EraSummary {
                 eraStart  = currentStart
               , eraParams = params
@@ -218,8 +240,6 @@ reconstructSummary (History.Shape shape) transition (HardForkState st) =
                               currentStart
                               (boundSlot currentStart)
               }
-
-    go ExactlyNil t = case t of {}
 
     -- Apply safe zone from the specified 'SlotNo'
     --
