@@ -71,6 +71,7 @@ instance Crypto c => Ord (PraosChainSelectView c) where
             comp v1 v2
         | otherwise =
             EQ
+
 data PraosCanBeLeader c = PraosCanBeLeader
   { -- | Certificate delegating rights from the stake pool cold key (or
     -- genesis stakeholder delegate cold key) to the online KES key.
