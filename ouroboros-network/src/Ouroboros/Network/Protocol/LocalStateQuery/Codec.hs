@@ -35,16 +35,14 @@ codecLocalStateQuery
      ( MonadST m
      , ShowQuery query
      )
-  => Bool -- allow @Maybe 'Point'@ in 'MsgAcquire' and 'MsgReAcquire'.
-  -> (point -> CBOR.Encoding)
+  => (point -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s point)
   -> (forall result . query result -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s (Some query))
   -> (forall result . query result -> result -> CBOR.Encoding)
   -> (forall result . query result -> forall s . CBOR.Decoder s result)
   -> Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure m ByteString
-codecLocalStateQuery canAcquireTip
-                     encodePoint  decodePoint
+codecLocalStateQuery encodePoint  decodePoint
                      encodeQuery  decodeQuery
                      encodeResult decodeResult =
     mkCodecCborLazyBS encode decode
@@ -72,14 +70,9 @@ codecLocalStateQuery canAcquireTip
      <> CBOR.encodeWord 0
      <> encodePoint pt
 
-    encode (ClientAgency TokIdle) (MsgAcquire Nothing) | canAcquireTip =
+    encode (ClientAgency TokIdle) (MsgAcquire Nothing) =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 8
-
-    encode (ClientAgency TokIdle) (MsgAcquire Nothing) =
-      error $ "encodeFailure: local state query: using acquire without a "
-           ++ "Point must be conditional on negotiating v8 of the "
-           ++ "node-to-client protocol"
 
     encode (ServerAgency TokAcquiring) MsgAcquired =
         CBOR.encodeListLen 1
@@ -109,12 +102,9 @@ codecLocalStateQuery canAcquireTip
      <> CBOR.encodeWord 6
      <> encodePoint pt
 
-    encode (ClientAgency TokAcquired) (MsgReAcquire Nothing) | canAcquireTip =
+    encode (ClientAgency TokAcquired) (MsgReAcquire Nothing) =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 9
-
-    encode (ClientAgency TokAcquired) (MsgReAcquire Nothing) =
-      error "encodeFailure: this version does not support re-acquiring tip"
 
     encode (ClientAgency TokIdle) MsgDone =
         CBOR.encodeListLen 1
@@ -131,7 +121,7 @@ codecLocalStateQuery canAcquireTip
           pt <- decodePoint
           return (SomeMessage (MsgAcquire (Just pt)))
 
-        (ClientAgency TokIdle, 1, 8) | canAcquireTip -> do
+        (ClientAgency TokIdle, 1, 8) -> do
           return (SomeMessage (MsgAcquire Nothing))
 
         (ServerAgency TokAcquiring, 1, 1) ->
@@ -156,7 +146,7 @@ codecLocalStateQuery canAcquireTip
           pt <- decodePoint
           return (SomeMessage (MsgReAcquire (Just pt)))
 
-        (ClientAgency TokAcquired, 1, 9) | canAcquireTip -> do
+        (ClientAgency TokAcquired, 1, 9) -> do
           return (SomeMessage (MsgReAcquire Nothing))
 
         (ClientAgency TokIdle, 1, 7) ->

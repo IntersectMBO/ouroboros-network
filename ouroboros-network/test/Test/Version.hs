@@ -7,7 +7,8 @@ module Test.Version (tests) where
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
                      nodeToClientVersionCodec)
-import           Ouroboros.Network.NodeToNode (nodeToNodeVersionCodec)
+import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
+                     nodeToNodeVersionCodec)
 
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
@@ -23,19 +24,16 @@ tests =
                  (crossFailurePropAll
                    nodeToClientVersionCodec
                    nodeToNodeVersionCodec
-                   ([NodeToClientV_2 .. maxBound] :: [NodeToClientVersion]))
+                   ([minBound .. maxBound] :: [NodeToClientVersion]))
       ]
     , testGroup "NodeToNodeVersion"
       [ testCase "NodeToNodeVersion round-trip codec property"
                  (roundTripPropAll nodeToNodeVersionCodec)
-      -- TODO: enable this test when `NodeToClientV_1` is removed:
-      {--
-        - , testCase "NodeToNodeVersion should not deserialise as NodeToClient"
-        -            (crossFailurePropAll
-        -              nodeToNodeVersionCodec
-        -              nodeToClientVersionCodec
-        -              ([minBound .. maxBound] :: [NodeToNodeVersion]))
-        --}
+      , testCase "NodeToNodeVersion should not deserialise as NodeToClient"
+                 (crossFailurePropAll
+                   nodeToNodeVersionCodec
+                   nodeToClientVersionCodec
+                   ([minBound .. maxBound] :: [NodeToNodeVersion]))
       ]
     ]
 

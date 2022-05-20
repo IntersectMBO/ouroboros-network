@@ -174,9 +174,6 @@ nodeToClientProtocols protocols version =
           , localTxSubmissionMiniProtocol localTxSubmissionProtocol
           ] <>
           [ localStateQueryMiniProtocol localStateQueryProtocol
-          | case version of
-              NodeToClientV_1 -> False
-              _               -> True
           ] <>
           [ localTxMonitorMiniProtocol localTxMonitorProtocol
           | version >= NodeToClientV_12

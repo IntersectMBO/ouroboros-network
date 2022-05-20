@@ -71,8 +71,6 @@ tests =
         , testProperty "codec 2-splits"      prop_codec_splits2
         , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                              prop_codec_splits3
-        , testProperty "codecs V7/V8 compatible"
-                                             prop_codec_V7_compatible
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
         , testProperty "channel ST"          prop_channel_ST
@@ -196,7 +194,7 @@ prop_channel createChannels input =
     runConnectedPeers
       createChannels
       nullTracer
-      (codec True)
+      codec
       (localStateQueryClientPeer $
        localStateQueryClient clientInput)
       (localStateQueryServerPeer $
@@ -324,13 +322,11 @@ instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
 
 
 codec :: MonadST m
-      => Bool
-      -> Codec (LocalStateQuery Block (Point Block) Query)
+      => Codec (LocalStateQuery Block (Point Block) Query)
                 DeserialiseFailure
                 m ByteString
-codec canAcquireTip =
+codec =
     codecLocalStateQuery
-      canAcquireTip
       Serialise.encode Serialise.decode
       encodeQuery      decodeQuery
       encodeResult     decodeResult
@@ -355,7 +351,7 @@ prop_codec
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec msg =
-  runST (prop_codecM (codec True) msg)
+  runST (prop_codecM codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
@@ -363,7 +359,7 @@ prop_codec_splits2
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 (codec True) msg)
+  runST (prop_codec_splitsM splits2 codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
@@ -371,23 +367,17 @@ prop_codec_splits3
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec_splits3 msg =
-  runST (prop_codec_splitsM splits3 (codec True) msg)
+  runST (prop_codec_splitsM splits3 codec msg)
 
 prop_codec_cbor
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Bool
 prop_codec_cbor msg =
-  runST (prop_codec_cborM (codec True) msg)
+  runST (prop_codec_cborM codec msg)
 
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
   :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
   -> Property
-prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codec True)
-
-prop_codec_V7_compatible
-  :: AnyMessageAndAgencyV7
-  -> Bool
-prop_codec_V7_compatible (AnyMessageAndAgencyV7 msg) =
-    runST (prop_codecs_compatM (codec False) (codec True) msg)
+prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec

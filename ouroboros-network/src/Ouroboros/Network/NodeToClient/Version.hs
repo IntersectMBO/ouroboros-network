@@ -24,22 +24,7 @@ import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
 -- | Enumeration of node to client protocol versions.
 --
 data NodeToClientVersion
-    = NodeToClientV_1
-    | NodeToClientV_2
-    -- ^ added local-query mini-protocol
-    | NodeToClientV_3
-    -- ^ enabled @CardanoNodeToClientVersion2@
-    | NodeToClientV_4
-    -- ^ enabled @CardanoNodeToClientVersion3@, adding more queries
-    | NodeToClientV_5
-    -- ^ enabled @CardanoNodeToClientVersion4@, i.e., Allegra
-    | NodeToClientV_6
-    -- ^ enabled @CardanoNodeToClientVersion5@, i.e., Mary
-    | NodeToClientV_7
-    -- ^ enabled @CardanoNodeToClientVersion6@, adding a query
-    | NodeToClientV_8
-    -- ^ 'LocalStateQuery' protocol codec change, allows to acquire tip point.
-    | NodeToClientV_9
+    = NodeToClientV_9
     -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
     | NodeToClientV_10
     -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
@@ -61,14 +46,6 @@ data NodeToClientVersion
 nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
 nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     where
-      encodeTerm NodeToClientV_1  = CBOR.TInt 1
-      encodeTerm NodeToClientV_2  = CBOR.TInt (2  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_3  = CBOR.TInt (3  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_4  = CBOR.TInt (4  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_5  = CBOR.TInt (5  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_6  = CBOR.TInt (6  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_7  = CBOR.TInt (7  `setBit` nodeToClientVersionBit)
-      encodeTerm NodeToClientV_8  = CBOR.TInt (8  `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_9  = CBOR.TInt (9  `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_10 = CBOR.TInt (10 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_11 = CBOR.TInt (11 `setBit` nodeToClientVersionBit)
@@ -79,14 +56,6 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
        case ( tag `clearBit` nodeToClientVersionBit
             , tag `testBit`  nodeToClientVersionBit
             ) of
-        (1, False) -> Right NodeToClientV_1
-        (2, True)  -> Right NodeToClientV_2
-        (3, True)  -> Right NodeToClientV_3
-        (4, True)  -> Right NodeToClientV_4
-        (5, True)  -> Right NodeToClientV_5
-        (6, True)  -> Right NodeToClientV_6
-        (7, True)  -> Right NodeToClientV_7
-        (8, True)  -> Right NodeToClientV_8
         (9, True)  -> Right NodeToClientV_9
         (10, True) -> Right NodeToClientV_10
         (11, True) -> Right NodeToClientV_11

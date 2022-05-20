@@ -142,44 +142,31 @@ queryEncodeNodeToClient ::
   -> SomeSecond Query blk
   -> Encoding
 queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
-  = case queryVersion of
+  = case query of
+      BlockQuery blockQuery ->
+        requireVersion QueryVersion1 $ mconcat
+          [ encodeListLen 2
+          , encodeWord8 0
+          , encodeBlockQuery blockQuery
+          ]
 
-    -- In "version 0" we only support BlockQuery and add no extra wrapping so
-    -- that it's backwards compatible with when there were no top level queries.
-    TopLevelQueryDisabled ->
-      case query of
-        BlockQuery blockQuery ->
-          encodeBlockQuery blockQuery
-        _ ->
-          throw $ QueryEncoderUnsupportedQuery (SomeSecond query) queryVersion
+      GetSystemStart ->
+        requireVersion QueryVersion1 $ mconcat
+          [ encodeListLen 1
+          , encodeWord8 1
+          ]
 
-    -- From version 1 onwards, we use normal constructor tags
-    _ ->
-      case query of
-        BlockQuery blockQuery ->
-          requireVersion QueryVersion1 $ mconcat
-            [ encodeListLen 2
-            , encodeWord8 0
-            , encodeBlockQuery blockQuery
-            ]
+      GetChainBlockNo ->
+        requireVersion QueryVersion2 $ mconcat
+          [ encodeListLen 1
+          , encodeWord8 2
+          ]
 
-        GetSystemStart ->
-          requireVersion QueryVersion1 $ mconcat
-            [ encodeListLen 1
-            , encodeWord8 1
-            ]
-
-        GetChainBlockNo ->
-          requireVersion QueryVersion2 $ mconcat
-            [ encodeListLen 1
-            , encodeWord8 2
-            ]
-
-        GetChainPoint ->
-          requireVersion QueryVersion2 $ mconcat
-            [ encodeListLen 1
-            , encodeWord8 3
-            ]
+      GetChainPoint ->
+        requireVersion QueryVersion2 $ mconcat
+          [ encodeListLen 1
+          , encodeWord8 3
+          ]
 
   where
     requireVersion :: QueryVersion -> a -> a
@@ -205,9 +192,8 @@ queryDecodeNodeToClient ::
   -> forall s. Decoder s (SomeSecond Query blk)
 queryDecodeNodeToClient codecConfig queryVersion blockVersion
   = case queryVersion of
-      TopLevelQueryDisabled -> decodeBlockQuery
-      QueryVersion1         -> handleTopLevelQuery
-      QueryVersion2         -> handleTopLevelQuery
+      QueryVersion1 -> handleTopLevelQuery
+      QueryVersion2 -> handleTopLevelQuery
   where
     handleTopLevelQuery :: Decoder s (SomeSecond Query blk)
     handleTopLevelQuery = do
