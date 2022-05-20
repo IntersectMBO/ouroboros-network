@@ -651,6 +651,29 @@ praosCheckCanForge
           fromIntegral $
             unSlotNo curSlot `div` praosSlotsPerKESPeriod praosParams
 
+
+{-------------------------------------------------------------------------------
+  PraosProtocolSupportsNode
+-------------------------------------------------------------------------------}
+
+instance PraosCrypto c => PraosProtocolSupportsNode (Praos c) where
+  getPraosNonces _prx cdst =
+      PraosNonces {
+          candidateNonce   = praosStateCandidateNonce
+        , epochNonce       = praosStateEpochNonce
+        , evolvingNonce    = praosStateEvolvingNonce
+        , labNonce         = praosStateLabNonce
+        , previousLabNonce = praosStateLastEpochBlockNonce
+        }
+    where
+      PraosState {
+          praosStateCandidateNonce
+        , praosStateEpochNonce
+        , praosStateEvolvingNonce
+        , praosStateLabNonce
+        , praosStateLastEpochBlockNonce
+        } = cdst
+
 {-------------------------------------------------------------------------------
   Util
 -------------------------------------------------------------------------------}
