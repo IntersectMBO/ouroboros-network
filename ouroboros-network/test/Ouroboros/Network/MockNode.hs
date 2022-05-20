@@ -39,7 +39,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy
 
--- TODO Should this be impored here
+-- TODO Should this be imported here
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState
