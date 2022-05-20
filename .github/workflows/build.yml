@@ -80,12 +80,33 @@ jobs:
         echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
         echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
 
+    - name: Install lmdb (Windows)
+      if: matrix.os == 'windows-latest'
+      env:
+        RUNNER_TEMP: ${{ runner.temp }}
+      run: |
+        echo "RUNNER_TEMP=$RUNNER_TEMP"
+        cd "$RUNNER_TEMP"
+
+        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
+
+        curl -Ls \
+          --connect-timeout 5 \
+          --max-time 10 \
+          --retry 5 \
+          --retry-delay 0 \
+          --retry-max-time 40 \
+          https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-lmdb-0.9.29-1-any.pkg.tar.zst -o lmdb-0.9.29.pkg.tar.zst
+
+        tar xvf lmdb-0.9.29.pkg.tar.zst
+
     - name: Install build environment
       if: matrix.os == 'ubuntu-20.04'
       run: |
         sudo apt-get update
         sudo apt-get -y install libsodium23 libsodium-dev
         sudo apt-get -y install libsystemd0 libsystemd-dev
+        sudo apt-get -y install liblmdb-dev
         sudo apt-get -y remove --purge software-properties-common
         sudo apt-get -y autoremove
 
@@ -122,13 +143,16 @@ jobs:
           --retry-delay 0 \
           --retry-max-time 40 \
           https://hydra.iohk.io/job/Cardano/haskell-nix/windows-secp256k1/latest/download/1 -o secp256k1.zip
+
         mkdir secp256k1
         cd secp256k1
         unzip ../secp256k1.zip
         cd ..
+
         export PKG_CONFIG_PATH="$PKG_CONFIG_PATH;$(readlink -f secp256k1/lib/pkgconfig | sed 's|^/d|D:|g' | tr / '\\')"
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
         echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
+
         export SECP256K1_PATH="$(readlink -f secp256k1/bin | sed 's|^/d|D:|g' | tr / '\\')"
         echo "SECP256K1_PATH=$SECP256K1_PATH"
         echo "$SECP256K1_PATH" >> $GITHUB_PATH
@@ -151,9 +175,6 @@ jobs:
     - name: Update Hackage index
       run: cabal update
 
-    - name: Cabal Configure
-      run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
-
     - name: Use cabal.project.local.ci
       run: |
         cat ./cabal.project.local.ci >> ./cabal.project.local
@@ -161,6 +182,29 @@ jobs:
         cat >> cabal.project.local <<EOF
         package cardano-crypto-praos
           flags: -external-libsodium-vrf
+        EOF
+
+        cat ./cabal.project.local
+
+    - name: Extra dirs (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cat >> cabal.project.local <<EOF
+        package lmdb
+          extra-include-dirs: D:\a\_temp\mingw64\include
+          extra-lib-dirs:     D:\a\_temp\mingw64\lib
+        EOF
+
+        cat ./cabal.project.local
+
+    # DO NOT RUN cabal configure. It will _overwrite_ the cabal.project.local.
+    # - name: Cabal Configure
+    #   run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
+
+    - name: Enable tests
+      run: |
+        cat >> cabal.project.local <<EOF
+        tests: True
         EOF
 
         cat ./cabal.project.local
