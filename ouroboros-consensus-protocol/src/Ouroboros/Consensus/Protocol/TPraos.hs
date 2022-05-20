@@ -71,6 +71,7 @@ import qualified Cardano.Protocol.TPraos.BHeader as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import qualified Cardano.Protocol.TPraos.Rules.Overlay as SL
+import qualified Cardano.Protocol.TPraos.Rules.Prtcl as SL
 import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
 
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
@@ -499,6 +500,36 @@ tpraosCheckCanForge TPraosConfig { tpraosParams }
     wallclockPeriod :: Absolute.KESPeriod
     wallclockPeriod = Absolute.KESPeriod $ fromIntegral $
         unSlotNo curSlot `div` tpraosSlotsPerKESPeriod tpraosParams
+
+{-------------------------------------------------------------------------------
+  PraosProtocolSupportsNode
+-------------------------------------------------------------------------------}
+
+instance SL.PraosCrypto c => PraosProtocolSupportsNode (TPraos c) where
+  getPraosNonces _prx cdst =
+      PraosNonces {
+          candidateNonce
+        , epochNonce       = ticknStateEpochNonce
+        , evolvingNonce
+        , labNonce         = csLabNonce
+        , previousLabNonce = ticknStatePrevHashNonce
+        }
+    where
+      TPraosState { tpraosStateChainDepState } = cdst
+      SL.ChainDepState {
+          SL.csLabNonce
+        , SL.csProtocol
+        , SL.csTickn
+        } = tpraosStateChainDepState
+      SL.PrtclState
+        _opcertCounters
+        evolvingNonce
+        candidateNonce
+          = csProtocol
+      SL.TicknState {
+          ticknStateEpochNonce
+        , ticknStatePrevHashNonce
+        } = csTickn
 
 {-------------------------------------------------------------------------------
   Condense

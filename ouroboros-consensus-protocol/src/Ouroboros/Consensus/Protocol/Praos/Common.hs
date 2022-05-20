@@ -9,9 +9,13 @@ module Ouroboros.Consensus.Protocol.Praos.Common (
     MaxMajorProtVer (..)
   , PraosCanBeLeader (..)
   , PraosChainSelectView (..)
+    -- * node support
+  , PraosNonces (..)
+  , PraosProtocolSupportsNode (..)
   ) where
 
 import qualified Cardano.Crypto.VRF as VRF
+import           Cardano.Ledger.BaseTypes (Nonce)
 import           Cardano.Ledger.Crypto (Crypto, VRF)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as OCert
@@ -23,6 +27,7 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
+import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | The maximum major protocol version.
 --
@@ -71,6 +76,7 @@ instance Crypto c => Ord (PraosChainSelectView c) where
             comp v1 v2
         | otherwise =
             EQ
+
 data PraosCanBeLeader c = PraosCanBeLeader
   { -- | Certificate delegating rights from the stake pool cold key (or
     -- genesis stakeholder delegate cold key) to the online KES key.
@@ -82,3 +88,24 @@ data PraosCanBeLeader c = PraosCanBeLeader
   deriving (Generic)
 
 instance Crypto c => NoThunks (PraosCanBeLeader c)
+
+-- | See 'PraosProtocolSupportsNode'
+data PraosNonces = PraosNonces {
+    candidateNonce   :: !Nonce
+  , epochNonce       :: !Nonce
+  , evolvingNonce    :: !Nonce
+    -- | Nonce constructed from the hash of the Last Applied Block
+  , labNonce         :: !Nonce
+    -- | Nonce corresponding to the LAB nonce of the last block of the previous
+    -- epoch
+  , previousLabNonce :: !Nonce
+  }
+
+-- | The node has Praos-aware code that inspects nonces in order to support
+-- some Cardano API queries that are crucial to the user exprience
+--
+-- The interface being used for that has grown and needs review, but we're
+-- adding to it here under time pressure. See
+-- <https://github.com/input-output-hk/cardano-node/issues/3864>
+class ConsensusProtocol p => PraosProtocolSupportsNode p where
+  getPraosNonces :: proxy p -> ChainDepState p -> PraosNonces
