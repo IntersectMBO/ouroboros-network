@@ -49,7 +49,7 @@ import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import           Ouroboros.Consensus.Util (foldlM')
-import           Ouroboros.Consensus.Util.IOLike (IOLike, bracket, onException)
+import           Ouroboros.Consensus.Util.IOLike (IOLike, MonadCatch(..), MonadThrow(..), bracket, onException)
 
 import qualified Database.LMDB.Raw as LMDB
 import qualified Database.LMDB.Simple as LMDB
@@ -87,6 +87,7 @@ data TraceDb
   | TDBValueHandle Int TraceValueHandle
   | TDBTableOp     TraceTableOp
   | TDBInitialisingFromLMDB !FS.FsPath
+  | TDBInitialisingFromLMDBDone !FS.FsPath
   deriving (Show, Eq)
 
 data TraceTableOp = TTO
@@ -151,8 +152,6 @@ defaultLMDBLimits = LMDB.defaultLimits
   }
 
 -- TODO a version field.
--- TODO(jdral): I've made a distinction between DbSettings and DbState because
--- /settings/ should probably not be updated on every flush.
 data DbSettings = DbSettings
 
 newtype DbState = DbState {
@@ -392,18 +391,45 @@ withDbStateRWMaybeNull db f  =
 
 data GuardDbDir  = GDDMustExist | GDDMustNotExist
 
-guardDbDir :: MonadIO m => GuardDbDir -> FS.SomeHasFS m -> FS.FsPath -> m FilePath
+-- | Guard for the existence/non-existence of a database directory,
+-- and create it if missing.
+guardDbDir ::
+     (MonadIO m, IOLike m)
+  => GuardDbDir
+  -> FS.SomeHasFS m
+  -> FS.FsPath
+  -> m FilePath
 guardDbDir gdd (FS.SomeHasFS fs) path = do
-  FS.doesFileExist fs path >>= \b -> when b $ Exn.throw $ DbErrStr $ "guardDbDir:must be a directory:" <> show path
-  FS.doesDirectoryExist fs path >>= \case
-    True | GDDMustNotExist <- gdd ->
-           -- TODO Should throw a DbErrDbExists exception
-           -- Callers should delete the directory if they want to restore a snapshot
-           FS.removeDirectoryRecursive fs path
-    False | GDDMustExist <- gdd -> Exn.throw $ DbErrDbDoesntExist path
-    _ -> pure ()
+  fileEx <- FS.doesFileExist fs path
+  when fileEx $
+    Exn.throw $ DbErrStr $ "guardDbDir:must be a directory: " <> show path
+  dirEx <- FS.doesDirectoryExist fs path
+  case dirEx of
+    True  | GDDMustNotExist <- gdd -> throwIO $ DbErrDbExists path
+    False | GDDMustExist    <- gdd -> throwIO $ DbErrDbDoesntExist path
+    _                              -> pure ()
   FS.createDirectoryIfMissing fs True path
   FS.unsafeToFilePath fs path
+
+-- | Same as @`guardDbDir`@, but retries the guard if we can make meaningful
+-- changes to the filesystem before we perform the retry.
+--
+-- Note: We only retry if a database directory exists while it shoudn't: In
+-- this case, we remove the directory recursively before retrying the guard.
+guardDbDirWithRetry ::
+     (MonadIO m, IOLike m)
+  => GuardDbDir
+  -> FS.SomeHasFS m
+  -> FS.FsPath
+  -> m FilePath
+guardDbDirWithRetry gdd shfs@(FS.SomeHasFS fs) path =
+    handle retryHandler (guardDbDir gdd shfs path)
+  where
+    retryHandler e = case (gdd, e) of
+      (GDDMustNotExist, DbErrDbExists _path) -> do
+        FS.removeDirectoryRecursive fs path
+        guardDbDir GDDMustNotExist shfs path
+      _ -> throwIO e
 
 {-------------------------------------------------------------------------------
  Initialize an LMDB
@@ -428,20 +454,27 @@ initFromVals dbsSeq vals Db{..} = liftIO $ LMDB.readWriteTransaction dbEnv $
                 $> ((), DbState{dbsSeq})
     Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
 
-initFromLMDBs :: (MonadIO m, IOLike m)
+initFromLMDBs ::
+     (MonadIO m, IOLike m)
   => Trace.Tracer m TraceDb
+  -> LMDBLimits
   -> FS.SomeHasFS m
   -> FS.FsPath
   -> FS.FsPath
   -> m ()
-initFromLMDBs tracer shfs from0 to0 = do
-  Trace.traceWith tracer $ TDBInitialisingFromLMDB from0
-  from <- guardDbDir GDDMustExist shfs from0
-  to <- guardDbDir GDDMustNotExist shfs to0
-  bracket
-    (liftIO $ LMDB.openEnvironment from defaultLMDBLimits) -- TODO assess limits, in particular this could fail if the db is too big
-    (liftIO . LMDB.closeEnvironment)
-    (flip (lmdbCopy tracer) to)
+initFromLMDBs tracer limits shfs from0 to0 = do
+    Trace.traceWith tracer $ TDBInitialisingFromLMDB from0
+    from <- guardDbDir GDDMustExist shfs from0
+    to <- guardDbDirWithRetry GDDMustNotExist shfs to0
+    bracket
+      -- TODO assess limits, in particular this could fail if the db is too big
+      -- TODO(jdral): Should we read from some configuration/settings file what
+      -- the limits of the "from" database are? Do we want to support
+      -- interoperablity between databases with different limits?
+      (liftIO $ LMDB.openEnvironment from limits)
+      (liftIO . LMDB.closeEnvironment)
+      (flip (lmdbCopy tracer) to)
+    Trace.traceWith tracer $ TDBInitialisingFromLMDBDone to0
 
 lmdbCopy :: MonadIO m
   => Trace.Tracer m TraceDb
@@ -484,12 +517,12 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
     (gdd, copy_db_action :: m (), init_action :: Db m l -> m ()) = case init_db of
       LIInitialiseFromLMDB fp
         -- If fp == path then this is the LINoInitialise case
-        | fp /= path -> (GDDMustNotExist, initFromLMDBs dbTracer sfs fp path, \_ -> pure ())
+        | fp /= path -> (GDDMustNotExist, initFromLMDBs dbTracer limits sfs fp path, \_ -> pure ())
       LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), initFromVals slot vals)
       _ -> (GDDMustExist, pure (), \_ -> pure ())
 
   -- get the filepath for this db creates the directory if appropriate
-  dbFilePath <- guardDbDir gdd sfs path
+  dbFilePath <- guardDbDirWithRetry gdd sfs path
 
   -- copy from another lmdb path if appropriate
   copy_db_action
@@ -500,7 +533,6 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
   dbSettings <- liftIO $ LMDB.readWriteTransaction dbEnv $ LMDB.getDatabase (Just "_dbsettings")
   -- The LMDB.Database that holds the @`DbState`@ (i.e. sequence number)
   -- This transaction must be read-write because on initialisation it creates the database
-
   dbState <- liftIO $ LMDB.readWriteTransaction dbEnv $ LMDB.getDatabase (Just "_dbstate")
 
   -- TODO: at some point Javier was able to get an LMDB which didn't have this
