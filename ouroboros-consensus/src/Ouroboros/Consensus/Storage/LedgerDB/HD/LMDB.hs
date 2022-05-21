@@ -102,8 +102,13 @@ data TDBTableOp
  Errors
 -------------------------------------------------------------------------------}
 
-data DbErr = DbErrStr !String
+data DbErr =
+    DbErrStr !String
   | DbErrNoSettings
+  | DbErrNoDbState
+  -- | The sequence number of a @`Db`@ should be monotonically increasing
+  -- across calls to @`bsWrite`@, since we use @`bsWrite`@ to flush
+  -- /immutable/ changes.
   | DbErrNonMonotonicSeq !(WithOrigin SlotNo) !(WithOrigin SlotNo)
   | DbErrNoDbNamed !String
   | DbErrBadDynamic !String
@@ -120,10 +125,17 @@ instance Exn.Exception DbErr
   Database definition
 -------------------------------------------------------------------------------}
 
-data Db m l = Db
-  { dbEnv           :: !(LMDB.Environment LMDB.ReadWrite) -- ^ The LMDB environment is a pointer to the directory that contains the DB.
-  , dbSettings      :: !(LMDB.Database () DbState)        -- ^ A database with only one key and one value, for the current sequence number on the DB.
-  , dbBackingTables :: !(LedgerTables l LMDBMK)           -- ^ The LMDB database with the key-value store
+data Db m l = Db {
+    -- | The LMDB environment is a pointer to the directory that contains the DB.
+    dbEnv           :: !(LMDB.Environment LMDB.ReadWrite)
+  , dbSettings      :: !(LMDB.Database () DbSettings)
+    -- | The on-disk state of the @`Db`@.
+    --
+    -- The state is itself an LDMB database with only one key and one value:
+    -- The current sequence number of the DB.
+  , dbState         :: !(LMDB.Database () DbState)
+    -- | The LMDB database with the key-value store.
+  , dbBackingTables :: !(LedgerTables l LMDBMK)
   , dbFilePath      :: !FilePath
   , dbTracer        :: !(Trace.Tracer m TraceDb)
   , dbOpenHandles   :: !(IOLike.TVar m (Map Int (ValueHandle m)))
@@ -138,8 +150,13 @@ defaultLMDBLimits = LMDB.defaultLimits
   , LMDB.maxReaders = 16
   }
 
-newtype DbState  = DbState
-  { dbsSeq :: WithOrigin SlotNo  -- TODO a version field
+-- TODO a version field.
+-- TODO(jdral): I've made a distinction between DbSettings and DbState because
+-- /settings/ should probably not be updated on every flush.
+data DbSettings = DbSettings
+
+newtype DbState = DbState {
+    dbsSeq :: WithOrigin SlotNo
   } deriving (Show, Generic)
 
 instance S.Serialise DbState
@@ -352,26 +369,26 @@ writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK (HD.UtxoDiff diff)) =
                     else Just v
 
 {-------------------------------------------------------------------------------
- Db settings
+ Db state
 -------------------------------------------------------------------------------}
 
-readDbSettingsMaybeNull ::
+readDbStateMaybeNull ::
      LMDB.Database () DbState
   -> LMDB.Transaction mode (Maybe DbState)
-readDbSettingsMaybeNull db = LMDB.get db ()
+readDbStateMaybeNull db = LMDB.get db ()
 
-withDbSettingsRW ::
+withDbStateRW ::
      LMDB.Database () DbState
   -> (DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState))
   -> LMDB.Transaction LMDB.ReadWrite a
-withDbSettingsRW db f = withDbSettingsRWMaybeNull db $ maybe (Exn.throw DbErrNoSettings) f
+withDbStateRW db f = withDbStateRWMaybeNull db $ maybe (Exn.throw DbErrNoDbState) f
 
-withDbSettingsRWMaybeNull ::
+withDbStateRWMaybeNull ::
       LMDB.Database () DbState
    -> (Maybe DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState))
    -> LMDB.Transaction LMDB.ReadWrite a
-withDbSettingsRWMaybeNull db f  =
-  readDbSettingsMaybeNull db >>= f >>= \(r, new_s) -> LMDB.put db () (Just new_s) $> r
+withDbStateRWMaybeNull db f  =
+  readDbStateMaybeNull db >>= f >>= \(r, new_s) -> LMDB.put db () (Just new_s) $> r
 
 data GuardDbDir  = GDDMustExist | GDDMustNotExist
 
@@ -406,7 +423,7 @@ initFromVals ::
   -> Db m l
   -> m ()
 initFromVals dbsSeq vals Db{..} = liftIO $ LMDB.readWriteTransaction dbEnv $
-  withDbSettingsRWMaybeNull dbSettings $ \case
+  withDbStateRWMaybeNull dbState $ \case
     Nothing -> zipLedgerTables2A initLMDBTable dbBackingTables codecLedgerTables vals
                 $> ((), DbState{dbsSeq})
     Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
@@ -480,9 +497,11 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
   -- open this database
   dbEnv <- liftIO $ LMDB.openEnvironment dbFilePath limits
 
-  -- the LMDB.Database that holds the DbState (i.e. sequence number)
+  dbSettings <- liftIO $ LMDB.readWriteTransaction dbEnv $ LMDB.getDatabase (Just "_dbsettings")
+  -- The LMDB.Database that holds the @`DbState`@ (i.e. sequence number)
   -- This transaction must be read-write because on initialisation it creates the database
-  dbSettings <- liftIO $ LMDB.readWriteTransaction dbEnv $ LMDB.getDatabase (Just "_dbstate")
+
+  dbState <- liftIO $ LMDB.readWriteTransaction dbEnv $ LMDB.getDatabase (Just "_dbstate")
 
   -- TODO: at some point Javier was able to get an LMDB which didn't have this
   -- database. How is it possible? maybe some copy function is not copying this
@@ -511,7 +530,7 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
 
     bsWrite :: SlotNo -> LedgerTables l DiffMK -> m ()
     bsWrite slot diffs = do
-      old_slot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbSettingsRW dbSettings $ \s@DbState{dbsSeq} -> do
+      old_slot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbStateRW dbState $ \s@DbState{dbsSeq} -> do
         -- TODO This should be <. However the test harness does call bsWrite with the same slot
         unless (dbsSeq <= At slot) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
         void $ zipLedgerTables2A writeLMDBTable dbBackingTables codecLedgerTables diffs
@@ -580,7 +599,7 @@ mkLMDBBackingStoreValueHandle Db{..} = do
   let
     dbe = LMDB.readOnlyEnvironment dbEnv
   vh <- mkValueHandle dbTracer dbe dbOpenHandles
-  mb_init_slot <- vhSubmit vh $ readDbSettingsMaybeNull dbSettings
+  mb_init_slot <- vhSubmit vh $ readDbStateMaybeNull dbState
   init_slot <- liftIO $ maybe (Exn.throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mb_init_slot
   let
     bsvhClose :: m ()
