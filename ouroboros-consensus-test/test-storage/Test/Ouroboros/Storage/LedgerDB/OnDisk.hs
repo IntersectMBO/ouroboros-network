@@ -65,6 +65,7 @@ import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
+import           Test.Util.Tasty.Traceable (ShowTrace(..), traceableProperty)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -93,16 +94,15 @@ import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 import qualified Control.Tracer as Trace
 
-import qualified Test.Tasty.Traceable as TTT
 {-------------------------------------------------------------------------------
   Top-level tests
 -------------------------------------------------------------------------------}
 
 tests :: TestTree
 tests = testGroup "OnDisk"
-    [ TTT.traceableProperty "LedgerSimple-InMem" $ \show_trace ->
+    [ traceableProperty "LedgerSimple-InMem" $ \show_trace ->
         prop_sequential $ inMemDbEnv show_trace
-    , TTT.traceableProperty "LedgerSimple-LMDB"  $ \show_trace ->
+    , traceableProperty "LedgerSimple-LMDB"  $ \show_trace ->
         prop_sequential $ lmdbDbEnv show_trace LMDB.defaultLMDBLimits
     ]
 
@@ -1350,13 +1350,13 @@ prop_sequential mk_dbenv secParam = QC.withMaxSuccess 100000 $
   forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
     QC.monadicIO $ QC.run (mk_dbenv secParam) >>= \e -> propCmds e cmds
 
-mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
-mkDbTracer (TTT.ShowTrace b)
+mkDbTracer :: ShowTrace -> Trace.Tracer IO LMDB.TraceDb
+mkDbTracer (ShowTrace b)
   | b = show `Trace.contramap` Trace.stdoutTracer
   | otherwise = mempty
 
 inMemDbEnv :: Trans.MonadIO m
-  => TTT.ShowTrace
+  => ShowTrace
   -> SecurityParam
   -> m (DbEnv IO)
 inMemDbEnv show_trace dbSecParam = Trans.liftIO $ do
@@ -1369,7 +1369,7 @@ inMemDbEnv show_trace dbSecParam = Trans.liftIO $ do
   pure DbEnv{..}
 
 lmdbDbEnv :: Trans.MonadIO m
-  => TTT.ShowTrace
+  => ShowTrace
   -> LMDB.LMDBLimits
   -> SecurityParam
   -> m (DbEnv IO)
@@ -1382,7 +1382,7 @@ lmdbDbEnv show_trace limits dbSecParam = do
     dbBackingStoreSelector = LMDBBackingStore limits
     dbTracer = mkDbTracer show_trace
   pure DbEnv{..}
-  
+
 -- Ideally we'd like to use @IOSim s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
 propCmds :: DbEnv IO
