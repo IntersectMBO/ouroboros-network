@@ -791,11 +791,11 @@ runMock cmd initMock =
 
 -- | Arguments required by 'StandaloneDB'
 data DbEnv m = DbEnv {
-      dbHasFS    :: !(SomeHasFS m)
-    , dbSecParam :: !SecurityParam
+      dbHasFS                :: !(SomeHasFS m)
+    , dbSecParam             :: !SecurityParam
     , dbBackingStoreSelector :: !(BackingStoreSelector m)
-    , dbTracer   :: !(Trace.Tracer m LMDB.TraceDb)
-    , dbCleanup :: !(m ())
+    , dbTracer               :: !(Trace.Tracer m LMDB.TraceDb)
+    , dbCleanup              :: !(m ())
     }
 
 -- | Standalone ledger DB
@@ -1000,9 +1000,11 @@ runDB standalone@DB{..} cmd =
         (initLog, db, _replayed, backingStore) <-
           initLedgerDB
             nullTracer
+            -- FIXME(jdral): Consider using @traceMaybe@. This would require
+            -- the function to be added to the IOHK-fork of @contra-variant@.
             (Trace.Tracer $ \case
                LMDBEvent e -> Trace.runTracer (dbTracer dbEnv) e
-               _ -> pure ()) -- TODO gross
+               _ -> pure ())
             hasFS
             S.decode
             S.decode
@@ -1353,7 +1355,7 @@ prop_sequential mk_dbenv secParam = QC.withMaxSuccess 100000 $
 mkDbTracer :: ShowTrace -> Trace.Tracer IO LMDB.TraceDb
 mkDbTracer (ShowTrace b)
   | b = show `Trace.contramap` Trace.stdoutTracer
-  | otherwise = mempty
+  | otherwise = nullTracer
 
 inMemDbEnv :: Trans.MonadIO m
   => ShowTrace
