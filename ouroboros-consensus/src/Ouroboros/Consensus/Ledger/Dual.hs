@@ -444,8 +444,6 @@ instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) where
       <$> (zipLedgerTables2A f main0 main1 main2)
       <*> (zipLedgerTables2A f aux0  aux1  aux2)
 
-
-
   zipLedgerTables2
     f
     (DualBlockLedgerTables mainL auxL)

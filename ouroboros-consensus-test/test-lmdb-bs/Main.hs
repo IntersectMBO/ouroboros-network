@@ -36,7 +36,8 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 
 import           Test.Util.TestBlock ()
 
-withLMDB :: forall l. (TableStuff l, SufficientSerializationForAnyBackingStore l)
+withLMDB ::
+     forall l. (TableStuff l, SufficientSerializationForAnyBackingStore l)
   => Maybe LMDB.LMDBLimits
   -> (IO (LMDB.LMDBBackingStore l IO) -> Tasty.TestTree)
   -> Tasty.TestTree

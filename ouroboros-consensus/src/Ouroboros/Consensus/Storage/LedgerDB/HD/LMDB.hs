@@ -9,9 +9,6 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use <$>" #-}
-
 module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (
     DbErr
   , LMDBBackingStore
@@ -58,7 +55,6 @@ import qualified Database.LMDB.Raw as LMDB
 import qualified Database.LMDB.Simple as LMDB
 import qualified Database.LMDB.Simple.Extra as LMDB
 import qualified Database.LMDB.Simple.Internal as LMDB.Internal
-
 
 {-------------------------------------------------------------------------------
  Backing Store interface
@@ -159,46 +155,46 @@ data ValueHandle m = ValueHandle
  LMDB Interface that uses CodecMK
 -------------------------------------------------------------------------------}
 
-withSerialisationGet ::
+get ::
      CodecMK k v
   -> LMDB.Database k v
   -> k
   -> LMDB.Transaction mode (Maybe v)
-withSerialisationGet (CodecMK encKey _ _ decVal) db k =
+get (CodecMK encKey _ _ decVal) db k =
   fmap (fmap (deserialiseBS "a value" decVal)) $ getBS db (toStrictByteString (encKey k))
 
-withSerializationPut ::
+put ::
      CodecMK k v
   -> LMDB.Database k v
   -> k
   -> Maybe v
   -> LMDB.Transaction LMDB.ReadWrite ()
-withSerializationPut (CodecMK encKey encVal _ _) db k =
+put (CodecMK encKey encVal _ _) db k =
     maybe (void $ LMDB.Internal.deleteBS db keyBS) (putBS db keyBS . toStrictByteString . encVal)
   where
     keyBS = toStrictByteString (encKey k)
 
-withSerializationFoldrWithKey ::
+foldrWithKey ::
      (k -> v -> b -> b)
   -> b
   -> CodecMK k v
   -> LMDB.Database k v
   -> LMDB.Transaction mode b
-withSerializationFoldrWithKey f b (CodecMK _ _ decKey decVal) = foldrWithKey fBS b
+foldrWithKey f b (CodecMK _ _ decKey decVal) = foldrWithKeyBS fBS b
   where
     fBS keyBS valBS =
       f (deserialiseBS "a key" decKey keyBS) (deserialiseBS "a value" decVal valBS)
 
 -- | Deserialise a 'BS.ByteString' using the provided decoder.
-deserialiseBS
-  :: String
+deserialiseBS ::
+     String
   -- ^ Label to be used for error reporting. This should describe the value to be deserialised.
   -> (forall s . CBOR.Decoder s a)
   -> BS.ByteString
   -> a
 deserialiseBS label decoder bs = either err snd $ deserialiseFromBytes decoder $ LBS.fromStrict bs
   where
-    err = error $ "withSerializationFoldrWithKey: error deserializing " ++ label ++ " from the database."
+    err = error $ "foldrWithKey: error deserialising " ++ label ++ " from the database."
 
 {-------------------------------------------------------------------------------
  Alternatives to LMDB operations that do not rely on Serialise instances
@@ -217,7 +213,7 @@ getBS ::
   -> BS.ByteString
   -> LMDB.Transaction mode (Maybe BS.ByteString)
 getBS db k = LMDB.Internal.getBS' db k >>=
-  maybe (return Nothing) (liftIO . fmap Just . marshalInBS)
+    maybe (return Nothing) (liftIO . fmap Just . marshalInBS)
 
 putBS ::
      LMDB.Database k v
@@ -225,24 +221,24 @@ putBS ::
   -> BS.ByteString
   -> LMDB.Transaction LMDB.ReadWrite ()
 putBS (LMDB.Internal.Db _ dbi) keyBS valueBS =  LMDB.Internal.Txn $ \txn ->
-  LMDB.Internal.marshalOutBS keyBS $ \kval -> do
-  let sz = BS.length valueBS
-  LMDB.MDB_val len ptr <- LMDB.mdb_reserve' LMDB.Internal.defaultWriteFlags txn dbi kval sz
-  let len' = fromIntegral len
-  assert (len' == sz) $
-    unsafeUseAsCStringLen valueBS $
-      \(bsp, lenToCopy) -> copyBytes ptr (castPtr bsp) lenToCopy
+    LMDB.Internal.marshalOutBS keyBS $ \kval -> do
+      let sz = BS.length valueBS
+      LMDB.MDB_val len ptr <- LMDB.mdb_reserve' LMDB.Internal.defaultWriteFlags txn dbi kval sz
+      let len' = fromIntegral len
+      assert (len' == sz) $
+        unsafeUseAsCStringLen valueBS $
+          \(bsp, lenToCopy) -> copyBytes ptr (castPtr bsp) lenToCopy
 
-foldrWithKey ::
+foldrWithKeyBS ::
      (BS.ByteString -> BS.ByteString -> b -> b)
   -> b
   -> LMDB.Database k v
   -> LMDB.Transaction mode b
-foldrWithKey f z (LMDB.Internal.Db _ dbi)  = LMDB.Internal.Txn $ \txn ->
-  alloca $ \kptr ->
-  alloca $ \vptr ->
-   LMDB.Internal.forEachForward txn dbi kptr vptr z $ \rest ->
-  f <$> peekVal' kptr <*> peekVal' vptr <*> rest
+foldrWithKeyBS f z (LMDB.Internal.Db _ dbi)  = LMDB.Internal.Txn $ \txn ->
+    alloca $ \kptr ->
+    alloca $ \vptr ->
+      LMDB.Internal.forEachForward txn dbi kptr vptr z $ \rest ->
+        f <$> peekVal' kptr <*> peekVal' vptr <*> rest
   where
     peekVal' :: Ptr LMDB.MDB_val -> IO BS.ByteString
     peekVal' = peek >=> marshalInBS
@@ -261,7 +257,7 @@ getDb ::
 getDb (NameMK name) = LMDBMK name <$> LMDB.getDatabase (Just name)
 
 initRangeReadLMDBTable ::
-     (Ord k)
+     Ord k
   => Int
   -> LMDBMK  k v
   -> CodecMK k v
@@ -273,7 +269,7 @@ initRangeReadLMDBTable count (LMDBMK _ db) codecMK =
       -- This is inadequate. We are folding over the whole table, the
       -- fiddling with either is to short circuit as best we can.
       -- TODO improve lmdb-simple bindings to give better access to cursors
-      wrangle <$> withSerializationFoldrWithKey go (Right Map.empty) codecMK db
+      wrangle <$> foldrWithKey go (Right Map.empty) codecMK db
       where
         wrangle = either HD.UtxoValues HD.UtxoValues
         go k v acc = do
@@ -282,7 +278,7 @@ initRangeReadLMDBTable count (LMDBMK _ db) codecMK =
           pure $ Map.insert k v m
 
 rangeReadLMDBTable ::
-     (Ord k)
+     Ord k
   => Int
   -> LMDBMK  k v
   -> CodecMK k v
@@ -307,11 +303,10 @@ rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) 
                     when (Map.size m >= count) $ Left m
                     pure $ Map.insert k v m
             in
-              wrangle <$> withSerializationFoldrWithKey go (Right Map.empty) codecMK db
+              wrangle <$> foldrWithKey go (Right Map.empty) codecMK db
 
 initLMDBTable ::
-    ()
-  => LMDBMK   k v
+     LMDBMK   k v
   -> CodecMK  k v
   -> ValuesMK k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK  k v)
@@ -322,7 +317,7 @@ initLMDBTable (LMDBMK tbl_name db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVal
       is_empty <- LMDB.null db
       unless is_empty $ Exn.throw $ DbErrInitialisingNonEmpty tbl_name
       void $ Map.traverseWithKey
-                 (\k v -> withSerializationPut codecMK db k (Just v))
+                 (\k v -> put codecMK db k (Just v))
                  utxoVals
 
 readLMDBTable ::
@@ -336,13 +331,12 @@ readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) =
   where
     lmdbReadTable = HD.UtxoValues <$> foldlM' go Map.empty (Set.toList keys)
       where
-        go m k = withSerialisationGet codecMK db k <&> \case
+        go m k = get codecMK db k <&> \case
           Nothing -> m
           Just v  -> Map.insert k v m
 
 writeLMDBTable ::
-    ()
-  => LMDBMK  k v
+     LMDBMK  k v
   -> CodecMK k v
   -> DiffMK  k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK  k v)
@@ -351,7 +345,7 @@ writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK (HD.UtxoDiff diff)) =
   where
     lmdbWriteTable = void $ Map.traverseWithKey go diff
       where
-        go k (HD.UtxoEntryDiff v reason) = withSerializationPut codecMK db k value
+        go k (HD.UtxoEntryDiff v reason) = put codecMK db k value
           where
             value = if reason `elem` [HD.UedsDel, HD.UedsInsAndDel]
                     then Nothing

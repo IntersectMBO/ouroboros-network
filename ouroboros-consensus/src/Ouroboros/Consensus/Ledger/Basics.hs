@@ -75,32 +75,32 @@ module Ouroboros.Consensus.Ledger.Basics (
   , EmptyMK
   , IsApplyMapKind
   , KeysMK
+  , LMDBMK (..)
+  , NameMK (..)
   , QueryMK
   , SeqDiffMK
   , TrackingMK
   , UnApplyMapKind
   , ValuesMK
-  , LMDBMK (..)
-  , NameMK (..)
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
     -- ** Convenience aliases
-  , emptyLedgerTables
-  , polyEmptyLedgerTables
-  , forgetLedgerTables
-  , forgetLedgerTablesValues
-  , forgetLedgerTablesDiffs
-  , forgetLedgerTablesDiffsTicked
-  , prependLedgerTablesDiffsRaw
-  , prependLedgerTablesDiffs
-  , prependLedgerTablesDiffsTicked
-  , prependLedgerTablesDiffsFromTicked
   , applyLedgerTablesDiffs
   , applyLedgerTablesDiffsTicked
   , calculateAdditions
   , calculateDifference
   , calculateDifferenceTicked
+  , emptyLedgerTables
+  , forgetLedgerTables
+  , forgetLedgerTablesDiffs
+  , forgetLedgerTablesDiffsTicked
+  , forgetLedgerTablesValues
+  , polyEmptyLedgerTables
+  , prependLedgerTablesDiffs
+  , prependLedgerTablesDiffsFromTicked
+  , prependLedgerTablesDiffsRaw
+  , prependLedgerTablesDiffsTicked
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
@@ -124,8 +124,8 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Misc
   , ShowLedgerState (..)
     -- * Exported only for testing
-  , rawCalculateDifference
   , rawApplyDiffs
+  , rawCalculateDifference
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -158,10 +158,10 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
 
+import qualified Database.LMDB.Simple as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
-import qualified Database.LMDB.Simple as LMDB
 
 {-------------------------------------------------------------------------------
   Tip
@@ -426,9 +426,9 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk3
     -> LedgerTables l mk4
 
-  zipLedgerTablesA :: Applicative f
-    =>
-       (forall k v.
+  zipLedgerTablesA ::
+       Applicative f
+    => (forall k v.
             Ord k
          => mk1 k v
          -> mk2 k v
@@ -438,11 +438,9 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> f (LedgerTables l mk3)
 
-  -- FIXME: zipLedgerTables2 and zipLedgerTables2A should be renamed to zip2LedgerTables and zip2LedgerTablesA
-  -- Otherwise the number 2 comes too late in the function name.
-  zipLedgerTables2A :: Applicative f
-    =>
-       (forall k v.
+  zipLedgerTables2A ::
+       Applicative f
+    => (forall k v.
             Ord k
          => mk1 k v
          -> mk2 k v
