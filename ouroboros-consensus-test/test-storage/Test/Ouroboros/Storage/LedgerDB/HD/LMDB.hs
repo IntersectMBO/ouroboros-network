@@ -9,15 +9,15 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-
 -- | Simple unit tests for the LMDB backing store.
-module Main (main) where
+module Test.Ouroboros.Storage.LedgerDB.HD.LMDB (tests) where
 
 import qualified Control.Tracer as Trace
 import           Data.Maybe
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Text (Text)
+import           Test.Tasty (TestTree, testGroup)
 import qualified Test.Tasty as Tasty
 import qualified Test.Tasty.HUnit as Tasty
 import           Test.Util.TestBlock ()
@@ -57,10 +57,12 @@ withLMDB mb_limits mb_init_vals act = let
       Dir.removeDirectoryRecursive tmpdir
   in Tasty.withResource init_lmdb cleanup_lmdb $ \x -> act $ fmap snd x
 
-main :: IO ()
-main = Tasty.defaultMain test1
+tests :: TestTree
+tests = testGroup "LMDB" [
+    test1
+  ]
 
-test1 :: Tasty.TestTree
+test1 :: TestTree
 test1 = withLMDB Nothing Nothing $ \mbs -> Tasty.testCaseSteps "simple insert and read" $ \step -> do
   bs <- mbs
   step "write1"
