@@ -1,40 +1,39 @@
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+
+
+-- | Simple unit tests for the LMDB backing store.
 module Main (main) where
 
-import qualified System.Directory as Dir
-import           System.IO.Temp
+import qualified Control.Tracer as Trace
+import           Data.Maybe
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import           Data.Text (Text)
 import qualified Test.Tasty as Tasty
 import qualified Test.Tasty.HUnit as Tasty
+import           Test.Util.TestBlock ()
+import qualified System.Directory as Dir
+import           System.IO.Temp
 
-import Ouroboros.Consensus.Storage.FS.API (SomeHasFS (SomeHasFS))
-import Ouroboros.Consensus.Block (WithOrigin(Origin), SlotNo)
-import Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (MountPoint))
-import Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import Ouroboros.Consensus.Ledger.Basics
-import Data.Text (Text)
-import Data.Map(Map)
-import qualified Data.Map as Map
+import           Cardano.Slotting.Slot (WithOrigin(At))
+
+import           Ouroboros.Consensus.Block (WithOrigin(Origin), SlotNo)
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (SomeHasFS))
+import           Ouroboros.Consensus.Storage.FS.API.Types (MountPoint (MountPoint))
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
-import Data.Maybe
-import Control.Concurrent (tryReadMVar)
-import Test.Util.TestBlock ()
-import qualified Data.Set as Set
-import Control.Concurrent.MVar
-import Control.Exception (throwIO)
-import Cardano.Slotting.Slot (WithOrigin(At))
--- import qualified Test.Ouroboros.Storage
-import qualified Control.Tracer as Trace
 
 withLMDB :: forall l. TableStuff l
   => Maybe LMDB.LMDBLimits
