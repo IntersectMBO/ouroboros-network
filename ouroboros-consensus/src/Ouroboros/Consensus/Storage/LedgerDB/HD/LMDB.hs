@@ -75,7 +75,6 @@ data TraceDb
   | TDBClosing     !FilePath
   | TDBClosed      !FilePath
   | TDBCopying     !FilePath !FilePath
-  | TDBCopyingFile !FilePath !FilePath
   | TDBCopied      !FilePath !FilePath
   | TDBWrite       !(WithOrigin SlotNo) !SlotNo
   | TDBValueHandle Int TraceValueHandle
@@ -122,6 +121,9 @@ data Db m l = Db
   , dbTracer        :: !(Trace.Tracer m TraceDb)
   , dbOpenHandles   :: !(IOLike.TVar m (Map Int (ValueHandle m)))
   }
+
+newVHId :: Map Int (ValueHandle m) -> Int
+newVHId openHdls = maybe 0 ((+1) . fst) $ Map.lookupMax openHdls
 
 type LMDBLimits = LMDB.Limits
 
@@ -179,9 +181,21 @@ lmdbWriteTable db0 (HD.UtxoDiff m) =
     void $ Map.traverseWithKey go m
   where
     db = coerceDatabase db0
-    go k (HD.UtxoEntryDiff v reason) =
-      LMDB.put db (LmdbBox k) (if reason `elem` [HD.UedsDel, HD.UedsInsAndDel] then Nothing else Just (LmdbBox v))
+    go k (HD.UtxoEntryDiff v reason) = LMDB.put db (LmdbBox k) $
+      case reason of
+        HD.UedsDel ->
+          Nothing
+        HD.UedsInsAndDel ->
+          Nothing
+        HD.UedsIns ->
+          Just (LmdbBox v)
 
+-- | @`lmdbInitRangeReadTable` count db0@ performs a range read of roughly
+-- @count@ values from database @db0@.
+--
+-- Note: See @`RangeQuery`@ for more information about range queries.
+--
+-- Todo(jdral): Test this function.
 lmdbInitRangeReadTable :: LedgerConstraint k v
   => Int
   -> LMDB.Database k v
@@ -199,6 +213,12 @@ lmdbInitRangeReadTable count db0 =
       when (Map.size m >= count) $ Left m
       pure $ Map.insert k v m
 
+-- | @`lmdbRangeReadTable` count db0 ks@ performs a range read of roughly
+-- @count@ values from database @db0@.
+--
+-- Note: See @`RangeQuery`@ for more information about range queries.
+--
+-- Todo(jdral): Test this function.
 lmdbRangeReadTable :: LedgerConstraint k v
   => Int
   -> LMDB.Database k v
@@ -334,17 +354,11 @@ lmdbCopy :: MonadIO m
   -> m ()
 lmdbCopy tracer dbEnv to = do
   -- TODO This copying is gross. Tests depend on it, but I wish I was only responsible for copying the database here
-    let LMDB.Env e = dbEnv
-    from <- liftIO $ LMDB.mdb_env_get_path e
-    Trace.traceWith tracer $ TDBCopying from to
-    liftIO $ LMDB.mdb_env_copy e to
-    -- others <- liftIO $ Dir.listDirectory from <&> filter ((/= ".mdb") . Dir.takeExtension)
-    -- for_ others $ \f0 -> do
-    --   let f = from Dir.</> f0
-    --       t = to Dir.</> f0
-    --   Trace.traceWith tracer $ TDBCopyingFile f t
-    --   liftIO $ Dir.copyFile f t
-    Trace.traceWith tracer $ TDBCopied from to
+  let LMDB.Env e = dbEnv
+  from <- liftIO $ LMDB.mdb_env_get_path e
+  Trace.traceWith tracer $ TDBCopying from to
+  liftIO $ LMDB.mdb_env_copy e to
+  Trace.traceWith tracer $ TDBCopied from to
 
 -- TODO We don't know how much time is spent in I/O
 
@@ -444,7 +458,7 @@ mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
 
   (r, traces) <- IOLike.atomically $ IOLike.stateTVar dbOpenHandles $ \x0 ->
     let
-      vh_id = maybe 0 ((+1) . fst) $ Map.lookupMax x0
+      vh_id = newVHId x0
       tracer = Trace.contramap (TDBValueHandle vh_id) dbTracer0
 
       vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> m (Maybe a)
@@ -477,8 +491,8 @@ mkLMDBBackingStoreValueHandle :: forall l m. (MonadIO m, TableStuff l, IOLike m)
   -> m (WithOrigin SlotNo, LMDBValueHandle l m)
 mkLMDBBackingStoreValueHandle Db{..} = do
   let
-    dbe = LMDB.readOnlyEnvironment dbEnv
-  vh <- mkValueHandle dbTracer dbe dbOpenHandles
+    dbEnvRO = LMDB.readOnlyEnvironment dbEnv
+  vh <- mkValueHandle dbTracer dbEnvRO dbOpenHandles
   mb_init_slot <- vhSubmit vh $ readDbSettingsMaybeNull dbSettings
   init_slot <- liftIO $ maybe (Exn.throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mb_init_slot
   let
