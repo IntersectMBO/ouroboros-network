@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (BackingStoreSelector)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+
 {-------------------------------------------------------------------------------
   Arguments
 -------------------------------------------------------------------------------}
@@ -146,7 +147,7 @@ defaultArgs ::
 defaultArgs mkFS diskPolicy bss =
   toChainDbArgs (ImmutableDB.defaultArgs immFS)
                 (VolatileDB.defaultArgs  volFS)
-                (LgrDB.defaultArgs lgrFS diskPolicy bss)
+                (LgrDB.defaultArgs       lgrFS diskPolicy bss)
                 defaultSpecificArgs
   where
     immFS, volFS, lgrFS :: SomeHasFS m

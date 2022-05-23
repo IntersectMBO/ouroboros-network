@@ -237,6 +237,8 @@ lmdbInitTable tbl_name db0 (HD.UtxoValues m) = do
   LMDB Interface specialized for ApplyMapKinds
 -------------------------------------------------------------------------------}
 
+data LMDBMK k v = LMDBMK String !(LMDB.Database k v)
+
 getDb                  :: LMDB.Mode mode       =>                      NameMK   k v -> LMDB.Transaction mode           (LMDBMK   k v)
 initLMDBTable          :: LedgerConstraint k v =>        LMDBMK k v -> ValuesMK k v -> LMDB.Transaction LMDB.ReadWrite (EmptyMK  k v)
 writeLMDBTable         :: LedgerConstraint k v =>        LMDBMK k v -> DiffMK   k v -> LMDB.Transaction LMDB.ReadWrite (EmptyMK  k v)

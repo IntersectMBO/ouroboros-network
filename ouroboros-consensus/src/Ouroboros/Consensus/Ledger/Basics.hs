@@ -81,7 +81,6 @@ module Ouroboros.Consensus.Ledger.Basics (
   , TrackingMK
   , UnApplyMapKind
   , ValuesMK
-  , LMDBMK (..)
   , NameMK (..)
     -- ** Queries
   , DiskLedgerView (..)
@@ -139,7 +138,6 @@ import qualified Data.Map as Map
 import           Data.Monoid (All (..), Sum (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
--- import           Data.Coerce(Coercible)
 import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
@@ -162,7 +160,6 @@ import           Ouroboros.Consensus.Util.Singletons
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
-import qualified Database.LMDB.Simple as LMDB
 
 {-------------------------------------------------------------------------------
   Tip
@@ -696,7 +693,6 @@ data MapKind' = DiffMK'
               | TrackingMK'
               | ValuesMK'
 
-
 type DiffMK     = ApplyMapKind' DiffMK'
 type EmptyMK    = ApplyMapKind' EmptyMK'
 type KeysMK     = ApplyMapKind' KeysMK'
@@ -714,7 +710,6 @@ data CodecMK k v = CodecMK
                      (forall s . CBOR.Decoder s k)
                      (forall s . CBOR.Decoder s v)
 
-data LMDBMK k v = LMDBMK String !(LMDB.Database k v)
 newtype NameMK k v = NameMK String
 
 type ApplyMapKind mk = mk

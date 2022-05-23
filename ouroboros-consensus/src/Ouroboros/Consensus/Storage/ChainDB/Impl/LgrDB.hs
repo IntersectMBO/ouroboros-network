@@ -158,7 +158,6 @@ type LgrDbSerialiseConstraints blk =
   Initialization
 -------------------------------------------------------------------------------}
 
-
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy           :: DiskPolicy
     , lgrGenesis              :: HKD f (m (ExtLedgerState blk ValuesMK))
@@ -283,8 +282,6 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
         (streamAPI immutableDB)
         lgrRunAlsoLegacy
         lgrBackingStoreSelector
-
-
     return (db, replayed, backingStore)
   where
     LgrDbArgs { lgrHasFS = hasFS, .. } = args
