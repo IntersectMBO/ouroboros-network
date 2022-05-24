@@ -462,8 +462,9 @@ instance TableStuff (LedgerState TestBlock) where
   mapLedgerTables      _                                       NoTestLedgerTables = NoTestLedgerTables
   traverseLedgerTables _                                       NoTestLedgerTables = pure NoTestLedgerTables
   zipLedgerTables      _                    NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
-  zipLedgerTablesA     _                    NoTestLedgerTables NoTestLedgerTables = pure NoTestLedgerTables
   zipLedgerTables2     _ NoTestLedgerTables NoTestLedgerTables NoTestLedgerTables = NoTestLedgerTables
+  zipLedgerTablesA     _                    NoTestLedgerTables NoTestLedgerTables = pure NoTestLedgerTables
+  zipLedgerTables2A    _ NoTestLedgerTables NoTestLedgerTables NoTestLedgerTables = pure NoTestLedgerTables
   foldLedgerTables     _                                       NoTestLedgerTables = mempty
   foldLedgerTables2    _                    NoTestLedgerTables NoTestLedgerTables = mempty
   namesLedgerTables                                                               = NoTestLedgerTables

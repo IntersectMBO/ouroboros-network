@@ -132,8 +132,9 @@ instance TableStuff (LedgerState ByronSpecBlock) where
   mapLedgerTables      _f                                                 NoByronSpecLedgerTables = NoByronSpecLedgerTables
   traverseLedgerTables _f                                                 NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
   zipLedgerTables      _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
-  zipLedgerTablesA     _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
   zipLedgerTables2     _f NoByronSpecLedgerTables NoByronSpecLedgerTables NoByronSpecLedgerTables = NoByronSpecLedgerTables
+  zipLedgerTablesA     _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
+  zipLedgerTables2A    _f NoByronSpecLedgerTables NoByronSpecLedgerTables NoByronSpecLedgerTables = pure NoByronSpecLedgerTables
   foldLedgerTables     _f                                                 NoByronSpecLedgerTables = mempty
   foldLedgerTables2    _f                         NoByronSpecLedgerTables NoByronSpecLedgerTables = mempty
   namesLedgerTables                                                                               = NoByronSpecLedgerTables

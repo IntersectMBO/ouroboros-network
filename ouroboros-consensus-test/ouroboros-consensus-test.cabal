@@ -295,6 +295,7 @@ test-suite test-lmdb-bs
                      , tasty-quickcheck
                      , tasty-hunit
                      , ouroboros-consensus
+                     , cardano-binary
                      , cardano-slotting
                      , ouroboros-consensus-test
                      , directory

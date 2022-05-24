@@ -388,8 +388,9 @@ instance ShelleyBasedHardForkConstraints era1 era2
   mapLedgerTables      f                                                                           (ShelleyBasedHardForkLedgerTables x) = ShelleyBasedHardForkLedgerTables (f x)
   traverseLedgerTables f                                                                           (ShelleyBasedHardForkLedgerTables x) = ShelleyBasedHardForkLedgerTables <$> f x
   zipLedgerTables      f                                      (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables (f l r)
-  zipLedgerTablesA     f                                      (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables <$> f l r
   zipLedgerTables2     f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables c) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables (f l c r)
+  zipLedgerTablesA     f                                      (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables <$> f l r
+  zipLedgerTables2A    f (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables c) (ShelleyBasedHardForkLedgerTables r) = ShelleyBasedHardForkLedgerTables <$> f l c r
   foldLedgerTables     f                                                                           (ShelleyBasedHardForkLedgerTables x) = f x
   foldLedgerTables2    f                                      (ShelleyBasedHardForkLedgerTables l) (ShelleyBasedHardForkLedgerTables r) = f l r
   namesLedgerTables = ShelleyBasedHardForkLedgerTables { shelleyBasedHardForkUTxOTable = NameMK "shelleyBasedHardForkUTxOTable" }

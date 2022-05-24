@@ -51,7 +51,6 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Isolating the tables
   , TableStuff (..)
   , TickedTableStuff (..)
-  , LedgerConstraint
   , mapOverLedgerTables
   , mapOverLedgerTablesTicked
   , overLedgerTables
@@ -76,32 +75,32 @@ module Ouroboros.Consensus.Ledger.Basics (
   , EmptyMK
   , IsApplyMapKind
   , KeysMK
+  , LMDBMK (..)
+  , NameMK (..)
   , QueryMK
   , SeqDiffMK
   , TrackingMK
   , UnApplyMapKind
   , ValuesMK
-  , LMDBMK (..)
-  , NameMK (..)
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
     -- ** Convenience aliases
-  , emptyLedgerTables
-  , polyEmptyLedgerTables
-  , forgetLedgerTables
-  , forgetLedgerTablesValues
-  , forgetLedgerTablesDiffs
-  , forgetLedgerTablesDiffsTicked
-  , prependLedgerTablesDiffsRaw
-  , prependLedgerTablesDiffs
-  , prependLedgerTablesDiffsTicked
-  , prependLedgerTablesDiffsFromTicked
   , applyLedgerTablesDiffs
   , applyLedgerTablesDiffsTicked
   , calculateAdditions
   , calculateDifference
   , calculateDifferenceTicked
+  , emptyLedgerTables
+  , forgetLedgerTables
+  , forgetLedgerTablesDiffs
+  , forgetLedgerTablesDiffsTicked
+  , forgetLedgerTablesValues
+  , polyEmptyLedgerTables
+  , prependLedgerTablesDiffs
+  , prependLedgerTablesDiffsFromTicked
+  , prependLedgerTablesDiffsRaw
+  , prependLedgerTablesDiffsTicked
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
@@ -125,8 +124,8 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Misc
   , ShowLedgerState (..)
     -- * Exported only for testing
-  , rawCalculateDifference
   , rawApplyDiffs
+  , rawCalculateDifference
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -159,10 +158,10 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
 
+import qualified Database.LMDB.Simple as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
-import qualified Database.LMDB.Simple as LMDB
 
 {-------------------------------------------------------------------------------
   Tip
@@ -344,9 +343,6 @@ noNewTickingDiffs :: TickedTableStuff l
                    -> l DiffMK
 noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables
 
-class (Ord k, ToCBOR k, FromCBOR k, ToCBOR v, FromCBOR v) => LedgerConstraint k v
-instance (Ord k, ToCBOR k, FromCBOR k, ToCBOR v, FromCBOR v) => LedgerConstraint k v
-
 -- This can't be in IsLedger because we have a compositional IsLedger instance
 -- for LedgerState HardForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
@@ -383,14 +379,14 @@ class ( ShowLedgerState (LedgerTables l)
 
   pureLedgerTables ::
        (forall k v.
-            LedgerConstraint k v
+            Ord k
          => mk k v
        )
     -> LedgerTables l mk
 
   mapLedgerTables ::
        (forall k v.
-            LedgerConstraint k v
+            Ord k
          => mk1 k v
          -> mk2 k v
        )
@@ -399,7 +395,7 @@ class ( ShowLedgerState (LedgerTables l)
 
   traverseLedgerTables ::
        Applicative f
-    => (forall k v . LedgerConstraint k v
+    => (forall k v . Ord k
         =>    mk1 k v
         -> f (mk2 k v)
        )
@@ -408,7 +404,7 @@ class ( ShowLedgerState (LedgerTables l)
 
   zipLedgerTables ::
        (forall k v.
-            LedgerConstraint k v
+            Ord k
          => mk1 k v
          -> mk2 k v
          -> mk3 k v
@@ -417,21 +413,9 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
 
-  zipLedgerTablesA :: Applicative f
-    =>
-       (forall k v.
-            LedgerConstraint k v
-         => mk1 k v
-         -> mk2 k v
-         -> f (mk3 k v)
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
-    -> f (LedgerTables l mk3)
-
   zipLedgerTables2 ::
        (forall k v.
-            LedgerConstraint k v
+            Ord k
          => mk1 k v
          -> mk2 k v
          -> mk3 k v
@@ -442,10 +426,36 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk3
     -> LedgerTables l mk4
 
+  zipLedgerTablesA ::
+       Applicative f
+    => (forall k v.
+            Ord k
+         => mk1 k v
+         -> mk2 k v
+         -> f (mk3 k v)
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> f (LedgerTables l mk3)
+
+  zipLedgerTables2A ::
+       Applicative f
+    => (forall k v.
+            Ord k
+         => mk1 k v
+         -> mk2 k v
+         -> mk3 k v
+         -> f (mk4 k v)
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> LedgerTables l mk3
+    -> f (LedgerTables l mk4)
+
   foldLedgerTables ::
        Monoid m
     => (forall k v.
-            LedgerConstraint k v
+            Ord k
          => mk k v
          -> m
        )
@@ -455,7 +465,7 @@ class ( ShowLedgerState (LedgerTables l)
   foldLedgerTables2 ::
        Monoid m
     => (forall k v.
-           LedgerConstraint k v
+           Ord k
         => mk1 k v
         -> mk2 k v
         -> m
