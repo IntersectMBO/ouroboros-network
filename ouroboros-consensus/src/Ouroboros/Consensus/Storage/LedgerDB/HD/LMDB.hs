@@ -459,6 +459,10 @@ withDbStateRWMaybeNull ::
 withDbStateRWMaybeNull db f  =
   readDbStateMaybeNull db >>= f >>= \(r, new_s) -> LMDB.put db () (Just new_s) $> r
 
+{-------------------------------------------------------------------------------
+ Db directory guards
+-------------------------------------------------------------------------------}
+
 data GuardDbDir  = GDDMustExist | GDDMustNotExist
 
 -- | Guard for the existence/non-existence of a database directory,
@@ -484,8 +488,11 @@ guardDbDir gdd (FS.SomeHasFS fs) path = do
 -- | Same as @`guardDbDir`@, but retries the guard if we can make meaningful
 -- changes to the filesystem before we perform the retry.
 --
--- Note: We only retry if a database directory exists while it shoudn't: In
+-- Note: We only retry if a database directory exists while it shoudn't. In
 -- this case, we remove the directory recursively before retrying the guard.
+-- This is necessary for initialisation of the LMDB backing store, since the
+-- (non-snapshot) tables will probably still be on-disk. These tables are not
+-- removed when stopping the node, so they should be "overwritten".
 guardDbDirWithRetry ::
      (MonadIO m, IOLike m)
   => GuardDbDir
