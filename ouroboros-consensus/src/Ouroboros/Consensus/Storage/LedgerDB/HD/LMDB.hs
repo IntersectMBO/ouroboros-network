@@ -87,7 +87,7 @@ data TraceDb
   | TDBValueHandle Int TraceValueHandle
   | TDBTableOp     TraceTableOp
   | TDBInitialisingFromLMDB !FS.FsPath
-  | TDBInitialisingFromLMDBDone !FS.FsPath
+  | TDBInitialisedFromLMDBD !FS.FsPath
   deriving (Show, Eq)
 
 data TraceTableOp = TTO
@@ -467,14 +467,10 @@ initFromLMDBs tracer limits shfs from0 to0 = do
     from <- guardDbDir GDDMustExist shfs from0
     to <- guardDbDirWithRetry GDDMustNotExist shfs to0
     bracket
-      -- TODO assess limits, in particular this could fail if the db is too big
-      -- TODO(jdral): Should we read from some configuration/settings file what
-      -- the limits of the "from" database are? Do we want to support
-      -- interoperablity between databases with different limits?
       (liftIO $ LMDB.openEnvironment from limits)
       (liftIO . LMDB.closeEnvironment)
       (flip (lmdbCopy tracer) to)
-    Trace.traceWith tracer $ TDBInitialisingFromLMDBDone to0
+    Trace.traceWith tracer $ TDBInitialisedFromLMDBD to0
 
 lmdbCopy :: MonadIO m
   => Trace.Tracer m TraceDb
