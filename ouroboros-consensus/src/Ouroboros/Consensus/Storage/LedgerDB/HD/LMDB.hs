@@ -25,7 +25,6 @@ import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toStrictByteString)
 import qualified Codec.Serialise as S (Serialise (..))
 import           Control.Exception (assert)
-import qualified Control.Exception as Exn
 import           Control.Monad (unless, void, when, (>=>))
 import qualified Control.Monad.Class.MonadSTM as IOLike
 import           Control.Monad.IO.Class (MonadIO (liftIO))
@@ -49,7 +48,10 @@ import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import           Ouroboros.Consensus.Util (foldlM')
-import           Ouroboros.Consensus.Util.IOLike (IOLike, MonadCatch(..), MonadThrow(..), bracket, onException)
+import           Ouroboros.Consensus.Util.IOLike
+                  ( IOLike, MonadCatch(..), MonadThrow(..)
+                  , Exception (..), bracket, onException
+                  )
 
 import qualified Database.LMDB.Raw as LMDB
 import qualified Database.LMDB.Simple as LMDB
@@ -128,7 +130,7 @@ data DbErr =
     -- | A database directory should exist already.
   | DbErrDirDoesntExist !FS.FsPath
 
-instance Exn.Exception DbErr
+instance Exception DbErr
 
 -- | Show instance for pretty printing @`DbErr`@s as error messages that
 -- include: (i) an indication of the probable cause of the error, and
@@ -390,7 +392,7 @@ initLMDBTable (LMDBMK tbl_name db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVal
   where
     lmdbInitTable  = do
       is_empty <- LMDB.null db
-      unless is_empty $ Exn.throw $ DbErrInitialisingNonEmpty tbl_name
+      unless is_empty $ liftIO . throwIO $ DbErrInitialisingNonEmpty tbl_name
       void $ Map.traverseWithKey
                  (\k v -> put codecMK db k (Just v))
                  utxoVals
@@ -448,7 +450,7 @@ withDbStateRW ::
      LMDB.Database () DbState
   -> (DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState))
   -> LMDB.Transaction LMDB.ReadWrite a
-withDbStateRW db f = withDbStateRWMaybeNull db $ maybe (Exn.throw DbErrNoDbState) f
+withDbStateRW db f = withDbStateRWMaybeNull db $ maybe (liftIO . throwIO $ DbErrNoDbState) f
 
 withDbStateRWMaybeNull ::
       LMDB.Database () DbState
@@ -470,7 +472,7 @@ guardDbDir ::
 guardDbDir gdd (FS.SomeHasFS fs) path = do
   fileEx <- FS.doesFileExist fs path
   when fileEx $
-    Exn.throw $ DbErrStr $ "guardDbDir:must be a directory: " <> show path
+    throwIO $ DbErrStr $ "guardDbDir:must be a directory: " <> show path
   dirEx <- FS.doesDirectoryExist fs path
   case dirEx of
     True  | GDDMustNotExist <- gdd -> throwIO $ DbErrDirExists path
@@ -520,7 +522,7 @@ initFromVals dbsSeq vals Db{..} = liftIO $ LMDB.readWriteTransaction dbEnv $
   withDbStateRWMaybeNull dbState $ \case
     Nothing -> zipLedgerTables2A initLMDBTable dbBackingTables codecLedgerTables vals
                 $> ((), DbState{dbsSeq})
-    Just _ -> Exn.throw $ DbErrStr "initFromVals: db already had state"
+    Just _ -> liftIO . throwIO $ DbErrStr "initFromVals: db already had state"
 
 initFromLMDBs ::
      (MonadIO m, IOLike m)
@@ -631,7 +633,7 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
     bsWrite slot diffs = do
       old_slot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbStateRW dbState $ \s@DbState{dbsSeq} -> do
         -- TODO This should be <. However the test harness does call bsWrite with the same slot
-        unless (dbsSeq <= At slot) $ Exn.throw $ DbErrNonMonotonicSeq (At slot) dbsSeq
+        unless (dbsSeq <= At slot) $ liftIO . throwIO $ DbErrNonMonotonicSeq (At slot) dbsSeq
         void $ zipLedgerTables2A writeLMDBTable dbBackingTables codecLedgerTables diffs
         pure (dbsSeq, s {dbsSeq = At slot})
       Trace.traceWith dbTracer $ TDBWrite old_slot slot
@@ -668,7 +670,7 @@ mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
       vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> m (Maybe a)
       vhSubmit (LMDB.Internal.Txn t) = do
         present <- Map.member vh_id <$> IOLike.atomically (IOLike.readTVar dbOpenHandles)
-        unless present $ Exn.throw $ DbErrNoValueHandle vh_id
+        unless present $ throwIO $ DbErrNoValueHandle vh_id
         flip onException vhClose $ do
           Trace.traceWith tracer TVHSubmissionStarted
           r <- liftIO $ t readOnlyTx
@@ -699,7 +701,7 @@ mkLMDBBackingStoreValueHandle Db{..} = do
     dbe = LMDB.readOnlyEnvironment dbEnv
   vh <- mkValueHandle dbTracer dbe dbOpenHandles
   mb_init_slot <- vhSubmit vh $ readDbStateMaybeNull dbState
-  init_slot <- liftIO $ maybe (Exn.throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mb_init_slot
+  init_slot <- liftIO $ maybe (throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mb_init_slot
   let
     bsvhClose :: m ()
     bsvhClose = vhClose vh
@@ -707,7 +709,7 @@ mkLMDBBackingStoreValueHandle Db{..} = do
     bsvhRead :: LedgerTables l KeysMK -> m (LedgerTables l ValuesMK)
     bsvhRead keys = vhSubmit vh (Just <$> zipLedgerTables2A readLMDBTable dbBackingTables codecLedgerTables keys)
         >>= \case
-              Nothing -> Exn.throw DbErrBadRead
+              Nothing -> throwIO DbErrBadRead
               Just x  -> pure x
 
     bsvhRangeRead :: HD.RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK)
@@ -716,6 +718,6 @@ mkLMDBBackingStoreValueHandle Db{..} = do
         Nothing -> zipLedgerTablesA (initRangeReadLMDBTable rqCount) dbBackingTables codecLedgerTables
         Just keys -> zipLedgerTables2A (rangeReadLMDBTable rqCount) dbBackingTables codecLedgerTables keys
       in vhSubmit vh transaction >>= \case
-        Nothing -> Exn.throw DbErrBadRangeRead
+        Nothing -> throwIO DbErrBadRangeRead
         Just x  -> pure x
   pure (init_slot, HD.BackingStoreValueHandle{..})
