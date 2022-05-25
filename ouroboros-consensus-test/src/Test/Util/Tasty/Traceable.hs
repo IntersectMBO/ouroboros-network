@@ -3,7 +3,7 @@
 -- |
 {-# OPTIONS_GHC -Wno-missing-export-lists #-}
 
-module Test.Tasty.Traceable where
+module Test.Util.Tasty.Traceable where
 import qualified Test.Tasty.Options as Tasty
 import Test.Tasty.Providers
 import Data.Proxy

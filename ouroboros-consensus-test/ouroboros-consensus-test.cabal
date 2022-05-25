@@ -69,12 +69,12 @@ library
                        Test.Util.Slots
                        Test.Util.Split
                        Test.Util.Stream
+                       Test.Util.Tasty.Traceable
                        Test.Util.TestBlock
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
 
-                       Test.Tasty.Traceable
   build-depends:       base              >=4.9 && <4.15
                      , base16-bytestring
                      , bytestring        >=0.10  && <0.11

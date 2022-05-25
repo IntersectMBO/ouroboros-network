@@ -64,7 +64,7 @@ import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
-import qualified Test.Tasty.Traceable as TTT
+import qualified Test.Util.Tasty.Traceable as TTT
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
