@@ -8,16 +8,19 @@
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
+
+-- | Simple unit tests for the LMDB backing store.
 module Main (main) where
 
 import qualified Control.Tracer as Trace
-import qualified Data.Map as Map
 import           Data.Maybe
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified System.Directory as Dir
 import           System.IO.Temp
 
+import           Test.Tasty (TestTree)
 import qualified Test.Tasty as Tasty
 import qualified Test.Tasty.HUnit as Tasty
 
@@ -36,42 +39,37 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 
 import           Test.Util.TestBlock ()
 
-withLMDB ::
-     forall l. (TableStuff l, SufficientSerializationForAnyBackingStore l)
-  => Maybe LMDB.LMDBLimits
-  -> (IO (LMDB.LMDBBackingStore l IO) -> Tasty.TestTree)
-  -> Tasty.TestTree
-withLMDB mb_limits act = let
-    init_lmdb = do
-      x <- Dir.getTemporaryDirectory
-      tmpdir <- createTempDirectory x "cardano-lmdb"
-      let
-        fs = someHasFSIO tmpdir
-        limits = fromMaybe LMDB.defaultLMDBLimits mb_limits
-        empty_init :: LMDB.LMDBInit l
-        empty_init = LMDB.LIInitialiseFromMemory Origin polyEmptyLedgerTables
-      bs <- LMDB.newLMDBBackingStore
-        (show `Trace.contramap` Trace.stdoutTracer)
-        limits fs empty_init
-      pure (tmpdir, bs)
-    cleanup_lmdb (tmpdir, _) = do
-      Dir.removeDirectoryRecursive tmpdir
-  in Tasty.withResource init_lmdb cleanup_lmdb $ \x -> act $ fmap snd x
-
 main :: IO ()
 main = Tasty.defaultMain test1
 
-test1 :: Tasty.TestTree
-test1 = withLMDB Nothing $ \mbs -> Tasty.testCaseSteps "simple insert and read" $ \step -> do
+{-------------------------------------------------------------------------------
+  Unit tests
+-------------------------------------------------------------------------------}
+
+-- | Perform a few simple writes and reads.
+--
+-- The test asserts that:
+-- * The database sequence number increases monotonically across writes.
+-- * The @`BackingStoreValueHandle`@s have a view of the database that is
+--   consistent with the state of the database at the point in time when
+--   the handles were created. That is, the value handles do not show changes
+--   that were written /after/ the value handle was opened.
+test1 :: TestTree
+test1 =
+  withLMDB Nothing Nothing $ \mbs ->
+    Tasty.testCaseSteps "simple insert and read" $ \step -> do
   bs <- mbs
+
   step "write1"
   HD.bsWrite bs 1 simpleWrite1
   (seq1, vh1) <- HD.bsValueHandle bs
   Tasty.assertEqual "" (At 1) seq1
+
   step "write2"
   HD.bsWrite bs 2 simpleWrite2
   (seq2, vh2) <- HD.bsValueHandle bs
   Tasty.assertEqual "" (At 2) seq2
+
   step "read1"
   TLedgerTables
     { od_tbl1 = ApplyValuesMK (HD.UtxoValues t1_1)
@@ -79,6 +77,7 @@ test1 = withLMDB Nothing $ \mbs -> Tasty.testCaseSteps "simple insert and read" 
     } <- HD.bsvhRead vh1 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 True) t1_1
   Tasty.assertEqual "" (Map.singleton "1" 1) t2_1
+
   step "read2"
   TLedgerTables
     { od_tbl1 = ApplyValuesMK (HD.UtxoValues t1_2)
@@ -87,9 +86,45 @@ test1 = withLMDB Nothing $ \mbs -> Tasty.testCaseSteps "simple insert and read" 
   Tasty.assertEqual "" (Map.singleton 1 False) t1_2
   Tasty.assertEqual "" (Map.singleton "1" 2) t2_2
 
+-- | Initialise an `LMDB` backing store and use it to run actions test-case steps.
+withLMDB ::
+     forall l. (TableStuff l, SufficientSerializationForAnyBackingStore l)
+  => Maybe LMDB.LMDBLimits
+  -> Maybe (LedgerTables l ValuesMK)
+  -> (IO (LMDB.LMDBBackingStore l IO) -> TestTree)
+  -> Tasty.TestTree
+withLMDB mayLimits _mayInitVals act =
+    Tasty.withResource (initLMDB mayLimits) cleanupLMDB $ \x -> act $ fmap snd x
+
+-- | Initialise an @`LMDBBackingStore`@ inside a temporary directory.
+initLMDB ::
+     forall l. (TableStuff l, SufficientSerializationForAnyBackingStore l)
+  => Maybe LMDB.LMDBLimits
+  -> IO (FilePath, LMDB.LMDBBackingStore l IO)
+initLMDB mayLimits = do
+  x <- Dir.getTemporaryDirectory
+  tmpdir <- createTempDirectory x "cardano-lmdb"
+  let
+    fs = someHasFSIO tmpdir
+    limits = fromMaybe LMDB.defaultLMDBLimits mayLimits
+    emptyInit :: LMDB.LMDBInit l
+    emptyInit = LMDB.LIInitialiseFromMemory Origin polyEmptyLedgerTables
+  bs <- LMDB.newLMDBBackingStore
+    (show `Trace.contramap` Trace.stdoutTracer)
+    limits fs emptyInit
+  pure (tmpdir, bs)
+
+-- | Remove a temporary directory that was created for an @`LMDBBackingStore`@.
+cleanupLMDB :: (FilePath, b) -> IO ()
+cleanupLMDB (tmpdir, _) = do
+  Dir.removeDirectoryRecursive tmpdir
 
 someHasFSIO :: FilePath -> SomeHasFS IO
 someHasFSIO fp = SomeHasFS $ ioHasFS $ MountPoint fp
+
+{-------------------------------------------------------------------------------
+  Test utilities: Simple ledger
+-------------------------------------------------------------------------------}
 
 data T mk = T
   { seq_no :: WithOrigin SlotNo
@@ -119,7 +154,6 @@ instance ShowLedgerState (LedgerTables T) where
     . showsApplyMapKind od_tbl2
     . showString " }"
 
-
 instance TableStuff T where
   data LedgerTables T mk = TLedgerTables
     { od_tbl1 :: mk Int Bool
@@ -135,15 +169,32 @@ instance TableStuff T where
   pureLedgerTables f =
     TLedgerTables { od_tbl1 = f, od_tbl2 = f }
 
+  mapLedgerTables f TLedgerTables{od_tbl1, od_tbl2} =
+    TLedgerTables (f od_tbl1) (f od_tbl2)
+
   traverseLedgerTables f TLedgerTables{od_tbl1, od_tbl2} =
     TLedgerTables <$> f od_tbl1 <*> f od_tbl2
+
+  zipLedgerTables f l r =
+    TLedgerTables (f (od_tbl1 l) (od_tbl1 r)) (f (od_tbl2 l) (od_tbl2 r))
 
   zipLedgerTablesA f l r =
     TLedgerTables <$> f (od_tbl1 l) (od_tbl1 r) <*> f (od_tbl2 l) (od_tbl2 r)
 
+  zipLedgerTables2 f l m r =
+    TLedgerTables
+      (f (od_tbl1 l) (od_tbl1 m) (od_tbl1 r))
+      (f (od_tbl2 l) (od_tbl2 m) (od_tbl2 r))
+
   zipLedgerTables2A f l c r =
     TLedgerTables <$> f (od_tbl1 l) (od_tbl1 c) (od_tbl1 r)
                   <*> f (od_tbl2 l) (od_tbl2 c) (od_tbl2 r)
+
+  foldLedgerTables f TLedgerTables{od_tbl1, od_tbl2} =
+    f od_tbl1 <> f od_tbl2
+
+  foldLedgerTables2 f l r =
+    f (od_tbl1 l) (od_tbl1 r) <> f (od_tbl2 l) (od_tbl2 r)
 
   namesLedgerTables =
     TLedgerTables { od_tbl1 = NameMK "tbl1", od_tbl2 = NameMK "tbl2" }
@@ -152,6 +203,10 @@ instance  SufficientSerializationForAnyBackingStore T where
   codecLedgerTables =
     TLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
                   (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
+
+{-------------------------------------------------------------------------------
+  Test utilities: Simple ledger tables
+-------------------------------------------------------------------------------}
 
 simpleWrite1 :: LedgerTables T DiffMK
 simpleWrite1 = TLedgerTables
