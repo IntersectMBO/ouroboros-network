@@ -7,6 +7,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DataKinds                  #-}
 
 module Ouroboros.Consensus.Storage.Common (
     -- * Indexing

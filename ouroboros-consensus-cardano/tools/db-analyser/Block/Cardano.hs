@@ -91,8 +91,8 @@ analyseWithLedgerState f (WithLedgerState cb sb sa) =
     oeb = getOneEraBlock . getHardForkBlock $ cb
 
     goLS ::
-      LedgerState (CardanoBlock StandardCrypto) ValuesMK ->
-      NP (Maybe :.: Flip LedgerState ValuesMK) (CardanoEras StandardCrypto)
+      LedgerState (CardanoBlock StandardCrypto) EmptyMK ->
+      NP (Maybe :.: Flip LedgerState EmptyMK) (CardanoEras StandardCrypto)
     goLS =
       hexpand (Comp Nothing)
         . hmap (Comp . Just . currentState)

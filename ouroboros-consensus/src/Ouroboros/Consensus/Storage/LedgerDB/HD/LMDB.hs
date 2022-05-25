@@ -18,6 +18,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (
   , TraceDb (..)
   , defaultLMDBLimits
   , newLMDBBackingStore
+  -- * Exported for ledger-db-backends-checker
+  , DbState (..)
+  , LMDBMK (..)
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR

@@ -53,6 +53,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , mkLgrDB
     -- * Temporarily exported
   , lgrBackingStore
+  , streamAPI
+  , streamAPI'
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -456,29 +458,40 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
 streamAPI ::
      forall m blk.
      (IOLike m, HasHeader blk)
-  => ImmutableDB m blk -> StreamAPI m blk
-streamAPI immutableDB = StreamAPI streamAfter
+  => ImmutableDB m blk -> StreamAPI m blk blk
+streamAPI = streamAPI' (return . NextBlock) GetBlock
+
+streamAPI' ::
+     forall m blk a.
+     (IOLike m, HasHeader blk)
+  => (a -> m (NextBlock a)) -- ^ Stop condition
+  -> BlockComponent   blk a
+  -> ImmutableDB    m blk
+  -> StreamAPI      m blk a
+streamAPI' shouldStop blockComponent immutableDB = StreamAPI streamAfter
   where
-    streamAfter :: HasCallStack
-                => Point blk
-                -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
-                -> m a
+    streamAfter :: Point blk
+                -> (Either (RealPoint blk) (m (NextBlock a)) -> m b)
+                -> m b
     streamAfter tip k = withRegistry $ \registry -> do
         eItr <-
           ImmutableDB.streamAfterPoint
             immutableDB
             registry
-            GetBlock
+            blockComponent
             tip
         case eItr of
           -- Snapshot is too recent
           Left  err -> k $ Left  $ ImmutableDB.missingBlockPoint err
           Right itr -> k $ Right $ streamUsing itr
 
-    streamUsing :: ImmutableDB.Iterator m blk blk -> m (NextBlock blk)
-    streamUsing itr = ImmutableDB.iteratorNext itr >>= \case
-      ImmutableDB.IteratorExhausted  -> return $ NoMoreBlocks
-      ImmutableDB.IteratorResult blk -> return $ NextBlock blk
+    streamUsing :: ImmutableDB.Iterator m blk a
+                -> m (NextBlock a)
+    streamUsing itr = do
+        itrResult <- ImmutableDB.iteratorNext itr
+        case itrResult of
+          ImmutableDB.IteratorExhausted -> return NoMoreBlocks
+          ImmutableDB.IteratorResult b  -> shouldStop b
 
 {-------------------------------------------------------------------------------
   Previously applied blocks
