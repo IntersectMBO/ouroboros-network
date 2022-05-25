@@ -999,9 +999,11 @@ runDB standalone@DB{..} cmd =
         (initLog, db, _replayed, backingStore) <-
           initLedgerDB
             nullTracer
+            -- Todo(jdral): Consider using @traceMaybe@. This would require
+            -- the function to be added to the IOHK-fork of @contra-variant@.
             (Trace.Tracer $ \case
                LMDBEvent e -> Trace.runTracer (dbTracer dbEnv) e
-               _           -> pure ()) -- TODO gross
+               _           -> pure ())
             hasFS
             S.decode
             S.decode
@@ -1352,7 +1354,7 @@ prop_sequential mk_dbenv secParam = QC.withMaxSuccess 100000 $
 mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
 mkDbTracer (TTT.ShowTrace b)
   | b = show `Trace.contramap` Trace.stdoutTracer
-  | otherwise = mempty
+  | otherwise = nullTracer
 
 inMemDbEnv :: Trans.MonadIO m
   => TTT.ShowTrace
