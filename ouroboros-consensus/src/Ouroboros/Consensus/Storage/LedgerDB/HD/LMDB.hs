@@ -172,6 +172,7 @@ prettyPrintDbErr = \case
   Database definition
 -------------------------------------------------------------------------------}
 
+-- | The LMDB database that underlies the backing store.
 data Db m l = Db {
     -- | The LMDB environment is a pointer to the directory that contains the
     -- @`Db`@.
@@ -197,7 +198,8 @@ type LMDBLimits = LMDB.Limits
 defaultLMDBLimits :: LMDBLimits
 defaultLMDBLimits = LMDB.defaultLimits
   { LMDB.mapSize = 6_000_000_000
-  , LMDB.maxDatabases = 10 -- We use 1 database per field + one for the state (i.e. sidetable)
+    -- We use 1 database per field + one for the state (i.e. sidetable)
+  , LMDB.maxDatabases = 10
   , LMDB.maxReaders = 16
   }
 
@@ -227,7 +229,6 @@ instance S.Serialise DbState
 data ValueHandle m = ValueHandle
   { vhClose :: !(m ())
   , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> m (Maybe a))
-  -- , vhRefCount :: !(IOLike.TVar IO Int)
   }
 
 {-------------------------------------------------------------------------------
@@ -496,7 +497,7 @@ guardDbDir ::
 guardDbDir gdd (FS.SomeHasFS fs) path = do
   fileEx <- FS.doesFileExist fs path
   when fileEx $
-    throwIO $ DbErrStr $ "guardDbDir:must be a directory: " <> show path
+    throwIO $ DbErrStr $ "guardDbDir: must be a directory: " <> show path
   dirEx <- FS.doesDirectoryExist fs path
   case dirEx of
     True  | GDDMustNotExist <- gdd -> throwIO $ DbErrDirExists path
@@ -532,18 +533,25 @@ guardDbDirWithRetry gdd shfs@(FS.SomeHasFS fs) path =
  Initialize an LMDB
 -------------------------------------------------------------------------------}
 
--- | How to initialise an LMDB Backing store
-data LMDBInit l
-  = LIInitialiseFromMemory (WithOrigin SlotNo) (LedgerTables l ValuesMK) -- ^ Initialise with these values
-  | LIInitialiseFromLMDB FS.FsPath -- ^ Initialise by copying from an LMDB db at this path
-  | LINoInitialise -- ^ The database is already initialised
+-- | How to initialise an LMDB Backing store.
+data LMDBInit l =
+    -- | Initialise with these values.
+    LIInitialiseFromMemory (WithOrigin SlotNo) (LedgerTables l ValuesMK)
+    -- | Initialise by copying from an LMDB database at a given path.
+  | LIInitialiseFromLMDB FS.FsPath
+    -- | The database is already initialised.
+  | LINoInitialise
 
--- | Initialize the LMDB from these provided values
+
+-- | Initialise an LMDB database from these provided values.
 initFromVals ::
      (TableStuff l, SufficientSerializationForAnyBackingStore l, MonadIO m)
   => WithOrigin SlotNo
+     -- ^ The slot number up to which the ledger tables contain values.
   -> LedgerTables l ValuesMK
+     -- ^ The ledger tables to initialise the LMDB database tables with.
   -> Db m l
+     -- ^ The LMDB database.
   -> m ()
 initFromVals dbsSeq vals Db{..} = liftIO $ LMDB.readWriteTransaction dbEnv $
   withDbStateRWMaybeNull dbState $ \case
@@ -551,13 +559,18 @@ initFromVals dbsSeq vals Db{..} = liftIO $ LMDB.readWriteTransaction dbEnv $
                 $> ((), DbState{dbsSeq})
     Just _ -> liftIO . throwIO $ DbErrStr "initFromVals: db already had state"
 
+-- | Initialise an LMDB database from an existing LMDB database.
 initFromLMDBs ::
      (MonadIO m, IOLike m)
   => Trace.Tracer m TraceDb
   -> LMDBLimits
+     -- ^ Configuration for the LMDB database that we initialise from.
   -> FS.SomeHasFS m
+     -- ^ Abstraction over the filesystem.
   -> FS.FsPath
+     -- ^ The path that contains the LMDB database that we want to initialise from.
   -> FS.FsPath
+     -- ^ The path where the new LMDB database should be initialised.
   -> m ()
 initFromLMDBs tracer limits shfs from0 to0 = do
     Trace.traceWith tracer $ TDBInitialisingFromLMDB from0
@@ -569,13 +582,15 @@ initFromLMDBs tracer limits shfs from0 to0 = do
       (flip (lmdbCopy tracer) to)
     Trace.traceWith tracer $ TDBInitialisedFromLMDBD to0
 
+-- | Copy an existing LMDB database to a given directory.
 lmdbCopy :: MonadIO m
   => Trace.Tracer m TraceDb
   -> LMDB.Environment LMDB.ReadWrite
+     -- ^ The environment in which the LMDB database lives.
   -> FilePath
+     -- ^ The path where the copy should reside.
   -> m ()
 lmdbCopy tracer dbEnv to = do
-  -- TODO This copying is gross. Tests depend on it, but I wish I was only responsible for copying the database here
   let LMDB.Internal.Env e = dbEnv
   from <- liftIO $ LMDB.mdb_env_get_path e
   Trace.traceWith tracer $ TDBCopying from to
@@ -586,13 +601,19 @@ lmdbCopy tracer dbEnv to = do
 
 -- TODO 50% of total time is spent somewhere else. Where?
 
--- | Initialise a backing store
+-- | Initialise a backing store.
 newLMDBBackingStore ::
      forall m l. (TableStuff l, SufficientSerializationForAnyBackingStore l, MonadIO m, IOLike m)
   => Trace.Tracer m TraceDb
   -> LMDBLimits
+     -- ^ Configuration parameters for the LMDB database that we
+     -- initialise. In case we initialise the LMDB database from
+     -- an existing LMDB database, we use these same configuration parameters
+     -- to open the existing LMDB database.
   -> FS.SomeHasFS m
+     -- ^ Abstraction over the filesystem.
   -> LMDBInit l
+     -- ^ Determines how the LMDB database should be initialised.
   -> m (LMDBBackingStore l m)
 newLMDBBackingStore dbTracer limits sfs initDb = do
   Trace.traceWith dbTracer TDBOpening
@@ -674,10 +695,14 @@ data TraceValueHandle
   | TVHSubmissionEnded
   deriving stock(Show, Eq)
 
+-- | Create a value handle that has a consistent view of the current database
+-- state (i.e., the database contents, not to be confused with @`DbState`@).
 mkValueHandle :: forall m. (MonadIO m, IOLike m)
   => Trace.Tracer m TraceDb
   -> LMDB.Environment LMDB.ReadOnly
+     -- ^ The read-only environment in which the LMDB database lives.
   -> IOLike.TVar m (Map Int (ValueHandle m))
+     -- ^ Value handles that are already open.
   -> m (ValueHandle m)
 mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
   let LMDB.Internal.Env env = dbEnv
@@ -713,9 +738,20 @@ mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
   for_ traces $ Trace.traceWith dbTracer0
   pure r
 
+-- | Create a backing store value handle that has a consistent view of the
+-- current database state (i.e., the database contents, not to be confused
+-- with @`DbState`@).
+--
+-- Note(jdral): A backing store value handle is different with respect to
+-- a value handle in the sense that @`ValueHandle`@ exposes an interface
+-- for submitting LMDB transactions to the LMDB database, while the
+-- @`LMDBValueHandle`@ exposes an interface for performing reads and range
+-- queries /using/ a value handle perform them.
 mkLMDBBackingStoreValueHandle ::
      forall l m. (TableStuff l, SufficientSerializationForAnyBackingStore l, MonadIO m, IOLike m)
   => Db m l
+     -- ^ The LMDB database for which the backing store value handle is
+     -- created.
   -> m (WithOrigin SlotNo, LMDBValueHandle l m)
 mkLMDBBackingStoreValueHandle Db{..} = do
   let
