@@ -10,7 +10,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Simple unit tests for the LMDB backing store.
-module Main (main) where
+module Test.Ouroboros.Storage.LedgerDB.HD.LMDB (tests) where
 
 import qualified Control.Tracer as Trace
 import           Data.Maybe
@@ -20,7 +20,7 @@ import           Data.Text (Text)
 import qualified System.Directory as Dir
 import           System.IO.Temp
 
-import           Test.Tasty (TestTree)
+import           Test.Tasty (TestTree, testGroup)
 import qualified Test.Tasty as Tasty
 import qualified Test.Tasty.HUnit as Tasty
 
@@ -39,8 +39,10 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 
 import           Test.Util.TestBlock ()
 
-main :: IO ()
-main = Tasty.defaultMain test1
+tests :: TestTree
+tests = testGroup "LMDB" [
+    test1
+  ]
 
 {-------------------------------------------------------------------------------
   Unit tests
