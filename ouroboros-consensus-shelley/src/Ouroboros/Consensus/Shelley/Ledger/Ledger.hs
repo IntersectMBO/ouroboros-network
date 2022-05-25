@@ -81,6 +81,7 @@ import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BHeaderView as SL (BHeaderView)
+import qualified Cardano.Ledger.BaseTypes as SL (epochInfoPure)
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -293,7 +294,7 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock proto era)) 
       globals = shelleyLedgerGlobals cfg
 
       ei :: EpochInfo Identity
-      ei = SL.epochInfo globals
+      ei = SL.epochInfoPure globals
 
       swizzle (l, events) =
           LedgerResult {
@@ -434,7 +435,7 @@ applyHelper f cfg blk TickedShelleyLedgerState{
     swindow = SL.stabilityWindow globals
 
     ei :: EpochInfo Identity
-    ei = SL.epochInfo globals
+    ei = SL.epochInfoPure globals
 
     -- The start of the next epoch is within the safe zone, always.
     startOfNextEpoch :: SlotNo
