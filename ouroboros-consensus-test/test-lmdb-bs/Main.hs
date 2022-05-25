@@ -72,16 +72,16 @@ test1 =
 
   step "read1"
   TLedgerTables
-    { od_tbl1 = ApplyValuesMK (HD.UtxoValues t1_1)
-    , od_tbl2 = ApplyValuesMK (HD.UtxoValues t2_1)
+    { lgrTbl1 = ApplyValuesMK (HD.UtxoValues t1_1)
+    , lgrTbl2 = ApplyValuesMK (HD.UtxoValues t2_1)
     } <- HD.bsvhRead vh1 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 True) t1_1
   Tasty.assertEqual "" (Map.singleton "1" 1) t2_1
 
   step "read2"
   TLedgerTables
-    { od_tbl1 = ApplyValuesMK (HD.UtxoValues t1_2)
-    , od_tbl2 = ApplyValuesMK (HD.UtxoValues t2_2)
+    { lgrTbl1 = ApplyValuesMK (HD.UtxoValues t1_2)
+    , lgrTbl2 = ApplyValuesMK (HD.UtxoValues t2_2)
     } <- HD.bsvhRead vh2 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 False) t1_2
   Tasty.assertEqual "" (Map.singleton "1" 2) t2_2
@@ -127,7 +127,7 @@ someHasFSIO fp = SomeHasFS $ ioHasFS $ MountPoint fp
 -------------------------------------------------------------------------------}
 
 data T mk = T
-  { seq_no :: WithOrigin SlotNo
+  { seqNo :: WithOrigin SlotNo
   , tbl1   :: mk Int Bool
   , tbl2   :: mk Text Word
   }
@@ -137,9 +137,9 @@ deriving instance (Eq (mk Int Bool), Eq (mk Text Word)) => Eq (T mk)
 deriving instance (Eq (mk Int Bool), Eq (mk Text Word)) => (Eq (LedgerTables T mk))
 
 instance ShowLedgerState T where
-  showsLedgerState _ T{seq_no, tbl1, tbl2} = showParen True
-    $ showString "T { seq_no = "
-    . shows seq_no
+  showsLedgerState _ T{seqNo, tbl1, tbl2} = showParen True
+    $ showString "T { seqNo = "
+    . shows seqNo
     . showString ", tbl1 = "
     . showsApplyMapKind tbl1
     . showString ", tbl2 = "
@@ -147,57 +147,57 @@ instance ShowLedgerState T where
     . showString " }"
 
 instance ShowLedgerState (LedgerTables T) where
-  showsLedgerState _ TLedgerTables{od_tbl1, od_tbl2} = showParen True
-    $ showString "TLedgerTables { od_tbl1 = "
-    . showsApplyMapKind od_tbl1
-    . showString ", od_tbl2 = "
-    . showsApplyMapKind od_tbl2
+  showsLedgerState _ TLedgerTables{lgrTbl1, lgrTbl2} = showParen True
+    $ showString "TLedgerTables { lgrTbl1 = "
+    . showsApplyMapKind lgrTbl1
+    . showString ", lgrTbl2 = "
+    . showsApplyMapKind lgrTbl2
     . showString " }"
 
 instance TableStuff T where
   data LedgerTables T mk = TLedgerTables
-    { od_tbl1 :: mk Int Bool
-    , od_tbl2 :: mk Text Word
+    { lgrTbl1 :: mk Int Bool
+    , lgrTbl2 :: mk Text Word
     }
 
   projectLedgerTables T{tbl1, tbl2} =
-    TLedgerTables { od_tbl1 = tbl1, od_tbl2 = tbl2 }
+    TLedgerTables { lgrTbl1 = tbl1, lgrTbl2 = tbl2 }
 
-  withLedgerTables t TLedgerTables{od_tbl1, od_tbl2} =
-    t { tbl1 = od_tbl1, tbl2 = od_tbl2 }
+  withLedgerTables t TLedgerTables{lgrTbl1, lgrTbl2} =
+    t { tbl1 = lgrTbl1, tbl2 = lgrTbl2 }
 
   pureLedgerTables f =
-    TLedgerTables { od_tbl1 = f, od_tbl2 = f }
+    TLedgerTables { lgrTbl1 = f, lgrTbl2 = f }
 
-  mapLedgerTables f TLedgerTables{od_tbl1, od_tbl2} =
-    TLedgerTables (f od_tbl1) (f od_tbl2)
+  mapLedgerTables f TLedgerTables{lgrTbl1, lgrTbl2} =
+    TLedgerTables (f lgrTbl1) (f lgrTbl2)
 
-  traverseLedgerTables f TLedgerTables{od_tbl1, od_tbl2} =
-    TLedgerTables <$> f od_tbl1 <*> f od_tbl2
+  traverseLedgerTables f TLedgerTables{lgrTbl1, lgrTbl2} =
+    TLedgerTables <$> f lgrTbl1 <*> f lgrTbl2
 
   zipLedgerTables f l r =
-    TLedgerTables (f (od_tbl1 l) (od_tbl1 r)) (f (od_tbl2 l) (od_tbl2 r))
+    TLedgerTables (f (lgrTbl1 l) (lgrTbl1 r)) (f (lgrTbl2 l) (lgrTbl2 r))
 
   zipLedgerTablesA f l r =
-    TLedgerTables <$> f (od_tbl1 l) (od_tbl1 r) <*> f (od_tbl2 l) (od_tbl2 r)
+    TLedgerTables <$> f (lgrTbl1 l) (lgrTbl1 r) <*> f (lgrTbl2 l) (lgrTbl2 r)
 
   zipLedgerTables2 f l m r =
     TLedgerTables
-      (f (od_tbl1 l) (od_tbl1 m) (od_tbl1 r))
-      (f (od_tbl2 l) (od_tbl2 m) (od_tbl2 r))
+      (f (lgrTbl1 l) (lgrTbl1 m) (lgrTbl1 r))
+      (f (lgrTbl2 l) (lgrTbl2 m) (lgrTbl2 r))
 
   zipLedgerTables2A f l c r =
-    TLedgerTables <$> f (od_tbl1 l) (od_tbl1 c) (od_tbl1 r)
-                  <*> f (od_tbl2 l) (od_tbl2 c) (od_tbl2 r)
+    TLedgerTables <$> f (lgrTbl1 l) (lgrTbl1 c) (lgrTbl1 r)
+                  <*> f (lgrTbl2 l) (lgrTbl2 c) (lgrTbl2 r)
 
-  foldLedgerTables f TLedgerTables{od_tbl1, od_tbl2} =
-    f od_tbl1 <> f od_tbl2
+  foldLedgerTables f TLedgerTables{lgrTbl1, lgrTbl2} =
+    f lgrTbl1 <> f lgrTbl2
 
   foldLedgerTables2 f l r =
-    f (od_tbl1 l) (od_tbl1 r) <> f (od_tbl2 l) (od_tbl2 r)
+    f (lgrTbl1 l) (lgrTbl1 r) <> f (lgrTbl2 l) (lgrTbl2 r)
 
   namesLedgerTables =
-    TLedgerTables { od_tbl1 = NameMK "tbl1", od_tbl2 = NameMK "tbl2" }
+    TLedgerTables { lgrTbl1 = NameMK "tbl1", lgrTbl2 = NameMK "tbl2" }
 
 instance  SufficientSerializationForAnyBackingStore T where
   codecLedgerTables =
@@ -210,18 +210,18 @@ instance  SufficientSerializationForAnyBackingStore T where
 
 simpleWrite1 :: LedgerTables T DiffMK
 simpleWrite1 = TLedgerTables
-  { od_tbl1 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton 1 (HD.UtxoEntryDiff True HD.UedsIns)
-  , od_tbl2 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton "1" (HD.UtxoEntryDiff 1 HD.UedsIns)
+  { lgrTbl1 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton 1 (HD.UtxoEntryDiff True HD.UedsIns)
+  , lgrTbl2 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton "1" (HD.UtxoEntryDiff 1 HD.UedsIns)
   }
 
 simpleWrite2 :: LedgerTables T DiffMK
 simpleWrite2 = TLedgerTables
-  { od_tbl1 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton 1 (HD.UtxoEntryDiff False HD.UedsIns)
-  , od_tbl2 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton "1" (HD.UtxoEntryDiff 2 HD.UedsIns)
+  { lgrTbl1 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton 1 (HD.UtxoEntryDiff False HD.UedsIns)
+  , lgrTbl2 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton "1" (HD.UtxoEntryDiff 2 HD.UedsIns)
   }
 
 simpleKeys :: LedgerTables T KeysMK
 simpleKeys = TLedgerTables
-  { od_tbl1 = ApplyKeysMK $ HD.UtxoKeys $ Set.singleton 1
-  , od_tbl2 = ApplyKeysMK $ HD.UtxoKeys $ Set.singleton "1"
+  { lgrTbl1 = ApplyKeysMK $ HD.UtxoKeys $ Set.singleton 1
+  , lgrTbl2 = ApplyKeysMK $ HD.UtxoKeys $ Set.singleton "1"
   }

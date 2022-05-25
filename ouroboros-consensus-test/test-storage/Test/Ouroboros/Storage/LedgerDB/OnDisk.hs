@@ -99,10 +99,10 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
 tests :: TestTree
 tests = testGroup "OnDisk"
-    [ TTT.traceableProperty "LedgerSimple-InMem" $ \show_trace ->
-        prop_sequential $ inMemDbEnv show_trace
-    , TTT.traceableProperty "LedgerSimple-LMDB"  $ \show_trace ->
-        prop_sequential $ lmdbDbEnv show_trace LMDB.defaultLMDBLimits
+    [ TTT.traceableProperty "LedgerSimple-InMem" $ \showTrace ->
+        prop_sequential $ inMemDbEnv showTrace
+    , TTT.traceableProperty "LedgerSimple-LMDB"  $ \showTrace ->
+        prop_sequential $ lmdbDbEnv showTrace LMDB.defaultLMDBLimits
     ]
 
 {-------------------------------------------------------------------------------
@@ -1347,9 +1347,9 @@ sm secParam db = StateMachine {
     }
 
 prop_sequential :: (SecurityParam -> IO (DbEnv IO)) -> SecurityParam -> QC.Property
-prop_sequential mk_dbenv secParam = QC.withMaxSuccess 100000 $
+prop_sequential mkDbEnv secParam = QC.withMaxSuccess 100000 $
   forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
-    QC.monadicIO $ QC.run (mk_dbenv secParam) >>= \e -> propCmds e cmds
+    QC.monadicIO $ QC.run (mkDbEnv secParam) >>= \e -> propCmds e cmds
 
 mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
 mkDbTracer (TTT.ShowTrace b)
@@ -1360,13 +1360,13 @@ inMemDbEnv :: Trans.MonadIO m
   => TTT.ShowTrace
   -> SecurityParam
   -> m (DbEnv IO)
-inMemDbEnv show_trace dbSecParam = Trans.liftIO $ do
+inMemDbEnv showTrace dbSecParam = Trans.liftIO $ do
   fs <- uncheckedNewTVarM MockFS.empty
   let
     dbHasFS = SomeHasFS $ simHasFS fs
     dbBackingStoreSelector = InMemoryBackingStore
     dbCleanup = pure ()
-    dbTracer = mkDbTracer show_trace
+    dbTracer = mkDbTracer showTrace
   pure DbEnv{..}
 
 lmdbDbEnv :: Trans.MonadIO m
@@ -1374,14 +1374,14 @@ lmdbDbEnv :: Trans.MonadIO m
   -> LMDB.LMDBLimits
   -> SecurityParam
   -> m (DbEnv IO)
-lmdbDbEnv show_trace limits dbSecParam = do
+lmdbDbEnv showTrace limits dbSecParam = do
   (dbHasFS, dbCleanup) <- Trans.liftIO $ do
       systmpdir <- Dir.getTemporaryDirectory
       tmpdir <- Temp.createTempDirectory systmpdir "init_standalone_db"
       pure (SomeHasFS $ FSIO.ioHasFS $ MountPoint tmpdir, Dir.removeDirectoryRecursive tmpdir)
   let
     dbBackingStoreSelector = LMDBBackingStore limits
-    dbTracer = mkDbTracer show_trace
+    dbTracer = mkDbTracer showTrace
   pure DbEnv{..}
 
 -- Ideally we'd like to use @IOSim s@ instead of IO, but unfortunately

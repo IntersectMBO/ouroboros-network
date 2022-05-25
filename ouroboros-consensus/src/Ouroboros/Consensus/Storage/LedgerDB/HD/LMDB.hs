@@ -372,11 +372,11 @@ rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) 
           -- fiddling with either is to short circuit as best we can.
           -- TODO improve llvm-simple bindings to give better access to cursors
           Nothing -> pure $ HD.UtxoValues Map.empty
-          Just last_excluded_key ->
+          Just lastExcludedKey ->
             let
               wrangle = either HD.UtxoValues HD.UtxoValues
               go k v acc
-                | k <= last_excluded_key = acc
+                | k <= lastExcludedKey = acc
                 | otherwise = do
                     m <- acc
                     when (Map.size m >= count) $ Left m
@@ -389,12 +389,12 @@ initLMDBTable ::
   -> CodecMK  k v
   -> ValuesMK k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
-initLMDBTable (LMDBMK tbl_name db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVals)) =
+initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVals)) =
     ApplyEmptyMK <$ lmdbInitTable
   where
     lmdbInitTable  = do
-      is_empty <- LMDB.null db
-      unless is_empty $ liftIO . throwIO $ DbErrInitialisingNonEmpty tbl_name
+      isEmpty <- LMDB.null db
+      unless isEmpty $ liftIO . throwIO $ DbErrInitialisingNonEmpty tblName
       void $ Map.traverseWithKey
                  (\k v -> put codecMK db k (Just v))
                  utxoVals
@@ -459,7 +459,7 @@ withDbStateRWMaybeNull ::
    -> (Maybe DbState -> LMDB.Transaction LMDB.ReadWrite (a, DbState))
    -> LMDB.Transaction LMDB.ReadWrite a
 withDbStateRWMaybeNull db f  =
-  readDbStateMaybeNull db >>= f >>= \(r, new_s) -> LMDB.put db () (Just new_s) $> r
+  readDbStateMaybeNull db >>= f >>= \(r, sNew) -> LMDB.put db () (Just sNew) $> r
 
 {-------------------------------------------------------------------------------
  Db directory guards
@@ -582,14 +582,14 @@ newLMDBBackingStore ::
   -> FS.SomeHasFS m
   -> LMDBInit l
   -> m (LMDBBackingStore l m)
-newLMDBBackingStore dbTracer limits sfs init_db = do
+newLMDBBackingStore dbTracer limits sfs initDb = do
   Trace.traceWith dbTracer TDBOpening
 
   dbOpenHandles <- IOLike.newTVarIO Map.empty
   let
     path = FS.mkFsPath ["tables"]
 
-    (gdd, copy_db_action :: m (), init_action :: Db m l -> m ()) = case init_db of
+    (gdd, copyDbAction :: m (), initAction :: Db m l -> m ()) = case initDb of
       LIInitialiseFromLMDB fp
         -- If fp == path then this is the LINoInitialise case
         | fp /= path -> (GDDMustNotExist, initFromLMDBs dbTracer limits sfs fp path, \_ -> pure ())
@@ -600,7 +600,7 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
   dbFilePath <- guardDbDirWithRetry gdd sfs path
 
   -- copy from another lmdb path if appropriate
-  copy_db_action
+  copyDbAction
 
   -- open this database
   dbEnv <- liftIO $ LMDB.openEnvironment dbFilePath limits
@@ -627,8 +627,8 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
     bsClose :: m ()
     bsClose = do
       Trace.traceWith dbTracer $ TDBClosing dbFilePath
-      open_handles <- IOLike.atomically $ IOLike.readTVar dbOpenHandles
-      for_ open_handles vhClose
+      openHandles <- IOLike.atomically $ IOLike.readTVar dbOpenHandles
+      for_ openHandles vhClose
       liftIO $ LMDB.closeEnvironment dbEnv
       Trace.traceWith dbTracer $ TDBClosed dbFilePath
 
@@ -640,15 +640,15 @@ newLMDBBackingStore dbTracer limits sfs init_db = do
 
     bsWrite :: SlotNo -> LedgerTables l DiffMK -> m ()
     bsWrite slot diffs = do
-      old_slot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbStateRW dbState $ \s@DbState{dbsSeq} -> do
+      oldSlot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbStateRW dbState $ \s@DbState{dbsSeq} -> do
         -- TODO This should be <. However the test harness does call bsWrite with the same slot
         unless (dbsSeq <= At slot) $ liftIO . throwIO $ DbErrNonMonotonicSeq (At slot) dbsSeq
         void $ zipLedgerTables2A writeLMDBTable dbBackingTables codecLedgerTables diffs
         pure (dbsSeq, s {dbsSeq = At slot})
-      Trace.traceWith dbTracer $ TDBWrite old_slot slot
+      Trace.traceWith dbTracer $ TDBWrite oldSlot slot
 
   -- now initialise those tables if appropriate
-  init_action db
+  initAction db
 
   Trace.traceWith dbTracer $ TDBOpened dbFilePath
   pure HD.BackingStore{..}
@@ -673,13 +673,13 @@ mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
 
   (r, traces) <- IOLike.atomically $ IOLike.stateTVar dbOpenHandles $ \x0 ->
     let
-      vh_id = maybe 0 ((+1) . fst) $ Map.lookupMax x0
-      tracer = Trace.contramap (TDBValueHandle vh_id) dbTracer0
+      vhId = maybe 0 ((+1) . fst) $ Map.lookupMax x0
+      tracer = Trace.contramap (TDBValueHandle vhId) dbTracer0
 
       vhSubmit :: forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> m (Maybe a)
       vhSubmit (LMDB.Internal.Txn t) = do
-        present <- Map.member vh_id <$> IOLike.atomically (IOLike.readTVar dbOpenHandles)
-        unless present $ throwIO $ DbErrNoValueHandle vh_id
+        present <- Map.member vhId <$> IOLike.atomically (IOLike.readTVar dbOpenHandles)
+        unless present $ throwIO $ DbErrNoValueHandle vhId
         flip onException vhClose $ do
           Trace.traceWith tracer TVHSubmissionStarted
           r <- liftIO $ t readOnlyTx
@@ -692,12 +692,12 @@ mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
         -- same result. We chose commit for readability but they perform the
         -- same operations in this case.
         liftIO $ LMDB.mdb_txn_commit readOnlyTx
-        IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vh_id)
+        IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vhId)
         Trace.traceWith tracer TVHClosed
       vh = ValueHandle{..}
     in
-      ( (vh, [TDBValueHandle vh_id TVHOpened] )
-      , Map.insert vh_id vh x0 )
+      ( (vh, [TDBValueHandle vhId TVHOpened] )
+      , Map.insert vhId vh x0 )
   for_ traces $ Trace.traceWith dbTracer0
   pure r
 
@@ -709,8 +709,8 @@ mkLMDBBackingStoreValueHandle Db{..} = do
   let
     dbe = LMDB.readOnlyEnvironment dbEnv
   vh <- mkValueHandle dbTracer dbe dbOpenHandles
-  mb_init_slot <- vhSubmit vh $ readDbStateMaybeNull dbState
-  init_slot <- liftIO $ maybe (throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mb_init_slot
+  mbInitSlot <- vhSubmit vh $ readDbStateMaybeNull dbState
+  initSlot <- liftIO $ maybe (throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mbInitSlot
   let
     bsvhClose :: m ()
     bsvhClose = vhClose vh
@@ -729,4 +729,4 @@ mkLMDBBackingStoreValueHandle Db{..} = do
       in vhSubmit vh transaction >>= \case
         Nothing -> throwIO DbErrBadRangeRead
         Just x  -> pure x
-  pure (init_slot, HD.BackingStoreValueHandle{..})
+  pure (initSlot, HD.BackingStoreValueHandle{..})

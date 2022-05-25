@@ -54,5 +54,5 @@ instance IsTest t => IsTest (TraceableTest t) where
 -- example: (i) the underlying property can choose to ignore the flag entirely,
 -- and (ii) the underlying property can choose which concrete tracer to use.
 traceableProperty :: QC.Testable t => String -> (ShowTrace -> t) -> TestTree
-traceableProperty name mk_prop = askOption $ \show_trace ->
-  singleTest name (TraceableTest (QC $ QC.property $ mk_prop show_trace))
+traceableProperty name mkProp = askOption $ \showTrace ->
+  singleTest name (TraceableTest (QC $ QC.property $ mkProp showTrace))
