@@ -250,10 +250,12 @@ marshalInBS (LMDB.MDB_val len ptr) = BS.packCStringLen (castPtr ptr, fromIntegra
   LMDB Interface specialized for ApplyMapKinds
 -------------------------------------------------------------------------------}
 
+data LMDBMK k v = LMDBMK String !(LMDB.Database k v)
+
 getDb ::
      LMDB.Mode mode
   => NameMK k v
-  -> LMDB.Transaction mode (LMDBMK   k v)
+  -> LMDB.Transaction mode (LMDBMK k v)
 getDb (NameMK name) = LMDBMK name <$> LMDB.getDatabase (Just name)
 
 initRangeReadLMDBTable ::
@@ -309,7 +311,7 @@ initLMDBTable ::
      LMDBMK   k v
   -> CodecMK  k v
   -> ValuesMK k v
-  -> LMDB.Transaction LMDB.ReadWrite (EmptyMK  k v)
+  -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
 initLMDBTable (LMDBMK tbl_name db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVals)) =
     ApplyEmptyMK <$ lmdbInitTable
   where
@@ -339,7 +341,7 @@ writeLMDBTable ::
      LMDBMK  k v
   -> CodecMK k v
   -> DiffMK  k v
-  -> LMDB.Transaction LMDB.ReadWrite (EmptyMK  k v)
+  -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
 writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK (HD.UtxoDiff diff)) =
     ApplyEmptyMK <$ lmdbWriteTable
   where
