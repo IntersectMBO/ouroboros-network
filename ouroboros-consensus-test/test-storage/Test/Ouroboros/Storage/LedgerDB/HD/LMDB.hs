@@ -116,9 +116,11 @@ initLMDB mayLimits = do
     limits fs emptyInit
   pure (tmpdir, bs)
 
--- | Remove a temporary directory that was created for an @`LMDBBackingStore`@.
-cleanupLMDB :: (FilePath, b) -> IO ()
-cleanupLMDB (tmpdir, _) = do
+-- | Close the 'LMDB.LMDBBackingStore' and remove the temporary
+-- directory containing the LMDB files.
+cleanupLMDB :: (FilePath, LMDB.LMDBBackingStore l IO) -> IO ()
+cleanupLMDB (tmpdir, bs) = do
+  HD.bsClose bs
   Dir.removeDirectoryRecursive tmpdir
 
 someHasFSIO :: FilePath -> SomeHasFS IO
