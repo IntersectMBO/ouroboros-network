@@ -414,6 +414,10 @@ initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVals
                  (\k v -> put codecMK db k (Just v))
                  utxoVals
 
+--  Todo(jdral/dnadales): Would it be possible to issue a single @C@ call to
+-- get a bunch of keys in one go? We are currently folding over the set of
+-- keys and issuing a @get@ for each one separately. LMDB cursors could be
+-- of help here.
 readLMDBTable ::
      Ord k
   => LMDBMK  k v
