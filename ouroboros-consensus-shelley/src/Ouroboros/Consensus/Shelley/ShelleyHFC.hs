@@ -224,7 +224,7 @@ instance ShelleyCompatible proto era => HasPartialLedgerConfig (ShelleyBlock pro
   completeLedgerConfig _ epochInfo (ShelleyPartialLedgerConfig cfg _) =
       cfg {
           shelleyLedgerGlobals = (shelleyLedgerGlobals cfg) {
-              SL.epochInfoWithErr =
+              SL.epochInfo =
                   hoistEpochInfo
                     (runExcept . withExceptT (T.pack . show))
                     epochInfo
