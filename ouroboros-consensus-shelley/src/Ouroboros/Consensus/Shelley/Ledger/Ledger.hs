@@ -50,11 +50,13 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (decode, encode)
+import           Control.Arrow (left)
 import qualified Control.Exception as Exception
 import           Control.Monad.Except
 import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity
+import qualified Data.Text as Text
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Records
@@ -156,7 +158,7 @@ mkShelleyLedgerConfig genesis transCtxt epochInfo mmpv =
       , shelleyLedgerGlobals            =
           SL.mkShelleyGlobals
             genesis
-            (HardFork.toPureEpochInfo epochInfo)
+            (hoistEpochInfo (left (Text.pack . show) . runExcept) epochInfo)
             maxMajorPV
       , shelleyLedgerTranslationContext = transCtxt
       }
