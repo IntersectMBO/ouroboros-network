@@ -147,7 +147,7 @@ queryEncodeNodeToClient ::
   -> BlockNodeToClientVersion blk
   -> SomeQuery (Query blk)
   -> Encoding
-queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeSecond query)
+queryEncodeNodeToClient codecConfig queryVersion blockVersion (SomeQuery query)
   = case query of
       BlockQuery blockQuery ->
         requireVersion QueryVersion1 $ mconcat

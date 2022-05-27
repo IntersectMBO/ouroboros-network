@@ -585,7 +585,7 @@ forkBlockForging IS{..} blockForging =
         -- force the mempool's computation before the tracer event
         _ <- evaluate (length txs)
         _ <- evaluate (snapshotLedgerState mempoolSnapshot)
-        trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
+        -- trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
 
         -- Actually produce the block
         newBlock <- lift $

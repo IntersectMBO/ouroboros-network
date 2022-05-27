@@ -81,7 +81,6 @@ package ouroboros-consensus-cardano
 package ouroboros-consensus-cardano-test
   tests: True
 
-
 package cardano-binary
   tests: False
 

@@ -141,7 +141,7 @@ data ShelleyEncoderException era proto =
     -- | A query was submitted that is not supported by the given
     -- 'ShelleyNodeToClientVersion'.
     ShelleyEncoderUnsupportedQuery
-         (SomeSecond BlockQuery (ShelleyBlock proto era))
+         (SomeQuery (BlockQuery (ShelleyBlock proto era)))
          ShelleyNodeToClientVersion
   deriving (Show)
 
@@ -179,8 +179,8 @@ instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock proto era) (
   decodeNodeToClient _ _ = fromCBOR
 
 instance ShelleyCompatible proto era
-      => SerialiseNodeToClient (ShelleyBlock proto era) (SomeSecond BlockQuery (ShelleyBlock proto era)) where
-  encodeNodeToClient _ version (SomeSecond q)
+      => SerialiseNodeToClient (ShelleyBlock proto era) (SomeQuery (BlockQuery (ShelleyBlock proto era))) where
+  encodeNodeToClient _ version (SomeQuery q)
     | querySupportedVersion q version
     = encodeShelleyQuery q
     | otherwise

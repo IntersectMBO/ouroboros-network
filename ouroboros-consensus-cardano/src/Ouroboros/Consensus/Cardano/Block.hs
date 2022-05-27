@@ -3,9 +3,15 @@
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE PatternSynonyms          #-}
 {-# LANGUAGE ViewPatterns             #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE TypeFamilies             #-}
 module Ouroboros.Consensus.Cardano.Block (
     -- * Eras
     CardanoEras
+  , ShelleyBasedEras
+  , ShelleyBasedProtosAndEras
   , module Ouroboros.Consensus.Shelley.Eras
     -- * Block
   , CardanoBlock
@@ -64,6 +70,8 @@ module Ouroboros.Consensus.Cardano.Block (
   , EraMismatch (..)
   ) where
 
+import           Data.Kind
+
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
@@ -88,6 +96,8 @@ import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 
+import           Ouroboros.Consensus.Util.SOP (MapSnd)
+
 {-------------------------------------------------------------------------------
   The eras of the Cardano blockchain
 -------------------------------------------------------------------------------}
@@ -105,6 +115,17 @@ type CardanoEras c =
    , ShelleyBlock (TPraos c) (AlonzoEra c)
    , ShelleyBlock (Praos c)  (BabbageEra c)
    ]
+
+type ShelleyBasedProtosAndEras :: Type -> [(Type, Type)]
+type ShelleyBasedProtosAndEras c =
+  '[ '(TPraos c, ShelleyEra c)
+   , '(TPraos c, AllegraEra c)
+   , '(TPraos c, MaryEra c)
+   , '(TPraos c, AlonzoEra c)
+   , '(Praos c,  BabbageEra c)
+   ]
+
+type ShelleyBasedEras c = MapSnd (ShelleyBasedProtosAndEras c)
 
 {-------------------------------------------------------------------------------
   INTERNAL A tag function for each era
@@ -724,8 +745,8 @@ pattern QueryAnytimeAlonzo q = QueryAnytime q (EraIndex (TagAlonzo (K ())))
 -- > QueryAnytimeBabbage EraStart
 --
 pattern QueryAnytimeBabbage
-  :: QueryAnytime result
-  -> CardanoQuery c result
+  :: QueryAnytime fp result
+  -> CardanoQuery c fp result
 pattern QueryAnytimeBabbage q = QueryAnytime q (EraIndex (TagBabbage (K ())))
 
 {-# COMPLETE QueryIfCurrentByron
@@ -980,12 +1001,12 @@ pattern LedgerStateAlonzo st <-
         (TeleAlonzo _ _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateBabbage
-  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateBabbage st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleBabbage _ _ _ _ _ (State.Current { currentState = st })))
+        (TeleBabbage _ _ _ _ _ (State.Current { currentState = Flip st })))
 
 {-# COMPLETE LedgerStateByron
            , LedgerStateShelley
