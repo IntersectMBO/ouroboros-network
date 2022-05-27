@@ -9,9 +9,9 @@
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE TypeOperators           #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE TypeApplications        #-}
 module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) where
 
-import           Data.SOP.Strict hiding (All2)
 import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -19,7 +19,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
                      (Flip (..))
 
 import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Shelley.HFEras ()
@@ -32,8 +31,8 @@ overShelleyBasedLedgerState ::
      forall c mk.
      (TPraos.PraosCrypto c, Praos.PraosCrypto c)
   => (   forall era proto. (EraCrypto era ~ c, ShelleyCompatible proto era)
-      => LedgerState (ShelleyBlock proto era) mk
-      -> LedgerState (ShelleyBlock proto era) mk
+      => Flip LedgerState mk (ShelleyBlock proto era)
+      -> Flip LedgerState mk (ShelleyBlock proto era)
      )
   -> LedgerState (CardanoBlock c) mk
   -> LedgerState (CardanoBlock c) mk
@@ -43,17 +42,30 @@ overShelleyBasedLedgerState f (HardForkLedgerState st) =
     fs :: NP (Flip LedgerState mk -.-> Flip LedgerState mk)
              (CardanoEras c)
     fs = fn id
-        :* injectShelleyNP
-             reassoc
-             (hcpure
-               (Proxy @(And (HasCrypto c) ShelleyBasedEra))
-               (fn (Comp . Flip . f . unFlip . unComp)))
+        :* injectSingleEra
+        :* injectSingleEra
+        :* injectSingleEra
+        :* injectSingleEra
+        :* injectSingleEra
+        :* Nil
 
-    reassoc ::
-         (     Flip LedgerState mk :.: ShelleyBlock
-          -.-> Flip LedgerState mk :.: ShelleyBlock
-         ) shelleyEra
-      -> (     Flip LedgerState mk
-          -.-> Flip LedgerState mk
-         ) (ShelleyBlock shelleyEra)
-    reassoc g = fn $ unComp . apFn g . Comp
+    injectSingleEra ::
+      ( ShelleyCompatible proto era, EraCrypto era ~ c
+      , shelleyEra ~ ShelleyBlock proto era
+      )
+      => (Flip LedgerState mk -.-> Flip LedgerState mk) shelleyEra
+    injectSingleEra = fn f
+    --     :* injectShelleyNP
+    --          reassoc
+    --          (hcpure
+    --            (Proxy @(And (HasCrypto c) (ShelleyCompatible proto)))
+    --            (fn (Comp . Flip . f . unFlip . unComp)))
+
+    -- reassoc ::
+    --      (     Flip LedgerState mk :.: ShelleyBlock proto
+    --       -.-> Flip LedgerState mk :.: ShelleyBlock proto
+    --      ) shelleyEra
+    --   -> (     Flip LedgerState mk
+    --       -.-> Flip LedgerState mk
+    --      ) (ShelleyBlock proto shelleyEra)
+    -- reassoc g = fn $ unComp . apFn g . Comp

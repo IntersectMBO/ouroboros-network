@@ -11,6 +11,9 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -86,7 +89,7 @@ instance Crypto c => Serialise (NonMyopicMemberRewards c) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
 
-data instance BlockQuery (ShelleyBlock proto era) :: FootprintL Type -> Type where
+data instance BlockQuery (ShelleyBlock proto era) :: FootprintL -> Type -> Type where
   GetLedgerTip :: BlockQuery (ShelleyBlock proto era) SmallL (Point (ShelleyBlock proto era))
   GetEpochNo :: BlockQuery (ShelleyBlock proto era) SmallL EpochNo
   -- | Calculate the Non-Myopic Pool Member Rewards for a set of
@@ -312,98 +315,193 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
       emptyUtxo                        = SL.UTxO Map.empty
       combUtxo (SL.UTxO l) (SL.UTxO r) = SL.UTxO $ Map.union l r
 
-instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
+instance EqQuery (BlockQuery (ShelleyBlock proto era)) where
+   eqQuery GetLedgerTip GetLedgerTip
+     = Just Refl
+   eqQuery GetLedgerTip _
+     = Nothing
+   eqQuery GetEpochNo GetEpochNo
+     = Just Refl
+   eqQuery GetEpochNo _
+     = Nothing
+   eqQuery (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
+     | creds == creds'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetNonMyopicMemberRewards _) _
+     = Nothing
+   eqQuery GetCurrentPParams GetCurrentPParams
+     = Just Refl
+   eqQuery GetCurrentPParams _
+     = Nothing
+   eqQuery GetProposedPParamsUpdates GetProposedPParamsUpdates
+     = Just Refl
+   eqQuery GetProposedPParamsUpdates _
+     = Nothing
+   eqQuery GetStakeDistribution GetStakeDistribution
+     = Just Refl
+   eqQuery GetStakeDistribution _
+     = Nothing
+   eqQuery (GetUTxOByAddress addrs) (GetUTxOByAddress addrs')
+     | addrs == addrs'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetUTxOByAddress _) _
+     = Nothing
+   eqQuery GetUTxOWhole GetUTxOWhole
+     = Just Refl
+   eqQuery GetUTxOWhole _
+     = Nothing
+   eqQuery DebugEpochState DebugEpochState
+     = Just Refl
+   eqQuery DebugEpochState _
+     = Nothing
+   eqQuery (GetCBOR q) (GetCBOR q')
+     = (\Refl -> Refl) <$> eqQuery q q'
+   eqQuery (GetCBOR _) _
+     = Nothing
+   eqQuery (GetFilteredDelegationsAndRewardAccounts creds)
+                (GetFilteredDelegationsAndRewardAccounts creds')
+     | creds == creds'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetFilteredDelegationsAndRewardAccounts _) _
+     = Nothing
+   eqQuery GetGenesisConfig GetGenesisConfig
+     = Just Refl
+   eqQuery GetGenesisConfig _
+     = Nothing
+   eqQuery DebugNewEpochState DebugNewEpochState
+     = Just Refl
+   eqQuery DebugNewEpochState _
+     = Nothing
+   eqQuery DebugChainDepState DebugChainDepState
+     = Just Refl
+   eqQuery DebugChainDepState _
+     = Nothing
+   eqQuery GetRewardProvenance GetRewardProvenance
+     = Just Refl
+   eqQuery GetRewardProvenance _
+     = Nothing
+   eqQuery (GetUTxOByTxIn addrs) (GetUTxOByTxIn addrs')
+     | addrs == addrs'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetUTxOByTxIn _) _
+     = Nothing
+   eqQuery GetStakePools GetStakePools
+     = Just Refl
+   eqQuery GetStakePools _
+     = Nothing
+   eqQuery (GetStakePoolParams poolids) (GetStakePoolParams poolids')
+     | poolids == poolids'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetStakePoolParams _) _
+     = Nothing
+   eqQuery GetRewardInfoPools GetRewardInfoPools
+     = Just Refl
+   eqQuery GetRewardInfoPools _
+     = Nothing
+
+
+instance SameDepIndex (BlockQuery (ShelleyBlock proto era) fp) where
   sameDepIndex GetLedgerTip GetLedgerTip
     = Just Refl
-  eqQuery GetLedgerTip _
+  sameDepIndex GetLedgerTip _
     = Nothing
-  eqQuery GetEpochNo GetEpochNo
+  sameDepIndex GetEpochNo GetEpochNo
     = Just Refl
-  eqQuery GetEpochNo _
+  sameDepIndex GetEpochNo _
     = Nothing
-  eqQuery (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
+  sameDepIndex (GetNonMyopicMemberRewards creds) (GetNonMyopicMemberRewards creds')
     | creds == creds'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetNonMyopicMemberRewards _) _
+  sameDepIndex (GetNonMyopicMemberRewards _) _
     = Nothing
-  eqQuery GetCurrentPParams GetCurrentPParams
+  sameDepIndex GetCurrentPParams GetCurrentPParams
     = Just Refl
-  eqQuery GetCurrentPParams _
+  sameDepIndex GetCurrentPParams _
     = Nothing
-  eqQuery GetProposedPParamsUpdates GetProposedPParamsUpdates
+  sameDepIndex GetProposedPParamsUpdates GetProposedPParamsUpdates
     = Just Refl
-  eqQuery GetProposedPParamsUpdates _
+  sameDepIndex GetProposedPParamsUpdates _
     = Nothing
-  eqQuery GetStakeDistribution GetStakeDistribution
+  sameDepIndex GetStakeDistribution GetStakeDistribution
     = Just Refl
-  eqQuery GetStakeDistribution _
+  sameDepIndex GetStakeDistribution _
     = Nothing
-  eqQuery (GetUTxOByAddress addrs) (GetUTxOByAddress addrs')
+  sameDepIndex (GetUTxOByAddress addrs) (GetUTxOByAddress addrs')
     | addrs == addrs'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetUTxOByAddress _) _
+  sameDepIndex (GetUTxOByAddress _) _
     = Nothing
-  eqQuery GetUTxOWhole GetUTxOWhole
+  sameDepIndex GetUTxOWhole GetUTxOWhole
     = Just Refl
-  eqQuery GetUTxOWhole _
+  sameDepIndex GetUTxOWhole _
     = Nothing
-  eqQuery DebugEpochState DebugEpochState
+  sameDepIndex DebugEpochState DebugEpochState
     = Just Refl
-  eqQuery DebugEpochState _
+  sameDepIndex DebugEpochState _
     = Nothing
-  eqQuery (GetCBOR q) (GetCBOR q')
-    = (\Refl -> Refl) <$> eqQuery q q'
-  eqQuery (GetCBOR _) _
+  sameDepIndex (GetCBOR q) (GetCBOR q')
+    = (\Refl -> Refl) <$> sameDepIndex q q'
+  sameDepIndex (GetCBOR _) _
     = Nothing
-  eqQuery (GetFilteredDelegationsAndRewardAccounts creds)
+  sameDepIndex (GetFilteredDelegationsAndRewardAccounts creds)
                (GetFilteredDelegationsAndRewardAccounts creds')
     | creds == creds'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetFilteredDelegationsAndRewardAccounts _) _
+  sameDepIndex (GetFilteredDelegationsAndRewardAccounts _) _
     = Nothing
-  eqQuery GetGenesisConfig GetGenesisConfig
+  sameDepIndex GetGenesisConfig GetGenesisConfig
     = Just Refl
-  eqQuery GetGenesisConfig _
+  sameDepIndex GetGenesisConfig _
     = Nothing
-  eqQuery DebugNewEpochState DebugNewEpochState
+  sameDepIndex DebugNewEpochState DebugNewEpochState
     = Just Refl
-  eqQuery DebugNewEpochState _
+  sameDepIndex DebugNewEpochState _
     = Nothing
-  eqQuery DebugChainDepState DebugChainDepState
+  sameDepIndex DebugChainDepState DebugChainDepState
     = Just Refl
-  eqQuery DebugChainDepState _
+  sameDepIndex DebugChainDepState _
     = Nothing
-  eqQuery GetRewardProvenance GetRewardProvenance
+  sameDepIndex GetRewardProvenance GetRewardProvenance
     = Just Refl
-  eqQuery GetRewardProvenance _
+  sameDepIndex GetRewardProvenance _
     = Nothing
-  eqQuery (GetUTxOByTxIn addrs) (GetUTxOByTxIn addrs')
+  sameDepIndex (GetUTxOByTxIn addrs) (GetUTxOByTxIn addrs')
     | addrs == addrs'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetUTxOByTxIn _) _
+  sameDepIndex (GetUTxOByTxIn _) _
     = Nothing
-  eqQuery GetStakePools GetStakePools
+  sameDepIndex GetStakePools GetStakePools
     = Just Refl
-  eqQuery GetStakePools _
+  sameDepIndex GetStakePools _
     = Nothing
-  eqQuery (GetStakePoolParams poolids) (GetStakePoolParams poolids')
+  sameDepIndex (GetStakePoolParams poolids) (GetStakePoolParams poolids')
     | poolids == poolids'
     = Just Refl
     | otherwise
     = Nothing
-  eqQuery (GetStakePoolParams _) _
+  sameDepIndex (GetStakePoolParams _) _
     = Nothing
-  eqQuery GetRewardInfoPools GetRewardInfoPools
+  sameDepIndex GetRewardInfoPools GetRewardInfoPools
     = Just Refl
-  eqQuery GetRewardInfoPools _
+  sameDepIndex GetRewardInfoPools _
     = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock proto era) fp result)
@@ -431,7 +529,7 @@ instance ShelleyCompatible proto era => ShowQuery (BlockQuery (ShelleyBlock prot
       GetStakePoolParams {}                      -> show
       GetRewardInfoPools                         -> show
 
-instance ShelleyBasedEra era => IsQuery (BlockQuery (ShelleyBlock era)) where
+instance (ShelleyCompatible proto era, EqQuery (BlockQuery (ShelleyBlock proto era))) => IsQuery (BlockQuery (ShelleyBlock proto era)) where
   classifyQuery = \case
       GetLedgerTip                               -> SmallQ
       GetEpochNo                                 -> SmallQ
@@ -562,7 +660,7 @@ encodeShelleyQuery query = case query of
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
-  => Decoder s (SomeSecond BlockQuery (ShelleyBlock proto era))
+  => Decoder s (SomeQuery (BlockQuery (ShelleyBlock proto era)))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8

@@ -141,7 +141,7 @@ instance Inject Examples where
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
       , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
       , exampleSlotNo           =                                            exampleSlotNo
-      , examplesLedgerTables    = inj (Proxy @WrapLedgerTables)              examplesLedgerTables
+      , exampleLedgerTables     = inj (Proxy @WrapLedgerTables)              exampleLedgerTables
       }
     where
       inj ::

@@ -230,7 +230,7 @@ data Examples blk = Examples {
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
     , exampleExtLedgerState   :: Labelled (ExtLedgerState blk EmptyMK)
     , exampleSlotNo           :: Labelled SlotNo
-    , examplesLedgerTables    :: Labelled (LedgerTables (LedgerState blk) ValuesMK)
+    , exampleLedgerTables    :: Labelled (LedgerTables (LedgerState blk) ValuesMK)
     }
 
 emptyExamples :: Examples blk
@@ -250,7 +250,7 @@ emptyExamples = Examples {
     , exampleChainDepState    = mempty
     , exampleExtLedgerState   = mempty
     , exampleSlotNo           = mempty
-    , examplesLedgerTables    = mempty
+    , exampleLedgerTables    = mempty
     }
 
 combineExamples ::
@@ -275,7 +275,7 @@ combineExamples f e1 e2 = Examples {
     , exampleChainDepState    = combine exampleChainDepState
     , exampleExtLedgerState   = combine exampleExtLedgerState
     , exampleSlotNo           = combine exampleSlotNo
-    , examplesLedgerTables    = combine examplesLedgerTables
+    , exampleLedgerTables    = combine exampleLedgerTables
     }
   where
     combine :: (Examples blk -> Labelled a) -> Labelled a
@@ -383,7 +383,7 @@ goldenTest_SerialiseDisk codecConfig goldenDir Examples {..} =
       , test "AnnTip"         exampleAnnTip        (encodeDisk codecConfig)
       , test "ChainDepState"  exampleChainDepState (encodeDisk codecConfig)
       , test "ExtLedgerState" exampleExtLedgerState encodeExt
-      , test "LedgerTables"   examplesLedgerTables  valuesMKEncoder
+      , test "LedgerTables"   exampleLedgerTables  valuesMKEncoder
       ]
   where
     test :: TestName -> Labelled a -> (a -> Encoding) -> TestTree

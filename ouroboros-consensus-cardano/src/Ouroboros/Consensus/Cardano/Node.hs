@@ -113,6 +113,7 @@ import           Ouroboros.Consensus.Shelley.Node.Praos
                      (ProtocolParamsBabbage (..))
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 import qualified Ouroboros.Consensus.Shelley.Node.TPraos as TPraos
+import Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip(..))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
@@ -813,9 +814,9 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
-          => LedgerState (ShelleyBlock proto era) mk
-          -> LedgerState (ShelleyBlock proto era) mk
-        register st = st {
+          => Flip LedgerState mk (ShelleyBlock proto era)
+          -> Flip LedgerState mk (ShelleyBlock proto era)
+        register (Flip st) = Flip st {
               Shelley.shelleyLedgerState =
                 -- We must first register the initial funds, because the stake
                 -- information depends on it.
