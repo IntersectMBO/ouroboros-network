@@ -429,3 +429,11 @@ instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) TxOutW
       . TxOutWrapper
       . Alonzo.translateTxOut
       . unTxOutWrapper
+
+instance ShelleyBasedEra (BabbageEra c) => Core.TranslateEra (BabbageEra c) TxOutWrapper where
+  type TranslationError (BabbageEra c) TxOutWrapper = Void
+  translateEra _ctxt =
+        pure
+      . TxOutWrapper
+      . Babbage.translateTxOut
+      . unTxOutWrapper

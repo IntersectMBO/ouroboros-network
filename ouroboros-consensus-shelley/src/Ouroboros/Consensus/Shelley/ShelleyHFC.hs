@@ -330,9 +330,13 @@ instance ( ShelleyBasedEra era
       return $ ShelleyTip sno bno (ShelleyHash hash)
 
 instance ( ShelleyBasedEra era
+         , ShelleyBasedEra (SL.PreviousEra era)
          , SL.TranslateEra era (ShelleyTip proto)
          , SL.TranslateEra era SL.NewEpochState
+         , SL.TranslateEra era TxOutWrapper
          , SL.TranslationError era SL.NewEpochState ~ Void
+         , SL.TranslationError era TxOutWrapper ~ Void
+         , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
          ) => SL.TranslateEra era (Flip LedgerState (ApplyMapKind' mk) :.: ShelleyBlock proto) where
   translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition tables))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
@@ -350,8 +354,8 @@ translateShelleyTables ::
      , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
      )
   => SL.TranslationContext era
-  -> LedgerTables (LedgerState (ShelleyBlock (SL.PreviousEra era))) (ApplyMapKind' mk)
-  -> LedgerTables (LedgerState (ShelleyBlock                 era))  (ApplyMapKind' mk)
+  -> LedgerTables (LedgerState (ShelleyBlock proto (SL.PreviousEra era))) (ApplyMapKind' mk)
+  -> LedgerTables (LedgerState (ShelleyBlock proto                 era))  (ApplyMapKind' mk)
 translateShelleyTables ctxt (ShelleyLedgerTables utxoTable) =
       ShelleyLedgerTables
     $ mapValuesAppliedMK

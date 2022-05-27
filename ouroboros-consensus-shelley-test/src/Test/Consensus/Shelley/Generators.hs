@@ -127,7 +127,7 @@ instance CanMock proto era => Arbitrary (GenTx (ShelleyBlock proto era)) where
 instance CanMock proto era => Arbitrary (GenTxId (ShelleyBlock proto era)) where
   arbitrary = ShelleyTxId <$> arbitrary
 
-instance CanMock proto era => Arbitrary (SomeSecond BlockQuery (ShelleyBlock proto era)) where
+instance CanMock proto era => Arbitrary (SomeQuery (BlockQuery (ShelleyBlock proto era))) where
   arbitrary = oneof
     [ pure $ SomeQuery GetLedgerTip
     , pure $ SomeQuery GetEpochNo
@@ -225,7 +225,7 @@ instance PraosCrypto c => Arbitrary (SL.ChainDepState c) where
 -- make sure to not generate those queries in combination with
 -- 'ShelleyNodeToClientVersion1'.
 instance CanMock proto era
-      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeSecond BlockQuery (ShelleyBlock proto era))) where
+      => Arbitrary (WithVersion ShelleyNodeToClientVersion (SomeQuery (BlockQuery (ShelleyBlock proto era)))) where
   arbitrary = do
       query@(SomeQuery q) <- arbitrary
       version <- arbitrary `suchThat` querySupportedVersion q

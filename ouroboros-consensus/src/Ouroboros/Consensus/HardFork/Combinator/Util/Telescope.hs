@@ -12,7 +12,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
-
+{-# LANGUAGE StandaloneKindSignatures #-}
 -- | Intended for qualified import
 --
 -- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
@@ -100,7 +100,8 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 -- In addition to the standard SOP operators, the new operators that make
 -- a 'Telescope' a telescope are 'extend', 'retract' and 'align'; see their
 -- documentation for details.
-data Telescope (g :: k -> Type) (f :: k -> Type) (xs :: [k]) where
+type Telescope :: forall k. (k -> Type) -> (k -> Type) -> [k] -> Type
+data Telescope g f xs where
   TZ :: !(f x) ->                        Telescope g f (x ': xs)
   TS :: !(g x) -> !(Telescope g f xs) -> Telescope g f (x ': xs)
 

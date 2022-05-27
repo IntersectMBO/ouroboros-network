@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 -- | Strict variant of SOP
 --
@@ -158,7 +159,8 @@ instance HTrans NP NP where
   NS
 -------------------------------------------------------------------------------}
 
-data NS :: (k -> Type) -> [k] -> Type where
+type NS :: forall k. (k -> Type) -> [k] -> Type
+data NS f xs where
   Z :: !(f x) -> NS f (x ': xs)
   S :: !(NS f xs) -> NS f (x ': xs)
 
