@@ -71,7 +71,7 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (ConnectionId, LocalAddress,
                      LocalSocket, NodeToClientVersionData (..), combineVersions,
                      simpleSingletonVersions)
-import           Ouroboros.Network.NodeToNode (DiffusionMode,
+import           Ouroboros.Network.NodeToNode (DiffusionMode (..),
                      MiniProtocolParameters, NodeToNodeVersionData (..),
                      RemoteAddress, Socket, blockFetchPipeliningMax,
                      defaultMiniProtocolParameters)
@@ -749,7 +749,8 @@ stdLowLevelRunNodeArgsIO ::
           NodeToClientVersionData
           blk
           p2p)
-stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
+                         StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
     pure LowLevelRunNodeArgs
@@ -773,7 +774,14 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo } StdRunNodeArgs{..} = do
       , llrnVersionDataNTN =
           stdVersionDataNTN
             networkMagic
-            (Diffusion.daMode srnDiffusionArguments)
+            (case rnEnableP2P of
+               EnabledP2PMode  -> Diffusion.daMode srnDiffusionArguments
+               -- Every connection in non-p2p mode is unidirectional; We connect
+               -- from an ephemeral port.  We still pass `srnDiffusionArguments`
+               -- to the diffusion layer, so the server side will be run also in
+               -- `InitiatorAndResponderDiffusionMode`.
+               DisabledP2PMode -> InitiatorOnlyDiffusionMode
+            )
       , llrnNodeToNodeVersions =
           limitToLatestReleasedVersion
             fst

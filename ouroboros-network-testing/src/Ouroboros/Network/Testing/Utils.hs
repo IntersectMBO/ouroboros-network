@@ -5,7 +5,34 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-module Ouroboros.Network.Testing.Utils where
+module Ouroboros.Network.Testing.Utils
+  ( -- * Arbitrary Delays
+    Delay (..)
+  , genDelayWithPrecision
+  , SmallDelay (..)
+    -- * QuickCheck Utils
+  , arbitrarySubset
+  , shrinkVector
+  , prop_shrink_valid
+  , prop_shrink_nonequal
+  -- * Tracing Utils
+  , WithName (..)
+  , WithTime (..)
+  , tracerWithName
+  , tracerWithTime
+  , tracerWithTimeName
+  , swapTimeWithName
+  , swapNameWithTime
+  , splitWithNameTrace
+  -- * Tracers
+  , debugTracer
+  , sayTracer
+  -- * Tasty Utils
+  , nightlyTest
+  , ignoreTest
+  -- * Auxiliary functions
+  , renderRanges
+  ) where
 
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTime
@@ -23,9 +50,7 @@ import qualified Data.Set as Set
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree)
-#ifndef NIGHTLY
-import           Test.Tasty.ExpectedFailure
-#endif
+import           Test.Tasty.ExpectedFailure (ignoreTest)
 import           Debug.Trace (traceShowM)
 
 

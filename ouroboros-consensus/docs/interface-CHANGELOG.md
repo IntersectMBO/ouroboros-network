@@ -88,7 +88,7 @@ https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
   To obtain `ShelleyCompatible` instances for various eras, you may need to
   import the `Ouroboros.Consensus.Shelley.HFEras` module.
 - Add a new supported node to client version `NodeToClientV_13` and node to node
-  version `NodeToNodeV_10` supporting the new Babbage era.
+  version `NodeToNodeV_9` supporting the new Babbage era.
 
 ## Circa 2021-12-16
 
