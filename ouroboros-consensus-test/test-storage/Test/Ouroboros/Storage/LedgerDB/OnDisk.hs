@@ -1346,8 +1346,13 @@ sm secParam db = StateMachine {
         dbCleanup $ dbEnv db
     }
 
+-- FIXME(jdral): @withMaxSuccess@ has temporarily been decreased from @1000000@
+-- to @1000@, since the LMDB version of this property test takes an unreasonable
+-- amount of time to finish. At the moment, a 1000 property tests that exercise
+-- an LMDB backing store will take ~3 minutes to run. Code line to restore:
+-- > prop_sequential mkDbEnv secParam = QC.withMaxSuccess 100000
 prop_sequential :: (SecurityParam -> IO (DbEnv IO)) -> SecurityParam -> QC.Property
-prop_sequential mkDbEnv secParam = QC.withMaxSuccess 100000 $
+prop_sequential mkDbEnv secParam = QC.withMaxSuccess 1000 $
   forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
     QC.monadicIO $ QC.run (mkDbEnv secParam) >>= \e -> propCmds e cmds
 
