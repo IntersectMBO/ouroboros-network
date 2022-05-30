@@ -86,7 +86,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 data DiffusionMode
     = InitiatorOnlyDiffusionMode
     | InitiatorAndResponderDiffusionMode
-  deriving (Typeable, Eq, Show)
+  deriving (Typeable, Eq, Ord, Show)
 
 
 -- | Version data for NodeToNode protocol
@@ -100,11 +100,15 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   -- negotiation (see 'Acceptable' instance below).
 
 instance Acceptable NodeToNodeVersionData where
+    -- | Check that both side use the same 'networkMagic'.  Choose smaller one
+    -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
+    -- agree on it.
     acceptableVersion local remote
-      | networkMagic local == networkMagic remote && diffusionMode remote == InitiatorOnlyDiffusionMode
-      = Accept remote
       | networkMagic local == networkMagic remote
-      = Accept local
+      = Accept NodeToNodeVersionData
+          { networkMagic  = networkMagic local
+          , diffusionMode = diffusionMode local `min` diffusionMode remote
+          }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
                        ++ show local
