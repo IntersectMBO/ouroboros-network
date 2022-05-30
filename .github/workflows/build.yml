@@ -193,6 +193,7 @@ jobs:
         package lmdb
           extra-include-dirs: D:\a\_temp\mingw64\include
           extra-lib-dirs:     D:\a\_temp\mingw64\lib
+                              D:\a\_temp\mingw64\bin
         EOF
 
         cat ./cabal.project.local
