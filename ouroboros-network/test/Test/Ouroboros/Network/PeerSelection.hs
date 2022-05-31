@@ -8,6 +8,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE NumericUnderscores         #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -2148,16 +2149,15 @@ selectGovEvents = Signal.selectEvents
                            _               -> Nothing)
 
 selectGovState :: Eq a
-               => (Governor.PeerSelectionState PeerAddr () -> a)
+               => (forall peerconn. Governor.PeerSelectionState PeerAddr peerconn -> a)
                -> Events TestTraceEvent
                -> Signal a
 selectGovState f =
     Signal.nub
-  . fmap f
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (Governor.emptyPeerSelectionState $ mkStdGen 42)
+  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState $ mkStdGen 42)
   . Signal.selectEvents
-      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just st
+      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just (f st)
              _                                         -> Nothing)
 
 selectEnvTargets :: Eq a

@@ -479,7 +479,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 -- Utils for properties
 --
 
-data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr ())
+data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr)
                     | GovernorEvent    (TracePeerSelection PeerAddr)
                     | GovernorCounters PeerSelectionCounters
                     | MockEnvEvent     TraceMockEnv
@@ -495,9 +495,13 @@ data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr ())
 tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
 tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 
-tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr peerconn)
-tracerDebugPeerSelection = contramap (GovernorDebug . fmap (const ()))
+tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
+tracerDebugPeerSelection = contramap (GovernorDebug . voidDebugPeerSelection)
                                      tracerTestTraceEvent
+  where
+    voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
+    voidDebugPeerSelection (TraceGovernorState btime wtime state) =
+                            TraceGovernorState btime wtime (const () <$> state)
 
 tracerTracePeerSelectionCounters :: Tracer (IOSim s) PeerSelectionCounters
 tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent

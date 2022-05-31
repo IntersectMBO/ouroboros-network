@@ -124,22 +124,10 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m (TracePeerSelection ntnAddr)
 
     , dtDebugPeerSelectionInitiatorTracer
-        :: Tracer m (DebugPeerSelection
-                       ntnAddr
-                       (PeerConnectionHandle
-                         InitiatorMode
-                         ntnAddr
-                         ByteString
-                         m () Void))
+        :: Tracer m (DebugPeerSelection ntnAddr)
 
     , dtDebugPeerSelectionInitiatorResponderTracer
-        :: Tracer m (DebugPeerSelection
-                       ntnAddr
-                       (PeerConnectionHandle
-                         InitiatorResponderMode
-                         ntnAddr
-                         ByteString
-                         m () ()))
+        :: Tracer m (DebugPeerSelection ntnAddr)
 
     , dtTracePeerSelectionCounters
         :: Tracer m PeerSelectionCounters
