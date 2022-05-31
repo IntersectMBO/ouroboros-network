@@ -460,7 +460,7 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_13, CardanoNodeToClientVersion9)
       ]
 
-  latestReleasedNodeVersion _prx = (Just NodeToNodeV_8, Just NodeToClientV_12)
+  latestReleasedNodeVersion _prx = (Just NodeToNodeV_9, Just NodeToClientV_13)
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
