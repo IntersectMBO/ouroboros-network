@@ -226,7 +226,7 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
         -> Diffusion.Applications
              addrNTN NodeToNodeVersion   versionDataNTN
              addrNTC NodeToClientVersion versionDataNTC
-             m
+             m ()
         -> Diffusion.ExtraApplications p2p addrNTN m
         -> m ()
 
@@ -426,7 +426,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       -> ( Diffusion.Applications
              addrNTN NodeToNodeVersion   versionDataNTN
              addrNTC NodeToClientVersion versionDataNTC
-             m
+             m ()
          , Diffusion.ExtraApplications p2p addrNTN m
          )
     mkDiffusionApplications
@@ -699,7 +699,7 @@ stdRunDataDiffusion ::
   -> Diffusion.Applications
        RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
        LocalAddress   NodeToClientVersion NodeToClientVersionData
-       IO
+       IO ()
   -> Diffusion.ExtraApplications p2p RemoteAddress IO
   -> IO ()
 stdRunDataDiffusion = Diffusion.run
