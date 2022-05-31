@@ -1,9 +1,12 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
 module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
@@ -616,11 +619,16 @@ data TracePeerSelection peeraddr =
      | TraceChurnMode          ChurnMode
   deriving Show
 
-data DebugPeerSelection peeraddr peerconn =
-       TraceGovernorState Time              -- blocked time
-                          (Maybe DiffTime)  -- wait time
-                          (PeerSelectionState peeraddr peerconn)
-  deriving (Show, Functor)
+data DebugPeerSelection peeraddr where
+  TraceGovernorState :: forall peeraddr peerconn.
+                        Show peerconn
+                     => Time            -- blocked time
+                     -> Maybe DiffTime  -- wait time
+                     -> PeerSelectionState peeraddr peerconn
+                     -> DebugPeerSelection peeraddr
+
+deriving instance (Ord peeraddr, Show peeraddr)
+               => Show (DebugPeerSelection peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal deriving Show

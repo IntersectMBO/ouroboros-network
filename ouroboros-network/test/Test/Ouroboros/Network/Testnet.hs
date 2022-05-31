@@ -13,7 +13,6 @@ import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 import           Data.Bifoldable (bifoldMap)
 
 import           Data.Dynamic (Typeable)
-import           Data.Functor (void)
 import           Data.List (intercalate)
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
@@ -149,7 +148,7 @@ data DiffusionTestTrace =
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionPeerSelectionTrace (TracePeerSelection NtNAddr)
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr)
-    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr ())
+    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
     | DiffusionConnectionManagerTrace
         (ConnectionManagerTrace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
@@ -186,7 +185,7 @@ tracersExtraWithTimeName ntnAddr =
                                           $ dynamicTracer
     , dtDebugPeerSelectionInitiatorTracer = contramap
                                              ( DiffusionDebugPeerSelectionTrace
-                                             . void
+                                             . voidDebugPeerSelection
                                              )
                                           . tracerWithName ntnAddr
                                           . tracerWithTime
@@ -194,7 +193,7 @@ tracersExtraWithTimeName ntnAddr =
     , dtDebugPeerSelectionInitiatorResponderTracer
         = contramap
            ( DiffusionDebugPeerSelectionTrace
-           . void
+           . voidDebugPeerSelection
            )
         . tracerWithName ntnAddr
         . tracerWithTime
@@ -233,6 +232,10 @@ tracersExtraWithTimeName ntnAddr =
     , dtLocalServerTracer                 = nullTracer
     , dtLocalInboundGovernorTracer        = nullTracer
   }
+  where
+    voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
+    voidDebugPeerSelection (TraceGovernorState btime wtime state) =
+                            TraceGovernorState btime wtime (const () <$> state)
 
 tracerDiffusionSimWithTimeName :: NtNAddr -> Tracer (IOSim s) DiffusionSimulationTrace
 tracerDiffusionSimWithTimeName ntnAddr =
@@ -1782,17 +1785,16 @@ selectDiffusionSimulationTrace = Signal.selectEvents
                            _                                   -> Nothing)
 
 selectDiffusionPeerSelectionState :: Eq a
-                                  => (Governor.PeerSelectionState NtNAddr () -> a)
+                                  => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
                                   -> Events DiffusionTestTrace
                                   -> Signal a
 selectDiffusionPeerSelectionState f =
     Signal.nub
-  . fmap f
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (Governor.emptyPeerSelectionState $ mkStdGen 42)
+  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState $ mkStdGen 42)
   . Signal.selectEvents
       (\case
-        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just st
+        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
         _                                                            -> Nothing)
 
 selectDiffusionConnectionManagerEvents

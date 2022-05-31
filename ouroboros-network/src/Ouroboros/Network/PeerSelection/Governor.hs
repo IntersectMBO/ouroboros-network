@@ -432,9 +432,10 @@ base our decision on include:
 -- |
 --
 peerSelectionGovernor :: (MonadAsync m, MonadLabelledSTM m, MonadMask m,
-                          MonadTime m, MonadTimer m, Ord peeraddr)
+                          MonadTime m, MonadTimer m, Ord peeraddr,
+                          Show peerconn)
                       => Tracer m (TracePeerSelection peeraddr)
-                      -> Tracer m (DebugPeerSelection peeraddr peerconn)
+                      -> Tracer m (DebugPeerSelection peeraddr)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
                       -> PeerSelectionActions peeraddr peerconn m
@@ -469,9 +470,9 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
 peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              (MonadAsync m, MonadMask m,
                               MonadTime m, MonadTimer m,
-                              Ord peeraddr)
+                              Ord peeraddr, Show peerconn)
                           => Tracer m (TracePeerSelection peeraddr)
-                          -> Tracer m (DebugPeerSelection peeraddr peerconn)
+                          -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
