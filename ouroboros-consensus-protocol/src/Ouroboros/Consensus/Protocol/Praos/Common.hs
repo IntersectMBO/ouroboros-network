@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | Various things common to iterations of the Praos protocol.
 module Ouroboros.Consensus.Protocol.Praos.Common (
@@ -17,11 +18,13 @@ module Ouroboros.Consensus.Protocol.Praos.Common (
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Ledger.BaseTypes (Nonce)
 import           Cardano.Ledger.Crypto (Crypto, VRF)
+import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer))
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as OCert
 import           Cardano.Slotting.Block (BlockNo)
 import           Cardano.Slotting.Slot (SlotNo)
 import           Data.Function (on)
+import           Data.Map.Strict (Map)
 import           Data.Ord (Down (Down))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
@@ -108,4 +111,8 @@ data PraosNonces = PraosNonces {
 -- adding to it here under time pressure. See
 -- <https://github.com/input-output-hk/cardano-node/issues/3864>
 class ConsensusProtocol p => PraosProtocolSupportsNode p where
+  type PraosProtocolSupportsNodeCrypto p
+
   getPraosNonces :: proxy p -> ChainDepState p -> PraosNonces
+
+  getOpCertCounters :: proxy p -> ChainDepState p -> Map (KeyHash 'BlockIssuer (PraosProtocolSupportsNodeCrypto p)) Word64

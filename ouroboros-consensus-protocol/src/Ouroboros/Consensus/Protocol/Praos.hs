@@ -657,6 +657,8 @@ praosCheckCanForge
 -------------------------------------------------------------------------------}
 
 instance PraosCrypto c => PraosProtocolSupportsNode (Praos c) where
+  type PraosProtocolSupportsNodeCrypto (Praos c) = c
+
   getPraosNonces _prx cdst =
       PraosNonces {
           candidateNonce   = praosStateCandidateNonce
@@ -672,6 +674,13 @@ instance PraosCrypto c => PraosProtocolSupportsNode (Praos c) where
         , praosStateEvolvingNonce
         , praosStateLabNonce
         , praosStateLastEpochBlockNonce
+        } = cdst
+
+  getOpCertCounters _prx cdst =
+      praosStateOCertCounters
+    where
+      PraosState {
+          praosStateOCertCounters
         } = cdst
 
 {-------------------------------------------------------------------------------

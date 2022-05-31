@@ -506,6 +506,8 @@ tpraosCheckCanForge TPraosConfig { tpraosParams }
 -------------------------------------------------------------------------------}
 
 instance SL.PraosCrypto c => PraosProtocolSupportsNode (TPraos c) where
+  type PraosProtocolSupportsNodeCrypto (TPraos c) = c
+
   getPraosNonces _prx cdst =
       PraosNonces {
           candidateNonce
@@ -530,6 +532,18 @@ instance SL.PraosCrypto c => PraosProtocolSupportsNode (TPraos c) where
           ticknStateEpochNonce
         , ticknStatePrevHashNonce
         } = csTickn
+
+  getOpCertCounters _prx cdst = opcertCounters
+    where
+      TPraosState { tpraosStateChainDepState } = cdst
+      SL.ChainDepState {
+        SL.csProtocol
+        } = tpraosStateChainDepState
+      SL.PrtclState
+        opcertCounters
+        _evolvingNonce
+        _candidateNonce
+          = csProtocol
 
 {-------------------------------------------------------------------------------
   Condense
