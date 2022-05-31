@@ -403,7 +403,7 @@ instance SL.PraosCrypto c => ConsensusProtocol (TPraos c) where
 
 mkShelleyGlobals :: ConsensusConfig (TPraos c) -> SL.Globals
 mkShelleyGlobals TPraosConfig{..} = SL.Globals {
-      epochInfoWithErr              =
+      epochInfo                     =
         hoistEpochInfo
           (runExcept . withExceptT (T.pack . show))
           tpraosEpochInfo
