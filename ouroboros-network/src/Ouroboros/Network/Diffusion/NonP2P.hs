@@ -161,7 +161,7 @@ run
     -> Applications
          RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress  NodeToClientVersion NodeToClientVersionData
-         IO
+         IO a
     -> ApplicationsExtra
     -> IO ()
 run Tracers

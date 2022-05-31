@@ -82,7 +82,7 @@ data ExtraApplications (p2p :: P2P) ntnAddr m where
 
 -- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
 --
-run :: forall (p2p :: P2P).
+run :: forall (p2p :: P2P) a.
        Tracers
          RemoteAddress NodeToNodeVersion
          LocalAddress  NodeToClientVersion
@@ -95,7 +95,7 @@ run :: forall (p2p :: P2P).
     -> Applications
          RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress   NodeToClientVersion NodeToClientVersionData
-         IO
+         IO a
     -> ExtraApplications p2p RemoteAddress IO
     -> IO ()
 run tracers (P2PTracers tracersExtra)

@@ -138,7 +138,7 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
 --
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
-                  m =
+                  m a =
   Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
@@ -150,7 +150,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorMode ntnAddr
-                      ByteString m () Void)
+                      ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
@@ -159,7 +159,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorResponderMode ntnAddr
-                      ByteString m () ())
+                      ByteString m a ())
 
       -- | NodeToClient responder application (server role)
       --

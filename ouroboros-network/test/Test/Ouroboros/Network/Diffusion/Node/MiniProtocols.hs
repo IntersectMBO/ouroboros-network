@@ -164,7 +164,7 @@ applications :: forall block m.
              -> AppArgs m
              -> m (Diff.Applications NtNAddr NtNVersion NtNVersionData
                                      NtCAddr NtCVersion NtCVersionData
-                                     m)
+                                     m ())
 applications nodeKernel
              Codecs { chainSyncCodec, keepAliveCodec, pingPongCodec }
              limits
