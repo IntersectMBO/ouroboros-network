@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (
   -- * Exported for ledger-db-backends-checker
   , DbState (..)
   , LMDBMK (..)
+  , foldrWithKey
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR

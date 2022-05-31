@@ -17,7 +17,6 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Map.Strict as Map
 import           Data.String (fromString)
 import           Options.Applicative as O
-import           Unsafe.Coerce (unsafeCoerce)
 
 import           Cardano.Binary as CBOR
 import           Cardano.Ledger.Crypto
@@ -30,10 +29,9 @@ import qualified Ouroboros.Consensus.Storage.FS.API as FS
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.FS.IO as FS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as Consensus.LMDB
 
 import qualified Database.LMDB.Simple as LMDB
-import qualified Database.LMDB.Simple.Extra as LMDB
 
 data Options = Options { inmemFile :: FilePath, lmdbFile :: FilePath } deriving Show
 
@@ -76,15 +74,15 @@ getMemDb f = do
 
 getLMDB :: FilePath -> IO (WithOrigin SlotNo, LedgerTables (ExtLedgerState (CardanoBlock StandardCrypto)) ValuesMK)
 getLMDB dbFilePath = do
-  dbEnv <- LMDB.openEnvironment dbFilePath LMDB.defaultLMDBLimits
-  Just dbSettings <- LMDB.readWriteTransaction dbEnv $ (LMDB.getDatabase (Just "_dbstate") :: LMDB.Transaction LMDB.ReadWrite (LMDB.Database () LMDB.DbState)) >>= flip LMDB.get ()
-  dbBackingTables <- LMDB.readWriteTransaction dbEnv $ traverseLedgerTables (\(NameMK name) -> LMDBMK name <$> LMDB.getDatabase (Just name)) namesLedgerTables
-  (LMDB.dbsSeq dbSettings,) <$> (LMDB.readWriteTransaction dbEnv (traverseLedgerTables2 f dbBackingTables codecLedgerTables) :: IO (LedgerTables (ExtLedgerState (CardanoBlock StandardCrypto)) ValuesMK))
+  dbEnv <- LMDB.openEnvironment dbFilePath Consensus.LMDB.defaultLMDBLimits
+  Just dbSettings <- LMDB.readWriteTransaction dbEnv $ (LMDB.getDatabase (Just "_dbstate") :: LMDB.Transaction LMDB.ReadWrite (LMDB.Database () Consensus.LMDB.DbState)) >>= flip LMDB.get ()
+  dbBackingTables <- LMDB.readWriteTransaction dbEnv $ traverseLedgerTables (\(NameMK name) -> Consensus.LMDB.LMDBMK name <$> LMDB.getDatabase (Just name)) namesLedgerTables
+  (Consensus.LMDB.dbsSeq dbSettings,) <$> (LMDB.readWriteTransaction dbEnv (zipLedgerTablesA f dbBackingTables codecLedgerTables) :: IO (LedgerTables (ExtLedgerState (CardanoBlock StandardCrypto)) ValuesMK))
   where
-    f :: Ord k => LMDB.LMDBMK k v -> CodecMK k v -> LMDB.Transaction mode (ValuesMK k v)
-    f (LMDB.LMDBMK _ db) cdc = ApplyValuesMK
+    f :: Ord k => Consensus.LMDB.LMDBMK k v -> CodecMK k v -> LMDB.Transaction mode (ValuesMK k v)
+    f (Consensus.LMDB.LMDBMK _ db) cdc = ApplyValuesMK
                         . HD.UtxoValues
-                       <$> LMDB.foldrWithKey
+                       <$> Consensus.LMDB.foldrWithKey
                             Map.insert
                             Map.empty
                             cdc
