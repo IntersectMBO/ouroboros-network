@@ -22,6 +22,8 @@ type Enclosing = Enclosing' ()
 pattern FallingEdge :: Enclosing' ()
 pattern FallingEdge = FallingEdgeWith ()
 
+{-# COMPLETE RisingEdge, FallingEdge #-}
+
 -- | Enclose an action using the given 'Tracer'.
 encloseWith ::
      Applicative m
