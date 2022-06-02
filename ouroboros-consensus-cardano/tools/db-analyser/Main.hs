@@ -20,6 +20,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
@@ -158,6 +159,13 @@ parseAnalysis = asum [
                 <> " of the ledger state and inserts markers for 'significant'"
                 <> " events, such as for example epoch transitions."
         ]
+    , fmap ReproMempoolAndForge $ option auto $ mconcat [
+          long "repro-mempool-and-forge"
+        , help $ "Maintain ledger state and mempool trafficking the"
+              <> " transactions of each block. The integer is how many"
+              <> "blocks to put in the mempool at once."
+        , metavar "INT"
+        ]
     , pure OnlyValidation
     ]
 
@@ -223,6 +231,7 @@ analyse ::
      , Show (Header blk)
      , HasAnalysis blk
      , HasProtocolInfo blk
+     , LedgerSupportsMempool.HasTxs blk
      )
   => CmdLine
   -> Args blk
