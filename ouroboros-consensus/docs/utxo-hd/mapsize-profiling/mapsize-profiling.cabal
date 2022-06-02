@@ -1,0 +1,34 @@
+name:                mapsize-profiling
+version:             0.1.0.0
+synopsis:            Profiling LMDB put/get under different mapsizes
+-- description:
+license:             Apache-2.0
+copyright:           2022 Input Output (Hong Kong) Ltd.
+author:              IOHK Engineering Team
+maintainer:          operations@iohk.io
+category:            Network
+build-type:          Simple
+cabal-version:       >=1.10
+
+executable mapsize-profiling
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  default-language:    Haskell2010
+
+  build-depends:       base              >=4.9 && <4.15
+                     , directory
+                     , lmdb-simple       >=0.4.0.0 && <0.5
+                     , lmdb              >= 0.2.5
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+                       -threaded
+                       -fprof-auto
+                       "-with-rtsopts=-N -p -s -hc"

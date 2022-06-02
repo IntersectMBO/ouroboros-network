@@ -1,0 +1,3 @@
+Puts 1 10000000
+Gets 1 10000000
+GetSize
