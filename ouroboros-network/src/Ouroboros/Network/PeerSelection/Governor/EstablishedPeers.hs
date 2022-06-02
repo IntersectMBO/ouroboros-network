@@ -325,7 +325,7 @@ aboveTarget :: forall peeraddr peerconn m.
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
 aboveTarget actions
-            PeerSelectionPolicy {
+            policy@PeerSelectionPolicy {
               policyPickWarmPeersToDemote
             }
             st@PeerSelectionState {
@@ -389,7 +389,7 @@ aboveTarget actions
                           inProgressDemoteWarm = inProgressDemoteWarm
                                               <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteEstablishedPeer actions peeraddr peerconn
+        decisionJobs  = [ jobDemoteEstablishedPeer actions policy peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
@@ -397,19 +397,15 @@ aboveTarget actions
   = GuardedSkip Nothing
 
 
--- | Reconnect delay for peers which asynchronously transitioned to cold state.
---
-reconnectDelay :: DiffTime
-reconnectDelay = 10
---TODO: make this a policy param
-
 jobDemoteEstablishedPeer :: forall peeraddr peerconn m.
                             (Monad m, Ord peeraddr)
                          => PeerSelectionActions peeraddr peerconn m
+                         -> PeerSelectionPolicy peeraddr m
                          -> peeraddr
                          -> peerconn
                          -> Job () m (Completion m peeraddr peerconn)
 jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateActions {closePeerConnection}}
+                         PeerSelectionPolicy { policyErrorDelay }
                          peeraddr peerconn =
     Job job handler () "demoteEstablishedPeer"
   where
@@ -432,7 +428,7 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
             inProgressDemoteWarm' = Set.delete peeraddr inProgressDemoteWarm
             knownPeers'           = KnownPeers.setConnectTime
                                      peerSet
-                                     ((realToFrac rFuzz + reconnectDelay)
+                                     ((realToFrac rFuzz + policyErrorDelay)
                                       `addTime` now)
                                    . Set.foldr'
                                      ((snd .) . KnownPeers.incrementFailCount)

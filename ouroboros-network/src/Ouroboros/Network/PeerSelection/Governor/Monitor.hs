@@ -88,22 +88,18 @@ jobs jobPool st =
       return (completion st)
 
 
--- | Reconnect delay for peers which asynchronously transitioned to cold state.
---
-reconnectDelay :: DiffTime
-reconnectDelay = 10
---TODO: make this a policy param
-
 -- | Monitor connections.
 --
 connections :: forall m peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
+            -> PeerSelectionPolicy peeraddr m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
+            PeerSelectionPolicy { policyErrorDelay }
             st@PeerSelectionState {
               activePeers,
               establishedPeers,
@@ -141,7 +137,7 @@ connections PeerSelectionActions{
             -- a result of a failure.
             knownPeers'        = KnownPeers.setConnectTime
                                    (Map.keysSet demotedToCold)
-                                   ((realToFrac rFuzz + reconnectDelay)
+                                   ((realToFrac rFuzz + policyErrorDelay)
                                     `addTime` now)
                                . Set.foldr'
                                    ((snd .) . KnownPeers.incrementFailCount)
@@ -217,9 +213,11 @@ connections PeerSelectionActions{
 localRoots :: forall peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
            => PeerSelectionActions peeraddr peerconn m
+           -> PeerSelectionPolicy peeraddr m
            -> PeerSelectionState peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 localRoots actions@PeerSelectionActions{readLocalRootPeers}
+           policy
            st@PeerSelectionState{
              localRootPeers,
              publicRootPeers,
@@ -290,6 +288,6 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
                               inProgressDemoteHot = inProgressDemoteHot
                                                  <> selectedToDemote
                             },
-            decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
+            decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
                           | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
           }

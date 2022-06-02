@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- Constants used in 'Ouroboros.Network.Diffusion'
@@ -16,6 +17,7 @@ import qualified System.Random as Rnd
 
 import           Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
                      Provenance (..), PrunePolicy)
+import           Ouroboros.Network.ExitPolicy as ExitPolicy
 import           Ouroboros.Network.InboundGovernor
                      (InboundGovernorObservableState (..))
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -47,8 +49,9 @@ simplePeerSelectionPolicy :: forall m peerAddr.
                           => StrictTVar m StdGen
                           -> STM m ChurnMode
                           -> PeerMetrics m peerAddr
+                          -> ReconnectDelay
                           -> PeerSelectionPolicy peerAddr m
-simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
+simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelectionPolicy {
       policyPickKnownPeersForGossip = simplePromotionPolicy,
       policyPickColdPeersToPromote  = simplePromotionPolicy,
       policyPickWarmPeersToPromote  = simplePromotionPolicy,
@@ -61,7 +64,9 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics = PeerSelectionPolicy {
       policyMaxInProgressGossipReqs = 2,
       policyGossipRetryTime         = 3600, -- seconds
       policyGossipBatchWaitTime     = 3,    -- seconds
-      policyGossipOverallTimeout    = 10    -- seconds
+      policyGossipOverallTimeout    = 10,   -- seconds
+
+      policyErrorDelay              = ExitPolicy.reconnectDelay errorDelay
     }
   where
 
