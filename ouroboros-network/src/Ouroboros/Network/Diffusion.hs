@@ -70,14 +70,14 @@ data ExtraArguments (p2p :: P2P) m where
 
 -- | Application data which depend on p2p mode.
 --
-data ExtraApplications (p2p :: P2P) ntnAddr m where
+data ExtraApplications (p2p :: P2P) ntnAddr m a where
   P2PApplications
-    :: P2P.ApplicationsExtra ntnAddr m
-    -> ExtraApplications 'P2P ntnAddr m
+    :: P2P.ApplicationsExtra ntnAddr m a
+    -> ExtraApplications 'P2P ntnAddr m a
 
   NonP2PApplications
     :: NonP2P.ApplicationsExtra
-    -> ExtraApplications 'NonP2P ntnAddr m
+    -> ExtraApplications 'NonP2P ntnAddr m a
 
 
 -- | Run data diffusion in either 'P2P' or 'NonP2P' mode.
@@ -96,7 +96,7 @@ run :: forall (p2p :: P2P) a.
          RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress   NodeToClientVersion NodeToClientVersionData
          IO a
-    -> ExtraApplications p2p RemoteAddress IO
+    -> ExtraApplications p2p RemoteAddress IO a
     -> IO ()
 run tracers (P2PTracers tracersExtra)
             args (P2PArguments argsExtra)

@@ -5,8 +5,8 @@
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
@@ -54,6 +54,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           System.Random (StdGen)
 
+import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.EstablishedPeers
                      (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -209,7 +210,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- | Monitor peer state.
     --
-    monitorPeerConnection    :: peerconn -> STM m PeerStatus,
+    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, ReconnectDelay),
 
     -- | Establish new connection: cold to warm.
     --
