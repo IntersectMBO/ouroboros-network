@@ -73,13 +73,15 @@ import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
-import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (BlockNodeToClientVersion)
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (RangeQuery (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+                     (RangeQuery (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.DepPair
 

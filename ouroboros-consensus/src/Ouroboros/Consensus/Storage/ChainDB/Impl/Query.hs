@@ -12,12 +12,12 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
     -- * Queries
     getBlockComponent
   , getCurrentChain
-  , getLedgerBackingStoreValueHandle
-  , getLedgerStateForKeys
   , getIsFetched
   , getIsInvalidBlock
   , getIsValid
+  , getLedgerBackingStoreValueHandle
   , getLedgerDB
+  , getLedgerStateForKeys
   , getMaxSlotNo
   , getTipBlock
   , getTipHeader
@@ -40,7 +40,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
-import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util (StaticEither (..), eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike

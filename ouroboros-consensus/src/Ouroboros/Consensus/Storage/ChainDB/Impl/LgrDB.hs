@@ -77,8 +77,8 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as Lock
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
@@ -90,11 +90,12 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
-                     ExceededRollback (..), LedgerDbCfg (..), RunAlsoLegacy (..))
+                     ExceededRollback (..), LedgerDbCfg (..),
+                     RunAlsoLegacy (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
-                     DiskSnapshot, LedgerDB', NextBlock (..),
-                     LedgerBackingStore, ReplayGoal, StreamAPI (..),
+                     DiskSnapshot, LedgerBackingStore, LedgerDB',
+                     NextBlock (..), ReplayGoal, StreamAPI (..),
                      TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
@@ -108,10 +109,10 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
-      varDB               :: !(StrictTVar m (LedgerDB' blk))
+      varDB           :: !(StrictTVar m (LedgerDB' blk))
       -- ^ INVARIANT: the tip of the 'LedgerDB' is always in sync with the tip
       -- of the current chain of the ChainDB.
-    , varPrevApplied      :: !(StrictTVar m (Set (RealPoint blk)))
+    , varPrevApplied  :: !(StrictTVar m (Set (RealPoint blk)))
       -- ^ INVARIANT: this set contains only points that are in the
       -- VolatileDB.
       --
@@ -123,18 +124,18 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
-    , lgrBackingStore     :: !(LedgerBackingStore m (ExtLedgerState blk))
+    , lgrBackingStore :: !(LedgerBackingStore m (ExtLedgerState blk))
       -- ^ Handle to the ledger's backing store, containing the parts that grow
       -- too big for in-memory residency
-    , lgrFlushLock        :: !(Lock.RAWLock m ())
+    , lgrFlushLock    :: !(Lock.RAWLock m ())
       -- ^ Lock used to ensure the contents of 'varDB' and 'lgrBackingStore'
       -- remain coherent
-    , resolveBlock        :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
+    , resolveBlock    :: !(LedgerDB.ResolveBlock m blk) -- TODO: ~ (RealPoint blk -> m blk)
       -- ^ Read a block from disk
-    , cfg                 :: !(TopLevelConfig blk)
-    , diskPolicy          :: !DiskPolicy
-    , hasFS               :: !(SomeHasFS m)
-    , tracer              :: !(Tracer m (TraceEvent blk))
+    , cfg             :: !(TopLevelConfig blk)
+    , diskPolicy      :: !DiskPolicy
+    , hasFS           :: !(SomeHasFS m)
+    , tracer          :: !(Tracer m (TraceEvent blk))
 
     } deriving (Generic)
 

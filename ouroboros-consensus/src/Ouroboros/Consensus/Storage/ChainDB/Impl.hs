@@ -74,10 +74,11 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+                     (RunAlsoLegacy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
-import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy(..))
 
 {-------------------------------------------------------------------------------
   Initialization

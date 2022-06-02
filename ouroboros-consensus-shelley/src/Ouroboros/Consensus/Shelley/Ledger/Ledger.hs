@@ -26,8 +26,8 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , ShelleyTip (..)
   , ShelleyTransition (..)
   , Ticked (..)
-  , castShelleyTip
   , Ticked1 (..)
+  , castShelleyTip
   , shelleyLedgerTipPoint
   , shelleyTipToPoint
     -- * Ledger config
@@ -48,9 +48,9 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , encodeShelleyLedgerState
     -- * TEMPORARY exports to unblock prototyping
   , cnv
+  , projectUtxoSL
   , vnc
   , withUtxoSL
-  , projectUtxoSL
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -93,8 +93,8 @@ import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BHeaderView as SL (BHeaderView)
 import qualified Cardano.Ledger.BaseTypes as SL (epochInfoPure)
-import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Block as Core
+import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Control.State.Transition.Extended as STS

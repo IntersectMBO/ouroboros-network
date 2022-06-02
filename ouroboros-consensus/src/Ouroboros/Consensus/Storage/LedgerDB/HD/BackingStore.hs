@@ -1,9 +1,9 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
@@ -16,10 +16,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
   , bsRead
   , withBsValueHandle
     -- * An in-memory backing store
-  , newTVarBackingStore
   , TVarBackingStoreClosedExn (..)
   , TVarBackingStoreDeserialiseExn (..)
   , TVarBackingStoreValueHandleClosedExn (..)
+  , newTVarBackingStore
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
@@ -79,14 +79,14 @@ data BackingStoreValueHandle m keys values = BackingStoreValueHandle {
     -- | Close the handle
     --
     -- Other methods throw exceptions if called on a closed handle.
-    bsvhClose      :: !(m ())
+    bsvhClose     :: !(m ())
     -- | See 'RangeQuery'
-  , bsvhRangeRead  :: !(RangeQuery keys -> m values)
+  , bsvhRangeRead :: !(RangeQuery keys -> m values)
     -- | Read the given keys from the handle
     --
     -- Absent keys will merely not be present in the result instead of causing a
     -- failure or an exception.
-  , bsvhRead       :: !(keys -> m values)
+  , bsvhRead      :: !(keys -> m values)
   }
 
 data RangeQuery keys = RangeQuery {

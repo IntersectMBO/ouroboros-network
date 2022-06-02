@@ -6,10 +6,10 @@
 {-# LANGUAGE PolyKinds               #-}
 {-# LANGUAGE RankNTypes              #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE TypeOperators           #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
-{-# LANGUAGE TypeApplications        #-}
 module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) where
 
 import           Data.SOP.Strict
