@@ -98,7 +98,11 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyMaxInProgressGossipReqs :: !Int,
        policyGossipRetryTime         :: !DiffTime,
        policyGossipBatchWaitTime     :: !DiffTime,
-       policyGossipOverallTimeout    :: !DiffTime
+       policyGossipOverallTimeout    :: !DiffTime,
+
+       -- | Reconnection delay, passed from `ExitPolicy`.
+       --
+       policyErrorDelay              :: !DiffTime
      }
 
 

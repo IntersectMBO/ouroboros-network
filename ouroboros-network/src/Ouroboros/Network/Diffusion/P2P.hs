@@ -842,7 +842,7 @@ runM Interfaces
                         spsCloseConnectionTimeout =
                           Diffusion.Policies.closeConnectionTimeout,
                         spsConnectionManager = connectionManager,
-                        spsExitPolicy = stdExitPolicy daReturnPolicy
+                        spsExitPolicy = exitPolicy
                       }
                     $ \(peerStateActions
                           :: NodeToNodePeerStateActions InitiatorMode ntnAddr m a Void) ->
@@ -873,7 +873,8 @@ runM Interfaces
                           fuzzRng
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
-                            policyRngVar (readTVar churnModeVar) daPeerMetrics))
+                             policyRngVar (readTVar churnModeVar)
+                             daPeerMetrics (epErrorDelay exitPolicy)))
                         $ \governorThread ->
                           Async.withAsync
                           (Governor.peerChurnGovernor
@@ -993,7 +994,8 @@ runM Interfaces
                           fuzzRng
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
-                            policyRngVar (readTVar churnModeVar) daPeerMetrics))
+                             policyRngVar (readTVar churnModeVar)
+                             daPeerMetrics (epErrorDelay exitPolicy)))
                         $ \governorThread ->
                         withSockets tracer diNtnSnocket
                                     ( catMaybes
@@ -1063,6 +1065,9 @@ runM Interfaces
         case fromException err of
           Just (_ :: IOManagerError) -> ShutdownNode
           Nothing                    -> mempty
+
+    exitPolicy :: ExitPolicy a
+    exitPolicy = stdExitPolicy daReturnPolicy
 
 
 -- | Main entry point for data diffusion service.  It allows to:
