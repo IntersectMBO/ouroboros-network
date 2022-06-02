@@ -2237,7 +2237,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
                 policyMaxInProgressGossipReqs = 0,
                 policyGossipRetryTime         = 0, -- seconds
                 policyGossipBatchWaitTime     = 0, -- seconds
-                policyGossipOverallTimeout    = 0  -- seconds
+                policyGossipOverallTimeout    = 0, -- seconds
+                policyErrorDelay              = 0  -- seconds
               }
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
     pickTrivially m n = pure . Set.take n $ m
