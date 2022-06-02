@@ -86,7 +86,8 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Basics (SufficientSerializationForAnyBackingStore)
+import           Ouroboros.Consensus.Ledger.Basics
+                     (SufficientSerializationForAnyBackingStore)
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run

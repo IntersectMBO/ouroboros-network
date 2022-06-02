@@ -11,7 +11,7 @@ import           Control.Monad (unless)
 {-------------------------------------------------------------------------------
   Serialization aliases
 -------------------------------------------------------------------------------}
-  
+
 -- | Simple codec to use since there's no version history to deal with and
 -- exactly one constructor
 versionZeroProductFromCBOR :: String -> Int -> CBOR.Decoder s a -> CBOR.Decoder s a

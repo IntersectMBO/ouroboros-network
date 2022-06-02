@@ -84,21 +84,21 @@ module Ouroboros.Consensus.Ledger.Basics (
   , DiskLedgerView (..)
   , FootprintL (..)
     -- ** Convenience aliases
-  , emptyLedgerTables
-  , polyEmptyLedgerTables
-  , forgetLedgerTables
-  , forgetLedgerTablesValues
-  , forgetLedgerTablesDiffs
-  , forgetLedgerTablesDiffsTicked
-  , prependLedgerTablesDiffsRaw
-  , prependLedgerTablesDiffs
-  , prependLedgerTablesDiffsTicked
-  , prependLedgerTablesDiffsFromTicked
   , applyLedgerTablesDiffs
   , applyLedgerTablesDiffsTicked
   , calculateAdditions
   , calculateDifference
   , calculateDifferenceTicked
+  , emptyLedgerTables
+  , forgetLedgerTables
+  , forgetLedgerTablesDiffs
+  , forgetLedgerTablesDiffsTicked
+  , forgetLedgerTablesValues
+  , polyEmptyLedgerTables
+  , prependLedgerTablesDiffs
+  , prependLedgerTablesDiffsFromTicked
+  , prependLedgerTablesDiffsRaw
+  , prependLedgerTablesDiffsTicked
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
@@ -122,8 +122,8 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Misc
   , ShowLedgerState (..)
     -- * Exported only for testing
-  , rawCalculateDifference
   , rawApplyDiffs
+  , rawCalculateDifference
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR

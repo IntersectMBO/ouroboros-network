@@ -30,7 +30,8 @@ import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerState, DiffMK, EmptyMK, LedgerTables)
+import           Ouroboros.Consensus.Ledger.Basics (DiffMK, EmptyMK,
+                     LedgerState, LedgerTables)
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope

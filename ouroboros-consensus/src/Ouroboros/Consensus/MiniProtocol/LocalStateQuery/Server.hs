@@ -16,7 +16,8 @@ import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (Query, QueryLedger)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
-import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Util (StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
 

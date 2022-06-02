@@ -36,8 +36,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-import Ouroboros.Consensus.Storage.LedgerDB.InMemory (RunAlsoLegacy)
 
 {-------------------------------------------------------------------------------
   Arguments
