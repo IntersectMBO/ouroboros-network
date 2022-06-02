@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Tele
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig, LedgerState,
                      TickedLedgerState, ValuesMK, applyChainTick,
-                     forgetLedgerTables, applyLedgerTablesDiffsTicked)
+                     applyLedgerTablesDiffsTicked, forgetLedgerTables)
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 
 import           Cardano.Crypto (toVerification)

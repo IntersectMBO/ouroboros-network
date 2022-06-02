@@ -30,8 +30,8 @@ import           Ouroboros.Consensus.Config (SecurityParam (SecurityParam),
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
                      (HeaderState (HeaderState))
-import           Ouroboros.Consensus.Ledger.Abstract
-                     (LedgerConfig, ValuesMK, polyEmptyLedgerTables)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, ValuesMK,
+                     polyEmptyLedgerTables)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Mempool.TxLimits
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
@@ -48,10 +48,11 @@ import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, EraCrypto,
                      ShelleyBasedEra (shelleyBasedEraName))
 import           Ouroboros.Consensus.Shelley.Ledger
                      (CodecConfig (ShelleyCodecConfig), LedgerState (..),
-                     ShelleyBlock, ShelleyCompatible, LedgerTables(ShelleyLedgerTables),
-                     ShelleyTransition (..), StorageConfig (..),
-                     forgeShelleyBlock, mkShelleyBlockConfig,
-                     mkShelleyLedgerConfig, projectUtxoSL, shelleyUTxOTable, withUtxoSL)
+                     LedgerTables (ShelleyLedgerTables), ShelleyBlock,
+                     ShelleyCompatible, ShelleyTransition (..),
+                     StorageConfig (..), forgeShelleyBlock,
+                     mkShelleyBlockConfig, mkShelleyLedgerConfig, projectUtxoSL,
+                     shelleyUTxOTable, withUtxoSL)
 import           Ouroboros.Consensus.Shelley.Node
                      (ProtocolParamsShelleyBased (..),
                      ShelleyLeaderCredentials (..), validateGenesis)

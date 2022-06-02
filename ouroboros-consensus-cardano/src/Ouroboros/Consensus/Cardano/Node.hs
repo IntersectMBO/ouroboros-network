@@ -106,6 +106,8 @@ import           Cardano.Slotting.Time (SystemStart (SystemStart))
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.ShelleyBased
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (praosCanBeLeaderOpCert)
@@ -113,7 +115,6 @@ import           Ouroboros.Consensus.Shelley.Node.Praos
                      (ProtocolParamsBabbage (..))
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 import qualified Ouroboros.Consensus.Shelley.Node.TPraos as TPraos
-import Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Flip(..))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC

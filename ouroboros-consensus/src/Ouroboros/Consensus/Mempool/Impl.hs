@@ -29,7 +29,7 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import qualified Control.Exception as Exn
-import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)  -- TODO invariant checking?
+import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)
 import           Control.Monad.Except
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -45,7 +45,8 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
@@ -428,7 +429,7 @@ getStatePair mpEnv seP removals txs =
       StaticRight (Just ((ls, is), tables)) -> StaticRight $ Just (is, ls `withLedgerTables` ExtLedgerStateTables tables)
 
 data ShortCircuitGetStatePairExn b blk =
-    ShortCircuitGetStatePairExn 
+    ShortCircuitGetStatePairExn
       (StaticEither
          b
          (InternalState blk, Maybe (LedgerState blk ValuesMK))

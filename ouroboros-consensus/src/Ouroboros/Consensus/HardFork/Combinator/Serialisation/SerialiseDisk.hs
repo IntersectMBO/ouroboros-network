@@ -22,7 +22,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
                      (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, SufficientSerializationForAnyBackingStore)
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK,
+                     SufficientSerializationForAnyBackingStore)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 

@@ -7,14 +7,17 @@
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE ViewPatterns             #-}
 module Ouroboros.Consensus.Cardano.Block (
     -- * Eras
     CardanoEras
   , CardanoShelleyEras
+  , module Ouroboros.Consensus.Shelley.Eras
   , ShelleyBasedEras
   , ShelleyBasedProtosAndEras
-  , module Ouroboros.Consensus.Shelley.Eras
     -- * Block
   , CardanoBlock
     -- Note: by exporting the pattern synonyms as part of the matching data

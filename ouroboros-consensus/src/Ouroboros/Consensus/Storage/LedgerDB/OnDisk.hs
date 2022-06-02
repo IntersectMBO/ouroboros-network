@@ -165,7 +165,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , snapshotToStatePath
   , snapshotToTablesPath
     -- ** Opaque
-  , DiskSnapshot (..) -- the constructor is exported only for db-analyser
+  , DiskSnapshot (..)
+    -- the constructor is exported only for db-analyser
     -- * Trace events
   , ReplayGoal (..)
   , ReplayStart (..)

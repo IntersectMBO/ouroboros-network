@@ -1,18 +1,18 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE EmptyCase            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 {-# LANGUAGE StandaloneKindSignatures #-}
 module Ouroboros.Consensus.Util.SOP (
@@ -49,14 +49,14 @@ module Ouroboros.Consensus.Util.SOP (
   , hizipWith3
   , hizipWith4
     -- * Tuples
-  , Fst
-  , Snd
-  , MapSnd
-  , UncurryComp (..)
-  , Uncurry
   , ApOnlySnd (..)
   , ApOnlySnd2 (..)
+  , Fst
+  , MapSnd
   , NsMapSnd (..)
+  , Snd
+  , Uncurry
+  , UncurryComp (..)
   , castSndIdx
   ) where
 
@@ -371,5 +371,5 @@ instance NsMapSnd xs => NsMapSnd (x ': xs) where
 
 castSndIdx :: Index xs x -> Index (MapSnd xs) (Snd x)
 castSndIdx = \case
-  IZ -> IZ
+  IZ   -> IZ
   IS n -> IS (castSndIdx n)
