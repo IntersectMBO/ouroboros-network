@@ -31,6 +31,10 @@ let
         enableLibraryProfiling = profiling;
 
         # Command-line options for test suites:
+        packages.ouroboros-consensus-byron-test.components.tests.test.testFlags =
+          lib.mkForce [ "--no-create" ];
+        packages.ouroboros-consensus-shelley-test.components.tests.test.testFlags =
+          lib.mkForce [ "--no-create" ];
         packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags =
           lib.mkForce [ "--no-create" ];
 
