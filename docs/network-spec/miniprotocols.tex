@@ -217,14 +217,6 @@ following pieces of information:
     {ouroboros-network/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
     {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
 
-
-\miniEntry
-    {Local Transaction Submission Mini Protocol}
-    {local-tx-submission-protocol}
-    {Transmitting Transactions from a wallet to a local node.}
-    {ouroboros-network/src/Ouroboros/Network/Protocol/LocalTxSubmission/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html\#t:LocalTxSubmission}
-
 \miniEntry
     {Locat State Query Mini Protocol}
     {local-state-query-protocol}
@@ -933,8 +925,13 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Tx-Submission mini-protocol}
 \subsection{Version 1}
-\haddockref{Ouroboros.Network.Protocol.TxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type\#t:TxSubmission}
-\label{tx-submission-protocol}
+Version 1 of the tx-submission protocol is no longer supported.
+
+\subsection{Version 2}
+\haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}
+\label{tx-submission-protocol2}
+\newcommand{\StInit}  {\state{StInit}}
+\newcommand{\MsgInit} {\trans{MsgInit}}
 \newcommand{\StTxIdsBlocking}    {\state{StTxIdsBlocking}}
 \newcommand{\StTxIdsNonBlocking} {\state{StTxIdsNonBlocking}}
 \newcommand{\StTxs}              {\state{StTxs}}
@@ -945,55 +942,51 @@ See appendix \ref{cddl-common} for common definitions.
 \newcommand{\MsgReplyTxs}        {\trans{MsgReplyTxs}}
 
 \subsubsection{Description}
-The node-to-node transaction submission protocol is used to transfer transactions between full nodes.
-The protocol follows a pull-based strategy where the initiator asks for new transactions and the responder
-replies with the transactions.
-It is suitable for a trustless setting where both sides need to guard against resource consumption attacks from
-the other side.
-The local transaction submission protocol, which is used when the server trusts a local client,
-is described in Section \ref{local-tx-submission-protocol}.
-The implementation of the node-to-node transaction mini protocol is based on a generic mini protocol framework
-(the same as for all other mini protocols).
-For technical reasons however the roles of the initiator and the responder are reversed with respect to
-the way the other mini protocols are implemented in the frame work.
-In other words: The Server is the initiator and ask for new transactions
-and the Client is the responder and replies with the transactions.
+The node-to-node transaction submission protocol is used to transfer
+transactions between full nodes.  The protocol follows a pull-based strategy
+where the initiator asks for new transactions and the responder sends them
+back.  It is suitable for a trustless setting where both sides need to guard
+against resource consumption attacks from the other side.  The local
+transaction submission protocol, which is used when the server trusts a local
+client, is described in Section \ref{local-tx-submission-protocol}.
 
-The version 1 of the protocol is only used by the node-to-node protocol version
-5 and earlier.
+The version 2 is used by version 6 an higher of node-to-node protocol.
 \subsubsection{State machine}
 
 \begin{figure}[h]
   \begin{tabular}{|l|l|}
     \hline
-    \multicolumn{2}{|c|}{Agency} \\\hline
-    Server has Agency & \StIdle  \\\hline
-    Client has Agency & \StTxIdsNonBlocking, \StTxIdsBlocking, \StTxs \\\hline
+    \multicolumn{2}{|c|}{Agency} \\ \hline
+    Client has Agency & \StInit, \StTxIdsBlocking, \StTxIdsNonBlocking \\ \hline
+    Server has Agency & \StIdle, \StTxs \\ \hline
   \end{tabular}
 \end{figure}
 
 \begin{figure}[h]
-  \begin{tikzpicture}[->,shorten >=1pt,auto,node distance=5.5cm, semithick]
-    \tikzstyle{every state}=[fill=red,draw=none,text=white]
-    \node[state, myblue, initial](A) at ( 0,  0) {\StIdle};
-    \node[state]                 (B) at ( 9, -4) {\StDone};
-    \node[state, mygreen]        (C) at ( 4, -4) {\StTxIdsBlocking};
-    \node[state, mygreen]        (D) at (-4, -4) {\StTxIdsNonBlocking};
-    \node[state, mygreen]        (E) at ( 0,  4) {\StTxs};
-    \draw (C)  edge[above]                    node[below]{\MsgDone}                                                (B);
-    \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\MsgRequestTxIdsB}               (C);
-    \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\MsgReplyTxIds}     (A);
-    \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\MsgReplyTxIds}                  (A);
-    \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\MsgRequestTxIdsNB} (D);
-    \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center, above = 2pt]{\MsgRequestTxs}     (E);
-    \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center, below = 2pt]{\MsgReplyTxs}       (A);
-  \end{tikzpicture}
-  \caption{State machine of the Tx-Submission mini-protocol (version 1).}
-  \label{tx-submission-automata-v1}
+\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, mygreen, initial] (I) at (-4,  0) {\StInit};
+  \node[state, myblue]           (A) at ( 0,  0) {\StIdle};
+  \node[state]                   (B) at ( 9, -4) {\StDone};
+  \node[state, mygreen]          (C) at ( 4, -4) {\StTxIdsBlocking};
+  \node[state, mygreen]          (D) at (-4, -4) {\StTxIdsNonBlocking};
+  \node[state, mygreen]          (E) at ( 0,  4) {\StTxs};
+  \draw (I)  edge[above]                    node[above]{\MsgInit}                                                (A);
+  \draw (C)  edge[above]                    node[below]{\MsgDone}                                                (B);
+  \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\MsgRequestTxIdsB}               (C);
+  \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\MsgReplyTxIds}     (A);
+  \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\MsgReplyTxIds}                  (A);
+  \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\MsgRequestTxIdsNB} (D);
+  \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center, above = 2pt]{\MsgRequestTxs}     (E);
+  \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center, below = 2pt]{\MsgReplyTxs}       (A);
+\end{tikzpicture}
+  \caption{State machine of the Tx-Submission mini-protocol (version 2).}
+\label{tx-submission-automata-v2}
 \end{figure}
 
 \paragraph{Protocol messages}
 \begin{description}
+\item [\MsgInit] initial message of the protocol
 \item [\MsgRequestTxIdsB{} {\boldmath $(ack,req)$}]
       The server asks for new transaction ids and acknowledges old ids.
       The client will block until new transactions are available.
@@ -1017,78 +1010,8 @@ The version 1 of the protocol is only used by the node-to-node protocol version
   \begin{tabular}{|l|l|l|l|}
     \hline
     \multicolumn{4}{|c|}{Transition table} \\ \hline
-    from state          & message                & parameters                    & to state            \\ \hline\hline
-    \StIdle             & \MsgRequestTxIdsB      & $ack$,$req$                   & \StTxIdsBlocking    \\ \hline
-    \StTxIdsBlocking    & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-    \StIdle             & \MsgRequestTxIdsNB     & $ack$,$req$                   & \StTxIdsNonBlocking \\ \hline
-    \StTxIdsNonBlocking & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
-    \StIdle             & \MsgRequestTxs         & $\langle ids \rangle$         & \StTxs              \\ \hline
-    \StTxs              & \MsgReplyTxs           & $\langle txs \rangle$         & \StIdle             \\ \hline
-    \MsgRequestTxIdsB   & \MsgDone               &                               & \StDone             \\ \hline
-  \end{tabular}
-  \caption{Tx-Submission mini-protocol (version 1) messages.}
-\end{table}
-\subsubsection{CDDL encoding specification}\label{tx-submission-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/tx-submission.cddl}
-See appendix \ref{cddl-common} for common definitions.
-
-\subsection{Version 2}
-\haddockref{Ouroboros.Network.Protocol.TxSubmission2.Type}{ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type\#t:TxSubmission2}
-\label{tx-submission-protocol2}
-\newcommand{\Hello}  {\state{Hello}}
-\newcommand{\MsgHello} {\trans{MsgHello}}
-
-\subsubsection{Description}
-This mini-protocol changes the initial state of the transaction submission
-mini-protocol v1.  The new initial state, unlike the previous version, has
-agency on the client side.  One the client initialises the mini-protocol
-conversation with \MsgHello{} the version 1 of the protocol takes over.
-
-The version 2 is used by version 6 of node-to-node protocol.
-\subsubsection{State machine}
-
-\begin{figure}[h]
-  \begin{tabular}{|l|l|}
-    \hline
-    \multicolumn{2}{|c|}{Agency} \\ \hline
-    Server has Agency & \StIdle \\  \hline
-    Client has Agency & \StTxIdsBlocking, \StTxIdsNonBlocking, \StTxs \\ \hline
-  \end{tabular}
-\end{figure}
-
-\begin{figure}[h]
-\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
-  \tikzstyle{every state}=[fill=red,draw=none,text=white]
-  \node[state, mygreen, initial] (I) at (-4,  0) {\Hello};
-  \node[state, myblue]           (A) at ( 0,  0) {\StIdle};
-  \node[state]                   (B) at ( 9, -4) {\StDone};
-  \node[state, mygreen]          (C) at ( 4, -4) {\StTxIdsBlocking};
-  \node[state, mygreen]          (D) at (-4, -4) {\StTxIdsNonBlocking};
-  \node[state, mygreen]          (E) at ( 0,  4) {\StTxs};
-  \draw (I)  edge[above]                    node[above]{\MsgHello}                                               (A);
-  \draw (C)  edge[above]                    node[below]{\MsgDone}                                                (B);
-  \draw (A)  edge[left, bend left=45]       node[fill = white, anchor = center]{\MsgRequestTxIdsB}               (C);
-  \draw (C)  edge[right, bend left=15]      node[fill = white, anchor = center, above = 2pt]{\MsgReplyTxIds}     (A);
-  \draw (D)  edge[right, bend left=45]      node[fill = white, anchor = center]{\MsgReplyTxIds}                  (A);
-  \draw (A)  edge[right, bend left=15]      node[fill = white, anchor = center, below = 2pt]{\MsgRequestTxIdsNB} (D);
-  \draw (A)  edge[left, bend right=45]      node[fill = white, anchor = center, above = 2pt]{\MsgRequestTxs}     (E);
-  \draw (E)  edge[right,bend right=45]      node[fill = white, anchor = center, below = 2pt]{\MsgReplyTxs}       (A);
-\end{tikzpicture}
-  \caption{State machine of the Tx-Submission mini-protocol (version 2).}
-\label{tx-submission-automata-v2}
-\end{figure}
-
-\paragraph{Protocol messages}
-\begin{description}
-\item [\MsgHello] initial message of the protocol
-\end{description}
-
-\begin{table}[h]
-  \begin{tabular}{|l|l|l|l|}
-    \hline
-    \multicolumn{4}{|c|}{Transition table} \\ \hline
     from state        & message             & parameters                    & to state          \\ \hline\hline
-    \Hello            & \MsgHello           &                               & \StIdle             \\ \hline
+    \StInit           & \MsgInit            &                               & \StIdle             \\ \hline
     \StIdle             & \MsgRequestTxIdsB      & $ack$,$req$                   & \StTxIdsBlocking    \\ \hline
     \StTxIdsBlocking    & \MsgReplyTxIds         & $\langle (id, size) \rangle$  & \StIdle             \\ \hline
     \StIdle             & \MsgRequestTxIdsNB     & $ack$,$req$                   & \StTxIdsNonBlocking \\ \hline
