@@ -58,6 +58,7 @@ import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import           Cardano.Ledger.Babbage (BabbageEra)
 import           Cardano.Ledger.Babbage.PParams (PParams' (..))
 import qualified Cardano.Ledger.Babbage.Rules.Utxo as Babbage
+import qualified Cardano.Ledger.Babbage.Rules.Utxow as Babbage
 import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
 import qualified Cardano.Ledger.Core as Core
