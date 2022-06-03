@@ -20,8 +20,8 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
+import           Data.Proxy (Proxy (..))
 import           Data.Type.Equality ((:~:))
-import           Data.Proxy (Proxy(..))
 
 import           Network.TypedProtocol.Core
 
@@ -222,7 +222,7 @@ instance (forall fp result. Show (query fp result))
 -- of places.
 class (forall fp result. Show (query fp result)) => ShowQuery query where
     showResult :: forall fp result. query fp result -> result -> String
-    
+
 instance (ShowQuery query, Show point)
       => Show (Message (LocalStateQuery block point query) st st') where
   showsPrec p msg = case msg of

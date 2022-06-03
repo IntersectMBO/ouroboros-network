@@ -53,6 +53,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , mkLgrDB
     -- * Temporarily exported
   , lgrBackingStore
+  , streamAPI
+  , streamAPI'
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -94,9 +96,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
                      RunAlsoLegacy (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
-                     DiskSnapshot, LedgerBackingStore, LedgerDB',
-                     NextBlock (..), ReplayGoal, StreamAPI (..),
-                     TraceEvent (..), TraceReplayEvent (..))
+                     BackingStoreSelector (..), DiskSnapshot,
+                     LedgerBackingStore, LedgerDB', NextBlock (..), ReplayGoal,
+                     StreamAPI (..), TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
@@ -160,13 +162,14 @@ type LgrDbSerialiseConstraints blk =
 -------------------------------------------------------------------------------}
 
 data LgrDbArgs f m blk = LgrDbArgs {
-      lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
-    , lgrHasFS          :: SomeHasFS m
-    , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
-    , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
-    , lgrTracer         :: Tracer m (TraceEvent blk)
-    , lgrRunAlsoLegacy  :: RunAlsoLegacy
+      lgrDiskPolicy           :: DiskPolicy
+    , lgrGenesis              :: HKD f (m (ExtLedgerState blk ValuesMK))
+    , lgrHasFS                :: SomeHasFS m
+    , lgrTopLevelConfig       :: HKD f (TopLevelConfig blk)
+    , lgrTraceLedger          :: Tracer m (LedgerDB' blk)
+    , lgrTracer               :: Tracer m (TraceEvent blk)
+    , lgrRunAlsoLegacy        :: RunAlsoLegacy
+    , lgrBackingStoreSelector :: !(BackingStoreSelector m)
     }
 
 -- | Default arguments
@@ -174,8 +177,9 @@ defaultArgs ::
      Applicative m
   => SomeHasFS m
   -> DiskPolicy
+  -> BackingStoreSelector m
   -> LgrDbArgs Defaults m blk
-defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
+defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
       lgrDiskPolicy     = diskPolicy
     , lgrGenesis        = NoDefault
     , lgrHasFS
@@ -183,6 +187,7 @@ defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
     , lgrRunAlsoLegacy  = RunBoth
+    , lgrBackingStoreSelector = bss
     }
 
 -- | Open the ledger DB
@@ -279,6 +284,7 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
         lgrGenesis
         (streamAPI immutableDB)
         lgrRunAlsoLegacy
+        lgrBackingStoreSelector
     return (db, replayed, backingStore)
   where
     LgrDbArgs { lgrHasFS = hasFS, .. } = args
@@ -453,29 +459,40 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
 streamAPI ::
      forall m blk.
      (IOLike m, HasHeader blk)
-  => ImmutableDB m blk -> StreamAPI m blk
-streamAPI immutableDB = StreamAPI streamAfter
+  => ImmutableDB m blk -> StreamAPI m blk blk
+streamAPI = streamAPI' (return . NextBlock) GetBlock
+
+streamAPI' ::
+     forall m blk a.
+     (IOLike m, HasHeader blk)
+  => (a -> m (NextBlock a)) -- ^ Stop condition
+  -> BlockComponent   blk a
+  -> ImmutableDB    m blk
+  -> StreamAPI      m blk a
+streamAPI' shouldStop blockComponent immutableDB = StreamAPI streamAfter
   where
-    streamAfter :: HasCallStack
-                => Point blk
-                -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
-                -> m a
+    streamAfter :: Point blk
+                -> (Either (RealPoint blk) (m (NextBlock a)) -> m b)
+                -> m b
     streamAfter tip k = withRegistry $ \registry -> do
         eItr <-
           ImmutableDB.streamAfterPoint
             immutableDB
             registry
-            GetBlock
+            blockComponent
             tip
         case eItr of
           -- Snapshot is too recent
           Left  err -> k $ Left  $ ImmutableDB.missingBlockPoint err
           Right itr -> k $ Right $ streamUsing itr
 
-    streamUsing :: ImmutableDB.Iterator m blk blk -> m (NextBlock blk)
-    streamUsing itr = ImmutableDB.iteratorNext itr >>= \case
-      ImmutableDB.IteratorExhausted  -> return $ NoMoreBlocks
-      ImmutableDB.IteratorResult blk -> return $ NextBlock blk
+    streamUsing :: ImmutableDB.Iterator m blk a
+                -> m (NextBlock a)
+    streamUsing itr = do
+        itrResult <- ImmutableDB.iteratorNext itr
+        case itrResult of
+          ImmutableDB.IteratorExhausted -> return NoMoreBlocks
+          ImmutableDB.IteratorResult b  -> shouldStop b
 
 {-------------------------------------------------------------------------------
   Previously applied blocks

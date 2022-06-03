@@ -5,24 +5,21 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.Protocol.LocalStateQuery.Client (
-      -- * Protocol type for the client
-      -- | The protocol states from the point of view of the client.
-      LocalStateQueryClient(..)
-    , ClientStIdle(..)
-    , ClientStAcquiring(..)
-    , ClientStAcquired(..)
-    , ClientStQuerying(..)
-
-      -- * Execution as a typed protocol
-    , localStateQueryClientPeer
-
-      -- * Null local state query client
-    , localStateQueryClientNull
-
-      -- * Utilities
-    , mapLocalStateQueryClient
-    ) where
+module Ouroboros.Network.Protocol.LocalStateQuery.Client
+  ( -- * Protocol type for the client
+    -- | The protocol states from the point of view of the client.
+    LocalStateQueryClient (..)
+  , ClientStIdle (..)
+  , ClientStAcquiring (..)
+  , ClientStAcquired (..)
+  , ClientStQuerying (..)
+    -- * Execution as a typed protocol
+  , localStateQueryClientPeer
+    -- * Null local state query client
+  , localStateQueryClientNull
+    -- * Utilities
+  , mapLocalStateQueryClient
+  ) where
 
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadTimer

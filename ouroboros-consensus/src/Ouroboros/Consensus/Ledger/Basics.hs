@@ -75,6 +75,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , EmptyMK
   , IsApplyMapKind
   , KeysMK
+  , NameMK (..)
   , QueryMK
   , SeqDiffMK
   , TrackingMK
@@ -422,6 +423,32 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk3
     -> LedgerTables l mk4
 
+  zipLedgerTablesA ::
+       Applicative f
+    => (forall k v.
+            Ord k
+         => mk1 k v
+         -> mk2 k v
+         -> f (mk3 k v)
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> f (LedgerTables l mk3)
+
+  zipLedgerTables2A ::
+       Applicative f
+    => (forall k v.
+            Ord k
+         => mk1 k v
+         -> mk2 k v
+         -> mk3 k v
+         -> f (mk4 k v)
+       )
+    -> LedgerTables l mk1
+    -> LedgerTables l mk2
+    -> LedgerTables l mk3
+    -> f (LedgerTables l mk4)
+
   foldLedgerTables ::
        Monoid m
     => (forall k v.
@@ -434,7 +461,8 @@ class ( ShowLedgerState (LedgerTables l)
 
   foldLedgerTables2 ::
        Monoid m
-    => (forall k v . Ord k
+    => (forall k v.
+           Ord k
         => mk1 k v
         -> mk2 k v
         -> m
@@ -442,6 +470,8 @@ class ( ShowLedgerState (LedgerTables l)
     -> LedgerTables l mk1
     -> LedgerTables l mk2
     -> m
+
+  namesLedgerTables :: LedgerTables l NameMK
 
 overLedgerTables ::
      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
@@ -689,6 +719,8 @@ data CodecMK k v = CodecMK
                      (v -> CBOR.Encoding)
                      (forall s . CBOR.Decoder s k)
                      (forall s . CBOR.Decoder s v)
+
+newtype NameMK k v = NameMK String
 
 type ApplyMapKind mk = mk
 
