@@ -115,10 +115,9 @@ connections PeerSelectionActions{
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition ((==PeerWarm) . fst) demotions
       return $ \now ->
-        let (aFuzz, fuzzRng')      = randomR (-5, 5 :: Double) fuzzRng
-            (rFuzz, fuzzRng'')     = randomR (-2, 2 :: Double) fuzzRng'
-            activePeers'       = activePeers
-                                  Set.\\ Map.keysSet demotions
+        let (aFuzz, fuzzRng')  = randomR (-5, 5 :: Double) fuzzRng
+            (rFuzz, fuzzRng'') = randomR (-2, 2 :: Double) fuzzRng'
+            activePeers'       = activePeers Set.\\ Map.keysSet demotions
 
             -- Note that we do not use establishedStatus' which
             -- has the synchronous ones that are supposed to be
