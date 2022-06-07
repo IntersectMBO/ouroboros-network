@@ -80,12 +80,12 @@ newtype MiniProtocolNum = MiniProtocolNum Word16
   deriving (Eq, Ord, Enum, Ix, Show)
 
 -- | Per Miniprotocol limits
-data MiniProtocolLimits =
+newtype MiniProtocolLimits =
      MiniProtocolLimits {
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --
-       maximumIngressQueue :: !Int
+       maximumIngressQueue :: Int
      }
   -- GR-FIXME: Q. if part of wire format, shouldn't this be a fixed width, E.g.,
   -- Word16?

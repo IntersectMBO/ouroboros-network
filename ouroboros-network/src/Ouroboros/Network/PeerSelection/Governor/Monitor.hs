@@ -149,7 +149,7 @@ connections PeerSelectionActions{
                                . Set.foldr'
                                    ((snd .) . KnownPeers.incrementFailCount)
                                    (knownPeers st)
-                               $ (Map.keysSet demotedToCold)
+                               $ Map.keysSet demotedToCold
 
         in assert
             (let establishedPeersSet' =
@@ -259,11 +259,10 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
                         LocalRootPeers.toMap localRootPeers'
           addedSet    = Map.keysSet added
           removedSet  = Map.keysSet removed
-          knownPeers' = KnownPeers.insert addedSet
+          knownPeers' = KnownPeers.insert addedSet knownPeers
                         -- We do not immediately remove old ones from the
                         -- known peers set because we may have established
                         -- connections
-                      $ knownPeers
 
           -- We have to adjust the publicRootPeers to maintain the invariant
           -- that the local and public sets are non-overlapping.

@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -75,7 +75,8 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 
         -- | Trace state transitions.
         --
-        cmTrTracer            :: Tracer m (TransitionTrace peerAddr (ConnectionState peerAddr handle handleError version m)),
+        cmTrTracer            :: Tracer m (TransitionTrace peerAddr
+                                            (ConnectionState peerAddr handle handleError version m)),
 
         -- | Mux trace.
         --
@@ -330,13 +331,13 @@ instance ( Show peerAddr
              , show df
              ]
     show (InboundIdleState connId connThread _handle df) =
-      concat ([ "InboundIdleState "
-              , show connId
-              , " "
-              , show (asyncThreadId connThread)
-              , " "
-              , show df
-              ])
+      concat [ "InboundIdleState "
+             , show connId
+             , " "
+             , show (asyncThreadId connThread)
+             , " "
+             , show df
+             ]
     show (InboundState  connId connThread _handle df) =
       concat [ "InboundState "
              , show connId
@@ -357,10 +358,10 @@ instance ( Show peerAddr
               , " "
               , show (asyncThreadId connThread)
               ]
-              ++ maybeToList (((' ' :) . show) <$> handleError))
+              ++ maybeToList ((' ' :) . show <$> handleError))
     show (TerminatedState handleError) =
       concat (["TerminatedState"]
-              ++ maybeToList (((' ' :) . show) <$> handleError))
+              ++ maybeToList ((' ' :) . show <$> handleError))
 
 
 getConnThread :: ConnectionState peerAddr handle handleError version m
@@ -411,7 +412,7 @@ isInboundConn TerminatedState {}                         = False
 
 
 abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b) -> AbstractState
-abstractState = \s -> case s of
+abstractState = \case
     Unknown  -> UnknownConnectionSt
     Race s'  -> go s'
     Known s' -> go s'
@@ -854,7 +855,7 @@ withConnectionManager ConnectionManagerArguments {
                            unmask (threadDelay delay)
                              `catch` \e ->
                                 case fromException e
-                                of Just (AsyncCancelled) -> do
+                                of Just AsyncCancelled -> do
                                      t' <- getMonotonicTime
                                      forceThreadDelay (delay - t' `diffTime` t)
                                    _ -> throwIO e
@@ -1930,7 +1931,7 @@ withConnectionManager ConnectionManagerArguments {
               -- operation which returns only once the connection is
               -- negotiated.
               ReservedOutboundState ->
-                return $
+                return
                   ( DemoteToColdLocalError
                      (TrForbiddenOperation peerAddr st)
                      st
@@ -1938,7 +1939,7 @@ withConnectionManager ConnectionManagerArguments {
                   )
 
               UnnegotiatedState _ _ _ ->
-                return $
+                return
                   ( DemoteToColdLocalError
                      (TrForbiddenOperation peerAddr st)
                      st

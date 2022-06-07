@@ -8,7 +8,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 -- `withLocalSocket` has some constraints that are only required on Windows.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}

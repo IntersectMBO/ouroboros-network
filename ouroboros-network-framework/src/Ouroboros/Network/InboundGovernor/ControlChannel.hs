@@ -2,9 +2,8 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
+
 
 -- | Intended to be imported qualified.
 --
@@ -91,20 +90,9 @@ newControlChannel = do
         newTBQueue 10                             -- G-FIXME[R]: magic number
         >>= \q -> labelTBQueue q "server-cc" $> q
     pure $ ControlChannel {
-        readMessage  = readMessage channel,
-        writeMessage = writeMessage channel
+        readMessage  = readTBQueue channel,
+        writeMessage = writeTBQueue channel
       }
-  where
-    readMessage
-      :: TBQueue m srvCntrlMsg
-      -> STM     m srvCntrlMsg
-    readMessage = readTBQueue
-
-    writeMessage
-      :: TBQueue m srvCntrlMsg
-      -> srvCntrlMsg
-      -> STM m ()
-    writeMessage q a = writeTBQueue q a
 
 
 newOutboundConnection

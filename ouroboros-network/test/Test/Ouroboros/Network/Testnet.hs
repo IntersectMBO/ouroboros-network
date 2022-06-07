@@ -137,7 +137,6 @@ tests =
     ]
   ]
 
-
 -- Warning: be careful with writing properties that rely
 -- on trace events from multiple components environment.
 -- These events typically occur in separate threads and

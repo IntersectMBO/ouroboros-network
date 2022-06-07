@@ -188,9 +188,11 @@ instance Applicative (WithProtocolTemperature Established) where
     pure = WithEstablished
     (<*>) (WithEstablished f) = fmap f
 
-instance Semigroup a => Semigroup (WithProtocolTemperature pt a) where
+instance Semigroup a => Semigroup (WithProtocolTemperature Hot a) where
     WithHot a <> WithHot b                 = WithHot (a <> b)
+instance Semigroup a => Semigroup (WithProtocolTemperature Warm a) where
     WithWarm a <> WithWarm b               = WithWarm (a <> b)
+instance Semigroup a => Semigroup (WithProtocolTemperature Established a) where
     WithEstablished a <> WithEstablished b = WithEstablished (a <> b)
 
 instance Monoid a => Monoid (WithProtocolTemperature Hot a) where
