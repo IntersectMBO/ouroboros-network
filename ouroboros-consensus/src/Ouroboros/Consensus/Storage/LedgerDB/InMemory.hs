@@ -698,13 +698,15 @@ ledgerDbOldest db =
 --
 -- This also includes the snapshot at the anchor. For each snapshot we also
 -- return the distance from the tip.
-ledgerDbSnapshots :: TableStuff l => LedgerDB l -> [(Word64, l EmptyMK)]
-ledgerDbSnapshots LedgerDB{..} = case ledgerDbCheckpoints of
-  Nothing -> []
-  Just legacyDb ->
+--
+-- TODO: this name is misleading. Probably deserves a renaming.
+ledgerDbSnapshots :: LedgerDB l -> [(Word64, l EmptyMK)]
+ledgerDbSnapshots =
       zip [0..]
-    $ map (forgetLedgerTables . unCheckpoint)
-    $ AS.toNewestFirst legacyDb <> [AS.anchor legacyDb]
+    . map unDbChangelogState
+    . AS.toNewestFirst
+    . changelogVolatileStates
+    . ledgerDbChangelog
 
 -- | How many blocks can we currently roll back?
 ledgerDbMaxRollback :: (GetTip (l ValuesMK), GetTip (l EmptyMK)) => LedgerDB l -> Word64
