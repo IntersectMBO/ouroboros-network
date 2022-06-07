@@ -28,7 +28,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      HeaderState (..), annTipPoint)
 import           Ouroboros.Consensus.Ledger.Abstract (tickThenApplyLedgerResult)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..))
+import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..), LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
@@ -36,6 +36,7 @@ import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      StreamFrom (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
@@ -364,15 +365,15 @@ checkNoThunksEvery
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
           newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
           bn            = blockNo blk
-      when (unBlockNo bn `mod` nBlocks == 0 ) $ checkNoThunks bn newLedger
+      when (unBlockNo bn `mod` nBlocks == 0 ) $ IOLike.evaluate (ledgerState newLedger) >>= checkNoThunks bn
       return newLedger
 
-    checkNoThunks :: BlockNo -> ExtLedgerState blk -> IO ()
+    checkNoThunks :: BlockNo -> LedgerState blk -> IO ()
     checkNoThunks bn ls =
-      noThunks [] (ledgerState ls) >>= \case
-        Nothing -> putStrLn $ "BlockNo " <> show bn <> ": no thunks found."
+      noThunks ["--checkThunks"] ls >>= \case
+        Nothing -> putStrLn $ show bn <> ": no thunks found."
         Just ti -> do
-          putStrLn $ "BlockNo " <> show bn <> ": thunks found."
+          putStrLn $ show bn <> ": thunks found."
           print ti
 
 {-------------------------------------------------------------------------------
