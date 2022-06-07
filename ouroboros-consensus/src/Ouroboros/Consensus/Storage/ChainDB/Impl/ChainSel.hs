@@ -954,6 +954,11 @@ chainSelection chainSelEnv chainDiffs =
                 -- As we are only extending the existing chain, the intersection
                 -- point is not receding, in which case fhSwitchFork is not
                 -- necessary.
+
+              -- Just in case, explicitly yield to ensure that a capability (by
+              -- default, the node uses just two) has the opportunity to switch
+              -- to a ChainSync server thread.
+              yield
             pure mTentativeHeader
 
         -- | Clear a tentative header that turned out to be invalid. Also, roll
