@@ -352,13 +352,13 @@ type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
 -- @muxMode@.
 --
-data ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
+newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
     ConnectionHandler {
         -- | Connection handler.
         --
         connectionHandler ::
-          (WithMuxTuple muxMode
-            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m))
+          WithMuxTuple muxMode
+            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m)
       }
 
 

@@ -5,7 +5,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TupleSections       #-}
 
 -- 'startProtocols' is using 'HasInitiator' constraint to limit pattern
@@ -556,7 +555,7 @@ withPeerStateActions PeerStateActionsArguments {
                        spsTracer,
                        spsConnectionManager
                      }
-                     k = do
+                     k =
     JobPool.withJobPool $ \jobPool ->
       k PeerStateActions {
           establishPeerConnection = establishPeerConnection jobPool,
