@@ -43,8 +43,6 @@ import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe.Strict (StrictMaybe (..))
 import           GHC.Stack (HasCallStack)
-import           System.Environment (lookupEnv)
-import           System.IO.Unsafe (unsafePerformIO)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 
@@ -74,8 +72,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-                     (RunAlsoLegacy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
@@ -144,15 +140,8 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
               (contramap TraceLedgerReplayEvent tracer)
 
       traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
-      -- TODO confirm this env var is sufficient, eg for Benchmarking and QA Team
-      let runDual =
-            if LgrDB.lgrRunAlsoLegacy argsLgrDb == RunOnlyNew
-            then RunOnlyNew
-            else case unsafePerformIO (lookupEnv "DISABLE_DUAL_LEDGER") of
-                   Nothing     -> RunBoth
-                   Just "True" -> RunOnlyNew
-                   Just o      -> error $ "DISABLE_DUAL_LEDGER is either unset or set to the string \"True\", not " <> o
-      (lgrDB, replayed) <- LgrDB.openDB (argsLgrDb { LgrDB.lgrRunAlsoLegacy = runDual })
+
+      (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
                             lgrReplayTracer
                             immutableDB
                             (Query.getAnyKnownBlock immutableDB volatileDB)

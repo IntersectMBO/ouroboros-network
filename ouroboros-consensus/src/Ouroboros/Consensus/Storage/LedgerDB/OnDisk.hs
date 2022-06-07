@@ -945,6 +945,7 @@ data TraceReplayEvent blk =
         (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
   deriving (Generic, Eq, Show)
 
+-- | The backing store selector
 data BackingStoreSelector m where
   LMDBBackingStore :: MonadIO m => !LMDB.LMDBLimits -> BackingStoreSelector m
   InMemoryBackingStore :: BackingStoreSelector m
