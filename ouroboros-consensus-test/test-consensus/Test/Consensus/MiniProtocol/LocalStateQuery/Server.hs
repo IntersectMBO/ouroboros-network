@@ -243,7 +243,7 @@ initLgrDB k chain = do
       , lgrGenesis              = return testInitExtLedger
       , lgrTracer               = nullTracer
       , lgrTraceLedger          = nullTracer
-      , lgrRunAlsoLegacy        = LgrDB.RunBoth
+      , lgrRunAlsoLegacy        = LgrDB.RunOnlyNew
       , lgrBackingStoreSelector = TECHDEBT.InMemoryBackingStore
       }
 

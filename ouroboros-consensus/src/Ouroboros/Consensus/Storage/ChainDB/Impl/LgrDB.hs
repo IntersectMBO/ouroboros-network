@@ -186,7 +186,7 @@ defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
-    , lgrRunAlsoLegacy  = RunBoth
+    , lgrRunAlsoLegacy  = RunOnlyNew
     , lgrBackingStoreSelector = bss
     }
 
