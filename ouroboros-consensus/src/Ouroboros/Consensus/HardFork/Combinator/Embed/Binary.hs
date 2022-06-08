@@ -32,19 +32,23 @@ protocolInfoBinary ::
      forall m blk1 blk2.
      (CanHardFork '[blk1, blk2], Monad m)
      -- First era
-  => ProtocolInfo m blk1
+  => ProtocolInfo blk1
+  -> m [BlockForging m blk1]
   -> History.EraParams
   -> (ConsensusConfig (BlockProtocol blk1) -> PartialConsensusConfig (BlockProtocol blk1))
   -> (LedgerConfig blk1 -> PartialLedgerConfig blk1)
      -- Second era
-  -> ProtocolInfo m blk2
+  -> ProtocolInfo blk2
+  -> m [BlockForging m blk2]
   -> History.EraParams
   -> (ConsensusConfig (BlockProtocol blk2) -> PartialConsensusConfig (BlockProtocol blk2))
   -> (LedgerConfig blk2 -> PartialLedgerConfig blk2)
-  -> ProtocolInfo m (HardForkBlock '[blk1, blk2])
-protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialLedgerConfig1
-                   protocolInfo2 eraParams2 toPartialConsensusConfig2 toPartialLedgerConfig2 =
-    ProtocolInfo {
+  -> ( ProtocolInfo (HardForkBlock '[blk1, blk2])
+     , m [BlockForging m (HardForkBlock '[blk1, blk2])]
+     )
+protocolInfoBinary protocolInfo1 blockForging1 eraParams1 toPartialConsensusConfig1 toPartialLedgerConfig1
+                   protocolInfo2 blockForging2 eraParams2 toPartialConsensusConfig2 toPartialLedgerConfig2 =
+    ( ProtocolInfo {
         pInfoConfig = TopLevelConfig {
             topLevelConfigProtocol = HardForkConsensusConfig {
                 hardForkConsensusConfigK      = k
@@ -86,9 +90,9 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
                   WrapChainDepState $
                     headerStateChainDep initHeaderState1
           }
-      , pInfoBlockForging =
-          alignWith alignBlockForging <$> blockForging1 <*> blockForging2
       }
+    , alignWith alignBlockForging <$> blockForging1 <*> blockForging2
+    )
   where
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -102,7 +106,6 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
             ledgerState = initLedgerState1
           , headerState = initHeaderState1
           }
-      , pInfoBlockForging = blockForging1
       } = protocolInfo1
 
     ProtocolInfo {
@@ -113,7 +116,6 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
           , topLevelConfigCodec    = codecConfig2
           , topLevelConfigStorage  = storageConfig2
           }
-      , pInfoBlockForging = blockForging2
       } = protocolInfo2
 
     k1, k2, k :: SecurityParam

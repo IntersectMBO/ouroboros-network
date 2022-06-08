@@ -500,21 +500,19 @@ instance Functor m => Isomorphic (BlockForging m) where
           . State.fromTZ
           . tickedHardForkChainDepStatePerEra
 
-instance Functor m => Isomorphic (ProtocolInfo m) where
+instance Isomorphic ProtocolInfo where
   project :: forall blk. NoHardForks blk
-          => ProtocolInfo m (HardForkBlock '[blk]) -> ProtocolInfo m blk
+          => ProtocolInfo (HardForkBlock '[blk]) -> ProtocolInfo blk
   project ProtocolInfo {..} = ProtocolInfo {
         pInfoConfig       = project pInfoConfig
       , pInfoInitLedger   = project pInfoInitLedger
-      , pInfoBlockForging = fmap project <$> pInfoBlockForging
       }
 
   inject :: forall blk. NoHardForks blk
-         => ProtocolInfo m blk -> ProtocolInfo m (HardForkBlock '[blk])
+         => ProtocolInfo blk -> ProtocolInfo (HardForkBlock '[blk])
   inject ProtocolInfo {..} = ProtocolInfo {
         pInfoConfig       = inject pInfoConfig
       , pInfoInitLedger   = inject pInfoInitLedger
-      , pInfoBlockForging = fmap inject <$> pInfoBlockForging
       }
 
 {-------------------------------------------------------------------------------
