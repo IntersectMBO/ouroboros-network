@@ -10,6 +10,8 @@
 
 module Ouroboros.Consensus.Shelley.Node.Praos (
     ProtocolParamsBabbage (..)
+  , blockForgingPraosBabbage
+  , blockForgingPraosShelleyBased
   , praosBlockForging
   , praosSharedBlockForging
   , protocolInfoPraosBabbage
@@ -144,38 +146,48 @@ data ProtocolParamsBabbage c = ProtocolParamsBabbage
   }
 
 protocolInfoPraosBabbage ::
-  forall m c.
-  ( IOLike m,
-    ShelleyCompatible (Praos c) (BabbageEra c),
-    TxLimits (ShelleyBlock (Praos c) (BabbageEra c))
-  ) =>
+  forall c.
+  ShelleyCompatible (Praos c) (BabbageEra c) =>
   ProtocolParamsShelleyBased (BabbageEra c) ->
   ProtocolParamsBabbage c ->
-  ProtocolInfo m (ShelleyBlock (Praos c) (BabbageEra c))
+  ProtocolInfo (ShelleyBlock (Praos c) (BabbageEra c))
 protocolInfoPraosBabbage
   protocolParamsShelleyBased
   ProtocolParamsBabbage
-    { babbageProtVer = protVer,
-      babbageMaxTxCapacityOverrides = maxTxCapacityOverrides
-    } =
+    { babbageProtVer = protVer } =
     protocolInfoPraosShelleyBased
       protocolParamsShelleyBased
       (error "Babbage currently pretending to be Alonzo")
       protVer
-      maxTxCapacityOverrides
+
+blockForgingPraosBabbage ::
+  forall m c.
+  ( IOLike m,
+    ShelleyCompatible (Praos c) (BabbageEra c)
+  ) =>
+  ProtocolParamsShelleyBased (BabbageEra c) ->
+  ProtocolParamsBabbage c ->
+  m [BlockForging m (ShelleyBlock (Praos c) (BabbageEra c))]
+blockForgingPraosBabbage
+  protocolParamsShelleyBased
+  ProtocolParamsBabbage
+    { babbageProtVer = protoVer,
+      babbageMaxTxCapacityOverrides = maxTxCapacityOverrides
+    } =
+  blockForgingPraosShelleyBased
+    protocolParamsShelleyBased
+    protoVer
+    maxTxCapacityOverrides
 
 protocolInfoPraosShelleyBased ::
-  forall m era c.
-  ( IOLike m,
-    ShelleyCompatible (Praos c) era,
-    TxLimits (ShelleyBlock (Praos c) era),
+  forall era c.
+  ( ShelleyCompatible (Praos c) era,
     c ~ EraCrypto era
   ) =>
   ProtocolParamsShelleyBased era ->
   Core.TranslationContext era ->
   SL.ProtVer ->
-  TxLimits.Overrides (ShelleyBlock (Praos c) era) ->
-  ProtocolInfo m (ShelleyBlock (Praos c) era)
+  ProtocolInfo (ShelleyBlock (Praos c) era)
 protocolInfoPraosShelleyBased
   ProtocolParamsShelleyBased
     { shelleyBasedGenesis = genesis,
@@ -183,16 +195,11 @@ protocolInfoPraosShelleyBased
       shelleyBasedLeaderCredentials = credentialss
     }
   transCtxt
-  protVer
-  maxTxCapacityOverrides =
+  protVer =
     assertWithMsg (validateGenesis genesis) $
       ProtocolInfo
         { pInfoConfig = topLevelConfig,
-          pInfoInitLedger = initExtLedgerState,
-          pInfoBlockForging =
-            traverse
-              (praosBlockForging praosParams maxTxCapacityOverrides)
-              credentialss
+          pInfoInitLedger = initExtLedgerState
         }
     where
       additionalGenesisConfig :: SL.AdditionalGenesisConfig era
@@ -281,3 +288,42 @@ protocolInfoPraosShelleyBased
           { ledgerState = initLedgerState,
             headerState = HeaderState Origin initChainDepState
           }
+
+blockForgingPraosShelleyBased ::
+  forall m era c.
+  ( IOLike m,
+    ShelleyCompatible (Praos c) era,
+    TxLimits (ShelleyBlock (Praos c) era),
+    c ~ EraCrypto era
+  ) =>
+  ProtocolParamsShelleyBased era ->
+  SL.ProtVer ->
+  TxLimits.Overrides (ShelleyBlock (Praos c) era) ->
+  m [BlockForging m (ShelleyBlock (Praos c) era)]
+blockForgingPraosShelleyBased
+  ProtocolParamsShelleyBased
+    { shelleyBasedGenesis = genesis,
+      shelleyBasedLeaderCredentials = credentialss
+    }
+  protVer
+  maxTxCapacityOverrides =
+    traverse
+      (praosBlockForging praosParams maxTxCapacityOverrides)
+      credentialss
+  where
+    maxMajorProtVer :: MaxMajorProtVer
+    maxMajorProtVer = MaxMajorProtVer $ SL.pvMajor protVer
+
+    praosParams :: PraosParams
+    praosParams =
+      PraosParams
+        { praosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis,
+          praosLeaderF = SL.mkActiveSlotCoeff $ SL.sgActiveSlotsCoeff genesis,
+          praosSecurityParam = SecurityParam $ SL.sgSecurityParam genesis,
+          praosMaxKESEvo = SL.sgMaxKESEvolutions genesis,
+          praosQuorum = SL.sgUpdateQuorum genesis,
+          praosMaxMajorPV = maxMajorProtVer,
+          praosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesis,
+          praosNetworkId = SL.sgNetworkId genesis,
+          praosSystemStart = SystemStart $ SL.sgSystemStart genesis
+        }

@@ -223,7 +223,9 @@ protocolInfoShelley ::
       )
   => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley c
-  -> ProtocolInfo m (ShelleyBlock (TPraos c)(ShelleyEra c) )
+  -> ( ProtocolInfo (ShelleyBlock (TPraos c)(ShelleyEra c))
+     , m [BlockForging m (ShelleyBlock (TPraos c) (ShelleyEra c))]
+     )
 protocolInfoShelley protocolParamsShelleyBased
                     ProtocolParamsShelley {
                         shelleyProtVer                = protVer
@@ -247,7 +249,9 @@ protocolInfoTPraosShelleyBased ::
   -> Core.TranslationContext era
   -> SL.ProtVer
   -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
-  -> ProtocolInfo m     (ShelleyBlock (TPraos c) era)
+  -> ( ProtocolInfo      (ShelleyBlock (TPraos c) era)
+     , m [BlockForging m (ShelleyBlock (TPraos c) era)]
+     )
 protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
                              shelleyBasedGenesis           = genesis
                            , shelleyBasedInitialNonce      = initialNonce
@@ -257,14 +261,14 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
                          protVer
                          maxTxCapacityOverrides =
     assertWithMsg (validateGenesis genesis) $
-    ProtocolInfo {
+    ( ProtocolInfo {
         pInfoConfig       = topLevelConfig
       , pInfoInitLedger   = initExtLedgerState
-      , pInfoBlockForging =
-          traverse
-            (shelleyBlockForging tpraosParams maxTxCapacityOverrides)
-            credentialss
       }
+    , traverse
+        (shelleyBlockForging tpraosParams maxTxCapacityOverrides)
+        credentialss
+    )
   where
 
     -- | Currently for all existing eras in ledger-specs (Shelley, Allegra, Mary
