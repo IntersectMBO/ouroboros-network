@@ -21,6 +21,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
+import           Ouroboros.Consensus.Block.Forging (BlockForging)
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -37,11 +38,11 @@ mkProtocolByron ::
   -> CoreNodeId
   -> Genesis.Config
   -> Genesis.GeneratedSecrets
-  -> (ProtocolInfo m ByronBlock, SignKeyDSIGN ByronDSIGN)
+  -> (ProtocolInfo ByronBlock, [BlockForging m ByronBlock], SignKeyDSIGN ByronDSIGN)
      -- ^ We return the signing key which is needed in some tests, because it
      -- cannot easily be extracted from the 'ProtocolInfo'.
 mkProtocolByron params coreNodeId genesisConfig genesisSecrets =
-    (protocolInfo, signingKey)
+    (protocolInfo, blockForging, signingKey)
   where
     leaderCredentials :: ByronLeaderCredentials
     leaderCredentials =
@@ -55,9 +56,14 @@ mkProtocolByron params coreNodeId genesisConfig genesisSecrets =
 
     PBftParams { pbftSignatureThreshold } = params
 
-    protocolInfo :: ProtocolInfo m ByronBlock
-    protocolInfo =
-        protocolInfoByron $ ProtocolParamsByron {
+    protocolInfo :: ProtocolInfo ByronBlock
+    protocolInfo = protocolInfoByron protocolParams
+
+    blockForging :: [BlockForging m ByronBlock]
+    blockForging = blockForgingByron protocolParams
+
+    protocolParams :: ProtocolParamsByron
+    protocolParams = ProtocolParamsByron {
             byronGenesis                = genesisConfig
           , byronPbftSignatureThreshold = Just $ pbftSignatureThreshold
           , byronProtocolVersion        = theProposedProtocolVersion

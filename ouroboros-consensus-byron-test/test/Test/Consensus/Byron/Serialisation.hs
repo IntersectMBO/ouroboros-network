@@ -15,7 +15,6 @@ module Test.Consensus.Byron.Serialisation (tests) where
 
 import           Codec.CBOR.Write (toLazyByteString)
 import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor.Identity
 
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
@@ -101,7 +100,7 @@ prop_detectCorruption_RegularBlock (RegularBlock blk) =
 testCfg :: TopLevelConfig ByronBlock
 testCfg = pInfoConfig protocolInfo
   where
-    protocolInfo :: ProtocolInfo Identity ByronBlock
+    protocolInfo :: ProtocolInfo ByronBlock
     protocolInfo =
       protocolInfoByron $ ProtocolParamsByron {
           byronGenesis                = CC.dummyConfig

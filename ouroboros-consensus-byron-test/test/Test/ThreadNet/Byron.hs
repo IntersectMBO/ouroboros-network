@@ -22,7 +22,7 @@ import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 
@@ -1290,27 +1290,27 @@ mkRekeyUpd
   => Genesis.Config
   -> Genesis.GeneratedSecrets
   -> CoreNodeId
-  -> ProtocolInfo m ByronBlock
+  -> ProtocolInfo ByronBlock
+  -> m [BlockForging m ByronBlock]
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> m (Maybe (TestNodeInitialization m ByronBlock))
-mkRekeyUpd genesisConfig genesisSecrets cid pInfo eno newSK =
-    pInfoBlockForging pInfo <&> \blockForging ->
-      case listToMaybe blockForging of
-        Nothing -> Nothing
-        Just _  ->
-          let genSK = genesisSecretFor genesisConfig genesisSecrets cid
-              creds' = updSignKey genSK bcfg cid (coerce eno) newSK
-              blockForging' =
-                byronBlockForging
-                  (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
-                  creds'
-              pInfo' = pInfo { pInfoBlockForging = return [blockForging'] }
+mkRekeyUpd genesisConfig genesisSecrets cid pInfo blockForging eno newSK = do
+  blockForging <&> \case
+    []    -> Nothing
+    (_:_) ->
+      let genSK = genesisSecretFor genesisConfig genesisSecrets cid
+          creds' = updSignKey genSK bcfg cid (coerce eno) newSK
+          blockForging' =
+            byronBlockForging
+              (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+              creds'
 
-          in Just TestNodeInitialization
-            { tniCrucialTxs = [dlgTx (blcDlgCert creds')]
-            , tniProtocolInfo = pInfo'
-            }
+      in Just TestNodeInitialization
+        { tniCrucialTxs = [dlgTx (blcDlgCert creds')]
+        , tniProtocolInfo = pInfo
+        , tniBlockForging = pure [blockForging']
+        }
   where
     bcfg = configBlock (pInfoConfig pInfo)
 
