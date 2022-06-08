@@ -52,16 +52,25 @@ The Genesis initiative for the Consensus team, from the top.
     and/or do it automatically/without manual intervention isn't really the
     point.
 
-  * The P2P design strives to _prevent_ eclipses. But the Networking Team's
-    plan from the start has been for Consensus to handle _detecting_ eclipses
-    when the peer selection went wrong. Once detected, the plan for _escaping_
-    eclipses has been to cycle our peers, starting a fresh P2P connection
-    effort. Remark: if we're fundamentally eclipsed (eg at the hardware level),
-    then the best we can hope for is refusing to commit to any blocks until
-    we're reconnected to the honest chain. (Or just dying with an indiciative
-    log message, I suppose.)
+  * The Networking Team's plan from the start had been for the P2P design to try
+    to _prevent_ eclipses, but ultimately rely on Consensus to handle
+    _detecting_ eclipses when the peer selection went wrong. Once detected, the
+    plan for _escaping_ eclipses has been to cycle our peers, starting a fresh
+    P2P connection effort. Remark: if we're fundamentally eclipsed (eg at the
+    hardware level), then the best we can hope for is refusing to commit to any
+    blocks until we're reconnected to the honest chain. (Or just dying with an
+    indiciative log message, I suppose.)
 
-  * See below for the detection scheme.
+  * However, in early 2022, a few conversations among subsets of Frisby,
+    Alexander Russell, and Networking discussed what the _escape_ action would
+    look like and why it might do any better than the peer selection that lead
+    to an eclipse. The result of those conversations was a change in the design:
+    instead of only doing the escape action when we detect eclipses, the
+    Networking layer will simply do something along the same lines "frequently
+    enough". Thus, there is a limit how long a (non-physical/non-hardware)
+    eclipse attack could last, and that relieves Consensus of the obligation to
+    detect eclipses (eg by noticing a significant drop off in chain density,
+    which is a tricky probablistic decision to make binary).
 
 # Mitigating long range attacks
 
@@ -249,14 +258,63 @@ messages, then they're probably not actually sending me a real historical chain
 (ie one that does not require any ChainSync `MsgRollback`s). Or their network
 connection is so poor that I should replace them with a new peer anyway.
 
-# Eclipse detection
+# Why Genesis prefix selection can be slower than Praos chain selection
 
-That description constitutes the expected path through the Genesis state
-machine for a (re)joining node, but there are other paths as well. If at any
-moment we detect an eclipse (see below), we transition back to Connecting as an
-attempt to escape. (TODO Maybe we need to check for eclipse before transition
-to CaughtUp so that a node that is fully eclipsed won't only try to escape once
-ever and then just give up?)
+It was decided the node should still mint blocks when in Connecting and Syncing.
+Any honest nodes minting stale blocks (creating several short forks) could
+slightly help the adversary create alternative chains, but the risk of many
+honest nodes skipping many slots in which they could have created a competitive
+chain is more dangerous. If a node leaves CaughtUp just before the slot it
+leads, then it will likely mint the same block it would have minted in CaughtUp.
+There are two subtleties.
+
+* In that case of such lucky timing, the node won't select the block it just
+  minted! Because doing so would advance its immutable tip, which is never
+  allowed in Connecting and only allowed in Syncing when all of our peers
+  similarly advance their immutable tip. TODO Note that Deferred Validation
+  would let us propagate our minted block without having selected it! If all
+  our peers select it, then we could too, even in Syncing. TODO Would DV be
+  able to thereby unclog the network if all honest nodes were in Syncing? I
+  think so, unless a peer of ours has a Syncing peer that branches off `k`
+  before our minted block?
+
+* If we were in Connecting or Syncing for a while before leading, it's possible
+  that our minted block will not be competitive, since our selection may have
+  become conservative (eg truncated to a `k`-extension of `Anchor_j`).
+
+# BlockFetch in CaughtUp
+
+TODO download capacity could be a limiting factor: so which blocks to download
+when faced with competing chains? The Tse paper
+https://eprint.iacr.org/2021/1545 says to download blocks along the chain with
+the freshest block.
+
+TODO The current code does a hybrid of preferring the longest blocks offered by
+the peers that are most likely to be able to send us all the requested blocks
+within two slots (magic number!).
+
+TODO We discussed this with the researchers and Alex proposed a couple options,
+but then they found the Tse paper and we seem to all think that rule is sound.
+Something like: if you purposely withhold the block I want, you can only do
+that so long, since someone else will forge a new most desirable block soon
+enough.
+
+TODO What do I do once I have that freshest block? How do I spend my excess
+download capacity? Favor the second-freshest block? Favor any chains that are
+longer than the freshest block? Something else?
+
+# Appendix: the former Eclipse _detection_ plan
+
+As of 2022, the following text is archived here merely in case we later revisit
+the idea of detecting eclipses by monitoring the chain density -- we are not
+currently planning to do so.
+
+The above describes the expected path through the Genesis state machine for a
+(re)joining node, but there are other paths as well. If at any moment we detect
+an eclipse (see below), we transition back to Connecting as an attempt to
+escape. (TODO Maybe we need to check for eclipse before transition to CaughtUp
+so that a node that is fully eclipsed won't only try to escape once ever and
+then just give up?)
 
 The rule that triggers this transition has non-trivial consequences.
 
@@ -346,30 +404,6 @@ We can't judge that balance well without understanding the costs of each.
   in significant portions of the honest stake with appreciable
   duration/frequency/duty cycle.
 
-## Why Genesis prefix selection can be slower than Praos chain selection
-
-It was decided the node should still mint blocks when in Connecting and Syncing.
-Any honest nodes minting stale blocks (creating several short forks) could
-slightly help the adversary create alternative chains, but the risk of many
-honest nodes skipping many slots they could have created a competitive chain is
-more dangerous. If a node leaves CaughtUp just before the slot it leads, then it
-will likely mint the same block it would have minted in CaughtUp. There are two
-subtleties.
-
-* In that case of such lucky timing, the node won't select the block it just
-  minted! Because doing so would advance its immutable tip, which is never
-  allowed in Connecting and only allowed in Syncing when all of our peers
-  similarly advance their immutable tip. TODO Note that Deferred Validation
-  would let us propagate our minted block without having selected it! If all
-  our peers select it, then we could too, even in Syncing. TODO Would DV be
-  able to thereby unclog the network if all honest nodes were in Syncing? I
-  think so, unless a peer of ours has a Syncing peer that branches off `k`
-  before our minted block?
-
-* If we were in Connecting or Syncing for a while before leading, it's possible
-  that our minted block will not be competitive, since our selection may have
-  become conservative (eg truncated to a `k`-extension of `Anchor_j`).
-
 ## The eclipse detection rule
 
 TODO look for a recent drop in density
@@ -394,24 +428,3 @@ happens to too many nodes/too often, then it lowers the honest chain growth.
 TODO False alarms inherently cause harm in the absence of attacks, but might
 potentially be easy enough for an adversary to trigger that they become an
 attack vector of their own!
-
-# BlockFetch in CaughtUp
-
-TODO download capacity could be a limiting factor: so which blocks to download
-when faced with competing chains? The Tse paper
-https://eprint.iacr.org/2021/1545 says to download blocks along the chain with
-the freshest block.
-
-TODO The current code does a hybrid of preferring the longest blocks offered by
-the peers that are most likely to be able to send us all the requested blocks
-within two slots (magic number!).
-
-TODO We discussed this with the researchers and Alex proposed a couple options,
-but then they found the Tse paper and we seem to all think that rule is sound.
-Something like: if you purposely withhold the block I want, you can only do
-that so long, since someone else will forge a new most desirable block soon
-enough.
-
-TODO What do I do once I have that freshest block? How do I spend my excess
-download capacity? Favor the second-freshest block? Favor any chains that are
-longer than the freshest block? Something else?
