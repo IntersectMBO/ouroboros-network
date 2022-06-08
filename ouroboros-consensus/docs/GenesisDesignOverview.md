@@ -161,15 +161,19 @@ could be implemented as truncate them all before passing them as options to
 BlockFetch, except for blocks I meant (which currently circumvent BlockFetch).)
 
 ```
+    Anchor_0 :: Point
     Anchor_0 = intersection(S)
 
+Candidates_i :: Set AnchoredFragment
 Candidates_i = subset of S that extends Anchor_i
 
+     Bests_i :: Set AnchoredFragment
      Bests_i = the (necessarily non-empty) subset of Candidates_i
                whose density in the Genesis window starting at Anchor_i
                could be the greatest
                if some headers extending the element were to suddenly arrive
 
+Anchor_{i+1} :: Point
 Anchor_{i+1} = intersection(Bests_i)
 ```
 
@@ -184,39 +188,41 @@ conservatively defined as the number of its headers in the window plus the
 number of slots after its last header in the window.
 
 As our Syncing progress reaches the tip of the peers' chains, though, our peers
-will begin informing us that they have no additional headers. This scenario is
-converging on Praos's domain, since we actually have the peer's whole (header)
-chain itself, not just a prefix of it (TODO unless they're also syncing!). Thus
-we have the following refined definition.
+will begin informing us that they have no additional headers. This means the
+above definition of `Bests_i` is too conservative, since the peer has informed
+us that no headers extending beyond their claimed tip could possibly "suddenly
+arrive" (TODO unless they're also syncing!). Thus we have the following refined
+definition.
 
 ```
-    Cutoff_i = the minimum count of
-               headers in the Genesis window starting at Anchor_i
-               for any element of Candidates_i
+    Cutoff_i :: Natural
+    Cutoff_i = the minimum over every prefix in Candidates_i of
+               the count of headers in the Genesis window starting at Anchor_i
 
+     Bests_i :: Set AnchoredFragment
      Bests_i = the (necessarily non-empty) subset of Candidates_i
-               containing each prefix for which
+               that contains each prefix for which
                the count of headers in the Genesis window starting at Anchor_i
                plus the count of slots that are
                    in the Genesis window starting at Anchor_i
                    > the slot of the prefix's tip
-                   and <= the slot of the peer's claimed tip
+                   and <= the slot of the tip of peer's claimed selection
                is >= Cutoff_i
-
-TODO would it be clearer to map each prefix-and-claimed-tip pair to an interval
-[#headers in window, min(anchor+s, claimed tip) - #empty slots in window older
-than a header] and keep only those prefixes whose upper bound is >= the overall
-minimum lower bound?
-
 ```
+
+Indeed, this rule converges on Praos once the peer's have no more headers to
+offer beyond the Genesis window, since we then actually have all the headers on
+the peer's selected chain, not just a prefix of it (TODO unless they're also
+syncing!). And that happily suggests a smooth transition from Syncing to
+CaughtUp is possible.
 
 Intuitively, an inferior candidate prefix is eliminated from consideration (and
 thereby stops holding back `Anchor_j`) in one of two ways. Either that chain
 ends in the window (while the better chains don't) or else the node eventually
-receives enough of each prefix in the window to see that the number of
-remaining slots in the window for this sparse prefix is too small for the
-prefix to ever be able to catch up to the greatest number of received headers
-in the window on whichever prefix has the most.
+receives enough of each prefix in the window to see that the number of remaining
+slots in the window for a relatively sparse prefix is too small for that prefix
+to ever be able to catch up to however many headers the prefix with the most
+headers has.
 
 TODO the above is sound as a description of overall chain selection. But if
 we're going to leave the logic in the ChainDB untouched (ie select the longest
@@ -226,10 +232,10 @@ However we resolve that impedance mismatch might have similarities with
 Deferred Validation (being able to judge (speculatively) and propagate a block
 we haven't yet validated).
 
-It's a notable special case that Genesis prefix selection selects nearly as
-aggressively as does Praos chain selection when all peers are offering the same
-chain. The only delay is waiting for every peer to give us enough headers
-instead of just the one. TODO Mention the jumping optimization idea.
+It's a notable special case that Genesis prefix selection is nearly as
+aggressive as Praos chain selection when all peers are offering the same chain.
+The only delay is waiting for every peer to give us enough headers instead of
+just the one. TODO Mention the jumping optimization idea.
 
 ## A new DoS vector in Syncing
 
