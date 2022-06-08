@@ -93,7 +93,7 @@ with regard to the upcoming \emph{Input-Endorsers} protocol enhancement. \\
 The goal of the Input-Endorsers is to minimize under-utilization of Cardano's system resources.
 As of writing, approximately 25\% ($5$ seconds out of each $20$ second period) are currently being used to process
 transactions. The remaining 75\% of the time is spent idle, filling mempool, or dedicated to other tasks
-which do not contribute to the bandwidth of the network.
+which do not contribute to the bandwidth of the network. \\
 
 Thus, the goal with the introduction of Input-Endorsers is to achieve a higher transaction throughput
 by utilizing resources more efficiently, and more effectively. This change (which will touch the three 
@@ -101,9 +101,7 @@ major system components: Consensus, Ledger \& Network) will also pave the way fo
 pricing, which is also discussed herein. \\
 
 This document will look at hypothetical requirements (motivation), highlight the a potential high-level
-architecture, and finally, shine a light on some potential "footguns" which the implementation should consider. \\
-
-The target audience for this document is Engineering, and it should be considered a disambiguation paper 
+architecture, and finally, shine a light on some potential "footguns" which the implementation should consider. The target audience for this document is Engineering, and it should be considered a disambiguation paper 
 rather than a design document. As of writing, Research on Input Endorsers is still ongoing, thus, design 
 decisions are still in flux.
 \pagebreak
@@ -216,7 +214,9 @@ In following sections we will discuss technical approaches which may be used to 
 \subsection{VRF Usage}
 Both \glsplural{ib} \& \glsplural{rb} will be produced using the same VRF (verifiable random function) mechanism 
 as the current implementation of Ouroboros. That is, block producers will be \emph{selected} using a VRF. 
-
+Both \glsplural{ib} and \glsplural{rb} production will have separate VRF calls, tuned by a parameter $\mathcal{F}$ to 
+ensure optimal pacing for both block types.
+TBC...
 
 
 
@@ -228,8 +228,9 @@ holding disseminated \emph{unprocessed} transactions. With Input Endorsers, ther
 \begin{enumerate}
   \item A transaction Mempool (inbound Mempool which holds unprocessed transactions which were received either from peers, or submitted locally).
   \item An \gls{ib} Mempool (outbound Mempool which holds \glsplural{ib} which are to be propagated downstream to peers).
-\end{enumerate}
+\end{enumerate} 
 
+\ \\
 Let us consider the following requirements which should influence our Mempool design:
 
 \begin{itemize}
@@ -237,6 +238,7 @@ Let us consider the following requirements which should influence our Mempool de
   \item SPO resource usage should be bounded (bounded resource will mitigate DDoS attack vectors).
   \item Transactions should have linear consistency (successive transactions sent from the same source should be processed in chronological order).
 \end{itemize}
+
 
 
 \subsection{"Colouring"}
