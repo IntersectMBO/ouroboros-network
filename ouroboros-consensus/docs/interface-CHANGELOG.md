@@ -56,6 +56,14 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-11-07
+
+## Added
+
+- Added `setBlockForging` to `NodeKernel` which must be used to set / control
+  block forging of the consensus layer.
+- We removed the `pInfoBlockForging` record field from the `ProtocolInfo` type.
+- `ProtocolInfo` no longer needs the monad parameter, so we've removed that too.
 ## Circa 2022-09-30
 
 ### Fixed
