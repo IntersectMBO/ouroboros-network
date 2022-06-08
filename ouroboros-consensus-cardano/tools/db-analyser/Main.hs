@@ -170,20 +170,20 @@ parseAnalysis = asum [
     ]
 
 storeLedgerParser :: Parser AnalysisName
-storeLedgerParser = (StoreLedgerStateAt . SlotNo . read) <$> strOption
+storeLedgerParser = (StoreLedgerStateAt . SlotNo) <$> option auto
   (  long "store-ledger"
   <> metavar "SLOT_NUMBER"
   <> help "Store ledger state at specific slot number" )
 
 checkNoThunksParser :: Parser AnalysisName
-checkNoThunksParser = (CheckNoThunksEvery . read) <$> strOption
+checkNoThunksParser = CheckNoThunksEvery <$> option auto
   (  long "checkThunks"
   <> metavar "BLOCK_COUNT"
   <> help "Check the ledger state for thunks every n blocks" )
 
 parseLimit :: Parser Limit
 parseLimit = asum [
-    Limit . read <$> strOption (mconcat [
+    Limit <$> option auto (mconcat [
         long "num-blocks-to-process"
       , help "Maximum number of blocks we want to process"
       , metavar "INT"
