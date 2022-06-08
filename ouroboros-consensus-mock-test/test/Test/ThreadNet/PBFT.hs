@@ -21,7 +21,7 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block.PBFT
 import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.PBFT (MockPBftBlock,
-                     protocolInfoMockPBFT)
+                     blockForgingMockPBFT, protocolInfoMockPBFT)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -115,10 +115,12 @@ prop_simple_pbft_convergence TestSetup
 
     testOutput =
         runTestNetwork testConfig testConfigB TestConfigMB
-            { nodeInfo = plainTestNodeInitialization .
-                            protocolInfoMockPBFT
-                              params
-                              (HardFork.defaultEraParams k slotLength)
+            { nodeInfo = \nid ->
+                            plainTestNodeInitialization
+                              (protocolInfoMockPBFT
+                                params
+                                (HardFork.defaultEraParams k slotLength))
+                              (pure $ blockForgingMockPBFT nid)
             , mkRekeyM = Nothing
             }
 

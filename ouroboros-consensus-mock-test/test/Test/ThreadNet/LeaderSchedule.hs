@@ -119,8 +119,8 @@ prop_simple_leader_schedule_convergence TestSetup
     testOutput@TestOutput{testOutputNodes} =
         runTestNetwork testConfig testConfigB TestConfigMB
             { nodeInfo = \nid ->
-                plainTestNodeInitialization $
-                protocolInfoPraosRule
+                plainTestNodeInitialization
+                (protocolInfoPraosRule
                   numCoreNodes
                   nid
                   PraosParams
@@ -130,7 +130,8 @@ prop_simple_leader_schedule_convergence TestSetup
                   }
                   (HardFork.defaultEraParams k slotLength)
                   schedule
-                  emptyPraosEvolvingStake
+                  emptyPraosEvolvingStake)
+                (pure blockForgingPraosRule)
             , mkRekeyM = Nothing
             }
 

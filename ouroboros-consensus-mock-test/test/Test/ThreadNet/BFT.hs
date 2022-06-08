@@ -103,11 +103,12 @@ prop_simple_bft_convergence TestSetup
     testOutput =
         runTestNetwork testConfig testConfigB TestConfigMB
             { nodeInfo = \nid ->
-                plainTestNodeInitialization $
-                  protocolInfoBft
+                plainTestNodeInitialization
+                  (protocolInfoBft
                     numCoreNodes
                     nid
                     k
-                    (HardFork.defaultEraParams k slotLength)
+                    (HardFork.defaultEraParams k slotLength))
+                  (pure $ blockForgingBft nid)
             , mkRekeyM = Nothing
             }
