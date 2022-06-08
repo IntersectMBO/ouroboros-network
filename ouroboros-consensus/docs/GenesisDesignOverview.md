@@ -40,6 +40,18 @@ The Genesis initiative for the Consensus team, from the top.
     stake attack mitigation, we can't do that: we'll disconnect from peers
     offering the honest chain (the `ForksTooDeep` ChainSync outcome).
 
+    Actually, in his eleventh hour, Edsko and I realized we could actually roll
+    back by more than `k` by maintaining a relatively lightweight on-disk
+    database to make it sufficiently cheap to check whether a deep forking
+    header we just learned about is in fact denser than our immutable chain. We
+    were excited about this, but then we realized that no user would want to
+    roll back by more than `k` -- what they want to know is that they can't be
+    eclipsed that long! IE Being able to roll back more than `k` is a
+    consolation convenience: having to roll back by more than is still extremely
+    bad scenario for a user to be in. Whether the node can recognize the need
+    and/or do it automatically/without manual intervention isn't really the
+    point.
+
   * The P2P design strives to _prevent_ eclipses. But the Networking Team's
     plan from the start has been for Consensus to handle _detecting_ eclipses
     when the peer selection went wrong. Once detected, the plan for _escaping_
