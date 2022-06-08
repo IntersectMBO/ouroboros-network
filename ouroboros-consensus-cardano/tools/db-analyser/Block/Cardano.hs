@@ -195,7 +195,7 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         }
       ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = genesisAlonzo
-        , transitionTrigger            = TriggerHardForkAtVersion 6
+        , transitionTrigger            = TriggerHardForkAtVersion 7
         }
 
 castHeaderHash ::
