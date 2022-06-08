@@ -35,9 +35,9 @@ The Genesis initiative for the Consensus team, from the top.
 3) "eclipse" attack (no IOG paper for this)
 
   * Even with Genesis, if all our peers are adversarial, we're doomed. The
-    Genesis paper can kind of get away with it, because it rollsback by more
-    than `k` whenever it reconnects to the honest chain. But because of our
-    fake stake attack mitigation, we can't do that: we'll disconnect from peers
+    Genesis paper can kind of tolerate it, because it rolls back by more than
+    `k` whenever it reconnects to the honest chain. But because of our fake
+    stake attack mitigation, we can't do that: we'll disconnect from peers
     offering the honest chain (the `ForksTooDeep` ChainSync outcome).
 
   * The P2P design strives to _prevent_ eclipses. But the Networking Team's
@@ -84,8 +84,8 @@ we've been eclipsed (likely a botnet attack).
 ## Another reason the intersection matters
 
 The above prefix selection perspective on the Genesis rule is particularly
-pertinent for our code because our actual node, in contrast to the the model in
-the papers, exchanges blocks at a time instead of whole chains, and hence, when
+pertinent for our code because our actual node, in contrast to the model in the
+papers, exchanges blocks at a time instead of whole chains, and hence, when
 (re)joining, is comparing prefixes until catches back up to `mainnet`. However,
 even if we did (somehow!) exchange entire chains, the Genesis rule is still
 necessary.
@@ -100,8 +100,8 @@ the adversary would not have enough elections to manipulate the leader schedule
 within it.
 
 In summary, without the Genesis rule, total chain length might be an
-apples-to-oranges, since, for historical chains the adversary has had
-sufficient wallclock time and leadership opporutnities to manipulate the chain
+apples-to-oranges comparison, since, for historical chains the adversary has had
+sufficient wallclock time and leadership opportunities to manipulate the chain
 that consists only of their blocks. On the other hand, the Genesis rule's
 density comparison in the Genesis window after an intersection is an
 apples-to-apples comparison.
@@ -239,7 +239,7 @@ connection is so poor that I should replace them with a new peer anyway.
 
 # Eclipse detection
 
-That description of constitutes the expected path through the Genesis state
+That description constitutes the expected path through the Genesis state
 machine for a (re)joining node, but there are other paths as well. If at any
 moment we detect an eclipse (see below), we transition back to Connecting as an
 attempt to escape. (TODO Maybe we need to check for eclipse before transition
@@ -286,8 +286,9 @@ notice? We consider two cases.
 * For a node that's rejoining the network, there's another option, since it
   already has selected a prefix of the (presumably) honest chain. If we were to
   become eclipsed by an adversary, which can never have more than half of the
-  active stake, then -- given a "long enough" slot interval on either side --
-  we should see a portion of our recent chain when the density plummeted.
+  active stake, then -- given a "long enough" slot interval on either side of
+  density change point -- we should see a portion of our recent chain when the
+  density plummeted.
 
 We could instead collapse those two by defining the density up to the genesis
 block to be two times whatever the absolute cutoff is. So I'll only discuss the
@@ -312,7 +313,7 @@ We can't judge that balance well without understanding the costs of each.
 
   The network as a whole wouldn't really notice the absence of a few nodes'
   stake, which is inactive while they're eclipsed. On the other hand, it could
-  be distastrous if a large portion of the network were eclipsed simultaneously
+  be disastrous if a large portion of the network were eclipsed simultaneously
   for an appreciable duration/frequency/duty cycle (eg by a botnet saturating
   our P2P peer selections).
 
@@ -335,13 +336,13 @@ We can't judge that balance well without understanding the costs of each.
 
 ## Why Genesis prefix selection can be slower than Praos chain selection
 
-It was decided the node should still mint blocks when in Connecting and
-Syncing. Any honest nodes minting stale blocks (creating several short forks)
-could slightly help the adversary create alternative chains, but the risk of
-many honest nodes skipping many slots they could have created a competitive is
-more dangerous. If a node leaves CaughtUp just before the slot it leads, then
-it will likely mint the same block it would have minted in CaughtUp. There are
-two subtleties.
+It was decided the node should still mint blocks when in Connecting and Syncing.
+Any honest nodes minting stale blocks (creating several short forks) could
+slightly help the adversary create alternative chains, but the risk of many
+honest nodes skipping many slots they could have created a competitive chain is
+more dangerous. If a node leaves CaughtUp just before the slot it leads, then it
+will likely mint the same block it would have minted in CaughtUp. There are two
+subtleties.
 
 * In that case of such lucky timing, the node won't select the block it just
   minted! Because doing so would advance its immutable tip, which is never
@@ -389,7 +390,7 @@ when faced with competing chains? The Tse paper
 https://eprint.iacr.org/2021/1545 says to download blocks along the chain with
 the freshest block.
 
-TODO The current code does a hybrid of prefering the longest blocks offered by
+TODO The current code does a hybrid of preferring the longest blocks offered by
 the peers that are most likely to be able to send us all the requested blocks
 within two slots (magic number!).
 
