@@ -16,7 +16,7 @@ module Analysis (
 
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
-import           Control.Tracer (Tracer (..), traceWith)
+import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word16, Word64)
@@ -27,16 +27,24 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      HeaderState (..), annTipPoint)
-import           Ouroboros.Consensus.Ledger.Abstract (tickThenApplyLedgerResult)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..))
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerCfg, LedgerConfig,
+                     applyChainTick, tickThenApplyLedgerResult, tickThenReapply)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..),
+                     LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+                     (LedgerSupportsMempool)
+import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
+import qualified Ouroboros.Consensus.Mempool.API as MP
+import qualified Ouroboros.Consensus.Mempool.Impl as MP
+import qualified Ouroboros.Consensus.Mempool.TxSeq as MP
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      StreamFrom (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
+import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -67,13 +75,17 @@ data AnalysisName =
   | CountBlocks
   | CheckNoThunksEvery Word64
   | TraceLedgerProcessing
+  | ReproMempoolAndForge Int
   deriving Show
 
 runAnalysis ::
      forall blk .
-     ( LgrDbSerialiseConstraints blk
-     , HasAnalysis blk
+     ( HasAnalysis blk
+     , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
+     , LedgerSupportsMempool.HasTxs blk
+     , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , LgrDbSerialiseConstraints blk
      )
   => AnalysisName -> Analysis blk
 runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
@@ -91,6 +103,7 @@ runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
     go CountBlocks                 = countBlocks env
     go (CheckNoThunksEvery nBks)   = checkNoThunksEvery nBks env
     go TraceLedgerProcessing       = traceLedgerProcessing env
+    go (ReproMempoolAndForge nBks) = reproMempoolForge nBks env
 
 type Analysis blk = AnalysisEnv IO blk -> IO ()
 
@@ -147,6 +160,15 @@ data TraceEvent blk =
     --   * slot number when the block was forged
     --   * number of transactions in the block
     --   * total size of transactions in the block
+  | BlockMempoolAndForgeRepro BlockNo SlotNo Int SizeInBytes IOLike.DiffTime IOLike.DiffTime
+    -- ^ triggered for all blocks during ShowBlockTxsSize analysis,
+    --   it holds:
+    --   * block number
+    --   * slot number when the block was forged
+    --   * number of transactions in the block
+    --   * total size of transactions in the block
+    --   * time to tick ledger state
+    --   * time to call 'MP.getSnapshotFor'
 
 instance HasAnalysis blk => Show (TraceEvent blk) where
   show (StartedEvent analysisName)        = "Started " <> (show analysisName)
@@ -183,6 +205,14 @@ instance HasAnalysis blk => Show (TraceEvent blk) where
       show slot
     , "Num txs in block = " <> show numBlocks
     , "Total size of txs in block = " <> show txsSize
+    ]
+  show (BlockMempoolAndForgeRepro bno slot txsCount txsSize durTick durSnap) = intercalate "\t" [
+      show bno
+    , show slot
+    , "txsCount " <> show txsCount
+    , "txsSize " <> show txsSize
+    , "durTick " <> show durTick
+    , "durSnap " <> show durSnap
     ]
 
 
@@ -364,15 +394,15 @@ checkNoThunksEvery
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
           newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
           bn            = blockNo blk
-      when (unBlockNo bn `mod` nBlocks == 0 ) $ checkNoThunks bn newLedger
+      when (unBlockNo bn `mod` nBlocks == 0 ) $ IOLike.evaluate (ledgerState newLedger) >>= checkNoThunks bn
       return newLedger
 
-    checkNoThunks :: BlockNo -> ExtLedgerState blk -> IO ()
+    checkNoThunks :: BlockNo -> LedgerState blk -> IO ()
     checkNoThunks bn ls =
-      noThunks [] (ledgerState ls) >>= \case
-        Nothing -> putStrLn $ "BlockNo " <> show bn <> ": no thunks found."
+      noThunks ["--checkThunks"] ls >>= \case
+        Nothing -> putStrLn $ show bn <> ": no thunks found."
         Just ti -> do
-          putStrLn $ "BlockNo " <> show bn <> ": thunks found."
+          putStrLn $ show bn <> ": thunks found."
           print ti
 
 {-------------------------------------------------------------------------------
@@ -403,6 +433,123 @@ traceLedgerProcessing
               HasAnalysis.WithLedgerState blk (ledgerState oldLedger) (ledgerState newLedger))
       mapM_ Debug.traceMarkerIO traces
       return $ newLedger
+
+{-------------------------------------------------------------------------------
+  Analysis: reforge the blocks, via the mempool
+-------------------------------------------------------------------------------}
+
+data ReproMempoolForgeHowManyBlks = ReproMempoolForgeOneBlk | ReproMempoolForgeTwoBlks
+
+reproMempoolForge ::
+  forall blk.
+  ( HasAnalysis blk
+  , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
+  , LedgerSupportsMempool.HasTxs blk
+  , LedgerSupportsMempool blk
+  , LedgerSupportsProtocol blk
+  ) =>
+  Int ->
+  Analysis blk
+reproMempoolForge numBlks env = do
+    howManyBlocks <- case numBlks of
+      1 -> pure ReproMempoolForgeOneBlk
+      2 -> pure ReproMempoolForgeTwoBlks
+      _ -> fail $ "--repro-mempool-and-forge only supports"
+               <> "1 or 2 blocks at a time, not " <> show numBlks
+
+    ref <- IOLike.newTVarIO initLedger
+    mempool <- MP.openMempoolWithoutSyncThread
+      MP.LedgerInterface {
+        getCurrentLedgerState = ledgerState <$> IOLike.readTVar ref
+      }
+      lCfg
+      -- one megabyte should generously accomodate two blocks' worth of txs
+      (MP.MempoolCapacityBytesOverride $ MP.MempoolCapacityBytes $ 2^(20 :: Int))
+      nullTracer
+      LedgerSupportsMempool.txInBlockSize
+
+    void $ processAll db registry GetBlock initLedger limit Nothing (process howManyBlocks ref mempool)
+  where
+    AnalysisEnv {
+      cfg
+    , initLedger
+    , db
+    , registry
+    , limit
+    , tracer
+    } = env
+
+    lCfg :: LedgerConfig blk
+    lCfg = configLedger cfg
+
+    elCfg :: LedgerCfg (ExtLedgerState blk)
+    elCfg = ExtLedgerCfg cfg
+
+    timed :: IO a -> IO (a, IOLike.DiffTime)
+    timed m = do
+      before <- IOLike.getMonotonicTime
+      !x <- m
+      after <- IOLike.getMonotonicTime
+      pure (x, after `IOLike.diffTime` before)
+
+    process
+      :: ReproMempoolForgeHowManyBlks
+      -> IOLike.StrictTVar IO (ExtLedgerState blk)
+      -> MP.Mempool IO blk MP.TicketNo
+      -> Maybe blk
+      -> blk
+      -> IO (Maybe blk)
+    process howManyBlocks ref mempool mbBlk blk' = (\() -> Just blk') <$> do
+      -- add this block's transactions to the mempool
+      do
+        results <- MP.addTxs mempool $ LedgerSupportsMempool.extractTxs blk'
+        let rejs = [ rej | rej@MP.MempoolTxRejected{} <- results ]
+        unless (null rejs) $ do
+          fail $ "Mempool rejected some of the on-chain txs: " <> show rejs
+
+      let scrutinee = case howManyBlocks of
+            ReproMempoolForgeOneBlk  -> Just blk'
+            ReproMempoolForgeTwoBlks -> mbBlk
+      case scrutinee of
+        Nothing  -> pure ()
+        Just blk -> do
+          st <- IOLike.readTVarIO ref
+
+          -- time the suspected slow parts of the forge thread that created
+          -- this block
+          --
+          -- Primary caveat: that thread's mempool may have had more transactions in it.
+          do
+            let slot = blockSlot blk
+            (ticked, durTick) <- timed $ IOLike.evaluate $
+              applyChainTick lCfg slot (ledgerState st)
+            ((), durSnap) <- timed $ IOLike.atomically $ do
+              snap <- MP.getSnapshotFor mempool $ MP.ForgeInKnownSlot slot ticked
+
+              pure $ length (MP.snapshotTxs snap) `seq` MP.snapshotLedgerState snap `seq` ()
+
+            let sizes = HasAnalysis.blockTxSizes blk
+            traceWith tracer $
+              BlockMempoolAndForgeRepro
+                (blockNo blk)
+                slot
+                (length sizes)
+                (sum sizes)
+                durTick
+                durSnap
+
+          -- advance the ledger state to include this block
+          --
+          -- TODO We could inline/reuse parts of the IsLedger ExtLedgerState
+          -- instance here as an optimization that avoids repeating the
+          -- 'applyChainTick' call above. We want to leave that call alone, though,
+          -- since it currently matches the call in the forging thread, which is
+          -- the primary intention of this Analysis. Maybe GHC's CSE is already
+          -- doing this sharing optimization?
+          IOLike.atomically $ IOLike.writeTVar ref $! tickThenReapply elCfg blk st
+
+          -- this flushes blk from the mempool, since every tx in it is now on the chain
+          void $ MP.syncWithLedger mempool
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB

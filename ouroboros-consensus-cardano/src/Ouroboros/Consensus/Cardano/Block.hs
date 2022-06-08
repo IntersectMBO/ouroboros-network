@@ -2,10 +2,12 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE ViewPatterns             #-}
 module Ouroboros.Consensus.Cardano.Block (
     -- * Eras
     CardanoEras
+  , CardanoShelleyEras
   , module Ouroboros.Consensus.Shelley.Eras
     -- * Block
   , CardanoBlock
@@ -95,9 +97,10 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 -- We parameterise over the crypto used in the post-Byron eras: @c@.
 --
 -- TODO: parameterise ByronBlock over crypto too
-type CardanoEras c =
-  '[ ByronBlock
-   , ShelleyBlock (TPraos c) (ShelleyEra c)
+type CardanoEras c = ByronBlock ': CardanoShelleyEras c
+
+type CardanoShelleyEras c =
+  '[ ShelleyBlock (TPraos c) (ShelleyEra c)
    , ShelleyBlock (TPraos c) (AllegraEra c)
    , ShelleyBlock (TPraos c) (MaryEra c)
    , ShelleyBlock (TPraos c) (AlonzoEra c)

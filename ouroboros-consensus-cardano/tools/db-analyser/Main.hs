@@ -20,6 +20,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
@@ -158,24 +159,31 @@ parseAnalysis = asum [
                 <> " of the ledger state and inserts markers for 'significant'"
                 <> " events, such as for example epoch transitions."
         ]
+    , fmap ReproMempoolAndForge $ option auto $ mconcat [
+          long "repro-mempool-and-forge"
+        , help $ "Maintain ledger state and mempool trafficking the"
+              <> " transactions of each block. The integer is how many"
+              <> "blocks to put in the mempool at once."
+        , metavar "INT"
+        ]
     , pure OnlyValidation
     ]
 
 storeLedgerParser :: Parser AnalysisName
-storeLedgerParser = (StoreLedgerStateAt . SlotNo . read) <$> strOption
+storeLedgerParser = (StoreLedgerStateAt . SlotNo) <$> option auto
   (  long "store-ledger"
   <> metavar "SLOT_NUMBER"
   <> help "Store ledger state at specific slot number" )
 
 checkNoThunksParser :: Parser AnalysisName
-checkNoThunksParser = (CheckNoThunksEvery . read) <$> strOption
+checkNoThunksParser = CheckNoThunksEvery <$> option auto
   (  long "checkThunks"
   <> metavar "BLOCK_COUNT"
   <> help "Check the ledger state for thunks every n blocks" )
 
 parseLimit :: Parser Limit
 parseLimit = asum [
-    Limit . read <$> strOption (mconcat [
+    Limit <$> option auto (mconcat [
         long "num-blocks-to-process"
       , help "Maximum number of blocks we want to process"
       , metavar "INT"
@@ -223,6 +231,7 @@ analyse ::
      , Show (Header blk)
      , HasAnalysis blk
      , HasProtocolInfo blk
+     , LedgerSupportsMempool.HasTxs blk
      )
   => CmdLine
   -> Args blk

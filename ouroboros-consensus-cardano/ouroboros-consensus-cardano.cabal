@@ -78,6 +78,7 @@ executable db-analyser
                      , base
                      , bytestring
                      , cardano-binary
+                     , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
@@ -102,7 +103,6 @@ executable db-analyser
                      , plutus-ledger-api
   other-modules:
                        Analysis
-                     , Block.Alonzo
                      , Block.Byron
                      , Block.Cardano
                      , Block.Shelley

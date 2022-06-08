@@ -9,12 +9,14 @@ module Block.Byron (
     Args (..)
   , ByronBlockArgs
   , openGenesisByron
+    -- * Exported for re-use by "Block.Cardano"
+  , parseConfigFile
+  , parsePBftSignatureThreshold
   ) where
 
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import           Data.Foldable (asum)
 import           Options.Applicative
 
 import           Cardano.Binary (Raw, unAnnotated)
@@ -45,44 +47,45 @@ instance HasAnalysis ByronBlock where
 instance HasProtocolInfo ByronBlock where
     data Args ByronBlock =
       ByronBlockArgs {
-          configFileByron      :: FilePath
+          configFile           :: FilePath
         , requiresNetworkMagic :: RequiresNetworkMagic
         , genesisHash          :: Maybe (Crypto.Hash Raw)
         , threshold            :: Maybe PBftSignatureThreshold
         }
     argsParser _ = parseByronArgs
     mkProtocolInfo ByronBlockArgs {..} = do
-      config <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
+      config <- openGenesisByron configFile genesisHash requiresNetworkMagic
       return $ mkByronProtocolInfo config threshold
 
 type ByronBlockArgs = Args ByronBlock
 
+parseConfigFile :: Parser FilePath
+parseConfigFile = strOption $ mconcat [
+      long "config"
+    , help "Path to config file"
+    , metavar "PATH"
+    ]
+
+parsePBftSignatureThreshold :: Parser (Maybe PBftSignatureThreshold)
+parsePBftSignatureThreshold = optional $ fmap PBftSignatureThreshold $ option auto $ mconcat [
+      long "threshold"
+    , help "PBftSignatureThreshold"
+    , metavar "THRESHOLD"
+    ]
+
 parseByronArgs :: Parser ByronBlockArgs
 parseByronArgs = ByronBlockArgs
-    <$> strOption (mconcat [
-            long "configByron"
-          , help "Path to config file"
-          , metavar "PATH"
-          ])
+    <$> parseConfigFile
     <*> flag RequiresNoMagic RequiresMagic (mconcat [
             long "requires-magic"
           , help "The DB contains blocks from a testnet, requiring network magic, rather than mainnet"
           ])
-    <*> parseMaybe (option auto (mconcat [
+    <*> optional (option auto (mconcat [
             long "genesisHash"
           , help "Expected genesis hash"
           , metavar "HASH"
           ]))
-    <*> parseMaybe (PBftSignatureThreshold <$> thresholdParser)
-  where
-    thresholdParser = option auto (mconcat [
-            long "threshold"
-          , help "PBftSignatureThreshold"
-          , metavar "THRESHOLD"
-          ])
-
-parseMaybe ::  Parser a -> Parser (Maybe a)
-parseMaybe parser = asum [Just <$> parser, pure Nothing]
+    <*> parsePBftSignatureThreshold
 
 -- | Equivalent of 'either' for 'ABlockOrBoundary'.
 aBlockOrBoundary :: (Chain.ABoundaryBlock ByteString -> a)
