@@ -219,10 +219,28 @@ as the current implementation of Ouroboros. That is, block producers will be \em
 
 
 
-\subsection{"Colouring"}
 
 \subsection{Mempool Design}
 Mempool will see significant changes, though importantly it will maintain a \emph{FIFO} structure.
+With the current implementation of the node there is a single Mempool which is responsible for
+holding disseminated \emph{unprocessed} transactions. With Input Endorsers, there will be two Mempools.
+
+\begin{enumerate}
+  \item A transaction Mempool (inbound Mempool which holds unprocessed transactions which were received either from peers, or submitted locally).
+  \item An \gls{ib} Mempool (outbound Mempool which holds \glsplural{ib} which are to be propagated downstream to peers).
+\end{enumerate}
+
+Let us consider the following requirements which should influence our Mempool design:
+
+\begin{itemize}
+  \item Transactions should be processed quickly, with as little duplicate processing/data transmission as possible.
+  \item SPO resource usage should be bounded (bounded resource will mitigate DDoS attack vectors).
+  \item Transactions should have linear consistency (successive transactions sent from the same source should be processed in chronological order).
+\end{itemize}
+
+
+\subsection{"Colouring"}
+
 
 \subsection{Blockchain Structure}
 
