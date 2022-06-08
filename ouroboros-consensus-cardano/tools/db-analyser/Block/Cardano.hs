@@ -22,13 +22,13 @@ import qualified Block.Byron as BlockByron
 import           Block.Shelley ()
 import           Cardano.Binary (Raw)
 import qualified Cardano.Chain.Genesis as Byron.Genesis
+import qualified Cardano.Chain.Update as Byron.Update
 import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.Hash.Class as CryptoClass
-import qualified Cardano.Chain.Update as Byron.Update
 import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
-import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Crypto
+import qualified Cardano.Ledger.Era as Core
 import           Control.Monad (when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -42,7 +42,8 @@ import           HasAnalysis
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Cardano
-import           Ouroboros.Consensus.Cardano.Block (CardanoEras, CardanoShelleyEras)
+import           Ouroboros.Consensus.Cardano.Block (CardanoEras,
+                     CardanoShelleyEras)
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
@@ -152,20 +153,20 @@ data CardanoConfig = CardanoConfig {
     requiresNetworkMagic :: RequiresNetworkMagic
 
      -- | @ByronGenesisFile@ field
-  , byronGenesisPath :: FilePath
+  , byronGenesisPath     :: FilePath
     -- | @ByronGenesisHash@ field
-  , byronGenesisHash :: Maybe (Crypto.Hash Raw)
+  , byronGenesisHash     :: Maybe (Crypto.Hash Raw)
 
     -- | @ShelleyGenesisFile@ field
     -- | @ShelleyGenesisHash@ field
-  , shelleyGenesisPath :: FilePath
-  , shelleyGenesisHash :: Maybe Nonce
+  , shelleyGenesisPath   :: FilePath
+  , shelleyGenesisHash   :: Maybe Nonce
 
     -- | @AlonzoGenesisFile@ field
-  , alonzoGenesisPath :: FilePath
+  , alonzoGenesisPath    :: FilePath
 
     -- | @Test*HardForkAtEpoch@ for each Shelley era
-  , hardForkTriggers :: NP STA (CardanoShelleyEras StandardCrypto)
+  , hardForkTriggers     :: NP STA (CardanoShelleyEras StandardCrypto)
   }
 
 -- | Shelley transition arguments

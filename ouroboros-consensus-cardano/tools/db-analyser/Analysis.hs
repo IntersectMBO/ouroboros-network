@@ -28,10 +28,12 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      HeaderState (..), annTipPoint)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerCfg, LedgerConfig,
-                     applyChainTick, tickThenReapply, tickThenApplyLedgerResult)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..), LedgerState)
+                     applyChainTick, tickThenApplyLedgerResult, tickThenReapply)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..),
+                     LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.SupportsMempool (LedgerSupportsMempool)
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+                     (LedgerSupportsMempool)
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
@@ -41,8 +43,8 @@ import qualified Ouroboros.Consensus.Mempool.TxSeq as MP
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      StreamFrom (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
-import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
