@@ -6,6 +6,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node.Praos (
     MockPraosBlock
+  , blockForgingPraos
   , protocolInfoPraos
   ) where
 
@@ -31,14 +32,13 @@ import           Ouroboros.Consensus.Util.IOLike
 
 type MockPraosBlock = SimplePraosBlock SimpleMockCrypto PraosMockCrypto
 
-protocolInfoPraos :: IOLike m
-                  => NumCoreNodes
+protocolInfoPraos :: NumCoreNodes
                   -> CoreNodeId
                   -> PraosParams
                   -> HardFork.EraParams
                   -> Natural
                   -> PraosEvolvingStake
-                  -> ProtocolInfo m MockPraosBlock
+                  -> ProtocolInfo MockPraosBlock
 protocolInfoPraos numCoreNodes nid params eraParams eta0 evolvingStakeDist =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
@@ -59,7 +59,6 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 evolvingStakeDist =
             ledgerState = genesisSimpleLedgerState addrDist
           , headerState = genesisHeaderState (PraosChainDepState [])
           }
-      , pInfoBlockForging = sequence [praosBlockForging nid initHotKey]
       }
   where
     signKeyVRF :: CoreNodeId -> SignKeyVRF MockVRF
@@ -73,6 +72,26 @@ protocolInfoPraos numCoreNodes nid params eraParams eta0 evolvingStakeDist =
 
     addrDist :: AddrDist
     addrDist = mkAddrDist numCoreNodes
+
+    verKeys :: Map CoreNodeId (VerKeyKES (MockKES t), VerKeyVRF MockVRF)
+    verKeys = Map.fromList
+      [ (nid', (kesKey, vrfKey))
+      | nid' <- enumCoreNodes numCoreNodes
+      , let !kesKey = verKeyKES nid'
+            !vrfKey = verKeyVRF nid'
+      ]
+
+blockForgingPraos :: IOLike m
+                  => NumCoreNodes
+                  -> CoreNodeId
+                  -> m [BlockForging m MockPraosBlock]
+blockForgingPraos numCoreNodes nid = sequence [praosBlockForging nid initHotKey]
+  where
+    verKeyVRF :: CoreNodeId -> VerKeyVRF MockVRF
+    verKeyVRF (CoreNodeId n) = VerKeyMockVRF n
+
+    verKeyKES :: CoreNodeId -> VerKeyKES (MockKES t)
+    verKeyKES (CoreNodeId n) = VerKeyMockKES n
 
     verKeys :: Map CoreNodeId (VerKeyKES (MockKES t), VerKeyVRF MockVRF)
     verKeys = Map.fromList
