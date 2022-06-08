@@ -1,5 +1,9 @@
+{-# LANGUAGE ApplicativeDo         #-}
+{-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -12,24 +16,24 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Block.Cardano (
-    Args (..)
-  , CardanoBlockArgs
-  ) where
+module Block.Cardano (CardanoBlockArgs) where
 
-import           Block.Alonzo (Args (..))
-import           Block.Byron (Args (..), openGenesisByron)
-import           Block.Shelley (Args (..))
+import qualified Block.Byron as BlockByron
+import           Block.Shelley ()
+import           Cardano.Binary (Raw)
 import qualified Cardano.Chain.Genesis as Byron.Genesis
+import           Cardano.Crypto (RequiresNetworkMagic (..))
+import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Crypto.Hash.Class as CryptoClass
 import qualified Cardano.Chain.Update as Byron.Update
 import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
 import           Cardano.Ledger.Crypto
 import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.SOP.Strict
 import           HasAnalysis
-import           Options.Applicative
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Cardano
@@ -46,11 +50,8 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
-import           Ouroboros.Consensus.Shelley.Eras (StandardAlonzo,
-                     StandardShelley)
+import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.HFEras ()
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node.Praos
 
@@ -100,23 +101,81 @@ analyseWithLedgerState f (WithLedgerState cb sb sa) =
         . hardForkLedgerStatePerEra
 
 instance HasProtocolInfo (CardanoBlock StandardCrypto) where
-  data Args (CardanoBlock StandardCrypto) =
-    CardanoBlockArgs {
-        byronArgs   :: Args ByronBlock
-      , shelleyArgs :: Args (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
-      , alonzoArgs  :: Args (ShelleyBlock (TPraos StandardCrypto) StandardAlonzo)
-      }
-  argsParser _ = parseCardanoArgs
+  data Args (CardanoBlock StandardCrypto) = CardanoBlockArgs {
+          configFile           :: FilePath
+        , threshold            :: Maybe PBftSignatureThreshold
+        }
+
+  argsParser _ = do
+    configFile           <- BlockByron.parseConfigFile
+    threshold            <- BlockByron.parsePBftSignatureThreshold
+    pure CardanoBlockArgs {..}
+
   mkProtocolInfo CardanoBlockArgs {..} = do
-    let ByronBlockArgs {..}   = byronArgs
-    let ShelleyBlockArgs {..} = shelleyArgs
-    let AlonzoBlockArgs {..}  = alonzoArgs
-    genesisByron <- openGenesisByron configFileByron genesisHash requiresNetworkMagic
+    CardanoConfig {..} <- either (error . show) return =<<
+      Aeson.eitherDecodeFileStrict' configFile
+
+    genesisByron   <-
+      BlockByron.openGenesisByron byronGenesisPath byronGenesisHash requiresNetworkMagic
     genesisShelley <- either (error . show) return =<<
-      Aeson.eitherDecodeFileStrict' configFileShelley
-    genesisAlonzo <- either (error . show) return =<<
-      Aeson.eitherDecodeFileStrict' configFileAlonzo
-    return $ mkCardanoProtocolInfo genesisByron threshold genesisShelley genesisAlonzo initialNonce
+      Aeson.eitherDecodeFileStrict' shelleyGenesisPath
+    genesisAlonzo  <- either (error . show) return =<<
+      Aeson.eitherDecodeFileStrict' alonzoGenesisPath
+
+    initialNonce <- case shelleyGenesisHash of
+      Just h  -> pure h
+      Nothing -> do
+        content <- BS.readFile shelleyGenesisPath
+        pure
+          $ Nonce
+          $ CryptoClass.castHash
+          $ CryptoClass.hashWith id
+          $ content
+
+    return
+      $ mkCardanoProtocolInfo
+          genesisByron
+          threshold
+          genesisShelley
+          genesisAlonzo
+          initialNonce
+
+data CardanoConfig = CardanoConfig {
+    -- | @RequiresNetworkMagic@ field
+    requiresNetworkMagic :: RequiresNetworkMagic
+
+     -- | @ByronGenesisFile@ field
+  , byronGenesisPath :: FilePath
+    -- | @ByronGenesisHash@ field
+  , byronGenesisHash :: Maybe (Crypto.Hash Raw)
+
+    -- | @ShelleyGenesisFile@ field
+    -- | @ShelleyGenesisHash@ field
+  , shelleyGenesisPath :: FilePath
+  , shelleyGenesisHash :: Maybe Nonce
+
+    -- | @AlonzoGenesisFile@ field
+  , alonzoGenesisPath :: FilePath
+  }
+
+instance Aeson.FromJSON CardanoConfig where
+  parseJSON = Aeson.withObject "CardanoConfigFile" $ \v -> do
+
+    requiresNetworkMagic <- v Aeson..: "RequiresNetworkMagic"
+
+    byronGenesisPath <- v Aeson..:  "ByronGenesisFile"
+    byronGenesisHash <- v Aeson..:? "ByronGenesisHash"
+
+    shelleyGenesisPath <- v Aeson..: "ShelleyGenesisFile"
+    shelleyGenesisHash <- v Aeson..:? "ShelleyGenesisHash" >>= \case
+      Nothing -> pure Nothing
+      Just hex -> case CryptoClass.hashFromTextAsHex hex of
+        Nothing -> fail "could not parse ShelleyGenesisHash as a hex string"
+        Just h  -> pure $ Just $ Nonce h
+
+    alonzoGenesisPath <- v Aeson..: "AlonzoGenesisFile"
+
+    pure $ CardanoConfig{..}
 
 instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
@@ -128,12 +187,6 @@ instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock Sta
   emitTraces = analyseWithLedgerState emitTraces
 
 type CardanoBlockArgs = Args (CardanoBlock StandardCrypto)
-
-parseCardanoArgs :: Parser CardanoBlockArgs
-parseCardanoArgs = CardanoBlockArgs
-    <$> argsParser Proxy
-    <*> argsParser Proxy
-    <*> argsParser Proxy
 
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
