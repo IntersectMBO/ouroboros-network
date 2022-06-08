@@ -12,10 +12,9 @@ import           Control.Monad.Class.MonadThrow (Handler (..), catches)
 import           Control.Monad.State.Strict
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import           Data.Bifunctor (first)
-import           Data.List (intercalate, unfoldr)
-import           Data.Map.Strict (Map)
+import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, isJust)
+import           Data.Maybe (isJust)
 import qualified Data.Set as Set
 import           Data.Typeable
 
@@ -68,10 +67,14 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..), forkLinkedWatcher)
 
+import           Test.Util.ChainUpdates (ChainUpdate (..), UpdateBehavior (..),
+                     genChainUpdates, toChainUpdates)
 import           Test.Util.LogicalClock (LogicalClock, NumTicks (..), Tick (..))
 import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
+import           Test.Util.Schedule (Schedule (..), genSchedule, joinSchedule,
+                     lastTick, shrinkSchedule)
 import           Test.Util.TestBlock
 import qualified Test.Util.TestBlock as TestBlock
 import           Test.Util.Tracer (recordingTracerTVar)
@@ -82,16 +85,8 @@ import           Test.Util.Tracer (recordingTracerTVar)
 
 tests :: TestTree
 tests = testGroup "ChainSyncClient"
-    [ testProperty "chainSync"                 $ prop_chainSync
-    , testProperty "joinSchedule/genSchedule"  $ prop_joinSchedule_genSchedule
-    , testProperty "genChainUpdates"           $ prop_genChainUpdates           k updatesToGenerate
+    [ testProperty "chainSync" prop_chainSync
     ]
-  where
-    k = SecurityParam 3
-
-updatesToGenerate :: Int
-updatesToGenerate = 100
-
 
 {-------------------------------------------------------------------------------
   Main property
@@ -179,31 +174,6 @@ isSuffixOf fragment chain =
 -- | Chain Sync Server
 serverId :: CoreNodeId
 serverId = CoreNodeId 1
-
--- | A schedule plans updates to a chain on certain times.
---
--- TODO Note that a schedule can't express delays between the messages sent
--- over the chain sync protocol. Generating such delays may expose more (most
--- likely concurrency-related) bugs.
-type Schedule a = Map Tick [a]
-
--- | Return the last tick at which an update is planned, if no updates are
--- planned, return 0.
-lastTick :: Schedule a -> Tick
-lastTick = fromMaybe (Tick 0) . maxKey
-  where
-    maxKey :: forall k v. Map k v -> Maybe k
-    maxKey = fmap (fst . fst) . Map.maxViewWithKey
-
-data ChainUpdate
-  = SwitchFork (Point TestBlock) [TestBlock]
-  | AddBlock TestBlock
-  deriving (Eq, Show)
-
-toChainUpdates :: [ChainUpdate] -> [Chain.ChainUpdate TestBlock TestBlock]
-toChainUpdates = concatMap $ \case
-    SwitchFork pt bs -> Chain.RollBack pt : map Chain.AddBlock bs
-    AddBlock b       -> Chain.AddBlock b  : []
 
 newtype ClientUpdates =
   ClientUpdates { getClientUpdates :: Schedule ChainUpdate }
@@ -347,15 +317,15 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       stop <- fmap isJust $ atomically $ readTVar varClientResult
       unless stop $ do
         -- Newly discovered invalid blocks
-        whenJust (Map.lookup tick invalidBlocks) $
+        whenJust (Map.lookup tick (getSchedule invalidBlocks)) $
           atomically . modifyTVar varKnownInvalid . Set.union . Set.fromList
 
         -- Client
-        whenJust (Map.lookup tick clientUpdates) $ \chainUpdates ->
+        whenJust (Map.lookup tick (getSchedule clientUpdates)) $ \chainUpdates ->
           atomically $ modifyTVar varClientState $ updateClientState chainUpdates
 
         -- Server
-        whenJust (Map.lookup tick serverUpdates) $ \chainUpdates ->
+        whenJust (Map.lookup tick (getSchedule serverUpdates)) $ \chainUpdates ->
           atomically $ do
             chainProducerState <- readTVar varChainProducerState
             case CPS.applyChainUpdates
@@ -372,8 +342,8 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     LogicalClock.onTick registry clock "startSyncing" startSyncingAt $ do
       -- When updates are planned at the same time that we start syncing, we
       -- wait until these updates are done before we start syncing.
-      when (isJust (Map.lookup startSyncingAt clientUpdates) ||
-            isJust (Map.lookup startSyncingAt serverUpdates)) $
+      when (Map.member startSyncingAt (getSchedule clientUpdates) ||
+            Map.member startSyncingAt (getSchedule serverUpdates)) $
         atomically $ do
           lastUpdate <- readTVar varLastUpdate
           check (lastUpdate == startSyncingAt)
@@ -546,12 +516,10 @@ data ChainSyncClientSetup = ChainSyncClientSetup
 instance Arbitrary ChainSyncClientSetup where
   arbitrary = do
     securityParam  <- SecurityParam <$> choose (2, 5)
-    clientUpdates0 <- evalStateT
-      (ClientUpdates <$> genUpdateSchedule SelectedChainBehavior securityParam)
-      emptyUpdateState
-    serverUpdates  <- evalStateT
-      (ServerUpdates <$> genUpdateSchedule TentativeChainBehavior securityParam)
-      emptyUpdateState
+    clientUpdates0 <- ClientUpdates <$>
+      genUpdateSchedule SelectedChainBehavior securityParam
+    serverUpdates  <- ServerUpdates <$>
+      genUpdateSchedule TentativeChainBehavior securityParam
     let clientUpdates = removeLateClientUpdates serverUpdates clientUpdates0
         maxStartTick  = maximum
           [ Tick 1
@@ -607,12 +575,12 @@ instance Show ChainSyncClientSetup where
       [ "ChainSyncClientSetup:"
       , "securityParam: " <> show (maxRollbacks securityParam)
       , "clientUpdates:"
-      , ppSchedule ppChainUpdate (getClientUpdates clientUpdates) <> "--"
+      , condense (getClientUpdates clientUpdates) <> "--"
       , "serverUpdates:"
-      , ppSchedule ppChainUpdate (getServerUpdates serverUpdates) <> "--"
+      , condense (getServerUpdates serverUpdates) <> "--"
       , "startTick: " <> show startTick
       , "invalidBlocks: "
-      , ppSchedule condense (getInvalidBlocks invalidBlocks)
+      , condense (getInvalidBlocks invalidBlocks)
       ]
 
 -- | Remove client updates that happen at a tick after the tick in which the
@@ -626,13 +594,13 @@ instance Show ChainSyncClientSetup where
 -- is run when we receive new messages (roll forward/backward) from the
 -- server.
 removeLateClientUpdates :: ServerUpdates -> ClientUpdates -> ClientUpdates
-removeLateClientUpdates (ServerUpdates sus)
+removeLateClientUpdates (ServerUpdates (Schedule sus))
     | Just ((lastServerUpdateTickNo, _), _) <- Map.maxViewWithKey sus
-    = \(ClientUpdates cus) ->
+    = \(ClientUpdates (Schedule cus)) ->
        let (cus', _) = Map.split (succ lastServerUpdateTickNo) cus
            -- @cus'@ contains the entries with a key < @succ
            -- lastServerUpdateTickNo@
-       in ClientUpdates cus'
+       in ClientUpdates (Schedule cus')
     | otherwise
     = id
 
@@ -643,179 +611,9 @@ removeLateClientUpdates (ServerUpdates sus)
 genUpdateSchedule
   :: UpdateBehavior
   -> SecurityParam
-  -> StateT ChainUpdateState Gen (Schedule ChainUpdate)
-genUpdateSchedule updateBehavior securityParam = do
-    cus  <- get
-    cus' <- lift $ genChainUpdates updateBehavior securityParam 10 cus
-    put cus'
-    let chainUpdates = getChainUpdates cus'
-    lift $ genSchedule chainUpdates
-
--- | Repeatedly remove the last entry (highest 'Tick')
-shrinkSchedule :: Schedule a -> [Schedule a]
-shrinkSchedule = unfoldr (fmap (\(_, m) -> (m, m)) . Map.maxView)
-
--- | Spread out elements over a schedule, i.e. schedule a number of elements to
--- be processed on each tick. Most ticks will have no associated elements.
-genSchedule :: [a] -> Gen (Schedule a)
-genSchedule = go Map.empty 1
-  where
-    go :: Schedule a
-       -> Tick
-       -> [a]
-       -> Gen (Schedule a)
-    go !schedule tick as
-      | null as = return schedule
-      | otherwise    = do
-        nbAs <- frequency [ (2, return 0), (1, choose (1, 5)) ]
-        let (this, rest) = splitAt nbAs as
-        go (Map.insert tick this schedule) (succ tick) rest
-
--- | Inverse of 'genSchedule'
-joinSchedule :: Schedule a -> [a]
-joinSchedule = concatMap snd . Map.toAscList
-
-prop_joinSchedule_genSchedule :: Property
-prop_joinSchedule_genSchedule =
-    forAll genUpdatesAndSpread $ \(as, spread) ->
-      joinSchedule spread === as
-  where
-    genUpdatesAndSpread = do
-      -- generate elements of some type with an Ord instance
-      as :: [Int] <- arbitrary
-      spread      <- genSchedule as
-      return (as, spread)
-
-{-------------------------------------------------------------------------------
-  Generating ChainUpdates
--------------------------------------------------------------------------------}
-
--- | We need some state to generate @ChainUpdate@s
-data ChainUpdateState = ChainUpdateState
-  { cusCurrentChain :: !(Chain TestBlock)
-    -- ^ The current chain, obtained by applying all the 'cusUpdates' in reverse
-    -- order.
-  , cusUpdates      :: ![ChainUpdate]
-    -- ^ The updates that have been generated so far, in reverse order: the
-    -- first update in the list is the last update to apply.
-  } deriving (Show)
-
-emptyUpdateState :: ChainUpdateState
-emptyUpdateState = ChainUpdateState
-  { cusCurrentChain = Genesis
-  , cusUpdates      = []
-  }
-
-getChainUpdates :: ChainUpdateState -> [ChainUpdate]
-getChainUpdates = reverse . cusUpdates
-
--- | Test that applying the generated updates gives us the same chain as
--- '_currentChain'.
-prop_genChainUpdates :: SecurityParam -> Int -> Property
-prop_genChainUpdates securityParam n =
-    forAll (genChainUpdates SelectedChainBehavior securityParam n emptyUpdateState) $ \cus ->
-      Chain.applyChainUpdates (toChainUpdates (getChainUpdates cus)) Genesis ===
-      Just (cusCurrentChain cus)
-
--- | Different strategies how to generate a sequence of 'ChainUpdate's.
-data UpdateBehavior =
-    -- | Chain updates tracking the selected chain of an honest node. In
-    -- particular, this includes:
-    --
-    --  * All blocks involved are valid.
-    --  * Every 'ChainUpdate' improves the chain.
-    SelectedChainBehavior
-  | -- | Chain updates tracking the tentative chain of an honest node (in the
-    -- context of diffusion pipelining). This is similiar to
-    -- 'SelectedChainBehavior', but allows for the following sequence of
-    -- 'ChainUpdates':
-    --
-    --  1. @'AddBlock' blk@ for @blk@ invalid
-    --  2. @'SwitchFork' (prevPoint blk) [blk']@ where @blk'@ is preferable to
-    --     @blk@.
-    TentativeChainBehavior
-  deriving (Show, Eq)
-
-genChainUpdates :: UpdateBehavior
-                -> SecurityParam
-                -> Int  -- ^ The number of updates to generate
-                -> ChainUpdateState
-                -> Gen ChainUpdateState
-genChainUpdates updateBehavior securityParam n =
-    execStateT (replicateM_ n genChainUpdate)
-  where
-    -- Modify the state
-    addUpdate u cus = cus { cusUpdates = u : cusUpdates cus }
-    setChain  c cus = cus { cusCurrentChain = c }
-
-    k = fromIntegral $ maxRollbacks securityParam
-
-    genChainUpdate = do
-      ChainUpdateState { cusCurrentChain = chain } <- get
-      let genValid =
-            frequency'
-              [ (3, genAddBlock Valid)
-              , ( if Chain.null chain then 0 else 1
-                , genSwitchFork (choose (1, k))
-                )
-              ]
-      frequency' $
-        (5, replicateM_ 2 genValid) :
-        [ (1, genInvalidBlock) | updateBehavior == TentativeChainBehavior ]
-
-    genBlockToAdd validity = do
-        ChainUpdateState { cusCurrentChain = chain } <- get
-        block <- lift $ case Chain.head chain of
-          Nothing      -> setValidity . firstBlock <$> genForkNo
-          Just curHead -> do
-            forkNo <- case validity of
-              Valid   ->  genForkNo
-              Invalid -> pure 3
-            return
-              . modifyFork (const forkNo)
-              . setValidity
-              $ successorBlock curHead
-        modify $ setChain (Chain.addBlock block chain)
-        return block
-      where
-        setValidity b = b { tbValid = validity }
-        genForkNo = case validity of
-          Valid -> frequency
-            [ (1, return 0)
-            , (1, choose (1, 2))
-            ]
-          -- Blocks with equal hashes have to have equal validity, so we reserve
-          -- a specific ForkNo for invalid blocks to ensure this.
-          Invalid -> pure 3
-
-    genAddBlock validity = do
-      block <- genBlockToAdd validity
-      modify $ addUpdate (AddBlock block)
-
-    genSwitchFork genRollBackBlocks = do
-      ChainUpdateState { cusCurrentChain = chain } <- get
-      rollBackBlocks <- lift genRollBackBlocks
-      let chain' = Chain.drop rollBackBlocks chain
-      modify $ setChain chain'
-      blocks <- replicateM rollBackBlocks (genBlockToAdd Valid)
-      modify $ addUpdate (SwitchFork (Chain.headPoint chain') blocks)
-
-    genInvalidBlock = do
-      genAddBlock Invalid
-      genSwitchFork (pure 1)
-
--- | Variant of 'frequency' that allows for transformers of 'Gen'
-frequency' :: (MonadTrans t, Monad (t Gen)) => [(Int, t Gen a)] -> t Gen a
-frequency' [] = error "frequency' used with empty list"
-frequency' xs0 = lift (choose (1, tot)) >>= (`pick` xs0)
- where
-  tot = sum (map fst xs0)
-
-  pick n ((k,x):xs)
-    | n <= k    = x
-    | otherwise = pick (n-k) xs
-  pick _ _  = error "pick used with empty list"
-
+  -> Gen (Schedule ChainUpdate)
+genUpdateSchedule updateBehavior securityParam =
+    genChainUpdates updateBehavior securityParam 10 >>= genSchedule
 
 {-------------------------------------------------------------------------------
   Pretty-printing
@@ -836,22 +634,6 @@ ppFragment f = ppBlocks (AF.anchorPoint f) (AF.toOldestFirst f)
 
 ppBlocks :: Point TestBlock -> [TestBlock] -> String
 ppBlocks a bs = ppPoint a <> " ] " <> intercalate " :> " (map ppBlock bs)
-
-ppChainUpdate :: ChainUpdate -> String
-ppChainUpdate u = case u of
-  AddBlock b -> "AddBlock " <> ppBlock b
-  SwitchFork p bs -> "SwitchFork <- " <> ppPoint p <> " -> " <>
-    unwords (map ppBlock bs)
-
-ppSchedule :: (a -> String) -> Schedule a -> String
-ppSchedule ppA =
-      unlines
-    . map (uncurry showEntry)
-    . filter (not . null . snd)
-    . Map.toAscList
-  where
-    showEntry (Tick tick) as = show tick <> ": " <>
-      intercalate ", " (map ppA as)
 
 ppTraceEvent :: TraceEvent -> String
 ppTraceEvent (Tick n, ev) = show n <> " | " <> case ev of

@@ -36,6 +36,7 @@ library
 
                        Test.Util.Blob
                        Test.Util.BoolProps
+                       Test.Util.ChainUpdates
                        Test.Util.ChunkInfo
                        Test.Util.Classify
                        Test.Util.Corruption
@@ -62,6 +63,7 @@ library
                        Test.Util.QuickCheck
                        Test.Util.Range
                        Test.Util.RefEnv
+                       Test.Util.Schedule
                        Test.Util.Serialisation.Golden
                        Test.Util.Serialisation.Roundtrip
                        Test.Util.Shrink
@@ -280,6 +282,8 @@ test-suite test-infra
   main-is:             Main.hs
   other-modules:
                        Test.ThreadNet.Util.Tests
+                       Test.Util.ChainUpdates.Tests
+                       Test.Util.Schedule.Tests
                        Test.Util.Split.Tests
 
   build-depends:       base
