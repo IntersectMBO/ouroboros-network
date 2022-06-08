@@ -33,7 +33,8 @@ data Rekeying m blk = forall opKey. Rekeying
     -- and diffused (eg no @PBftExceededSignThreshold@).
   , rekeyUpd ::
          CoreNodeId
-      -> ProtocolInfo m blk
+      -> ProtocolInfo blk
+      -> m [BlockForging m blk]
       -> EpochNo
       -> opKey
       -> m (Maybe (TestNodeInitialization m blk))
@@ -53,13 +54,13 @@ data Rekeying m blk = forall opKey. Rekeying
 fromRekeyingToRekeyM :: IOLike m => Rekeying m blk -> m (RekeyM m blk)
 fromRekeyingToRekeyM Rekeying{rekeyFreshSKs, rekeyOracle, rekeyUpd} = do
     rekeyVar <- uncheckedNewTVarM rekeyFreshSKs
-    pure $ \cid pInfo s mkEno -> case rekeyOracle cid s of
-      Nothing -> pure $ plainTestNodeInitialization pInfo
+    pure $ \cid pInfo blockForging s mkEno -> case rekeyOracle cid s of
+      Nothing -> pure $ plainTestNodeInitialization pInfo blockForging
       Just s' -> do
         x <- atomically $ do
           x :< xs <- readTVar rekeyVar
           x <$ writeTVar rekeyVar xs
         eno <- mkEno s'
-        rekeyUpd cid pInfo eno x <&> \case
-          Nothing  -> plainTestNodeInitialization pInfo
+        rekeyUpd cid pInfo blockForging eno x <&> \case
+          Nothing  -> plainTestNodeInitialization pInfo blockForging
           Just tni -> tni

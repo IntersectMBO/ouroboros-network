@@ -214,7 +214,8 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 
     testConfigMB :: Monad m => TestConfigMB m TestBlock
     testConfigMB = TestConfigMB {
-          nodeInfo = plainTestNodeInitialization . protocolInfo
+          nodeInfo = \a -> plainTestNodeInitialization (protocolInfo a)
+                                                       (return blockForging)
         , mkRekeyM = Nothing
         }
 
@@ -224,7 +225,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
       where
         EraSize sz = eraSizeA
 
-    protocolInfo :: Monad m => CoreNodeId -> ProtocolInfo m TestBlock
+    protocolInfo :: CoreNodeId -> ProtocolInfo TestBlock
     protocolInfo nid = ProtocolInfo {
           pInfoConfig =
             topLevelConfig nid
@@ -236,13 +237,15 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
                               initHardForkState
                                 (WrapChainDepState initChainDepState)
             }
-        , pInfoBlockForging = return
-            [   hardForkBlockForging "Test"
-              $ OptCons blockForgingA
-              $ OptCons blockForgingB
-              $ OptNil
-            ]
         }
+
+    blockForging :: Monad m => [BlockForging m TestBlock]
+    blockForging =
+        [   hardForkBlockForging "Test"
+          $ OptCons blockForgingA
+          $ OptCons blockForgingB
+          $ OptNil
+        ]
 
     initLedgerState :: LedgerState BlockA
     initLedgerState = LgrA {
