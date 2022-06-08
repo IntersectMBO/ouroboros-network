@@ -246,34 +246,41 @@ prop_simple_allegraMary_convergence TestSetup
     testOutput :: TestOutput AllegraMaryBlock
     testOutput = runTestNetwork setupTestConfig testConfigB TestConfigMB {
           nodeInfo = \(CoreNodeId nid) ->
-            TestNodeInitialization {
-                tniCrucialTxs   =
-                  if not setupHardFork then [] else
-                  fmap GenTxShelley1 $
-                  Shelley.mkMASetDecentralizationParamTxs
-                    coreNodes
-                    (SL.ProtVer majorVersion2 0)
-                    (SlotNo $ unNumSlots numSlots)   -- never expire
-                    setupD   -- unchanged
-              , tniProtocolInfo =
+            let protocolParamsShelleyBased =
+                  ProtocolParamsShelleyBased {
+                      shelleyBasedGenesis           = genesisShelley
+                    , shelleyBasedInitialNonce      = setupInitialNonce
+                    , shelleyBasedLeaderCredentials =
+                        [Shelley.mkLeaderCredentials
+                          (coreNodes !! fromIntegral nid)]
+                    }
+
+                protocolTransitionParamsShelleyBased =
+                  ProtocolTransitionParamsShelleyBased {
+                      transitionTranslationContext = ()
+                    , transitionTrigger            =
+                        TriggerHardForkAtVersion majorVersion2
+                    }
+                (protocolInfo, blockForging) =
                   protocolInfoShelleyBasedHardFork
-                    ProtocolParamsShelleyBased {
-                        shelleyBasedGenesis           = genesisShelley
-                      , shelleyBasedInitialNonce      = setupInitialNonce
-                      , shelleyBasedLeaderCredentials =
-                          [Shelley.mkLeaderCredentials
-                            (coreNodes !! fromIntegral nid)]
-                      }
+                    protocolParamsShelleyBased
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
-                    ProtocolTransitionParamsShelleyBased {
-                        transitionTranslationContext = ()
-                      , transitionTrigger            =
-                          TriggerHardForkAtVersion majorVersion2
-                      }
-              }
-          , mkRekeyM = Nothing
-          }
+                    protocolTransitionParamsShelleyBased
+            in TestNodeInitialization {
+                  tniCrucialTxs   =
+                    if not setupHardFork then [] else
+                    fmap GenTxShelley1 $
+                    Shelley.mkMASetDecentralizationParamTxs
+                      coreNodes
+                      (SL.ProtVer majorVersion2 0)
+                      (SlotNo $ unNumSlots numSlots)   -- never expire
+                      setupD   -- unchanged
+                , tniProtocolInfo = protocolInfo
+                , tniBlockForging = blockForging
+                }
+            , mkRekeyM = Nothing
+            }
 
     maxForkLength :: NumBlocks
     maxForkLength = NumBlocks $ maxRollbacks setupK

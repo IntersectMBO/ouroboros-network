@@ -249,6 +249,27 @@ prop_simple_allegraAlonzo_convergence TestSetup
     testOutput :: TestOutput MaryAlonzoBlock
     testOutput = runTestNetwork setupTestConfig testConfigB TestConfigMB {
           nodeInfo = \(CoreNodeId nid) ->
+            let protocolParamsShelleyBased =
+                  ProtocolParamsShelleyBased {
+                      shelleyBasedGenesis           = genesisMary
+                    , shelleyBasedInitialNonce      = setupInitialNonce
+                    , shelleyBasedLeaderCredentials =
+                        [Shelley.mkLeaderCredentials
+                          (coreNodes !! fromIntegral nid)]
+                    }
+                protocolTransitionParamsShelleyBased =
+                  ProtocolTransitionParamsShelleyBased {
+                      transitionTranslationContext = alonzoGenesis
+                    , transitionTrigger            =
+                        TriggerHardForkAtVersion majorVersion2
+                    }
+                (protocolInfo, blockForging) =
+                  protocolInfoShelleyBasedHardFork
+                    protocolParamsShelleyBased
+                    (SL.ProtVer majorVersion1 0)
+                    (SL.ProtVer majorVersion2 0)
+                    protocolTransitionParamsShelleyBased
+            in
             TestNodeInitialization {
                 tniCrucialTxs   =
                   if not setupHardFork then [] else
@@ -258,22 +279,8 @@ prop_simple_allegraAlonzo_convergence TestSetup
                     (SL.ProtVer majorVersion2 0)
                     (SlotNo $ unNumSlots numSlots)   -- never expire
                     setupD   -- unchanged
-              , tniProtocolInfo =
-                  protocolInfoShelleyBasedHardFork
-                    ProtocolParamsShelleyBased {
-                        shelleyBasedGenesis           = genesisMary
-                      , shelleyBasedInitialNonce      = setupInitialNonce
-                      , shelleyBasedLeaderCredentials =
-                          [Shelley.mkLeaderCredentials
-                            (coreNodes !! fromIntegral nid)]
-                      }
-                    (SL.ProtVer majorVersion1 0)
-                    (SL.ProtVer majorVersion2 0)
-                    ProtocolTransitionParamsShelleyBased {
-                        transitionTranslationContext = alonzoGenesis
-                      , transitionTrigger            =
-                          TriggerHardForkAtVersion majorVersion2
-                      }
+              , tniProtocolInfo = protocolInfo
+              , tniBlockForging = blockForging
               }
           , mkRekeyM = Nothing
           }

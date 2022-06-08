@@ -22,6 +22,7 @@ import           Test.Tasty.QuickCheck
 
 import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 
+import           Ouroboros.Consensus.Block.Forging (BlockForging)
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
@@ -473,7 +474,8 @@ mkProtocolCardanoAndHardForkTxs
     protocolParamsByronShelley =
     TestNodeInitialization
       { tniCrucialTxs   = crucialTxs
-      , tniProtocolInfo = pInfo
+      , tniProtocolInfo = protocolInfo
+      , tniBlockForging = blockForging
       }
   where
     crucialTxs :: [GenTx (CardanoBlock c)]
@@ -491,8 +493,24 @@ mkProtocolCardanoAndHardForkTxs
               generatedSecretsByron
               propPV
 
-    pInfo :: ProtocolInfo m (CardanoBlock c)
-    pInfo = protocolInfoCardano
+    protocolInfo :: ProtocolInfo (CardanoBlock c)
+    blockForging :: m [BlockForging m (CardanoBlock c)]
+    (protocolInfo, blockForging) = protocolInfoCardano
+              paramsByron
+              paramsShelleyBased
+              paramsShelley
+              paramsAllegra
+              paramsMary
+              paramsAlonzo
+              paramsBabbage
+              transitionShelley
+              transitionAllegra
+              transitionMary
+              transitionAlonzo
+              transitionBabbage
+
+    paramsByron :: ProtocolParamsByron
+    paramsByron =
         ProtocolParamsByron {
             byronGenesis                = genesisByron
             -- Trivialize the PBFT signature window so that the forks induced by
@@ -503,47 +521,79 @@ mkProtocolCardanoAndHardForkTxs
           , byronLeaderCredentials      = Just leaderCredentialsByron
           , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
+
+    paramsShelleyBased :: ProtocolParamsShelleyBased (ShelleyEra c)
+    paramsShelleyBased =
         ProtocolParamsShelleyBased {
             shelleyBasedGenesis           = genesisShelley
           , shelleyBasedInitialNonce      = initialNonce
           , shelleyBasedLeaderCredentials = [leaderCredentialsShelley]
           }
+
+    paramsShelley :: ProtocolParamsShelley c
+    paramsShelley =
         ProtocolParamsShelley {
             shelleyProtVer                = SL.ProtVer shelleyMajorVersion 0
           , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
+
+    paramsAllegra :: ProtocolParamsAllegra c
+    paramsAllegra =
         ProtocolParamsAllegra {
             allegraProtVer                = SL.ProtVer allegraMajorVersion 0
           , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
+
+    paramsMary :: ProtocolParamsMary c
+    paramsMary =
         ProtocolParamsMary {
             maryProtVer                   = SL.ProtVer maryMajorVersion    0
           , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
+
+    paramsAlonzo :: ProtocolParamsAlonzo c
+    paramsAlonzo =
         ProtocolParamsAlonzo {
             alonzoProtVer                 = SL.ProtVer alonzoMajorVersion  0
           , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
+
+    paramsBabbage :: ProtocolParamsBabbage c
+    paramsBabbage =
         ProtocolParamsBabbage {
             babbageProtVer                = SL.ProtVer babbageMajorVersion  0
           , babbageMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
-        protocolParamsByronShelley
+
+    transitionShelley :: ProtocolTransitionParamsShelleyBased (ShelleyEra c)
+    transitionShelley = protocolParamsByronShelley
+
+    transitionAllegra :: ProtocolTransitionParamsShelleyBased (AllegraEra c)
+    transitionAllegra =
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = ()
           , transitionTrigger            =
               TriggerHardForkAtVersion allegraMajorVersion
           }
+
+    transitionMary :: ProtocolTransitionParamsShelleyBased (MaryEra c)
+    transitionMary =
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = ()
           , transitionTrigger            =
               TriggerHardForkAtVersion maryMajorVersion
           }
+
+    transitionAlonzo :: ProtocolTransitionParamsShelleyBased (AlonzoEra c)
+    transitionAlonzo =
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
           , transitionTrigger            =
               TriggerHardForkAtVersion alonzoMajorVersion
           }
+
+    transitionBabbage :: ProtocolTransitionParamsShelleyBased (BabbageEra c)
+    transitionBabbage =
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
           , transitionTrigger            =
