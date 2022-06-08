@@ -27,17 +27,22 @@ import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.Hash.Class as CryptoClass
 import qualified Cardano.Chain.Update as Byron.Update
 import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
+import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Crypto
+import           Control.Monad (when)
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString as BS
+import           Data.Kind (Type)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.SOP.Strict
+import           Data.Word (Word16)
 import           HasAnalysis
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Cardano
-import           Ouroboros.Consensus.Cardano.Block (CardanoEras)
+import           Ouroboros.Consensus.Cardano.Block (CardanoEras, CardanoShelleyEras)
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
@@ -52,6 +57,7 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.HFEras ()
+import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node.Praos
 
@@ -139,6 +145,7 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
           genesisShelley
           genesisAlonzo
           initialNonce
+          hardForkTriggers
 
 data CardanoConfig = CardanoConfig {
     -- | @RequiresNetworkMagic@ field
@@ -156,7 +163,18 @@ data CardanoConfig = CardanoConfig {
 
     -- | @AlonzoGenesisFile@ field
   , alonzoGenesisPath :: FilePath
+
+    -- | @Test*HardForkAtEpoch@ for each Shelley era
+  , hardForkTriggers :: NP STA (CardanoShelleyEras StandardCrypto)
   }
+
+-- | Shelley transition arguments
+data STA :: Type -> Type where
+  STA ::
+       -- so far, the context is either () or AlonzoGenesis
+       (SL.AlonzoGenesis -> Core.TranslationContext era)
+    -> TriggerHardFork
+    -> STA (ShelleyBlock proto era)
 
 instance Aeson.FromJSON CardanoConfig where
   parseJSON = Aeson.withObject "CardanoConfigFile" $ \v -> do
@@ -174,6 +192,35 @@ instance Aeson.FromJSON CardanoConfig where
         Just h  -> pure $ Just $ Nonce h
 
     alonzoGenesisPath <- v Aeson..: "AlonzoGenesisFile"
+
+    hardForkTriggers <- do
+      let f ::
+               Aeson.Key
+            -> Word16   -- ^ the argument to 'TriggerHardForkAtVersion'
+            -> (SL.AlonzoGenesis -> Core.TranslationContext era)
+            -> (Aeson.Parser :.: STA) (ShelleyBlock proto era)
+          f nm majProtVer ctxt = Comp $
+              fmap (STA ctxt)
+            $           (fmap TriggerHardForkAtEpoch <$> (v Aeson..:? nm))
+              Aeson..!= (TriggerHardForkAtVersion majProtVer)
+
+      stas <- hsequence' $
+        f "TestShelleyHardForkAtEpoch" 2 (\_ -> ()) :*
+        f "TestAllegraHardForkAtEpoch" 3 (\_ -> ()) :*
+        f "TestMaryHardForkAtEpoch"    4 (\_ -> ()) :*
+        f "TestAlonzoHardForkAtEpoch"  5 id         :*
+        f "TestBabbageHardForkAtEpoch" 7 id         :*
+        Nil
+
+      let isBad :: NP STA xs -> Bool
+          isBad = \case
+            STA _ TriggerHardForkAtVersion{} :* STA _ TriggerHardForkAtEpoch{} :* _ -> True
+
+            STA{} :* np -> isBad np
+            Nil          -> False
+      fmap (\() -> stas) $ when (isBad stas) $ fail $
+           "if the Cardano config file sets a Test*HardForkEpoch,"
+        <> " it must also set it for all previous eras."
 
     pure $ CardanoConfig{..}
 
@@ -194,8 +241,9 @@ mkCardanoProtocolInfo ::
   -> ShelleyGenesis StandardShelley
   -> SL.AlonzoGenesis
   -> Nonce
+  -> NP STA (CardanoShelleyEras StandardCrypto)
   -> ProtocolInfo IO (CardanoBlock StandardCrypto)
-mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlonzo initialNonce =
+mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlonzo initialNonce hardForkTriggers =
     protocolInfoCardano
       ProtocolParamsByron {
           byronGenesis                = genesisByron
@@ -230,26 +278,22 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
           babbageProtVer                 = ProtVer 7 0
         , babbageMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
-      ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = ()
-        , transitionTrigger            = TriggerHardForkAtVersion 2
-        }
-      ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = ()
-        , transitionTrigger            = TriggerHardForkAtVersion 3
-        }
-      ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = ()
-        , transitionTrigger            = TriggerHardForkAtVersion 4
-        }
-      ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = genesisAlonzo
-        , transitionTrigger            = TriggerHardForkAtVersion 5
-        }
-      ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = genesisAlonzo
-        , transitionTrigger            = TriggerHardForkAtVersion 7
-        }
+      (unSTA shelleyTransition)
+      (unSTA allegraTransition)
+      (unSTA maryTransition)
+      (unSTA alonzoTransition)
+      (unSTA babbageTransition)
+  where
+    ( shelleyTransition :*
+      allegraTransition :*
+      maryTransition    :*
+      alonzoTransition  :*
+      babbageTransition :*
+      Nil
+      ) = hardForkTriggers
+
+    unSTA :: STA (ShelleyBlock proto era) -> ProtocolTransitionParamsShelleyBased era
+    unSTA (STA ctxt trigger) = ProtocolTransitionParamsShelleyBased (ctxt genesisAlonzo) trigger
 
 castHeaderHash ::
      HeaderHash ByronBlock
