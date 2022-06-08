@@ -97,9 +97,9 @@ type ShelleyBlockArgs = Args (ShelleyBlock (TPraos StandardCrypto) StandardShell
 mkShelleyProtocolInfo ::
      ShelleyGenesis StandardShelley
   -> Nonce
-  -> ProtocolInfo IO (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
+  -> ProtocolInfo (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
 mkShelleyProtocolInfo genesis initialNonce =
-    protocolInfoShelley
+    fst $ protocolInfoShelley @IO
       ProtocolParamsShelleyBased {
           shelleyBasedGenesis           = genesis
         , shelleyBasedInitialNonce      = initialNonce

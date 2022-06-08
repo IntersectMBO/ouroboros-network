@@ -35,4 +35,4 @@ class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where
 
 class HasProtocolInfo blk where
   data Args blk
-  mkProtocolInfo :: Args blk -> IO (ProtocolInfo IO blk)
+  mkProtocolInfo :: Args blk -> IO (ProtocolInfo blk)
