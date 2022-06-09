@@ -10,7 +10,7 @@ module Test.Consensus.MiniProtocol.ChainSync.Client (tests) where
 
 import           Control.Monad.Class.MonadThrow (Handler (..), catches)
 import           Control.Monad.State.Strict
-import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import           Control.Tracer (contramap, nullTracer)
 import           Data.Bifunctor (first)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
@@ -69,7 +69,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Test.Util.ChainUpdates (ChainUpdate (..), UpdateBehavior (..),
                      genChainUpdates, toChainUpdates)
-import           Test.Util.LogicalClock (LogicalClock, NumTicks (..), Tick (..))
+import           Test.Util.LogicalClock (NumTicks (..), Tick (..))
 import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
@@ -251,7 +251,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     -- at the final state of each candidate.
     varFinalCandidates <- uncheckedNewTVarM Map.empty
 
-    (tracer, getTrace) <- first (addTick clock) <$> recordingTracerTVar
+    (tracer, getTrace) <- first (LogicalClock.tickTracer clock) <$> recordingTracerTVar
     let chainSyncTracer = contramap Left  tracer
         protocolTracer  = contramap Right tracer
 
@@ -428,13 +428,6 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       , lastTick serverUpdates
       , startSyncingAt
       ]
-
-    addTick :: forall ev. LogicalClock m
-            -> Tracer m (Tick, ev)
-            -> Tracer m ev
-    addTick clock tr = Tracer $ \ev -> do
-      tick <- atomically $ LogicalClock.getCurrentTick clock
-      traceWith tr (tick, ev)
 
     catchAlsoLinked :: Exception e => m a -> (e -> m a) -> m a
     catchAlsoLinked ma handler = ma `catches`
