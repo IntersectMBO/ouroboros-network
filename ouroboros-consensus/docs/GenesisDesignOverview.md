@@ -94,6 +94,14 @@ fetch from its peers. We plan to implement this as follows.
       * This is the _CaughtUp_ state and is equivalent to today's node's
         behavior.
 
+      * TODO Naively, we also need the Network Layer to checkin with the relays
+        ___while we're bulk syncing___ in Syncing. However:
+
+          * If our latest ledger state is years old, how likely are the relays
+            registered on it to still be responsive? Even if they are, we're
+            certainly not within `k` of their tip; so what precisely should we
+            be asking them?
+
       * TODO can we allow less than NumPeers-many peers while CaughtUp?
 
       * If the Network Layer's check ever fails to confirm our chain, we cycle
