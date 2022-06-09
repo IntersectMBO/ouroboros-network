@@ -111,7 +111,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-                     (RunAlsoLegacy (RunBoth), ledgerDbCurrentValues)
+                     (RunAlsoLegacy (RunOnlyNew), ledgerDbCurrentValues)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector (..), LedgerDB')
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -714,7 +714,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         -- Misc
         , cdbTracer                 = instrumentationTracer <> nullDebugTracer
         , cdbTraceLedger            = nullDebugTracer
-        , cdbLedgerRunAlsoLegacy    = RunBoth
+        , cdbLedgerRunAlsoLegacy    = RunOnlyNew
         , cdbRegistry               = registry
           -- TODO vary these
         , cdbGcDelay                = 0
