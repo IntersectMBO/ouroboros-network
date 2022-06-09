@@ -1,5 +1,130 @@
 The Genesis initiative for the Consensus team, from the top.
 
+# Executive summary
+
+When communicating with the net after not having access to the honest chain for
+a significant amount of time (eg computer was asleep, eclipse attack just now
+ended, etc), a node will use _the Genesis rule_ to determine which blocks to
+fetch from its peers. We plan to implement this as follows.
+
+  * Don't download any blocks while we have less than NumPeers-many peers. TODO:
+    work with Networking Team and Researchers to choose the exact number. This
+    is the _Connecting_ state.
+
+  * Each of our NumPeers-many peers will have sent us (via `MsgIntersectFound`
+    and `MsgRollForward`) both a sequence of headers that extends our immutable
+    tip and also the tip `Point` of the chain they claimed to have selected. We
+    have no practical way of validating their claim, because this `Point` may
+    indeed be arbitrarily many blocks and slots ahead of our selected chain.
+
+  * To choose which block to download from among our peers' offered header
+    sequences, we consider only a fixed number of slots after their common
+    intersection. This window of slots is called _the Genesis window (for this
+    set of header sequences)_. It is unsound to consider blocks beyond this
+    window, because doing so increases the probability that an adversarial peer
+    has been able to influence the leader schedule and hence undeservedly
+    increase their chain growwth as compared to the honest chain.
+
+  * We only download a block once we have identified a subset of offered header
+    sequences whose represented chains necessarily have strictly more blocks in
+    this Genesis window than do any of the chains represented by all the offered
+    sequences not in this subset. This is the _Syncing_ state.
+
+  * We might not yet have enough information to identify that subset, but once
+    we do, every sequence in it will share the same unique header by the
+    following two assumptions.
+
+      * Assumption 1: NumPeers-many peers is enough to probabilistically ensure
+        we're connected to the honest network, and so one of the offerings will
+        indeed be the honest chain.
+
+      * Assumption 2: In any Genesis window, the honest chain has strictly more
+        blocks than any other chain. This inherited from the Ouroboros Genesis
+        security argument.
+
+      * Thus, we download that block, certain that we will never roll it back,
+        and continue the process from there. (Until we're "caught up"; keep
+        reading.)
+
+  * We cannot download any blocks until we have identified that subset, so we
+    wait for our peers to send us more information.
+
+      * Thus, an adversarial/buggy peer could claim a maximally-appealing tip of
+        their selection (recall we can't validate their claimed tip) and then
+        withhold any further information, thus preventing us from downloading
+        any blocks.
+
+      * To prevent this, we require that each peer sends us a new best header
+        (strictly better than any they've previously sent) with "sufficient
+        frequency", eg as determined by a leaky token bucket abstraction. Any
+        peer worth connecting to will be able to send more headers frequently
+        enough, since they are only ~1100 bytes.
+
+      * This is also the _Syncing_ state.
+
+  * There are three reasons a peer wouldn't send a new best header soon enough
+    to satisfy our "sufficient frequency" demand.
+
+      * It's adversarial, trying to stall us. (We should disconnect.)
+
+      * It's buggy and/or has a bad network connection. (We should disconnect.)
+
+      * It has no more headers to offer. In which case its latest
+        `MsgRollForward` message carried a header and also claimed that same
+        header is the tip of its selected chain. (We should be patient.)
+
+  * Once all of our peers have no more headers to offer and we've downloaded and
+    selected one of their chains, we have successfully _rejoined_ the honest
+    net, and we no longer need to use the Genesis rule.
+
+      * We can instead simply run Praos, soundly interpreting every offered
+        header sequence as the end of the represented chain. The Praos paper's
+        analysis, combined with the assumption that we maintain access to at
+        least one peer offering the honest chain (and not just a prefix of it),
+        ensures we'll be able to fetch, select, and extend the honest chain.
+
+      * The Network Layer's P2P governor actively ensures we do indeed have
+        ongoing access to the honest chain. Roughly: it will continually sample
+        relays registered on the chain according to their relative stake and
+        confirm that our selected chain is within `k` of the relay's tip for
+        some number of relays whose cumulative relative stake probabilistically
+        ensures we're on the honest chain.
+
+      * This is the _CaughtUp_ state and is equivalent to today's node's
+        behavior.
+
+      * TODO can we allow less than NumPeers-many peers while CaughtUp?
+
+      * If the Network Layer's check ever fails to confirm our chain, we cycle
+        our peers and return to the Connecting state, followed by the Syncing
+        state until we've again rejoined. The fundamental assumption is that the
+        Network Layer will detect we've lost access to the honest net _soon
+        enough_. Specifically, it will do so before we could have made any
+        irrevocable block selections (ie well before any adversary would be able
+        to mint a valid chain that has more than `k` blocks after its
+        intersection with the honest chain).
+
+  * In each of the Connecting, Syncing, and CaughtUp states, we mint blocks
+    whenever we lead the current slot, as usual.
+
+      * When not in CaughtUp, it is likely that we're either minting a
+        non-compettive block because our selected chain is historical or even
+        possibly minting a block that extends an adversary's short fork.
+
+      * However, both of those are unavoidable (unless we wait to finish
+        rejoining and then mint our block retroactively, which an honest node
+        should never do and would rarely actually benefit from) and more
+        importantly less risky than arming an unknown attack vector that might
+        be able to prevent large numbers of honest nodes from contributing to
+        the growth of the honest chain.
+
+  * TODO recall and explain why the Genesis designing made us worry about how
+    BlockFetch was allocating download bandwidth as a limited resource (and that
+    we concluded, at least for important nodes, we should just request the block
+    for every header that's better than our selected chain)
+
+TODO make sure each of the above points is explicitly elaborated below
+
 # Relevant attacks
 
 1) "fake stake" attack (our current code already mitigates this)
