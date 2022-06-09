@@ -58,7 +58,7 @@ fetch from its peers. We plan to implement this as follows.
         (strictly better than any they've previously sent) with "sufficient
         frequency", eg as determined by a leaky token bucket abstraction. Any
         peer worth connecting to will be able to send more headers frequently
-        enough, since they are only ~1100 bytes.
+        enough, since a header is only ~1100 bytes.
 
       * This is also the _Syncing_ state.
 
@@ -71,7 +71,8 @@ fetch from its peers. We plan to implement this as follows.
 
       * It has no more headers to offer. In which case its latest
         `MsgRollForward` message carried a header and also claimed that same
-        header is the tip of its selected chain. (We should be patient.)
+        header is the tip of its selected chain. (We should be patient, since
+        the next header indeed might not even exist yet.)
 
   * Once all of our peers have no more headers to offer and we've downloaded and
     selected one of their chains, we have successfully _rejoined_ the honest
