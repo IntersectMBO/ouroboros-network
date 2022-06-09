@@ -23,7 +23,7 @@ fetch from its peers. We plan to implement this as follows.
     set of header sequences)_. It is unsound to consider blocks beyond this
     window, because doing so increases the probability that an adversarial peer
     has been able to influence the leader schedule and hence undeservedly
-    increase their chain growwth as compared to the honest chain.
+    increase their chain growth as compared to the honest chain.
 
   * We only download a block once we have identified a subset of offered header
     sequences whose represented chains necessarily have strictly more blocks in
@@ -103,6 +103,10 @@ fetch from its peers. We plan to implement this as follows.
         irrevocable block selections (ie well before any adversary would be able
         to mint a valid chain that has more than `k` blocks after its
         intersection with the honest chain).
+
+      * TODO Can we transition to CaughtUp sooner? Or do we really need to wait
+        until we're all the way to the peers' tips? We're a bit worried about
+        livelock risk with such a demanding trigger for Syncing->CaughtUp.
 
   * In each of the Connecting, Syncing, and CaughtUp states, we mint blocks
     whenever we lead the current slot, as usual.
