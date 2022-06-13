@@ -17,6 +17,7 @@ Currently the team consists of:
 * [Damian Nadales](https://github.com/dnadales)
 * [Alexander Esgen](https://github.com/amesgen)
 * [Yogesh Sajanikar](https://github.com/yogeshsajanikar)
+* [Bart Frenk](https://github.com/bartfrenk)
 
 ### Join our slack channels
 
