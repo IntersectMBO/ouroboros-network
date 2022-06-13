@@ -241,7 +241,7 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
           SL.poolsByTotalStakeFraction globals st
         GetUTxOByAddress addrs ->
           SL.getFilteredUTxO st addrs
-        GetUTxOWhole ->
+        GetUTxOWhole -> -- FIXME:  if we never match this case then we should probaly clarify this to avoid confusions when reading this part of the code.
           SL.getUTxO st
         DebugEpochState ->
           getEpochState st

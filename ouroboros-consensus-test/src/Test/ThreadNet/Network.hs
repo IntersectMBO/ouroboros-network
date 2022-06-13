@@ -1,18 +1,19 @@
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 -- | Setup network
 module Test.ThreadNet.Network (
@@ -94,6 +95,7 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util (StaticEither (StaticLeft))
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
@@ -110,10 +112,13 @@ import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-                     (RunAlsoLegacy (RunOnlyNew), ledgerDbCurrentValues)
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+                     (RangeQuery (RangeQuery))
+import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB,
+                     RunAlsoLegacy (RunOnlyNew))
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-                     (BackingStoreSelector (..), LedgerDB')
+                     (BackingStoreSelector (..), LedgerBackingStoreValueHandle,
+                     LedgerDB', mkDiskLedgerView)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 
@@ -658,20 +663,26 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> STM m (LedgerDB' blk)
+                   -> DiskLedgerView m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
-    forkTxProducer coreNodeId registry clock cfg nodeSeed getLedgerDB mempool =
-      void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
-        ledgerSt <- (ledgerState . maybe (error "tests can only be run with dual ledger for now")  id. ledgerDbCurrentValues) <$> atomically getLedgerDB
-        -- Combine the node's seed with the current slot number, to make sure
-        -- we generate different transactions in each slot.
-        let txs = runGen
-                (nodeSeed `combineWith` unSlotNo curSlotNo)
-                (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra ledgerSt)
-
-        void $ addTxs mempool txs
+    forkTxProducer coreNodeId registry clock cfg nodeSeed dlv mempool =
+        void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
+          let (DiskLedgerView emptySt _ doRangeQuery _) = dlv
+          fullLedgerSt <- fmap ledgerState $ do
+                -- FIXME: we know that the range query implemetation will add at
+                -- most 1 to the number of requested keys, hence the
+                -- subtraction. When we revisit the range query implementation
+                -- we should remove this workaround.
+                fullUTxO <- doRangeQuery (RangeQuery Nothing (maxBound-1))
+                pure $! withLedgerTables emptySt fullUTxO
+          -- Combine the node's seed with the current slot number, to make sure
+          -- we generate different transactions in each slot.
+          let txs = runGen
+                  (nodeSeed `combineWith` unSlotNo curSlotNo)
+                  (testGenTxs coreNodeId numCoreNodes curSlotNo cfg txGenExtra fullLedgerSt)
+          void $ addTxs mempool txs
 
     mkArgs :: OracularClock m
            -> ResourceRegistry m
@@ -1047,6 +1058,32 @@ runThreadNetwork systemTime ThreadNetworkArgs
         mempool
         txs0
 
+      -- Create a 'DiskLedgerView' to be used in 'forkTxProducer'. This function
+      -- needs the 'DiskLedgerView' to elaborate a complete UTxO set to generate
+      -- transactions.
+      let
+        extractBsValueHandle ::
+             StaticEither
+               'False
+               ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+               , LedgerDB' blk
+               , m ()
+               )
+               (Either
+                 (Point blk)
+                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+                 , LedgerDB' blk
+                 , m ())
+               )
+          -> ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+             , LedgerDB (ExtLedgerState blk)
+             , m ()
+             )
+        extractBsValueHandle = \case
+            StaticLeft bsValueHandle -> bsValueHandle
+      seBsValueHandle <-
+          fmap extractBsValueHandle
+        $ ChainDB.getLedgerBackingStoreValueHandle chainDB registry (StaticLeft ())
       forkTxProducer
         coreNodeId
         registry
@@ -1057,7 +1094,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         (seed `combineWith` unCoreNodeId coreNodeId)
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.
-        (ChainDB.getLedgerDB chainDB)
+        (mkDiskLedgerView seBsValueHandle)
         mempool
 
       return (nodeKernel, LimitedApp app)

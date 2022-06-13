@@ -104,6 +104,9 @@ data RangeQuery keys = RangeQuery {
       -- has not reached the last key. The only crucial invariant is that the
       -- query only returns an empty map if there are no more keys to read on
       -- disk.
+      --
+      -- FIXME: can we satisfy this invariant if we read keys from disk but all
+      -- of them were deleted in the changelog?
     , rqCount :: !Int
     }
 

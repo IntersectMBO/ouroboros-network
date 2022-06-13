@@ -349,6 +349,12 @@ data ChainDB m blk = ChainDB {
       -- not on current chain, so that 'LedgerDB' is unavailable.
       --
       -- The value handle is allocated in the given registry.
+      --
+      -- TODO: we need to comment what does the input value mean.
+      --
+      -- TODO: We need to comment on the rationale for the complex return type.
+      --
+      -- TODO: We should probably wrap this triple in a data type.
     , getLedgerBackingStoreValueHandle ::
         forall b.
              ResourceRegistry m
