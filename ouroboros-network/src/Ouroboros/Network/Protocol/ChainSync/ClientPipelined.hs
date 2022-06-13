@@ -26,7 +26,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 
 -- | Pipelined chain sync client.  It can only pipeline 'MsgRequestNext'
 -- messages, while the 'MsgFindIntersect' are non pipelined.  This has a penalty
--- cost of an RTT, but they are send relatively seldom and their response might
+-- cost of an RTT, but they are sent relatively seldom and their response might
 -- impact how many messages one would like to pipeline.  It also simplifies the
 -- receiver callback.
 --
