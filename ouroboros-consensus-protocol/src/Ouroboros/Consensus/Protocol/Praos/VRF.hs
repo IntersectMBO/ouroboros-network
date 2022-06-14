@@ -99,7 +99,7 @@ hashVRF _ use certVRF =
         SVRFNonce  -> castHash $ hashWith id $ "N" <> vrfOutputAsBytes
 
 -- | Range-extend a VRF output to be used for leader checks from the relevant
--- hash. See section 2.1 of the linked paper for details.
+-- hash. See section 4.1 of the linked paper for details.
 vrfLeaderValue ::
   forall c proxy.
   Crypto c =>
@@ -112,7 +112,7 @@ vrfLeaderValue p cvrf =
     (bytesToNatural . hashToBytes $ hashVRF p SVRFLeader cvrf)
 
 -- | Range-extend a VRF output to be used for the evolving nonce. See section
--- 2.1 of the linked paper for details.
+-- 4.1 of the linked paper for details.
 vrfNonceValue ::
   forall c proxy.
   Crypto c =>
