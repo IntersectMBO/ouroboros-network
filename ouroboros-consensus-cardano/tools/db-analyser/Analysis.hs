@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -23,6 +24,7 @@ import           Data.Proxy
 import           Data.Word (Word16, Word64)
 import qualified Debug.Trace as Debug
 
+import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Util.IOLike
@@ -69,8 +71,7 @@ data AnalysisName =
 
 runAnalysis ::
      forall blk .
-     ( LgrDbSerialiseConstraints blk
-     , HasAnalysis blk)
+     HasAnalysis blk
   => AnalysisName -> Analysis blk
 runAnalysis analysisName env@AnalysisEnv{ tracer } = do
   traceWith tracer (StartedEvent analysisName)
@@ -309,7 +310,7 @@ storeLedgerStateAt slotNo AnalysisEnv { db, backing, initLedger, cfg, ledgerDbFS
              tracer'
              configLedgerDb
              backingStore
-             (mkStream (\b -> if blockSlot b >= slotNo
+             (mkStream (\b -> if blockSlot b > slotNo
                               then return NoMoreBlocks
                               else return $ NextBlock b) GetBlock db)
              initDb
@@ -319,8 +320,30 @@ storeLedgerStateAt slotNo AnalysisEnv { db, backing, initLedger, cfg, ledgerDbFS
       Right (ldb, _) -> do
         -- The replay performed above leaves the DbChangelog at @tip - k@
         -- blocks. We use this flush to push all the remaining differences into
-        -- the backing store.
-        OnDisk.flush backingStore $ ledgerDbChangelog ldb
+        -- the backing store. First, we must update the @DbChangeLog@ such that
+        -- it reflects the fact that we are flushing all remaining differences.
+
+        let
+          DbChangelog {
+              changelogDiffAnchor
+            , changelogDiffs
+            , changelogImmutableStates
+            , changelogVolatileStates
+            } = ledgerDbChangelog ldb
+
+          imm = changelogImmutableStates
+          vol = changelogVolatileStates
+
+          imm'    = AS.unsafeJoin imm vol
+          vol'    = AS.Empty $ AS.anchor imm'
+          ldb'    = DbChangelog {
+              changelogDiffAnchor
+            , changelogDiffs
+            , changelogImmutableStates = imm'
+            , changelogVolatileStates  = vol'
+            }
+
+        OnDisk.flush backingStore ldb'
 
         writeSnapshot
           ledgerDbFS
