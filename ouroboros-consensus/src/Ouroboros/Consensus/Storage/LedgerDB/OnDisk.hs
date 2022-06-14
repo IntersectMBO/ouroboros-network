@@ -186,7 +186,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
-import qualified Control.Exception as Exn
 import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.List as List
@@ -748,35 +747,33 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
     doFixupReadResult ::
          Ord k
       => Int
-      -- ^ TODO: what is this?
+      -- ^ Number of requested keys from the backing store.
       -> ApplyMapKind DiffMK   k v
-      -- ^ TODO: what is this?
+      -- ^ Differences that will be applied to the values read from the backing
+      -- store.
       -> ApplyMapKind ValuesMK k v
-      -- ^ TODO: what is this?
+      -- ^ Values read from the backing store. The number of values read should
+      -- be at most @nrequested@.
       -> ApplyMapKind ValuesMK k v
     doFixupReadResult
       nrequested
       (ApplyDiffMK (HD.UtxoDiff ds))
-      (ApplyValuesMK (HD.UtxoValues vs)) = -- TODO: it's hard to see where the fundef begins
-        let definitelyNoMoreToFetch = Map.size vs < nrequested
-            includingAllKeys        =
+      (ApplyValuesMK (HD.UtxoValues vs)) =
+        let includingAllKeys        =
               HD.forwardValues (HD.UtxoValues vs) (HD.UtxoDiff ds)
+            definitelyNoMoreToFetch = Map.size vs < nrequested
         in
         ApplyValuesMK
       $ case Map.maxViewWithKey vs of
           Nothing             ->
-              assertDefinitelyNoMoreToFetch
-            $ includingAllKeys
+              if definitelyNoMoreToFetch
+              then includingAllKeys
+              else error $ "Size of values " <> show (Map.size vs) <> ", nrequested " <> show nrequested
           Just ((k, _v), vs') ->
             if definitelyNoMoreToFetch then includingAllKeys else
             HD.forwardValues
               (HD.UtxoValues vs')
               (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
-      where
-        assertDefinitelyNoMoreToFetch =
-          if Map.size vs < nrequested
-          then id
-          else error $ "Size of values " <> show (Map.size vs) <> ", nrequested " <> show nrequested
 
 readKeySets :: forall m l.
      IOLike m
