@@ -57,7 +57,7 @@ import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     ignoreTest, sayTracer, splitWithNameTrace, tracerWithName,
+                     sayTracer, splitWithNameTrace, tracerWithName,
                      tracerWithTime)
 
 import           Simulation.Network.Snocket (BearerInfo (..))
@@ -96,8 +96,7 @@ tests =
                    prop_diffusionScript_commandScript_valid
     , testProperty "diffusion no livelock"
                    prop_diffusion_nolivelock
-    , ignoreTest $
-      testProperty "diffusion dns can recover from fails"
+    , testProperty "diffusion dns can recover from fails"
                    prop_diffusion_dns_can_recover
     , testProperty "diffusion target established public"
                    prop_diffusion_target_established_public
