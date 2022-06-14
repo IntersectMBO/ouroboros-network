@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -9,6 +10,7 @@
 module Main (main) where
 
 import           Data.Foldable (asum)
+import           Data.Maybe (fromMaybe)
 import           Options.Applicative
 import           System.IO
 
@@ -33,7 +35,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
-                     (defaultLMDBLimits)
+                     (defaultLMDBLimits, mapSize)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector (..), DiskSnapshot (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -56,7 +58,7 @@ data SelectDB =
     SelectChainDB
   | SelectImmutableDB (Maybe DiskSnapshot)
 
-data BackingStore = LMDB | MEM
+data BackingStore = LMDB (Maybe Int) | MEM
   deriving Eq
 
 data CmdLine = CmdLine {
@@ -100,10 +102,27 @@ parseCmdLine = CmdLine
     <*> parseSelector
 
 parseSelector :: Parser BackingStore
-parseSelector = (\x -> if x == "MEM" then MEM else LMDB) <$> strOption
-  (  long "backend"
-  <> metavar "BACKEND"
-  <> help "Choose a backend for the LedgerDB (MEM|LMDB), default: LMDB" )
+parseSelector = fromMaybe MEM <$> parseMaybe (asum [
+      MEM <$ parseMEM
+    , LMDB <$ parseLMDB <*> parseMapSize
+    ])
+  where
+    parseMEM :: Parser ()
+    parseMEM = flag' () $ mconcat [
+        long "inmem-backingstore"
+      , help "Choose the in-memory backing store for the LedgerDB."
+      ]
+    parseLMDB :: Parser ()
+    parseLMDB = flag' () $ mconcat [
+        long "lmdb-backingstore"
+      , help "Choose the LMDB backing store for the LedgerDB."
+      ]
+    parseMapSize :: Parser (Maybe Int)
+    parseMapSize = optional $ read <$> strOption (mconcat [
+        long "mapsize"
+      , metavar "NR_BYTES"
+      , help "The maximum database size defined in nr. of bytes NR_BYTES. NR_BYTES must be a multiple of the OS page size."
+      ])
 
 parseSelectDB :: Parser SelectDB
 parseSelectDB = asum [
@@ -276,8 +295,12 @@ analyse CmdLine {..} args =
                                 Just snapshot -> Left snapshot
 
           let bs = case bsSelector of
-                MEM -> InMemoryBackingStore
-                _   -> LMDBBackingStore defaultLMDBLimits
+                MEM          -> InMemoryBackingStore
+                LMDB mapsize ->
+                  maybe
+                    (LMDBBackingStore defaultLMDBLimits)
+                    (\n -> LMDBBackingStore (defaultLMDBLimits { mapSize = n }))
+                    mapsize
 
           ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs runWithTempRegistry) $ \immutableDB -> do
             runAnalysis analysis $ AnalysisEnv {
