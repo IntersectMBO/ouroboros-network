@@ -69,14 +69,24 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 
 
 
--- | The flag which indicates wheather the node runs only initiator or both
--- initiator or responder node.   It does not however specify weather the node
--- is using duplex connections, this is implicit see 'NodeToNodeV_4'
+-- | The flag which indicates whether the node runs only initiator or both
+-- initiator or responder node.
+--
+-- This data structure has two proposes:
+--
+-- * instruct the diffusion layer if it should listen on incoming connections;
+--
+-- * it is communicated via 'NodeToNodeVersionData' during handshake
+--   negotiation. In non-p2p mode we always send 'InitiatorOnlyDiffusionMode',
+--   in p2p mode we send exactly what the diffusion is given.  In non-p2p mode
+--   every connection outbound port is ephemeral, the remote side cannot connect
+--   to it, however in p2p mode the outbound port is actually the port on which
+--   the node is listening (if it runs in 'InitiatorAndResponderDiffusionMode').
 --
 data DiffusionMode
     = InitiatorOnlyDiffusionMode
     | InitiatorAndResponderDiffusionMode
-  deriving (Typeable, Eq, Show)
+  deriving (Typeable, Eq, Ord, Show)
 
 
 -- | Version data for NodeToNode protocol
@@ -90,11 +100,15 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   -- negotiation (see 'Acceptable' instance below).
 
 instance Acceptable NodeToNodeVersionData where
+    -- | Check that both side use the same 'networkMagic'.  Choose smaller one
+    -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
+    -- agree on it.
     acceptableVersion local remote
-      | networkMagic local == networkMagic remote && diffusionMode remote == InitiatorOnlyDiffusionMode
-      = Accept remote
       | networkMagic local == networkMagic remote
-      = Accept local
+      = Accept NodeToNodeVersionData
+          { networkMagic  = networkMagic local
+          , diffusionMode = diffusionMode local `min` diffusionMode remote
+          }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
                        ++ show local
