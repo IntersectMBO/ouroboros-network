@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -373,6 +372,15 @@ storeLedgerStateAt slotNo AnalysisEnv { db, backing, initLedger, cfg, ledgerDbFS
         -- blocks. We use this flush to push all the remaining differences into
         -- the backing store. First, we must update the @DbChangeLog@ such that
         -- it reflects the fact that we are flushing all remaining differences.
+        -- That is, we move the volatile part into the immutable part, such that
+        -- from the perspective of the changelog, the diffs we are flushing are
+        -- in the immutable part. See Note [Behaviour of OnDisk.flush] in the
+        -- @ouroboros-consensus@, which explains why this is necessary.
+
+        -- TODO(jdral): We might want to look into not using @'OnDisk.flush'@
+        -- directly. We could add a new @DbChangelogFlushPolicy@, and use
+        -- @InMemory.ledgerDbFlush@ instead, because then we don't have to
+        -- look under the hood of the @'DbChangeLog'@ here.
 
         let
           DbChangelog {
@@ -382,16 +390,12 @@ storeLedgerStateAt slotNo AnalysisEnv { db, backing, initLedger, cfg, ledgerDbFS
             , changelogVolatileStates
             } = ledgerDbChangelog ldb
 
-          imm = changelogImmutableStates
-          vol = changelogVolatileStates
-
-          imm'    = AS.unsafeJoin imm vol
-          vol'    = AS.Empty $ AS.anchor imm'
+          imm'    = AS.unsafeJoin changelogImmutableStates changelogVolatileStates
           ldb'    = DbChangelog {
               changelogDiffAnchor
             , changelogDiffs
             , changelogImmutableStates = imm'
-            , changelogVolatileStates  = vol'
+            , changelogVolatileStates  = AS.Empty $ AS.anchor imm'
             }
 
         OnDisk.flush backingStore ldb'
