@@ -689,18 +689,35 @@ withConnectionManager ConnectionManagerArguments {
             -- callback. If the finally block loses the race, the received
             -- 'AsyncCancelled' should interrupt the 'threadDelay'.
             --
-            (connState, tr, shouldTrace) <- atomically $ do
-              connState <- readTVar connVar
-              let connState' = TerminatedState Nothing
-                  tr = TransitionTrace peerAddr (mkTransition connState connState')
-                  absConnState = abstractState (Known connState)
-                  shouldTrace = absConnState /= TerminatedSt
+            (connState, trT, trU , shouldTraceTerminated, shouldTraceUnknown)
+              <- atomically $ do
+                  connState <- readTVar connVar
+                  let connState'            = TerminatedState Nothing
+                      trT                   =
+                        TransitionTrace peerAddr (mkTransition connState connState')
+                      absConnState          = abstractState (Known connState)
+                      shouldTraceTerminated = absConnState /= TerminatedSt
+                      shouldTraceUnknown    = absConnState == ReservedOutboundSt
+                      trU = TransitionTrace
+                              peerAddr
+                              (Transition { fromState = Known connState'
+                                          , toState   = Unknown
+                                          })
 
-              writeTVar connVar connState'
-              return (connState, tr, shouldTrace)
+                  writeTVar connVar connState'
+                  return (connState, trT, trU
+                         , shouldTraceTerminated, shouldTraceUnknown)
 
-            when shouldTrace $
-              traceWith trTracer tr
+            when shouldTraceTerminated $ do
+              traceWith trTracer trT
+
+              -- If an Async exception is received after a connection gets set
+              -- to ReservedOutboundSt, BUT after a connect call is made and,
+              -- therefore still does not have a connection handler thread, we
+              -- should trace the unknown transition as well.
+              when shouldTraceUnknown $
+                traceWith trTracer trU
+
             -- using 'throwTo' here, since we want to block only until connection
             -- handler thread receives an exception so as to not take up extra
             -- time and making us go above timeout schedules.
