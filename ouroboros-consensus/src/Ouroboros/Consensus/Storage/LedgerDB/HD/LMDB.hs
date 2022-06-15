@@ -11,10 +11,10 @@
 
 module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (
     DbErr
+  , LMDB.mapSize
   , LMDBBackingStore
   , LMDBInit (..)
   , LMDBLimits
-  , LMDB.mapSize
   , LMDBValueHandle
   , TraceDb (..)
   , defaultLMDBLimits

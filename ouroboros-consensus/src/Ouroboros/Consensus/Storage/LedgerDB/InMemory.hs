@@ -72,7 +72,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbSwitch
     -- * Exports for the benefit of tests
     -- ** Additional queries
-  , ledgerDbCurrentValues
   , ledgerDbIsSaturated
   , ledgerDbMaxRollback
     -- ** Pure API
@@ -438,6 +437,11 @@ applyBlock cfg ap db = case ap of
   where
     legacyLs :: Maybe (l ValuesMK)
     legacyLs = ledgerDbCurrentValues db
+      where
+        -- The ledger state at the tip of the chain
+        ledgerDbCurrentValues :: GetTip (l ValuesMK) => LedgerDB l -> Maybe (l ValuesMK)
+        ledgerDbCurrentValues =
+          fmap (either unCheckpoint unCheckpoint . AS.head) . ledgerDbCheckpoints
 
     legacyApplyBlock :: l ValuesMK -> Ap m l blk c -> m (l DiffMK)
     legacyApplyBlock legLs = \case
@@ -619,15 +623,6 @@ defaultReadKeySets f dbReader = runReaderT (runDbReader dbReader) f
 {-------------------------------------------------------------------------------
   Queries
 -------------------------------------------------------------------------------}
-
--- | The ledger state at the tip of the chain
---
--- TODO This won't work if @not 'runDual'@.
-ledgerDbCurrentValues :: GetTip (l ValuesMK) => LedgerDB l -> Maybe (l ValuesMK)
-ledgerDbCurrentValues =
-  fmap (either unCheckpoint unCheckpoint
-        . AS.head)
-  . ledgerDbCheckpoints
 
 -- | The ledger state at the tip of the chain
 ledgerDbCurrent :: GetTip (l EmptyMK) => LedgerDB l -> l EmptyMK

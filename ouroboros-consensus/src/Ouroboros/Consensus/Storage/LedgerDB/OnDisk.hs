@@ -152,6 +152,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , LedgerBackingStore (..)
   , LedgerBackingStoreValueHandle (..)
   , flush
+  , mkDiskLedgerView
   , readKeySets
   , readKeySetsVH
     -- * Snapshots
@@ -190,7 +191,9 @@ import           Control.Tracer
 import qualified Data.List as List
 import qualified Data.Map as Map
 import           Data.Maybe (isJust, mapMaybe)
+import           Data.Monoid (Sum (..))
 import           Data.Ord (Down (..))
+import           Data.Semigroup (Max (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
@@ -218,7 +221,7 @@ import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
@@ -534,16 +537,18 @@ restoreBackingStore someHasFs snapshot bss = do
 
     store <- case bss of
       LMDBBackingStore limits -> LMDB.newLMDBBackingStore mempty limits someHasFs (LMDB.LIInitialiseFromLMDB loadPath)
-      InMemoryBackingStore -> HD.newTVarBackingStore
+      InMemoryBackingStore -> BackingStore.newTVarBackingStore
                (zipLedgerTables lookup_)
-               (\rq values -> case HD.rqPrev rq of
-                   Nothing   -> mapLedgerTables (rangeRead0_ (HD.rqCount rq))      values
-                   Just keys -> zipLedgerTables (rangeRead_  (HD.rqCount rq)) keys values
+               (\rq values -> case BackingStore.rqPrev rq of
+                   Nothing   ->
+                     mapLedgerTables (rangeRead0_ (BackingStore.rqCount rq))      values
+                   Just keys ->
+                     zipLedgerTables (rangeRead_  (BackingStore.rqCount rq)) keys values
                )
                (zipLedgerTables applyDiff_)
                valuesMKEncoder
                valuesMKDecoder
-               (Left (someHasFs, HD.BackingStorePath loadPath))
+               (Left (someHasFs, BackingStore.BackingStorePath loadPath))
     pure (LedgerBackingStore store)
   where
     loadPath = snapshotToTablesPath snapshot
@@ -567,11 +572,13 @@ newBackingStore tracer bss someHasFS tables = do
       limits
       someHasFS
       (LMDB.LIInitialiseFromMemory Origin tables)
-    InMemoryBackingStore -> HD.newTVarBackingStore
+    InMemoryBackingStore -> BackingStore.newTVarBackingStore
                (zipLedgerTables lookup_)
-               (\rq values -> case HD.rqPrev rq of
-                   Nothing   -> mapLedgerTables (rangeRead0_ (HD.rqCount rq))      values
-                   Just keys -> zipLedgerTables (rangeRead_  (HD.rqCount rq)) keys values
+               (\rq values -> case BackingStore.rqPrev rq of
+                   Nothing   ->
+                     mapLedgerTables (rangeRead0_ (BackingStore.rqCount rq))      values
+                   Just keys ->
+                     zipLedgerTables (rangeRead_  (BackingStore.rqCount rq)) keys values
                )
                (zipLedgerTables applyDiff_)
                valuesMKEncoder
@@ -617,7 +624,7 @@ applyDiff_ (ApplyValuesMK values) (ApplyDiffMK diff) =
 
 -- | A handle to the backing store for the ledger tables
 newtype LedgerBackingStore m l = LedgerBackingStore
-    (HD.BackingStore m
+    (BackingStore.BackingStore m
       (LedgerTables l KeysMK)
       (LedgerTables l ValuesMK)
       (LedgerTables l DiffMK)
@@ -627,7 +634,7 @@ newtype LedgerBackingStore m l = LedgerBackingStore
 -- | A handle to the backing store for the ledger tables
 data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
     !(WithOrigin SlotNo)
-    !(HD.BackingStoreValueHandle m
+    !(BackingStore.BackingStoreValueHandle m
       (LedgerTables l KeysMK)
       (LedgerTables l ValuesMK)
     )
@@ -636,13 +643,145 @@ data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
 
 type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)
 
+mkDiskLedgerView ::
+     (GetTip (l EmptyMK), IOLike m, TableStuff l)
+  => (LedgerBackingStoreValueHandle m l, LedgerDB l, m ())
+  -> DiskLedgerView m l
+mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
+    DiskLedgerView
+      (ledgerDbCurrent ldb)
+      (\ks -> do
+          let chlog = ledgerDbChangelog ldb
+              rew   = rewindTableKeySets chlog ks
+          unfwd <- readKeySetsVH
+                     (\ks' -> (,) seqNo <$> BackingStore.bsvhRead vh ks')
+                     rew
+          case forwardTableKeySets chlog unfwd of
+              Left _err -> error "impossible!"
+              Right vs  -> pure vs
+      )
+      (\rq -> do
+          let chlog = ledgerDbChangelog ldb
+              -- Get the differences without the keys that are greater or equal
+              -- than the maximum previously seen key.
+              diffs =
+                maybe
+                  id
+                  (zipLedgerTables doDropLTE)
+                  (BackingStore.rqPrev rq)
+                  $ mapLedgerTables prj
+                  $ changelogDiffs chlog
+              -- (1) Ensure that we never delete everything read from disk (ie
+              --     if our result is non-empty then it contains something read
+              --     from disk).
+              --
+              -- (2) Also, read one additional key, which we will not include in
+              --     the result but need in order to know which in-memory
+              --     insertions to include.
+              maxDeletes = maybe 0 getMax
+                         $ foldLedgerTables (Just . Max . numDeletesDiffMK) diffs
+              nrequested = 1 + max (BackingStore.rqCount rq) (1 + maxDeletes)
+
+          values <- BackingStore.bsvhRangeRead vh (rq{BackingStore.rqCount = nrequested})
+          pure $ zipLedgerTables (doFixupReadResult nrequested) diffs values
+      )
+      close
+  where
+    prj ::
+         Ord k
+      => ApplyMapKind SeqDiffMK k v
+      -> ApplyMapKind DiffMK k v
+    prj (ApplySeqDiffMK sq) = ApplyDiffMK (HD.cumulativeDiffSeqUtxoDiff sq)
+
+    -- remove all diff elements that are <= to the greatest given key
+    doDropLTE ::
+         Ord k
+      => ApplyMapKind KeysMK k v
+      -> ApplyMapKind DiffMK k v
+      -> ApplyMapKind DiffMK k v
+    doDropLTE (ApplyKeysMK (HD.UtxoKeys ks)) (ApplyDiffMK (HD.UtxoDiff ds)) =
+        ApplyDiffMK
+      $ HD.UtxoDiff
+      $ case Set.lookupMax ks of
+          Nothing -> ds
+          Just k  -> Map.filterWithKey (\dk _dv -> dk > k) ds
+
+    -- NOTE: this is counting the deletions wrt disk.
+    numDeletesDiffMK :: ApplyMapKind DiffMK k v -> Int
+    numDeletesDiffMK (ApplyDiffMK (HD.UtxoDiff m)) =
+      getSum $ foldMap (Sum . oneIfDel) m
+      where
+        oneIfDel (HD.UtxoEntryDiff _v diffstate) = case diffstate of
+          HD.UedsDel       -> 1
+          HD.UedsIns       -> 0
+          HD.UedsInsAndDel -> 0
+
+    -- INVARIANT: nrequested > 0
+    --
+    -- (1) if we reached the end of the store, then simply yield the given diff
+    --     applied to the given values
+    -- (2) otherwise, the readset must be non-empty, since 'rqCount' is positive
+    -- (3) remove the greatest read key
+    -- (4) remove all diff elements that are >= the greatest read key
+    -- (5) apply the remaining diff
+    -- (6) (the greatest read key will be the first fetched if the yield of this
+    --     result is next passed as 'rqPrev')
+    --
+    -- Note that if the in-memory changelog contains the greatest key, then
+    -- we'll return that in step (1) above, in which case the next passed
+    -- 'rqPrev' will contain it, which will cause 'doDropLTE' to result in an
+    -- empty diff, which will result in an entirely empty range query result,
+    -- which is the termination case.
+    --
+    -- TODO this @definitelyNoMoreToFetch@ logic leads to an extra roundtrip
+    -- when the changelog contains the greatest key. That'll be rare, and should
+    -- be in-expensive since the requisite pages would have been fetched by the
+    -- previous roundtrip (which was fruitful). But it seems sloppy. Switching
+    -- from 'rqPrev' to 'rqStart' would eliminate the extra rountrip and
+    -- simplify this code. However, it would also complicate the return type,
+    -- since the " next " range query wouldn't be defined by the keys of the "
+    -- previous " range query's results: we'd have to explicitly include the "
+    -- new next key " in the result of the range query. So maybe this should
+    -- stay as-is? Maybe some existing general wisdom out there about range
+    -- queries could guide us here.
+    doFixupReadResult ::
+         Ord k
+      => Int
+      -- ^ Number of requested keys from the backing store.
+      -> ApplyMapKind DiffMK   k v
+      -- ^ Differences that will be applied to the values read from the backing
+      -- store.
+      -> ApplyMapKind ValuesMK k v
+      -- ^ Values read from the backing store. The number of values read should
+      -- be at most @nrequested@.
+      -> ApplyMapKind ValuesMK k v
+    doFixupReadResult
+      nrequested
+      (ApplyDiffMK (HD.UtxoDiff ds))
+      (ApplyValuesMK (HD.UtxoValues vs)) =
+        let includingAllKeys        =
+              HD.forwardValues (HD.UtxoValues vs) (HD.UtxoDiff ds)
+            definitelyNoMoreToFetch = Map.size vs < nrequested
+        in
+        ApplyValuesMK
+      $ case Map.maxViewWithKey vs of
+          Nothing             ->
+              if definitelyNoMoreToFetch
+              then includingAllKeys
+              else error $ "Size of values " <> show (Map.size vs) <> ", nrequested " <> show nrequested
+          Just ((k, _v), vs') ->
+            if definitelyNoMoreToFetch then includingAllKeys else
+            HD.forwardValues
+              (HD.UtxoValues vs')
+              (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
+
 readKeySets :: forall m l.
      IOLike m
   => LedgerBackingStore m l
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
 readKeySets (LedgerBackingStore backingStore) rew = do
-    readKeySetsVH (HD.bsRead backingStore) rew
+    readKeySetsVH (BackingStore.bsRead backingStore) rew
 
 readKeySetsVH :: forall m l.
      IOLike m
@@ -669,7 +808,7 @@ flush (LedgerBackingStore backingStore) dblog =
     case youngestImmutableSlotDbChangelog dblog of
       Origin  -> pure ()   -- the diff is necessarily empty
       At slot ->
-        HD.bsWrite
+        BackingStore.bsWrite
           backingStore
           slot
           (mapLedgerTables prj $ changelogDiffs dblog)
@@ -820,10 +959,10 @@ writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
     createDirectory hasFS (snapshotToDirPath snapshot)
     withFile hasFS (snapshotToStatePath snapshot) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
-    HD.bsCopy
+    BackingStore.bsCopy
       (let LedgerBackingStore store = backingStore in store)
       (SomeHasFS hasFS)
-      (HD.BackingStorePath (snapshotToTablesPath snapshot))
+      (BackingStore.BackingStorePath (snapshotToTablesPath snapshot))
   where
     encode :: ExtLedgerState blk EmptyMK -> Encoding
     encode = encodeSnapshot encLedger
