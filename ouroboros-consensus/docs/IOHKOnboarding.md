@@ -16,6 +16,7 @@ Currently the team consists of:
 * [Javier Sagredo](https://github.com/Jasagredo)
 * [Damian Nadales](https://github.com/dnadales)
 * [Alexander Esgen](https://github.com/amesgen)
+* [Yogesh Sajanikar](https://github.com/yogeshsajanikar)
 
 ### Join our slack channels
 
