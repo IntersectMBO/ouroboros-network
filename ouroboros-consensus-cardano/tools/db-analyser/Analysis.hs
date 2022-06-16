@@ -23,6 +23,7 @@ import           Data.Proxy
 import           Data.Word (Word16, Word64)
 import qualified Debug.Trace as Debug
 
+import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Util.IOLike
@@ -69,8 +70,7 @@ data AnalysisName =
 
 runAnalysis ::
      forall blk .
-     ( LgrDbSerialiseConstraints blk
-     , HasAnalysis blk)
+     HasAnalysis blk
   => AnalysisName -> Analysis blk
 runAnalysis analysisName env@AnalysisEnv{ tracer } = do
   traceWith tracer (StartedEvent analysisName)
@@ -309,7 +309,7 @@ storeLedgerStateAt slotNo AnalysisEnv { db, backing, initLedger, cfg, ledgerDbFS
              tracer'
              configLedgerDb
              backingStore
-             (mkStream (\b -> if blockSlot b >= slotNo
+             (mkStream (\b -> if blockSlot b > slotNo
                               then return NoMoreBlocks
                               else return $ NextBlock b) GetBlock db)
              initDb
@@ -319,8 +319,35 @@ storeLedgerStateAt slotNo AnalysisEnv { db, backing, initLedger, cfg, ledgerDbFS
       Right (ldb, _) -> do
         -- The replay performed above leaves the DbChangelog at @tip - k@
         -- blocks. We use this flush to push all the remaining differences into
-        -- the backing store.
-        OnDisk.flush backingStore $ ledgerDbChangelog ldb
+        -- the backing store. First, we must update the @DbChangeLog@ such that
+        -- it reflects the fact that we are flushing all remaining differences.
+        -- That is, we move the volatile part into the immutable part, such that
+        -- from the perspective of the changelog, the diffs we are flushing are
+        -- in the immutable part. See Note [Behaviour of OnDisk.flush] in the
+        -- @ouroboros-consensus@, which explains why this is necessary.
+
+        -- TODO(jdral): We might want to look into not using @'OnDisk.flush'@
+        -- directly. We could add a new @DbChangelogFlushPolicy@, and use
+        -- @InMemory.ledgerDbFlush@ instead, because then we don't have to
+        -- look under the hood of the @'DbChangeLog'@ here.
+
+        let
+          DbChangelog {
+              changelogDiffAnchor
+            , changelogDiffs
+            , changelogImmutableStates
+            , changelogVolatileStates
+            } = ledgerDbChangelog ldb
+
+          imm'    = AS.unsafeJoin changelogImmutableStates changelogVolatileStates
+          ldb'    = DbChangelog {
+              changelogDiffAnchor
+            , changelogDiffs
+            , changelogImmutableStates = imm'
+            , changelogVolatileStates  = AS.Empty $ AS.anchor imm'
+            }
+
+        OnDisk.flush backingStore ldb'
 
         writeSnapshot
           ledgerDbFS

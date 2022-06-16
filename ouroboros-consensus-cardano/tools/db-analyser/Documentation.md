@@ -24,6 +24,9 @@ Usage: db-analyser --db PATH
                     --show-ebbs |
 					--store-ledger SLOT_NUMBER]
                    [--num-blocks-to-process INT]
+                   [--inmem-backingstore | --lmdb-backingstore
+                     [--mapsize NR_BYTES]]
+
   Simple framework used to analyse a Chain DB
 
 ```
@@ -108,3 +111,11 @@ Lastly the user must provide the analysis they want to run on the chain. They mu
 * `--store-ledger SLOT_NUMBER` Will store a snapshot of a ledger state under `DB_PATH/ledger/SLOT_NUMBER_db-analyser`. If there is no block under requested slot number, it will create one on the next available slot number (and issue a warning about this fact).
 
 * `--count-blocks` Will print out the number of blocks it saw on the chain
+
+### --inmem-backingstore and --lmdb-backingstore MAP_SIZE
+
+```
+[--inmem-backingstore | --lmdb-backingstore [--mapsize NR_BYTES]]
+```
+
+UTxO HD introduces optional functionality to store parts of the ledger state, such as the UTxO, on disk. The user can choose whether to store these parts of the ledger state in memory by providing the `--inmem-backingstore` flag, or use the functionality to store the ledger state on disk using the `--lmdb-backingstore` flag. In case the latter flag is provided, the `--mapsize NR_BYTES` option defines the maxmimum size of the on-disk database in nr. of bytes `NR_BYTES`. Note that the `NR_BYTES` should be a multiple of the OS page size. The maximum database size defaults to ~`6_000_000` bytes if this option is not provided. By default, `db-analyser` uses the in-memory backing store.
