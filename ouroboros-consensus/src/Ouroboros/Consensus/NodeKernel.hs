@@ -415,40 +415,48 @@ forkBlockForging IS{..} blockForging =
 
         -- Add the block to the chain DB
         let noPunish = InvalidBlockPunishment.noPunishment   -- no way to punish yourself
-        result <- lift $ ChainDB.addBlockAsync chainDB noPunish newBlock
-        -- Block until we have processed the block
-        curTip <- lift $ atomically $ ChainDB.blockProcessed result
-
-        -- Check whether we adopted our block
-        when (curTip /= blockPoint newBlock) $ do
-          isInvalid <- lift $ atomically $
-            ($ blockHash newBlock) . forgetFingerprint <$>
-            ChainDB.getIsInvalidBlock chainDB
-          case isInvalid of
-            Nothing ->
-              trace $ TraceDidntAdoptBlock currentSlot newBlock
-            Just reason -> do
-              trace $ TraceForgedInvalidBlock currentSlot newBlock reason
-              -- We just produced a block that is invalid according to the
-              -- ledger in the ChainDB, while the mempool said it is valid.
-              -- There is an inconsistency between the two!
-              --
-              -- Remove all the transactions in that block, otherwise we'll
-              -- run the risk of forging the same invalid block again. This
-              -- means that we'll throw away some good transactions in the
-              -- process.
-              lift $ removeTxs mempool (map (txId . txForgetValidated) txs)
-          exitEarly
-
-        -- We successfully produced /and/ adopted a block
+        -- Make sure that if an async exception is thrown while a block is
+        -- added to the chain db, we will remove txs from the mempool.
         --
-        -- NOTE: we are tracing the transactions we retrieved from the Mempool,
-        -- not the transactions actually /in the block/. They should always
-        -- match, if they don't, that would be a bug. Unfortunately, we can't
-        -- assert this here because the ability to extract transactions from a
-        -- block, i.e., the @HasTxs@ class, is not implementable by all blocks,
-        -- e.g., @DualBlock@.
-        trace $ TraceAdoptedBlock currentSlot newBlock txs
+        -- 'addBlockAsync' is a non-blocking action, so `mask_` would suffice,
+        -- but the finalizer is a blocking operation, hence we need to use
+        -- 'uninterruptibleMask_' to make sure that async exceptions do not
+        -- interrupt it.
+        uninterruptibleMask_ $ do
+          result <- lift $ ChainDB.addBlockAsync chainDB noPunish newBlock
+          -- Block until we have processed the block
+          curTip <- lift $ atomically $ ChainDB.blockProcessed result
+
+          -- Check whether we adopted our block
+          when (curTip /= blockPoint newBlock) $ do
+            isInvalid <- lift $ atomically $
+              ($ blockHash newBlock) . forgetFingerprint <$>
+              ChainDB.getIsInvalidBlock chainDB
+            case isInvalid of
+              Nothing ->
+                trace $ TraceDidntAdoptBlock currentSlot newBlock
+              Just reason -> do
+                trace $ TraceForgedInvalidBlock currentSlot newBlock reason
+                -- We just produced a block that is invalid according to the
+                -- ledger in the ChainDB, while the mempool said it is valid.
+                -- There is an inconsistency between the two!
+                --
+                -- Remove all the transactions in that block, otherwise we'll
+                -- run the risk of forging the same invalid block again. This
+                -- means that we'll throw away some good transactions in the
+                -- process.
+                lift $ removeTxs mempool (map (txId . txForgetValidated) txs)
+            exitEarly
+
+          -- We successfully produced /and/ adopted a block
+          --
+          -- NOTE: we are tracing the transactions we retrieved from the Mempool,
+          -- not the transactions actually /in the block/. They should always
+          -- match, if they don't, that would be a bug. Unfortunately, we can't
+          -- assert this here because the ability to extract transactions from a
+          -- block, i.e., the @HasTxs@ class, is not implementable by all blocks,
+          -- e.g., @DualBlock@.
+          trace $ TraceAdoptedBlock currentSlot newBlock txs
 
     trace :: TraceForgeEvent blk -> WithEarlyExit m ()
     trace =
