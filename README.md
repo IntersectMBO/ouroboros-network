@@ -34,7 +34,7 @@ the Cardano Shelley implementation:
 
 - [Official Cardano Documentation](https://docs.cardano.org/en/latest/)
 
-  Specifically the section "Explore Cardano" is helpful, since it talks about the [Cardano Architecture](https://docs.cardano.org/explore-cardano/cardano-architecture/overview), [Cardano Design Rationale](https://docs.cardano.org/explore-cardano/cardano-design-rationale), the [Cardano Network](https://docs.cardano.org/explore-cardano/cardano-network/about-the-cardano-network), etc.
+  Specifically the section "Explore Cardano" is helpful, since it talks about the [Cardano Architecture](https://docs.cardano.org/explore-cardano/cardano-architecture), [Cardano Design Rationale](https://docs.cardano.org/explore-cardano/cardano-design-rationale), the [Cardano Network](https://docs.cardano.org/explore-cardano/cardano-network/about-the-cardano-network), etc.
   Although the Cardano documentation is less detailed, it is a good place to start and refresh some more basic concepts about Cardano.
 
 ## Ouroboros-Network API
@@ -76,7 +76,7 @@ Consensus layer of the family Ouroboros blockchain protocols.
 
 The `ouroboros-consensus/docs` folder contains documentation about the
 consensus layer. Start with the
-[README.md](https://github.com/input-output-hk/ouroboros-network/ouroboros-consensus/docs/Contributing.md).
+[README.md](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/README.md).
 
 * [The Cardano Consensus and Storage Layer](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.consensus-docs.x86_64-linux/latest/download/1)
 
