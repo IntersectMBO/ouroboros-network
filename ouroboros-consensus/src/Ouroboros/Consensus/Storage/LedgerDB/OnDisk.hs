@@ -801,6 +801,50 @@ readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
 -- The 'Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB.LgrDb'
 -- 'Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB.flushLock' write lock must be
 -- held before calling this function.
+--
+-- PRECONDITION: @dblog@ should only contain the diffs for the immutable part
+-- of the changelog. If not, the @slot@ that we flush to the backing store will
+-- not match the actual tip of the diffs that we flush to the backing store.
+--
+-- == Note [Behaviour of OnDisk.flush]
+--
+-- Consider a simplified @DbChangelog@ that consists of a diff, an
+-- immutable part, and a volatile part. By /flush/ we mean @'OnDisk.flush'@.
+--
+-- >   changelog = diffs, imm, vol
+-- >   flush     = @'OnDisk.flush'@
+--
+-- Consider a changelog shaped as shown below, which spans blocks a, b, c, and d.
+--
+-- >   a     b     c     d
+-- >   |-----|     |-----|
+-- >     imm         vol
+-- >   |-----------------|
+-- >          diffs
+--
+-- Each block @x@ has an accompanying diff @diff(x)@. If we flush this
+-- changelog, the following will happen:
+-- * All diffs @diff(a) .. diff(d)@ will be flushed to the backing store.
+-- * The slot number of the tip of the immutable part, which is the slot
+--   number of block b, will be flushed to the backing store.
+--
+-- This leads to an inconsistency: We flushed all diffs up to and including
+-- the diff of block d, but we flushed the slot number of block b.
+--
+-- To counter this problem, we should either ...
+-- * Remove the diffs that are in the volatile part, or ...
+-- * Let the immutable part span blocks a..d, and leave the volatile part
+--   empty.
+--
+--           Solution 1                   Solution 2
+-- >    a     b     c     d           a     b     c     d
+-- >    |-----|     |-----|           |-----------------|  |---|
+-- >      imm         vol                     imm           vol
+-- >    |-----|                       |-----------------|
+-- >     diffs                               diffs
+--
+-- Which solution to use depends on the desired behaviour, which in turn
+-- depends on which diffs are /supposed/ to be flushed.
 flush ::
      (Applicative m, TableStuff l, GetTip (l EmptyMK))
   => LedgerBackingStore m l -> DbChangelog l -> m ()
