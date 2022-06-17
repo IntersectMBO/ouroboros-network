@@ -205,6 +205,10 @@ instance Aeson.FromJSON CardanoConfig where
             $           (fmap TriggerHardForkAtEpoch <$> (v Aeson..:? nm))
               Aeson..!= (TriggerHardForkAtVersion majProtVer)
 
+      -- Note: we must skip major protocol version 6, which coincides with the
+      -- era between the Alonzo intra-era hard-fork and Babbage hard-fork. The
+      -- intra-era hard-fork only introduced changes at the ledger level and
+      -- not at the consensus level, so protocol version 6 can be skipped.
       stas <- hsequence' $
         f "TestShelleyHardForkAtEpoch" 2 (\_ -> ()) :*
         f "TestAllegraHardForkAtEpoch" 3 (\_ -> ()) :*

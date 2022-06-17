@@ -13,6 +13,10 @@ import           Cardano.Slotting.Slot (EpochNo)
 data TriggerHardFork =
     -- | Trigger the transition when the on-chain protocol major version (from
     -- the ledger state) reaches this number.
+    --
+    -- Note: Consensus does not enforce protocol versions to be successive.
+    -- That is, the ledger state is not restricted to transition from version
+    -- @x@ to @x+1@.
     TriggerHardForkAtVersion !Word16
     -- | For testing only, trigger the transition at a specific hard-coded
     -- epoch, irrespective of the ledger state.
