@@ -1971,7 +1971,7 @@ prop_governor_target_established_local env =
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            15 -- seconds
             id
             promotionOpportunities
 
