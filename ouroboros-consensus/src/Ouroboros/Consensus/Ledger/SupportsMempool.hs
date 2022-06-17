@@ -50,6 +50,8 @@ data WhetherToIntervene
     -- ^ We do not trust remote peers, so if a problematic-yet-valid transaction
     -- arrives over NTN, we accept it; it will end up in a block and the ledger
     -- will penalize them for it.
+    --
+    -- TODO: what is "problematic-yet-valid"?
   | Intervene
     -- ^ We trust local clients, so if a problematic-yet-valid transaction
     -- arrives over NTC, we reject it in order to avoid the ledger penalizing
