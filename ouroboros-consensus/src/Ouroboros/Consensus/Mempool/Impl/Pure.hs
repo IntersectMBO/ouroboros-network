@@ -233,7 +233,7 @@ pureGetSnapshotFor
      , ValidateEnvelope blk
      )
   => LedgerConfig blk
-  -> ForgeLedgerState blk ValuesMK
+  -> ForgeLedgerState blk
   -> MempoolCapacityBytesOverride
   -> InternalState blk
   -> MempoolSnapshot blk TicketNo
@@ -258,7 +258,6 @@ implSnapshotFromIS is = MempoolSnapshot {
     , snapshotHasTx       = implSnapshotHasTx          is
     , snapshotMempoolSize = implSnapshotGetMempoolSize is
     , snapshotSlotNo      = isSlotNo                   is
-    , snapshotLedgerState = isLedgerState              is
     }
  where
   implSnapshotGetTxs :: InternalState blk

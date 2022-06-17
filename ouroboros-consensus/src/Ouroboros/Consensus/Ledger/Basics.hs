@@ -87,6 +87,7 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Convenience aliases
   , applyLedgerTablesDiffs
   , applyLedgerTablesDiffsTicked
+  , attachAndApplyDiffsTicked
   , calculateAdditions
   , calculateDifference
   , calculateDifferenceTicked
@@ -100,6 +101,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , prependLedgerTablesDiffsFromTicked
   , prependLedgerTablesDiffsRaw
   , prependLedgerTablesDiffsTicked
+  , prependLedgerTablesTrackingDiffs
+  , reapplyTrackingTicked
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
@@ -687,6 +690,37 @@ calculateDifferenceTicked :: TickedTableStuff l => Ticked1 l ValuesMK -> Ticked1
 calculateAdditions               after = zipOverLedgerTables       (flip rawCalculateDifference) after polyEmptyLedgerTables
 calculateDifference       before after = zipOverLedgerTables       (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
 calculateDifferenceTicked before after = zipOverLedgerTablesTicked (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
+
+rawAttachDiffs ::
+     Ord k
+  => DiffMK     k v
+  -> ValuesMK   k v
+  -> TrackingMK k v
+rawAttachDiffs (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (forwardValues v d) d
+
+attachAndApplyDiffsTicked :: TickedTableStuff l => Ticked1 l DiffMK -> l ValuesMK -> Ticked1 l TrackingMK
+attachAndApplyDiffsTicked after before = zipOverLedgerTablesTicked rawAttachDiffs after $ projectLedgerTables before
+
+rawPrependTrackingDiffs ::
+   Ord k
+   => TrackingMK k v
+   -> TrackingMK k v
+   -> TrackingMK k v
+rawPrependTrackingDiffs (ApplyTrackingMK v d2) (ApplyTrackingMK _v d1) = ApplyTrackingMK v (d1 <> d2)
+
+prependLedgerTablesTrackingDiffs :: TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l TrackingMK -> Ticked1 l TrackingMK
+prependLedgerTablesTrackingDiffs after before =
+  zipOverLedgerTablesTicked rawPrependTrackingDiffs after $ projectLedgerTablesTicked before
+
+rawReapplyTracking ::
+     Ord k
+  => TrackingMK k v
+  -> ValuesMK   k v
+  -> TrackingMK k v
+rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) = ApplyTrackingMK (forwardValues v d) d
+
+reapplyTrackingTicked :: TickedTableStuff l => Ticked1 l TrackingMK -> l ValuesMK -> Ticked1 l TrackingMK
+reapplyTrackingTicked after before = zipOverLedgerTablesTicked rawReapplyTracking after $ projectLedgerTables before
 
 {-------------------------------------------------------------------------------
   Concrete ledger tables

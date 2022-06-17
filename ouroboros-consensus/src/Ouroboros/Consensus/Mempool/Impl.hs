@@ -128,11 +128,7 @@ mkMempool mpEnv = Mempool
             let snapshot =
                   pureGetSnapshotFor
                     cfg
-                    (ForgeInKnownSlot slot
-                      $ applyLedgerTablesDiffsTicked (ledgerState ls')
-                      $ applyChainTick cfg slot
-                      $ forgetLedgerTables
-                      $ ledgerState ls')
+                    (ForgeInKnownSlot slot $ ledgerState ls')
                     capacityOverride
                     is
             atomically $ putTMVar istate is

@@ -80,7 +80,7 @@ data InternalState blk = IS {
       --
       -- INVARIANT: 'isLedgerState' is the ledger resulting from applying the
       -- transactions in 'isTxs' against the ledger identified 'isTip' as tip.
-    , isLedgerState  :: !(TickedLedgerState blk ValuesMK)
+    , isLedgerState  :: !(TickedLedgerState blk TrackingMK)
 
       -- | The tip of the chain that 'isTxs' was validated against
       --
@@ -116,7 +116,7 @@ data InternalState blk = IS {
 
 deriving instance ( NoThunks (Validated (GenTx blk))
                   , NoThunks (GenTxId blk)
-                  , NoThunks (TickedLedgerState blk ValuesMK)
+                  , NoThunks (TickedLedgerState blk TrackingMK)
                   , StandardHash blk
                   , Typeable blk
                   ) => NoThunks (InternalState blk)
@@ -131,7 +131,7 @@ initInternalState
   => MempoolCapacityBytesOverride
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
   -> SlotNo
-  -> TickedLedgerState blk ValuesMK
+  -> TickedLedgerState blk TrackingMK
   -> InternalState blk
 initInternalState capacityOverride lastTicketNo slot st = IS {
       isTxs          = TxSeq.Empty
@@ -173,7 +173,7 @@ data ValidationResult invalidTx blk = ValidationResult {
 
       -- | The state of the ledger after applying 'vrValid' against the ledger
       -- state identifeid by 'vrBeforeTip'.
-    , vrAfter          :: TickedLedgerState blk ValuesMK
+    , vrAfter          :: TickedLedgerState blk TrackingMK
 
       -- | The transactions that were invalid, along with their errors
       --
@@ -203,12 +203,12 @@ extendVRPrevApplied :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
                     -> ValidationResult (Validated (GenTx blk)) blk
                     -> ValidationResult (Validated (GenTx blk)) blk
 extendVRPrevApplied cfg txTicket vr =
-    case runExcept (reapplyTx cfg vrSlotNo tx vrAfter) of
+    case runExcept (reapplyTx cfg vrSlotNo tx (forgetLedgerTablesDiffsTicked vrAfter)) of
       Left err  -> vr { vrInvalid = (tx, err) : vrInvalid
                       }
       Right st' -> vr { vrValid      = vrValid :> txTicket
                       , vrValidTxIds = Set.insert (txId (txForgetValidated tx)) vrValidTxIds
-                      , vrAfter      = forgetLedgerTablesDiffsTicked st'
+                      , vrAfter      = prependLedgerTablesTrackingDiffs st' vrAfter
                       }
   where
     TxTicket { txTicketTx = tx } = txTicket
@@ -230,7 +230,7 @@ extendVRNew :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
                , ValidationResult (GenTx blk) blk
                )
 extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
-    case runExcept (applyTx cfg wti vrSlotNo tx vrAfter) of
+    case runExcept (applyTx cfg wti vrSlotNo tx $ forgetLedgerTablesDiffsTicked vrAfter) of
       Left err         ->
         ( Left err
         , vr { vrInvalid      = (tx, err) : vrInvalid
@@ -241,7 +241,7 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
         , vr { vrValid        = vrValid :> TxTicket vtx nextTicketNo (txSize tx)
              , vrValidTxIds   = Set.insert (txId tx) vrValidTxIds
              , vrNewValid     = Just vtx
-             , vrAfter        = forgetLedgerTablesDiffsTicked st'
+             , vrAfter        = prependLedgerTablesTrackingDiffs st' vrAfter
              , vrLastTicketNo = nextTicketNo
              }
         )
@@ -283,13 +283,14 @@ validateStateFor
   :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => MempoolCapacityBytesOverride
   -> LedgerConfig     blk
-  -> ForgeLedgerState blk ValuesMK
+  -> ForgeLedgerState blk
   -> InternalState    blk
   -> ValidationResult (Validated (GenTx blk)) blk
 validateStateFor capacityOverride cfg blockLedgerState is
     | isTip    == castHash (getTipHash st')
     , isSlotNo == slot
-    = validationResultFromIS is
+    = validationResultFromIS
+        is { isLedgerState = reapplyTrackingTicked (isLedgerState is) (forgeLedgerState blockLedgerState) }
     | otherwise
     = revalidateTxsFor
         capacityOverride
@@ -310,7 +311,7 @@ revalidateTxsFor
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
   -> SlotNo
-  -> TickedLedgerState blk ValuesMK
+  -> TickedLedgerState blk TrackingMK
   -> TicketNo
      -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
   -> [TxTicket (Validated (GenTx blk))]
@@ -331,22 +332,24 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
 tickLedgerState
   :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
   => LedgerConfig     blk
-  -> ForgeLedgerState blk ValuesMK
-  -> (SlotNo, TickedLedgerState blk ValuesMK)
-tickLedgerState _cfg (ForgeInKnownSlot slot st) = (slot, st)
-tickLedgerState  cfg (ForgeInUnknownSlot st) =
-    (slot, applyLedgerTablesDiffsTicked st $ applyChainTick cfg slot (forgetLedgerTables st))
-  where
-    -- Optimistically assume that the transactions will be included in a block
-    -- in the next available slot
-    --
-    -- TODO: We should use time here instead
-    -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
-    -- Once we do, the ValidateEnvelope constraint can go.
-    slot :: SlotNo
-    slot = case ledgerTipSlot st of
+  -> ForgeLedgerState blk
+  -> (SlotNo, TickedLedgerState blk TrackingMK)
+tickLedgerState cfg fiks =
+  let st   = forgeLedgerState fiks
+      slot = case fiks of
+        ForgeInKnownSlot s _ -> s
+        ForgeInUnknownSlot{} ->
+          -- Optimistically assume that the transactions will be included in a block
+          -- in the next available slot
+          --
+          -- TODO: We should use time here instead
+          -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
+          -- Once we do, the ValidateEnvelope constraint can go.
+          case ledgerTipSlot st of
              Origin      -> minimumPossibleSlotNo (Proxy @blk)
              NotOrigin s -> succ s
+  in
+    (slot, attachAndApplyDiffsTicked (applyChainTick cfg slot (forgetLedgerTables st)) st)
 
 {-------------------------------------------------------------------------------
   Conversions
