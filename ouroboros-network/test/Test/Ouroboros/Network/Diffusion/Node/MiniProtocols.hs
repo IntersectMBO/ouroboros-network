@@ -213,7 +213,7 @@ applications nodeKernel
 
     initiatorAndResponderApp
       :: OuroborosBundle InitiatorResponderMode NtNAddr ByteString m () ()
-    initiatorAndResponderApp = Bundle
+    initiatorAndResponderApp = TemperatureBundle
       { withHot = WithHot $ \ connId controlMessageSTM ->
           [ MiniProtocol
               { miniProtocolNum    = MiniProtocolNum 1
