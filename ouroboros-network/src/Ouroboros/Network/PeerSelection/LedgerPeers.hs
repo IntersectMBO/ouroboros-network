@@ -261,7 +261,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
                (rng', !pickedPeers) <- pickPeers rng tracer peerMap' numRequested
                traceWith tracer $ PickedPeers numRequested pickedPeers
 
-               let (plainAddrs, domains) = foldl' splitPeers (Set.empty, []) pickedPeers
+               let (plainAddrs, domains) = foldl' partitionPeer (Set.empty, []) pickedPeers
 
                domainAddrs <- doResolve domains
 
@@ -285,13 +285,11 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
 
     -- Divide the picked peers form the ledger into addresses we can use directly and
     -- domain names that we need to resolve.
-      -- FIXME[C]: change name to 'partitionPeer' as this is handling just
-      --           one peer.
-    splitPeers :: (Set peerAddr, [DomainAccessPoint])
-               -> RelayAccessPoint
-               -> (Set peerAddr, [DomainAccessPoint])
-    splitPeers (addrs, domains) (RelayDomainAccessPoint domain) = (addrs, domain : domains)
-    splitPeers (addrs, domains) (RelayAccessAddress ip port) =
+    partitionPeer :: (Set peerAddr, [DomainAccessPoint])
+                  -> RelayAccessPoint
+                  -> (Set peerAddr, [DomainAccessPoint])
+    partitionPeer (addrs, domains) (RelayDomainAccessPoint domain) = (addrs, domain : domains)
+    partitionPeer (addrs, domains) (RelayAccessAddress ip port) =
         let !addr = toPeerAddr ip port in
         (Set.insert addr addrs, domains)
 
