@@ -125,14 +125,14 @@ mkMempool mpEnv = Mempool
         case mbPair of
           Nothing        -> pure Nothing
           Just (is, ls') -> do
-            let snapshot =
-                  pureGetSnapshotFor
+            let (ticked, snapshot) =
+                  pureGetSnapshotAndTickedFor
                     cfg
                     (ForgeInKnownSlot slot $ ledgerState ls')
                     capacityOverride
                     is
             atomically $ putTMVar istate is
-            pure $ Just (forgetLedgerTables ls', snapshot)
+            pure $ Just (forgetLedgerTables ls', ticked, snapshot)
     , getCapacity    = isCapacity <$> readTMVar istate
     , getTxSize      = txSize
     , zeroIdx        = zeroTicketNo

@@ -504,7 +504,7 @@ forkBlockForging IS{..} blockForging =
         -- produce a block that fits onto the ledger we got above; if the
         -- ledger in the meantime changes, the block we produce here may or
         -- may not be adopted, but it won't be invalid.
-        (unticked, mempoolSnapshot) <- do
+        (unticked, tickedLedgerState, mempoolSnapshot) <- do
           mb <- lift $ getLedgerAndSnapshotFor mempool bcPrevPoint currentSlot
           case mb of
             Just x  -> return x
@@ -572,18 +572,11 @@ forkBlockForging IS{..} blockForging =
         -- At this point we have established that we are indeed slot leader
         trace $ TraceNodeIsLeader currentSlot
 
-        -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: TickedLedgerState blk DiffMK
-            tickedLedgerState =
-              applyChainTick
-                (configLedger cfg)
-                currentSlot
-                (ledgerState unticked)
-
         let txs = map fst $ snapshotTxs mempoolSnapshot
 
         -- force the mempool's computation before the tracer event
         _ <- evaluate (length txs)
+        _ <- evaluate tickedLedgerState -- TODO: worth?
         -- trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
 
         -- Actually produce the block

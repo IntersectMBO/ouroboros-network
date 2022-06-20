@@ -175,13 +175,23 @@ data Mempool m blk idx = Mempool {
     , getSnapshot    :: STM m (MempoolSnapshot blk idx)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
-      -- the returned ledger state when it's ticked to the given slot
+      -- the returned ledger state when it's ticked to the given slot.
+      --
+      -- This returns the ledger state that was retrieved from the LedgerDB (for
+      -- ticking its ChainDepState to see if we have to forge), the ticked
+      -- ledger state that was used for mempool revalidation, and a snapshot of
+      -- the mempool. In particular given '(a, b, _)' as a result, 'b == tick
+      -- (ledgerState a)'.
       --
       -- This does not update the state of the mempool.
     , getLedgerAndSnapshotFor ::
            Point blk
         -> SlotNo
-        -> m (Maybe (ExtLedgerState blk EmptyMK, MempoolSnapshot blk idx))
+        -> m (Maybe ( ExtLedgerState blk EmptyMK
+                    , TickedLedgerState blk TrackingMK
+                    , MempoolSnapshot blk idx
+                    )
+             )
 
       -- | Get the mempool's capacity in bytes.
       --

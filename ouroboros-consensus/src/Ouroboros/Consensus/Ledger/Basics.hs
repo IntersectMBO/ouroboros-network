@@ -691,36 +691,62 @@ calculateAdditions               after = zipOverLedgerTables       (flip rawCalc
 calculateDifference       before after = zipOverLedgerTables       (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
 calculateDifferenceTicked before after = zipOverLedgerTablesTicked (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
 
-rawAttachDiffs ::
+rawAttachAndApplyDiffs ::
      Ord k
   => DiffMK     k v
   -> ValuesMK   k v
   -> TrackingMK k v
-rawAttachDiffs (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (forwardValues v d) d
+rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) =
+  ApplyTrackingMK (forwardValues v d) d
 
-attachAndApplyDiffsTicked :: TickedTableStuff l => Ticked1 l DiffMK -> l ValuesMK -> Ticked1 l TrackingMK
-attachAndApplyDiffsTicked after before = zipOverLedgerTablesTicked rawAttachDiffs after $ projectLedgerTables before
+-- | Replace the tables in the first parameter with the tables of the second
+-- parameter after applying the differences in the first parameter to them
+attachAndApplyDiffsTicked ::
+     TickedTableStuff l
+  => Ticked1 l DiffMK
+  ->         l ValuesMK
+  -> Ticked1 l TrackingMK
+attachAndApplyDiffsTicked after before =
+    zipOverLedgerTablesTicked rawAttachAndApplyDiffs after
+  $ projectLedgerTables before
 
 rawPrependTrackingDiffs ::
    Ord k
    => TrackingMK k v
    -> TrackingMK k v
    -> TrackingMK k v
-rawPrependTrackingDiffs (ApplyTrackingMK v d2) (ApplyTrackingMK _v d1) = ApplyTrackingMK v (d1 <> d2)
+rawPrependTrackingDiffs (ApplyTrackingMK v d2) (ApplyTrackingMK _v d1) =
+  ApplyTrackingMK v (d1 <> d2)
 
-prependLedgerTablesTrackingDiffs :: TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l TrackingMK -> Ticked1 l TrackingMK
+-- | Mappend the differences in the ledger tables. Keep the ledger state of the
+-- first one.
+prependLedgerTablesTrackingDiffs ::
+     TickedTableStuff l
+  => Ticked1 l TrackingMK
+  -> Ticked1 l TrackingMK
+  -> Ticked1 l TrackingMK
 prependLedgerTablesTrackingDiffs after before =
-  zipOverLedgerTablesTicked rawPrependTrackingDiffs after $ projectLedgerTablesTicked before
+    zipOverLedgerTablesTicked rawPrependTrackingDiffs after
+  $ projectLedgerTablesTicked before
 
 rawReapplyTracking ::
      Ord k
   => TrackingMK k v
   -> ValuesMK   k v
   -> TrackingMK k v
-rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) = ApplyTrackingMK (forwardValues v d) d
+rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) =
+  ApplyTrackingMK (forwardValues v d) d
 
-reapplyTrackingTicked :: TickedTableStuff l => Ticked1 l TrackingMK -> l ValuesMK -> Ticked1 l TrackingMK
-reapplyTrackingTicked after before = zipOverLedgerTablesTicked rawReapplyTracking after $ projectLedgerTables before
+-- | Replace the tables in the first parameter with the tables of the second
+-- parameter after applying the differences in the first parameter to them
+reapplyTrackingTicked ::
+     TickedTableStuff l
+  => Ticked1 l TrackingMK
+  ->         l ValuesMK
+  -> Ticked1 l TrackingMK
+reapplyTrackingTicked after before =
+    zipOverLedgerTablesTicked rawReapplyTracking after
+  $ projectLedgerTables before
 
 {-------------------------------------------------------------------------------
   Concrete ledger tables
