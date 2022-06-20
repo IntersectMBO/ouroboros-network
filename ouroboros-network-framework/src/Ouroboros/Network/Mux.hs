@@ -138,15 +138,12 @@ newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
 data ProtocolTemperature = Established | Warm | Hot
   deriving (Eq, Ord, Show)
 
--- GR-FIXME[D2]: AppKind is what?
--- | Singletons for 'AppKind' 
+-- | Singleton tokens for 'ProtocolTemperature'.
 --
 data TokProtocolTemperature (pt :: ProtocolTemperature) where
     TokHot         :: TokProtocolTemperature Hot
     TokWarm        :: TokProtocolTemperature Warm
     TokEstablished :: TokProtocolTemperature Established
-
--- GR-FIXME[C3]: What does 'Tok' signify?
 
 data SomeTokProtocolTemperature where
     SomeTokProtocolTemperature :: TokProtocolTemperature pt
