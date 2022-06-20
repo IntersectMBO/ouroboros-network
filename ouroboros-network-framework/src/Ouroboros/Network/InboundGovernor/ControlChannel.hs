@@ -12,13 +12,12 @@ module Ouroboros.Network.InboundGovernor.ControlChannel
   , ControlChannel (..)
   , ServerControlChannel
   , newControlChannel
-  , newOutboundConnection
-  , newInboundConnection
   ) where
 
 import           Control.Monad.Class.MonadSTM.Strict
 
 import           Data.Functor (($>))
+import           GHC.Natural (Natural)
 
 import           Network.Mux.Types (MuxMode)
 
@@ -54,40 +53,35 @@ instance Show peerAddr
 
 
 
--- | Server control channel.  It allows to pass 'STM' transactions which will
+-- | A Server control channel which instantiates 'handle'.
+--
+type ServerControlChannel (muxMode :: MuxMode) peerAddr bytes m a b =
+    ControlChannel peerAddr (Handle muxMode peerAddr bytes m a b) m
+
+-- | Control channel.  It allows to pass 'STM' transactions which will
 -- resolve to 'NewConnection'.   Server's monitoring thread is the consumer
 -- of these messages; there are two producers: accept loop and connection
 -- handler for outbound connections.
 --
--- GR-FIXME[D2]: Last sentence is DOU (see code-review-doc)
-type ServerControlChannel (muxMode :: MuxMode) peerAddr bytes m a b =
-    ControlChannel m (NewConnection peerAddr (Handle muxMode peerAddr bytes m a b))
-
-data ControlChannel m msg =
+data ControlChannel peerAddr handle m =
   ControlChannel {
     -- | Read a single 'NewConnection' instruction from the channel.
     --
-    readMessage  :: STM m msg,
+    readMessage  :: STM m (NewConnection peerAddr handle),
 
     -- | Write a 'NewConnection' to the channel.
     --
-    writeMessage :: msg -> STM m ()
+    writeMessage :: NewConnection peerAddr handle -> STM m ()
   }
-  -- GR-FIXME[C2]: the 'msg' tyvar appears to be always instantiated to
-  --   'NewConnection ...'
-  --   i.e., unnecessary polymorphism: reason for? to avoid dup of (NewConnection ...)?
 
 
-newControlChannel :: forall m srvCntrlMsg.
+newControlChannel :: forall peerAddr handle m.
                      MonadLabelledSTM m
-                  => m (ControlChannel m srvCntrlMsg)
+                  => m (ControlChannel peerAddr handle m)
 newControlChannel = do
-    -- Queue size: events will come either from the accept loop or from the
-    -- connection manager (when it includes an outbound duplex connection).
-    -- GR-FIXME[D2]: above comment is DOU (see code-review-doc)
     channel <-
       atomically $
-        newTBQueue 10                             -- G-FIXME[R]: magic number
+        newTBQueue cc_QUEUE_BOUND
         >>= \q -> labelTBQueue q "server-cc" $> q
     pure $ ControlChannel {
         readMessage  = readTBQueue channel,
@@ -95,25 +89,7 @@ newControlChannel = do
       }
 
 
-newOutboundConnection
-    :: ControlChannel m (NewConnection peerAddr handle)
-    -> ConnectionId peerAddr
-    -> DataFlow
-    -> handle
-    -> STM m ()
-newOutboundConnection channel connId dataFlow handle =
-    writeMessage channel
-                (NewConnection Outbound connId dataFlow handle)
-
-newInboundConnection
-    :: ControlChannel m (NewConnection peerAddr handle)
-    -> ConnectionId peerAddr
-    -> DataFlow
-    -> handle
-    -> STM m ()
-newInboundConnection channel connId dataFlow handle =
-    writeMessage channel
-                 (NewConnection Inbound connId dataFlow handle)
-
--- GR-FIXME[C3]: Possibly inline the last two at their call sites, each
---  is just called 1 time in ....ConnectionManager.Core
+-- | The 'ControlChannel's 'TBQueue' depth.
+--
+cc_QUEUE_BOUND :: Natural
+cc_QUEUE_BOUND = 10

@@ -110,7 +110,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
 import           Ouroboros.Network.PeerSelection.Simple
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server2 (ServerArguments (..),
-                     ServerTrace (..))
+                     ServerControlChannel, ServerTrace (..))
 import qualified Ouroboros.Network.Server2 as Server
 
 -- | P2P DiffusionTracers Extras
@@ -322,10 +322,7 @@ data ConnectionManagerDataInMode peerAddr m (mode :: MuxMode) where
       :: ConnectionManagerDataInMode peerAddr m InitiatorMode
 
     CMDInInitiatorResponderMode
-      :: Server.ControlChannel m
-          (Server.NewConnection
-            peerAddr
-            (Handle InitiatorResponderMode peerAddr ByteString m () ()))
+      :: ServerControlChannel InitiatorResponderMode peerAddr ByteString  m () ()
       -> StrictTVar m Server.InboundGovernorObservableState
       -> ConnectionManagerDataInMode peerAddr m InitiatorResponderMode
 
@@ -759,9 +756,6 @@ runM Interfaces
                   -- action which we pass to connection handler
                   pure (HasInitiator CMDInInitiatorMode)
                 InitiatorAndResponderDiffusionMode ->
-                  -- we pass 'Server.newOutboundConnection serverControlChannel' to
-                  -- connection handler
-                  -- GR-FIXME: last comment? not understandable in context. DEI?
                   HasInitiatorResponder <$>
                     (CMDInInitiatorResponderMode
                       <$> Server.newControlChannel
