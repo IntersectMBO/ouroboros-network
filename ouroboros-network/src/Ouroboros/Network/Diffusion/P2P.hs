@@ -677,7 +677,7 @@ runM Interfaces
                         SingResponderMode
                         diNtcHandshakeArguments
                         ( ( \ (OuroborosApplication apps)
-                           -> Bundle
+                           -> TemperatureBundle
                                 (WithHot apps)
                                 (WithWarm (\_ _ -> []))
                                 (WithEstablished (\_ _ -> []))

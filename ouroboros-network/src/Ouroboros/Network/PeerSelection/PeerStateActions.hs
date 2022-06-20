@@ -291,17 +291,17 @@ data ApplicationHandle muxMode bytes m a b = ApplicationHandle {
 --
 
 getControlVar :: TokProtocolTemperature pt
-              -> Bundle (ApplicationHandle muxMode bytes m a b)
+              -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
               -> StrictTVar m ControlMessage
 getControlVar tok = ahControlVar . projectBundle tok
 
 getProtocols :: TokProtocolTemperature pt
-             -> Bundle (ApplicationHandle muxMode bytes m a b)
+             -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
              -> [MiniProtocol muxMode bytes m a b]
 getProtocols tok bundle = ahApplication (projectBundle tok bundle)
 
 getMiniProtocolsVar :: TokProtocolTemperature pt
-                    -> Bundle (ApplicationHandle muxMode bytes m a b)
+                    -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
                     -> StrictTVar m (Map MiniProtocolNum (STM m (HasReturned a)))
 getMiniProtocolsVar tok = ahMiniProtocolResults . projectBundle tok
 
@@ -337,7 +337,7 @@ instance Semigroup FirstToFinishResult where
 --
 awaitFirstResult :: MonadSTM m
                  => TokProtocolTemperature pt
-                 -> Bundle (ApplicationHandle muxMode bytes m a b)
+                 -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
                  -> STM m FirstToFinishResult
 awaitFirstResult tok bundle = do
     d <- readTVar (getMiniProtocolsVar tok bundle)
@@ -376,7 +376,7 @@ instance Monoid LastToFinishResult where
 --
 awaitAllResults :: MonadSTM m
                 => TokProtocolTemperature pt
-                -> Bundle (ApplicationHandle muxMude bytes m a b)
+                -> TemperatureBundle (ApplicationHandle muxMude bytes m a b)
                 -> STM m LastToFinishResult
 awaitAllResults tok bundle = do
     results <-  readTVar (getMiniProtocolsVar tok bundle)
@@ -430,7 +430,7 @@ data PeerConnectionHandle (muxMode :: MuxMode) peerAddr bytes m a b = PeerConnec
     pchConnectionId :: ConnectionId peerAddr,
     pchPeerState    :: StrictTVar m PeerState,
     pchMux          :: Mux.Mux muxMode m,
-    pchAppHandles   :: Bundle (ApplicationHandle muxMode bytes m a b)
+    pchAppHandles   :: TemperatureBundle (ApplicationHandle muxMode bytes m a b)
   }
 
 instance Show peerAddr
@@ -741,7 +741,7 @@ withPeerStateActions PeerStateActionsArguments {
                   throwIO err
       where
         mkAwaitVars :: MuxBundle muxMode ByteString m a b
-                    -> STM m (Bundle
+                    -> STM m (TemperatureBundle
                                (StrictTVar m
                                  (Map MiniProtocolNum
                                    (STM m (HasReturned a)))))
@@ -951,13 +951,13 @@ mkApplicationHandleBundle
     :: forall (muxMode :: MuxMode) bytes m a b.
        MuxBundle muxMode bytes m a b
     -- ^ mux application
-    -> Bundle (StrictTVar m ControlMessage)
+    -> TemperatureBundle (StrictTVar m ControlMessage)
     -- ^ 'ControlMessage' bundle
-    -> Bundle (StrictTVar m (Map MiniProtocolNum (STM m (HasReturned a))))
+    -> TemperatureBundle (StrictTVar m (Map MiniProtocolNum (STM m (HasReturned a))))
     -- ^ await for application termination
-    -> Bundle (ApplicationHandle muxMode bytes m a b)
+    -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
 mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
-    Bundle
+    TemperatureBundle
       (mkApplication TokHot)
       (mkApplication TokWarm)
       (mkApplication TokEstablished)

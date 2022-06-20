@@ -235,7 +235,7 @@ instance Arbitrary req => Arbitrary (ClientAndServerData req) where
 
 expectedResult :: ClientAndServerData req
                -> ClientAndServerData req
-               -> [Bundle [[req]]]
+               -> [TemperatureBundle [[req]]]
 expectedResult client@ClientAndServerData
                                    { hotInitiatorRequests
                                    , warmInitiatorRequests
@@ -251,7 +251,7 @@ expectedResult client@ClientAndServerData
     rounds = numberOfRounds client
     fn acc x = (x : acc, x : acc)
     go (a : as) (b : bs) (c : cs) =
-      Bundle
+      TemperatureBundle
         (WithHot         (snd $ mapAccumL fn [accumulatorInit] a))
         (WithWarm        (snd $ mapAccumL fn [accumulatorInit] b))
         (WithEstablished (snd $ mapAccumL fn [accumulatorInit] c))
@@ -259,14 +259,14 @@ expectedResult client@ClientAndServerData
     go [] [] [] = []
     go _  _  _  = error "expectedResult: impossible happened"
 
-noNextRequests :: forall stm req peerAddr. Applicative stm => Bundle (ConnectionId peerAddr -> stm [req])
+noNextRequests :: forall stm req peerAddr. Applicative stm => TemperatureBundle (ConnectionId peerAddr -> stm [req])
 noNextRequests = pure $ \_ -> pure []
 
 -- | Next requests bundle for bidirectional and unidirectional experiments.
 oneshotNextRequests
   :: forall req peerAddr m. MonadSTM m
   => ClientAndServerData req
-  -> m (Bundle (ConnectionId peerAddr -> STM m [req]))
+  -> m (TemperatureBundle (ConnectionId peerAddr -> STM m [req]))
 oneshotNextRequests ClientAndServerData {
                       hotInitiatorRequests,
                       warmInitiatorRequests,
@@ -278,9 +278,10 @@ oneshotNextRequests ClientAndServerData {
     hotRequestsVar         <- newTVarIO hotInitiatorRequests
     warmRequestsVar        <- newTVarIO warmInitiatorRequests
     establishedRequestsVar <- newTVarIO establishedInitiatorRequests
-    return $ Bundle (WithHot hotRequestsVar)
-                    (WithWarm warmRequestsVar)
-                    (WithEstablished establishedRequestsVar)
+    return $ TemperatureBundle
+               (WithHot hotRequestsVar)
+               (WithWarm warmRequestsVar)
+               (WithEstablished establishedRequestsVar)
               <&> \ reqVar _ -> popRequests reqVar
   where
     popRequests requestsVar = do
@@ -326,7 +327,7 @@ withInitiatorOnlyConnectionManager
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> Maybe peerAddr
-    -> Bundle (ConnectionId peerAddr -> STM m [req])
+    -> TemperatureBundle (ConnectionId peerAddr -> STM m [req])
     -- ^ Functions to get the next requests for a given connection
     -> ProtocolTimeLimits (Handshake UnversionedProtocol Term)
     -- ^ Handshake time limits
@@ -380,14 +381,14 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket local
       (\cm ->
         k cm `catch` \(e :: SomeException) -> throwIO e)
   where
-    clientApplication :: Bundle
+    clientApplication :: TemperatureBundle
                           (ConnectionId peerAddr
                             -> ControlMessageSTM m
                             -> [MiniProtocol InitiatorMode ByteString m [resp] Void])
     clientApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums)
                                 <*> nextRequests
 
-      where nums = Bundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
+      where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
             mkProto miniProtocolNum nextRequest connId _ =
               [MiniProtocol {
                   miniProtocolNum,
@@ -486,7 +487,7 @@ withBidirectionalConnectionManager
     -> Maybe peerAddr
     -> acc
     -- ^ Initial state for the server
-    -> Bundle (ConnectionId peerAddr -> STM m [req])
+    -> TemperatureBundle (ConnectionId peerAddr -> STM m [req])
     -- ^ Functions to get the next requests for a given connection
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
@@ -575,12 +576,12 @@ withBidirectionalConnectionManager name timeouts
           `catch` \(e :: SomeException) -> do
             throwIO e
   where
-    serverApplication :: Bundle
+    serverApplication :: TemperatureBundle
                           (ConnectionId peerAddr
                             -> ControlMessageSTM m
                             -> [MiniProtocol InitiatorResponderMode ByteString m [resp] acc])
     serverApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums) <*> nextRequests
-      where nums = Bundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
+      where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
             mkProto miniProtocolNum nextRequest connId _ =
               [MiniProtocol {
                   miniProtocolNum,
@@ -674,7 +675,7 @@ runInitiatorProtocols
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m
     -> MuxBundle muxMode ByteString m a b
-    -> m (Bundle a)
+    -> m (TemperatureBundle a)
 runInitiatorProtocols
     singMuxMode mux
     bundle
@@ -749,7 +750,7 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
           $ \_ serverAddr serverAsync -> do
             link serverAsync
             -- client → server: connect
-            (rs :: [Either SomeException (Bundle [resp])]) <-
+            (rs :: [Either SomeException (TemperatureBundle [resp])]) <-
                 replicateM
                   (numberOfRounds clientAndServerData)
                   (bracket
@@ -762,7 +763,7 @@ unidirectionalExperiment timeouts snocket socket clientAndServerData = do
                           try @_ @SomeException $
                             (runInitiatorProtocols
                               SingInitiatorMode mux muxBundle
-                              :: m (Bundle [resp])
+                              :: m (TemperatureBundle [resp])
                             )
                         Disconnected _ err ->
                           throwIO (userError $ "unidirectionalExperiment: " ++ show err))
@@ -872,8 +873,8 @@ bidirectionalExperiment
               -- protocol in each bucket (warm \/ hot \/ established); but
               -- we run only one mini-protocol. We can use `concat` to
               -- flatten the results.
-              ( rs0 :: [Either SomeException (Bundle [resp])]
-                , rs1 :: [Either SomeException (Bundle [resp])]
+              ( rs0 :: [Either SomeException (TemperatureBundle [resp])]
+                , rs1 :: [Either SomeException (TemperatureBundle [resp])]
                 ) <-
                 -- Run initiator twice; this tests if the responders on
                 -- the other end are restarted.
@@ -1023,9 +1024,9 @@ data ConnectionEvent req peerAddr
     -- ^ Create a connection from client or server with the given address to the central server.
   | OutboundConnection DiffTime peerAddr
     -- ^ Create a connection from the central server to another server.
-  | InboundMiniprotocols DiffTime peerAddr (Bundle [req])
+  | InboundMiniprotocols DiffTime peerAddr (TemperatureBundle [req])
     -- ^ Run a bundle of mini protocols on the inbound connection from the given address.
-  | OutboundMiniprotocols DiffTime peerAddr (Bundle [req])
+  | OutboundMiniprotocols DiffTime peerAddr (TemperatureBundle [req])
     -- ^ Run a bundle of mini protocols on the outbound connection to the given address.
   | CloseInboundConnection DiffTime peerAddr
     -- ^ Close an inbound connection.
@@ -1097,14 +1098,14 @@ isValidEvent e ScriptState{..} =
     ShutdownClientServer    _ a   -> elem a (startedClients ++ startedServers)
 
 -- This could be an Arbitrary instance, but it would be an orphan.
-genBundle :: Arbitrary a => Gen (Bundle a)
+genBundle :: Arbitrary a => Gen (TemperatureBundle a)
 genBundle = traverse id $ pure arbitrary
 
-shrinkBundle :: Arbitrary a => Bundle a -> [Bundle a]
-shrinkBundle (Bundle (WithHot hot) (WithWarm warm) (WithEstablished est)) =
-  (shrink hot  <&> \ hot'  -> Bundle (WithHot hot') (WithWarm warm)  (WithEstablished est)) ++
-  (shrink warm <&> \ warm' -> Bundle (WithHot hot)  (WithWarm warm') (WithEstablished est)) ++
-  (shrink est  <&> \ est'  -> Bundle (WithHot hot)  (WithWarm warm)  (WithEstablished est'))
+shrinkBundle :: Arbitrary a => TemperatureBundle a -> [TemperatureBundle a]
+shrinkBundle (TemperatureBundle (WithHot hot) (WithWarm warm) (WithEstablished est)) =
+  (shrink hot  <&> \ hot'  -> TemperatureBundle (WithHot hot') (WithWarm warm)  (WithEstablished est)) ++
+  (shrink warm <&> \ warm' -> TemperatureBundle (WithHot hot)  (WithWarm warm') (WithEstablished est)) ++
+  (shrink est  <&> \ est'  -> TemperatureBundle (WithHot hot)  (WithWarm warm)  (WithEstablished est'))
 
 genAttenuationMap :: Ord peerAddr
                   => [ConnectionEvent req peerAddr]
@@ -1386,7 +1387,7 @@ data ConnectionHandlerMessage peerAddr req
     -- ^ Connect to the server at the given address.
   | Disconnect peerAddr
     -- ^ Disconnect from the server at the given address.
-  | RunMiniProtocols peerAddr (Bundle [req])
+  | RunMiniProtocols peerAddr (TemperatureBundle [req])
     -- ^ Run a bundle of mini protocols against the server at the given address (requires an active
     --   connection).
   | Shutdown
@@ -1515,8 +1516,8 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
             Nothing -> throwIO (NodeNotRunningException addr)
             Just cc -> writeTQueue cc msg
 
-    mkNextRequests :: StrictTVar m (Map.Map (ConnectionId peerAddr) (Bundle (TQueue m [req]))) ->
-                      Bundle (ConnectionId peerAddr -> STM m [req])
+    mkNextRequests :: StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (TQueue m [req]))) ->
+                      TemperatureBundle (ConnectionId peerAddr -> STM m [req])
     mkNextRequests connVar = makeBundle next
       where
         next :: forall pt. TokProtocolTemperature pt -> ConnectionId peerAddr -> STM m [req]
@@ -1625,10 +1626,13 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
             (HasInitiator muxMode ~ True)
          => SingMuxMode muxMode
          -> peerAddr
-         -> TQueue m (ConnectionHandlerMessage peerAddr req)                          -- control channel
+         -> TQueue m (ConnectionHandlerMessage peerAddr req)
+         -- ^ control channel
          -> MuxConnectionManager muxMode socket peerAddr UnversionedProtocol ByteString m [resp] a
-         -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a)          -- active connections
-         -> StrictTVar m (Map.Map (ConnectionId peerAddr) (Bundle (TQueue m [req])))  -- mini protocol queues
+         -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a)
+         -- ^ active connections
+         -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (TQueue m [req])))
+         -- ^ mini protocol queues
          -> m ()
     connectionLoop muxMode localAddr cc cm connMap0 connVar = go True connMap0
       where
@@ -2505,8 +2509,8 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
     $ inboundGovernorEvents
   where
     -- Note that this is only valid in the case of no attenuation.
-    bundleToCounters :: Bundle [Int] -> InboundGovernorCounters
-    bundleToCounters (Bundle hot warm _) =
+    bundleToCounters :: TemperatureBundle [Int] -> InboundGovernorCounters
+    bundleToCounters (TemperatureBundle hot warm _) =
       let warmRemote = bool 1 0 (null warm)
           hotRemote  = bool 1 0 (null hot)
        in InboundGovernorCounters 0 0 warmRemote hotRemote
@@ -2993,10 +2997,11 @@ unit_connection_terminated_when_negotiating =
          , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 24})
          , StartServer 0           (TestAddr {unTestAddr = TestAddress 40}) 0
          , OutboundMiniprotocols 0 (TestAddr {unTestAddr = TestAddress 24})
-                                   (Bundle { withHot         = WithHot [0]
-                                           , withWarm        = WithWarm []
-                                           , withEstablished = WithEstablished []
-                                           })
+                                   (TemperatureBundle
+                                     { withHot         = WithHot [0]
+                                     , withWarm        = WithWarm []
+                                     , withEstablished = WithEstablished []
+                                     })
          , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 40})
          ]
          Map.empty
@@ -3036,7 +3041,7 @@ ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
     ppEvent (CloseOutboundConnection _ a)   = "Close connection to " ++ show a
     ppEvent (ShutdownClientServer    _ a)   = "Shutdown client/server " ++ show a
 
-    ppData (Bundle hot warm est) =
+    ppData (TemperatureBundle hot warm est) =
       concat [ "hot:", show (withoutProtocolTemperature hot)
              , " warm:", show (withoutProtocolTemperature warm)
              , " est:", show (withoutProtocolTemperature est)]
@@ -3119,11 +3124,11 @@ withLock True   v m =
             (const m)
 
 
--- | Convenience function to create a Bundle. Could move to Ouroboros.Network.Mux.
-makeBundle :: (forall pt. TokProtocolTemperature pt -> a) -> Bundle a
-makeBundle f = Bundle (WithHot         $ f TokHot)
-                      (WithWarm        $ f TokWarm)
-                      (WithEstablished $ f TokEstablished)
+-- | Convenience function to create a TemperatureBundle. Could move to Ouroboros.Network.Mux.
+makeBundle :: (forall pt. TokProtocolTemperature pt -> a) -> TemperatureBundle a
+makeBundle f = TemperatureBundle (WithHot         $ f TokHot)
+                                 (WithWarm        $ f TokWarm)
+                                 (WithEstablished $ f TokEstablished)
 
 
 -- TODO: we should use @traceResult True@; the `prop_unidirectional_Sim` and
