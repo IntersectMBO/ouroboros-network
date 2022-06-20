@@ -151,17 +151,8 @@ connections PeerSelectionActions{
                                    (knownPeers st)
                                $ Map.keysSet demotedToCold
 
-        in assert
-            (let establishedPeersSet' =
-                   Map.keysSet (EstablishedPeers.toMap establishedPeers')
-             in activePeers' `Set.isSubsetOf` establishedPeersSet'
-             &&    Map.keysSet
-                     (EstablishedPeers.toMap establishedPeers')
-                == establishedPeersSet')
-              -- GR-FIXME[F3]: the right hand side of '&&' is equivalent to
-              --   establishedPeersSet' == establishedPeersSet'
-              --   i.e., True
-          
+        in assert (activePeers' `Set.isSubsetOf`
+                     Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
               decisionTrace = TraceDemoteAsynchronous demotions,
               decisionJobs  = [],
