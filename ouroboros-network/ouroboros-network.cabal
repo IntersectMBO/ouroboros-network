@@ -130,6 +130,7 @@ library
                        Ouroboros.Network.PeerSelection.Governor.Monitor
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types
+                       Ouroboros.Network.Diffusion.Utils
 
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
