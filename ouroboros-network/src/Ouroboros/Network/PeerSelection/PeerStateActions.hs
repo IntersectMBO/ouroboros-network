@@ -11,7 +11,9 @@
 -- matches.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 module Ouroboros.Network.PeerSelection.PeerStateActions
-  ( -- $doc
+  ( -- * Introduction
+    -- $doc
+    -- * Create PeerStateActions
     PeerStateActionsArguments (..)
   , PeerConnectionHandle
   , withPeerStateActions
@@ -54,11 +56,7 @@ import           Ouroboros.Network.ConnectionHandler (Handle (..),
                      HandleError (..), MuxConnectionManager)
 import           Ouroboros.Network.ConnectionManager.Types
 
--- GR-FIXME[D3]: The results of the haddock are odd, the TOC is odd and not matching
--- the sections in the page.
-
 -- $doc
--- = Introduction
 --
 -- This module implements 'withPeerStateActions', giving the user access to the
 -- 'PeerStateActions' API, which provides the following capabilities:
@@ -68,7 +66,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 --        * 'activatePeerConnection'
 --        * 'deactivatePeerConnection'
 --        * 'closePeerConnection'
--- 
+--
 --   [monitoring]: 'monitorPeerConnection' - returns the state of the connection.
 --
 --   [asynchronous demotions]: happens when a mini-protocol terminates or errors.
@@ -110,10 +108,10 @@ import           Ouroboros.Network.ConnectionManager.Types
 --
 -- The monitoring loop is responsible for taking an action when one of the
 -- mini-protocols either terminates or errors.  When a mini-protocol terminates
--- 
+--
 --    * if (mini-protocol was hot): trigger a synchronous /hot → warm/ transition.
 --    * otherwise: close the connection.
---  
+--
 -- The monitoring loop is supposed to stop when the multiplexer stops.
 --
 -- Note that the monitoring loop must act as soon as one of the mini-protocols
