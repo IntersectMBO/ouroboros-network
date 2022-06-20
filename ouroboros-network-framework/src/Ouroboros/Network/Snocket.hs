@@ -316,9 +316,9 @@ socketSnocket ioManager = Snocket {
           Socket.setSocketOption sd Socket.NoDelay 1
           -- it is safe to set 'SO_LINGER' option (which implicates that every
           -- close will reset the connection), since our protocols are robust.
-          -- In particualar if invalid data will arive (which includes the the
-          -- rare case of a late packet from a previous connection), we will
-          -- abandon (and close) the connection.
+          -- In particular if invalid data will arrive (which includes the rare
+          -- case of a late packet from a previous connection), we will abandon
+          -- (and close) the connection.
           Socket.setSockOpt sd Socket.Linger
                               (StructLinger { sl_onoff  = 1,
                                               sl_linger = 0 })
