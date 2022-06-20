@@ -40,7 +40,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.List (intercalate)
+import           Data.List (foldl1', intercalate)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Void (Void)
@@ -158,7 +158,8 @@ run ServerArguments {
                       | (localAddress, socket) <- localAddresses `zip` sockets
                       ]
 
-      raceAll threads
+      -- race all the threads
+      foldl1' (\as io -> either id id <$> as `race` io) threads
         `finally`
           traceWith tracer TrServerStopped
         `catch`
@@ -189,13 +190,6 @@ run ServerArguments {
 #endif
     iseCONNABORTED _ = False
 #endif
-
-    -- GR-FIXME[C]: this called just 1x, inline??
-    -- GR-FIXME[R]: easy to replace with Data.List.NonEmpty?
-    raceAll :: [m x] -> m x
-    raceAll []       = error "raceAll: invariant violation"
-    raceAll [t]      = t
-    raceAll (t : ts) = either id id <$> race t (raceAll ts)
 
     acceptLoop :: peerAddr
                -> Accept m socket peerAddr
