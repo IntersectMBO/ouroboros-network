@@ -138,17 +138,6 @@ newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
 data ProtocolTemperature = Established | Warm | Hot
   deriving (Eq, Ord, Show)
 
--- GR-FIXME[C3]: A name a little more specific, less misleading?
---   The word "Temperature" makes one think Cold, Warm, or Hot.  But that's
---   not the idea here.
---   E.g.,
---   data ProtocolRunsInTheTemperatureSet =
---          WarmAndHot  / ProtocolsForWarmAndHot
---        | WarmOnly    / ProtocolsForWarmOnly
---        | HotOnly     / ProtocolsForHotOnly
---   or, 
---   data ProtocolCategories = ...
-
 -- GR-FIXME[D2]: AppKind is what?
 -- | Singletons for 'AppKind' 
 --
