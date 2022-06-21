@@ -288,17 +288,17 @@ data ApplicationHandle muxMode bytes m a b = ApplicationHandle {
 -- Useful accessors
 --
 
-getControlVar :: TokProtocolTemperature pt
+getControlVar :: SingProtocolTemperature pt
               -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
               -> StrictTVar m ControlMessage
 getControlVar tok = ahControlVar . projectBundle tok
 
-getProtocols :: TokProtocolTemperature pt
+getProtocols :: SingProtocolTemperature pt
              -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
              -> [MiniProtocol muxMode bytes m a b]
 getProtocols tok bundle = ahApplication (projectBundle tok bundle)
 
-getMiniProtocolsVar :: TokProtocolTemperature pt
+getMiniProtocolsVar :: SingProtocolTemperature pt
                     -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
                     -> StrictTVar m (Map MiniProtocolNum (STM m (HasReturned a)))
 getMiniProtocolsVar tok = ahMiniProtocolResults . projectBundle tok
@@ -334,7 +334,7 @@ instance Semigroup FirstToFinishResult where
 -- the indicated bundle.
 --
 awaitFirstResult :: MonadSTM m
-                 => TokProtocolTemperature pt
+                 => SingProtocolTemperature pt
                  -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
                  -> STM m FirstToFinishResult
 awaitFirstResult tok bundle = do
@@ -373,7 +373,7 @@ instance Monoid LastToFinishResult where
 -- temperature.
 --
 awaitAllResults :: MonadSTM m
-                => TokProtocolTemperature pt
+                => SingProtocolTemperature pt
                 -> TemperatureBundle (ApplicationHandle muxMude bytes m a b)
                 -> STM m LastToFinishResult
 awaitAllResults tok bundle = do
@@ -561,13 +561,13 @@ withPeerStateActions PeerStateActionsArguments {
         r <-
           atomically $
             (WithSomeProtocolTemperature . WithEstablished
-              <$> awaitFirstResult TokEstablished pchAppHandles)
+              <$> awaitFirstResult SingEstablished pchAppHandles)
           `orElse`
             (WithSomeProtocolTemperature . WithWarm
-              <$> awaitFirstResult TokWarm pchAppHandles)
+              <$> awaitFirstResult SingWarm pchAppHandles)
           `orElse`
             (WithSomeProtocolTemperature . WithHot
-              <$> awaitFirstResult TokHot pchAppHandles)
+              <$> awaitFirstResult SingHot pchAppHandles)
 
         traceWith spsTracer (PeerMonitoringResult pchConnectionId r)
         case r of
@@ -651,9 +651,9 @@ withPeerStateActions PeerStateActionsArguments {
                       (Handle mux muxBundle controlMessageBundle) -> do
 
               atomically $ do
-                writeTVar (projectBundle TokHot         controlMessageBundle) Terminate
-                writeTVar (projectBundle TokWarm        controlMessageBundle) Continue
-                writeTVar (projectBundle TokEstablished controlMessageBundle) Continue
+                writeTVar (projectBundle SingHot         controlMessageBundle) Terminate
+                writeTVar (projectBundle SingWarm        controlMessageBundle) Continue
+                writeTVar (projectBundle SingEstablished controlMessageBundle) Continue
 
               awaitVarBundle <- atomically $ mkAwaitVars muxBundle
 
@@ -668,8 +668,8 @@ withPeerStateActions PeerStateActionsArguments {
                                             awaitVarBundle
                       }
 
-              startProtocols TokWarm connHandle
-              startProtocols TokEstablished connHandle
+              startProtocols SingWarm connHandle
+              startProtocols SingEstablished connHandle
               atomically $ writeTVar peerStateVar PeerWarm
               traceWith spsTracer (PeerStatusChanged
                                     (ColdToWarm
@@ -761,8 +761,8 @@ withPeerStateActions PeerStateActionsArguments {
         -- if the peer is cold we can't activate it.
         notCold <- isNotCold pchPeerStatus
         when notCold $ do
-          writeTVar (getControlVar TokHot pchAppHandles) Continue
-          writeTVar (getControlVar TokWarm pchAppHandles) Quiesce
+          writeTVar (getControlVar SingHot pchAppHandles) Continue
+          writeTVar (getControlVar SingWarm pchAppHandles) Quiesce
         return notCold
       when (not wasWarm) $ do
         traceWith spsTracer (PeerStatusChangeFailure
@@ -771,7 +771,7 @@ withPeerStateActions PeerStateActionsArguments {
         throwIO $ ColdActivationException pchConnectionId
 
       -- start hot peer protocols
-      startProtocols TokHot connHandle
+      startProtocols SingHot connHandle
 
       -- Only set the status to PeerHot if the peer isn't PeerCold.
       -- This can happen asynchronously between the check above and now.
@@ -797,8 +797,8 @@ withPeerStateActions PeerStateActionsArguments {
       wasWarm <- atomically $ do
         notCold <- isNotCold pchPeerStatus
         when notCold $ do
-          writeTVar (getControlVar TokHot pchAppHandles) Terminate
-          writeTVar (getControlVar TokWarm pchAppHandles) Continue
+          writeTVar (getControlVar SingHot pchAppHandles) Terminate
+          writeTVar (getControlVar SingWarm pchAppHandles) Continue
         return notCold
       when (not wasWarm) $ do
         -- The governor attempted to demote an already cold peer.
@@ -811,7 +811,7 @@ withPeerStateActions PeerStateActionsArguments {
       -- Hot protocols should stop within 'spsDeactivateTimeout'.
       res <-
         timeout spsDeactivateTimeout
-                (atomically $ awaitAllResults TokHot pchAppHandles)
+                (atomically $ awaitAllResults SingHot pchAppHandles)
       case res of
         Nothing -> do
           Mux.stopMux pchMux
@@ -841,7 +841,7 @@ withPeerStateActions PeerStateActionsArguments {
             when notCold $ do
               -- We need to update hot protocols to indicate that they are not
               -- running.
-              stateTVar (getMiniProtocolsVar TokHot pchAppHandles)
+              stateTVar (getMiniProtocolsVar SingHot pchAppHandles)
                         (\a -> ( ()
                                , Map.map (const (pure NotRunning)) a
                                ))
@@ -866,9 +866,9 @@ withPeerStateActions PeerStateActionsArguments {
             pchMux
           } = do
       atomically $ do
-        writeTVar (getControlVar TokWarm pchAppHandles) Terminate
-        writeTVar (getControlVar TokEstablished pchAppHandles) Terminate
-        writeTVar (getControlVar TokHot pchAppHandles) Terminate
+        writeTVar (getControlVar SingWarm pchAppHandles) Terminate
+        writeTVar (getControlVar SingEstablished pchAppHandles) Terminate
+        writeTVar (getControlVar SingHot pchAppHandles) Terminate
 
       res <-
         timeout spsCloseConnectionTimeout
@@ -878,9 +878,9 @@ withPeerStateActions PeerStateActionsArguments {
                     -- established mini-protocols since 'closePeerConnection'
                     -- is also used by asynchronous demotions, not just
                     -- /warm → cold/ transition.
-                    <$> awaitAllResults TokHot pchAppHandles
-                    <*> awaitAllResults TokWarm pchAppHandles
-                    <*> awaitAllResults TokEstablished pchAppHandles)
+                    <$> awaitAllResults SingHot pchAppHandles
+                    <*> awaitAllResults SingWarm pchAppHandles
+                    <*> awaitAllResults SingEstablished pchAppHandles)
       -- 'unregisterOutboundConnection' could only fail to demote the peer if
       -- connection manager would simultaneously promote it, but this is not
       -- posible.
@@ -930,11 +930,11 @@ mkApplicationHandleBundle
     -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
 mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
     TemperatureBundle
-      (mkApplication TokHot)
-      (mkApplication TokWarm)
-      (mkApplication TokEstablished)
+      (mkApplication SingHot)
+      (mkApplication SingWarm)
+      (mkApplication SingEstablished)
   where
-    mkApplication :: TokProtocolTemperature pt
+    mkApplication :: SingProtocolTemperature pt
                   -> WithProtocolTemperature pt (ApplicationHandle muxMode bytes m a b)
     mkApplication tok =
       let app =
@@ -944,12 +944,12 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
               ahMiniProtocolResults = projectBundle tok awaitVarsBundle
             }
       in case tok of
-          TokHot         -> WithHot app
-          TokWarm        -> WithWarm app
-          TokEstablished -> WithEstablished app
+          SingHot         -> WithHot app
+          SingWarm        -> WithWarm app
+          SingEstablished -> WithEstablished app
 
 
--- | Given a singleton 'TokAppKind' and 'PeerConnectionHandle' start the mux
+-- | Given a singleton 'SingProtocolTemperature' and 'PeerConnectionHandle' start the mux
 -- protocol bundle indicated by the type of the first argument.
 --
 startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature) peerAddr m a b.
@@ -958,7 +958,7 @@ startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature) peerAd
                   , MonadThrow (STM m)
                   , HasInitiator muxMode ~ True
                   )
-               => TokProtocolTemperature pt
+               => SingProtocolTemperature pt
                -> PeerConnectionHandle muxMode peerAddr ByteString m a b
                -> m ()
 startProtocols tok PeerConnectionHandle { pchMux, pchAppHandles } = do
