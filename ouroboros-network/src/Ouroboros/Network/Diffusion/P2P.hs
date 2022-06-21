@@ -864,7 +864,7 @@ runM Interfaces
                       daReadPublicRootPeers
                       peerStateActions
                       requestLedgerPeers
-                      $ \mbLocalPeerSelectionActionsThread
+                      $ \localPeerSelectionActionsThread
                         (peerSelectionActions
                            :: NodeToNodePeerSelectionActions
                                 InitiatorMode ntnAddr m Void) ->
@@ -891,11 +891,11 @@ runM Interfaces
                           $ \churnGovernorThread ->
                                 -- wait for any thread to fail
                                 snd <$> Async.waitAny
-                                (maybeToList mbLocalPeerSelectionActionsThread
-                                ++ [ governorThread
+                                   [ localPeerSelectionActionsThread
+                                   , governorThread
                                    , ledgerPeerThread
                                    , churnGovernorThread
-                                   ])
+                                   ]
 
               -- InitiatorResponderMode
               --
@@ -982,7 +982,7 @@ runM Interfaces
                       daReadPublicRootPeers
                       peerStateActions
                       requestLedgerPeers
-                      $ \mbLocalPeerRootProviderThread
+                      $ \localPeerRootProviderThread
                         (peerSelectionActions
                            :: NodeToNodePeerSelectionActions
                                 InitiatorResponderMode ntnAddr m ()) ->
@@ -1036,12 +1036,12 @@ runM Interfaces
 
                                       -- wait for any thread to fail
                                       snd <$> Async.waitAny
-                                        (maybeToList mbLocalPeerRootProviderThread
-                                        ++ [ serverThread
+                                           [ localPeerRootProviderThread
+                                           , serverThread
                                            , governorThread
                                            , ledgerPeerThread
                                            , churnGovernorThread
-                                           ])
+                                           ]
 
     Async.runConcurrently
       $ asum
