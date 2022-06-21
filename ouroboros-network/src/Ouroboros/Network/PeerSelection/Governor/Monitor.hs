@@ -82,7 +82,7 @@ jobs jobPool st =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
     Guarded Nothing $ do
-      Completion completion <- JobPool.collect jobPool
+      Completion completion <- JobPool.waitForJob jobPool
       return (completion st)
 
 
