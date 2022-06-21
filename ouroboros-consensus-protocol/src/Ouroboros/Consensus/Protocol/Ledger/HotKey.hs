@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Hot key
@@ -187,11 +188,10 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
             KESKeyPoisoned -> error "trying to sign with a poisoned key"
             KESKey key     -> do
               let evolution = kesEvolution kesStateInfo
-                  signed    = SL.signedKES () evolution toSign key
-              -- Force the signature to WHNF (for 'SignedKES', WHNF implies
-              -- NF) so that we don't have any thunks holding on to a key that
-              -- might be destructively updated when evolved.
-              evaluate signed
+              -- This also forces the signature to WHNF (for 'SignedKES', WHNF
+              -- implies NF) so that we don't have any thunks holding on to a
+              -- key that might be destructively updated when evolved.
+              SL.signedKES () evolution toSign key
       }
   where
     initKESState :: KESState c
@@ -268,7 +268,7 @@ evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
       | targetEvolution <= curEvolution
       = return $ KESState { kesStateInfo = info, kesStateKey = KESKey key }
       | otherwise
-      = case SL.updateKES () key curEvolution of
+      = SL.updateKES () key curEvolution >>= \case
           -- This cannot happen
           Nothing    -> error "Could not update KES key"
           Just !key' -> do
