@@ -13,7 +13,7 @@ module Control.Concurrent.JobPool
   , forkJob
   , readSize
   , readGroupSize
-  , collect
+  , waitForJob
   , cancelGroup
   ) where
 
@@ -99,11 +99,8 @@ readGroupSize JobPool{jobsVar} group =
     . Map.filterWithKey (\(group', _) _ -> group' == group)
   <$> readTVar jobsVar
 
-collect :: MonadSTM m => JobPool group m a -> STM m a
-collect JobPool{completionQueue} = readTQueue completionQueue
-  -- GR-FIXME[C2]: better name?
-  --  - 'collect' gives the impression getting many and NOT blocking
-  --  - how about 'getCompletedJob'?
+waitForJob :: MonadSTM m => JobPool group m a -> STM m a
+waitForJob JobPool{completionQueue} = readTQueue completionQueue
   
 cancelGroup :: ( MonadAsync m
                , Eq group

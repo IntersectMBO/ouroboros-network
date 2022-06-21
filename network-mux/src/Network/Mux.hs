@@ -362,7 +362,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
     go !monitorCtx@MonitorCtx { mcOnDemandProtocols } = do
       result <- atomically $ runFirstToFinish $
             -- wait for a mini-protocol thread to terminate
-           (FirstToFinish $ EventJobResult <$> JobPool.collect jobpool)
+           (FirstToFinish $ EventJobResult <$> JobPool.waitForJob jobpool)
 
             -- wait for a new control command
         <> (FirstToFinish $ EventControlCmd <$> readTQueue cmdQueue)
