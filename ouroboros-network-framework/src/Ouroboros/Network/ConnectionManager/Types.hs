@@ -56,11 +56,11 @@
 --
 -- >
 -- > ┌────────────────────────┐
--- > │                        │        ┏━━━━━━━━━━━━━━━━┓     ┌──────────────────┐
--- > │   ConnectionHandler    │        ┃                ┃     │                  │
--- > │                        ┝━━━━━━━▶┃     handle     ┣━━━━▶│ PeerStateActions ├───▶ P2P Governor
--- > │  inbound / outbound    │        ┃                ┃     │                  │
--- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛     └──────────────────┘
+-- > │                        │        ┏━━━━━━━━━━━━━━━━┓
+-- > │   ConnectionHandler    │        ┃                ┃
+-- > │                        ┝━━━━━━━▶┃     handle     ┃
+-- > │  inbound / outbound    │        ┃                ┃
+-- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛
 -- > └─────────╂──────────────┘           ┃
 -- >           ┃                          ┃
 -- >           ▼                          ┃
@@ -79,9 +79,9 @@
 -- Termination procedure as well as connection state machine is not described in
 -- this haddock, see associated specification.
 --
-
--- GR-FIXME[D]: references to PeerStateActions and P2P Governor feel misplaced
--- as these are defined in a calling package! (DOU)
+-- The 'handle' is used in `ouroboros-network` package to construct
+-- `PeerStateActions` which allow for the outbound governor to
+--
 
 module Ouroboros.Network.ConnectionManager.Types
   ( -- * Connection manager core types

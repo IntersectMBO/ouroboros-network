@@ -17,7 +17,7 @@ module Ouroboros.Network.Mux
   , OuroborosApplication (..)
   , MuxProtocolBundle
   , ProtocolTemperature (..)
-  , TokProtocolTemperature (..)
+  , SingProtocolTemperature (..)
   , SomeTokProtocolTemperature (..)
   , WithProtocolTemperature (..)
   , withoutProtocolTemperature
@@ -138,15 +138,15 @@ newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
 data ProtocolTemperature = Established | Warm | Hot
   deriving (Eq, Ord, Show)
 
--- | Singleton tokens for 'ProtocolTemperature'.
+-- | Singletons for 'ProtocolTemperature'.
 --
-data TokProtocolTemperature (pt :: ProtocolTemperature) where
-    TokHot         :: TokProtocolTemperature Hot
-    TokWarm        :: TokProtocolTemperature Warm
-    TokEstablished :: TokProtocolTemperature Established
+data SingProtocolTemperature (pt :: ProtocolTemperature) where
+    SingHot         :: SingProtocolTemperature Hot
+    SingWarm        :: SingProtocolTemperature Warm
+    SingEstablished :: SingProtocolTemperature Established
 
 data SomeTokProtocolTemperature where
-    SomeTokProtocolTemperature :: TokProtocolTemperature pt
+    SomeTokProtocolTemperature :: SingProtocolTemperature pt
                                -> SomeTokProtocolTemperature
 
 
@@ -237,10 +237,10 @@ instance Semigroup a => Semigroup (TemperatureBundle a) where
 instance Monoid a => Monoid (TemperatureBundle a) where
     mempty = TemperatureBundle mempty mempty mempty
 
-projectBundle :: TokProtocolTemperature pt -> TemperatureBundle a -> a
-projectBundle TokHot         = withoutProtocolTemperature . withHot
-projectBundle TokWarm        = withoutProtocolTemperature . withWarm
-projectBundle TokEstablished = withoutProtocolTemperature . withEstablished
+projectBundle :: SingProtocolTemperature pt -> TemperatureBundle a -> a
+projectBundle SingHot         = withoutProtocolTemperature . withHot
+projectBundle SingWarm        = withoutProtocolTemperature . withWarm
+projectBundle SingEstablished = withoutProtocolTemperature . withEstablished
 
 
 instance Applicative TemperatureBundle where

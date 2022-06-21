@@ -188,19 +188,19 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                                 [ ( miniProtocolNum mpH
                                   , MiniProtocolData mpH Hot
                                   )
-                                | mpH <- projectBundle TokHot muxBundle
+                                | mpH <- projectBundle SingHot muxBundle
                                 ]
                               csMPMWarm =
                                 [ ( miniProtocolNum mpW
                                   , MiniProtocolData mpW Warm
                                   )
-                                | mpW <- projectBundle TokWarm muxBundle
+                                | mpW <- projectBundle SingWarm muxBundle
                                 ]
                               csMPMEstablished =
                                 [ ( miniProtocolNum mpE
                                   , MiniProtocolData mpE Established
                                   )
-                                | mpE <- projectBundle TokEstablished muxBundle
+                                | mpE <- projectBundle SingEstablished muxBundle
                                 ]
                               csMiniProtocolMap =
                                   Map.fromList

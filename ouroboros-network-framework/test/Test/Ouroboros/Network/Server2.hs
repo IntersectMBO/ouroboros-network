@@ -1520,7 +1520,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                       TemperatureBundle (ConnectionId peerAddr -> STM m [req])
     mkNextRequests connVar = makeBundle next
       where
-        next :: forall pt. TokProtocolTemperature pt -> ConnectionId peerAddr -> STM m [req]
+        next :: forall pt. SingProtocolTemperature pt -> ConnectionId peerAddr -> STM m [req]
         next tok connId = do
           connMap <- readTVar connVar
           case Map.lookup connId connMap of
@@ -1641,14 +1641,14 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
            -> m ()
         go !unregister !connMap = atomically (readTQueue cc) >>= \ case
           NewConnection remoteAddr -> do
-            let mkQueue :: forall pt. TokProtocolTemperature pt
+            let mkQueue :: forall pt. SingProtocolTemperature pt
                         -> STM m (TQueue m [req])
                 mkQueue tok = do
                   q <- newTQueue
                   let temp = case tok of
-                        TokHot         -> "hot"
-                        TokWarm        -> "warm"
-                        TokEstablished -> "cold"
+                        SingHot         -> "hot"
+                        SingWarm        -> "warm"
+                        SingEstablished -> "cold"
                   q <$ labelTQueue q ("protoVar." ++ temp ++ "@" ++ show localAddr)
             connHandle <- tryJust (\(e :: SomeException) ->
                                        case fromException e of
@@ -3125,10 +3125,10 @@ withLock True   v m =
 
 
 -- | Convenience function to create a TemperatureBundle. Could move to Ouroboros.Network.Mux.
-makeBundle :: (forall pt. TokProtocolTemperature pt -> a) -> TemperatureBundle a
-makeBundle f = TemperatureBundle (WithHot         $ f TokHot)
-                                 (WithWarm        $ f TokWarm)
-                                 (WithEstablished $ f TokEstablished)
+makeBundle :: (forall pt. SingProtocolTemperature pt -> a) -> TemperatureBundle a
+makeBundle f = TemperatureBundle (WithHot         $ f SingHot)
+                                 (WithWarm        $ f SingWarm)
+                                 (WithEstablished $ f SingEstablished)
 
 
 -- TODO: we should use @traceResult True@; the `prop_unidirectional_Sim` and
