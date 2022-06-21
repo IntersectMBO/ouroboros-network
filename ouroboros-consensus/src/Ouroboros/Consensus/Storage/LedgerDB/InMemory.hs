@@ -204,9 +204,9 @@ type ModernLedgerDB l = DbChangelog l
 data LedgerDB (l :: LedgerStateKind) = LedgerDB {
       -- | Legacy LedgerDB. If specified, this will be @Nothing@ and we will
       -- just run the modern database.
-      ledgerDbCheckpoints :: Maybe (LegacyLedgerDB l)
+      ledgerDbCheckpoints :: !(Maybe (LegacyLedgerDB l))
       -- | Modern database
-    , ledgerDbChangelog   :: ModernLedgerDB l
+    , ledgerDbChangelog   :: !(ModernLedgerDB l)
     }
   deriving (Generic)
 
