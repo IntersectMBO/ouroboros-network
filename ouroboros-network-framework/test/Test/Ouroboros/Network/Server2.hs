@@ -3087,15 +3087,15 @@ withTimeNameTraceEvents = fmap (\(WithTime t (WithName _ e)) -> WithTime t e)
               @(WithTime (WithName (Name SimAddr) b))
 
 showConnectionEvents :: ConnectionEvent req peerAddr -> String
-showConnectionEvents (StartClient{})             = "StartClient"
-showConnectionEvents (StartServer{})             = "StartServer"
-showConnectionEvents (InboundConnection{})       = "InboundConnection"
-showConnectionEvents (OutboundConnection{})      = "OutboundConnection"
-showConnectionEvents (InboundMiniprotocols{})    = "InboundMiniprotocols"
-showConnectionEvents (OutboundMiniprotocols{})   = "OutboundMiniprotocols"
-showConnectionEvents (CloseInboundConnection{})  = "CloseInboundConnection"
-showConnectionEvents (CloseOutboundConnection{}) = "CloseOutboundConnection"
-showConnectionEvents (ShutdownClientServer{})    = "ShutdownClientServer"
+showConnectionEvents StartClient{}             = "StartClient"
+showConnectionEvents StartServer{}             = "StartServer"
+showConnectionEvents InboundConnection{}       = "InboundConnection"
+showConnectionEvents OutboundConnection{}      = "OutboundConnection"
+showConnectionEvents InboundMiniprotocols{}    = "InboundMiniprotocols"
+showConnectionEvents OutboundMiniprotocols{}   = "OutboundMiniprotocols"
+showConnectionEvents CloseInboundConnection{}  = "CloseInboundConnection"
+showConnectionEvents CloseOutboundConnection{} = "CloseOutboundConnection"
+showConnectionEvents ShutdownClientServer{}    = "ShutdownClientServer"
 
 
 -- | Redefine this tracer to get valuable tracing information from various
