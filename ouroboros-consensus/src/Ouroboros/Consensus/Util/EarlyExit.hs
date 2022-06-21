@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE FlexibleInstances          #-}
 
 module Ouroboros.Consensus.Util.EarlyExit (
     exitEarly
@@ -39,6 +40,8 @@ import           Control.Monad.Class.MonadTimer
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
                      MonadMonotonicTime (..), StrictMVar, StrictTVar)
+import           Cardano.Crypto.KES.Class (KESSignAlgorithm)
+import qualified Cardano.Crypto.KES.Class as KES
 
 {-------------------------------------------------------------------------------
   Basic definitions
@@ -222,6 +225,14 @@ instance MonadEventlog m => MonadEventlog (WithEarlyExit m) where
   traceEventIO  = lift . traceEventIO
   traceMarkerIO = lift . traceMarkerIO
 
+instance KESSignAlgorithm m v => KESSignAlgorithm (WithEarlyExit m) v where
+  deriveVerKeyKES k = lift $ KES.deriveVerKeyKES k
+  signKES c t m k = lift $ KES.signKES c t m k
+  updateKES c k t = lift $ KES.updateKES c k t
+  genKeyKES = lift . KES.genKeyKES
+  rawSerialiseSignKeyKES k b s = lift $ KES.rawSerialiseSignKeyKES k b s
+  rawDeserialiseSignKeyKES b s = lift $ KES.rawDeserialiseSignKeyKES b s
+
 {-------------------------------------------------------------------------------
   Finally, the consensus IOLike wrapper
 -------------------------------------------------------------------------------}
@@ -236,4 +247,4 @@ instance ( IOLike m
            -- <https://github.com/input-output-hk/ouroboros-network/issues/1461>
          , MonadCatch (STM m)
          ) => IOLike (WithEarlyExit m) where
-  forgetSignKeyKES = lift . forgetSignKeyKES
+  forgetSignKeyKES = KES.forgetSignKeyKES

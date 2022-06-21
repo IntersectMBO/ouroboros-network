@@ -42,7 +42,7 @@ module Ouroboros.Consensus.Util.IOLike (
 
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Crypto.KES (KESAlgorithm, SignKeyKES)
+import           Cardano.Crypto.KES (KESSignAlgorithm, SignKeyKES)
 import qualified Cardano.Crypto.KES as KES
 
 import           Control.Monad.Class.MonadAsync
@@ -79,7 +79,7 @@ class ( MonadAsync              m
   -- | Securely forget a KES signing key.
   --
   -- No-op for the IOSim, but 'KES.forgetSignKeyKES' for IO.
-  forgetSignKeyKES :: KESAlgorithm v => SignKeyKES v -> m ()
+  forgetSignKeyKES :: forall v. KESSignAlgorithm m v => SignKeyKES v -> m ()
 
 instance IOLike IO where
   forgetSignKeyKES = KES.forgetSignKeyKES
