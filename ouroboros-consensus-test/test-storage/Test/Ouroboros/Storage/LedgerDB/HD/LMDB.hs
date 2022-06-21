@@ -79,6 +79,7 @@ test1 =
     } <- HD.bsvhRead vh1 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 True) t1_1
   Tasty.assertEqual "" (Map.singleton "1" 1) t2_1
+  HD.bsvhClose vh1
 
   step "read2"
   TLedgerTables
@@ -87,6 +88,7 @@ test1 =
     } <- HD.bsvhRead vh2 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 False) t1_2
   Tasty.assertEqual "" (Map.singleton "1" 2) t2_2
+  HD.bsvhClose vh2
 
 -- | Initialise an `LMDB` backing store and use it to run actions test-case steps.
 withLMDB ::
@@ -108,7 +110,7 @@ initLMDB mayLimits = do
   tmpdir <- createTempDirectory x "cardano-lmdb"
   let
     fs = someHasFSIO tmpdir
-    limits = fromMaybe LMDB.defaultLMDBLimits mayLimits
+    limits = fromMaybe defaultLMDBLimits mayLimits
     emptyInit :: LMDB.LMDBInit l
     emptyInit = LMDB.LIInitialiseFromMemory Origin polyEmptyLedgerTables
   bs <- LMDB.newLMDBBackingStore
@@ -125,6 +127,23 @@ cleanupLMDB (tmpdir, bs) = do
 
 someHasFSIO :: FilePath -> SomeHasFS IO
 someHasFSIO fp = SomeHasFS $ ioHasFS $ MountPoint fp
+
+{-------------------------------------------------------------------------------
+  Configuration
+-------------------------------------------------------------------------------}
+
+defaultLMDBLimits :: LMDB.LMDBLimits
+defaultLMDBLimits = LMDB.LMDBLimits
+  { -- 1 MiB should be more than sufficient for the simple, few writes that we
+    -- perform in these tests. If the database were to grow beyond a
+    -- Mebibyte, resulting in a test error, then something in the LMDB backing
+    -- store or tests has changed and we should reconsider this value.
+    LMDB.lmdbMapSize = 1024 * 1024
+    -- 4 internal databases: 1 for the settings, 1 for the state, 2 for the
+    -- ledger tables.
+  , LMDB.lmdbMaxDatabases = 4
+  , LMDB.lmdbMaxReaders = 16
+  }
 
 {-------------------------------------------------------------------------------
   Test utilities: Simple ledger
