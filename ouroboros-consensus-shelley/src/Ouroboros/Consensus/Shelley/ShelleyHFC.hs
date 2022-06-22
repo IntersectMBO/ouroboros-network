@@ -177,13 +177,13 @@ instance
     LedgerSupportsProtocol (ShelleyBlock proto era)
   ) => SingleEraBlock (ShelleyBlock proto era) where
   singleEraTransition pcfg _eraParams _eraStart ledgerState =
-      -- TODO(jdral): When fixing a bug in @db-analyser@ related to hard-forks,
-      -- we replaced the matched expression below with @traceShowId $
-      -- shelleyTriggerHardFork pcf@ to debug the hard-fork functionality.
-      -- The trace of @db-analyser@ shows that the expression is printed thrice
-      -- for every @reapplyBlock@ of a Shelley block. Does this mean that we
-      -- evaluate this function thrice for every @reapplyBlock@? It would be
-      -- useful to investigate whether this is problematic behaviour.
+      -- TODO: We might be evaluating 'singleEraTransition' more than once when
+      -- replaying blocks. We should investigate if this is the case, and if so,
+      -- whether this is the desired behaviour. If it is not, then we need to
+      -- fix it.
+      --
+      -- For evidence of this behaviour, replace the cased-on expression by:
+      -- > @traceShowId $ shelleyTriggerHardFork pcf@
       case shelleyTriggerHardFork pcfg of
         TriggerHardForkNever                         -> Nothing
         TriggerHardForkAtEpoch   epoch               -> Just epoch
