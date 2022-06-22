@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE MonoLocalBinds      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 -- | This tiny executable loads an in-mem backing store and an lmdb backing store and checks:
@@ -80,7 +81,7 @@ getMemDb f = do
 
 getLMDB :: (TranslateProto (TPraos StandardCrypto) (Praos StandardCrypto)) => FilePath -> IO (WithOrigin SlotNo, LedgerTables (ExtLedgerState (CardanoBlock StandardCrypto)) ValuesMK)
 getLMDB dbFilePath = do
-  dbEnv <- LMDB.openEnvironment dbFilePath Consensus.LMDB.defaultLMDBLimits
+  dbEnv <- LMDB.openEnvironment dbFilePath limits
   Just dbSettings <- LMDB.readWriteTransaction dbEnv $ (LMDB.getDatabase (Just "_dbstate") :: LMDB.Transaction LMDB.ReadWrite (LMDB.Database () Consensus.LMDB.DbState)) >>= flip LMDB.get ()
   dbBackingTables <- LMDB.readWriteTransaction dbEnv $ traverseLedgerTables (\(NameMK name) -> Consensus.LMDB.LMDBMK name <$> LMDB.getDatabase (Just name)) namesLedgerTables
   (Consensus.LMDB.dbsSeq dbSettings,) <$> (LMDB.readWriteTransaction dbEnv (zipLedgerTablesA f dbBackingTables codecLedgerTables) :: IO (LedgerTables (ExtLedgerState (CardanoBlock StandardCrypto)) ValuesMK))
@@ -93,3 +94,13 @@ getLMDB dbFilePath = do
                             Map.empty
                             cdc
                             db
+    -- Preferably, these settings should match the default configuration for
+    -- @cardano-node@. There, we pick @'lmdbMapSize'@ and @'lmdbMaxDatabases'@
+    -- such that they are sufficient for the medium term, i.e., until a more
+    -- performant backing store is developed and integrated.
+    limits :: LMDB.Limits
+    limits = LMDB.Limits {
+        LMDB.mapSize = 16_000_000_000
+      , LMDB.maxDatabases = 10
+      , LMDB.maxReaders = 16
+    }
