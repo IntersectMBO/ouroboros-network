@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -34,8 +34,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
-                     (defaultLMDBLimits, mapSize)
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (LMDBLimits (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector (..), DiskSnapshot (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -299,7 +298,7 @@ analyse CmdLine {..} args =
                 LMDB mapsize ->
                   maybe
                     (LMDBBackingStore defaultLMDBLimits)
-                    (\n -> LMDBBackingStore (defaultLMDBLimits { mapSize = n }))
+                    (\n -> LMDBBackingStore (defaultLMDBLimits { lmdbMapSize = n }))
                     mapsize
 
           ImmutableDB.withDB (ImmutableDB.openDB immutableDbArgs runWithTempRegistry) $ \immutableDB -> do
@@ -348,3 +347,13 @@ analyse CmdLine {..} args =
       (_, Just MinimumBlockValidation) -> VolatileDB.NoValidation
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
+
+    -- Preferably, these settings should match the default configuration for
+    -- @cardano-node@. There, we pick @'lmdbMapSize'@ and @'lmdbMaxDatabases'@
+    -- such that they are sufficient for the medium term, i.e., until a more
+    -- performant backing store is developed and integrated.
+    defaultLMDBLimits = LMDBLimits {
+      lmdbMapSize      = 16_000_000_000
+    , lmdbMaxDatabases = 10
+    , lmdbMaxReaders   = 16
+    }

@@ -1,24 +1,22 @@
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE NumericUnderscores         #-}
-{-# LANGUAGE Rank2Types                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (
     DbErr
-  , LMDB.mapSize
   , LMDBBackingStore
   , LMDBInit (..)
-  , LMDBLimits
   , LMDBValueHandle
   , TraceDb (..)
-  , defaultLMDBLimits
   , newLMDBBackingStore
+    -- * Configuration
+  , LMDBLimits (LMDBLimits, lmdbMapSize, lmdbMaxDatabases, lmdbMaxReaders)
     -- * Exported for ledger-db-backends-checker
   , DbState (..)
   , LMDBMK (..)
@@ -196,14 +194,22 @@ data Db m l = Db {
 newVHId :: Map Int (ValueHandle m) -> Int
 newVHId openHdls = maybe 0 ((+1) . fst) $ Map.lookupMax openHdls
 
-type LMDBLimits = LMDB.Limits
+newtype LMDBLimits = MkLMDBLimits {unLMDBLimits :: LMDB.Limits}
 
-defaultLMDBLimits :: LMDBLimits
-defaultLMDBLimits = LMDB.defaultLimits
-  { LMDB.mapSize = 6_000_000_000
-    -- We use 1 database per field + one for the state (i.e. sidetable)
-  , LMDB.maxDatabases = 10
-  , LMDB.maxReaders = 16
+{-# COMPLETE LMDBLimits #-}
+-- | Configuration to use for LMDB backing store initialisation.
+--
+-- Keep the following in mind:
+-- * @'lmdbMapSize'@ should be a multiple of the OS page size.
+-- * @'lmdbMaxDatabases'@ should be set to at least 2, since the backing store
+--    has 2 internal LMDB databases by default: 1 for the database settings
+--    @'DbSettings'@, and 1 for the database state @'DbState'@.
+pattern LMDBLimits :: Int -> Int -> Int -> LMDBLimits
+pattern LMDBLimits{lmdbMapSize, lmdbMaxDatabases, lmdbMaxReaders} =
+  MkLMDBLimits LMDB.Limits {
+    LMDB.mapSize = lmdbMapSize
+  , LMDB.maxDatabases = lmdbMaxDatabases
+  , LMDB.maxReaders = lmdbMaxReaders
   }
 
 -- | The database settings.
@@ -228,7 +234,7 @@ newtype DbState = DbState {
 
 instance S.Serialise DbState
 
--- | ValueHandles hold an Async which is holding a transaction open.
+-- | ValueHandles hold a transaction open.
 data ValueHandle m = ValueHandle
   { vhClose :: !(m ())
   , vhSubmit :: !(forall a. LMDB.Transaction LMDB.ReadOnly (Maybe a) -> m (Maybe a))
@@ -584,7 +590,7 @@ initFromLMDBs tracer limits shfs from0 to0 = do
     from <- guardDbDir GDDMustExist shfs from0
     to <- guardDbDirWithRetry GDDMustNotExist shfs to0
     bracket
-      (liftIO $ LMDB.openEnvironment from limits)
+      (liftIO $ LMDB.openEnvironment from (unLMDBLimits limits))
       (liftIO . LMDB.closeEnvironment)
       (flip (lmdbCopy tracer) to)
     Trace.traceWith tracer $ TDBInitialisedFromLMDBD to0
@@ -643,7 +649,7 @@ newLMDBBackingStore dbTracer limits sfs initDb = do
   copyDbAction
 
   -- open this database
-  dbEnv <- liftIO $ LMDB.openEnvironment dbFilePath limits
+  dbEnv <- liftIO $ LMDB.openEnvironment dbFilePath (unLMDBLimits limits)
 
   -- Create the settings table.
   dbSettings <- liftIO $ LMDB.readWriteTransaction dbEnv $ LMDB.getDatabase (Just "_dbsettings")

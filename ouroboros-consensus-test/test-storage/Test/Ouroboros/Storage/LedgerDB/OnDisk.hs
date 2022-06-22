@@ -13,6 +13,7 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -102,8 +103,21 @@ tests = testGroup "OnDisk"
     [ TTT.traceableProperty "LedgerSimple-InMem" $ \showTrace ->
         prop_sequential $ inMemDbEnv showTrace
     , TTT.traceableProperty "LedgerSimple-LMDB"  $ \showTrace ->
-        prop_sequential $ lmdbDbEnv showTrace LMDB.defaultLMDBLimits
+        prop_sequential $ lmdbDbEnv showTrace testLMDBLimits
     ]
+
+testLMDBLimits :: LMDB.LMDBLimits
+testLMDBLimits = LMDB.LMDBLimits
+  { -- 100 MiB should be more than sufficient for the tests we're running here.
+    -- If the database were to grow beyond 100 Mebibytes, resulting in a test
+    -- error, then something in the LMDB backing store or tests has changed and
+    -- we should reconsider this value.
+    LMDB.lmdbMapSize = 100 * 1024 * 1024
+    -- 3 internal databases: 1 for the settings, 1 for the state, and 1 for the
+    -- ledger tables.
+  , LMDB.lmdbMaxDatabases = 3
+  , LMDB.lmdbMaxReaders = 16
+  }
 
 {-------------------------------------------------------------------------------
   TestBlock
