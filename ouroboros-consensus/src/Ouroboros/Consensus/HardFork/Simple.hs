@@ -13,6 +13,9 @@ import           Cardano.Slotting.Slot (EpochNo)
 data TriggerHardFork =
     -- | Trigger the transition when the on-chain protocol major version (from
     -- the ledger state) reaches this number.
+    --
+    -- Note: The HFC logic does not require the trigger version for one era to
+    -- be the successor of the trigger version for the previous era.
     TriggerHardForkAtVersion !Word16
     -- | For testing only, trigger the transition at a specific hard-coded
     -- epoch, irrespective of the ledger state.

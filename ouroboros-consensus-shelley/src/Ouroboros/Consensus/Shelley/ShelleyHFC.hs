@@ -177,6 +177,13 @@ instance
     LedgerSupportsProtocol (ShelleyBlock proto era)
   ) => SingleEraBlock (ShelleyBlock proto era) where
   singleEraTransition pcfg _eraParams _eraStart ledgerState =
+      -- TODO: We might be evaluating 'singleEraTransition' more than once when
+      -- replaying blocks. We should investigate if this is the case, and if so,
+      -- whether this is the desired behaviour. If it is not, then we need to
+      -- fix it.
+      --
+      -- For evidence of this behaviour, replace the cased-on expression by:
+      -- > @traceShowId $ shelleyTriggerHardFork pcf@
       case shelleyTriggerHardFork pcfg of
         TriggerHardForkNever                         -> Nothing
         TriggerHardForkAtEpoch   epoch               -> Just epoch
