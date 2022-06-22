@@ -17,7 +17,7 @@ module Ouroboros.Consensus.Mempool.API (
     -- * Mempool Snapshot
   , ForgeLedgerState (..)
   , MempoolSnapshot (..)
-  , withLedgerTablesFLS
+  , forgeLedgerState
     -- * Mempool size and capacity
   , MempoolCapacityBytes (..)
   , MempoolCapacityBytesOverride (..)
@@ -175,13 +175,23 @@ data Mempool m blk idx = Mempool {
     , getSnapshot    :: STM m (MempoolSnapshot blk idx)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
-      -- the returned ledger state when it's ticked to the given slot
+      -- the returned ledger state when it's ticked to the given slot.
+      --
+      -- This returns the ledger state that was retrieved from the LedgerDB (for
+      -- ticking its ChainDepState to see if we have to forge), the ticked
+      -- ledger state that was used for mempool revalidation, and a snapshot of
+      -- the mempool. In particular given '(a, b, _)' as a result, 'b == tick
+      -- (ledgerState a)'.
       --
       -- This does not update the state of the mempool.
     , getLedgerAndSnapshotFor ::
            Point blk
         -> SlotNo
-        -> m (Maybe (ExtLedgerState blk EmptyMK, MempoolSnapshot blk idx))
+        -> m (Maybe ( ExtLedgerState blk EmptyMK
+                    , TickedLedgerState blk TrackingMK
+                    , MempoolSnapshot blk idx
+                    )
+             )
 
       -- | Get the mempool's capacity in bytes.
       --
@@ -303,12 +313,12 @@ addTxsHelper mempool wti = \txs -> do
 -- ledger: the update system might be updated, scheduled delegations might be
 -- applied, etc., and such changes should take effect before we validate any
 -- transactions.
-data ForgeLedgerState blk mk =
+data ForgeLedgerState blk =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
     -- and we are actually producing a block.
-    ForgeInKnownSlot SlotNo (TickedLedgerState blk mk)
+    ForgeInKnownSlot SlotNo (LedgerState blk ValuesMK)
 
     -- | The slot number of the block is not yet known
     --
@@ -316,18 +326,11 @@ data ForgeLedgerState blk mk =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | ForgeInUnknownSlot (LedgerState blk mk)
+  | ForgeInUnknownSlot (LedgerState blk ValuesMK)
 
-withLedgerTablesFLS ::
-     (TickedTableStuff (LedgerState blk), IsApplyMapKind mk)
-  => ForgeLedgerState blk any
-  -> LedgerTables (LedgerState blk) mk
-  -> ForgeLedgerState blk mk
-withLedgerTablesFLS flst tables = case flst of
-    ForgeInKnownSlot slot tickedLst ->
-      ForgeInKnownSlot slot $ withLedgerTablesTicked tickedLst tables
-    ForgeInUnknownSlot lst ->
-      ForgeInUnknownSlot $ withLedgerTables lst tables
+forgeLedgerState :: ForgeLedgerState blk -> LedgerState blk ValuesMK
+forgeLedgerState (ForgeInKnownSlot _ ls) = ls
+forgeLedgerState (ForgeInUnknownSlot ls) = ls
 
 {-------------------------------------------------------------------------------
   Mempool capacity in bytes
@@ -405,9 +408,6 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
 
     -- | The block number of the "virtual block" under construction
   , snapshotSlotNo      :: SlotNo
-
-    -- | The ledger state after all transactions in the snapshot
-  , snapshotLedgerState :: TickedLedgerState blk ValuesMK
   }
 
 {-------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ module Ouroboros.Consensus.Mempool.Impl.Pure (
     -- * Mempool
     SyncWithLedger (..)
   , TryAddTxs (..)
-  , pureGetSnapshotFor
+  , pureGetSnapshotAndTickedFor
   , pureRemoveTxs
   , pureSyncWithLedger
   , pureTryAddTxs
@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Mempool.Impl.Pure (
   ) where
 
 import           Control.Exception (assert)
+import           Data.Bifunctor (second)
 import           Data.Maybe (isJust, isNothing)
 import qualified Data.Set as Set
 
@@ -226,20 +227,21 @@ pureSyncWithLedger istate lstate lcfg capacityOverride =
 
 -- | Get a snapshot of the mempool state that is valid with respect to
 -- the given ledger state
-pureGetSnapshotFor
+pureGetSnapshotAndTickedFor
   :: forall blk.
      ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
      )
   => LedgerConfig blk
-  -> ForgeLedgerState blk ValuesMK
+  -> ForgeLedgerState blk
   -> MempoolCapacityBytesOverride
   -> InternalState blk
-  -> MempoolSnapshot blk TicketNo
-pureGetSnapshotFor cfg blockLedgerState capacityOverride =
-      implSnapshotFromIS
-    . internalStateFromVR
+  -> (TickedLedgerState blk TrackingMK, MempoolSnapshot blk TicketNo)
+pureGetSnapshotAndTickedFor cfg blockLedgerState capacityOverride =
+      second ( implSnapshotFromIS
+            . internalStateFromVR
+            )
     . validateStateFor capacityOverride cfg blockLedgerState
 
 {-------------------------------------------------------------------------------
@@ -258,7 +260,6 @@ implSnapshotFromIS is = MempoolSnapshot {
     , snapshotHasTx       = implSnapshotHasTx          is
     , snapshotMempoolSize = implSnapshotGetMempoolSize is
     , snapshotSlotNo      = isSlotNo                   is
-    , snapshotLedgerState = isLedgerState              is
     }
  where
   implSnapshotGetTxs :: InternalState blk
