@@ -252,16 +252,17 @@ Let us consider the following requirements which should influence our Mempool de
 With Input-Endorsers transaction processing throughput will be increased significantly. As outlined herein, this is the
 primary benefit of employing two different block types (\glsplural{ib} \& \glsplural{rb}).
 SPOs will create both \glsplural{ib} \& \glsplural{rb} as defined by the VRF schedule. One of the main challenges we 
-face due to \glsplural{ib} high production rate is reduction of duplicate being transmitted over the network graph.
-As each SPOs mempool naturally contains a similar set of unprocessed transactions, and given the high block production 
+face, due to \glsplural{ib} high production rate, is the reduction of duplicate data being transmitted over the network 
+graph.
+As each SPO's mempool naturally contains a similar set of unprocessed transactions, and given the high block production 
 rate of \glsplural{ib}, we would expect to see a significant proportion of disparately produced \glsplural{ib} share 
-a large intersection of their transaction sets. \\ The larger this intersection the lower the efficacy of the system.\\
+a large intersection of their respective transaction sets. \\ The larger this intersection the lower the efficacy of the 
+system.\\
 
-In order to maximise throughput with Input-Endorsers it's important to engineer a mechanism so that SPOs select
-transactions to include in \glsplural{ib} in a uniform distributed manner. Selection of transactions in a deterministic,
-uniformly distributed random manner will provide an approach to minimize the intersection of two disparately produced 
-\glsplural{ib}.
-
+In order to maximize throughput with Input-Endorsers it's important to engineer a mechanism so that SPOs select
+transactions to include in \glsplural{ib} in a uniformly distributed manner. Selection of transactions in a 
+deterministic, uniformly distributed random manner will provide an approach to minimize the intersection of two 
+disparately produced \glsplural{ib}. This mechanism may leverage the VRF or potentially the transaction ID.
 
 \subsection{Blockchain Structure}
 Assumptions we had with regard to the blockchain structure will need to be reevaluated in the context of 
