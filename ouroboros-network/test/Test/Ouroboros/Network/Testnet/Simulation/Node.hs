@@ -69,6 +69,8 @@ import qualified Ouroboros.Network.PeerSelection.Types as PeerSelection
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..), byteLimitsChainSync,
                      timeLimitsChainSync)
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
+                     (byteLimitsBlockFetch, timeLimitsBlockFetch)
 import           Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
                      (byteLimitsKeepAlive, timeLimitsKeepAlive)
@@ -607,23 +609,26 @@ diffusionSimulation
           limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts Block
           limitsAndTimeouts
             = NodeKernel.LimitsAndTimeouts
-                { NodeKernel.chainSyncLimits     = defaultMiniProtocolsLimit
-                , NodeKernel.chainSyncSizeLimits = byteLimitsChainSync (const 0)
-                , NodeKernel.chainSyncTimeLimits =
+                { NodeKernel.chainSyncLimits      = defaultMiniProtocolsLimit
+                , NodeKernel.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
+                , NodeKernel.chainSyncTimeLimits  =
                     timeLimitsChainSync stdChainSyncTimeout
-                , NodeKernel.keepAliveLimits     = defaultMiniProtocolsLimit
-                , NodeKernel.keepAliveSizeLimits = byteLimitsKeepAlive (const 0)
-                , NodeKernel.keepAliveTimeLimits = timeLimitsKeepAlive
-                , NodeKernel.pingPongLimits      = defaultMiniProtocolsLimit
-                , NodeKernel.pingPongSizeLimits  =
+                , NodeKernel.blockFetchLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
+                , NodeKernel.blockFetchTimeLimits = timeLimitsBlockFetch
+                , NodeKernel.keepAliveLimits      = defaultMiniProtocolsLimit
+                , NodeKernel.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
+                , NodeKernel.keepAliveTimeLimits  = timeLimitsKeepAlive
+                , NodeKernel.pingPongLimits       = defaultMiniProtocolsLimit
+                , NodeKernel.pingPongSizeLimits   =
                     ProtocolSizeLimits (const smallByteLimit) (const 0)
-                , NodeKernel.pingPongTimeLimits  =
+                , NodeKernel.pingPongTimeLimits   =
                     ProtocolTimeLimits (const (Just 60))
-                , NodeKernel.handshakeLimits     = defaultMiniProtocolsLimit
-                , NodeKernel.handshakeTimeLimits =
+                , NodeKernel.handshakeLimits      = defaultMiniProtocolsLimit
+                , NodeKernel.handshakeTimeLimits  =
                     ProtocolSizeLimits (const (4 * 1440))
                                        (fromIntegral . BL.length)
-                , NodeKernel.handhsakeSizeLimits =
+                , NodeKernel.handhsakeSizeLimits  =
                     ProtocolTimeLimits (const shortWait)
                 }
 

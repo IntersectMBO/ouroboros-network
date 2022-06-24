@@ -540,9 +540,9 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       bracketWithPrivateRegistry
         (chainSyncHeaderServerFollower
            (getChainDB kernel)
-           ( if isPipeliningEnabled version
-             then ChainDB.TentativeChain
-             else ChainDB.SelectedChain
+           ( case isPipeliningEnabled version of
+              ReceivingTentativeBlocks    -> ChainDB.TentativeChain
+              NotReceivingTentativeBlocks -> ChainDB.SelectedChain
            )
         )
         ChainDB.followerClose
@@ -564,7 +564,8 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       -> m (NodeToNodeInitiatorResult, Maybe bBF)
     aBlockFetchClient version controlMessageSTM them channel = do
       labelThisThread "BlockFetchClient"
-      bracketFetchClient (getFetchClientRegistry kernel) version them $ \clientCtx -> do
+      bracketFetchClient (getFetchClientRegistry kernel) version
+                         isPipeliningEnabled them $ \clientCtx -> do
         ((), trailing) <- runPipelinedPeerWithLimits
           (contramap (TraceLabelPeer them) tBlockFetchTracer)
           (cBlockFetchCodec (mkCodecs version))

@@ -38,6 +38,9 @@ import           Network.TypedProtocol.PingPong.Codec.CBOR
 import           Network.TypedProtocol.PingPong.Examples
 import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Type
+import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
+import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
@@ -74,11 +77,13 @@ import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 -- | Protocol codecs.
 --
 data Codecs block m = Codecs
-  { chainSyncCodec :: Codec (ChainSync block (Point block) (Tip block))
+  { chainSyncCodec  :: Codec (ChainSync block (Point block) (Tip block))
                          CBOR.DeserialiseFailure m ByteString
-  , keepAliveCodec :: Codec KeepAlive
+  , blockFetchCodec :: Codec (BlockFetch block (Point block))
                          CBOR.DeserialiseFailure m ByteString
-  , pingPongCodec  :: Codec PingPong
+  , keepAliveCodec  :: Codec KeepAlive
+                         CBOR.DeserialiseFailure m ByteString
+  , pingPongCodec   :: Codec PingPong
                          CBOR.DeserialiseFailure m ByteString
   }
 
@@ -88,6 +93,8 @@ cborCodecs = Codecs
                                     Serialise.encode Serialise.decode
                                     (Block.encodeTip Serialise.encode)
                                     (Block.decodeTip Serialise.decode)
+  , blockFetchCodec = codecBlockFetch Serialise.encode Serialise.decode
+                                      Serialise.encode Serialise.decode
   , keepAliveCodec = codecKeepAlive_v2
   , pingPongCodec  = codecPingPong
   }
@@ -99,9 +106,18 @@ data LimitsAndTimeouts block = LimitsAndTimeouts
     chainSyncLimits
       :: MiniProtocolLimits
   , chainSyncSizeLimits
-      :: ProtocolSizeLimits (ChainSync block (Point block) (Tip block)) ByteString
+      :: ProtocolSizeLimits (ChainSync block (Point block) (Tip block))
+                            ByteString
   , chainSyncTimeLimits
       :: ProtocolTimeLimits (ChainSync block (Point block) (Tip block))
+
+    -- block-fetch
+  , blockFetchLimits
+      :: MiniProtocolLimits
+  , blockFetchSizeLimits
+      :: ProtocolSizeLimits (BlockFetch block (Point block)) ByteString
+  , blockFetchTimeLimits
+      :: ProtocolTimeLimits (BlockFetch block (Point block))
 
     -- keep-alive
   , keepAliveLimits
@@ -147,7 +163,7 @@ data AppArgs m = AppArgs
 
 -- | Protocol handlers.
 --
-applications :: forall block m.
+applications :: forall block header m.
                 ( MonadAsync m
                 , MonadFork  m
                 , MonadMask  m
@@ -158,7 +174,7 @@ applications :: forall block m.
                 , HasHeader block
                 , ShowProxy block
                 )
-             => NodeKernel block m
+             => NodeKernel header block m
              -> Codecs block m
              -> LimitsAndTimeouts block
              -> AppArgs m
@@ -256,25 +272,29 @@ applications nodeKernel
       -> MuxPeer ByteString m ()
     chainSyncInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
-      MuxPeerRaw $ \channel ->
-        bracket (registerClientChains nodeKernel remoteAddress)
-                (\_ -> unregisterClientChains nodeKernel remoteAddress)
-                (\chainVar ->
-                  runPeerWithLimits
-                    nullTracer
-                    chainSyncCodec
-                    (chainSyncSizeLimits limits)
-                    (chainSyncTimeLimits limits)
-                    channel
-                    (chainSyncClientPeer $
-                       chainSyncClientExample
-                         chainVar
-                         (controlledClient controlMessageSTM))
-                )
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "ChainSyncClient"
+        bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
+                                   remoteAddress $
+          bracket (registerClientChains nodeKernel remoteAddress)
+                  (\_ -> unregisterClientChains nodeKernel remoteAddress)
+                  (\chainVar ->
+                    runPeerWithLimits
+                      nullTracer
+                      chainSyncCodec
+                      (chainSyncSizeLimits limits)
+                      (chainSyncTimeLimits limits)
+                      channel
+                      (chainSyncClientPeer $
+                         chainSyncClientExample
+                           chainVar
+                           (controlledClient controlMessageSTM))
+                  )
 
     chainSyncResponder
       :: MuxPeer ByteString m ()
-    chainSyncResponder = MuxPeerRaw $ \channel ->
+    chainSyncResponder = MuxPeerRaw $ \channel -> do
+      labelThisThread "ChainSyncServer"
       runPeerWithLimits
         nullTracer
         chainSyncCodec
@@ -291,29 +311,31 @@ applications nodeKernel
       -> MuxPeer ByteString m ()
     keepAliveInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
-      MuxPeerRaw $ \channel ->
-        bracket (registerClientKeepAlive nodeKernel remoteAddress)
-                (\_ -> unregisterClientKeepAlive nodeKernel remoteAddress)
-                (\ctxVar ->
-                    runPeerWithLimits
-                      nullTracer
-                      keepAliveCodec
-                      (keepAliveSizeLimits limits)
-                      (keepAliveTimeLimits limits)
-                      channel
-                      (keepAliveClientPeer $
-                         keepAliveClient
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "KeepAliveClient"
+        let kacApp =
+              \ctxVar -> runPeerWithLimits
                            nullTracer
-                           aaKeepAliveStdGen
-                           controlMessageSTM
-                           remoteAddress
-                           ctxVar
-                           (KeepAliveInterval aaKeepAliveInterval))
-                )
+                           keepAliveCodec
+                           (keepAliveSizeLimits limits)
+                           (keepAliveTimeLimits limits)
+                           channel
+                           (keepAliveClientPeer $
+                              keepAliveClient
+                                nullTracer
+                                aaKeepAliveStdGen
+                                controlMessageSTM
+                                remoteAddress
+                                ctxVar
+                                (KeepAliveInterval aaKeepAliveInterval))
+        bracketKeepAliveClient (nkFetchClientRegistry nodeKernel)
+                               remoteAddress
+                               kacApp
 
     keepAliveResponder
       :: MuxPeer ByteString m ()
-    keepAliveResponder = MuxPeerRaw $ \channel ->
+    keepAliveResponder = MuxPeerRaw $ \channel -> do
+      labelThisThread "KeepAliveServer"
       runPeerWithLimits
         nullTracer
         keepAliveCodec
