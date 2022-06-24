@@ -21,8 +21,6 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , newNodeKernel
   , registerClientChains
   , unregisterClientChains
-  , registerClientKeepAlive
-  , unregisterClientKeepAlive
   , withNodeKernelThread
   , NodeKernelError (..)
   ) where
@@ -51,7 +49,7 @@ import           Network.Socket (PortNumber)
 import           Ouroboros.Network.AnchoredFragment (Anchor (..))
 import           Ouroboros.Network.Block (HasHeader, SlotNo)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.DeltaQ
+import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState
@@ -160,7 +158,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
     , bgaSeed
     }
 
-data NodeKernel block m = NodeKernel {
+data NodeKernel header block m = NodeKernel {
       -- | upstream chains
       nkClientChains
         :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain block))),
@@ -169,21 +167,19 @@ data NodeKernel block m = NodeKernel {
       nkChainProducerState
         :: StrictTVar m (ChainProducerState block),
 
-      -- | keep alive state
-      nkKeepAliveCtx
-        :: StrictTVar m (Map NtNAddr PeerGSV)
+      nkFetchClientRegistry :: FetchClientRegistry NtNAddr header block m
     }
 
-newNodeKernel :: MonadSTM m => m (NodeKernel block m)
+newNodeKernel :: MonadSTM m => m (NodeKernel header block m)
 newNodeKernel = NodeKernel
             <$> newTVarIO Map.empty
             <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
-            <*> newTVarIO Map.empty
+            <*> newFetchClientRegistry
 
 -- | Register a new upstream chain-sync client.
 --
 registerClientChains :: MonadSTM m
-                     => NodeKernel block m
+                     => NodeKernel header block m
                      -> NtNAddr
                      -> m (StrictTVar m (Chain block))
 registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
@@ -195,32 +191,11 @@ registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
 -- | Unregister an upstream chain-sync client.
 --
 unregisterClientChains :: MonadSTM m
-                       => NodeKernel block m
+                       => NodeKernel header block m
                        -> NtNAddr
                        -> m ()
 unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
     modifyTVar nkClientChains (Map.delete peerAddr)
-
--- | Register a new keep alive state.
---
-registerClientKeepAlive :: MonadSTM m
-                        => NodeKernel block m
-                        -> NtNAddr
-                        -> m (StrictTVar m (Map NtNAddr PeerGSV))
-registerClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $ do
-    modifyTVar nkKeepAliveCtx (Map.insert peerAddr defaultGSV)
-    return nkKeepAliveCtx
-
-
--- | Unregister a keep alive state
---
-unregisterClientKeepAlive :: MonadSTM m
-                          => NodeKernel block m
-                          -> NtNAddr
-                          -> m ()
-unregisterClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $
-    modifyTVar nkKeepAliveCtx (Map.delete peerAddr)
-
 
 withSlotTime :: forall m a.
                 ( MonadAsync         m
@@ -283,7 +258,7 @@ instance Exception NodeKernelError where
 -- | Run chain selection \/ block production thread.
 --
 withNodeKernelThread
-  :: forall block m seed a.
+  :: forall block header m seed a.
      ( MonadAsync         m
      , MonadMonotonicTime m
      , MonadTimer         m
@@ -292,7 +267,7 @@ withNodeKernelThread
      , HasHeader block
      )
   => BlockGeneratorArgs block seed
-  -> (NodeKernel block m -> Async m Void -> m a)
+  -> (NodeKernel header block m -> Async m Void -> m a)
   -- ^ The continuation which has a handle to the chain selection \/ block
   -- production thread.  The thread might throw an exception.
   -> m a
@@ -302,7 +277,9 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
-    blockProducerThread :: NodeKernel block m -> (SlotNo -> STM m SlotNo) -> m Void
+    blockProducerThread :: NodeKernel header block m
+                        -> (SlotNo -> STM m SlotNo)
+                        -> m Void
     blockProducerThread NodeKernel { nkClientChains, nkChainProducerState }
                         waitForSlot
                       = loop (Block.SlotNo 1) bgaSeed
