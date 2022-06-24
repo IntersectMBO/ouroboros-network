@@ -78,6 +78,7 @@ library
 
   build-depends:       base              >=4.9 && <4.15
                      , base16-bytestring
+                     , binary
                      , bytestring        >=0.10  && <0.11
                      , cardano-crypto-class
                      , cardano-prelude
