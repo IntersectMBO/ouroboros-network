@@ -437,7 +437,7 @@ genBlocks n pt0 = take (fromIntegral n) (go pt0)
 genBlock ::
      Point TestBlock -> TestBlock
 genBlock pt =
-  mkBlockFrom pt Tx { consumed = Token pt'
+  mkBlockFrom pt Tx { consumed = Token pt
                     , produced = ( Token pt', TValue (pointSlot pt'))
                     }
   where
@@ -855,10 +855,7 @@ initStandaloneDB dbEnv@DbEnv{..} = do
                              dbTracer
                              dbBackingStoreSelector
                              dbHasFS
-                             (ExtLedgerStateTables
-                                TokenToTValue {
-                                -- TODO we could consider adapting the test generator to generate an initial ledger with non-empty tables.
-                                  testUtxtokTable = ApplyValuesMK (HD.UtxoValues mempty )})
+                             initTables -- TODO we could consider adapting the test generator to generate an initial ledger with non-empty tables.
     let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks
 
@@ -870,10 +867,16 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initChain :: [RealPoint TestBlock]
     initChain = []
 
-    initDB :: LedgerDB' TestBlock
-    initDB = ledgerDbWithAnchor
-               RunOnlyNew
-               (forgetLedgerTables $ testInitExtLedgerWithState initialTestLedgerState)
+    initDB     :: LedgerDB' TestBlock
+    initTables :: LedgerTables (ExtLedgerState TestBlock) ValuesMK
+    (initDB, initTables) =
+        ( ledgerDbWithAnchor
+            RunOnlyNew
+            (forgetLedgerTables initialState)
+        , projectLedgerTables initialState
+        )
+      where
+        initialState = testInitExtLedgerWithState initialTestLedgerState
 
     getBlock ::
          RealPoint TestBlock
@@ -1000,6 +1003,9 @@ runDB standalone@DB{..} cmd =
           bs <- readTVar dbBackingStore
           (_, db) <- readTVar dbState
           pure (bs, db)
+        -- We need to make sure we flush before we take the snapshot.
+        _ <- go hasFS Flush
+        -- TODO: why can't takeSnapshot flush?
         Snapped <$>
           takeSnapshot
             nullTracer

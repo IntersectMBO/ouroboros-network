@@ -673,7 +673,7 @@ ledgerDbOldest db =
     immAnchor :: l EmptyMK
     immAnchor =
         unDbChangelogState
-      $ AS.anchor
+      $ AS.headAnchor
       $ changelogImmutableStates
       $ ledgerDbChangelog db
 
