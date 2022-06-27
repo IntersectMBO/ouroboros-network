@@ -31,6 +31,7 @@ module Ouroboros.Consensus.Mempool.API (
   , TxSizeInBytes
   ) where
 
+import qualified Data.List.NonEmpty as NE
 import           Data.Word (Word32)
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
@@ -149,10 +150,10 @@ data Mempool m blk idx = Mempool {
                           )
 
       -- | Manually remove the given transactions from the mempool.
-    , removeTxs      :: [GenTxId blk] -> m ()
+    , removeTxs      :: NE.NonEmpty (GenTxId blk) -> m ()
 
       -- | Sync the transactions in the mempool with the current ledger state
-      --  of the 'ChainDB'.
+      --  at the tip of the 'ChainDB'.
       --
       -- The transactions that exist within the mempool will be revalidated
       -- against the current ledger state. Transactions which are found to be
@@ -171,19 +172,23 @@ data Mempool m blk idx = Mempool {
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
       --
-      -- This doesn't look at the ledger state at all.
+      -- This doesn't look at the ledger state at all, i.e. it produces a
+      -- snapshot from the current InternalState of the mempool.
     , getSnapshot    :: STM m (MempoolSnapshot blk idx)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
       -- the returned ledger state when it's ticked to the given slot.
       --
-      -- This returns the ledger state that was retrieved from the LedgerDB (for
-      -- ticking its ChainDepState to see if we have to forge), the ticked
-      -- ledger state that was used for mempool revalidation, and a snapshot of
-      -- the mempool. In particular given '(a, b, _)' as a result, 'b == tick
-      -- (ledgerState a)'.
+      -- This function returns the ledger state that was retrieved from the
+      -- LedgerDB (for ticking its ChainDepState to see if we have to forge),
+      -- the ticked ledger state that was used for mempool revalidation, and a
+      -- snapshot of the mempool. In particular given '(a, b, _)' as a result,
+      -- 'b == tick (ledgerState a)'.
       --
-      -- This does not update the state of the mempool.
+      -- This function returns 'Nothing' when the given point is not on
+      -- the current chain.
+      --
+      -- This does not update the internal state of the mempool.
     , getLedgerAndSnapshotFor ::
            Point blk
         -> SlotNo
@@ -191,7 +196,7 @@ data Mempool m blk idx = Mempool {
                     , TickedLedgerState blk TrackingMK
                     , MempoolSnapshot blk idx
                     )
-             )
+             ) -- FIXME: don't we want to introduce a custom data type for this triple?
 
       -- | Get the mempool's capacity in bytes.
       --
@@ -209,10 +214,6 @@ data Mempool m blk idx = Mempool {
 
       -- | Return the post-serialisation size in bytes of a 'GenTx'.
     , getTxSize      :: GenTx blk -> TxSizeInBytes
-
-      -- | Represents the initial value at which the transaction ticket number
-      -- counter will start (i.e. the zeroth ticket number).
-    , zeroIdx        :: idx
     }
 
 {-------------------------------------------------------------------------------
@@ -353,7 +354,6 @@ data MempoolCapacityBytesOverride
     -- ^ Use the following 'MempoolCapacityBytes'.
   deriving (Eq, Show)
 
-
 -- | If no override is provided, calculate the default mempool capacity as 2x
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
@@ -458,7 +458,7 @@ data TraceEventMempool blk
       MempoolSize
       -- ^ The current size of the Mempool.
   | TraceMempoolManuallyRemovedTxs
-      [GenTxId blk]
+      (NE.NonEmpty (GenTxId blk))
       -- ^ Transactions that have been manually removed from the Mempool.
       [Validated (GenTx blk)]
       -- ^ Previously valid transactions that are no longer valid because they
