@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveAnyClass       #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DerivingStrategies   #-}
@@ -7,12 +6,9 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -341,8 +337,13 @@ data ChainDB m blk = ChainDB {
       -- | Get a ledger state that contains the backing store values of the
       -- given keys
       --
+      -- The 'StaticLeft' case does not specify a point in the current chain, so
+      -- this function returns the ledger state at the tip of the 'ChainDB'.
+      --
       -- In the 'StaticRight' case, 'Nothing' out means the requested point is
       -- not on current chain, so that ledger state is unavailable.
+      --
+      -- TODO: we need to explain that 'a' parameter. What if we didn't have it?
     , getLedgerStateForKeys ::
         forall b a.
              StaticEither b () (Point blk)
@@ -351,23 +352,21 @@ data ChainDB m blk = ChainDB {
              )
           -> m (StaticEither
                  b
-                 (a, LedgerTables (ExtLedgerState blk) ValuesMK)
+                        (a, LedgerTables (ExtLedgerState blk) ValuesMK)
                  (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
                )
 
       -- | Get a 'LedgerDB' and a handle to a value of the backing store
       -- corresponding to the anchor of the 'LedgerDB'
       --
-      -- In the 'StaticRight' case, 'Nothing' out means the requested point is
+      -- In the 'StaticRight' case, 'Left pt' out means the requested point is
       -- not on current chain, so that 'LedgerDB' is unavailable.
       --
+      -- The return type in the end contains a value handle that can be used to
+      -- perform reads on the backing store, a LedgerDB truncated at the
+      -- requested point and a function for releasing the value handle.
+      --
       -- The value handle is allocated in the given registry.
-      --
-      -- TODO: we need to comment what does the input value mean.
-      --
-      -- TODO: We need to comment on the rationale for the complex return type.
-      --
-      -- TODO: We should probably wrap this triple in a data type.
     , getLedgerBackingStoreValueHandle ::
         forall b.
              ResourceRegistry m

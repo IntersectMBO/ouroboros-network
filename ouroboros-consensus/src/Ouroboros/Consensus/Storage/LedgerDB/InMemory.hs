@@ -8,6 +8,7 @@
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -31,9 +32,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * Ledger DB types (TODO: we might want to place this somewhere else)
   , DbChangelog
   , DbReader (..)
+  , KeySetsReader
   , ReadsKeySets (..)
   , RewoundTableKeySets (..)
-  , TypeOf_readDB
   , UnforwardedReadSets (..)
   , defaultReadKeySets
   , forwardTableKeySets
@@ -409,11 +410,11 @@ ledgerDbFlush policy db = do
     (l, r) = flushDbChangelog policy (ledgerDbChangelog db)
 
 class ReadsKeySets m l where
-  readDb :: TypeOf_readDB m l
+  readDb :: KeySetsReader m l
 
-type TypeOf_readDB m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
+type KeySetsReader m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
 
-newtype DbReader m l a = DbReader { runDbReader :: ReaderT (TypeOf_readDB m l) m a}
+newtype DbReader m l a = DbReader { runDbReader :: ReaderT (KeySetsReader m l) m a}
   deriving newtype (Functor, Applicative, Monad)
 
 instance ReadsKeySets (DbReader m l) l where
@@ -433,7 +434,7 @@ instance
       UnforwardedReadSets seqNo' values keys <- readDb (RewoundTableKeySets seqNo rew)
       pure $ UnforwardedReadSets seqNo' (Extended.ExtLedgerStateTables values) (Extended.ExtLedgerStateTables keys)
 
-defaultReadKeySets :: TypeOf_readDB m l -> DbReader m l a -> m a
+defaultReadKeySets :: KeySetsReader m l -> DbReader m l a -> m a
 defaultReadKeySets f dbReader = runReaderT (runDbReader dbReader) f
 
 {-------------------------------------------------------------------------------
@@ -529,7 +530,7 @@ ledgerDbPast ::
   -> Maybe (l EmptyMK)
 ledgerDbPast pt db = ledgerDbCurrent <$> ledgerDbPrefix pt db
 
--- | Get a prefix of the LedgerDB
+-- | Get a prefix of the LedgerDB that ends at the given point
 --
 --  \( O(\log(\min(i,n-i)) \)
 --
@@ -683,12 +684,6 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
 data LedgerDbCfg l = LedgerDbCfg {
       ledgerDbCfgSecParam :: !SecurityParam
     , ledgerDbCfg         :: !(LedgerCfg l)
-    -- ledgerDbFlushingPolicy :: FP
-    --
-    -- or
-    --
-    --
-    -- ledgerDbTryFlush  :: dbhandle -> DbChangelog l -> m ()
     }
   deriving (Generic)
 
