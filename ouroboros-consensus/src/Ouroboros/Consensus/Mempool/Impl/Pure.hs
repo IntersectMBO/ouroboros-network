@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -38,6 +37,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxTicket (..),
                      zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util.IOLike
+import qualified Data.List.NonEmpty as NE
 
 {-------------------------------------------------------------------------------
   Mempool Implementation
@@ -68,7 +68,7 @@ pureTryAddTxs
   => LedgerCfg (LedgerState blk)
      -- ^ The ledger configuration.
   -> (GenTx blk -> TxSizeInBytes)
-     -- ^ The function to claculate the size of a transaction.
+     -- ^ The function to calculate the size of a transaction.
   -> WhetherToIntervene
   -> GenTx blk
      -- ^ The transaction to add to the mempool.
@@ -113,7 +113,7 @@ pureTryAddTxs cfg txSize wti tx is
 -- transactions from the mempool and maybe a message to be traced while removing
 -- them.
 data RemoveTxs blk =
-    WriteRemoveTxs (InternalState blk) (Maybe (TraceEventMempool blk))
+    WriteRemoveTxs (InternalState blk) (TraceEventMempool blk)
 
 -- | Intepret a 'RemoveTxs' with the resulting values produced by manually
 -- removing the transactions given to 'pureRemoveTxs' from the mempool.
@@ -121,7 +121,7 @@ runRemoveTxs
   :: forall m blk. IOLike m
   => StrictTMVar m (InternalState blk)
   -> RemoveTxs blk
-  -> STM m (Maybe (TraceEventMempool blk))
+  -> STM m (TraceEventMempool blk)
 runRemoveTxs stateVar (WriteRemoveTxs is t) = do
     putTMVar stateVar is
     return t
@@ -135,7 +135,7 @@ pureRemoveTxs
      )
   => LedgerConfig blk
   -> MempoolCapacityBytesOverride
-  -> [GenTxId blk]
+  -> NE.NonEmpty (GenTxId blk)
   -> InternalState blk
   -> LedgerState blk ValuesMK
   -> RemoveTxs blk
@@ -143,7 +143,7 @@ pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
     -- Filtering is O(n), but this function will rarely be used, as it is an
     -- escape hatch when there's an inconsistency between the ledger and the
     -- mempool.
-    let toRemove       = Set.fromList txIds
+    let toRemove       = Set.fromList $ NE.toList txIds
         txTickets'     = filter
                            (   (`notElem` toRemove)
                              . txId
@@ -160,11 +160,7 @@ pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
                            isLastTicketNo
                            txTickets'
         is'            = internalStateFromVR vr
-        needsTrace     = if null txIds
-                         then
-                           Nothing
-                         else
-                           Just $ TraceMempoolManuallyRemovedTxs
+        needsTrace     = TraceMempoolManuallyRemovedTxs
                              txIds
                              (map fst (vrInvalid vr))
                              (isMempoolSize is')
@@ -185,7 +181,7 @@ data SyncWithLedger blk =
 -- invalid with respect to the current ledger state, will be dropped
 -- from the mempool, whereas valid transactions will remain.
 --
--- n.b. in our current implementation, when one opens a mempool, we
+-- NOTE: in our current implementation, when one opens a mempool, we
 -- spawn a thread which performs this action whenever the 'ChainDB' tip
 -- point changes.
 runSyncWithLedger
@@ -213,7 +209,7 @@ pureSyncWithLedger
   -> MempoolCapacityBytesOverride
   -> SyncWithLedger blk
 pureSyncWithLedger istate lstate lcfg capacityOverride =
-    let vr          = validateIS istate lstate lcfg capacityOverride
+    let vr          = snd . validateStateFor istate lcfg capacityOverride $ ForgeInUnknownSlot lstate
         removed     = map fst (vrInvalid vr)
         istate'     = internalStateFromVR vr
         mTrace      = if null removed
@@ -226,29 +222,29 @@ pureSyncWithLedger istate lstate lcfg capacityOverride =
       NewSyncedState istate' snapshot mTrace
 
 -- | Get a snapshot of the mempool state that is valid with respect to
--- the given ledger state
+-- the given ledger state, together with the ticked ledger state.
 pureGetSnapshotAndTickedFor
   :: forall blk.
      ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
      )
-  => LedgerConfig blk
-  -> ForgeLedgerState blk
+  => InternalState blk
+  -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
-  -> InternalState blk
+  -> ForgeLedgerState blk
   -> (TickedLedgerState blk TrackingMK, MempoolSnapshot blk TicketNo)
-pureGetSnapshotAndTickedFor cfg blockLedgerState capacityOverride =
+pureGetSnapshotAndTickedFor is cfg capacityOverride blockLedgerState =
       second ( implSnapshotFromIS
-            . internalStateFromVR
-            )
-    . validateStateFor capacityOverride cfg blockLedgerState
+             . internalStateFromVR
+             )
+    $ validateStateFor is cfg capacityOverride blockLedgerState
 
 {-------------------------------------------------------------------------------
   MempoolSnapshot Implementation
 -------------------------------------------------------------------------------}
 
--- | Create a Mempool Snapshot from a given Internal State of the mempool.
+-- | Create a 'MempoolSnapshot' from a given 'InternalState' of the mempool.
 implSnapshotFromIS
   :: HasTxId (GenTx blk)
   => InternalState blk
