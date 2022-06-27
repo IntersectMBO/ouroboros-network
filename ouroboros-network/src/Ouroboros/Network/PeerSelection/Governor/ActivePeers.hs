@@ -292,7 +292,6 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                              }
                            _now ->
 
-        assert (peeraddr `KnownPeers.member` knownPeers st) $
         if peeraddr `EstablishedPeers.member` establishedPeers st
           then
             let activePeers' = Set.insert peeraddr activePeers in
@@ -315,7 +314,6 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
               decisionState = st,
               decisionJobs  = []
             }
-
 
 ----------------------------
 -- Active peers above target
