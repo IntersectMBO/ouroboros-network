@@ -703,7 +703,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
 
     verify_dns_can_recover :: Events DiffusionTestTrace -> Property
     verify_dns_can_recover events =
-        counterexample (show events)
+        counterexample (intercalate "\n" $ map show $ eventsToList events)
       $ verify Map.empty Map.empty 0 (Time 0) (Signal.eventsToList events)
 
     verify :: Map DNS.Domain Time
@@ -729,26 +729,9 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
              in verify (Map.insert dns (addTime ttl' t) toRecover)
                         ttlMap'
                         recovered t evs
-        DiffusionPublicRootPeerTrace (TracePublicRootFailure dns err) ->
-            let ttl = fromMaybe 0 $ Map.lookup dns ttlMap
-                ttl' = ttlForDnsError err ttl
-                ttlMap' = Map.insert dns ttl' ttlMap
-             in verify (Map.insert dns (addTime ttl' t) toRecover)
-                        ttlMap'
-                        recovered t evs
         DiffusionLocalRootPeerTrace (TraceLocalRootResult dap r) ->
           let dns = dapDomain dap
               ttls = map snd r
-              ttlMap' = Map.insert dns (ttlForResults ttls) ttlMap
-           in case Map.lookup dns toRecover of
-                Nothing -> verify toRecover ttlMap' recovered t evs
-                Just _  -> verify (Map.delete dns toRecover)
-                                  ttlMap'
-                                  (recovered + 1)
-                                  t
-                                  evs
-        DiffusionPublicRootPeerTrace (TracePublicRootResult dns r) ->
-          let ttls = map snd r
               ttlMap' = Map.insert dns (ttlForResults ttls) ttlMap
            in case Map.lookup dns toRecover of
                 Nothing -> verify toRecover ttlMap' recovered t evs
