@@ -79,6 +79,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import qualified Data.List.NonEmpty as NE
+import Ouroboros.Consensus.Mempool.TxSeq (zeroTicketNo)
 
 {-------------------------------------------------------------------------------
   Relay node
@@ -391,7 +393,11 @@ forkBlockForging IS{..} blockForging =
               -- run the risk of forging the same invalid block again. This
               -- means that we'll throw away some good transactions in the
               -- process.
-              lift $ removeTxs mempool (map (txId . txForgetValidated) txs)
+              --
+              -- Note that the only way this could be invalid is through the
+              -- transactions in the block, which therefore are a non-empty
+              -- list.
+              lift $ removeTxs mempool $ NE.fromList (map (txId . txForgetValidated) txs)
           exitEarly
 
         -- We successfully produced /and/ adopted a block
@@ -511,7 +517,7 @@ getMempoolReader
   => Mempool m blk TicketNo
   -> TxSubmissionMempoolReader (GenTxId blk) (Validated (GenTx blk)) TicketNo m
 getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
-    { mempoolZeroIdx     = zeroIdx mempool
+    { mempoolZeroIdx     = zeroTicketNo
     , mempoolGetSnapshot = convertSnapshot <$> getSnapshot mempool
     }
   where

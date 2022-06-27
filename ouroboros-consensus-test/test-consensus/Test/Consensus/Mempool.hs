@@ -21,6 +21,9 @@ import           Data.Either (isRight)
 import           Data.List (foldl', isSuffixOf, nub, partition, sort)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.List.NonEmpty as NE
+import           Data.Map (Map)
+import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word
@@ -61,37 +64,37 @@ import           Test.Util.QuickCheck (elements)
 tests :: TestTree
 tests = testGroup "Mempool"
   [ testGroup "TxSeq"
-      [ testProperty "lookupByTicketNo complete"           prop_TxSeq_lookupByTicketNo_complete
-      , testProperty "lookupByTicketNo sound"              prop_TxSeq_lookupByTicketNo_sound
-      , testProperty "splitAfterTxSize"                    prop_TxSeq_splitAfterTxSize
-      , testProperty "splitAfterTxSizeSpec"                prop_TxSeq_splitAfterTxSizeSpec
+      [ testProperty "lookupByTicketNo complete"                prop_TxSeq_lookupByTicketNo_complete
+      , testProperty "lookupByTicketNo sound"                   prop_TxSeq_lookupByTicketNo_sound
+      , testProperty "splitAfterTxSize"                         prop_TxSeq_splitAfterTxSize
+      , testProperty "splitAfterTxSizeSpec"                     prop_TxSeq_splitAfterTxSizeSpec
       ]
-  , testProperty "snapshotTxs == snapshotTxsAfter zeroIdx" prop_Mempool_snapshotTxs_snapshotTxsAfter
-  , testProperty "valid added txs == getTxs"               prop_Mempool_addTxs_getTxs
-  , testProperty "addTxs [..] == forM [..] addTxs"         prop_Mempool_semigroup_addTxs
-  , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
-  , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
-  , testProperty "result of getCapacity"                   prop_Mempool_getCapacity
-  , testProperty "Mempool capacity implementation"         prop_Mempool_Capacity
-  , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
-  , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
-  , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
-  , testProperty "idx consistency"                         prop_Mempool_idx_consistency
-  , testProperty "removeTxs"                               prop_Mempool_removeTxs
-  , testProperty "removeTxs [..] == forM [..] removeTxs"   prop_Mempool_semigroup_removeTxs
+  , testProperty "snapshotTxs == snapshotTxsAfter zeroTicketNo" prop_Mempool_snapshotTxs_snapshotTxsAfter
+  , testProperty "valid added txs == getTxs"                    prop_Mempool_addTxs_getTxs
+  , testProperty "addTxs [..] == forM [..] addTxs"              prop_Mempool_semigroup_addTxs
+  , testProperty "result of addTxs"                             prop_Mempool_addTxs_result
+  , testProperty "Invalid transactions are never added"         prop_Mempool_InvalidTxsNeverAdded
+  , testProperty "result of getCapacity"                        prop_Mempool_getCapacity
+  , testProperty "Mempool capacity implementation"              prop_Mempool_Capacity
+  , testProperty "Added valid transactions are traced"          prop_Mempool_TraceValidTxs
+  , testProperty "Rejected invalid txs are traced"              prop_Mempool_TraceRejectedTxs
+  , testProperty "Removed invalid txs are traced"               prop_Mempool_TraceRemovedTxs
+  , testProperty "idx consistency"                              prop_Mempool_idx_consistency
+  , testProperty "removeTxs"                                    prop_Mempool_removeTxs
+  , testProperty "removeTxs [..] == forM [..] removeTxs"        prop_Mempool_semigroup_removeTxs
   ]
 
 {-------------------------------------------------------------------------------
   Mempool Implementation Properties
 -------------------------------------------------------------------------------}
 
--- | Test that @snapshotTxs == snapshotTxsAfter zeroIdx@.
+-- | Test that @snapshotTxs == snapshotTxsAfter zeroTicketNo@.
 prop_Mempool_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
 prop_Mempool_snapshotTxs_snapshotTxsAfter setup =
     withTestMempool setup $ \TestMempool { mempool } -> do
-      let Mempool { zeroIdx, getSnapshot } = mempool
+      let Mempool { getSnapshot } = mempool
       MempoolSnapshot { snapshotTxs, snapshotTxsAfter} <- atomically getSnapshot
-      return $ snapshotTxs === snapshotTxsAfter zeroIdx
+      return $ snapshotTxs === snapshotTxsAfter zeroTicketNo
 
 -- | Test that all valid transactions added to a 'Mempool' can be retrieved
 -- afterward.
@@ -162,7 +165,7 @@ prop_Mempool_removeTxs :: TestSetupWithTxInMempool -> Property
 prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup txToRemove) =
     withTestMempool testSetup $ \TestMempool { mempool } -> do
       let Mempool { removeTxs, getSnapshot } = mempool
-      removeTxs [txId txToRemove]
+      removeTxs $ NE.fromList [txId txToRemove]
       txsInMempoolAfter <- map fst . snapshotTxs <$> atomically getSnapshot
       return $ counterexample
         ("Transactions in the mempool after removing (" <>
@@ -174,11 +177,11 @@ prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup txToRemove) =
 prop_Mempool_semigroup_removeTxs :: TestSetupWithTxsInMempool -> Property
 prop_Mempool_semigroup_removeTxs (TestSetupWithTxsInMempool testSetup txsToRemove) =
   withTestMempool testSetup $ \TestMempool {mempool = mempool1} -> do
-  removeTxs mempool1 $ map txId txsToRemove
+  removeTxs mempool1 $ NE.map txId txsToRemove
   snapshot1 <- atomically (getSnapshot mempool1)
 
   return $ withTestMempool testSetup $ \TestMempool {mempool = mempool2} -> do
-    forM_ (map txId txsToRemove) (removeTxs mempool2 . (:[]))
+    forM_ (NE.map txId txsToRemove) (removeTxs mempool2 . (NE.:| []))
     snapshot2 <- atomically (getSnapshot mempool2)
 
     return $ counterexample
@@ -688,7 +691,7 @@ instance Arbitrary TestSetupWithTxInMempool where
     , tx' <- testInitialTxs testSetup'
     ]
 
-data TestSetupWithTxsInMempool = TestSetupWithTxsInMempool TestSetup [TestTx]
+data TestSetupWithTxsInMempool = TestSetupWithTxsInMempool TestSetup (NE.NonEmpty TestTx)
   deriving (Show)
 
 instance Arbitrary TestSetupWithTxsInMempool where
@@ -696,7 +699,7 @@ instance Arbitrary TestSetupWithTxsInMempool where
     TestSetupWithTxs { testSetup } <-
       arbitrary `suchThat` (not . null . testInitialTxs . testSetup)
     txs <- sublistOf (testInitialTxs testSetup)
-    return $ TestSetupWithTxsInMempool testSetup txs
+    return $ TestSetupWithTxsInMempool testSetup $ NE.fromList txs
 
   -- TODO shrink
 
@@ -1128,16 +1131,17 @@ executeAction testMempool action = case action of
           False
 
     RemoveTxs txs -> do
-      removeTxs mempool (map txId txs)
+      let txs' = NE.fromList $ map txId txs
+      removeTxs mempool txs'
       tracedManuallyRemovedTxs <- expectTraceEvent $ \case
         TraceMempoolManuallyRemovedTxs txIds _ _ -> Just txIds
         _                                        -> Nothing
-      return $ if concat tracedManuallyRemovedTxs == map txId txs
+      return $ if concatMap NE.toList tracedManuallyRemovedTxs == map txId txs
         then property True
         else counterexample
           ("Expected a TraceMempoolManuallyRemovedTxs event for " <>
            condense txs <> " but got " <>
-           condense tracedManuallyRemovedTxs)
+           condense (map NE.toList tracedManuallyRemovedTxs))
           False
 
   where
