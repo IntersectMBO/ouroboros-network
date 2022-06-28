@@ -724,7 +724,7 @@ runM Interfaces
                             serverTracer                = dtLocalServerTracer,
                             serverTrTracer              = nullTracer, -- TODO: issue #3320
                             serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
-                            serverInboundIdleTimeout    = local_PROTOCOL_IDLE_TIMEOUT,
+                            serverInboundIdleTimeout    = Nothing,
                             serverConnectionLimits      = localConnectionLimits,
                             serverConnectionManager     = localConnectionManager,
                             serverControlChannel        = localControlChannel,
@@ -1018,7 +1018,7 @@ runM Interfaces
                                   serverInboundGovernorTracer = dtInboundGovernorTracer,
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,
-                                  serverInboundIdleTimeout    = daProtocolIdleTimeout,
+                                  serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
                                   serverControlChannel        = controlChannel,
                                   serverObservableStateVar    = observableStateVar
                                 })
