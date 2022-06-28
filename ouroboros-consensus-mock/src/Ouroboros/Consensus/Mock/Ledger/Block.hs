@@ -415,12 +415,9 @@ instance SufficientSerializationForAnyBackingStore (LedgerState (SimpleBlock c e
 instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
   showsLedgerState _sing = shows
 
-instance
-     (Typeable ext, SimpleCrypto c)
-  => StowableLedgerTables (LedgerState (SimpleBlock c ext)) where
+instance StowableLedgerTables (LedgerState (SimpleBlock c ext)) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = isCandidateForUnstowDefault
 
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 

@@ -314,11 +314,9 @@ instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
 instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables     = stowErr "stowLedgerTables"
   unstowLedgerTables   = stowErr "unstowLedgerTables"
-  isCandidateForUnstow = const False
 
 stowErr :: String -> a
 stowErr fname = error $ "Function " <> fname <> " should not be used in these tests."
-                      <> " The dual ledger should never be used."
 
 instance Show (ApplyMapKind' mk' Token TValue) where
   show ap = showsApplyMapKind ap ""
@@ -925,7 +923,6 @@ initStandaloneDB dbEnv@DbEnv{..} = do
     initTables :: LedgerTables (ExtLedgerState TestBlock) ValuesMK
     (initDB, initTables) =
         ( ledgerDbWithAnchor
-            RunOnlyNew
             (forgetLedgerTables initialState)
         , projectLedgerTables initialState
         )
@@ -1081,7 +1078,6 @@ runDB standalone@DB{..} cmd =
             dbLedgerDbCfg
             (return (testInitExtLedgerWithState initialTestLedgerState))
             streamAPI
-            RunOnlyNew
             sdbBackingStoreSelector
 
         atomically $ do

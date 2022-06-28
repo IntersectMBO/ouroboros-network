@@ -92,8 +92,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
-                     ExceededRollback (..), LedgerDbCfg (..),
-                     RunAlsoLegacy (..))
+                     ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      BackingStoreSelector (..), DiskSnapshot,
@@ -168,7 +167,6 @@ data LgrDbArgs f m blk = LgrDbArgs {
     , lgrTopLevelConfig       :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger          :: Tracer m (LedgerDB' blk)
     , lgrTracer               :: Tracer m (TraceEvent blk)
-    , lgrRunAlsoLegacy        :: RunAlsoLegacy
     , lgrBackingStoreSelector :: !(BackingStoreSelector m)
     }
 
@@ -186,7 +184,6 @@ defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
-    , lgrRunAlsoLegacy  = RunOnlyNew
     , lgrBackingStoreSelector = bss
     }
 
@@ -283,7 +280,6 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
         (configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
-        lgrRunAlsoLegacy
         lgrBackingStoreSelector
     return (db, replayed, backingStore)
   where

@@ -541,14 +541,6 @@ instance
           proxySingle
           (Flip . unstowLedgerTables . unFlip)
       . hardForkLedgerStatePerEra
-  -- Cannot be 'isCandidateForUnstowDefault' because CardanoBlock has tables
-  -- even in the Byron era, so they'll all be empty.
-  isCandidateForUnstow =
-        hcollapse
-      . hcmap
-          proxySingle
-          (K . isCandidateForUnstow . unFlip)
-      . hardForkLedgerStatePerEra
 
 {-------------------------------------------------------------------------------
   Annotated forecasts

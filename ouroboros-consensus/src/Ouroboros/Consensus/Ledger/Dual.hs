@@ -615,8 +615,6 @@ instance
         , dualLedgerStateBridge
         } = st
 
-  isCandidateForUnstow = isCandidateForUnstowDefault
-
 {-------------------------------------------------------------------------------
   Utilities for working with the extended ledger state
 -------------------------------------------------------------------------------}

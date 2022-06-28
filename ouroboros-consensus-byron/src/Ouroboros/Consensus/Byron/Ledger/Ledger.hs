@@ -225,7 +225,6 @@ instance ShowLedgerState (LedgerTables (LedgerState ByronBlock)) where
 instance StowableLedgerTables (LedgerState ByronBlock) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = const True
 
 {-------------------------------------------------------------------------------
   Supporting the various consensus interfaces

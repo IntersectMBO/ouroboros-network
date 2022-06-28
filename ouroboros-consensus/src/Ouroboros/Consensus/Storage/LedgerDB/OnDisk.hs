@@ -2,14 +2,12 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -23,10 +21,7 @@
   Snapshotting a ledger state means saving a copy of the in-memory part of the
   ledger state serialized as a file on disk, as well as flushing differences
   between the last snapshotted ledger state and the one that we are snapshotting
-  now and making a copy of that resulting on-disk state. While the coupled
-  implementation is in place, the serialized file might also contain a
-  serialized version of the in-memory UTxO map carried by the legacy ledger
-  states, as explained below.
+  now and making a copy of that resulting on-disk state.
 
   == Startup
 
@@ -55,38 +50,16 @@
          contents of the Genesis UTxO and finish.
 
        - If there is a snapshot found, then deserialize the @state@ file, which
-         contains either:
+         contains a serialization of the in-memory part of the LedgerState, with
+         an empty UTxO map (i.e. a @ExtLedgerState blk EmptyMK@).
 
-            - If the node was running __with the legacy database enabled__, it
-              contains a full LedgerState snapshot in the same style as before
-              the UTxO HD implementation (i.e. in-memory part of the LedgerState
-              (equal among implementations) + UTxO map).
+        In case we found an snapshot, we will overwrite (either literally
+        overwriting it or using some feature the specific backend used) the
+        @BackingStore@ tables with the @tables@ file from said snapshot as it
+        was left in whatever state it was when the node shut down.
 
-            - Otherwise, it contains a serialization of the in-memory part of the
-              LedgerState, with an empty UTxO map.
-
-        In both cases, the snapshot will be deserialized as @ExtLedgerState blk
-        EmptyMK@. In case we found an snapshot, we will overwrite (either
-        literally overwriting it or using some feature the specific backend
-        used) the @BackingStore@ tables with the @tables@ file from said
-        snapshot as it was left in whatever state it was when the node shut
-        down.
-
-  3. Depending on whether the node is requested to run both databases and whether
-     or not the snapshot has a UTxO inside, the node will:
-
-       - __Run both__ + snapshot has UTxO inside: Extract the tables from the
-         deserialized snapshot to create a @ExtLedgerState blk ValuesMK@ which
-         can be 1. used in the legacy database and 2. after stripping out the
-         @ValuesMK@, used in the modern database.
-
-       - __Run both__ + snapshot has an empty UTxO map: an error will be
-         thrown as we cannot reconstruct an in-memory UTxO directly from the
-         @BackingStore@.
-
-       - Otherwise: Strip out the values inside the @ExtLedgerState blk EmptyMK@
-         to make sure that we don't have an in-memory UTxO map and use it as the
-         anchor for the modern database.
+  3. The deserialized ledger state will be then used as the anchor for the
+     ledger database.
 
   4. Replay on top of this ledger database all blocks up to the immutable
      database tip.
@@ -101,16 +74,12 @@
   copy the blocks which are more than @k@ blocks from the tip (i.e. the ones
   that must be considered immutable) to the immutable database and then:
 
-  1. Flush differences in the modern DB up to the immutable db tip.
+  1. Every time we have processed 100 or more blocks since the last flush, perform
+     a flush of differences in the DB up to the immutable db tip.
 
-  2. If dictated by the disk policy, serialize an @ExtLedgerState blk EmptyMK@ containing:
-
-       - If the legacy database is enabled, the state to serialize is the anchor
-         of the legacy database (which should be the same as the one from the
-         modern database) with the tables stowed.
-
-       - Otherwise, the state to serialize is the modern database anchor which
-         requires no further modifications.
+  2. If dictated by the disk policy, flush immediately all the differences up to
+     the immutable db tip and serialize the ledger database anchor
+     @ExtLedgerState blk EmptyMK@.
 
      A directory is created named after the slot number of the ledger state
      being snapshotted, and the serialization from above is written into the
@@ -123,10 +92,10 @@
 
   == Flush during startup and snapshot at the end of startup
 
-  Due to the nature of the modern database having to carry around all the
-  differences between the last snapshotted state and the current tip, there is a
-  need to flush when replaying the chain as otherwise, for example on a replay
-  from genesis to the tip, we would carry millions of differences in memory.
+  Due to the nature of the database having to carry around all the differences
+  between the last snapshotted state and the current tip, there is a need to
+  flush when replaying the chain as otherwise, for example on a replay from
+  genesis to the tip, we would carry millions of differences in memory.
 
   Because of this, when we are replaying blocks we will flush regularly. As the
   last snapshot that was taken lives in a @\<slotNumber\>/tables@ file, there is
@@ -134,7 +103,6 @@
   flushing. Only when we finish replaying blocks and start the background
   threads (and specifically the @copyAndSnapshotRunner@), we will take a
   snapshot of the current immutable database anchor as described above.
-
 -}
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
@@ -246,7 +214,7 @@ data NextBlock blk = NoMoreBlocks | NextBlock blk
 -- tip to bring the ledger up to date with the tip of the immutable DB.
 --
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
-data StreamAPI m blk a = StreamAPI {
+newtype StreamAPI m blk a = StreamAPI {
       -- | Start streaming after the specified block
       streamAfter :: forall b. HasCallStack
         => Point blk
@@ -367,7 +335,6 @@ initLedgerDB ::
   -> LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
-  -> RunAlsoLegacy
   -> BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
 initLedgerDB replayTracer
@@ -378,7 +345,6 @@ initLedgerDB replayTracer
              cfg
              getGenesisLedger
              streamAPI
-             runAlsoLegacy
              bss = do
     listSnapshots hasFS >>= tryNewestFirst id
   where
@@ -394,10 +360,7 @@ initLedgerDB replayTracer
       traceWith replayTracer ReplayFromGenesis
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-          initDb        =
-            case runAlsoLegacy of
-              RunBoth    -> ledgerDbWithAnchor runAlsoLegacy (stowLedgerTables genesisLedger)
-              RunOnlyNew -> ledgerDbWithAnchor runAlsoLegacy (forgetLedgerTables genesisLedger)
+          initDb        = ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
       backingStore <- newBackingStore nullTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
@@ -424,9 +387,9 @@ initLedgerDB replayTracer
           tryNewestFirst (acc . InitFailure s (InitFailureRead err)) ss
         Right extLedgerSt -> do
           let initialPoint =
-                withOrigin (Point Origin) annTipPoint
-                $ headerStateTip
-                $ headerState
+                  withOrigin (Point Origin) annTipPoint
+                . headerStateTip
+                . headerState
                 $ extLedgerSt
           case pointToWithOriginRealPoint (castPoint (getTip extLedgerSt)) of
             Origin        -> do
@@ -441,7 +404,7 @@ initLedgerDB replayTracer
               traceWith replayTracer $
                 ReplayFromSnapshot s tip (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
-                  initDb  = ledgerDbWithAnchor runAlsoLegacy extLedgerSt
+                  initDb  = ledgerDbWithAnchor extLedgerSt
               eDB <- runExceptT $ replayStartingWith
                                     tracer'
                                     cfg
@@ -656,7 +619,7 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
           let chlog = ledgerDbChangelog ldb
               rew   = rewindTableKeySets chlog ks
           unfwd <- readKeySetsVH
-                     (\ks' -> (,) seqNo <$> BackingStore.bsvhRead vh ks')
+                     (fmap (seqNo,) . BackingStore.bsvhRead vh)
                      rew
           case forwardTableKeySets chlog unfwd of
               Left _err -> error "impossible!"
@@ -967,7 +930,6 @@ snapshotFromPath fileName = do
 takeSnapshot ::
      forall m blk.
      ( MonadThrow m
-     , IsLedger (LedgerState blk)
      , LedgerSupportsProtocol blk
      )
   => Tracer m (TraceEvent blk)
@@ -1090,7 +1052,7 @@ decorateReplayTracerWithGoal
   :: Point blk -- ^ Tip of the ImmutableDB
   -> Tracer m (TraceReplayEvent blk)
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
-decorateReplayTracerWithGoal immTip = contramap ($ (ReplayGoal immTip))
+decorateReplayTracerWithGoal immTip = contramap ($ ReplayGoal immTip)
 
 -- | Add the block at which a replay started.
 --
@@ -1099,7 +1061,7 @@ decorateReplayTracerWithStart
   :: Point blk -- ^ Starting point of the replay
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
-decorateReplayTracerWithStart start = contramap ($ (ReplayStart start))
+decorateReplayTracerWithStart start = contramap ($ ReplayStart start)
 
 -- | Which point the replay started from
 newtype ReplayStart blk = ReplayStart (Point blk) deriving (Eq, Show)

@@ -106,7 +106,6 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Special classes of ledger states
   , InMemory (..)
   , StowableLedgerTables (..)
-  , isCandidateForUnstowDefault
     -- ** Serialization
   , SufficientSerializationForAnyBackingStore (..)
   , valuesMKDecoder
@@ -137,7 +136,7 @@ import           Control.Monad (when)
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import qualified Data.Map as Map
-import           Data.Monoid (All (..), Sum (..))
+import           Data.Monoid (Sum (..))
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
@@ -262,7 +261,7 @@ class ( -- Requirements on the ledger state itself
       , HeaderHash (l DiffMK) ~ HeaderHash l
       , HeaderHash (l TrackingMK) ~ HeaderHash l
       , NoThunks (LedgerTables l SeqDiffMK)
-      , NoThunks (LedgerTables l ValuesMK) -- for TVars in in-memory backing store and LegacyLedgerDB
+      , NoThunks (LedgerTables l ValuesMK) -- for TVars in in-memory backing store
       , StowableLedgerTables l
       ) => IsLedger (l :: LedgerStateKind) where
   -- | Errors that can arise when updating the ledger
@@ -1036,34 +1035,9 @@ class InMemory (l :: LedgerStateKind) where
   -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
   convertMapKind :: l mk -> l mk'
 
--- | TODO Once we remove the dual ledger, we won't need this anymore
 class StowableLedgerTables (l :: LedgerStateKind) where
   stowLedgerTables     :: l ValuesMK -> l EmptyMK
   unstowLedgerTables   :: l EmptyMK  -> l ValuesMK
-  -- | When we deserialize a snapshot from the disk, said snapshot will be
-  -- @ExtLedgerState blk EmptyMK@ and we will try to unstow it to get the legacy
-  -- style ledger state. However, if we run without the legacy database, it will
-  -- be the case that the serialized ledger state is indeed deprived from a
-  -- UTxO, and unstowing it will result in an empty UTxO in the legacy database.
-  --
-  -- This function should check that the UTxO inside the ledger state is not empty.
-  isCandidateForUnstow :: l EmptyMK -> Bool
-
--- | True if and only if all tables are non-empty
---
--- TODO reconsider each occurrences of this as soon as we add a second table
--- beyond the UTxO map
-isCandidateForUnstowDefault ::
-     (TableStuff l, StowableLedgerTables l)
-  => l EmptyMK -> Bool
-isCandidateForUnstowDefault =
-      getAll
-    . foldLedgerTables (All . not . nullValues)
-    . projectLedgerTables
-    . unstowLedgerTables
-  where
-    nullValues :: ValuesMK k v -> Bool
-    nullValues (ApplyValuesMK (UtxoValues vs)) = Map.null vs
 
 {-------------------------------------------------------------------------------
   Changelog

@@ -158,7 +158,6 @@ instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
 instance StowableLedgerTables (LedgerState ByronSpecBlock) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = const True
 
 {-------------------------------------------------------------------------------
   Applying blocks

@@ -588,7 +588,6 @@ instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
 instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = isCandidateForUnstowDefault
 
 instance TickedTableStuff (LedgerState TestBlock) where
   projectLedgerTablesTicked _                         = NoTestLedgerTables

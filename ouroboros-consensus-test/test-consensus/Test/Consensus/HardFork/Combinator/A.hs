@@ -196,7 +196,6 @@ instance InMemory (LedgerState BlockA) where
 instance StowableLedgerTables (LedgerState BlockA) where
   stowLedgerTables     = convertMapKind
   unstowLedgerTables   = convertMapKind
-  isCandidateForUnstow = isCandidateForUnstowDefault
 
 -- | Ticking has no state on the A ledger state
 newtype instance Ticked1 (LedgerState BlockA) mk = TickedLedgerStateA {

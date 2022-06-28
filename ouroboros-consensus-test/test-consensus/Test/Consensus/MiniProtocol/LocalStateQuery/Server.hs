@@ -231,7 +231,7 @@ initLgrDB k chain = do
 
     cfg = testCfg k
 
-    genesisLedgerDB = LgrDB.ledgerDbWithAnchor LgrDB.RunBoth (convertMapKind testInitExtLedger)
+    genesisLedgerDB = LgrDB.ledgerDbWithAnchor (convertMapKind testInitExtLedger)
 
     noopTrace :: blk -> m ()
     noopTrace = const $ pure ()
@@ -243,7 +243,6 @@ initLgrDB k chain = do
       , lgrGenesis              = return testInitExtLedger
       , lgrTracer               = nullTracer
       , lgrTraceLedger          = nullTracer
-      , lgrRunAlsoLegacy        = LgrDB.RunOnlyNew
       , lgrBackingStoreSelector = TECHDEBT.InMemoryBackingStore
       }
 

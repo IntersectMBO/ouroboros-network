@@ -670,11 +670,11 @@ ledgerDbAndBackingStore ::
 ledgerDbAndBackingStore bss fs  = \case
   Left (initLedger', s) -> do
         backingStore <- restoreBackingStore fs s bss
-        return (ledgerDbWithAnchor RunOnlyNew initLedger'
+        return (ledgerDbWithAnchor initLedger'
                , backingStore)
   Right genesisLedger -> do
         backingStore <- newBackingStore mempty bss fs (projectLedgerTables genesisLedger)
-        return (ledgerDbWithAnchor RunOnlyNew (forgetLedgerTables genesisLedger)
+        return (ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
                , backingStore)
 
 decodeExtLedgerState' :: forall s blk .

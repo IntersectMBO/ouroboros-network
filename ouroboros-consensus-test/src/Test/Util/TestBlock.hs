@@ -489,7 +489,6 @@ instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
 instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables   (TestLedger p EmptyPLDS) = TestLedger p EmptyPLDS
   unstowLedgerTables (TestLedger p EmptyPLDS) = TestLedger p EmptyPLDS
-  isCandidateForUnstow                        = isCandidateForUnstowDefault
 
 instance PayloadSemantics ptype
          => ApplyBlock (LedgerState (TestBlockWith ptype)) (TestBlockWith ptype) where
