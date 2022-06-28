@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric       #-}
 
 -- | Node kernel which does chain selection and block production.
 --
@@ -25,6 +26,8 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , NodeKernelError (..)
   ) where
 
+import           GHC.Generics (Generic)
+
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM.Strict
@@ -33,7 +36,9 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Coerce (coerce)
+import           Data.Hashable (Hashable)
 import qualified Data.IP as IP
+import           Data.IP (IP (..), toIPv4, toIPv6)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
@@ -63,7 +68,8 @@ import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 import           Simulation.Network.Snocket (AddressType (..),
                      GlobalAddressScheme (..))
 
-import           Data.IP (IP (..), toIPv4, toIPv6)
+import           Test.Ouroboros.Network.Orphans ()
+
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
                      oneof)
 
@@ -74,7 +80,7 @@ data NtNAddr_
   = EphemeralIPv4Addr Natural
   | EphemeralIPv6Addr Natural
   | IPAddr IP.IP PortNumber
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic)
 
 instance Arbitrary NtNAddr_ where
   arbitrary = do
@@ -102,6 +108,8 @@ instance GlobalAddressScheme NtNAddr_ where
         IPAddr (IP.IPv6 {}) _ -> IPv6Address
     ephemeralAddress IPv4Address = TestAddress . EphemeralIPv4Addr
     ephemeralAddress IPv6Address = TestAddress . EphemeralIPv6Addr
+
+instance Hashable NtNAddr_
 
 type NtNAddr        = TestAddress NtNAddr_
 type NtNVersion     = UnversionedProtocol
