@@ -233,7 +233,7 @@ nodeToNodeProtocols
   -> NodeToNodeVersion
   -> OuroborosBundle muxMode addr bytes m a b
 nodeToNodeProtocols miniProtocolParameters protocols _version =
-    Bundle
+    TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
       (WithHot $ \connectionId controlMessageSTM ->
         case protocols connectionId controlMessageSTM of

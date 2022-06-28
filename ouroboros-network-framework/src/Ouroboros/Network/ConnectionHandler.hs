@@ -4,12 +4,9 @@
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE KindSignatures            #-}
-{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeApplications          #-}
 
 -- | Implementation of 'ConnectionHandler'
 --
@@ -101,7 +98,7 @@ data Handle (muxMode :: MuxMode) peerAddr bytes m a b =
     Handle {
         hMux            :: !(Mux muxMode m),
         hMuxBundle      :: !(MuxBundle muxMode bytes m a b),
-        hControlMessage :: !(Bundle (StrictTVar m ControlMessage))
+        hControlMessage :: !(TemperatureBundle (StrictTVar m ControlMessage))
       }
 
 
@@ -281,7 +278,7 @@ makeConnectionHandler muxTracer singMuxMode
                 unmask $ do
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
-                    <- (\a b c -> Bundle (WithHot a) (WithWarm b) (WithEstablished c))
+                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue
@@ -348,7 +345,7 @@ makeConnectionHandler muxTracer singMuxMode
                 unmask $ do
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
-                    <- (\a b c -> Bundle (WithHot a) (WithWarm b) (WithEstablished c))
+                    <- (\a b c -> TemperatureBundle (WithHot a) (WithWarm b) (WithEstablished c))
                         <$> newTVarIO Continue
                         <*> newTVarIO Continue
                         <*> newTVarIO Continue

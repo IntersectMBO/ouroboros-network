@@ -279,14 +279,14 @@ withBidirectionalConnectionManager snocket socket
     serverApplication :: LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
-                      -> Bundle
+                      -> TemperatureBundle
                           (ConnectionId peerAddr
                       -> ControlMessageSTM m
                       -> [MiniProtocol InitiatorResponderMode ByteString m () ()])
     serverApplication hotRequestsVar
                       warmRequestsVar
                       establishedRequestsVar
-                      = Bundle {
+                      = TemperatureBundle {
         withHot = WithHot $ \_ _ ->
           [ let miniProtocolNum = Mux.MiniProtocolNum 1
             in MiniProtocol {
@@ -371,12 +371,12 @@ runInitiatorProtocols
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m
     -> MuxBundle muxMode ByteString m a b
-    -> m (Maybe (Bundle [a]))
+    -> m (Maybe (TemperatureBundle [a]))
 runInitiatorProtocols
     singMuxMode mux
-    (Bundle (WithHot hotPtcls)
-            (WithWarm warmPtcls)
-            (WithEstablished establishedPtcls)) = do
+    (TemperatureBundle (WithHot hotPtcls)
+                       (WithWarm warmPtcls)
+                       (WithEstablished establishedPtcls)) = do
       -- start all protocols
       hotSTMs <- traverse runInitiator hotPtcls
       warmSTMs <- traverse runInitiator warmPtcls
@@ -395,9 +395,10 @@ runInitiatorProtocols
              ([], established)) ->
           return
             . Just
-            $ Bundle (WithHot hot)
-                     (WithWarm warm)
-                     (WithEstablished established)
+            $ TemperatureBundle
+                (WithHot hot)
+                (WithWarm warm)
+                (WithEstablished established)
   where
     runInitiator :: MiniProtocol muxMode ByteString m a b
                  -> m (STM m (Either SomeException a))

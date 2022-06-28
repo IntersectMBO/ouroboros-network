@@ -250,7 +250,7 @@ subscriptionLoop
     forever $ do
       traceWith tr (SubscriptionTraceStart valency)
       start <- getMonotonicTime
-      conThreads <- atomically $ newTVar Set.empty
+      conThreads <- newTVarIO Set.empty
       sTarget <- subscriptionTargets
       innerLoop conThreads valencyVar sTarget
       atomically $ waitValencyCounter valencyVar
@@ -567,7 +567,7 @@ worker
     -> IO x
 worker tr errTrace tbl sVar snocket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx } workerParams k = do
     resQ <- newResultQ
-    threadsVar <- atomically $ newTVar Set.empty
+    threadsVar <- newTVarIO Set.empty
     withAsync
       (subscriptionLoop tr tbl resQ sVar threadsVar snocket
          workerCallbacks workerParams k) $ \_ ->

@@ -1,10 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
@@ -284,7 +281,7 @@ We classify (potential or actual) upstream peers in three nested categories:
 
 We define the terms /known/, /established/ and /active/ to be nested sets.
 We define the terms /cold/, /warm/ and /hot/ to be disjoint sets. Both
-collections of terms are useful. For example there is information wish to
+collections of terms are useful. For example there is information we wish to
 track for all known peers, irrespective of whether they are cold, warm or hot.
 
 So we have six transitions to consider:
@@ -295,6 +292,9 @@ So we have six transitions to consider:
  * demote a hot peer to warm
  * demote a warm peer to cold
  * forget a cold peer
+
+(Excluding the transitions in which any peer determined to be adversarial is
+forgotten.)
 
 We want a design that separates the policy from the mechanism. We must
 consider what kinds of policy we might like to express and make sure that

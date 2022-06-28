@@ -48,7 +48,7 @@
 --
 -- The calls 'requestOutboundConnection' and 'includeInboundConnection' return
 -- once a connection has been negotiated.  The returned 'handle' contains all
--- the information that is need to start and monitor mini-protocols through
+-- the information that is needed to start and monitor mini-protocols through
 -- the mux interface.
 --
 -- For inbound connections, the connection manager will pass handle (also after
@@ -56,11 +56,11 @@
 --
 -- >
 -- > ┌────────────────────────┐
--- > │                        │        ┏━━━━━━━━━━━━━━━━┓     ┌──────────────────┐
--- > │   ConnectionHandler    │        ┃                ┃     │                  │
--- > │                        ┝━━━━━━━▶┃     handle     ┣━━━━▶│ PeerStateActions ├───▶ P2P Governor
--- > │  inbound / outbound    │        ┃                ┃     │                  │
--- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛     └──────────────────┘
+-- > │                        │        ┏━━━━━━━━━━━━━━━━┓
+-- > │   ConnectionHandler    │        ┃                ┃
+-- > │                        ┝━━━━━━━▶┃     handle     ┃
+-- > │  inbound / outbound    │        ┃                ┃
+-- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛
 -- > └─────────╂──────────────┘           ┃
 -- >           ┃                          ┃
 -- >           ▼                          ┃
@@ -79,6 +79,10 @@
 -- Termination procedure as well as connection state machine is not described in
 -- this haddock, see associated specification.
 --
+-- The 'handle' is used in `ouroboros-network` package to construct
+-- `PeerStateActions` which allow for the outbound governor to
+--
+
 module Ouroboros.Network.ConnectionManager.Types
   ( -- * Connection manager core types
     -- ** Connection Types
@@ -348,13 +352,13 @@ type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
 -- @muxMode@.
 --
-data ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
+newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
     ConnectionHandler {
         -- | Connection handler.
         --
         connectionHandler ::
-          (WithMuxTuple muxMode
-            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m))
+          WithMuxTuple muxMode
+            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m)
       }
 
 

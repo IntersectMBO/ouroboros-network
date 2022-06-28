@@ -82,7 +82,7 @@ jobs jobPool st =
     -- This case is simple because the job pool returns a 'Completion' which is
     -- just a function from the current state to a new 'Decision'.
     Guarded Nothing $ do
-      Completion completion <- JobPool.collect jobPool
+      Completion completion <- JobPool.waitForJob jobPool
       return (completion st)
 
 
@@ -149,16 +149,10 @@ connections PeerSelectionActions{
                                . Set.foldr'
                                    ((snd .) . KnownPeers.incrementFailCount)
                                    (knownPeers st)
-                               $ (Map.keysSet demotedToCold)
+                               $ Map.keysSet demotedToCold
 
-        in assert
-            (let establishedPeersSet' =
-                   Map.keysSet (EstablishedPeers.toMap establishedPeers')
-             in activePeers' `Set.isSubsetOf` establishedPeersSet'
-             &&    Map.keysSet
-                     (EstablishedPeers.toMap establishedPeers')
-                == establishedPeersSet')
-
+        in assert (activePeers' `Set.isSubsetOf`
+                     Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
               decisionTrace = TraceDemoteAsynchronous demotions,
               decisionJobs  = [],
@@ -256,11 +250,10 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
                         LocalRootPeers.toMap localRootPeers'
           addedSet    = Map.keysSet added
           removedSet  = Map.keysSet removed
-          knownPeers' = KnownPeers.insert addedSet
+          knownPeers' = KnownPeers.insert addedSet knownPeers
                         -- We do not immediately remove old ones from the
                         -- known peers set because we may have established
                         -- connections
-                      $ knownPeers
 
           -- We have to adjust the publicRootPeers to maintain the invariant
           -- that the local and public sets are non-overlapping.

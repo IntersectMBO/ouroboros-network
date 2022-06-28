@@ -133,11 +133,8 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
     , daMode                     :: DiffusionMode
   }
 
--- | Common DiffusionArguments interface between P2P and NonP2P
---
--- TODO: we need initiator only mode for blockchain explorer or a similar
--- application, there's no reason why one should run a node-to-node server for
--- it.
+
+-- | Versioned mini-protocol bundles run on a negotiated connection.
 --
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
