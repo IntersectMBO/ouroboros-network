@@ -196,6 +196,8 @@ instance Show addr => Show (TestAddress addr) where
         showString "TestAddress "
       . showParen True (showsPrec d addr)
 
+instance Hashable addr => Hashable (TestAddress addr)
+
 -- | We support either sockets or named pipes.
 --
 -- There are three families of addresses: 'SocketFamily' usef for Berkeley
