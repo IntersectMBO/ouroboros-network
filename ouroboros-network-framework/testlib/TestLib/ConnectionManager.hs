@@ -300,7 +300,5 @@ connectionManagerTraceMap (TrConnectionManagerCounters _)  =
   "TrConnectionManagerCounters"
 connectionManagerTraceMap (TrState _)                      =
   "TrState"
-connectionManagerTraceMap (TrUnknownConnection _)          =
-  "TrUnknownConnection"
 connectionManagerTraceMap (TrUnexpectedlyFalseAssertion _) =
   "TrUnexpectedlyFalseAssertion"

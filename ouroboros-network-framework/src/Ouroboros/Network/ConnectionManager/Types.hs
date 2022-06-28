@@ -847,7 +847,6 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionManagerCounters    ConnectionManagerCounters
   | TrState                        (Map peerAddr AbstractState)
   -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
-  | TrUnknownConnection            (ConnectionId peerAddr)
   | TrUnexpectedlyFalseAssertion   (AssertionLocation peerAddr)
   -- ^ This case is unexpected at call site.
   deriving Show

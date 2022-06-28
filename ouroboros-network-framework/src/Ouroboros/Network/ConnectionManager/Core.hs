@@ -750,10 +750,8 @@ withConnectionManager ConnectionManagerArguments {
 
     -- Fork connection thread.
     --
-    -- TODO: We don't have 'MonadFix' instance for 'IOSim', so we cannot
-    -- directly pass 'connVar' (which requires @Async ()@ returned by this
-    -- function.  If we had 'MonadFix' at hand We could then also elegantly
-    -- eliminate 'PromiseWriter'.
+    -- TODO: We could probably elegantly eliminate 'PromiseWriter', now that we use
+    -- MonadFix.
     forkConnectionHandler
       :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
       -> MutableConnState peerAddr handle handleError version m
@@ -834,7 +832,7 @@ withConnectionManager ConnectionManagerArguments {
                   traverse_ (traceWith trTracer) mbTransition
                   close cmSnocket socket
                   return ( Map.delete peerAddr state
-                         , Left (Known (TerminatedState Nothing))
+                         , Left ()
                          )
                 Right transition -> do
                   close cmSnocket socket
@@ -843,24 +841,15 @@ withConnectionManager ConnectionManagerArguments {
                          )
 
             case eTransition of
-              Left Unknown -> do
-                -- TODO: this only happens because we read 'mConnVar' from
-                -- 'stateVar', if we have 'MonadFix' instance we could access it
-                -- directly which would reduce this case.
-                traceWith tracer (TrUnknownConnection connId)
+              Left () -> do
+                traceWith trTracer
+                          (TransitionTrace
+                            peerAddr
+                            Transition
+                               { fromState = Known (TerminatedState Nothing)
+                               , toState   = Unknown
+                               })
                 traceCounters stateVar
-
-              Left connState@Known {} -> do
-                traceWith trTracer (TransitionTrace peerAddr
-                                      Transition
-                                         { fromState = connState
-                                         , toState   = Unknown
-                                         })
-                traceCounters stateVar
-              -- This case is impossible to reach since the previous atomically block
-              -- does not return the 'Race' constructor.
-              -- TODO: Make this pattern match impossible.
-              Left _ -> error "connection cleanup handler: impossible happened"
               Right transition ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    when (cmTimeWaitTimeout > 0) $
