@@ -3,8 +3,8 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE TypeApplications      #-}
 
 module Test.Ouroboros.Network.Diffusion.Node
   ( -- * run a node
@@ -28,13 +28,15 @@ module Test.Ouroboros.Network.Diffusion.Node
   , UseLedgerAfter (..)
   ) where
 
+import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, wait, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM), MonadTraceSTM, StrictTVar)
+                     MonadSTM (STM, atomically), MonadTraceSTM, StrictTVar,
+                     newTVar, readTVar, modifyTVar')
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -42,8 +44,10 @@ import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (nullTracer)
 
+import           Data.Foldable (foldl')
 import           Data.IP (IP (..))
 import           Data.Map (Map)
+import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Text as Text
 import           Data.Void (Void)
@@ -53,10 +57,14 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.DNS (Domain, TTL)
 
-import           Ouroboros.Network.BlockFetch.Decision (FetchMode (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (MaxSlotNo(..), maxSlotNoFromWithOrigin, pointSlot, Point)
+import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState(..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
@@ -83,7 +91,7 @@ import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                      TestAddress (..))
 
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+import           Ouroboros.Network.Testing.ConcreteBlock (Block (..), BlockHeader (..), convertSlotToTimeForTestsAssumingNoHardFork)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
@@ -91,7 +99,7 @@ import           Simulation.Network.Snocket (AddressType (..), FD)
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NtCAddr,
                      NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
-                     NtNVersionData (..))
+                     NtNVersionData (..), NodeKernel (..))
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay, DNSTimeout, mockDNSActions)
@@ -223,16 +231,87 @@ run blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daReturnPolicy           = mempty
               }
 
-        apps <- Node.applications nodeKernel Node.cborCodecs limits appArgs
+        apps <- Node.applications @_ @BlockHeader nodeKernel Node.cborCodecs limits appArgs
+
+        registry <- newFetchClientRegistry
 
         withAsync
            (Diff.P2P.runM interfaces
                           Diff.nullTracers tracersExtra
                           args argsExtra apps appsExtra)
            $ \ diffusionThread ->
-               wait diffusionThread
-            <> wait nodeKernelThread
+               withAsync (blockFetch registry nodeKernel) $ \blockFetchLogicThread ->
+                 wait diffusionThread
+              <> wait blockFetchLogicThread
+              <> wait nodeKernelThread
   where
+    blockFetch :: FetchClientRegistry NtNAddr BlockHeader Block m
+               -> NodeKernel BlockHeader Block m
+               -> m Void
+    blockFetch registry nodeKernel = do
+      blockHeapVar <- LazySTM.newTVarIO Set.empty
+
+      blockFetchLogic
+        nullTracer
+        nullTracer
+        (blockFetchPolicy blockHeapVar nodeKernel)
+        registry
+        (BlockFetchConfiguration {
+          bfcMaxConcurrencyBulkSync = 1,
+          bfcMaxConcurrencyDeadline = 2,
+          bfcMaxRequestsInflight    = 10,
+          bfcDecisionLoopInterval   = 0.01,
+          bfcSalt                   = 0
+        })
+
+    blockFetchPolicy :: LazySTM.TVar m (Set (Point Block))
+                     -> NodeKernel BlockHeader Block m
+                     -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
+    blockFetchPolicy blockHeapVar nodeKernel =
+        BlockFetchConsensusInterface {
+          readCandidateChains    = readTVar (nkClientChains nodeKernel)
+                                   >>= traverse (readTVar
+                                       >=> (return . toAnchoredFragmentHeader)),
+          readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
+                                   >>= (return . toAnchoredFragmentHeader . chainState),
+          readFetchMode          = return FetchModeBulkSync,
+          readFetchedBlocks      = flip Set.member <$> LazySTM.readTVar blockHeapVar,
+          readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
+                                   map (maxSlotNoFromWithOrigin . pointSlot) .
+                                   Set.elems <$>
+                                   LazySTM.readTVar blockHeapVar,
+          mkAddFetchedBlock        = \_enablePipelining -> do
+              pure $ \p _b ->
+                atomically (modifyTVar' blockHeapVar (Set.insert p)),
+
+          plausibleCandidateChain,
+          compareCandidateChains,
+
+          blockFetchSize         = \_ -> 1000,
+          blockMatchesHeader     = \_ _ -> True,
+
+          headerForgeUTCTime,
+          blockForgeUTCTime      = headerForgeUTCTime . fmap blockHeader
+        }
+      where
+        plausibleCandidateChain cur candidate =
+            AF.headBlockNo candidate > AF.headBlockNo cur
+
+        headerForgeUTCTime (FromConsensus hdr) =
+            pure $
+            convertSlotToTimeForTestsAssumingNoHardFork (headerSlot hdr)
+
+        compareCandidateChains c1 c2 =
+          AF.headBlockNo c1 `compare` AF.headBlockNo c2
+
+        -- | Convert a 'Chain' to an 'AnchoredFragment' with an header.
+        --
+        -- The anchor of the fragment will be 'Chain.genesisPoint'.
+        toAnchoredFragmentHeader :: Chain Block -> AF.AnchoredFragment BlockHeader
+        toAnchoredFragmentHeader = AF.fromOldestFirst AF.AnchorGenesis
+                                 . map blockHeader
+                                 . toOldestFirst
+
     ntnAddressType :: NtNAddr -> Maybe AddressType
     ntnAddressType (TestAddress (Node.EphemeralIPv4Addr _)) = Just IPv4Address
     ntnAddressType (TestAddress (Node.EphemeralIPv6Addr _)) = Just IPv6Address
