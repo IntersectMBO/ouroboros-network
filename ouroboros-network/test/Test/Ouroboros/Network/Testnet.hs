@@ -1064,7 +1064,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              10 -- seconds
+              15 -- seconds
               id
               promotionOpportunities
 
