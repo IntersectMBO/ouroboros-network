@@ -41,6 +41,7 @@ module Ouroboros.Consensus.Shelley.Node.TPraos (
 
 import           Control.Monad.Except (Except)
 import           Data.Bifunctor (first)
+import qualified Data.ListMap as ListMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
@@ -380,6 +381,7 @@ registerGenesisStaking staking nes = nes {
     }
   where
     SL.ShelleyGenesisStaking { sgsPools, sgsStake } = staking
+    sgsStakeMap = ListMap.toMap sgsStake
     SL.NewEpochState { nesEs = epochState } = nes
     ledgerState = SL.esLState epochState
     dpState = SL.lsDPState ledgerState
@@ -393,8 +395,8 @@ registerGenesisStaking staking nes = nes {
           SL._unified = UM.unify
             ( Map.map (const $ SL.Coin 0)
                       . Map.mapKeys SL.KeyHashObj
-                      $ sgsStake)
-            ( Map.mapKeys SL.KeyHashObj sgsStake )
+                      $ sgsStakeMap)
+            ( Map.mapKeys SL.KeyHashObj $ sgsStakeMap )
             mempty
         }
 
@@ -402,7 +404,7 @@ registerGenesisStaking staking nes = nes {
     -- See STS POOL for details
     pState' :: SL.PState (EraCrypto era)
     pState' = (SL.dpsPState dpState) {
-          SL._pParams = sgsPools
+          SL._pParams = ListMap.toMap sgsPools
         }
 
     -- The new stake distribution is made on the basis of a snapshot taken

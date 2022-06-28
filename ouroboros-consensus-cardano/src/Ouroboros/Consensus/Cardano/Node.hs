@@ -49,6 +49,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Exception (assert)
 import qualified Data.ByteString.Short as Short
 import           Data.Functor.These (These1 (..))
+import qualified Data.ListMap as ListMap
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict hiding (shape, shift)
 import           Data.Word (Word16, Word64)
@@ -820,7 +821,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                   registerGenesisStaking
                     (SL.sgStaking genesisShelley)
                 . registerInitialFunds
-                    (SL.sgInitialFunds genesisShelley)
+                    (ListMap.toMap $ SL.sgInitialFunds genesisShelley)
                 $ Shelley.shelleyLedgerState st
             }
 
