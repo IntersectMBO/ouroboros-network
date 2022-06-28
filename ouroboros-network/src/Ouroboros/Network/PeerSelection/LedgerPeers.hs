@@ -196,6 +196,17 @@ pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
                  traceWith tracer $ PickedPeer relay ackStake stake
                  go rng'' (n - 1) (relay : picked)
 
+-- | Peer list life time decides how often previous ledger peers should be
+-- reused.  If the ledger peer map is empty we use 'short_PEER_LIST_LIFE_TIME'
+-- otherwise we use 'long_PEER_LIST_LIFE_TIME'
+--
+short_PEER_LIST_LIFE_TIME :: DiffTime
+short_PEER_LIST_LIFE_TIME = 30
+
+-- | Long peer list lift time, close to 30minutes but not exactly
+--
+long_PEER_LIST_LIFE_TIME :: DiffTime
+long_PEER_LIST_LIFE_TIME = 1847 -- a prime number!
 
 -- | Run the LedgerPeers worker thread.
 --
@@ -211,6 +222,8 @@ ledgerPeersThread :: forall m peerAddr.
                   -> LedgerPeersConsensusInterface m
                   -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set peerAddr)))
                   -> STM m NumberOfPeers
+                  -- ^ a blocking action which receives next request for more
+                  -- ledger peers
                   -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
 ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
@@ -224,11 +237,11 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
         traceWith tracer (TraceUseLedgerAfter useLedgerAfter)
 
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerAfter
-                                  then 30
-                                  else 1847 -- Close to but not exactly 30min.
-                                  -- GR-FIXME[R2]: move magic numbers to ...?
+                                  then short_PEER_LIST_LIFE_TIME
+                                  else long_PEER_LIST_LIFE_TIME
 
         traceWith tracer WaitingOnRequest
+        -- wait until next request of ledger peers
         numRequested <- atomically getReq
         traceWith tracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
