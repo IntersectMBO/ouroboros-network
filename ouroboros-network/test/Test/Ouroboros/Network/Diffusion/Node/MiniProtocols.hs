@@ -26,6 +26,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>))
+import           Data.Maybe (fromMaybe)
 import           Data.Void (Void)
 import           System.Random (StdGen)
 
@@ -39,7 +40,10 @@ import           Network.TypedProtocol.PingPong.Examples
 import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Type
 import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
+import           Ouroboros.Network.Protocol.BlockFetch.Examples
+import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec
@@ -57,12 +61,14 @@ import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 import           Data.Monoid.Synchronisation
 
-import           Ouroboros.Network.Block (HasHeader, Point)
+import           Ouroboros.Network.Block (HeaderHash, HasHeader, Point)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.ConnectionId
 import qualified Ouroboros.Network.Diffusion as Diff (Applications (..))
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.KeepAlive
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
@@ -70,6 +76,10 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Testing.ConcreteBlock
+
+import           Network.TypedProtocol
+
+import qualified Pipes
 
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
@@ -171,7 +181,9 @@ applications :: forall block header m.
                 , MonadTime  m
                 , MonadTimer m
                 , MonadThrow (STM m)
+                , HasHeader header
                 , HasHeader block
+                , HeaderHash header ~ HeaderHash block
                 , ShowProxy block
                 )
              => NodeKernel header block m
@@ -182,7 +194,8 @@ applications :: forall block header m.
                                      NtCAddr NtCVersion NtCVersionData
                                      m ())
 applications nodeKernel
-             Codecs { chainSyncCodec, keepAliveCodec, pingPongCodec }
+             Codecs { chainSyncCodec, blockFetchCodec
+                    , keepAliveCodec, pingPongCodec }
              limits
              AppArgs
                { aaLedgerPeersConsensusInterface
@@ -232,12 +245,20 @@ applications nodeKernel
     initiatorAndResponderApp = TemperatureBundle
       { withHot = WithHot $ \ connId controlMessageSTM ->
           [ MiniProtocol
-              { miniProtocolNum    = MiniProtocolNum 1
+              { miniProtocolNum    = MiniProtocolNum 2
               , miniProtocolLimits = chainSyncLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     (chainSyncInitiator connId controlMessageSTM)
                     chainSyncResponder
+              }
+          , MiniProtocol
+              { miniProtocolNum    = MiniProtocolNum 3
+              , miniProtocolLimits = blockFetchLimits limits
+              , miniProtocolRun    =
+                  InitiatorAndResponderProtocol
+                    (blockFetchInitiator connId controlMessageSTM)
+                    blockFetchResponder
               }
           ]
       , withWarm = WithWarm $ \ _connId controlMessageSTM ->
@@ -304,6 +325,52 @@ applications nodeKernel
         (chainSyncServerPeer
           (chainSyncServerExample
             () (nkChainProducerState nodeKernel)))
+
+    blockFetchInitiator
+      :: ConnectionId NtNAddr
+      -> ControlMessageSTM m
+      -> MuxPeer ByteString m ()
+    blockFetchInitiator ConnectionId { remoteAddress }
+                        controlMessageSTM =
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "BlockFetchClient"
+        bracketFetchClient (nkFetchClientRegistry nodeKernel)
+                           UnversionedProtocol
+                           (const NotReceivingTentativeBlocks)
+                           remoteAddress
+                           $ \clientCtx ->
+          runPeerWithLimits
+            nullTracer
+            blockFetchCodec
+            (blockFetchSizeLimits limits)
+            (blockFetchTimeLimits limits)
+            channel
+            (forgetPipelined
+              $ blockFetchClient UnversionedProtocol controlMessageSTM
+                                 nullTracer clientCtx)
+
+    blockFetchResponder
+      :: MuxPeer ByteString m ()
+    blockFetchResponder =
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "BlockFetchServer"
+        runPeerWithLimits
+          nullTracer
+          blockFetchCodec
+          (blockFetchSizeLimits limits)
+          (blockFetchTimeLimits limits)
+          channel
+          (blockFetchServerPeer $
+            blockFetchServer
+            (constantRangeRequests $ \(ChainRange from to) -> do
+              nkChainProducer <- Pipes.lift
+                               $ readTVarIO (nkChainProducerState nodeKernel)
+              Pipes.each $ fromMaybe []
+                         $ Chain.selectBlockRange (chainState nkChainProducer)
+                                                  from
+                                                  to
+            )
+          )
 
     keepAliveInitiator
       :: ConnectionId NtNAddr
