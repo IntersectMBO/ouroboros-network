@@ -93,6 +93,10 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
       serverObservableStateVar    :: StrictTVar m InboundGovernorObservableState
     }
 
+-- | Server pauses accepting connections after an 'CONNABORTED' error.
+--
+server_CONNABORTED_DELAY :: DiffTime
+server_CONNABORTED_DELAY = 0.5
 
 -- | Run the server, which consists of the following components:
 --
@@ -232,8 +236,8 @@ run ServerArguments {
               case fromException err of
                  Just ioErr ->
                    if iseCONNABORTED ioErr
-                      then threadDelay 0.5 >> go unmask acceptNext
-                           -- GR-FIXME[R]: can we remove this magic number?
+                      then threadDelay server_CONNABORTED_DELAY
+                        >> go unmask acceptNext
                       else throwIO ioErr
                  Nothing -> throwIO err
 
