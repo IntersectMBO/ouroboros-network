@@ -80,7 +80,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
       -- | Time for which all protocols need to be idle to trigger
       -- 'DemotedToCold' transition.
       --
-      serverInboundIdleTimeout    :: DiffTime,
+      serverInboundIdleTimeout    :: Maybe DiffTime,
 
       -- | Server control var is passed as an argument; this allows to use the
       -- server to run and manage responders which needs to be started on

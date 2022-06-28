@@ -567,7 +567,7 @@ withBidirectionalConnectionManager name timeouts
                       WithName name `contramap` inboundTracer, -- InboundGovernorTrace
                     serverConnectionLimits = acceptedConnLimit,
                     serverConnectionManager = connectionManager,
-                    serverInboundIdleTimeout = tProtocolIdleTimeout timeouts,
+                    serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
                     serverControlChannel = inbgovControlChannel,
                     serverObservableStateVar = observableStateVar
                   }

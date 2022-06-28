@@ -99,7 +99,7 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
                 -> ServerControlChannel muxMode peerAddr ByteString m a b
-                -> DiffTime -- protocol idle timeout
+                -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket peerAddr
                                         versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
@@ -242,11 +242,13 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                             Nothing -> return Nothing
 
                             Just csCompletionMap -> do
-                              v <- registerDelay inboundIdleTimeout
+                              mv <- traverse registerDelay inboundIdleTimeout
                               let -- initial state is 'RemoteIdle', if the remote end will not
                                   -- start any responders this will unregister the inbound side.
                                   csRemoteState :: RemoteState m
-                                  csRemoteState = RemoteIdle (LazySTM.readTVar v >>= check)
+                                  csRemoteState = RemoteIdle (case mv of
+                                                                Nothing -> retry
+                                                                Just v  -> LazySTM.readTVar v >>= check)
 
                                   connState = ConnectionState {
                                       csMux,
@@ -338,9 +340,11 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
               let state' = unregisterConnection connId state
               return (Just connId, state')
             OperationSuccess {}  -> do
-              v <- registerDelay inboundIdleTimeout
+              mv <- traverse registerDelay inboundIdleTimeout
               let timeoutSTM :: STM m ()
-                  !timeoutSTM = LazySTM.readTVar v >>= check
+                  !timeoutSTM = case mv of
+                    Nothing -> retry
+                    Just v  -> LazySTM.readTVar v >>= check
 
               let state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
 
