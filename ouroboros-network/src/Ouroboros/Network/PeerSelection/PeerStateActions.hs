@@ -881,10 +881,6 @@ withPeerStateActions PeerStateActionsArguments {
                     <$> awaitAllResults SingHot pchAppHandles
                     <*> awaitAllResults SingWarm pchAppHandles
                     <*> awaitAllResults SingEstablished pchAppHandles)
-      -- 'unregisterOutboundConnection' could only fail to demote the peer if
-      -- connection manager would simultaneously promote it, but this is not
-      -- posible.
-        -- GR-FIXME[D2]: Don't understand, why this comment here.
       case res of
         Nothing -> do
           -- timeout fired
@@ -908,6 +904,10 @@ withPeerStateActions PeerStateActionsArguments {
 
         Just AllSucceeded -> do
           -- all mini-protocols terminated cleanly
+          --
+          -- 'unregisterOutboundConnection' could only fail to demote the peer if
+          -- connection manager would simultaneously promote it, but this is not
+          -- possible.
           _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
           atomically (writeTVar pchPeerStatus PeerCold)
           traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
