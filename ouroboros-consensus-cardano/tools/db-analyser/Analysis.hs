@@ -15,7 +15,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise
 import           Control.Monad.Except
-import           Control.Tracer (Tracer (..), nullTracer, traceWith)
+import           Control.Tracer (Tracer (..), traceWith)
 import           Data.IORef
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
@@ -38,38 +38,19 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
-import qualified Ouroboros.Consensus.Mempool.API as MP
-import qualified Ouroboros.Consensus.Mempool.Impl as MP
-import qualified Ouroboros.Consensus.Mempool.TxSeq as MP
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
-                     StreamFrom (..))
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
-                     (LgrDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
-                     writeSnapshot)
-import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes,
-                     encodeDisk)
 
-import           HasAnalysis (HasAnalysis)
-import qualified HasAnalysis
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Util.ResourceRegistry
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB hiding
                      (TraceEvent)
-import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDB)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk hiding (TraceEvent)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as OnDisk
@@ -537,106 +518,106 @@ reproMempoolForge ::
   ) =>
   Int ->
   Analysis blk
-reproMempoolForge numBlks env = do
-    howManyBlocks <- case numBlks of
-      1 -> pure ReproMempoolForgeOneBlk
-      2 -> pure ReproMempoolForgeTwoBlks
-      _ -> fail $ "--repro-mempool-and-forge only supports"
-               <> "1 or 2 blocks at a time, not " <> show numBlks
+reproMempoolForge numBlks env = undefined -- do
+  --   howManyBlocks <- case numBlks of
+  --     1 -> pure ReproMempoolForgeOneBlk
+  --     2 -> pure ReproMempoolForgeTwoBlks
+  --     _ -> fail $ "--repro-mempool-and-forge only supports"
+  --              <> "1 or 2 blocks at a time, not " <> show numBlks
 
-    ref <- IOLike.newTVarIO initLedger
-    mempool <- MP.openMempoolWithoutSyncThread
-      MP.LedgerInterface {
-        getCurrentLedgerState = ledgerState <$> IOLike.readTVar ref
-      }
-      lCfg
-      -- one megabyte should generously accomodate two blocks' worth of txs
-      (MP.MempoolCapacityBytesOverride $ MP.MempoolCapacityBytes $ 2^(20 :: Int))
-      nullTracer
-      LedgerSupportsMempool.txInBlockSize
+  --   ref <- IOLike.newTVarIO initLedger
+  --   mempool <- MP.openMempoolWithoutSyncThread
+  --     MP.LedgerInterface {
+  --       MP.getCurrentLedgerState = ledgerState <$> IOLike.readTVar ref
+  --     }
+  --     lCfg
+  --     -- one megabyte should generously accomodate two blocks' worth of txs
+  --     (MP.MempoolCapacityBytesOverride $ MP.MempoolCapacityBytes $ 2^(20 :: Int))
+  --     nullTracer
+  --     LedgerSupportsMempool.txInBlockSize
 
-    void $ processAll db registry GetBlock initLedger limit Nothing (process howManyBlocks ref mempool)
-  where
-    AnalysisEnv {
-      cfg
-    , initLedger
-    , db
-    , registry
-    , limit
-    , tracer
-    } = env
+  --   void $ processAll db registry GetBlock initLedger limit Nothing (process howManyBlocks ref mempool)
+  -- where
+  --   AnalysisEnv {
+  --     cfg
+  --   , initLedger
+  --   , db
+  --   , registry
+  --   , limit
+  --   , tracer
+  --   } = env
 
-    lCfg :: LedgerConfig blk
-    lCfg = configLedger cfg
+  --   lCfg :: LedgerConfig blk
+  --   lCfg = configLedger cfg
 
-    elCfg :: LedgerCfg (ExtLedgerState blk)
-    elCfg = ExtLedgerCfg cfg
+  --   elCfg :: LedgerCfg (ExtLedgerState blk)
+  --   elCfg = ExtLedgerCfg cfg
 
-    timed :: IO a -> IO (a, IOLike.DiffTime)
-    timed m = do
-      before <- IOLike.getMonotonicTime
-      !x <- m
-      after <- IOLike.getMonotonicTime
-      pure (x, after `IOLike.diffTime` before)
+  --   timed :: IO a -> IO (a, IOLike.DiffTime)
+  --   timed m = do
+  --     before <- IOLike.getMonotonicTime
+  --     !x <- m
+  --     after <- IOLike.getMonotonicTime
+  --     pure (x, after `IOLike.diffTime` before)
 
-    process
-      :: ReproMempoolForgeHowManyBlks
-      -> IOLike.StrictTVar IO (ExtLedgerState blk)
-      -> MP.Mempool IO blk MP.TicketNo
-      -> Maybe blk
-      -> blk
-      -> IO (Maybe blk)
-    process howManyBlocks ref mempool mbBlk blk' = (\() -> Just blk') <$> do
-      -- add this block's transactions to the mempool
-      do
-        results <- MP.addTxs mempool $ LedgerSupportsMempool.extractTxs blk'
-        let rejs = [ rej | rej@MP.MempoolTxRejected{} <- results ]
-        unless (null rejs) $ do
-          fail $ "Mempool rejected some of the on-chain txs: " <> show rejs
+  --   process
+  --     :: ReproMempoolForgeHowManyBlks
+  --     -> IOLike.StrictTVar IO (ExtLedgerState blk)
+  --     -> MP.Mempool IO blk MP.TicketNo
+  --     -> Maybe blk
+  --     -> blk
+  --     -> IO (Maybe blk)
+  --   process howManyBlocks ref mempool mbBlk blk' = (\() -> Just blk') <$> do
+  --     -- add this block's transactions to the mempool
+  --     do
+  --       results <- MP.addTxs mempool $ LedgerSupportsMempool.extractTxs blk'
+  --       let rejs = [ rej | rej@MP.MempoolTxRejected{} <- results ]
+  --       unless (null rejs) $ do
+  --         fail $ "Mempool rejected some of the on-chain txs: " <> show rejs
 
-      let scrutinee = case howManyBlocks of
-            ReproMempoolForgeOneBlk  -> Just blk'
-            ReproMempoolForgeTwoBlks -> mbBlk
-      case scrutinee of
-        Nothing  -> pure ()
-        Just blk -> do
-          st <- IOLike.readTVarIO ref
+  --     let scrutinee = case howManyBlocks of
+  --           ReproMempoolForgeOneBlk  -> Just blk'
+  --           ReproMempoolForgeTwoBlks -> mbBlk
+  --     case scrutinee of
+  --       Nothing  -> pure ()
+  --       Just blk -> do
+  --         st <- IOLike.readTVarIO ref
 
-          -- time the suspected slow parts of the forge thread that created
-          -- this block
-          --
-          -- Primary caveat: that thread's mempool may have had more transactions in it.
-          do
-            let slot = blockSlot blk
-            (ticked, durTick) <- timed $ IOLike.evaluate $
-              applyChainTick lCfg slot (ledgerState st)
-            ((), durSnap) <- timed $ IOLike.atomically $ do
-              snap <- MP.getSnapshotFor mempool $ MP.ForgeInKnownSlot slot ticked
+  --         -- time the suspected slow parts of the forge thread that created
+  --         -- this block
+  --         --
+  --         -- Primary caveat: that thread's mempool may have had more transactions in it.
+  --         do
+  --           let slot = blockSlot blk
+  --           (ticked, durTick) <- timed $ IOLike.evaluate $
+  --             applyChainTick lCfg slot (ledgerState st)
+  --           ((), durSnap) <- timed $ IOLike.atomically $ do
+  --             snap <- MP.getLedgerAndSnapshotFor mempool $ MP.ForgeInKnownSlot slot ticked
 
-              pure $ length (MP.snapshotTxs snap) `seq` MP.snapshotLedgerState snap `seq` ()
+  --             pure $ length (MP.snapshotTxs snap) ()
 
-            let sizes = HasAnalysis.blockTxSizes blk
-            traceWith tracer $
-              BlockMempoolAndForgeRepro
-                (blockNo blk)
-                slot
-                (length sizes)
-                (sum sizes)
-                durTick
-                durSnap
+  --           let sizes = HasAnalysis.blockTxSizes blk
+  --           traceWith tracer $
+  --             BlockMempoolAndForgeRepro
+  --               (blockNo blk)
+  --               slot
+  --               (length sizes)
+  --               (sum sizes)
+  --               durTick
+  --               durSnap
 
-          -- advance the ledger state to include this block
-          --
-          -- TODO We could inline/reuse parts of the IsLedger ExtLedgerState
-          -- instance here as an optimization that avoids repeating the
-          -- 'applyChainTick' call above. We want to leave that call alone, though,
-          -- since it currently matches the call in the forging thread, which is
-          -- the primary intention of this Analysis. Maybe GHC's CSE is already
-          -- doing this sharing optimization?
-          IOLike.atomically $ IOLike.writeTVar ref $! tickThenReapply elCfg blk st
+  --         -- advance the ledger state to include this block
+  --         --
+  --         -- TODO We could inline/reuse parts of the IsLedger ExtLedgerState
+  --         -- instance here as an optimization that avoids repeating the
+  --         -- 'applyChainTick' call above. We want to leave that call alone, though,
+  --         -- since it currently matches the call in the forging thread, which is
+  --         -- the primary intention of this Analysis. Maybe GHC's CSE is already
+  --         -- doing this sharing optimization?
+  --         IOLike.atomically $ IOLike.writeTVar ref $! tickThenReapply elCfg blk st
 
-          -- this flushes blk from the mempool, since every tx in it is now on the chain
-          void $ MP.syncWithLedger mempool
+  --         -- this flushes blk from the mempool, since every tx in it is now on the chain
+  --         void $ MP.syncWithLedger mempool
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB
