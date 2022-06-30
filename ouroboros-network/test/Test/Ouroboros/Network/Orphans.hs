@@ -2,7 +2,7 @@
 module Test.Ouroboros.Network.Orphans () where
 
 
-import           Data.Hashable ( Hashable(hashWithSalt), hashUsing )
+import           Data.Hashable (Hashable (hashWithSalt), hashUsing)
 import qualified Data.IP as IP
 import           Data.Word (Word16)
 

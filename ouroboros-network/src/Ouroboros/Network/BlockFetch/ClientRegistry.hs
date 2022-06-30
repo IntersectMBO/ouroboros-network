@@ -3,7 +3,7 @@
 
 module Ouroboros.Network.BlockFetch.ClientRegistry
   ( -- * Registry of block fetch clients
-    FetchClientRegistry(..)
+    FetchClientRegistry (..)
   , newFetchClientRegistry
   , bracketFetchClient
   , bracketKeepAliveClient
@@ -241,7 +241,6 @@ bracketKeepAliveClient(FetchClientRegistry _ctxVar
                modifyTVar dqRegistry $ \m ->
                  assert (peer `Map.member` m) $
                  Map.delete peer m
-
 
 setFetchClientContext :: MonadSTM m
                       => FetchClientRegistry peer header block m
