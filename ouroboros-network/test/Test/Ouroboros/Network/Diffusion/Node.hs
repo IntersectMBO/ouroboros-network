@@ -3,8 +3,8 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Test.Ouroboros.Network.Diffusion.Node
   ( -- * run a node
@@ -36,7 +36,7 @@ import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
                      MonadSTM (STM, atomically), MonadTraceSTM, StrictTVar,
-                     newTVar, readTVar, modifyTVar')
+                     modifyTVar', newTVar, readTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -47,8 +47,8 @@ import           Control.Tracer (nullTracer)
 import           Data.Foldable (foldl')
 import           Data.IP (IP (..))
 import           Data.Map (Map)
-import qualified Data.Set as Set
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import           Data.Void (Void)
 import           System.Random (StdGen, split)
@@ -58,13 +58,15 @@ import qualified Codec.CBOR.Term as CBOR
 import           Network.DNS (Domain, TTL)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo(..), maxSlotNoFromWithOrigin, pointSlot, Point)
+import           Ouroboros.Network.Block (MaxSlotNo (..), Point,
+                     maxSlotNoFromWithOrigin, pointSlot)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
-import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState(..))
+import           Ouroboros.Network.MockChain.ProducerState
+                     (ChainProducerState (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
@@ -91,15 +93,17 @@ import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                      TestAddress (..))
 
-import           Ouroboros.Network.Testing.ConcreteBlock (Block (..), BlockHeader (..), convertSlotToTimeForTestsAssumingNoHardFork)
+import           Ouroboros.Network.Testing.ConcreteBlock (Block (..),
+                     BlockHeader (..),
+                     convertSlotToTimeForTestsAssumingNoHardFork)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
-import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NtCAddr,
-                     NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
-                     NtNVersionData (..), NodeKernel (..))
+import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
+                     (NodeKernel (..), NtCAddr, NtCVersion, NtCVersionData,
+                     NtNAddr, NtNVersion, NtNVersionData (..))
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay, DNSTimeout, mockDNSActions)

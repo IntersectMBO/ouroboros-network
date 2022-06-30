@@ -9,6 +9,7 @@
 module Test.Ouroboros.Network.Testnet.Simulation.Node
   ( SimArgs (..)
   , DiffusionScript (..)
+  , HotDiffusionScript (..)
   , DiffusionSimulationTrace (..)
   , prop_diffusionScript_fixupCommands
   , prop_diffusionScript_commandScript_valid
@@ -65,12 +66,11 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..), PortNumber,
                      RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
-import qualified Ouroboros.Network.PeerSelection.Types as PeerSelection
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
+                     (byteLimitsBlockFetch, timeLimitsBlockFetch)
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..), byteLimitsChainSync,
                      timeLimitsChainSync)
-import           Ouroboros.Network.Protocol.BlockFetch.Codec
-                     (byteLimitsBlockFetch, timeLimitsBlockFetch)
 import           Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
                      (byteLimitsKeepAlive, timeLimitsKeepAlive)
@@ -96,7 +96,7 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelect
 
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
                      chooseInt, counterexample, frequency, oneof, property,
-                     shrinkList, sized, sublistOf, vectorOf, (.&&.))
+                     shrinkList, sized, sublistOf, suchThat, vectorOf, (.&&.))
 
 
 -- | Diffusion Simulator Arguments
@@ -197,7 +197,7 @@ genIP ips =
 genCommands :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
   port <- fromIntegral <$> (arbitrary :: Gen Int)
-  commands <- vectorOf size (frequency [ (10, JoinNetwork
+  commands <- vectorOf size (frequency [ (1, JoinNetwork
                                               <$> delay
                                               <*> ( Just
                                                   . TestAddress
@@ -243,59 +243,182 @@ fixupCommands (_:t) = fixupCommands t
 --
 -- List of 'SimArgs'. Each element of the list represents one running node.
 --
-newtype DiffusionScript = DiffusionScript
-  { dsToRun :: [(SimArgs, [Command])]
+newtype DiffusionScript = DiffusionScript {
+    dsToRun :: [(SimArgs, [Command])]
   } deriving Show
 
+-- | Multinode Diffusion Simulator Script
+--
+-- Tries to generate a reasonable looking network with at most 3 nodes that can
+-- or can not be connected to one another. These nodes can also randomly die or
+-- have their local configuration changed.
+--
+genNonHotDiffusionScript :: Gen [(SimArgs, [Command])]
+genNonHotDiffusionScript = do
+  -- Limit the number of nodes to run in Simulation otherwise it is going
+  -- to take very long time for tests to run
+  size <- chooseInt (0, 3)
+  raps <- nub <$> vectorOf size arbitrary
 
-instance Arbitrary DiffusionScript where
-  arbitrary = do
-    -- Limit the number of nodes to run in Simulation otherwise it is going
-    -- to take very long time for tests to run
-    size <- chooseInt (0, 5)
-    raps <- nub <$> vectorOf size arbitrary
+  let toRunRaps = [ r | r@(RelayAccessAddress _ _) <- raps ]
+  toRun <- mapM (genSimArgs raps)
+               [ (ntnToPeerAddr ip p, r)
+               | r@(RelayAccessAddress ip p) <- toRunRaps ]
 
-    let toRunRaps = [ r | r@(RelayAccessAddress _ _) <- raps ]
-    toRun <- mapM (addressToRun raps)
+  comands <- mapM (genLocalRootPeers raps >=> genCommands) toRunRaps
+
+  return (zip toRun comands)
+  where
+    -- | Generate Local Root Peers
+    --
+    genLocalRootPeers :: [RelayAccessPoint]
+                      -> RelayAccessPoint
+                      -> Gen [(Int, Map RelayAccessPoint PeerAdvertise)]
+    genLocalRootPeers l r = do
+      nrGroups <- chooseInt (1, 3)
+      -- Remove self from local root peers
+      let newL = l \\ [r]
+          size = length newL
+          sizePerGroup = (size `div` nrGroups) + 1
+
+      peerAdvertise <- vectorOf size arbitrary
+
+      let relaysAdv = zip newL peerAdvertise
+          relayGroups = divvy sizePerGroup sizePerGroup relaysAdv
+          relayGroupsMap = Map.fromList <$> relayGroups
+
+      target <- forM relayGroups
+                    (\x -> if null x
+                          then pure 0
+                          else chooseInt (1, length x))
+
+      let lrpGroups = zip target relayGroupsMap
+
+      return lrpGroups
+
+    -- | Given a NtNAddr generate the necessary things to run in Simulation
+    genSimArgs :: [RelayAccessPoint]
+                 -> (NtNAddr, RelayAccessPoint)
+                 -> Gen SimArgs
+    genSimArgs raps (ntnAddr, rap) = do
+      -- Slot length needs to be greater than 0 else we get a livelock on
+      -- the IOSim.
+      --
+      -- Quota values matches mainnet, so a slot length of 1s and 1 / 20
+      -- chance that someone gets to make a block
+      let rapsWithoutSelf = delete rap raps
+          bgaSlotDuration = secondsToDiffTime 1
+          numberOfNodes   = length [ r | r@(RelayAccessAddress _ _) <- raps ]
+          quota = 20 `div` numberOfNodes
+          (RelayAccessAddress rapIP _) = rap
+      seed <- arbitrary
+
+      dMap <- genDomainMap rapsWithoutSelf rapIP
+
+      -- These values approximately correspond to false positive
+      -- thresholds for streaks of empty slots with 99% probability,
+      -- 99.9% probability up to 99.999% probability.
+      -- t = T_s [log (1-Y) / log (1-f)]
+      -- Y = [0.99, 0.999...]
+      --
+      -- T_s = slot length of 1s.
+      -- f = 0.05
+      -- The timeout is randomly picked per bearer to avoid all bearers
+      -- going down at the same time in case of a long streak of empty
+      -- slots. TODO: workaround until peer selection governor.
+      -- Taken from ouroboros-consensus/src/Ouroboros/Consensus/Node.hs
+      mustReplyTimeout <- Just <$> oneof (pure <$> [90, 135, 180, 224, 269])
+
+      lrp <- genLocalRootPeers rapsWithoutSelf rap
+      relays <- sublistOf rapsWithoutSelf
+
+      peerSelectionTargets <- arbitrary
+      dnsTimeout <- arbitrary
+      dnsLookupDelay <- arbitrary
+
+      return SimArgs
+          { saSlot                  = bgaSlotDuration
+          , saSeed                  = seed
+          , saQuota                 = quota
+          , saMbTime                = mustReplyTimeout
+          , saRelays                = relays
+          , saDomainMap             = dMap
+          , saAddr                  = ntnAddr
+          , saLocalRootPeers        = lrp
+          , saLocalSelectionTargets = peerSelectionTargets
+          , saDNSTimeoutScript      = dnsTimeout
+          , saDNSLookupDelayScript  = dnsLookupDelay
+          }
+
+-- | Multinode Hot Diffusion Simulator Script
+--
+-- Tries to generate a network with at most 2 nodes that should
+-- be connected to one another. This generator tries to obtain high ratios of
+-- active peers so we can test the miniprotocols that run when we have such
+-- active connections. These nodes can not randomly die or have their local
+-- configuration changed. Their local root peers consist of a single group.
+--
+-- TODO: Refactor and abstract common parts with the
+-- 'genNonHotDiffusionScript' generator
+--
+genHotDiffusionScript :: Gen [(SimArgs, [Command])]
+genHotDiffusionScript = do
+
+    -- Since we want to maximize active peers in tests we want to have
+    -- a set of RelayAccessAddress peers to immediately try to connect.
+    let minConnected = 2
+
+    -- We want to make sure the nodes we connect to are RelayAccessAddresses.
+    -- They could be domains but it is easier to connect to IPs straight away.
+    -- We also want to make sure we get as many peers as specified by
+    -- 'minConnected'.
+    raas <- (nub <$> vectorOf minConnected (arbitrary `suchThat` isRelayAccessAddress))
+            `suchThat` ((>= minConnected) . length)
+
+    let allRaps = nub raas
+        toRunRaps = [ r | r@(RelayAccessAddress _ _) <- allRaps ]
+
+        -- Nodes are not killed
+        comands = repeat [JoinNetwork 0 Nothing]
+
+    toRun <- mapM (genSimArgs allRaps minConnected)
                  [ (ntnToPeerAddr ip p, r)
                  | r@(RelayAccessAddress ip p) <- toRunRaps ]
 
-    comands <- mapM (genLocalRootPeers raps >=> genCommands) toRunRaps
 
-    return (DiffusionScript (zip toRun comands))
+    return (zip toRun comands)
     where
+      isRelayAccessAddress :: RelayAccessPoint -> Bool
+      isRelayAccessAddress RelayAccessAddress{} = True
+      isRelayAccessAddress _                    = False
+
+      hasActive :: Int -> PeerSelectionTargets -> Bool
+      hasActive minConnected (PeerSelectionTargets _ _ _ y) = y > minConnected
+
       -- | Generate Local Root Peers
-      --
+      -- This only generates 1 group
       genLocalRootPeers :: [RelayAccessPoint]
                         -> RelayAccessPoint
                         -> Gen [(Int, Map RelayAccessPoint PeerAdvertise)]
       genLocalRootPeers l r = do
-        nrGroups <- chooseInt (1, 3)
         -- Remove self from local root peers
-        let newL = l \\ [r]
+        let newL = delete r l
             size = length newL
-            sizePerGroup = (size `div` nrGroups) + 1
 
         peerAdvertise <- vectorOf size arbitrary
 
-        let relaysAdv = zip newL peerAdvertise
-            relayGroups = divvy sizePerGroup sizePerGroup relaysAdv
-            relayGroupsMap = Map.fromList <$> relayGroups
+        let relaysAdv      = zip newL peerAdvertise
+            relayGroupsMap = Map.fromList relaysAdv
+            target         = length relaysAdv
 
-        target <- forM relayGroups
-                      (\x -> if null x
-                            then pure 0
-                            else chooseInt (1, length x))
-
-        let lrpGroups = zip target relayGroupsMap
-
-        return lrpGroups
+        return [(target, relayGroupsMap)]
 
       -- | Given a NtNAddr generate the necessary things to run in Simulation
-      addressToRun :: [RelayAccessPoint]
-                   -> (NtNAddr, RelayAccessPoint)
-                   -> Gen SimArgs
-      addressToRun raps (ntnAddr, rap) = do
+      genSimArgs :: [RelayAccessPoint]
+                 -> Int
+                 -> (NtNAddr, RelayAccessPoint)
+                 -> Gen SimArgs
+      genSimArgs raps minConnected (ntnAddr, rap) = do
         -- Slot length needs to be greater than 0 else we get a livelock on
         -- the IOSim.
         --
@@ -327,7 +450,10 @@ instance Arbitrary DiffusionScript where
         lrp <- genLocalRootPeers rapsWithoutSelf rap
         relays <- sublistOf rapsWithoutSelf
 
-        peerSelectionTargets <- arbitrary
+        -- Make sure our targets for active peers cover the maximum of peers
+        -- one generated
+        peerSelectionTargets <- arbitrary `suchThat` hasActive minConnected
+
         dnsTimeout <- arbitrary
         dnsLookupDelay <- arbitrary
 
@@ -345,6 +471,12 @@ instance Arbitrary DiffusionScript where
             , saDNSTimeoutScript      = dnsTimeout
             , saDNSLookupDelayScript  = dnsLookupDelay
             }
+
+instance Arbitrary DiffusionScript where
+  arbitrary = DiffusionScript
+            <$> frequency [ (1, genNonHotDiffusionScript)
+                          , (1, genHotDiffusionScript)
+                          ]
   shrink (DiffusionScript []) = []
   shrink (DiffusionScript ((sargs, cmds):s)) = do
     shrinkedCmds <- fixupCommands <$> shrinkList shrinkCommand cmds
@@ -359,6 +491,20 @@ instance Arbitrary DiffusionScript where
       shrinkCommand (Kill d)            = Kill        <$> shrinkDelay d
       shrinkCommand (Reconfigure d lrp) = Reconfigure <$> shrinkDelay d
                                                       <*> shrink lrp
+
+-- | Multinode Hot Diffusion Simulator Script
+--
+-- List of 'SimArgs'. Each element of the list represents one running node.
+--
+newtype HotDiffusionScript = HotDiffusionScript {
+    hdsToRun :: [(SimArgs, [Command])]
+  } deriving Show
+
+instance Arbitrary HotDiffusionScript where
+  arbitrary = HotDiffusionScript <$> genHotDiffusionScript
+  shrink (HotDiffusionScript hds) =
+    [ HotDiffusionScript ds
+    | DiffusionScript ds <- shrink (DiffusionScript hds) ]
 
 -- Tests if the fixupCommand is idempotent.
 -- Note that the generator for DiffusionScript already fixups the Command list.

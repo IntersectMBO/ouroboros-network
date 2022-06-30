@@ -52,6 +52,8 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+                     (AbsBearerInfo (..), NonFailingAbsBearerInfo (unNFBI),
+                     attenuation, delay, toSduSize)
 import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
@@ -63,6 +65,11 @@ import           Simulation.Network.Snocket (BearerInfo (..))
 
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import           Test.Ouroboros.Network.Testnet.Simulation.Node
+                     (DiffusionScript (..), DiffusionSimulationTrace (..),
+                     HotDiffusionScript (HotDiffusionScript),
+                     diffusionSimulation,
+                     prop_diffusionScript_commandScript_valid,
+                     prop_diffusionScript_fixupCommands)
 import           Test.QuickCheck (Property, checkCoverage, classify, conjoin,
                      counterexample, coverTable, property, tabulate)
 import           Test.Tasty
@@ -99,6 +106,10 @@ tests =
                    prop_diffusion_target_active_public
     , testProperty "diffusion target established local"
                    prop_diffusion_target_established_local
+    , testProperty "diffusion target active local"
+                   prop_diffusion_target_active_local
+    , testProperty "diffusion target active root"
+                   prop_diffusion_target_active_root
     , testProperty "diffusion target active below"
                    prop_diffusion_target_active_below
     , testProperty "diffusion target active local above"
@@ -129,6 +140,14 @@ tests =
                    prop_inbound_governor_trace_coverage
     , testProperty "diffusion inbound governor transitions coverage"
                    prop_inbound_governor_transitions_coverage
+    ]
+  , testGroup "hot diffusion script"
+    [ testProperty "hot diffusion target active public"
+                   prop_hot_diffusion_target_active_public
+    , testProperty "hot diffusion target active local"
+                   prop_hot_diffusion_target_active_local
+    , testProperty "hot diffusion target active root"
+                   prop_hot_diffusion_target_active_root
     ]
   ]
 
@@ -920,6 +939,202 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
                        [("PublicPeers in Active Set", 1)]
           $ tabulate "active public peers" valuesList
           $ True
+
+
+-- | This test checks the percentage of local root peers that, at some point,
+-- become active.
+--
+prop_diffusion_target_active_local :: AbsBearerInfo
+                                   -> DiffusionScript
+                                   -> Property
+prop_diffusion_target_active_local defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_local ev
+        )
+      <$> events
+  where
+    verify_target_active_local :: Events DiffusionTestTrace -> Property
+    verify_target_active_local events =
+        let govLocalRootPeersSig :: Signal (Set NtNAddr)
+            govLocalRootPeersSig =
+              selectDiffusionPeerSelectionState
+                (LocalRootPeers.keysSet . Governor.localRootPeers) events
+
+            govActivePeersSig :: Signal (Set NtNAddr)
+            govActivePeersSig =
+              selectDiffusionPeerSelectionState Governor.activePeers events
+
+            localInActive :: Signal Bool
+            localInActive =
+              (\localPeers active ->
+                Set.size
+                (localPeers `Set.intersection` active)
+                  > 0
+              ) <$> govLocalRootPeersSig
+                <*> govActivePeersSig
+
+            meaning :: Bool -> String
+            meaning False = "No LocalPeers in Active Set"
+            meaning True  = "LocalPeers in Active Set"
+
+            valuesList :: [String]
+            valuesList = map (meaning . snd)
+                       . Signal.eventsToList
+                       . Signal.toChangeEvents
+                       $ localInActive
+
+         in checkCoverage
+          $ coverTable "active local peers"
+                       [("LocalPeers in Active Set", 1)]
+          $ tabulate "active local peers" valuesList
+          $ True
+
+-- | This test checks the percentage of root peers that, at some point,
+-- become active.
+--
+prop_diffusion_target_active_root :: AbsBearerInfo
+                                  -> DiffusionScript
+                                  -> Property
+prop_diffusion_target_active_root defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_root ev
+        )
+      <$> events
+  where
+    verify_target_active_root :: Events DiffusionTestTrace -> Property
+    verify_target_active_root events =
+        let govLocalRootPeersSig :: Signal (Set NtNAddr)
+            govLocalRootPeersSig =
+              selectDiffusionPeerSelectionState
+                (LocalRootPeers.keysSet . Governor.localRootPeers) events
+
+            govPublicRootPeersSig :: Signal (Set NtNAddr)
+            govPublicRootPeersSig =
+              selectDiffusionPeerSelectionState Governor.publicRootPeers events
+
+            govRootPeersSig :: Signal (Set NtNAddr)
+            govRootPeersSig = Set.union <$> govLocalRootPeersSig
+                                        <*> govPublicRootPeersSig
+
+            govActivePeersSig :: Signal (Set NtNAddr)
+            govActivePeersSig =
+              selectDiffusionPeerSelectionState Governor.activePeers events
+
+            rootInActive :: Signal Bool
+            rootInActive =
+              (\rootPeers active ->
+                Set.size
+                (rootPeers `Set.intersection` active)
+                  > 0
+              ) <$> govRootPeersSig
+                <*> govActivePeersSig
+
+            meaning :: Bool -> String
+            meaning False = "No Root Peers in Active Set"
+            meaning True  = "Root Peers in Active Set"
+
+            valuesList :: [String]
+            valuesList = map (meaning . snd)
+                       . Signal.eventsToList
+                       . Signal.toChangeEvents
+                       $ rootInActive
+
+         in checkCoverage
+          $ coverTable "active root peers"
+                       [("Root Peers in Active Set", 1)]
+          $ tabulate "active root peers" valuesList
+          $ True
+
+-- | This test checks the percentage of public root peers that, at some point,
+-- become active, when using the 'HotDiffusionScript' generator.
+--
+prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
+                                        -> HotDiffusionScript
+                                        -> Property
+prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript hds) =
+  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript hds)
+
+-- | This test checks the percentage of local root peers that, at some point,
+-- become active, when using the 'HotDiffusionScript' generator.
+--
+prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
+                                       -> HotDiffusionScript
+                                       -> Property
+prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript hds) =
+  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript hds)
+
+-- | This test checks the percentage of root peers that, at some point,
+-- become active, when using the 'HotDiffusionScript' generator.
+--
+prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
+                                      -> HotDiffusionScript
+                                      -> Property
+prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript hds) =
+  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript hds)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'

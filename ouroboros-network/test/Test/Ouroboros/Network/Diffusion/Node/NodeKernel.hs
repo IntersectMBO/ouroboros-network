@@ -1,7 +1,7 @@
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveGeneric       #-}
 
 -- | Node kernel which does chain selection and block production.
 --
@@ -37,8 +37,8 @@ import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Coerce (coerce)
 import           Data.Hashable (Hashable)
-import qualified Data.IP as IP
 import           Data.IP (IP (..), toIPv4, toIPv6)
+import qualified Data.IP as IP
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)

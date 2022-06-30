@@ -61,7 +61,7 @@ import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 import           Data.Monoid.Synchronisation
 
-import           Ouroboros.Network.Block (HeaderHash, HasHeader, Point)
+import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.ConnectionId
 import qualified Ouroboros.Network.Diffusion as Diff (Applications (..))
