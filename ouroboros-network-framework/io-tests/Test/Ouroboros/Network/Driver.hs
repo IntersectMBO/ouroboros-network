@@ -75,20 +75,24 @@ import           Text.Show.Functions ()
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Driver"
-  [ testGroup "Limits"
-    [ testProperty "channel ReqResp ST"              prop_channel_reqresp_ST
-    , testProperty "channel ReqResp IO"              prop_channel_reqresp_IO
+  [ testGroup "Simple"
+    [ testProperty "channel ReqResp ST"              prop_channel_simple_reqresp_ST
+    , testProperty "channel ReqResp IO"              (withMaxSuccess 33 prop_channel_simple_reqresp_IO)
     , testProperty "channel PingPong ST"             prop_channel_ping_pong_ST
     , testProperty "channel PingPong IO"             prop_channel_ping_pong_IO
     , testProperty "channel PingPong STM ST"         prop_channel_ping_pong_stm_ST
     , testProperty "channel PingPong STM IO"         prop_channel_ping_pong_stm_IO
+    ]
+  , testGroup "Limits"
+    [ testProperty "channel ReqResp ST"              prop_channel_reqresp_ST
+    , testProperty "channel ReqResp IO"              prop_channel_reqresp_IO
     , testProperty "channel PingPong with limits ST" prop_channel_ping_pong_with_limits_ST
     , testProperty "channel PingPong with limits STM ST"
                     prop_channel_ping_pong_with_limits_stm_ST
     ]
   , testGroup "Stateful"
     [ testProperty "channel Stateful ReqResp ST"     prop_channel_stateful_reqresp_ST
-    , testProperty "channel Stateful ReqResp IO"     (withMaxSuccess 33 $ prop_channel_stateful_reqresp_IO)
+    , testProperty "channel Stateful ReqResp IO"     (withMaxSuccess 33 prop_channel_stateful_reqresp_IO)
     ]
   ]
 
@@ -384,6 +388,63 @@ prop_channel_stateful_reqresp_IO
   -> Property
 prop_channel_stateful_reqresp_IO (ReqRespPayloadWithLimit _limit payload) f =
   ioProperty (prop_channel_stateful_reqresp nullTracer [payload] f)
+
+
+-- | Run the server peer using @runPeerWithByteLimit@, which will receive requests
+-- with the given payloads.
+--
+prop_channel_simple_reqresp
+  :: forall m. ( Alternative (STM m), MonadAsync m, MonadDelay m,
+                 MonadLabelledSTM m, MonadMask m, MonadThrow (STM m))
+  => Tracer m (TraceSendRecv (ReqResp String ()))
+  -> [(String, DiffTime)]
+  -- ^ request payloads
+  -> m Property
+prop_channel_simple_reqresp tracer reqPayloads = do
+      (c1, c2) <- createConnectedChannels
+
+      res <- try $
+        (fst <$> runPeer tracer codecReqResp c1 recvPeer)
+          `concurrently`
+        (void $ runPeer tracer codecReqResp c2 sendPeer)
+
+      pure $ case res :: Either ProtocolLimitFailure ([DiffTime], ()) of
+        Right _                  -> property True
+        Left ExceededSizeLimit{} -> property False
+        Left ExceededTimeLimit{} -> property False
+
+    where
+      sendPeer :: Client (ReqResp String ()) NonPipelined Empty StIdle m stm [()]
+      sendPeer = reqRespClientPeer
+               $ reqRespClientMap
+                   (map fst reqPayloads)
+
+      recvPeer :: Server (ReqResp String ()) NonPipelined Empty StIdle m stm [DiffTime]
+      recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
+        (\a _ -> case a of
+          [] -> error "prop_runPeerWithLimits: empty list"
+          delay : acc -> do
+            threadDelay delay
+            return (acc, ()))
+        (map snd reqPayloads)
+
+
+prop_channel_simple_reqresp_IO
+  :: ReqRespPayloadWithLimit
+  -> Property
+prop_channel_simple_reqresp_IO (ReqRespPayloadWithLimit _limit payload) =
+  ioProperty (prop_channel_simple_reqresp nullTracer [payload])
+
+
+prop_channel_simple_reqresp_ST
+  :: ReqRespPayloadWithLimit
+  -> Property
+prop_channel_simple_reqresp_ST (ReqRespPayloadWithLimit _limit payload) =
+  let trace = runSimTrace (prop_channel_simple_reqresp (Tracer (say . show)) [payload])
+  in counterexample (intercalate "\n" $ map show $ traceEvents trace)
+   $ case traceResult True trace of
+       Left e  -> throw e
+       Right x -> x
 
 
 prop_channel_ping_pong_ST
