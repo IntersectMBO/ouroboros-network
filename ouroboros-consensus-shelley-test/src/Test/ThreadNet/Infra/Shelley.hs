@@ -38,6 +38,8 @@ module Test.ThreadNet.Infra.Shelley (
 import           Control.Monad.Except (throwError)
 import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
+import           Data.ListMap (ListMap(ListMap))
+import qualified Data.ListMap as ListMap
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe.Strict (maybeToStrictMaybe)
@@ -309,7 +311,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
     , sgMaxLovelaceSupply     = maxLovelaceSupply
     , sgProtocolParams        = pparams
     , sgGenDelegs             = coreNodesToGenesisMapping
-    , sgInitialFunds          = initialFunds
+    , sgInitialFunds          = ListMap.fromMap initialFunds
     , sgStaking               = initialStake
     }
   where
@@ -369,14 +371,14 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
     -- In this initial stake, each core node delegates its stake to itself.
     initialStake :: ShelleyGenesisStaking (EraCrypto era)
     initialStake = ShelleyGenesisStaking
-      { sgsPools = Map.fromList
+      { sgsPools = ListMap
           [ (pk, pp)
           | pp@(SL.PoolParams { _poolId = pk }) <- Map.elems coreNodeToPoolMapping
           ]
         -- The staking key maps to the key hash of the pool, which is set to the
         -- "delegate key" in order that nodes may issue blocks both as delegates
         -- and as stake pools.
-      , sgsStake = Map.fromList
+      , sgsStake = ListMap
           [ ( SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnStakingKey
             , SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey
             )
