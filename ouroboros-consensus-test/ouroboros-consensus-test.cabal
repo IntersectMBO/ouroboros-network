@@ -73,6 +73,7 @@ library
                        Test.Util.Stream
                        Test.Util.Tasty.Traceable
                        Test.Util.TestBlock
+                       Test.Util.TheTestBlock
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
@@ -94,6 +95,7 @@ library
                      , filepath
                      , generics-sop
                      , graphviz
+                     , hashable
                      , mtl               >=2.2   && <2.3
                      , nothunks
                      , QuickCheck
