@@ -334,7 +334,7 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
 
     initChainDepState :: TPraosState c
     initChainDepState = TPraosState Origin $
-      SL.initialChainDepState initialNonce (SL.sgGenDelegs genesis)
+      SL.initialChainDepState initialNonce (ListMap.toMap (SL.sgGenDelegs genesis))
 
     initExtLedgerState :: ExtLedgerState (ShelleyBlock (TPraos c) era)
     initExtLedgerState = ExtLedgerState {
