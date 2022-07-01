@@ -101,9 +101,13 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 tests :: TestTree
 tests = testGroup "OnDisk"
     [ TTT.traceableProperty "LedgerSimple-InMem" $ \showTrace ->
-        prop_sequential $ inMemDbEnv showTrace
+        prop_sequential 1000000  $ inMemDbEnv showTrace
     , TTT.traceableProperty "LedgerSimple-LMDB"  $ \showTrace ->
-        prop_sequential $ lmdbDbEnv showTrace testLMDBLimits
+        -- FIXME: we test 1000 cases since the LMDB version of this property test
+        -- takes an unreasonable amount of time to finish. At the moment, a 1000
+        -- property tests that exercise an LMDB backing store will take ~3
+        -- minutes to run.
+        prop_sequential 1000     $ lmdbDbEnv showTrace testLMDBLimits
     ]
 
 testLMDBLimits :: LMDB.LMDBLimits
@@ -502,7 +506,7 @@ data Cmd ss =
     -- Note that as the Mock doesn't have the notion of "flushed differences", it is a no-op on the mock.
   | Flush
 
-    -- | Restore the DB from on-disk, then return it along with the init log
+    -- | Restore the DB from disk, then return it along with the init log
   | Restore
 
     -- | Corrupt a previously taken snapshot
@@ -570,23 +574,43 @@ type MockSnaps = Map MockSnap (RealPoint TestBlock, SnapState)
 -- We store the chain most recent first.
 data Mock = Mock {
       -- | Current ledger
-      mockLedger   :: MockLedger
+      mockLedger             :: MockLedger
 
       -- | Current state the snapshots
-    , mockSnaps    :: MockSnaps
+    , mockSnaps              :: MockSnaps
+
+      -- | Point at which a immutable tip in the sequence of ledger states was
+      -- flushed to disk
+      --
+      -- The latest flushed point does not necessarily correspond to the point
+      -- at which the immutable tip is. As blocks are pushed onto the LedgerDB,
+      -- the immutable tip will move further ahead from the latest flushed
+      -- point. See the example below:
+      --
+      -- p0--------------------p_f-----------------p_i----------p_t
+      -- ^                      ^                   ^            ^
+      -- Genesis point  latest flushed point     Immutable tip   Tip
+      --
+      -- A 'Flush' command will make @p_f@ and @p_i@ equal.
+      --
+      -- The value of this field is affected by a 'Flush' command, but also by
+      -- 'Restore' and 'Drop' commands. The last two affect the current chain,
+      -- and therefore they also affect the point of the most recent known
+      -- flush. See the implementation of 'runMock' for additional details.
+    , mockLatestFlushedPoint :: Point TestBlock
 
       -- | The oldest (tail) block in the real DB at the most recent restore
       --
       -- This puts a limit on how far we can roll back.
       -- See also 'applyMockLog', 'mockMaxRollback'.
-    , mockRestore  :: Point TestBlock
+    , mockRestore            :: Point TestBlock
 
       -- | Security parameter
       --
       -- We need the security parameter only to compute which snapshots the real
       -- implementation would take, so that we can accurately predict how far
       -- the real implementation can roll back.
-    , mockSecParam :: SecurityParam
+    , mockSecParam           :: SecurityParam
     }
   deriving (Show, Generic, ToExpr)
 
@@ -594,7 +618,13 @@ data SnapState = SnapOk | SnapCorrupted
   deriving (Show, Eq, Generic, ToExpr)
 
 mockInit :: SecurityParam -> Mock
-mockInit = Mock [] Map.empty GenesisPoint
+mockInit secParam = Mock
+  { mockLedger             = []
+  , mockSnaps              = Map.empty
+  , mockLatestFlushedPoint = GenesisPoint
+  , mockRestore            = GenesisPoint
+  , mockSecParam           = secParam
+  }
 
 mockChainLength :: Mock -> Word64
 mockChainLength Mock{..} = fromIntegral (length mockLedger)
@@ -662,6 +692,12 @@ mockInitLog Mock{..} = go (Map.toDescList mockSnaps)
 applyMockLog :: MockInitLog MockSnap -> Mock -> Mock
 applyMockLog = go
   where
+    -- NOTE: we do not alter the mockLedger when applying the MockLog. When the
+    -- SUT restores, it streams all the blocks from the dbState to initLedgerDB.
+    -- No matter which snapshot we use when restoring, once we apply all the
+    -- blocks after the snapshot, we should end up with the same LedgerDB we had
+    -- after restoration. That is why the mock does not care about updating
+    -- mockLedger.
     go :: MockInitLog MockSnap -> Mock -> Mock
     go  MockFromGenesis                mock = mock { mockRestore = GenesisPoint         }
     go (MockFromSnapshot    _  tip)    mock = mock { mockRestore = realPointToPoint tip }
@@ -671,13 +707,14 @@ applyMockLog = go
 
     deleteSnap :: MockSnap -> Mock -> Mock
     deleteSnap ss mock = mock {
-          mockSnaps = Map.alter delete ss (mockSnaps mock)
-        }
-
-    delete :: Maybe (RealPoint TestBlock, SnapState)
-           -> Maybe (RealPoint TestBlock, SnapState)
-    delete Nothing  = error "setIsDeleted: impossible"
-    delete (Just _) = Nothing
+        mockSnaps = Map.alter delete ss (mockSnaps mock)
+      }
+      where
+        delete ::
+            Maybe (RealPoint TestBlock, SnapState)
+         -> Maybe (RealPoint TestBlock, SnapState)
+        delete Nothing  = error "setIsDeleted: impossible"
+        delete (Just _) = Nothing
 
 -- | Compute theoretical maximum rollback
 --
@@ -706,13 +743,42 @@ runMock cmd initMock =
     go Current       mock = (Ledger (forgetLedgerTables $ cur (mockLedger mock)), mock)
     go (Push b)      mock = first MaybeErr $ mockUpdateLedger (push b)      mock
     go (Switch n bs) mock = first MaybeErr $ mockUpdateLedger (switch n bs) mock
-    go Restore       mock = (Restored (initLog, forgetLedgerTables $ cur (mockLedger mock')), mock')
+    go Restore       mock = (Restored (initLog, forgetLedgerTables $ cur (mockLedger mock'')), mock'')
+      -- When we restore to the most recent valid snapshot, the point at which a
+      -- immutable tip was flushed to disk becomes the tip of the restoraton
+      -- point, since any flushes that occured after this point are now invalid
+      -- because we restored a snapshot.
+      --
+      -- TODO: This depends on the SUT not flushing during restoration. At the
+      -- moment we flush every 100 blocks, and the chains we generate are far
+      -- below that (about less than 40 elements). At the moment we do not model
+      -- the flushing during restoration aspect here.
       where
         initLog = mockInitLog mock
         mock'   = applyMockLog initLog mock
+        mock''  = mock'  { mockLatestFlushedPoint = mockRestore mock' }
     go Flush         mock =
-      -- The mock doesn't have the notion of flushing, so therefore this is a no-op. However, after executing the Flush command on the model, the states must still agree.
-      (Flushed, mock)
+      (Flushed, mock { mockLatestFlushedPoint = immutableTipSlot })
+      -- When we flush, we might encounter the following scenarios:
+      --
+      -- 1. We do not have an immutable tip because we have less than @k@ blocks
+      -- in the chain.
+      --
+      -- 2. We have less than @k@ blocks from the immutable tip, which will
+      -- happen only after a restoration. In that case we leave the latest
+      -- flushed point unaltered.
+      --
+      -- 2. We have more than @k@ blocks, in which case we set the latest
+      -- flushed point to the immutable tip.
+      where
+        immutableTipSlot :: Point TestBlock
+        immutableTipSlot =
+          case drop k (mockLedger mock) of
+            []           -> mockLatestFlushedPoint mock
+            (blk, _st):_ -> max (mockLatestFlushedPoint mock) (blockPoint blk)
+          where
+            k :: Int
+            k = fromIntegral $ maxRollbacks $ mockSecParam mock
     go Snap          mock = case mbSnapshot of
         Just pt
           | let mockSnap = MockSnap (unSlotNo (realPointSlot pt))
@@ -730,17 +796,16 @@ runMock cmd initMock =
         -- | The snapshot that the real implementation will possibly write to
         -- disk.
         --
-        -- 1. We will write the snapshot of the ledger state @k@ blocks back
-        --    from the tip to disk.
+        -- 1. We will write the snapshot of the latest flushed ledger state.
         --
-        --    For example, with @k = 2@:
+        --    In the example below, if the latest flushed state was B this is
+        --    what we will write to disk, unless there is already a snapshot of
+        --    B.
         --
         --    > A -> B -> C -> D -> E
         --
-        --    We will write C to disk.
-        --
-        -- 2. In case we don't have enough snapshots for (1), i.e., @<= k@, we
-        --    look at the snapshot from which we restored ('mockRestore').
+        -- 2. In case flushed never ocurred, we look at the snapshot from which
+        --    we restored ('mockRestore').
         --
         --    a. When that corresponds to the genesis ledger state, we don't
         --       write a snapshot to disk.
@@ -749,22 +814,11 @@ runMock cmd initMock =
         --       check whether that snapshots still exists on disk, in which
         --       case we wouldn't write it to disk again.
         mbSnapshot :: Maybe (RealPoint TestBlock)
-        mbSnapshot = case drop k untilRestore of
-            (blk, _):_ -> Just (blockRealPoint blk)  -- 1
-            []         -> case pointToWithOriginRealPoint (mockRestore mock) of
+        mbSnapshot = case pointToWithOriginRealPoint $ mockLatestFlushedPoint mock of
+            NotOrigin pt -> Just pt                  -- 1
+            Origin       -> case pointToWithOriginRealPoint (mockRestore mock) of
                             Origin       -> Nothing  -- 2a
                             NotOrigin pt -> Just pt  -- 2b
-          where
-            k :: Int
-            k = fromIntegral $ maxRollbacks $ mockSecParam mock
-
-            -- The snapshots from new to old until 'mockRestore' (inclusive)
-            untilRestore :: [(TestBlock, ExtLedgerState TestBlock ValuesMK)]
-            untilRestore =
-              takeWhile
-                ((/= (mockRestore mock)) . blockPoint . fst)
-                (mockLedger mock)
-
     go (Corrupt c ss) mock = (
           Unit ()
         , mock { mockSnaps = Map.alter corrupt ss (mockSnaps mock) }
@@ -1003,9 +1057,6 @@ runDB standalone@DB{..} cmd =
           bs <- readTVar dbBackingStore
           (_, db) <- readTVar dbState
           pure (bs, db)
-        -- We need to make sure we flush before we take the snapshot.
-        _ <- go hasFS Flush
-        -- TODO: why can't takeSnapshot flush?
         Snapped <$>
           takeSnapshot
             nullTracer
@@ -1366,13 +1417,13 @@ sm secParam db = StateMachine {
         dbCleanup $ dbEnv db
     }
 
--- FIXME(jdral): @withMaxSuccess@ has temporarily been decreased from @1000000@
--- to @1000@, since the LMDB version of this property test takes an unreasonable
--- amount of time to finish. At the moment, a 1000 property tests that exercise
--- an LMDB backing store will take ~3 minutes to run. Code line to restore:
--- > prop_sequential mkDbEnv secParam = QC.withMaxSuccess 100000
-prop_sequential :: (SecurityParam -> IO (DbEnv IO)) -> SecurityParam -> QC.Property
-prop_sequential mkDbEnv secParam = QC.withMaxSuccess 1000 $
+prop_sequential ::
+     Int
+     -- ^ Number of tests to run
+  -> (SecurityParam -> IO (DbEnv IO))
+  -> SecurityParam
+  -> QC.Property
+prop_sequential maxSuccess mkDbEnv secParam = QC.withMaxSuccess maxSuccess $
   forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
     QC.monadicIO $ QC.run (mkDbEnv secParam) >>= \e -> propCmds e cmds
 
