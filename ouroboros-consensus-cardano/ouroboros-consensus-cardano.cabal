@@ -43,6 +43,7 @@ library
 
                      , cardano-binary
                      , cardano-crypto-class
+                     , cardano-data
                      , cardano-ledger-alonzo
                      , cardano-ledger-babbage
                      , cardano-ledger-byron
