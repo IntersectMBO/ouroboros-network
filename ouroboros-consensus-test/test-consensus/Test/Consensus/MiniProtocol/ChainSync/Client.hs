@@ -8,7 +8,6 @@
 {-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.MiniProtocol.ChainSync.Client (tests) where
 
-import           Control.Monad.Class.MonadThrow (Handler (..), catches)
 import           Control.Monad.State.Strict
 import           Control.Tracer (contramap, nullTracer)
 import           Data.Bifunctor (first)
@@ -62,6 +61,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API
                      (InvalidBlockReason (ValidationError))
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Exception
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
@@ -426,12 +426,6 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       [ lastTick clientUpdates
       , lastTick serverUpdates
       , startSyncingAt
-      ]
-
-    catchAlsoLinked :: Exception e => m a -> (e -> m a) -> m a
-    catchAlsoLinked ma handler = ma `catches`
-      [ Handler handler
-      , Handler $ \(ExceptionInLinkedThread _ ex) -> throwIO ex `catch` handler
       ]
 
 updateClientState :: [ChainUpdate] -> Chain TestBlock -> Chain TestBlock
