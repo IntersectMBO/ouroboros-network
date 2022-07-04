@@ -367,7 +367,8 @@ instance Arbitrary BlockFetchClientTestSetup where
       pure BlockFetchClientTestSetup {..}
     where
       genUpdateSchedule =
-        genChainUpdates TentativeChainBehavior maxRollback 20 >>= genSchedule
+        genChainUpdates TentativeChainBehavior maxRollback 20
+          >>= genSchedule DefaultSchedulingStrategy
 
       -- Only use a small k to avoid rolling forward by a big chain.
       maxRollback = SecurityParam 5

@@ -73,8 +73,7 @@ import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.LogicalClock (NumTicks (..), Tick (..))
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.Schedule (Schedule (..), genSchedule, joinSchedule,
-                     lastTick, shrinkSchedule)
+import           Test.Util.Schedule
 import qualified Test.Util.TestBlock as TestBlock
 import           Test.Util.TestBlock
 import           Test.Util.Tracer (recordingTracerTVar)
@@ -525,7 +524,8 @@ instance Arbitrary ChainSyncClientSetup where
           | AddBlock b <- joinSchedule (getServerUpdates serverUpdates)
           , tbValid b == Invalid
           ]
-    invalidBlocks <- InvalidBlocks <$> (genSchedule =<< shuffle trapBlocks)
+    invalidBlocks <- InvalidBlocks <$>
+      (genSchedule DefaultSchedulingStrategy =<< shuffle trapBlocks)
     return ChainSyncClientSetup {..}
   shrink cscs@ChainSyncClientSetup {..} =
     -- We don't shrink 'securityParam' because the updates depend on it
@@ -606,7 +606,8 @@ genUpdateSchedule
   -> SecurityParam
   -> Gen (Schedule ChainUpdate)
 genUpdateSchedule updateBehavior securityParam =
-    genChainUpdates updateBehavior securityParam 10 >>= genSchedule
+    genChainUpdates updateBehavior securityParam 10
+      >>= genSchedule DefaultSchedulingStrategy
 
 {-------------------------------------------------------------------------------
   Pretty-printing

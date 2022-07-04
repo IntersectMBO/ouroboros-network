@@ -19,7 +19,8 @@ prop_joinSchedule_genSchedule =
       joinSchedule spread === as
   where
     genElementsAndSpread = do
+      strat       <- chooseEnum (minBound, maxBound)
       -- generate elements of some type with an Ord instance
       as :: [Int] <- arbitrary
-      spread      <- genSchedule as
+      spread      <- genSchedule strat as
       return (as, spread)
