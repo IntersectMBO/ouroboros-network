@@ -50,9 +50,9 @@ the rules below, it is good practice to update the code's style to match them.
    b. We indent record `data` and `newtype` definitions as follows:
 
       ```haskell
-      data Foo = Foo
-          { fooBar      :: Int
-          , fooArgument :: Bool
+      data Foo = Foo {
+            fooBar      :: Int,
+            fooArgument :: Bool
           }
         deriving (Show, Eq)
 
@@ -67,9 +67,9 @@ the rules below, it is good practice to update the code's style to match them.
       Multiple deriving clauses using `DerivingStrategies` are aligned:
 
       ```haskell
-      data Foo = Foo
-          { fooBar      :: Int
-          , fooArgument :: Bool
+      data Foo = Foo {
+            fooBar      :: Int,
+            fooArgument :: Bool
           }
         deriving stock    (Show, Eq, Generic)
         deriving anyclass (NoThunks, NFData)
@@ -92,6 +92,25 @@ the rules below, it is good practice to update the code's style to match them.
 
       We aren't very consistent with our data declarations, following the local
       style is always a good choice.
+
+      We prefer this style also when creating terms:
+
+      ```haskell
+      let foo = Foo {
+              fooBar      = ...,
+              fooArgument = ...
+            }
+      ```
+      but if terms are large (span multiple lines or use `do` notation) it might be better to use hanging `,` style:
+
+      ```haskell
+      let foo = Foo {
+              fooBar      = foo bar
+                                baz
+                                xi
+            , fooArgument = ...
+            }
+      ```
 
    c. We indent `data` definitions with multiple constructors as follows:
 
@@ -341,10 +360,10 @@ the rules below, it is good practice to update the code's style to match them.
       foo args =
           ..
         where
-          Args
-            { argA = a
-            , argB = b
-            , argC = SomeRecord {field = x}
+          Args {
+              argA = a,
+              argB = b,
+              argC = SomeRecord {field = x}
             } = args
       ```
 
@@ -624,14 +643,16 @@ the rules below, it is good practice to update the code's style to match them.
     -- POSTCONDITION: the result will be positive
     foo :: ..
 
-    data Foo = Foo
-        { -- | The bar ..
-          fooBar :: Int
+    data Foo = Foo {
+          -- | The bar ..
+          --
+          fooBar :: Int,
 
           -- | The baz ..
           --
           -- INVARIANT: 'fooBaz' is always greater than 7
-        , fooBaz :: Int
+          --
+          fooBaz :: Int
         }
     ```
 
@@ -936,9 +957,9 @@ the rules below, it is good practice to update the code's style to match them.
     `RecordWildCards` when the fields of the record are all of the form
 
     ```haskell
-    data SomeRecord = SomeRecord
-        { someRecordA :: ..
-        , someRecordB :: ..
+    data SomeRecord = SomeRecord {
+          someRecordA :: ...,
+          someRecordB :: ..
         }
     ```
 
