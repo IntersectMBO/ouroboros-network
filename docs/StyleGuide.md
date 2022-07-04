@@ -615,7 +615,8 @@ the rules below, it is good practice to update the code's style to match them.
     --
     -- > foo bar baz
     --
-    -- .. ends here.
+    -- more documentation, and an empty comment line before the declaration.
+    --
     foo :: ..
     ```
 
@@ -648,6 +649,9 @@ the rules below, it is good practice to update the code's style to match them.
 
     Note the indentation of `-- |`, the two spaces before the `-- ^`, and the
     blank line between the constructors.
+
+    Note that we leave an empty comment line as the last haddock or comment
+    line.
 
     We often document preconditions, invariants, and postcondition using the
     following style:
