@@ -209,7 +209,7 @@ the rules below, it is good practice to update the code's style to match them.
         A x -> A_body
         B y ->
           let bl = bl_body y
-          in  B_body
+          in B_body
       ```
 
       Note that we align `B_body` with `bl` in the `let` block. At the moment we
