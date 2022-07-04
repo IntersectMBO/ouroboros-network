@@ -72,7 +72,7 @@ data UpdateBehavior =
     -- particular, this includes:
     --
     --  * All blocks involved are valid.
-    --  * Every 'ChainUpdate' improves the chain.
+    --  * No 'ChainUpdate' causes the chain to regress.
     SelectedChainBehavior
   | -- | Chain updates tracking the tentative chain of an honest node (in the
     -- context of diffusion pipelining). This is similiar to
