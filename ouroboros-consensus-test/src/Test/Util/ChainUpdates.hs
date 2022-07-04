@@ -6,6 +6,8 @@
 module Test.Util.ChainUpdates (
     ChainUpdate (..)
   , UpdateBehavior (..)
+  , behaviorValidity
+  , classifyBehavior
   , genChainUpdates
   , toChainUpdates
     -- * Tests
@@ -13,6 +15,7 @@ module Test.Util.ChainUpdates (
   ) where
 
 import           Control.Monad.State.Strict
+import qualified Data.Set as Set
 
 import           Test.QuickCheck
 
@@ -83,12 +86,36 @@ data UpdateBehavior =
     --  2. @'SwitchFork' (prevPoint blk) [blk']@ where @blk'@ is preferable to
     --     @blk@.
     TentativeChainBehavior
-  deriving stock (Show, Eq, Enum, Bounded)
+  | -- | Chain updates involving invalid blocks only arisable by bugs, malice or
+    -- incorrect configuration.
+    InvalidChainBehavior
+  deriving stock (Show, Eq, Ord, Enum, Bounded)
 
+-- | Whether an 'UpdateBehavior' should cause a disconnect.
+behaviorValidity :: UpdateBehavior -> Validity
+behaviorValidity = \case
+    SelectedChainBehavior  -> Valid
+    TentativeChainBehavior -> Valid
+    InvalidChainBehavior   -> Invalid
+
+-- | Generate a sequence of chain updates. The given 'UpdateBehavior' is only
+-- used as an "upper bound" for what kind of updates are generated, i.e.
+-- specifying 'TentativeChainBehavior' might (rarely) result in a sequence for
+-- which 'classifyBehavior' returns 'SelectedChainBehavior'.
+--
+-- Concretely, we have the law
+--
+-- > classifyBehavior updates <= behavior
+--
+-- for all
+--
+-- > updates <- forAll $ genChainUpdates behavior k n
 genChainUpdates
   :: UpdateBehavior
   -> SecurityParam
-  -> Int  -- ^ The number of updates to generate
+  -> Int
+     -- ^ An indicator of how many updates to generate. The actual number of
+     -- updates will be proportional with a low factor.
   -> Gen [ChainUpdate]
 genChainUpdates updateBehavior securityParam n =
         getChainUpdates
@@ -100,7 +127,7 @@ genChainUpdateState ::
   -> Int
   -> ChainUpdateState
   -> Gen ChainUpdateState
-genChainUpdateState updateBehavior securityParam n =
+genChainUpdateState behavior securityParam n =
     execStateT (replicateM_ n genChainUpdate)
   where
     -- Modify the state
@@ -109,27 +136,30 @@ genChainUpdateState updateBehavior securityParam n =
 
     k = fromIntegral $ maxRollbacks securityParam
 
-    genChainUpdate = do
-      ChainUpdateState { cusCurrentChain = chain } <- get
-      let genValid =
+    genChainUpdate = frequency' $
+           -- Generate two normal updates, as the other option generates two
+           -- updates, in order to keep the number of updates propertional to n.
+           [ (5, replicateM_ 2 genNormalUpdate) ]
+        <> [ (1, genTrapTentativeBlock)
+           | behavior == TentativeChainBehavior
+           ]
+      where
+        -- Generate a single update, either AddBlock or SwitchFork
+        genNormalUpdate = do
+            chain <- gets cusCurrentChain
             frequency'
-              [ (3, genAddBlock Valid)
+              [ (3, genAddBlock =<< genValidity)
               , ( if Chain.null chain then 0 else 1
                 , genSwitchFork (choose (1, k))
                 )
               ]
-      frequency' $
-        (5, replicateM_ 2 genValid) :
-        [ (1, genInvalidBlock) | updateBehavior == TentativeChainBehavior ]
 
     genBlockToAdd validity = do
         ChainUpdateState { cusCurrentChain = chain } <- get
         block <- lift $ case Chain.head chain of
           Nothing      -> setValidity . firstBlock <$> genForkNo
           Just curHead -> do
-            forkNo <- case validity of
-              Valid   ->  genForkNo
-              Invalid -> pure 3
+            forkNo <- genForkNo
             return
               . modifyFork (const forkNo)
               . setValidity
@@ -144,8 +174,8 @@ genChainUpdateState updateBehavior securityParam n =
             , (1, choose (1, 2))
             ]
           -- Blocks with equal hashes have to have equal validity, so we reserve
-          -- a specific ForkNo for invalid blocks to ensure this.
-          Invalid -> pure 3
+          -- specific ForkNos for invalid blocks to ensure this.
+          Invalid -> elements [3, 4]
 
     genAddBlock validity = do
       block <- genBlockToAdd validity
@@ -156,12 +186,21 @@ genChainUpdateState updateBehavior securityParam n =
       rollBackBlocks <- lift genRollBackBlocks
       let chain' = Chain.drop rollBackBlocks chain
       modify $ setChain chain'
-      blocks <- replicateM rollBackBlocks (genBlockToAdd Valid)
+      let rollForwardBlocks = case behavior of
+            -- Make sure to switch to a better fork, such that the invalid
+            -- behavior can be detected.
+            InvalidChainBehavior -> rollBackBlocks + 1
+            _                    -> rollBackBlocks
+      blocks <- replicateM rollForwardBlocks (genBlockToAdd =<< genValidity)
       modify $ addUpdate (SwitchFork (Chain.headPoint chain') blocks)
 
-    genInvalidBlock = do
+    genTrapTentativeBlock = do
       genAddBlock Invalid
       genSwitchFork (pure 1)
+
+    genValidity = case behavior of
+      InvalidChainBehavior -> frequency' [ (4, pure Valid), (1, pure Invalid) ]
+      _                    -> pure Valid
 
 -- | Variant of 'frequency' that allows for transformers of 'Gen'
 frequency' :: (MonadTrans t, Monad (t Gen)) => [(Int, t Gen a)] -> t Gen a
@@ -174,6 +213,39 @@ frequency' xs0 = lift (choose (1, tot)) >>= (`pick` xs0)
       | n <= k    = x
       | otherwise = pick (n-k) xs
     pick _ _  = error "pick used with empty list"
+
+-- | Classify the 'UpdateBehavior' of a sequence of 'ChainUpdate's based on
+-- their validities.
+--
+-- PRECONDITION: The updates fit on each other.
+classifyBehavior :: [ChainUpdate] -> UpdateBehavior
+classifyBehavior updates
+    | null invalidBlocks
+    = SelectedChainBehavior
+    | noInvalidBlockExtended && invalidBlocksImproving
+    = TentativeChainBehavior
+    | otherwise
+    = InvalidChainBehavior
+  where
+    -- The behavior is tentative iff:
+    --  1. The sequence of invalid blocks is strictly improving.
+    invalidBlocksImproving = strictlyIncreasing $ blockNo <$> invalidBlocks
+    --  2. An invalid block is not followed by a descendant.
+    noInvalidBlockExtended = all successorIsValid allBlocks
+
+    allBlocks = updates >>= \case
+        AddBlock blk      -> [blk]
+        SwitchFork _ blks -> blks
+    invalidBlocks = filter ((Invalid ==) . tbValid) allBlocks
+
+    successorIsValid =
+        \blk -> blockPrevHash blk `Set.notMember` invalidBlockHashes
+      where
+        invalidBlockHashes =
+          Set.fromList $ BlockHash . blockHash <$> invalidBlocks
+
+    strictlyIncreasing :: Ord a => [a] -> Bool
+    strictlyIncreasing as = and $ zipWith (<) as (tail as)
 
 -- | Test that applying the generated updates gives us the same chain
 -- as @cusCurrentChain@.

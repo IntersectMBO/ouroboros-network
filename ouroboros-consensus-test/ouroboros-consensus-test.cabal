@@ -293,6 +293,7 @@ test-suite test-infra
                        Test.Util.Split.Tests
 
   build-depends:       base
+                     , containers
                      , QuickCheck
                      , tasty
                      , tasty-quickcheck
