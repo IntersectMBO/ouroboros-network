@@ -13,7 +13,7 @@ import           Control.Tracer (contramap, nullTracer)
 import           Data.Bifunctor (first)
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
+import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Set as Set
 import           Data.Typeable
 
@@ -67,8 +67,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..), forkLinkedWatcher)
 
-import           Test.Util.ChainUpdates (ChainUpdate (..), UpdateBehavior (..),
-                     genChainUpdates, toChainUpdates)
+import           Test.Util.ChainUpdates
 import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.LogicalClock (NumTicks (..), Tick (..))
 import           Test.Util.Orphans.Arbitrary ()
@@ -94,7 +93,8 @@ tests = testGroup "ChainSyncClient"
 prop_chainSync :: ChainSyncClientSetup -> Property
 prop_chainSync ChainSyncClientSetup {..} =
     counterexample
-    ("Client chain: "     <> ppChain finalClientChain  <> "\n" <>
+    ("Server behavior: "  <> show serverBehavior       <> "\n" <>
+     "Client chain: "     <> ppChain finalClientChain  <> "\n" <>
      "Server chain: "     <> ppChain finalServerChain  <> "\n" <>
      "Synced fragment: "  <> ppFragment syncedFragment <> "\n" <>
      "Trace:\n"           <> unlines (map ppTraceEvent traceEvents)) $
@@ -118,14 +118,19 @@ prop_chainSync ChainSyncClientSetup {..} =
       Just (Right result) ->
         counterexample ("Terminated with result: " ++ show result) False
       Just (Left ex) ->
-        counterexample ("Exception: " ++ displayException ex) False
+        label "Exception" $
+        counterexample ("Exception: " ++ displayException ex)
+        (behaviorValidity serverBehavior == Invalid)
       Nothing ->
+        label "StillRunning" $
         counterexample "Synced fragment not a suffix of the server chain"
         (syncedFragment `isSuffixOf` finalServerChain) .&&.
         counterexample "Synced fragment doesn't intersect with the client chain"
         (clientFragment `forksWithinK` syncedFragment) .&&.
         counterexample "Synced fragment doesn't have the same anchor as the client fragment"
-        (AF.anchorPoint clientFragment === AF.anchorPoint syncedFragment)
+        (AF.anchorPoint clientFragment === AF.anchorPoint syncedFragment) .&&.
+        counterexample "Invalid behavior wasn't caught"
+        (behaviorValidity serverBehavior == Valid)
   where
     k = maxRollbacks securityParam
 
@@ -142,6 +147,9 @@ prop_chainSync ChainSyncClientSetup {..} =
       Nothing -> False
       Just (_ourPrefix, _theirPrefix, ourSuffix, _theirSuffix) ->
         fromIntegral (AF.length ourSuffix) <= k
+
+    serverBehavior =
+        classifyBehavior $ joinSchedule $ getServerUpdates serverUpdates
 
 -- | Generalization of 'AF.withinFragmentBounds' that returns false if the
 -- types don't line up
@@ -425,6 +433,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     numTicks = LogicalClock.sufficientTimeFor
       [ lastTick clientUpdates
       , lastTick serverUpdates
+      , lastTick invalidBlocks
       , startSyncingAt
       ]
 
@@ -504,22 +513,20 @@ instance Arbitrary ChainSyncClientSetup where
     securityParam  <- SecurityParam <$> choose (2, 5)
     clientUpdates0 <- ClientUpdates <$>
       genUpdateSchedule SelectedChainBehavior securityParam
+    serverBehavior <- elements [TentativeChainBehavior, InvalidChainBehavior]
     serverUpdates  <- ServerUpdates <$>
-      genUpdateSchedule TentativeChainBehavior securityParam
+      genUpdateSchedule serverBehavior securityParam
     let clientUpdates = removeLateClientUpdates serverUpdates clientUpdates0
         maxStartTick  = maximum
           [ Tick 1
           , lastTick (getClientUpdates clientUpdates) - 1
           , lastTick (getServerUpdates serverUpdates) - 1
           ]
-    startTick <- choose (1, maxStartTick)
-    let trapBlocks =
-          [ blockHash b
-          | AddBlock b <- joinSchedule (getServerUpdates serverUpdates)
-          , tbValid b == Invalid
-          ]
-    invalidBlocks <- InvalidBlocks <$>
-      (genSchedule DefaultSchedulingStrategy =<< shuffle trapBlocks)
+    startTick <- case behaviorValidity serverBehavior of
+      -- Make sure we don't miss invalid behavior before the start tick.
+      Invalid -> pure 1
+      Valid   -> choose (1, maxStartTick)
+    invalidBlocks <- genInvalidBlocks serverBehavior serverUpdates
     return ChainSyncClientSetup {..}
   shrink cscs@ChainSyncClientSetup {..} =
     -- We don't shrink 'securityParam' because the updates depend on it
@@ -601,7 +608,55 @@ genUpdateSchedule
   -> Gen (Schedule ChainUpdate)
 genUpdateSchedule updateBehavior securityParam =
     genChainUpdates updateBehavior securityParam 10
-      >>= genSchedule DefaultSchedulingStrategy
+      >>= genSchedule schedulingStrategy
+  where
+    schedulingStrategy = case behaviorValidity updateBehavior of
+        -- Otherwise, invalid behavior within a single tick might not be visible
+        -- to the client due to a rollback.
+        Invalid -> SingleItemPerTickStrategy
+        Valid   -> DefaultSchedulingStrategy
+
+genInvalidBlocks ::
+     UpdateBehavior
+     -- ^ 'UpdateBehavior' of the server, corresponding to the next argument.
+  -> ServerUpdates
+  -> Gen InvalidBlocks
+genInvalidBlocks updateBehavior (ServerUpdates schedule) =
+    case behaviorValidity  updateBehavior of
+      -- If we spread the invalid block discoveries arbitrarily, we might not
+      -- detect intermediate invalid behavior before a fork. Hence, we ensure
+      -- that the discovery of an invalid block happens before the next
+      -- SwitchFork.
+      Invalid -> do
+        invalidBlockDiscoveries <-
+          forM invalidBlocksWithTick $ \(hash, tick) -> do
+            let ub = fromMaybe (lastTick schedule) $
+                  Set.lookupGE tick switchForkTicks
+            discoveryTick <- chooseEnum (0, (ub - 1) `max` 1)
+            pure (discoveryTick, [hash])
+        pure $ InvalidBlocks $ Schedule $
+          Map.fromListWith (<>) invalidBlockDiscoveries
+      Valid ->
+            fmap InvalidBlocks
+        .   genSchedule DefaultSchedulingStrategy
+        =<< shuffle (fst <$> invalidBlocksWithTick)
+  where
+    invalidBlocksWithTick =
+        [ (blockHash blk, tick)
+        | (tick, updates) <- Map.toList $ getSchedule schedule
+        ,  blk <- updates >>= \case
+            AddBlock blk      -> [blk]
+            SwitchFork _ blks -> blks
+        , tbValid blk == Invalid
+        ]
+
+    switchForkTicks = Set.fromList
+        [ tick
+        | (tick, updates) <- Map.toList $ getSchedule schedule
+        , any isSwitchFork updates
+        ]
+      where
+        isSwitchFork = \case SwitchFork{} -> True; _ -> False
 
 {-------------------------------------------------------------------------------
   Pretty-printing
