@@ -666,8 +666,6 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
                . withTimeNameTraceEvents
@@ -1312,8 +1310,6 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
                . withTimeNameTraceEvents
@@ -1464,8 +1460,6 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
                . withTimeNameTraceEvents
@@ -1586,8 +1580,6 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1689,8 +1681,6 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1753,8 +1743,6 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1825,8 +1813,6 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1895,8 +1881,6 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
