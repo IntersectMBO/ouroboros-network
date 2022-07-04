@@ -115,13 +115,31 @@ the rules below, it is good practice to update the code's style to match them.
    c. We indent `data` definitions with multiple constructors as follows:
 
       ```haskell
-      data Foo =
-          Bar Int Int
+      data Foo
+        = Bar Int Int
         | Baz
             Int
             Int
             (Maybe Bool)
             [Foo]
+      ```
+
+      or
+
+      ```haskell
+      data Foo
+        = -- | Bar
+          --
+          Bar Int Int
+
+          -- | Baz
+          --
+        | Baz
+            Int
+            Int
+            (Maybe Bool)
+            [Foo]
+
       ```
 
       Note the argument of `Baz` being indented by two spaces.
@@ -616,8 +634,8 @@ the rules below, it is good practice to update the code's style to match them.
       :: Word -- ^ Max size
       -> ..
 
-    data Foo =
-        -- | Foo
+    data Foo
+      = -- | Foo
         --
         -- ..
         Foo
