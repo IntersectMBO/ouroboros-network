@@ -194,7 +194,7 @@ import           Ouroboros.Consensus.Ledger.Basics (
                      ShowLedgerState (..), StowableLedgerTables (..),
                      TableStuff (..), TickedTableStuff (..), TrackingMK,
                      ValuesMK, isCandidateForUnstowDefault,
-                     polyEmptyLedgerTables, IsLedger(..), LedgerResult (..), LedgerStateKind)
+                     polyEmptyLedgerTables, IsLedger(..), LedgerResult (..), LedgerStateKind, emptyLedgerTables, NameMK (..))
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Ticked (Ticked1)
@@ -430,33 +430,36 @@ instance IsLedger (LedgerState hdr) => IsLedger (LedgerState (WithEBBInfo hdr)) 
 instance ( LedgerErr (LedgerState blk) ~ LedgerErr (LedgerState (WithEBBInfo blk))
          , AuxLedgerEvent (LedgerState (WithEBBInfo blk)) ~ AuxLedgerEvent (LedgerState blk)
          , ApplyBlock (LedgerState blk) blk) => ApplyBlock (LedgerState (WithEBBInfo blk)) (WithEBBInfo blk) where
-  applyBlockLedgerResult   cfg (WithEBBInfo blk _) (TickedWithEBBInfoLedgerState l) =
-    fmap WithEBBInfoLedgerState <$> applyBlockLedgerResult cfg blk l
+  applyBlockLedgerResult   cfg (WithEBBInfo blk _) (TickedWithEBBInfoLedgerState l) = do
+    LedgerResult evs l' <- applyBlockLedgerResult cfg blk l
+    return $ LedgerResult evs (WithEBBInfoLedgerState l')
   reapplyBlockLedgerResult cfg (WithEBBInfo blk _) (TickedWithEBBInfoLedgerState l) =
-    WithEBBInfoLedgerState <$> reapplyBlockLedgerResult cfg blk l
+    let LedgerResult evs l' = reapplyBlockLedgerResult cfg blk l
+    in
+      LedgerResult evs $ WithEBBInfoLedgerState l'
   getBlockKeySets (WithEBBInfo blk _) = WithEBBInfoLedgerTables $ getBlockKeySets blk
 
 ----------------------------------------------------------------------
 
 data instance LedgerState (WithBlockBody hdr bdy) mk = WithBlockBodyLedgerState {
     headerLedgerState :: LedgerState hdr mk
-  , bodyLedgerState   :: PayloadDependentState bdy mk
+  , bodyLedgerState   :: LedgerState bdy mk
   } deriving (Generic)
 
-deriving instance (Eq   (LedgerState hdr mk), Eq   (PayloadDependentState bdy mk)) => Eq   (LedgerState (WithBlockBody hdr bdy) mk)
-deriving instance (Show (LedgerState hdr mk), Show (PayloadDependentState bdy mk)) => Show (LedgerState (WithBlockBody hdr bdy) mk) 
-instance (NoThunks (LedgerState hdr mk), NoThunks (PayloadDependentState bdy mk)) => NoThunks (LedgerState (WithBlockBody hdr bdy) mk)
+deriving instance (Eq   (LedgerState hdr mk), Eq   (LedgerState bdy mk)) => Eq   (LedgerState (WithBlockBody hdr bdy) mk)
+deriving instance (Show (LedgerState hdr mk), Show (LedgerState bdy mk)) => Show (LedgerState (WithBlockBody hdr bdy) mk) 
+instance (NoThunks (LedgerState hdr mk), NoThunks (LedgerState bdy mk)) => NoThunks (LedgerState (WithBlockBody hdr bdy) mk)
 instance GetTip (LedgerState hdr mk) => GetTip (LedgerState (WithBlockBody hdr bdy) mk) where
   getTip = castPoint . getTip . headerLedgerState
-instance (ShowLedgerState (LedgerState hdr), ShowLedgerState (PayloadDependentState bdy)) => ShowLedgerState (LedgerState (WithBlockBody hdr bdy)) where
+instance (ShowLedgerState (LedgerState hdr), ShowLedgerState (LedgerState bdy)) => ShowLedgerState (LedgerState (WithBlockBody hdr bdy)) where
   showsLedgerState sing (WithBlockBodyLedgerState h b) = showsLedgerState sing h <> showsLedgerState sing b
 
 data instance Ticked1 (LedgerState (WithBlockBody hdr bdy)) mk = TickedWithBlockBodyLedgerState
   { tickedHeader :: Ticked1 (LedgerState hdr) mk
-  , tickedBody :: Ticked1 (PayloadDependentState bdy) mk
+  , tickedBody :: Ticked1 (LedgerState bdy) mk
   }
 instance StandardHash (Ticked1 (LedgerState hdr) mk) => StandardHash (Ticked1 (LedgerState (WithBlockBody hdr bdy)) mk)
-instance (StandardHash (Ticked1 (LedgerState hdr) mk), HeaderHash hdr ~ HeaderHash (PayloadDependentState bdy), GetTip (Ticked1 (LedgerState hdr) mk), GetTip (Ticked1 (PayloadDependentState bdy) mk))  => GetTip (Ticked1 (LedgerState (WithBlockBody hdr bdy)) mk) where
+instance (StandardHash (Ticked1 (LedgerState hdr) mk), HeaderHash hdr ~ HeaderHash (LedgerState bdy), GetTip (Ticked1 (LedgerState hdr) mk), GetTip (Ticked1 (LedgerState bdy) mk))  => GetTip (Ticked1 (LedgerState (WithBlockBody hdr bdy)) mk) where
   getTip (TickedWithBlockBodyLedgerState h b) =
     let hp = castPoint $ getTip h
         bp = castPoint $ getTip b
@@ -465,23 +468,23 @@ instance (StandardHash (Ticked1 (LedgerState hdr) mk), HeaderHash hdr ~ HeaderHa
 
 data WithBlockBodyLedgerCfg hdr bdy  = WithBlockBodyLedgerCfg {
   headerCfg :: LedgerCfg (LedgerState hdr)
-  , bodyCfg :: LedgerCfg (PayloadDependentState bdy)
+  , bodyCfg :: LedgerCfg (LedgerState bdy)
   } deriving (Generic)
 type instance LedgerCfg (LedgerState (WithBlockBody hdr bdy)) = WithBlockBodyLedgerCfg hdr bdy
-deriving instance (NoThunks (LedgerCfg (LedgerState hdr)), NoThunks (LedgerCfg (PayloadDependentState bdy))) => NoThunks (WithBlockBodyLedgerCfg hdr bdy)
+deriving instance (NoThunks (LedgerCfg (LedgerState hdr)), NoThunks (LedgerCfg (LedgerState bdy))) => NoThunks (WithBlockBodyLedgerCfg hdr bdy)
 
-instance (InMemory (LedgerState hdr), InMemory (PayloadDependentState bdy)) => InMemory (LedgerState (WithBlockBody hdr bdy)) where
+instance (InMemory (LedgerState hdr), InMemory (LedgerState bdy)) => InMemory (LedgerState (WithBlockBody hdr bdy)) where
   convertMapKind (WithBlockBodyLedgerState a b) = WithBlockBodyLedgerState (convertMapKind a) (convertMapKind b)
 
-instance (StowableLedgerTables (LedgerState hdr), StowableLedgerTables (PayloadDependentState bdy)) => StowableLedgerTables (LedgerState (WithBlockBody hdr bdy)) where
+instance (StowableLedgerTables (LedgerState hdr), StowableLedgerTables (LedgerState bdy)) => StowableLedgerTables (LedgerState (WithBlockBody hdr bdy)) where
   stowLedgerTables (WithBlockBodyLedgerState h b) = WithBlockBodyLedgerState (stowLedgerTables h) (stowLedgerTables b)
   unstowLedgerTables (WithBlockBodyLedgerState h b) = WithBlockBodyLedgerState (unstowLedgerTables h) (unstowLedgerTables b)
   isCandidateForUnstow (WithBlockBodyLedgerState h b) = isCandidateForUnstow h && isCandidateForUnstow b
 
-instance (TableStuff (LedgerState hdr), TableStuff (PayloadDependentState bdy)) => TableStuff (LedgerState (WithBlockBody hdr bdy)) where
+instance (TableStuff (LedgerState hdr), TableStuff (LedgerState bdy)) => TableStuff (LedgerState (WithBlockBody hdr bdy)) where
   data LedgerTables (LedgerState (WithBlockBody hdr bdy)) mk = WithBlockBodyLedgerTables {
        headerLedgerTables :: LedgerTables (LedgerState hdr) mk
-     , bodyLedgerTables :: LedgerTables (PayloadDependentState bdy) mk
+     , bodyLedgerTables :: LedgerTables (LedgerState bdy) mk
   } deriving Generic
 
   projectLedgerTables (WithBlockBodyLedgerState h b) = WithBlockBodyLedgerTables (projectLedgerTables h) (projectLedgerTables b)
@@ -498,29 +501,29 @@ instance (TableStuff (LedgerState hdr), TableStuff (PayloadDependentState bdy)) 
   foldLedgerTables2    f                                   (WithBlockBodyLedgerTables lh lb) (WithBlockBodyLedgerTables rh rb)     = foldLedgerTables2 f lh rh <> foldLedgerTables2 f lb rb
   namesLedgerTables                                                                                                                = undefined
 
-deriving instance (Eq (LedgerTables (LedgerState blk) mk), Eq (LedgerTables (PayloadDependentState bdy) mk)) => Eq (LedgerTables (LedgerState (WithBlockBody blk bdy)) mk)
-instance (ShowLedgerState (LedgerTables (LedgerState blk)), ShowLedgerState (LedgerTables (PayloadDependentState bdy))) => ShowLedgerState (LedgerTables (LedgerState (WithBlockBody blk bdy))) where
+deriving instance (Eq (LedgerTables (LedgerState blk) mk), Eq (LedgerTables (LedgerState bdy) mk)) => Eq (LedgerTables (LedgerState (WithBlockBody blk bdy)) mk)
+instance (ShowLedgerState (LedgerTables (LedgerState blk)), ShowLedgerState (LedgerTables (LedgerState bdy))) => ShowLedgerState (LedgerTables (LedgerState (WithBlockBody blk bdy))) where
   showsLedgerState s (WithBlockBodyLedgerTables htbs btbs) = showsLedgerState s htbs <> showsLedgerState s btbs
 
 data WithBlockBodyAuxLedgerEvent hdr bdy = WithBlockBodyAuxLedgerEvent {
   auxLedgerEventHeader :: AuxLedgerEvent (LedgerState hdr)
-  , auxLedgerEventBody :: AuxLedgerEvent (PayloadDependentState bdy)
+  , auxLedgerEventBody :: AuxLedgerEvent (LedgerState bdy)
   } deriving (Generic)
 
-deriving instance (Eq (AuxLedgerEvent (LedgerState hdr)), Eq (AuxLedgerEvent (PayloadDependentState bdy))) => Eq (WithBlockBodyAuxLedgerEvent hdr bdy)
-deriving instance (NoThunks (AuxLedgerEvent (LedgerState hdr)), NoThunks (AuxLedgerEvent (PayloadDependentState bdy))) => NoThunks (WithBlockBodyAuxLedgerEvent hdr bdy)  
+deriving instance (Eq (AuxLedgerEvent (LedgerState hdr)), Eq (AuxLedgerEvent (LedgerState bdy))) => Eq (WithBlockBodyAuxLedgerEvent hdr bdy)
+deriving instance (NoThunks (AuxLedgerEvent (LedgerState hdr)), NoThunks (AuxLedgerEvent (LedgerState bdy))) => NoThunks (WithBlockBodyAuxLedgerEvent hdr bdy)  
 
 data WithBlockBodyLedgerErr hdr bdy = WithBlockBodyLedgerErr {
   ledgerErrHeader :: LedgerErr (LedgerState hdr)
-  , ledgerErrBody :: LedgerErr (PayloadDependentState bdy)
+  , ledgerErrBody :: LedgerErr (LedgerState bdy)
   } deriving Generic
 
-deriving instance (Eq (LedgerErr (LedgerState hdr)), Eq (LedgerErr (PayloadDependentState bdy))) => Eq (WithBlockBodyLedgerErr hdr bdy)
-deriving instance (NoThunks (LedgerErr (LedgerState hdr)), NoThunks (LedgerErr (PayloadDependentState bdy))) => NoThunks (WithBlockBodyLedgerErr hdr bdy)
-deriving instance (Show (LedgerErr (LedgerState hdr)), Show (LedgerErr (PayloadDependentState bdy))) => Show (WithBlockBodyLedgerErr hdr bdy)
-deriving instance (NoThunks (LedgerTables (LedgerState blk) mk), NoThunks (LedgerTables (PayloadDependentState bdy) mk)) => NoThunks (LedgerTables (LedgerState (WithBlockBody blk bdy)) mk)
+deriving instance (Eq (LedgerErr (LedgerState hdr)), Eq (LedgerErr (LedgerState bdy))) => Eq (WithBlockBodyLedgerErr hdr bdy)
+deriving instance (NoThunks (LedgerErr (LedgerState hdr)), NoThunks (LedgerErr (LedgerState bdy))) => NoThunks (WithBlockBodyLedgerErr hdr bdy)
+deriving instance (Show (LedgerErr (LedgerState hdr)), Show (LedgerErr (LedgerState bdy))) => Show (WithBlockBodyLedgerErr hdr bdy)
+deriving instance (NoThunks (LedgerTables (LedgerState blk) mk), NoThunks (LedgerTables (LedgerState bdy) mk)) => NoThunks (LedgerTables (LedgerState (WithBlockBody blk bdy)) mk)
 
-instance (forall mk. StandardHash (Ticked1 (LedgerState hdr) mk), HeaderHash hdr ~ HeaderHash (PayloadDependentState bdy), IsLedger (LedgerState hdr), IsLedger (PayloadDependentState bdy)) => IsLedger (LedgerState (WithBlockBody hdr bdy)) where
+instance (forall mk. StandardHash (Ticked1 (LedgerState hdr) mk), HeaderHash hdr ~ HeaderHash (LedgerState bdy), IsLedger (LedgerState hdr), IsLedger (LedgerState bdy)) => IsLedger (LedgerState (WithBlockBody hdr bdy)) where
   type AuxLedgerEvent (LedgerState (WithBlockBody hdr bdy)) = WithBlockBodyAuxLedgerEvent hdr bdy
   type LedgerErr (LedgerState (WithBlockBody hdr bdy)) = WithBlockBodyLedgerErr hdr bdy
   applyChainTickLedgerResult cfg slot (WithBlockBodyLedgerState hls bls) =
@@ -630,35 +633,16 @@ data instance BlockConfig (TestBlockWithEBBs ptype) = TestBlockConfig {
   LedgerState
 -------------------------------------------------------------------------------}
 
-data instance LedgerState (TheTestBlock (Regular ptype)) mk =
-      TestLedger {
-        -- -- | The ledger state simply consists of the last applied block
-      --   lastAppliedPoint      :: Point (TheTestBlock (Regular ptype))
-      --   -- | State that depends on the application of the block payload to the
-      --   -- state.
-      -- , 
-        payloadDependentState :: PayloadDependentState ptype mk
-      } deriving (Generic)
+-- data instance LedgerState (TheTestBlock (Regular ptype)) mk =
+--       TestLedger {
+--         -- -- | The ledger state simply consists of the last applied block
+--       --   lastAppliedPoint      :: Point (TheTestBlock (Regular ptype))
+--       --   -- | State that depends on the application of the block payload to the
+--       --   -- state.
+--       -- , 
+--         payloadDependentState :: LedgerState ptype mk
+--       } deriving (Generic)
 
-deriving instance Eq (PayloadDependentState ptype EmptyMK) => Eq (LedgerState (TheTestBlock (Regular ptype)) EmptyMK)
-
-instance ShowLedgerState (LedgerTables (LedgerState (TheTestBlock e))) where
-  showsLedgerState _sing = undefined
-
-instance ShowLedgerState (LedgerState (TheTestBlock e)) where
-  showsLedgerState _sing = undefined
-
--- | The 'TestBlock' does not need any codec config
-data instance CodecConfig (TheTestBlock e) = TestBlockCodecConfig
-  deriving (Show, Generic, NoThunks)
-
--- | The 'TestBlock' does not need any storage config
-data instance StorageConfig (TheTestBlock e) = TestBlockStorageConfig
-  deriving (Show, Generic, NoThunks)
-
-newtype instance Ticked1 (LedgerState (TheTestBlock ptype)) mk = TickedTestLedger {
-      getTickedTestLedger :: LedgerState (TheTestBlock ptype) mk
-    }
 
 {-------------------------------------------------------------------------------
   PayloadSemantics
@@ -668,19 +652,19 @@ class ( Typeable ptype
       , Eq       ptype
       , NoThunks ptype
 
-      , Eq        (PayloadDependentState ptype EmptyMK)
-      , Eq        (PayloadDependentState ptype DiffMK)
-      , Eq        (PayloadDependentState ptype ValuesMK)
+      , Eq        (LedgerState ptype EmptyMK)
+      , Eq        (LedgerState ptype DiffMK)
+      , Eq        (LedgerState ptype ValuesMK)
 
-      , forall mk'. Show (PayloadDependentState ptype (ApplyMapKind' mk'))
+      , forall mk'. Show (LedgerState ptype (ApplyMapKind' mk'))
 
-      , forall mk. Generic   (PayloadDependentState ptype mk)
-      ,            Serialise (PayloadDependentState ptype EmptyMK)
+      , forall mk. Generic   (LedgerState ptype mk)
+      ,            Serialise (LedgerState ptype EmptyMK)
 
-      , NoThunks  (PayloadDependentState ptype EmptyMK)
-      , NoThunks  (PayloadDependentState ptype ValuesMK)
-      , NoThunks  (PayloadDependentState ptype SeqDiffMK)
-      , NoThunks  (PayloadDependentState ptype DiffMK)
+      , NoThunks  (LedgerState ptype EmptyMK)
+      , NoThunks  (LedgerState ptype ValuesMK)
+      , NoThunks  (LedgerState ptype SeqDiffMK)
+      , NoThunks  (LedgerState ptype DiffMK)
 
       , TickedTableStuff     (LedgerState (TheTestBlock (Regular ptype)))
       , StowableLedgerTables (LedgerState (TheTestBlock (Regular ptype)))
@@ -701,24 +685,18 @@ class ( Typeable ptype
       , NoThunks (StorageConfig (TheTestBlock (Regular ptype)))
       ) => PayloadSemantics ptype where
 
-  data PayloadDependentState ptype :: LedgerStateKind
-
   type PayloadDependentError ptype :: Type
 
   applyPayload ::
-       PayloadDependentState ptype ValuesMK
+       LedgerState ptype ValuesMK
     -> ptype
-    -> Either (PayloadDependentError ptype) (PayloadDependentState ptype TrackingMK)
+    -> Either (PayloadDependentError ptype) (LedgerState ptype TrackingMK)
 
   -- | This function is used to implement the 'getBlockKeySets' function of the
   -- 'ApplyBlock' class. Thus we assume that the payload contains all the
   -- information needed to determine which keys should be retrieved from the
   -- backing store to apply a 'TestBlockWith'.
-  getPayloadKeySets :: ptype -> LedgerTables (LedgerState (TheTestBlock (Regular ptype))) KeysMK
-
-data instance LedgerState (PayloadDependentState ptype mk) mk = PayloadLedgerState {
-
-                                                                                   }
+  getPayloadKeySets :: ptype -> LedgerTables (LedgerState ptype) KeysMK
 
 {-------------------------------------------------------------------------------
   LedgerTables for blocks without tables
@@ -767,15 +745,13 @@ data instance LedgerState (PayloadDependentState ptype mk) mk = PayloadLedgerSta
 
 -- type BlockWithPayload = TheTestBlock (Regular Tx)
 
-instance TableStuff (LedgerState (PayloadDependentState pld mk)) where
-  newtype LedgerTables (LedgerState (PayloadDependentState pld mk)) mk =
-    TokenToTValue { testUtxtokTable :: mk (Token pld) TValue }
+instance TableStuff (LedgerState Tx) where
+  newtype LedgerTables (LedgerState Tx) mk =
+    TokenToTValue { testUtxtokTable :: mk Token TValue }
     deriving stock (Generic)
 
-  projectLedgerTables st       = utxtoktables $ payloadDependentState st
-  withLedgerTables    st table = st { payloadDependentState =
-                                        (payloadDependentState st) {utxtoktables = table}
-                                    }
+  projectLedgerTables        = utxtoktables
+  withLedgerTables    st table = st { utxtoktables = table}
 
   pureLedgerTables = TokenToTValue
 
@@ -789,33 +765,33 @@ instance TableStuff (LedgerState (PayloadDependentState pld mk)) where
   foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
   namesLedgerTables                                                            = TokenToTValue $ NameMK "testblocktables"
 
-deriving newtype  instance Eq       (LedgerTables (LedgerState (PayloadDependentState pld EmptyMK)) EmptyMK)
-deriving newtype  instance Eq       (LedgerTables (LedgerState (PayloadDependentState pld DiffMK)) DiffMK)
-deriving newtype  instance Eq       (LedgerTables (LedgerState (PayloadDependentState pld ValuesMK )) ValuesMK)
-deriving newtype  instance Eq       (LedgerTables (LedgerState (PayloadDependentState pld SeqDiffMK)) SeqDiffMK)
-deriving newtype  instance Show     (LedgerTables (LedgerState (PayloadDependentState pld (ApplyMapKind' mk))) (ApplyMapKind' mk))
-deriving anyclass instance ToExpr   (LedgerTables (LedgerState (PayloadDependentState pld ValuesMK)) ValuesMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState (PayloadDependentState pld EmptyMK)) EmptyMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState (PayloadDependentState pld ValuesMK)) ValuesMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState (PayloadDependentState pld DiffMK)) DiffMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState (PayloadDependentState pld SeqDiffMK)) SeqDiffMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) EmptyMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) DiffMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) ValuesMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) SeqDiffMK)
+deriving newtype  instance Show     (LedgerTables (LedgerState Tx) (ApplyMapKind' mk))
+deriving anyclass instance ToExpr   (LedgerTables (LedgerState Tx) ValuesMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) EmptyMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) ValuesMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) DiffMK)
+deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) SeqDiffMK)
 
-instance StowableLedgerTables (LedgerState (PayloadDependentState pld mk)) where
-  stowLedgerTables   (TestLedger lap (UTxTok tbs h _  ))  = TestLedger lap (UTxTok emptyLedgerTables h tbs)
-  unstowLedgerTables (TestLedger lap (UTxTok _   h sto))  = TestLedger lap (UTxTok sto h polyEmptyLedgerTables)
+instance StowableLedgerTables (LedgerState Tx) where
+  stowLedgerTables   (UTxTok tbs h _ )  = UTxTok emptyLedgerTables h tbs
+  unstowLedgerTables (UTxTok _   h sto)  = UTxTok sto h polyEmptyLedgerTables
   isCandidateForUnstow = const True
 
-instance TickedTableStuff (LedgerState (PayloadDependentState pld mk)) where
-  projectLedgerTablesTicked (TickedTestLedger st)        = projectLedgerTables st
-  withLedgerTablesTicked    (TickedTestLedger st) tables =
-    TickedTestLedger $ withLedgerTables st tables
+instance TickedTableStuff (LedgerState Tx) where
+  projectLedgerTablesTicked (TickedLedgerState st)        = projectLedgerTables st
+  withLedgerTablesTicked    (TickedLedgerState st) tables =
+    TickedLedgerState $ withLedgerTables st tables
 
 -- {-------------------------------------------------------------------------------
 --   PayloadSemantics for block without tables
 -- -------------------------------------------------------------------------------}
 
 -- instance PayloadSemantics () where
---   data PayloadDependentState () mk = EmptyPLDS
+--   data LedgerState () mk = EmptyPLDS
 --     deriving stock (Eq, Show, Generic)
 --     deriving anyclass (Serialise, NoThunks)
 
@@ -829,14 +805,16 @@ instance TickedTableStuff (LedgerState (PayloadDependentState pld mk)) where
 --   PayloadSemantics for block with tables
 -- -------------------------------------------------------------------------------}
 
+instance StandardHash Tx
+
 -- | Mock of a UTxO transaction where exactly one (transaction) input is
 -- consumed and exactly one output is produced.
 --
-data Tx pld = Tx {
+data Tx = Tx {
     -- | Input that the transaction consumes.
-    consumed :: Token pld
+    consumed :: Token
     -- | Ouptupt that the transaction produces.
-  , produced :: (Token pld, TValue)
+  , produced :: (Token, TValue)
   }
   deriving stock (Show, Eq, Ord, Generic)
   deriving anyclass (Serialise, NoThunks)
@@ -846,7 +824,7 @@ data Tx pld = Tx {
 --
 -- This is analogous to @TxId@: it's how we identify what's in the table. It's
 -- also analogous to @TxIn@, since we trivially only have one output per 'Tx'.
-newtype Token pld = Token { unToken :: Point (PayloadDependentState pld) }
+newtype Token = Token { unToken :: Point (LedgerState Tx) }
   deriving stock (Show, Eq, Ord, Generic)
   deriving newtype (Serialise, NoThunks, ToExpr)
 
@@ -857,25 +835,27 @@ newtype TValue = TValue (WithOrigin SlotNo)
   deriving stock (Show, Eq, Ord, Generic)
   deriving newtype (Serialise, NoThunks, ToExpr)
 
-data TxErr pld
-  = TokenWasAlreadyCreated (Token pld)
-  | TokenDoesNotExist      (Token pld)
+data TxErr
+  = TokenWasAlreadyCreated Token 
+  | TokenDoesNotExist      Token
   deriving stock (Generic, Eq, Show)
   deriving anyclass (NoThunks, Serialise, ToExpr)
 
-instance PayloadSemantics pld where
-  data PayloadDependentState pld (mk :: MapKind) =
-    UTxTok { utxtoktables :: LedgerTables (LedgerState (PayloadDependentState pld mk)) mk
+data instance LedgerState Tx (mk :: MapKind) =
+    UTxTok { utxtoktables :: LedgerTables (LedgerState Tx) mk
              -- | All the tokens that ever existed. We use this to
              -- make sure a token is not created more than once. See
              -- the definition of 'applyPayload' in the
              -- 'PayloadSemantics' of 'Tx'.
-           , utxhist      :: Set.Set (Token pld)
-           , stowed       :: LedgerTables (LedgerState (PayloadDependentState pld mk)) ValuesMK
+           , utxhist      :: Set.Set Token
+           , stowed       :: LedgerTables (LedgerState Tx) ValuesMK
            }
     deriving stock    (Generic)
 
-  type PayloadDependentError pld = TxErr pld
+newtype instance Ticked1 (LedgerState Tx) mk = TickedLedgerState (LedgerState Tx mk)
+
+instance PayloadSemantics Tx where
+  type PayloadDependentError Tx = TxErr
 
   -- We need to exercise the HD backend. This requires that we store key-values
   -- ledger tables and the block application semantics satisfy:
@@ -889,8 +869,8 @@ instance PayloadSemantics pld where
       insert ::
            Token
         -> TValue
-        -> PayloadDependentState Tx ValuesMK
-        -> Either TxErr (PayloadDependentState Tx ValuesMK)
+        -> LedgerState Tx ValuesMK
+        -> Either TxErr (LedgerState Tx ValuesMK)
       insert tok val st'@UTxTok{utxtoktables, utxhist} =
           if tok `Set.member` utxhist
           then Left  $ TokenWasAlreadyCreated tok
@@ -899,15 +879,15 @@ instance PayloadSemantics pld where
                            }
       delete ::
            Token
-        -> PayloadDependentState Tx ValuesMK
-        -> Either TxErr (PayloadDependentState Tx ValuesMK)
+        -> LedgerState Tx ValuesMK
+        -> Either TxErr (LedgerState Tx ValuesMK)
       delete tok st'@UTxTok{utxtoktables} =
           if Map.member tok `queryKeys` utxtoktables
           then Right $ st' { utxtoktables = Map.delete tok `onValues` utxtoktables
                            }
           else Left  $ TokenDoesNotExist tok
 
-      track :: PayloadDependentState Tx ValuesMK -> PayloadDependentState Tx TrackingMK
+      track :: LedgerState Tx ValuesMK -> LedgerState Tx TrackingMK
       track stAfter =
           stAfter { utxtoktables =
                       TokenToTValue $ rawCalculateDifference utxtokBefore utxtokAfter
@@ -919,21 +899,10 @@ instance PayloadSemantics pld where
   getPayloadKeySets Tx{consumed} =
     TokenToTValue $ ApplyKeysMK $ HD.UtxoKeys $ Set.singleton consumed
 
-deriving stock    instance (Eq        (PayloadDependentState pld EmptyMK))
-deriving stock    instance (Eq        (PayloadDependentState pld DiffMK))
-deriving stock    instance (Eq        (PayloadDependentState pld ValuesMK))
-deriving stock    instance (Show      (PayloadDependentState pld (ApplyMapKind' mk)))
-deriving anyclass instance (Serialise (PayloadDependentState pld EmptyMK))
-deriving anyclass instance (ToExpr    (PayloadDependentState pld ValuesMK))
-deriving anyclass instance (NoThunks  (PayloadDependentState pld EmptyMK))
-deriving anyclass instance (NoThunks  (PayloadDependentState pld DiffMK))
-deriving anyclass instance (NoThunks  (PayloadDependentState pld ValuesMK))
-deriving anyclass instance (NoThunks  (PayloadDependentState pld SeqDiffMK))
-
 onValues ::
-     (Map.Map (Token pld) TValue -> Map.Map (Token pld) TValue)
-  -> LedgerTables (LedgerState (PayloadDependentState pld ValuesMK)) ValuesMK
-  -> LedgerTables (LedgerState (PayloadDependentState pld ValuesMK)) ValuesMK
+     (Map.Map Token TValue -> Map.Map Token TValue)
+  -> LedgerTables (LedgerState Tx) ValuesMK
+  -> LedgerTables (LedgerState Tx) ValuesMK
 onValues f TokenToTValue {testUtxtokTable} = TokenToTValue $ updateMap testUtxtokTable
   where
     updateMap :: ValuesMK Token TValue -> ValuesMK Token TValue
@@ -941,8 +910,8 @@ onValues f TokenToTValue {testUtxtokTable} = TokenToTValue $ updateMap testUtxto
       ApplyValuesMK $ HD.UtxoValues $ f utxovals
 
 queryKeys ::
-     (Map.Map (Token pld) TValue -> a)
-  -> LedgerTables (LedgerState (PayloadDependentState pld ValuesMK)) ValuesMK
+     (Map.Map Token TValue -> a)
+  -> LedgerTables (LedgerState Tx) ValuesMK
   -> a
 queryKeys f (TokenToTValue (ApplyValuesMK (HD.UtxoValues utxovals))) = f utxovals
 
