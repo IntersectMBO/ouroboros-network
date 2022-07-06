@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 -- | Minimal instantiation of the consensus layer to be able to run the ChainDB
@@ -68,9 +69,14 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
-import           Codec.Serialise (Serialise (..))
+import           Codec.Serialise (Serialise (..), serialise)
 import           Control.DeepSeq (force)
+import           Control.Monad (guard, replicateM, replicateM_)
 import           Control.Monad.Except (throwError)
+import qualified Data.Binary.Get as Get
+import qualified Data.Binary.Put as Put
+import qualified Data.ByteString.Lazy as BL
+import           Data.Foldable (for_)
 import           Data.Int
 import           Data.Kind (Type)
 import           Data.List (transpose)
@@ -97,7 +103,7 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           Ouroboros.Network.MockChain.Chain (Chain (..))
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
-import           Ouroboros.Consensus.Block hiding (hashSize)
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
@@ -115,6 +121,8 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
+import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
@@ -351,18 +359,18 @@ instance PayloadSemantics () where
   NestedCtxt
 -------------------------------------------------------------------------------}
 
-data instance NestedCtxt_ TestBlock f a where
-  CtxtTestBlock :: NestedCtxt_ TestBlock f (f TestBlock)
+data instance NestedCtxt_ (TestBlockWith ptype) f a where
+  CtxtTestBlock :: NestedCtxt_ (TestBlockWith ptype) f (f (TestBlockWith ptype))
 
-deriving instance Show (NestedCtxt_ TestBlock f a)
+deriving instance Show (NestedCtxt_ (TestBlockWith ptype) f a)
 
-instance TrivialDependency (NestedCtxt_ TestBlock f) where
-  type TrivialIndex (NestedCtxt_ TestBlock f) = f TestBlock
+instance TrivialDependency (NestedCtxt_ (TestBlockWith ptype) f) where
+  type TrivialIndex (NestedCtxt_ (TestBlockWith ptype) f) = f (TestBlockWith ptype)
   hasSingleIndex CtxtTestBlock CtxtTestBlock = Refl
   indexIsTrivial = CtxtTestBlock
 
-instance SameDepIndex (NestedCtxt_ TestBlock f)
-instance HasNestedContent f TestBlock
+instance SameDepIndex (NestedCtxt_ (TestBlockWith ptype) f)
+instance HasNestedContent f (TestBlockWith ptype)
 
 {-------------------------------------------------------------------------------
   Test infrastructure: ledger state
@@ -735,7 +743,7 @@ permute (Permutation n) = go (R.mkStdGen n)
               in a : go g' (before ++ after)
 
 {-------------------------------------------------------------------------------
-  Additional Serialise instances
+  Additional serialisation instances
 -------------------------------------------------------------------------------}
 
 instance Serialise (AnnTip (TestBlockWith ptype)) where
@@ -749,3 +757,55 @@ instance PayloadSemantics ptype => Serialise (ExtLedgerState (TestBlockWith ptyp
 instance Serialise (RealPoint (TestBlockWith ptype)) where
   encode = encodeRealPoint encode
   decode = decodeRealPoint decode
+
+-- 'ConvertRawHash' expects a constant-size hash. As a compromise, we allow to
+-- encode hashes with a block length of up to 100.
+instance ConvertRawHash (TestBlockWith ptype) where
+  -- 8 + 100 * 8: size of the list, and its elements, one Word64 each
+  hashSize _ = 808
+  toRawHash _ (TestHash h)
+      | len > 100 = error "hash too long"
+      | otherwise      = BL.toStrict . Put.runPut $ do
+          Put.putWord64le (fromIntegral len)
+          for_ h Put.putWord64le
+          replicateM_ (100 - len) $ Put.putWord64le 0
+    where
+      len = length h
+  fromRawHash _ bs = flip Get.runGet (BL.fromStrict bs) $ do
+      len <- fromIntegral <$> Get.getWord64le
+      (NE.nonEmpty -> Just h, rs) <-
+        splitAt len <$> replicateM 100 Get.getWord64le
+      guard $ all (0 ==) rs
+      pure $ TestHash h
+
+instance Serialise ptype => EncodeDisk (TestBlockWith ptype) (TestBlockWith ptype)
+instance Serialise ptype => DecodeDisk (TestBlockWith ptype) (BL.ByteString -> TestBlockWith ptype) where
+  decodeDisk _ = const <$> decode
+
+instance Serialise ptype => EncodeDisk (TestBlockWith ptype) (Header (TestBlockWith ptype))
+instance Serialise ptype => DecodeDisk (TestBlockWith ptype) (BL.ByteString -> Header (TestBlockWith ptype)) where
+  decodeDisk _ = const <$> decode
+
+instance EncodeDisk (TestBlockWith ptype) (AnnTip (TestBlockWith ptype))
+instance DecodeDisk (TestBlockWith ptype) (AnnTip (TestBlockWith ptype))
+
+instance ReconstructNestedCtxt Header (TestBlockWith ptype)
+
+instance PayloadSemantics ptype => EncodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype))
+instance PayloadSemantics ptype => DecodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype))
+
+instance Serialise ptype => EncodeDiskDep (NestedCtxt Header) (TestBlockWith ptype)
+instance Serialise ptype => DecodeDiskDep (NestedCtxt Header) (TestBlockWith ptype)
+
+-- ChainDepState (BlockProtocol (TestBlockWith ptype)) ~ ()
+instance EncodeDisk (TestBlockWith ptype) ()
+instance DecodeDisk (TestBlockWith ptype) ()
+
+-- Header (TestBlockWith ptype) is a newtype around TestBlockWith ptype
+instance Serialise ptype => HasBinaryBlockInfo (TestBlockWith ptype) where
+  getBinaryBlockInfo blk = BinaryBlockInfo {
+        headerOffset = 0
+      , headerSize   = fromIntegral . BL.length . serialise $ blk
+      }
+
+instance (Serialise ptype, PayloadSemantics ptype) => SerialiseDiskConstraints (TestBlockWith ptype)

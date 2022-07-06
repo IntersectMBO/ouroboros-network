@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TupleSections              #-}
 
 -- | Logical time (in terms of abstract " ticks ")
 --
@@ -19,9 +20,12 @@ module Test.Util.LogicalClock (
   , blockUntilTick
   , onTick
   , tickWatcher
+    -- * Utilities
+  , tickTracer
   ) where
 
 import           Control.Monad
+import           Control.Tracer (Tracer, contramapM)
 import           Data.Time (NominalDiffTime)
 import           Data.Word
 import           GHC.Stack
@@ -121,6 +125,18 @@ blockUntilTick clock tick = atomically $ do
     else do
       when (now < tick) retry
       return False
+
+{-------------------------------------------------------------------------------
+  Utilities
+-------------------------------------------------------------------------------}
+
+tickTracer ::
+     MonadSTM m
+  => LogicalClock m
+  -> Tracer m (Tick, ev)
+  -> Tracer m ev
+tickTracer clock = contramapM $ \ev ->
+    (,ev) <$> atomically (getCurrentTick clock)
 
 {-------------------------------------------------------------------------------
   Internal
