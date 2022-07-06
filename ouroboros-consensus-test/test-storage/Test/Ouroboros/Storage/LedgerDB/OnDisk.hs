@@ -100,15 +100,19 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
 tests :: TestTree
 tests = testGroup "OnDisk"
-    [ TTT.traceableProperty "LedgerSimple-InMem" $ \showTrace ->
-        prop_sequential 1000000  $ inMemDbEnv showTrace
-    , TTT.traceableProperty "LedgerSimple-LMDB"  $ \showTrace ->
-        -- FIXME: we test 1000 cases since the LMDB version of this property test
-        -- takes an unreasonable amount of time to finish. At the moment, a 1000
-        -- property tests that exercise an LMDB backing store will take ~3
-        -- minutes to run.
-        prop_sequential 1000     $ lmdbDbEnv showTrace testLMDBLimits
-    ]
+  [ TTT.withResourceTraceable'
+      inMemDbEnv
+      dbCleanup
+      (TTT.testPropertyTraceable' "LedgerSimple-InMem" . prop_sequential 1000000)
+  , -- FIXME: we test 1000 cases since the LMDB version of this property test
+    -- takes an unreasonable amount of time to finish. At the moment, a 1000
+    -- property tests that exercise an LMDB backing store will take ~3
+    -- minutes to run.
+    TTT.withResourceTraceable'
+      (flip lmdbDbEnv testLMDBLimits)
+      dbCleanup
+      (TTT.testPropertyTraceable' "LedgerSimple-LMDB" . prop_sequential 1000)
+  ]
 
 testLMDBLimits :: LMDB.LMDBLimits
 testLMDBLimits = LMDB.LMDBLimits
@@ -857,7 +861,6 @@ runMock cmd initMock =
 -- | Arguments required by 'StandaloneDB'
 data DbEnv m = DbEnv {
       dbHasFS                :: !(SomeHasFS m)
-    , dbSecParam             :: !SecurityParam
     , dbBackingStoreSelector :: !(BackingStoreSelector m)
     , dbTracer               :: !(Trace.Tracer m LMDB.TraceDb)
     , dbCleanup              :: !(m ())
@@ -871,6 +874,7 @@ data DbEnv m = DbEnv {
 data StandaloneDB m = DB {
       -- | Arguments
       dbEnv         :: DbEnv m
+    , dbSecParam    :: !SecurityParam
 
       -- | Block storage
       --
@@ -898,8 +902,8 @@ data StandaloneDB m = DB {
     , sdbBackingStoreSelector :: BackingStoreSelector m
     }
 
-initStandaloneDB :: forall m. (Trans.MonadIO m, IOLike m) => DbEnv m -> m (StandaloneDB m)
-initStandaloneDB dbEnv@DbEnv{..} = do
+initStandaloneDB :: forall m. (Trans.MonadIO m, IOLike m) => DbEnv m -> SecurityParam -> m (StandaloneDB m)
+initStandaloneDB dbEnv@DbEnv{..} dbSecParam = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
     dbBackingStore <- uncheckedNewTVarM
@@ -1416,12 +1420,12 @@ sm secParam db = StateMachine {
 prop_sequential ::
      Int
      -- ^ Number of tests to run
-  -> (SecurityParam -> IO (DbEnv IO))
+  -> IO (DbEnv IO)
   -> SecurityParam
   -> QC.Property
 prop_sequential maxSuccess mkDbEnv secParam = QC.withMaxSuccess maxSuccess $
   forAllCommands (sm secParam dbUnused) Nothing $ \cmds ->
-    QC.monadicIO $ QC.run (mkDbEnv secParam) >>= \e -> propCmds e cmds
+    QC.monadicIO $ QC.run mkDbEnv >>= \e -> propCmds e secParam cmds
 
 mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
 mkDbTracer (TTT.ShowTrace b)
@@ -1430,9 +1434,8 @@ mkDbTracer (TTT.ShowTrace b)
 
 inMemDbEnv :: Trans.MonadIO m
   => TTT.ShowTrace
-  -> SecurityParam
   -> m (DbEnv IO)
-inMemDbEnv showTrace dbSecParam = Trans.liftIO $ do
+inMemDbEnv showTrace = Trans.liftIO $ do
   fs <- uncheckedNewTVarM MockFS.empty
   let
     dbHasFS = SomeHasFS $ simHasFS fs
@@ -1444,9 +1447,8 @@ inMemDbEnv showTrace dbSecParam = Trans.liftIO $ do
 lmdbDbEnv :: Trans.MonadIO m
   => TTT.ShowTrace
   -> LMDB.LMDBLimits
-  -> SecurityParam
   -> m (DbEnv IO)
-lmdbDbEnv showTrace limits dbSecParam = do
+lmdbDbEnv showTrace limits = do
   (dbHasFS, dbCleanup) <- Trans.liftIO $ do
       systmpdir <- Dir.getTemporaryDirectory
       tmpdir <- Temp.createTempDirectory systmpdir "init_standalone_db"
@@ -1459,11 +1461,11 @@ lmdbDbEnv showTrace limits dbSecParam = do
 -- Ideally we'd like to use @IOSim s@ instead of IO, but unfortunately
 -- QSM requires monads that implement MonadIO.
 propCmds :: DbEnv IO
+         -> SecurityParam
          -> QSM.Commands (At Cmd) (At Resp)
          -> QC.PropertyM IO ()
-propCmds dbEnv cmds = do
-    let secParam =  dbSecParam dbEnv
-    db <- QC.run $ initStandaloneDB dbEnv
+propCmds dbEnv secParam cmds = do
+    db <- QC.run $ initStandaloneDB dbEnv secParam
     let sm' = sm secParam db
     (hist, _model, res) <- runCommands sm' cmds
     prettyCommands sm' hist
