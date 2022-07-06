@@ -46,7 +46,7 @@ import           Data.Functor.Classes
 import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust)
+import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.TreeDiff.Class (genericToExpr)
@@ -64,7 +64,7 @@ import qualified Test.QuickCheck.Random as QC
 import           Test.StateMachine hiding (showLabelledExamples)
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
-import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty (TestTree, testGroup, askOption)
 import qualified Test.Util.Tasty.Traceable as TTT
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -99,19 +99,13 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 -------------------------------------------------------------------------------}
 
 tests :: TestTree
-tests = testGroup "OnDisk"
-  [ TTT.withResourceTraceable'
-      inMemDbEnv
-      dbCleanup
-      (TTT.testPropertyTraceable' "LedgerSimple-InMem" . prop_sequential 1000000)
+tests = askOption $ \showTrace -> testGroup "OnDisk"
+  [ TTT.testPropertyTraceable' "LedgerSimple-InMem" $ prop_sequential 1000000 (inMemDbEnv showTrace)
   , -- FIXME: we test 1000 cases since the LMDB version of this property test
     -- takes an unreasonable amount of time to finish. At the moment, a 1000
     -- property tests that exercise an LMDB backing store will take ~3
     -- minutes to run.
-    TTT.withResourceTraceable'
-      (flip lmdbDbEnv testLMDBLimits)
-      dbCleanup
-      (TTT.testPropertyTraceable' "LedgerSimple-LMDB" . prop_sequential 1000)
+    TTT.testPropertyTraceable' "LedgerSimple-LMDB" $ prop_sequential 1000 (lmdbDbEnv showTrace testLMDBLimits)
   ]
 
 testLMDBLimits :: LMDB.LMDBLimits
@@ -1472,10 +1466,71 @@ propCmds dbEnv secParam cmds = do
       $ QC.tabulate
           "Tags"
           (map show $ tagEvents secParam (execCmds secParam cmds))
+      $ QC.tabulate
+          "Types of commands"
+          (map show cts)
+      $ QC.tabulate
+          "How many commands"
+          [show $ length cts]
+      $ tabulateCount counter CTagFlush
+      $ tabulateCount counter CTagSnap
+      $ tabulateCount counter CTagRestore
       $ res QC.=== Ok
+  where
+    cts = tagEvents' (execCmds secParam cmds)
+    counter = count cts
 
 dbUnused :: StandaloneDB IO
 dbUnused = error "DB unused during command generation"
+
+{-------------------------------------------------------------------------------
+  Command labelling
+-------------------------------------------------------------------------------}
+
+newtype Counter = Counter { unCounter :: Map CmdTag Int }
+
+instance Semigroup Counter where
+  Counter c1 <> Counter c2 = Counter $ Map.unionWith (+) c1 c2
+
+instance Monoid Counter where
+  mempty = Counter $ Map.fromList [(ct,0) | ct <- [minBound, maxBound]]
+
+count :: [CmdTag] -> Counter
+count = mconcat . map (Counter . flip Map.singleton 1)
+
+tabulateCount :: QC.Testable prop => Counter -> CmdTag -> prop -> QC.Property
+tabulateCount counter ct = QC.tabulate ("Nr of " <> show ct) [show $ getCount counter ct]
+
+getCount :: Counter -> CmdTag -> Int
+getCount ctr ct = fromMaybe 0 $ unCounter ctr Map.!? ct
+
+newtype NrRestores = NrRestores Int
+  deriving stock (Show, Eq)
+
+data CmdTag =
+    CTagCurrent
+  | CTagPush
+  | CTagSwitch
+  | CTagSnap
+  | CTagFlush
+  | CTagRestore
+  | CTagCorrupt
+  | CTagDrop
+  deriving stock (Show, Eq, Ord, Enum, Bounded)
+
+tagCmd :: At Cmd Symbolic -> CmdTag
+tagCmd (At cmd) = case cmd of
+  Current     -> CTagCurrent
+  Push _      -> CTagPush
+  Switch _ _  -> CTagSwitch
+  Snap        -> CTagSnap
+  Flush       -> CTagFlush
+  Restore     -> CTagRestore
+  Corrupt _ _ -> CTagCorrupt
+  Drop _      -> CTagDrop
+
+tagEvents' :: [Event Symbolic] -> [CmdTag]
+tagEvents' = map (tagCmd . eventCmd)
 
 {-------------------------------------------------------------------------------
   Event labelling
