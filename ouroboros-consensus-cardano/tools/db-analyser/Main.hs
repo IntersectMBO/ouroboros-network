@@ -19,7 +19,6 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
@@ -258,7 +257,7 @@ analyse ::
      , Show (Header blk)
      , HasAnalysis blk
      , HasProtocolInfo blk
-     , LedgerSupportsMempool.HasTxs blk
+     -- , LedgerSupportsMempool.HasTxs blk
      )
   => CmdLine
   -> Args blk
