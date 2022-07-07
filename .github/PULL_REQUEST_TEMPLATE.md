@@ -1,5 +1,16 @@
 # Description
 
+<!-- CI flakiness -- delete this before opening a PR
+
+Sadly, some CI checks are currently flaky. Right now, this includes:
+
+ - GH Actions Windows job runs out of memory, e.g. in https://github.com/input-output-hk/ouroboros-network/runs/7231748864?check_suite_focus=true
+ 
+ - The Hydra check for test-storage on Windows (mingwW64) fails with inscrutable malloc-related error messages: https://hydra.iohk.io/build/16260881/nixlog/1
+
+If you encounter one of these, try restarting the job to see if the failure vanishes. If it does not or when in doubt, consider posting in the #network or #consensus channels on Slack.
+-->
+
 _description of the pull request, if it fixes a particular issue it should link
 the PR to a particular issue, see
 [ref](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword=)_
