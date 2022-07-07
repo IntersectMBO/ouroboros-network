@@ -34,8 +34,7 @@ import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM, atomically), MonadTraceSTM, StrictTVar,
-                     newTVar)
+                     MonadSTM (STM), MonadTraceSTM, StrictTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -44,7 +43,6 @@ import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (nullTracer)
 
 import           Data.IP (IP (..))
-import qualified Data.IntPSQ as IntPSQ
 import           Data.Map (Map)
 import           Data.Set (Set)
 import qualified Data.Text as Text
@@ -64,7 +62,7 @@ import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (newPeerMetric)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..),
                      RelayAccessPoint (..))
@@ -165,9 +163,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
-        peerMetrics  <- atomically $ PeerMetrics
-          <$> newTVar IntPSQ.empty
-          <*> newTVar IntPSQ.empty
+        peerMetrics <- newPeerMetric
         let -- diffusion interfaces
             interfaces :: Diff.P2P.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                               (NtCFD m) NtCAddr NtCVersion NtCVersionData

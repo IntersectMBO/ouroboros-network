@@ -153,16 +153,13 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     let rng = mkStdGen seed
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
-    hVar <- newTVarIO apaHeaderMetric
-    fVar <- newTVarIO apaFetchedMetric
-
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
 
     let policies = simplePeerSelectionPolicy
                         rngVar
                         (readTVar cmVar)
                         metrics
                         (ReconnectDelay 10)
-        metrics = PeerMetrics hVar fVar
     picked <- atomically $ policyPickHotPeersToDemote policies
                   (const PeerSourceLocalRoot)
                   peerConnectFailCount
@@ -209,7 +206,7 @@ prop_randomDemotion :: ArbitraryPolicyArguments
 prop_randomDemotion args seed = runSimOrThrow $ prop_randomDemotionM args seed
 
 
--- Verifies that Tepid (formely hot) or failing peers are more likely to get
+-- Verifies that Tepid (formerly hot) or failing peers are more likely to get
 -- demoted/forgotten.
 prop_randomDemotionM :: forall m.
                         ( MonadSTM m
@@ -222,16 +219,13 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
     let rng = mkStdGen seed
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
-    hVar <- newTVarIO apaHeaderMetric
-    fVar <- newTVarIO apaFetchedMetric
-
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
 
     let policies = simplePeerSelectionPolicy
                         rngVar
                         (readTVar cmVar)
                         metrics
                         (ReconnectDelay 10)
-        metrics = PeerMetrics hVar fVar
     doDemotion numberOfTries policies Map.empty
 
 
