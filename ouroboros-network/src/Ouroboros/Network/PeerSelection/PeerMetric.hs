@@ -9,8 +9,6 @@ module Ouroboros.Network.PeerSelection.PeerMetric
   ( -- * Peer metrics
     PeerMetrics
   , newPeerMetric
-  , getHeaderMetrics
-  , getFetchedMetrics
     -- * Metric calculations
   , upstreamyness
   , fetchynessBytes
@@ -163,21 +161,6 @@ metricsTracer getMetrics writeMetrics = Tracer $ \(TraceLabelPeer !peer (!slot, 
                 else writeMetrics (Pq.insert (slotMetricKey slot) slot (peer, time) metrics)
 
 
-getHeaderMetrics
-    :: MonadSTM m
-    => PeerMetrics m p
-    -> STM m (SlotMetric p)
-getHeaderMetrics PeerMetrics{peerMetricsVar} =
-    headerMetrics <$> readTVar peerMetricsVar
-
-getFetchedMetrics
-    :: MonadSTM m
-    => PeerMetrics m p
-    -> STM m (SlotMetric (p, SizeInBytes))
-getFetchedMetrics PeerMetrics{peerMetricsVar} =
-    fetchedMetrics <$> readTVar peerMetricsVar
-
-
 --
 -- Metrics
 --
@@ -190,10 +173,22 @@ getFetchedMetrics PeerMetrics{peerMetricsVar} =
 -- to present us with a block/header.
 --
 upstreamyness
-    :: forall p.  ( Ord p )
-    => SlotMetric p
+    :: forall p m.
+       MonadSTM m
+    => Ord p
+    => PeerMetrics m p
+    -> STM m (Map p Int)
+upstreamyness PeerMetrics {peerMetricsVar} =
+    upstreamynessImpl <$> readTVar peerMetricsVar
+
+
+upstreamynessImpl
+    :: forall p.
+       Ord p
+    => PeerMetricsState p
     -> Map p Int
-upstreamyness = Pq.fold' count Map.empty
+upstreamynessImpl PeerMetricsState { headerMetrics } =
+    Pq.fold' count Map.empty headerMetrics
   where
     count :: Int
           -> SlotNo
@@ -212,10 +207,21 @@ upstreamyness = Pq.fold' count Map.empty
 -- peer.
 --
 fetchynessBytes
-    :: forall p.  ( Ord p )
-    => SlotMetric (p, SizeInBytes)
+    :: forall p m.
+       MonadSTM m
+    => Ord p
+    => PeerMetrics m p
+    -> STM m (Map p Int)
+fetchynessBytes PeerMetrics {peerMetricsVar} =
+    fetchynessBytesImpl <$> readTVar peerMetricsVar
+
+fetchynessBytesImpl
+    :: forall p.
+       Ord p
+    => PeerMetricsState p
     -> Map p Int
-fetchynessBytes = Pq.fold' count Map.empty
+fetchynessBytesImpl PeerMetricsState { fetchedMetrics } =
+    Pq.fold' count Map.empty fetchedMetrics
   where
     count :: Int
           -> SlotNo
@@ -234,10 +240,21 @@ fetchynessBytes = Pq.fold' count Map.empty
 -- we downloaded a block from.
 --
 fetchynessBlocks
-    :: forall p.  ( Ord p )
-    => SlotMetric (p, SizeInBytes)
+    :: forall p m.
+       MonadSTM m
+    => Ord p
+    => PeerMetrics m p
+    -> STM m (Map p Int)
+fetchynessBlocks PeerMetrics {peerMetricsVar} =
+    fetchynessBlocksImpl <$> readTVar peerMetricsVar
+
+fetchynessBlocksImpl
+    :: forall p.
+       Ord p
+    => PeerMetricsState p
     -> Map p Int
-fetchynessBlocks = Pq.fold' count Map.empty
+fetchynessBlocksImpl PeerMetricsState { fetchedMetrics } =
+    Pq.fold' count Map.empty fetchedMetrics
   where
     count :: Int
           -> SlotNo
