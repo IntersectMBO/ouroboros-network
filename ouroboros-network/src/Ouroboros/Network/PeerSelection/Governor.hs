@@ -657,8 +657,7 @@ peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelec
       -- Short delay, we may have no active peers right now
       threadDelay 1
 
-      -- Pick new active peer(s) based on the best performing established
-      -- peers.
+      -- Pick new active peer(s).
       atomically $ increaseActivePeers churnMode
 
       -- Give the promotion process time to start

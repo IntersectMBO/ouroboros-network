@@ -34,7 +34,7 @@ deactivateTimeout = 300
 -- | Timeout for 'spsCloseConnectionTimeout'.
 --
 -- This timeout depends on 'KeepAlive' and 'TipSample' timeouts.  'KeepAlive'
--- keeps agancy most of the time, but 'TipSample' can give away its agency for
+-- keeps agency most of the time, but 'TipSample' can give away its agency for
 -- longer periods of time.  Here we allow it to get 6 blocks (assuming a new
 -- block every @20s@).
 --
@@ -103,7 +103,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
              . Map.assocs
              $ available'
 
-    -- Randomly pick peers to demote, peeers with knownPeerTepid set are twice
+    -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
     -- as likely to be demoted.
     warmDemotionPolicy :: PickPolicy peerAddr m
     warmDemotionPolicy _ _ isTepid available pickNum = do
