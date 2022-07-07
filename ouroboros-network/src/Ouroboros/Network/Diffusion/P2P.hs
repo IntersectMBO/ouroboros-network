@@ -95,7 +95,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      PeerSelectionCounters (..), TracePeerSelection (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), withPeerStateActions)
