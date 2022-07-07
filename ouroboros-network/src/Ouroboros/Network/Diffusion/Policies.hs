@@ -88,12 +88,12 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
         mode <- getChurnMode
         scores <- case mode of
                        ChurnModeNormal -> do
-                           hup <- upstreamyness <$> getHeaderMetrics metrics
-                           bup <- fetchynessBlocks <$> getFetchedMetrics metrics
+                           hup <- upstreamyness metrics
+                           bup <- fetchynessBlocks metrics
                            return $ Map.unionWith (+) hup bup
 
                        ChurnModeBulkSync ->
-                           fetchynessBytes <$> getFetchedMetrics metrics
+                           fetchynessBytes metrics
         available' <- addRand available (,)
         return $ Set.fromList
              . map fst
