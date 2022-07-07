@@ -78,7 +78,6 @@ library
 
   build-depends:       base              >=4.9 && <4.15
                      , base16-bytestring
-                     , binary
                      , bytestring        >=0.10  && <0.11
                      , cardano-crypto-class
                      , cardano-prelude
@@ -143,7 +142,6 @@ test-suite test-consensus
                        Test.Consensus.HardFork.Combinator
                        Test.Consensus.HardFork.Combinator.A
                        Test.Consensus.HardFork.Combinator.B
-                       Test.Consensus.MiniProtocol.BlockFetch.Client
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
@@ -163,7 +161,6 @@ test-suite test-consensus
                      , contra-tracer
                      , directory
                      , generics-sop
-                     , hashable
                      , mtl
                      , nothunks
                      , QuickCheck
@@ -176,7 +173,6 @@ test-suite test-consensus
                      , tasty-quickcheck
                      , temporary
                      , time
-                     , transformers
                      , tree-diff
 
                      , io-classes

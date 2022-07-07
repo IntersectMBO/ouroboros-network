@@ -254,7 +254,6 @@ data BlockFetchConfiguration =
          -- | Salt used when comparing peers
          bfcSalt                   :: !Int
      }
-     deriving (Show)
 
 -- | Execute the block fetch logic. It monitors the current chain and candidate
 -- chains. It decided which block bodies to fetch and manages the process of
