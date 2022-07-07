@@ -33,9 +33,6 @@ import           Ouroboros.Consensus.Block.RealPoint
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-                     (LedgerSupportsMempool)
-import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
@@ -79,11 +76,11 @@ data AnalysisName =
 runAnalysis ::
      forall blk .
      ( HasAnalysis blk
-     , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
-     , LedgerSupportsMempool.HasTxs blk
-     , LedgerSupportsMempool blk
-     , LedgerSupportsProtocol blk
-     , LgrDbSerialiseConstraints blk
+     -- , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
+     -- , LedgerSupportsMempool.HasTxs blk
+     -- , LedgerSupportsMempool blk
+     -- , LedgerSupportsProtocol blk
+     -- , LgrDbSerialiseConstraints blk
      )
   => AnalysisName -> Analysis blk
 runAnalysis analysisName env@AnalysisEnv{ tracer } = do
@@ -101,7 +98,7 @@ runAnalysis analysisName env@AnalysisEnv{ tracer } = do
     go CountBlocks                 = countBlocks env
     go (CheckNoThunksEvery nBks)   = checkNoThunksEvery nBks env
     go TraceLedgerProcessing       = traceLedgerProcessing env
-    go (ReproMempoolAndForge nBks) = reproMempoolForge nBks env
+    go (ReproMempoolAndForge _)    = error "MempoolForge was disabled for UTxO-HD" -- reproMempoolForge nBks env
 
 type Analysis blk = AnalysisEnv IO blk -> IO ()
 
@@ -506,19 +503,19 @@ traceLedgerProcessing
   Analysis: reforge the blocks, via the mempool
 -------------------------------------------------------------------------------}
 
-data ReproMempoolForgeHowManyBlks = ReproMempoolForgeOneBlk | ReproMempoolForgeTwoBlks
+-- data ReproMempoolForgeHowManyBlks = ReproMempoolForgeOneBlk | ReproMempoolForgeTwoBlks
 
-reproMempoolForge ::
-  forall blk.
-  ( HasAnalysis blk
-  , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
-  , LedgerSupportsMempool.HasTxs blk
-  , LedgerSupportsMempool blk
-  , LedgerSupportsProtocol blk
-  ) =>
-  Int ->
-  Analysis blk
-reproMempoolForge numBlks env = undefined -- do
+-- reproMempoolForge ::
+--   forall blk.
+--   ( HasAnalysis blk
+--   , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
+--   , LedgerSupportsMempool.HasTxs blk
+--   , LedgerSupportsMempool blk
+--   , LedgerSupportsProtocol blk
+--   ) =>
+--   Int ->
+--   Analysis blk
+-- reproMempoolForge numBlks env = undefined -- do
   --   howManyBlocks <- case numBlks of
   --     1 -> pure ReproMempoolForgeOneBlk
   --     2 -> pure ReproMempoolForgeTwoBlks
