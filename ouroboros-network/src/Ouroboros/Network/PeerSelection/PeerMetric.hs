@@ -30,10 +30,36 @@ maxEntriesToTrack = 180
 
 type SlotMetric p = IntPSQ SlotNo (p, Time)
 
-data PeerMetrics m p = PeerMetrics {
-    headerMetrics  :: StrictTVar m (SlotMetric p)
-  , fetchedMetrics :: StrictTVar m (SlotMetric (p, SizeInBytes))
+-- | Mutable peer metrics state accessible via 'STM'.
+--
+newtype PeerMetrics m p = PeerMetrics {
+    peerMetricsVar :: StrictTVar m (PeerMetricsState p)
   }
+
+-- | Internal state
+--
+data PeerMetricsState p = PeerMetricsState {
+    headerMetrics  :: SlotMetric p
+  , fetchedMetrics :: SlotMetric (p, SizeInBytes)
+  }
+
+
+newPeerMetric
+    :: MonadSTM m
+    => m (PeerMetrics m p)
+newPeerMetric = newPeerMetric' Pq.empty Pq.empty
+
+
+newPeerMetric'
+    :: MonadSTM m
+    => SlotMetric p
+    -> SlotMetric (p, SizeInBytes)
+    -> m (PeerMetrics m p)
+newPeerMetric' headerMetrics fetchedMetrics =
+  PeerMetrics <$> newTVarIO PeerMetricsState {
+                                headerMetrics,
+                                fetchedMetrics
+                              }
 
 reportMetric
     :: forall m p.
@@ -58,10 +84,14 @@ headerMetricTracer
        ( MonadSTM m )
     => PeerMetrics m p
     -> Tracer (STM m) (TraceLabelPeer (ConnectionId p) (SlotNo, Time))
-headerMetricTracer PeerMetrics{headerMetrics} =
+headerMetricTracer PeerMetrics{peerMetricsVar} =
     (\(TraceLabelPeer con d) -> TraceLabelPeer (remoteAddress con) d)
     `contramap`
-    metricsTracer headerMetrics
+    metricsTracer
+      (headerMetrics <$> readTVar peerMetricsVar)
+      (\headerMetrics -> modifyTVar peerMetricsVar
+                                    (\metrics -> metrics { headerMetrics }))
+
 
 fetchedMetricTracer
     :: forall m p.
@@ -72,31 +102,22 @@ fetchedMetricTracer
                                       , SlotNo
                                       , Time
                                       ))
-fetchedMetricTracer PeerMetrics{fetchedMetrics} =
+fetchedMetricTracer PeerMetrics{peerMetricsVar} =
     (\(TraceLabelPeer con (bytes, slot, time)) ->
        TraceLabelPeer (remoteAddress con, bytes) (slot, time))
     `contramap`
-     metricsTracer fetchedMetrics
-
-
-getHeaderMetrics
-    :: MonadSTM m
-    => PeerMetrics m p
-    -> STM m (SlotMetric p)
-getHeaderMetrics PeerMetrics{headerMetrics} = readTVar headerMetrics
-
-getFetchedMetrics
-    :: MonadSTM m
-    => PeerMetrics m p
-    -> STM m (SlotMetric (p, SizeInBytes))
-getFetchedMetrics PeerMetrics{fetchedMetrics} = readTVar fetchedMetrics
+     metricsTracer
+       (fetchedMetrics <$> readTVar peerMetricsVar)
+       (\fetchedMetrics -> modifyTVar peerMetricsVar
+                                      (\metrics -> metrics { fetchedMetrics }))
 
 metricsTracer
     :: forall m p.  ( MonadSTM m )
-    => StrictTVar m (SlotMetric p)
+    => STM m (SlotMetric p)       -- ^ read metrics
+    -> (SlotMetric p -> STM m ()) -- ^ update metrics
     -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
-metricsTracer metricsVar = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
-    metrics <- readTVar metricsVar
+metricsTracer getMetrics writeMetrics = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
+    metrics <- getMetrics
     case Pq.lookup (slotMetricKey slot) metrics of
          Nothing -> do
              let metrics' = Pq.insert (slotMetricKey slot) slot (peer, time) metrics
@@ -107,23 +128,32 @@ metricsTracer metricsVar = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
                        Just (_, minSlotNo, _, metrics'') ->
                             if minSlotNo == slot
                                then return ()
-                               else writeTVar metricsVar metrics''
-             else writeTVar metricsVar metrics'
+                               else writeMetrics metrics''
+             else writeMetrics metrics'
          Just (_, (_, oldTime)) ->
              if oldTime <= time
                 then return ()
-                else writeTVar metricsVar (Pq.insert (slotMetricKey slot) slot (peer, time) metrics)
+                else writeMetrics (Pq.insert (slotMetricKey slot) slot (peer, time) metrics)
 
-newPeerMetric
+
+getHeaderMetrics
     :: MonadSTM m
-    => m (PeerMetrics m p)
-newPeerMetric = do
-  hs <- newTVarIO Pq.empty
-  bs <- newTVarIO Pq.empty
-  return $ PeerMetrics hs bs
+    => PeerMetrics m p
+    -> STM m (SlotMetric p)
+getHeaderMetrics PeerMetrics{peerMetricsVar} =
+    headerMetrics <$> readTVar peerMetricsVar
 
--- Returns a Map which counts the number of times a given peer
--- was the first to present us with a block/header.
+getFetchedMetrics
+    :: MonadSTM m
+    => PeerMetrics m p
+    -> STM m (SlotMetric (p, SizeInBytes))
+getFetchedMetrics PeerMetrics{peerMetricsVar} =
+    fetchedMetrics <$> readTVar peerMetricsVar
+
+
+-- | Returns a Map which counts the number of times a given peer was the first
+-- to present us with a block/header.
+--
 upstreamyness
     :: forall p.  ( Ord p )
     => SlotMetric p
