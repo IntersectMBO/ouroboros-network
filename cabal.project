@@ -18,6 +18,7 @@ packages: ./ouroboros-network-testing
           ./ouroboros-consensus-shelley
           ./ouroboros-consensus-shelley-test
           ./ouroboros-consensus-test
+          ./ouroboros-consensus-cardano-tools
           ./ntp-client
           ./cardano-client
 
@@ -79,6 +80,9 @@ package ouroboros-consensus-cardano
   flags: +asserts
 
 package ouroboros-consensus-cardano-test
+  tests: True
+
+package ouroboros-consensus-cardano-tools
   tests: True
 
 
