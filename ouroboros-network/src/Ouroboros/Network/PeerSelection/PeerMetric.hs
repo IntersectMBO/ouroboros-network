@@ -30,7 +30,7 @@ import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 import           Data.IntPSQ (IntPSQ)
-import qualified Data.IntPSQ as Pq
+import qualified Data.IntPSQ as IntPSQ
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
@@ -66,7 +66,7 @@ data PeerMetricsState p = PeerMetricsState {
 newPeerMetric
     :: MonadSTM m
     => m (PeerMetrics m p)
-newPeerMetric = newPeerMetric' Pq.empty Pq.empty
+newPeerMetric = newPeerMetric' IntPSQ.empty IntPSQ.empty
 
 
 newPeerMetric'
@@ -143,12 +143,12 @@ metricsTracer
     -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
 metricsTracer getMetrics writeMetrics = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
     metrics <- getMetrics
-    case Pq.lookup (slotMetricKey slot) metrics of
+    case IntPSQ.lookup (slotMetricKey slot) metrics of
          Nothing -> do
-             let metrics' = Pq.insert (slotMetricKey slot) slot (peer, time) metrics
-             if Pq.size metrics' > maxEntriesToTrack
+             let metrics' = IntPSQ.insert (slotMetricKey slot) slot (peer, time) metrics
+             if IntPSQ.size metrics' > maxEntriesToTrack
                 then
-                  case Pq.minView metrics' of
+                  case IntPSQ.minView metrics' of
                        Nothing -> error "impossible empty pq" -- We just inserted an element!
                        Just (_, minSlotNo, _, metrics'') ->
                             if minSlotNo == slot
@@ -158,7 +158,7 @@ metricsTracer getMetrics writeMetrics = Tracer $ \(TraceLabelPeer !peer (!slot, 
          Just (_, (_, oldTime)) ->
              if oldTime <= time
                 then return ()
-                else writeMetrics (Pq.insert (slotMetricKey slot) slot (peer, time) metrics)
+                else writeMetrics (IntPSQ.insert (slotMetricKey slot) slot (peer, time) metrics)
 
 
 --
@@ -188,7 +188,7 @@ upstreamynessImpl
     => PeerMetricsState p
     -> Map p Int
 upstreamynessImpl PeerMetricsState { headerMetrics } =
-    Pq.fold' count Map.empty headerMetrics
+    IntPSQ.fold' count Map.empty headerMetrics
   where
     count :: Int
           -> SlotNo
@@ -221,7 +221,7 @@ fetchynessBytesImpl
     => PeerMetricsState p
     -> Map p Int
 fetchynessBytesImpl PeerMetricsState { fetchedMetrics } =
-    Pq.fold' count Map.empty fetchedMetrics
+    IntPSQ.fold' count Map.empty fetchedMetrics
   where
     count :: Int
           -> SlotNo
@@ -254,7 +254,7 @@ fetchynessBlocksImpl
     => PeerMetricsState p
     -> Map p Int
 fetchynessBlocksImpl PeerMetricsState { fetchedMetrics } =
-    Pq.fold' count Map.empty fetchedMetrics
+    IntPSQ.fold' count Map.empty fetchedMetrics
   where
     count :: Int
           -> SlotNo
