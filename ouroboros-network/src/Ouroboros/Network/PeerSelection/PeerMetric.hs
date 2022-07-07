@@ -5,7 +5,28 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-module Ouroboros.Network.PeerSelection.PeerMetric where
+module Ouroboros.Network.PeerSelection.PeerMetric
+  ( -- * Peer metrics
+    PeerMetrics
+  , newPeerMetric
+  , getHeaderMetrics
+  , getFetchedMetrics
+    -- * Metric calculations
+  , upstreamyness
+  , fetchynessBytes
+  , fetchynessBlocks
+    -- * Tracers
+  , headerMetricTracer
+  , fetchedMetricTracer
+    -- * Metrics reporters
+  , ReportPeerMetrics (..)
+  , nullMetric
+  , reportMetric
+    -- * Internals
+    -- only exported for testing purposes
+  , SlotMetric
+  , newPeerMetric'
+  ) where
 
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
@@ -76,9 +97,13 @@ nullMetric
 nullMetric =
   ReportPeerMetrics nullTracer nullTracer
 
+
 slotMetricKey :: SlotNo -> Int
 slotMetricKey (SlotNo s) = fromIntegral s
 
+
+-- | Tracer which updates header metrics (upstreameness).
+--
 headerMetricTracer
     :: forall m p.
        ( MonadSTM m )
@@ -93,6 +118,8 @@ headerMetricTracer PeerMetrics{peerMetricsVar} =
                                     (\metrics -> metrics { headerMetrics }))
 
 
+-- | Tracer which updates fetched metrics (fetchyness).
+--
 fetchedMetricTracer
     :: forall m p.
        ( MonadSTM m )
@@ -151,6 +178,14 @@ getFetchedMetrics PeerMetrics{peerMetricsVar} =
     fetchedMetrics <$> readTVar peerMetricsVar
 
 
+--
+-- Metrics
+--
+-- * upstreameness
+-- * fetchyness by blocks
+-- * fetchyness by bytes
+--
+
 -- | Returns a Map which counts the number of times a given peer was the first
 -- to present us with a block/header.
 --
@@ -173,8 +208,9 @@ upstreamyness = Pq.fold' count Map.empty
         fn (Just c) = Just $! c + 1
 
 
--- Returns a Map which counts the number of bytes downloaded
--- for a given peer.
+-- | Returns a Map which counts the number of bytes downloaded for a given
+-- peer.
+--
 fetchynessBytes
     :: forall p.  ( Ord p )
     => SlotMetric (p, SizeInBytes)
@@ -193,8 +229,10 @@ fetchynessBytes = Pq.fold' count Map.empty
         fn Nothing         = Just $ fromIntegral bytes
         fn (Just oldBytes) = Just $! oldBytes + fromIntegral bytes
 
--- Returns a Map which counts the number of times a given peer
--- was the first we downloaded a block from.
+
+-- | Returns a Map which counts the number of times a given peer was the first
+-- we downloaded a block from.
+--
 fetchynessBlocks
     :: forall p.  ( Ord p )
     => SlotMetric (p, SizeInBytes)
