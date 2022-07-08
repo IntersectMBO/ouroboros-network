@@ -51,7 +51,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbChangelog
   , ledgerDbCurrent
   , ledgerDbFlush
-  , ledgerDbLastFlushState
+  , ledgerDbLastFlushedState
   , ledgerDbPast
   , ledgerDbPrefix
   , ledgerDbPrune
@@ -661,13 +661,13 @@ ledgerDbAnchor =
 --
 -- PRECONDITION: if you are running the legacy ledger, then you must flush
 -- before calling this function
-ledgerDbLastFlushState :: forall l.
+ledgerDbLastFlushedState :: forall l.
      ( StandardHash (l EmptyMK)
      , GetTip (l EmptyMK)
      , StowableLedgerTables l
      )
   => LedgerDB l -> l EmptyMK
-ledgerDbLastFlushState db =
+ledgerDbLastFlushedState db =
     case stuffedLegacyAnchor of
       Nothing  -> immAnchor
       Just sla -> Exn.assert (isFlushed sla) sla

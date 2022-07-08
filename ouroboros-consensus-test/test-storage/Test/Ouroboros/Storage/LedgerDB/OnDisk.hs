@@ -579,7 +579,7 @@ data Mock = Mock {
       -- | Current state the snapshots
     , mockSnaps              :: MockSnaps
 
-      -- | Point at which a immutable tip in the sequence of ledger states was
+      -- | Point at which an immutable tip in the sequence of ledger states was
       -- flushed to disk
       --
       -- The latest flushed point does not necessarily correspond to the point

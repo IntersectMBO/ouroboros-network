@@ -992,7 +992,7 @@ takeSnapshot tracer hasFS backingStore encLedger db =
           return $ Just (snapshot, tip)
   where
     lastFlushed :: ExtLedgerState blk EmptyMK
-    lastFlushed = ledgerDbLastFlushState db
+    lastFlushed = ledgerDbLastFlushedState db
 
 -- | Write snapshot to disk
 writeSnapshot ::
