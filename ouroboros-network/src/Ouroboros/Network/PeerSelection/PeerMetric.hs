@@ -8,6 +8,7 @@
 module Ouroboros.Network.PeerSelection.PeerMetric
   ( -- * Peer metrics
     PeerMetrics
+  , PeerMetricsConfiguration (..)
   , newPeerMetric
     -- * Metric calculations
   , upstreamyness
@@ -40,11 +41,14 @@ import           Ouroboros.Network.NodeToNode (ConnectionId (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
 
 
--- The maximum numbers of slots we will store data for.
--- On some chains sometimes this corresponds to 1h
--- worth of metrics *sighs*.
-maxEntriesToTrack :: Int
-maxEntriesToTrack = 180
+newtype PeerMetricsConfiguration = PeerMetricsConfiguration {
+      -- | The maximum numbers of slots we will store data for.  On some chains
+      -- sometimes this corresponds to 1h worth of metrics *sighs*.
+      --
+      -- this number MUST correspond to number of headers / blocks which are
+      -- produced in one hour.
+      maxEntriesToTrack :: Int
+    }
 
 
 type SlotMetric p = IntPSQ SlotNo (p, Time)
@@ -83,11 +87,12 @@ newPeerMetric' headerMetrics fetchedMetrics =
 reportMetric
     :: forall m p.
        ( MonadSTM m )
-     => PeerMetrics m p
+     => PeerMetricsConfiguration
+     -> PeerMetrics m p
      -> ReportPeerMetrics m (ConnectionId p)
-reportMetric peerMetrics =
-  ReportPeerMetrics (headerMetricTracer peerMetrics)
-                    (fetchedMetricTracer peerMetrics)
+reportMetric config peerMetrics =
+  ReportPeerMetrics (headerMetricTracer  config peerMetrics)
+                    (fetchedMetricTracer config peerMetrics)
 
 nullMetric
     :: MonadSTM m
@@ -105,15 +110,17 @@ slotMetricKey (SlotNo s) = fromIntegral s
 headerMetricTracer
     :: forall m p.
        ( MonadSTM m )
-    => PeerMetrics m p
+    => PeerMetricsConfiguration
+    -> PeerMetrics m p
     -> Tracer (STM m) (TraceLabelPeer (ConnectionId p) (SlotNo, Time))
-headerMetricTracer PeerMetrics{peerMetricsVar} =
+headerMetricTracer config PeerMetrics{peerMetricsVar} =
     (\(TraceLabelPeer con d) -> TraceLabelPeer (remoteAddress con) d)
     `contramap`
     metricsTracer
       (headerMetrics <$> readTVar peerMetricsVar)
       (\headerMetrics -> modifyTVar peerMetricsVar
                                     (\metrics -> metrics { headerMetrics }))
+      config
 
 
 -- | Tracer which updates fetched metrics (fetchyness).
@@ -121,13 +128,14 @@ headerMetricTracer PeerMetrics{peerMetricsVar} =
 fetchedMetricTracer
     :: forall m p.
        ( MonadSTM m )
-    => PeerMetrics m p
+    => PeerMetricsConfiguration
+    -> PeerMetrics m p
     -> Tracer (STM m) (TraceLabelPeer (ConnectionId p)
                                       ( SizeInBytes
                                       , SlotNo
                                       , Time
                                       ))
-fetchedMetricTracer PeerMetrics{peerMetricsVar} =
+fetchedMetricTracer config PeerMetrics{peerMetricsVar} =
     (\(TraceLabelPeer con (bytes, slot, time)) ->
        TraceLabelPeer (remoteAddress con, bytes) (slot, time))
     `contramap`
@@ -135,13 +143,15 @@ fetchedMetricTracer PeerMetrics{peerMetricsVar} =
        (fetchedMetrics <$> readTVar peerMetricsVar)
        (\fetchedMetrics -> modifyTVar peerMetricsVar
                                       (\metrics -> metrics { fetchedMetrics }))
+       config
 
 metricsTracer
     :: forall m p.  ( MonadSTM m )
     => STM m (SlotMetric p)       -- ^ read metrics
     -> (SlotMetric p -> STM m ()) -- ^ update metrics
+    -> PeerMetricsConfiguration
     -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
-metricsTracer getMetrics writeMetrics = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
+metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTrack } = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
     metrics <- getMetrics
     case IntPSQ.lookup (slotMetricKey slot) metrics of
          Nothing -> do
