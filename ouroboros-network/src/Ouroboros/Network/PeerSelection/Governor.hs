@@ -589,6 +589,10 @@ peerChurnGovernor :: forall m peeraddr.
                      , MonadDelay m
                      )
                   => Tracer m (TracePeerSelection peeraddr)
+                  -> DiffTime
+                  -- ^ the base for churn interval in the deadline mode.
+                  -> DiffTime
+                  -- ^ the base for churn interval in the bulk sync mode.
                   -> PeerMetrics m peeraddr
                   -> StrictTVar m ChurnMode
                   -> StdGen
@@ -596,7 +600,8 @@ peerChurnGovernor :: forall m peeraddr.
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
                   -> m Void
-peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
+peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
+                  _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -702,18 +707,11 @@ peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelec
 
 
     longDelay :: StdGen -> DiffTime -> m StdGen
-    longDelay = fuzzyDelay' churnInterval 600
+    longDelay = fuzzyDelay' deadlineChurnInterval 600
 
 
     shortDelay :: StdGen -> DiffTime -> m StdGen
-    shortDelay = fuzzyDelay' churnIntervalBulk 60
-
-    -- The min time between running the churn governor.
-    churnInterval :: DiffTime
-    churnInterval = 3300
-
-    churnIntervalBulk :: DiffTime
-    churnIntervalBulk = 300
+    shortDelay = fuzzyDelay' bulkChurnInterval 60
 
     -- Replace 20% or at least on peer every churnInterval.
     decrease :: Int -> Int
