@@ -129,6 +129,7 @@ library
                        Ouroboros.Consensus.Mempool.Impl.Types
                        Ouroboros.Consensus.Mempool.TxLimits
                        Ouroboros.Consensus.Mempool.TxSeq
+                       Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface
                        Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                        Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                        Ouroboros.Consensus.MiniProtocol.ChainSync.Server
