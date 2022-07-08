@@ -101,13 +101,9 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 tests :: TestTree
 tests = askOption $ \showTrace -> testGroup "OnDisk"
   [ TTT.testPropertyTraceable' "LedgerSimple-InMem" $
-      prop_sequential 100000 (inMemDbEnv showTrace) NoGenRealistic
-  , -- FIXME: we test 1000 cases since the LMDB version of this property test
-    -- takes an unreasonable amount of time to finish. At the moment, a 1000
-    -- property tests that exercise an LMDB backing store will take ~3
-    -- minutes to run.
-    TTT.testPropertyTraceable' "LedgerSimple-LMDB" $
-      prop_sequential 1000 (lmdbDbEnv showTrace testLMDBLimits) GenRealistic
+      prop_sequential 100000 (inMemDbEnv showTrace) Uniform
+  , TTT.testPropertyTraceable' "LedgerSimple-LMDB" $
+      prop_sequential 2000 (lmdbDbEnv showTrace testLMDBLimits) Custom
   ]
 
 testLMDBLimits :: LMDB.LMDBLimits
@@ -898,7 +894,11 @@ data StandaloneDB m = DB {
     , sdbBackingStoreSelector :: BackingStoreSelector m
     }
 
-initStandaloneDB :: forall m. (Trans.MonadIO m, IOLike m) => DbEnv m -> SecurityParam -> m (StandaloneDB m)
+initStandaloneDB ::
+     forall m. (Trans.MonadIO m, IOLike m)
+  => DbEnv m
+  -> SecurityParam
+  -> m (StandaloneDB m)
 initStandaloneDB dbEnv@DbEnv{..} dbSecParam = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
@@ -1231,35 +1231,45 @@ execCmds secParam = \(QSM.Commands cs) -> go (initModel secParam) cs
   Generator
 -------------------------------------------------------------------------------}
 
--- | Flag that should toggle the generation of commands (by @'generator'@) with
--- a semi-realistic distribution.
-data FlagGenRealistic = GenRealistic | NoGenRealistic
+-- | Simple distributions.
+data Distribution = Uniform | Custom
+type GenDistribution = Distribution
 
--- | Wrapper around @Integer@. ``Forces'' the use of @toRealistic@ to extract the
+-- | Wrapper around @Int@. ``Forces'' the use of @fromWeight@ to extract the
 -- @Int@.
-newtype Frequency = Frequency Int
+newtype Weight = Weight Int
   deriving newtype Num
 
-toRealistic :: FlagGenRealistic -> Frequency -> Int
-toRealistic GenRealistic   = \(Frequency x) -> x
-toRealistic NoGenRealistic = const 1
+-- | Unwrap a @'Weight'@ given a desired distribution.
+--
+-- Ignores the wrapped @Int@ in case we require a uniform distribution.
+fromWeight :: Distribution -> Weight -> Int
+fromWeight Custom  = \(Weight x) -> x
+fromWeight Uniform = const 1
 
-toRealistics :: FlagGenRealistic -> [(Frequency, a)] -> [(Int, a)]
-toRealistics fgr = fmap $ first (toRealistic fgr)
+-- | Unwrap multiple @'Weights'@s given a desired distribution.
+--
+-- POSTCONDITION:
+-- * If @Distribution == Uniform@, then all @Int@s in
+--   the result should be equal to @1@. As a result, all @a@'s in the result
+--   are equally weighted, resulting in a uniform distribution.
+fromWeights :: GenDistribution -> [(Weight, a)] -> [(Int, a)]
+fromWeights gd = fmap $ first (fromWeight gd)
 
 generator ::
-     FlagGenRealistic
+     GenDistribution
   -> SecurityParam
   -> Model Symbolic
   -> Maybe (Gen (Cmd :@ Symbolic))
-generator fgr secParam (Model mock hs) = Just $ QC.frequency $ toRealistics fgr $ concat [
+generator gd secParam (Model mock hs) =
+  Just $ QC.frequency $ fromWeights gd $ concat [
       withoutRef
     , if null possibleCorruptions
         then []
         else [(1, (At . uncurry Corrupt) <$> QC.elements possibleCorruptions)]
     ]
   where
-    withoutRef :: [(Frequency, Gen (Cmd :@ Symbolic))]
+    withoutRef :: [(Weight, Gen (Cmd :@ Symbolic))]
     withoutRef = (fmap . second . fmap $ At) [
           (10, pure Current)
         , (10, Push <$> genBlockFromLedgerState (mockCurrent mock))
@@ -1417,16 +1427,16 @@ symbolicResp m c = At <$> traverse (const genSym) resp
 
 sm :: IOLike m
    => SecurityParam
-   -> FlagGenRealistic
+   -> GenDistribution
    -> StandaloneDB m
    -> StateMachine Model (At Cmd) m (At Resp)
-sm secParam fgr db = StateMachine {
+sm secParam gd db = StateMachine {
       initModel     = initModel secParam
     , transition    = transition
     , precondition  = precondition
     , postcondition = postcondition
     , invariant     = Nothing
-    , generator     = generator fgr secParam
+    , generator     = generator gd secParam
     , shrinker      = shrinker
     , semantics     = semantics db
     , mock          = symbolicResp
@@ -1440,12 +1450,12 @@ prop_sequential ::
      Int
      -- ^ Number of tests to run
   -> IO (DbEnv IO)
-  -> FlagGenRealistic
+  -> GenDistribution
   -> SecurityParam
   -> QC.Property
-prop_sequential maxSuccess mkDbEnv fgr secParam = QC.withMaxSuccess maxSuccess $
-  forAllCommands (sm secParam fgr dbUnused) Nothing $ \cmds ->
-    QC.monadicIO $ QC.run mkDbEnv >>= \e -> propCmds e fgr secParam cmds
+prop_sequential maxSuccess mkDbEnv gd secParam = QC.withMaxSuccess maxSuccess $
+  forAllCommands (sm secParam gd dbUnused) Nothing $ \cmds ->
+    QC.monadicIO $ QC.run mkDbEnv >>= \e -> propCmds e gd secParam cmds
 
 mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
 mkDbTracer (TTT.ShowTrace b)
@@ -1482,13 +1492,13 @@ lmdbDbEnv showTrace limits = do
 -- QSM requires monads that implement MonadIO.
 propCmds ::
      DbEnv IO
-  -> FlagGenRealistic
+  -> GenDistribution
   -> SecurityParam
   -> QSM.Commands (At Cmd) (At Resp)
   -> QC.PropertyM IO ()
-propCmds dbEnv fgr secParam cmds = do
+propCmds dbEnv gd secParam cmds = do
     db <- QC.run $ initStandaloneDB dbEnv secParam
-    let sm' = sm secParam fgr db
+    let sm' = sm secParam gd db
     (hist, _model, res) <- runCommands sm' cmds
     prettyCommands sm' hist
       $ QC.tabulate
@@ -1500,12 +1510,10 @@ propCmds dbEnv fgr secParam cmds = do
       $ QC.tabulate
           "Bucketised length of generated command sequence"
           [show $ bucketise 10 $ length cts]
-      $ tabulateCount counter CTagFlush
-      $ tabulateCount counter CTagSnap
-      $ tabulateCount counter CTagRestore
+      $ tabulateCount counter CTagCorrupt
       $ res QC.=== Ok
   where
-    cts = tagEvents' (execCmds secParam cmds)
+    cts = tagCmds (execCmds secParam cmds)
     counter = count cts
 
 dbUnused :: StandaloneDB IO
@@ -1515,47 +1523,36 @@ dbUnused = error "DB unused during command generation"
   Command labelling
 -------------------------------------------------------------------------------}
 
-newtype Counter = Counter { unCounter :: Map CmdTag Int }
-
-instance Semigroup Counter where
-  Counter c1 <> Counter c2 = Counter $ Map.unionWith (+) c1 c2
-
-instance Monoid Counter where
-  mempty = Counter $ Map.fromList [(ct,0) | ct <- [minBound, maxBound]]
-
-count :: [CmdTag] -> Counter
-count = mconcat . map (Counter . flip Map.singleton 1)
-
-tabulateCount :: QC.Testable prop => Counter -> CmdTag -> prop -> QC.Property
-tabulateCount counter ct = QC.tabulate ("Nr of " <> show ct) [show $ getCount counter ct]
-
-getCount :: Counter -> CmdTag -> Int
-getCount ctr ct = fromMaybe 0 $ unCounter ctr Map.!? ct
-
+-- | A bucket to ``place'' values in.
+--
+-- Buckets are considered to all be of the same size. If buckets were to have a
+-- bucket size of @10@, then we would have the following buckets:
+-- > @[0-9], [10-19], [20, 29], ...
+-- The first bucket would be numbered @0@, the second @1@, etc.
 data Bucket = Bucket {
-    value      :: Int
-  , bucketNo   :: Int
+    bucketNo   :: Int
   , bucketSize :: Int
   }
 
+-- | Given a bucket size, and value, compute the bucket that the value falls in.
 bucketise :: Int -> Int -> Bucket
 bucketise bucketSize value = Bucket {..}
   where
     bucketNo = value `div` bucketSize
 
+-- We can calculate the shape of the bucket (e.g., "[0,9]" or "[30,39]") just
+-- from the @'bucketNo'@ and @'bucketSize'@.
 instance Show Bucket where
-  show Bucket{..} = "[" <> show (bucketNo * bucketSize) <> "," <> show ((bucketNo + 1) * bucketSize) <> "]"
+  show Bucket{..} = mconcat [
+    "["
+    , show $ bucketNo * bucketSize
+    , ","
+    , show ((bucketNo + 1) * bucketSize -1)
+    , "]"
+    ]
 
-data CmdTag =
-    CTagCurrent
-  | CTagPush
-  | CTagSwitch
-  | CTagSnap
-  | CTagFlush
-  | CTagRestore
-  | CTagCorrupt
-  | CTagDrop
-  deriving stock (Show, Eq, Ord, Enum, Bounded)
+tagCmds :: [Event Symbolic] -> [CmdTag]
+tagCmds = map (tagCmd . eventCmd)
 
 tagCmd :: At Cmd Symbolic -> CmdTag
 tagCmd (At cmd) = case cmd of
@@ -1568,8 +1565,43 @@ tagCmd (At cmd) = case cmd of
   Corrupt _ _ -> CTagCorrupt
   Drop _      -> CTagDrop
 
-tagEvents' :: [Event Symbolic] -> [CmdTag]
-tagEvents' = map (tagCmd . eventCmd)
+-- | Tags for the various @Cmd@'s.
+data CmdTag =
+    CTagCurrent
+  | CTagPush
+  | CTagSwitch
+  | CTagSnap
+  | CTagFlush
+  | CTagRestore
+  | CTagCorrupt
+  | CTagDrop
+  deriving stock (Show, Eq, Ord, Enum, Bounded)
+
+-- | Counting occurrences of each command tag.
+newtype Counter = Counter { unCounter :: Map CmdTag Int }
+
+-- @mappend@ing of counters should pair-wise @mappend@ the counts for each
+-- command tag.
+instance Semigroup Counter where
+  Counter c1 <> Counter c2 = Counter $ Map.unionWith (+) c1 c2
+
+-- An empty counter should return @0@ for each command tag.
+instance Monoid Counter where
+  mempty = Counter $ Map.fromList [(ct,0) | ct <- [minBound, maxBound]]
+
+-- | Count all occurrences of command tags.
+count :: [CmdTag] -> Counter
+count = mconcat . map (Counter . flip Map.singleton 1)
+
+getCount :: Counter -> CmdTag -> Int
+getCount ctr ct = fromMaybe 0 $ unCounter ctr Map.!? ct
+
+-- | Tabulate how often a specific command tag occurs in each test.
+tabulateCount :: QC.Testable prop => Counter -> CmdTag -> prop -> QC.Property
+tabulateCount counter ct =
+  QC.tabulate
+    ("#" <> show ct)
+    [show $ getCount counter ct]
 
 {-------------------------------------------------------------------------------
   Event labelling
@@ -1637,11 +1669,11 @@ tagEvents k = C.classify [
 
 showLabelledExamples ::
      SecurityParam
-  -> FlagGenRealistic
+  -> GenDistribution
   -> Maybe Int
   -> (Tag -> Bool) -- ^ Which tag are we interested in?
   -> IO ()
-showLabelledExamples secParam fgr mReplay relevant = do
+showLabelledExamples secParam gd mReplay relevant = do
     replaySeed <- case mReplay of
                     Nothing   -> getStdRandom $ randomR (1, 999999)
                     Just seed -> return seed
@@ -1654,7 +1686,7 @@ showLabelledExamples secParam fgr mReplay relevant = do
           }
 
     QC.labelledExamplesWith args $
-      forAllCommands (sm secParam fgr dbUnused) Nothing $ \cmds ->
+      forAllCommands (sm secParam gd dbUnused) Nothing $ \cmds ->
         repeatedly QC.collect (run cmds) $
           QC.property True
   where
