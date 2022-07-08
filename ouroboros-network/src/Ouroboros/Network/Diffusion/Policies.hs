@@ -42,6 +42,17 @@ closeConnectionTimeout :: DiffTime
 closeConnectionTimeout = 120
 
 
+-- | Number of events tracked by 'PeerMetrics'.  This corresponds to one hour of
+-- blocks on mainnet.
+--
+-- TODO: issue #3866
+--
+peerMetricsConfiguration :: PeerMetricsConfiguration
+peerMetricsConfiguration = PeerMetricsConfiguration {
+    maxEntriesToTrack = 180
+  }
+
+
 simplePeerSelectionPolicy :: forall m peerAddr.
                              ( MonadSTM m
                              , Ord peerAddr
