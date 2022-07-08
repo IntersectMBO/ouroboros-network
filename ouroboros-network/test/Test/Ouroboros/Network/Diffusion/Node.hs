@@ -265,12 +265,14 @@ run blockGeneratorArgs limits ni na tracersExtra =
 
     argsExtra :: Diff.P2P.ArgumentsExtra m
     argsExtra = Diff.P2P.ArgumentsExtra
-      { Diff.P2P.daPeerSelectionTargets = aPeerSelectionTargets na
-      , Diff.P2P.daReadLocalRootPeers   = aReadLocalRootPeers na
-      , Diff.P2P.daReadPublicRootPeers  = aReadPublicRootPeers na
-      , Diff.P2P.daReadUseLedgerAfter   = aReadUseLedgerAfter na
-      , Diff.P2P.daProtocolIdleTimeout  = aProtocolIdleTimeout na
-      , Diff.P2P.daTimeWaitTimeout      = aTimeWaitTimeout na
+      { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
+      , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
+      , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
+      , Diff.P2P.daReadUseLedgerAfter    = aReadUseLedgerAfter na
+      , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na
+      , Diff.P2P.daTimeWaitTimeout       = aTimeWaitTimeout na
+      , Diff.P2P.daDeadlineChurnInterval = 3300
+      , Diff.P2P.daBulkChurnInterval     = 300
       }
 
     appArgs :: Node.AppArgs m
