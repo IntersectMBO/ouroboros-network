@@ -444,6 +444,7 @@ pattern CardanoNodeToClientVersion9 =
       :* EraNodeToClientEnabled ShelleyNodeToClientVersion5
       :* Nil
       )
+
 instance CardanoHardForkConstraints c
       => SupportedNetworkProtocolVersion (CardanoBlock c) where
   supportedNodeToNodeVersions _ = Map.fromList $
@@ -459,9 +460,10 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_11, CardanoNodeToClientVersion8)
       , (NodeToClientV_12, CardanoNodeToClientVersion8)
       , (NodeToClientV_13, CardanoNodeToClientVersion9)
+      , (NodeToClientV_14, CardanoNodeToClientVersion9)
       ]
 
-  latestReleasedNodeVersion _prx = (Just NodeToNodeV_9, Just NodeToClientV_13)
+  latestReleasedNodeVersion _prx = (Just NodeToNodeV_9, Just NodeToClientV_14)
 
 {-------------------------------------------------------------------------------
   ProtocolInfo

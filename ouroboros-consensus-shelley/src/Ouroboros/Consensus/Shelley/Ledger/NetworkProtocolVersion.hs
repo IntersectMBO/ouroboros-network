@@ -30,6 +30,9 @@ data ShelleyNodeToClientVersion =
 
     -- | New queries introduced: GetRewardInfoPools
   | ShelleyNodeToClientVersion5
+
+    -- | New queries introduced: GetCurrentDelegationState
+  | ShelleyNodeToClientVersion6
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion (ShelleyBlock proto era) where

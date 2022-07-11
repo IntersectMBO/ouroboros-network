@@ -38,6 +38,7 @@ import           Data.Typeable (Typeable)
 import           Data.UMap (View (..), domRestrictedView)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import qualified Cardano.Ledger.Era as Era
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      encodePoint, mkSerialised)
@@ -63,6 +64,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                      (ShelleyNodeToClientVersion (..))
+import Ouroboros.Consensus.Shelley.Ledger.Query (BlockQuery(GetCurrentDelegationState))
 
 {-------------------------------------------------------------------------------
   QueryLedger
@@ -187,6 +189,9 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
                     Map (SL.KeyHash 'SL.StakePool (EraCrypto era))
                         (SL.RewardInfoPool))
 
+  GetCurrentDelegationState
+    :: BlockQuery (ShelleyBlock proto era) (SL.DPState (Era.Crypto era))
+
   -- WARNING: please add new queries to the end of the list and stick to this
   -- order in all other pattern matches on queries. This helps in particular
   -- with the en/decoders, as we want the CBOR tags to be ordered.
@@ -257,6 +262,8 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
           SL.getPoolParameters st poolids
         GetRewardInfoPools ->
           SL.getRewardInfoPools globals st
+        GetCurrentDelegationState ->
+          SL.lsDPState $ SL.esLState $ getEpochState st
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -364,6 +371,10 @@ instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
     = Just Refl
   sameDepIndex GetRewardInfoPools _
     = Nothing
+  sameDepIndex GetCurrentDelegationState GetCurrentDelegationState
+    = Just Refl
+  sameDepIndex GetCurrentDelegationState _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock proto era) result)
 deriving instance Show (BlockQuery (ShelleyBlock proto era) result)
@@ -389,6 +400,7 @@ instance ShelleyCompatible proto era => ShowQuery (BlockQuery (ShelleyBlock prot
       GetStakePools                              -> show
       GetStakePoolParams {}                      -> show
       GetRewardInfoPools                         -> show
+      GetCurrentDelegationState                  -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) result -> ShelleyNodeToClientVersion -> Bool
@@ -412,6 +424,7 @@ querySupportedVersion = \case
     GetStakePools                              -> (>= v4)
     GetStakePoolParams {}                      -> (>= v4)
     GetRewardInfoPools                         -> (>= v5)
+    GetCurrentDelegationState                  -> (>= v6)
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -420,6 +433,7 @@ querySupportedVersion = \case
     v3 = ShelleyNodeToClientVersion3
     v4 = ShelleyNodeToClientVersion4
     v5 = ShelleyNodeToClientVersion5
+    v6 = ShelleyNodeToClientVersion6
 
 {-------------------------------------------------------------------------------
   Auxiliary
@@ -496,6 +510,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 17 <> toCBOR poolids
     GetRewardInfoPools ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 18
+    GetCurrentDelegationState ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 19
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -523,6 +539,7 @@ decodeShelleyQuery = do
       (1, 16) -> return $ SomeSecond GetStakePools
       (2, 17) -> SomeSecond . GetStakePoolParams <$> fromCBOR
       (1, 18) -> return $ SomeSecond GetRewardInfoPools
+      (1, 19) -> return $ SomeSecond GetCurrentDelegationState
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -550,6 +567,7 @@ encodeShelleyResult query = case query of
     GetStakePools                              -> toCBOR
     GetStakePoolParams {}                      -> toCBOR
     GetRewardInfoPools                         -> toCBOR
+    GetCurrentDelegationState                  -> toCBOR
 
 decodeShelleyResult ::
      ShelleyCompatible proto era
@@ -575,3 +593,4 @@ decodeShelleyResult query = case query of
     GetStakePools                              -> fromCBOR
     GetStakePoolParams {}                      -> fromCBOR
     GetRewardInfoPools                         -> fromCBOR
+    GetCurrentDelegationState                  -> fromCBOR
