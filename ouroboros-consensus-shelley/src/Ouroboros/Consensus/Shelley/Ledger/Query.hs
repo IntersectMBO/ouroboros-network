@@ -64,7 +64,6 @@ import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                      (ShelleyNodeToClientVersion (..))
-import Ouroboros.Consensus.Shelley.Ledger.Query (BlockQuery(GetCurrentDelegationState))
 
 {-------------------------------------------------------------------------------
   QueryLedger
