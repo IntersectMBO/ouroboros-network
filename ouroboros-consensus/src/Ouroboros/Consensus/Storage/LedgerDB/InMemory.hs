@@ -24,7 +24,8 @@
 -- TODO stylish haskell insists on deleting this pragma if placed in the group above.
 {-# LANGUAGE DerivingStrategies         #-}
 
-
+-- TODO: we agreed on removing the ledgerDb prefix from the operations in this
+-- module. We can import the module qualified if we need to dissambiguate.
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
     LedgerDbCfg (..)
@@ -50,7 +51,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbChangelog
   , ledgerDbCurrent
   , ledgerDbFlush
-  , ledgerDbOldest
+  , ledgerDbLastFlushedState
   , ledgerDbPast
   , ledgerDbPrefix
   , ledgerDbPrune
@@ -640,10 +641,11 @@ ledgerDbAnchor =
   . changelogVolatileStates
   . ledgerDbChangelog
 
--- | Information about the state of the most recently flushed ledger
+-- | Get the most recently flushed ledger state
+--
+-- TODO: the comment below might belong somewhere else.
 --
 -- This is what will be serialized when snapshotting.
---
 --
 -- When we take a snapshot, we do it for both the modern and the legacy ledger.
 -- Conversely, when we read a snapshot, we assume the snapshot has what we need
@@ -659,17 +661,18 @@ ledgerDbAnchor =
 --
 -- PRECONDITION: if you are running the legacy ledger, then you must flush
 -- before calling this function
-ledgerDbOldest :: forall l.
+ledgerDbLastFlushedState :: forall l.
      ( StandardHash (l EmptyMK)
      , GetTip (l EmptyMK)
      , StowableLedgerTables l
      )
   => LedgerDB l -> l EmptyMK
-ledgerDbOldest db =
+ledgerDbLastFlushedState db =
     case stuffedLegacyAnchor of
       Nothing  -> immAnchor
       Just sla -> Exn.assert (isFlushed sla) sla
   where
+    -- TODO: after removing the legacy ledger this will become the implementation
     immAnchor :: l EmptyMK
     immAnchor =
         unDbChangelogState

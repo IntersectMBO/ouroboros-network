@@ -331,9 +331,11 @@ data InitFailure blk =
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
 --
--- If no such snapshot can be found, use the genesis ledger DB. Returns the
--- initialized DB as well as the block reference corresponding to the snapshot
--- we found on disk (the latter primarily for testing/monitoring purposes).
+-- If no such snapshot can be found, use the genesis ledger DB.
+--
+-- This function returns the initialized DB as well as the block reference
+-- corresponding to the snapshot we found on disk (the latter primarily for
+-- testing/monitoring purposes).
 --
 -- We do /not/ catch any exceptions thrown during streaming; should any be
 -- thrown, it is the responsibility of the 'ChainDB' to catch these
@@ -941,12 +943,14 @@ snapshotFromPath fileName = do
   Snapshots: Writing to disk
 -------------------------------------------------------------------------------}
 
--- | Take a snapshot of the /oldest ledger state/ in the ledger DB
+-- | Take a snapshot of the /last flushed ledger state/ in the ledger DB
 --
--- We write the /oldest/ ledger state to disk because the intention is to only
--- write ledger states to disk that we know to be immutable. Primarily for
--- testing purposes, 'takeSnapshot' returns the block reference corresponding
--- to the snapshot that we wrote.
+-- TODO: revisit the comment below.
+--
+-- We write the /last flushed/ ledger state to disk because the intention is to
+-- only write ledger states to disk that we know to be immutable. Primarily for
+-- testing purposes, 'takeSnapshot' returns the block reference corresponding to
+-- the snapshot that we wrote.
 --
 -- If a snapshot with the same number already exists on disk or if the tip is at
 -- genesis, no snapshot is taken.
@@ -973,7 +977,7 @@ takeSnapshot ::
   -> LedgerDB' blk
   -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot tracer hasFS backingStore encLedger db =
-    case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
+    case pointToWithOriginRealPoint (castPoint (getTip lastFlushed)) of
       Origin ->
         return Nothing
       NotOrigin tip -> do
@@ -983,12 +987,12 @@ takeSnapshot tracer hasFS backingStore encLedger db =
         if List.any ((== number) . dsNumber) snapshots then
           return Nothing
         else do
-          writeSnapshot hasFS backingStore encLedger snapshot oldest
+          writeSnapshot hasFS backingStore encLedger snapshot lastFlushed
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where
-    oldest :: ExtLedgerState blk EmptyMK
-    oldest = ledgerDbOldest db
+    lastFlushed :: ExtLedgerState blk EmptyMK
+    lastFlushed = ledgerDbLastFlushedState db
 
 -- | Write snapshot to disk
 writeSnapshot ::
