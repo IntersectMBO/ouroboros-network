@@ -11,6 +11,7 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) where
 
+import           Cardano.Binary (FromCBOR)
 import           Data.SOP.Strict hiding (All2)
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -19,12 +20,16 @@ import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible)
+import           Cardano.Ledger.Shelley.LedgerState (DPState)
 
 -- | When the given ledger state corresponds to a Shelley-based era, apply the
 -- given function to it.
 overShelleyBasedLedgerState ::
      forall c.
-     (TPraos.PraosCrypto c, Praos.PraosCrypto c)
+     ( TPraos.PraosCrypto c
+     , Praos.PraosCrypto c
+     , FromCBOR (DPState c)
+     )
   => (   forall era proto. (EraCrypto era ~ c, ShelleyCompatible proto era)
       => LedgerState (ShelleyBlock proto era)
       -> LedgerState (ShelleyBlock proto era)

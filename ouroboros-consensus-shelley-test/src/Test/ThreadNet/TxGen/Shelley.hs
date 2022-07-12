@@ -50,7 +50,9 @@ data ShelleyTxGenExtra h = ShelleyTxGenExtra
   , stgeStartAt :: SlotNo
   }
 
-instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) where
+instance
+  ( HashAlgorithm h
+  ) => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) where
 
   type TxGenExtra (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) = ShelleyTxGenExtra h
 
