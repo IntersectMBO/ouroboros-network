@@ -99,7 +99,8 @@ instance
           Praos.LedgerView
             { Praos.lvPoolDistr = nesPd,
               Praos.lvMaxBodySize = getField @"_maxBBSize" . SL.esPp $ nesEs,
-              Praos.lvMaxHeaderSize = getField @"_maxBHSize" . SL.esPp $ nesEs
+              Praos.lvMaxHeaderSize = getField @"_maxBHSize" . SL.esPp $ nesEs,
+              Praos.lvProtocolVersion = getField @"_protocolVersion" . SL.esPp $ nesEs
             }
 
   -- | Currently the Shelley+ ledger is hard-coded to produce a TPraos ledger
