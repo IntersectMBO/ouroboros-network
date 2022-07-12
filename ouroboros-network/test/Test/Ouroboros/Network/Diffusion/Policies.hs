@@ -25,6 +25,7 @@ import           System.Random
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Network.Diffusion.Policies
+import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.PeerSelection.Types (PeerSource (..))
@@ -160,6 +161,7 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
                         rngVar
                         (readTVar cmVar)
                         metrics
+                        (ReconnectDelay 10)
         metrics = PeerMetrics hVar fVar
     picked <- atomically $ policyPickHotPeersToDemote policies
                   (const PeerSourceLocalRoot)
@@ -228,6 +230,7 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
                         rngVar
                         (readTVar cmVar)
                         metrics
+                        (ReconnectDelay 10)
         metrics = PeerMetrics hVar fVar
     doDemotion numberOfTries policies Map.empty
 

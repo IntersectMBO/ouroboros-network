@@ -1,9 +1,12 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
@@ -51,6 +54,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           System.Random (StdGen)
 
+import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.EstablishedPeers
                      (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -94,7 +98,11 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyMaxInProgressGossipReqs :: !Int,
        policyGossipRetryTime         :: !DiffTime,
        policyGossipBatchWaitTime     :: !DiffTime,
-       policyGossipOverallTimeout    :: !DiffTime
+       policyGossipOverallTimeout    :: !DiffTime,
+
+       -- | Reconnection delay, passed from `ExitPolicy`.
+       --
+       policyErrorDelay              :: !DiffTime
      }
 
 
@@ -206,7 +214,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- | Monitor peer state.
     --
-    monitorPeerConnection    :: peerconn -> STM m PeerStatus,
+    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, ReconnectDelay),
 
     -- | Establish new connection: cold to warm.
     --
@@ -616,11 +624,16 @@ data TracePeerSelection peeraddr =
      | TraceChurnMode          ChurnMode
   deriving Show
 
-data DebugPeerSelection peeraddr peerconn =
-       TraceGovernorState Time              -- blocked time
-                          (Maybe DiffTime)  -- wait time
-                          (PeerSelectionState peeraddr peerconn)
-  deriving (Show, Functor)
+data DebugPeerSelection peeraddr where
+  TraceGovernorState :: forall peeraddr peerconn.
+                        Show peerconn
+                     => Time            -- blocked time
+                     -> Maybe DiffTime  -- wait time
+                     -> PeerSelectionState peeraddr peerconn
+                     -> DebugPeerSelection peeraddr
+
+deriving instance (Ord peeraddr, Show peeraddr)
+               => Show (DebugPeerSelection peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal deriving Show

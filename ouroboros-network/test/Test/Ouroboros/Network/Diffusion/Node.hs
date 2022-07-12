@@ -208,7 +208,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
                                                      dnsLookupDelayScriptVar)
               }
 
-            appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m
+            appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()
             appsExtra = Diff.P2P.ApplicationsExtra
               { -- TODO: simulation errors should be critical
                 Diff.P2P.daRethrowPolicy          =
@@ -223,6 +223,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daPeerMetrics            = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
+              , Diff.P2P.daReturnPolicy           = mempty
               }
 
         apps <- Node.applications nodeKernel Node.cborCodecs limits appArgs

@@ -65,6 +65,7 @@ library
                        Ouroboros.Network.Diffusion.P2P
                        Ouroboros.Network.Diffusion.NonP2P
                        Ouroboros.Network.Diffusion.Policies
+                       Ouroboros.Network.ExitPolicy
                        Ouroboros.Network.KeepAlive
                        Ouroboros.Network.Magic
                        Ouroboros.Network.NodeToNode
