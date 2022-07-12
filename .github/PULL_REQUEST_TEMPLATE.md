@@ -8,6 +8,8 @@ Sadly, some CI checks are currently flaky. Right now, this includes:
  
  - The Hydra check for test-storage on Windows (mingwW64) fails with inscrutable malloc-related error messages: https://hydra.iohk.io/build/16260881/nixlog/1
 
+ - The tests in WallClock.delay* can fail under load (quite rarely): https://hydra.iohk.io/build/16723452/nixlog/76
+
 If you encounter one of these, try restarting the job to see if the failure vanishes. If it does not or when in doubt, consider posting in the #network or #consensus channels on Slack.
 -->
 
