@@ -21,7 +21,7 @@ import           Ouroboros.Consensus.Protocol.Praos (ConsensusConfig (..),
                      Praos, PraosParams (..), PraosState (..),
                      Ticked (TickedPraosLedgerView))
 import           Ouroboros.Consensus.Protocol.Praos.Views
-                     (LedgerView (lvMaxBodySize, lvMaxHeaderSize))
+                     (LedgerView (lvMaxBodySize, lvMaxHeaderSize, lvProtocolVersion))
 import qualified Ouroboros.Consensus.Protocol.Praos.Views as Views
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..),
                      TPraosState (tpraosStateChainDepState, tpraosStateLastSlot))
@@ -70,7 +70,8 @@ instance
         Views.LedgerView
           { Views.lvPoolDistr = coercePoolDistr lvPoolDistr,
             lvMaxHeaderSize = SL.ccMaxBHSize lvChainChecks,
-            lvMaxBodySize = SL.ccMaxBBSize lvChainChecks
+            lvMaxBodySize = SL.ccMaxBBSize lvChainChecks,
+            lvProtocolVersion = SL.ccProtocolVersion lvChainChecks
           }
         where
           coercePoolDistr :: SL.PoolDistr c1 -> SL.PoolDistr c2

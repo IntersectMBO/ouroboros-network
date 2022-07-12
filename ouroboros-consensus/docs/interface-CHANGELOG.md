@@ -56,6 +56,21 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-07-20
+
+### Fixed
+
+- The obsolete node check in the new 'Praos' protocol was not performing the
+  check that was intended. It is supposed to check that the current protocol
+  version is no greater than the max major protocol version. It was instead
+  checking that the max major protocol version was not greater than the
+  protocol version listed in the block header (which is currently not supposed
+  to have any semantic meaning, and is used to manually check the readiness
+  of the network for a hard fork). Note that this mistake is only in the Praos
+  protocol, not in TPraos. The consequence of this incorrect check is that
+  nodes will not properly halt after a hard fork when they do not have the
+  required software for the hard fork.
+
 ## Circa 2022-07-13
 
 ### Added
