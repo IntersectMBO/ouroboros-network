@@ -191,6 +191,9 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
   GetCurrentDelegationState
     :: BlockQuery (ShelleyBlock proto era) (SL.DPState (Era.Crypto era))
 
+  GetPoolParams
+    :: BlockQuery (ShelleyBlock proto era) (SL.DPState (Era.Crypto era))
+
   -- WARNING: please add new queries to the end of the list and stick to this
   -- order in all other pattern matches on queries. This helps in particular
   -- with the en/decoders, as we want the CBOR tags to be ordered.
@@ -262,6 +265,8 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
         GetRewardInfoPools ->
           SL.getRewardInfoPools globals st
         GetCurrentDelegationState ->
+          SL.lsDPState $ SL.esLState $ getEpochState st
+        GetPoolParams ->
           SL.lsDPState $ SL.esLState $ getEpochState st
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
@@ -374,6 +379,10 @@ instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
     = Just Refl
   sameDepIndex GetCurrentDelegationState _
     = Nothing
+  sameDepIndex GetPoolParams GetPoolParams
+    = Just Refl
+  sameDepIndex GetPoolParams _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock proto era) result)
 deriving instance Show (BlockQuery (ShelleyBlock proto era) result)
@@ -400,6 +409,7 @@ instance ShelleyCompatible proto era => ShowQuery (BlockQuery (ShelleyBlock prot
       GetStakePoolParams {}                      -> show
       GetRewardInfoPools                         -> show
       GetCurrentDelegationState                  -> show
+      GetPoolParams                              -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) result -> ShelleyNodeToClientVersion -> Bool
@@ -424,6 +434,7 @@ querySupportedVersion = \case
     GetStakePoolParams {}                      -> (>= v4)
     GetRewardInfoPools                         -> (>= v5)
     GetCurrentDelegationState                  -> (>= v6)
+    GetPoolParams                              -> (>= v6)
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -511,6 +522,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 18
     GetCurrentDelegationState ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 19
+    GetPoolParams ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 20
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -539,6 +552,7 @@ decodeShelleyQuery = do
       (2, 17) -> SomeSecond . GetStakePoolParams <$> fromCBOR
       (1, 18) -> return $ SomeSecond GetRewardInfoPools
       (1, 19) -> return $ SomeSecond GetCurrentDelegationState
+      (1, 20) -> return $ SomeSecond GetPoolParams
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -567,6 +581,7 @@ encodeShelleyResult query = case query of
     GetStakePoolParams {}                      -> toCBOR
     GetRewardInfoPools                         -> toCBOR
     GetCurrentDelegationState                  -> toCBOR
+    GetPoolParams                              -> toCBOR
 
 decodeShelleyResult ::
      ShelleyCompatible proto era
@@ -593,3 +608,4 @@ decodeShelleyResult query = case query of
     GetStakePoolParams {}                      -> fromCBOR
     GetRewardInfoPools                         -> fromCBOR
     GetCurrentDelegationState                  -> fromCBOR
+    GetPoolParams                              -> fromCBOR
