@@ -16,7 +16,6 @@ module Ouroboros.Consensus.Shelley.HFEras (
   , StandardShelleyBlock
   ) where
 
-import           Cardano.Binary (FromCBOR)
 import           Cardano.Crypto.DSIGN (Signable)
 import           Cardano.Crypto.Hash (Hash)
 import           Cardano.Ledger.Crypto (DSIGN, HASH)
@@ -35,8 +34,6 @@ import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC ()
-
-import qualified Cardano.Ledger.Shelley.API as SL
 
 {-------------------------------------------------------------------------------
   Hard fork eras
@@ -57,30 +54,20 @@ type StandardBabbageBlock = ShelleyBlock (Praos StandardCrypto) StandardBabbage
 -------------------------------------------------------------------------------}
 
 instance
-  ( TPraos.PraosCrypto c
-  , Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)
-  , FromCBOR (SL.DPState c)
-  ) =>
+  (TPraos.PraosCrypto c, Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)) =>
   ShelleyCompatible (TPraos c) (ShelleyEra c)
 
 instance
-  ( TPraos.PraosCrypto c
-  , Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)
-  , FromCBOR (SL.DPState c)
-  ) =>
+  (TPraos.PraosCrypto c, Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)) =>
   ShelleyCompatible (TPraos c) (AllegraEra c)
 
 instance
-  ( TPraos.PraosCrypto c
-  , Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)
-  , FromCBOR (SL.DPState c)
-  ) =>
+  (TPraos.PraosCrypto c, Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)) =>
   ShelleyCompatible (TPraos c) (MaryEra c)
 
 instance
   ( TPraos.PraosCrypto c
   , Signable (DSIGN c) (Hash (HASH c) EraIndependentTxBody)
-  , FromCBOR (SL.DPState c)
   ) =>
   ShelleyCompatible (TPraos c) (AlonzoEra c)
 
@@ -88,14 +75,8 @@ instance
 -- Praos/Babbage still goes through the forecast for TPraos. Once this is
 -- addressed, we could remove this instance.
 instance
-  ( Praos.PraosCrypto c
-  , TPraos.PraosCrypto c
-  , FromCBOR (SL.DPState c)
-  ) =>
+  (Praos.PraosCrypto c, TPraos.PraosCrypto c) =>
   ShelleyCompatible (TPraos c) (BabbageEra c)
 
 instance
-  ( Praos.PraosCrypto c
-  , FromCBOR (SL.DPState c)
-  ) =>
-  ShelleyCompatible (Praos c) (BabbageEra c)
+  (Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (BabbageEra c)
