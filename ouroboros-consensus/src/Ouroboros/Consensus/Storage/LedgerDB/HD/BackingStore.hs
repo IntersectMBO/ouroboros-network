@@ -109,6 +109,7 @@ data RangeQuery keys = RangeQuery {
       -- of them were deleted in the changelog?
     , rqCount :: !Int
     }
+    deriving stock Show
 
 -- | TODO Is there a good way to not assume that any function that creates a
 -- 'BackingStoreValueHandle' doesn't hold space leaks in its closure?

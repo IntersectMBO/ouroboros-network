@@ -913,6 +913,9 @@ showsApplyMapKind = \case
     ApplyQueryAllMK       -> showParen True $ showString "ApplyQueryAllMK"
     ApplyQuerySomeMK keys -> showParen True $ showString "ApplyQuerySomeMK " . shows keys
 
+instance (Show k, Show v) => Show (ApplyMapKind' mk k v) where
+  show = flip showsApplyMapKind ""
+
 data instance Sing (mk :: MapKind') :: Type where
   SEmptyMK    :: Sing EmptyMK'
   SKeysMK     :: Sing KeysMK'
@@ -1011,12 +1014,13 @@ type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk
 
 -- | Monadic functions used to query this this block type's 'LargeL' ledger
 -- states, which typically involve accessing disk.
-data DiskLedgerView m l =
-    DiskLedgerView
-      !(l EmptyMK)
-      (LedgerTables l KeysMK -> m (LedgerTables l ValuesMK))
-      (RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK))   -- TODO will be unacceptably coarse once we have multiple tables
-      (m ())
+data DiskLedgerView m l = DiskLedgerView {
+    st :: !(l EmptyMK)
+  , dbRead :: LedgerTables l KeysMK -> m (LedgerTables l ValuesMK)
+    -- TODO will be unacceptably coarse once we have multiple tables
+  , dbReadRange :: RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK)
+  , dbClose :: m ()
+  }
 
 {-------------------------------------------------------------------------------
   Special classes of ledger states

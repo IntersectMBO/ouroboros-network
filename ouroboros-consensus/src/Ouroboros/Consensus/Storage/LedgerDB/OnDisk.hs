@@ -146,6 +146,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , decorateReplayTracerWithStart
     -- * For testing
   , newBackingStore
+  , newInMemoryBackingStore
   , replayStartingWith
   , restoreBackingStore
   , streamAll
@@ -537,19 +538,36 @@ newBackingStore tracer bss someHasFS tables = do
       limits
       someHasFS
       (LMDB.LIInitialiseFromMemory Origin tables)
-    InMemoryBackingStore -> BackingStore.newTVarBackingStore
-               (zipLedgerTables lookup_)
-               (\rq values -> case BackingStore.rqPrev rq of
-                   Nothing   ->
-                     mapLedgerTables (rangeRead0_ (BackingStore.rqCount rq))      values
-                   Just keys ->
-                     zipLedgerTables (rangeRead_  (BackingStore.rqCount rq)) keys values
-               )
-               (zipLedgerTables applyDiff_)
-               valuesMKEncoder
-               valuesMKDecoder
-               (Right (Origin, tables))
+    InMemoryBackingStore ->
+      newInMemoryBackingStore tables
   pure (LedgerBackingStore store)
+
+type InMemoryBackingStore l m =
+  BackingStore.BackingStore m
+    (LedgerTables l KeysMK)
+    (LedgerTables l ValuesMK)
+    (LedgerTables l DiffMK)
+
+newInMemoryBackingStore ::
+     ( IOLike m
+     , NoThunks (LedgerTables l ValuesMK)
+     , SufficientSerializationForAnyBackingStore l
+     , TableStuff l
+     )
+  => LedgerTables l ValuesMK
+  -> m (InMemoryBackingStore l m)
+newInMemoryBackingStore tables = BackingStore.newTVarBackingStore
+  (zipLedgerTables lookup_)
+  (\rq values -> case BackingStore.rqPrev rq of
+      Nothing   ->
+        mapLedgerTables (rangeRead0_ (BackingStore.rqCount rq))      values
+      Just keys ->
+        zipLedgerTables (rangeRead_  (BackingStore.rqCount rq)) keys values
+  )
+  (zipLedgerTables applyDiff_)
+  valuesMKEncoder
+  valuesMKDecoder
+  (Right (Origin, tables))
 
 lookup_ ::
      Ord k
