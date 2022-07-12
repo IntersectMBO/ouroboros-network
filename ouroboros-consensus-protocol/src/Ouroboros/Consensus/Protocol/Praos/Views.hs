@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Protocol.Praos.Views (
 
 import           Cardano.Crypto.KES (SignedKES)
 import           Cardano.Crypto.VRF (CertifiedVRF, VRFAlgorithm (VerKeyVRF))
+import           Cardano.Ledger.BaseTypes (ProtVer)
 import           Cardano.Ledger.Crypto (KES, VRF)
 import           Cardano.Ledger.Keys (KeyRole (BlockIssuer), VKey)
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -39,10 +40,12 @@ data HeaderView crypto = HeaderView
 
 data LedgerView crypto = LedgerView
   { -- | Stake distribution
-    lvPoolDistr     :: SL.PoolDistr crypto,
+    lvPoolDistr       :: SL.PoolDistr crypto,
     -- | Maximum header size
-    lvMaxHeaderSize :: !Natural,
+    lvMaxHeaderSize   :: !Natural,
     -- | Maximum block body size
-    lvMaxBodySize   :: !Natural
+    lvMaxBodySize     :: !Natural,
+    -- | Current protocol version
+    lvProtocolVersion :: !ProtVer
   }
   deriving (Show)
