@@ -22,7 +22,6 @@ import qualified Data.Time.Clock as Time
 import           NoThunks.Class (AllowThunk (..))
 import           Test.QuickCheck hiding (Fixed)
 import           Test.Tasty hiding (after)
-import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck hiding (Fixed)
 
 import qualified Control.Monad.Class.MonadSTM as LazySTM
@@ -80,20 +79,22 @@ instance Arbitrary TestDelayIO where
 -- NOTE: If the system is under very heavy load, this test /could/ fail:
 -- the slot number after the delay could be later than the one we expect.
 -- We don't relax the test because this is highly unlikely, and the stronger
--- test gives us a more useful property.
+-- test gives us a more useful property. Also see issue #3894.
 prop_delayNextSlot :: TestDelayIO -> Property
 prop_delayNextSlot TestDelayIO{..} =
     withMaxSuccess 10 $ ioProperty test
   where
-    test :: IO ()
+    test :: IO Property
     test = do
         tdioStart  <- pickSystemStart
         let time = defaultSystemTime tdioStart nullTracer
         atStart    <- fst <$> getWallClockSlot  time tdioSlotLen
         nextSlot   <-         waitUntilNextSlot time tdioSlotLen maxClockRewind atStart
         afterDelay <- fst <$> getWallClockSlot  time tdioSlotLen
-        assertEqual "atStart + 1" (atStart + 1) afterDelay
-        assertEqual "nextSlot"    nextSlot      afterDelay
+        pure $ conjoin
+          [ counterexample "atStart + 1" $ atStart + 1 === afterDelay
+          , counterexample "nextSlot"    $ nextSlot    === afterDelay
+          ]
 
     pickSystemStart :: IO SystemStart
     pickSystemStart = pick <$> getCurrentTime
@@ -288,8 +289,11 @@ prop_delayNoClockShift =
                    (slotLengthFromMillisec 100)
                    (secondsToNominalDiffTime 20)
                    5
-      assertEqual "slots" slots [SlotNo n | n <- [0..4]]
+      pure $ slots === [SlotNo n | n <- [0..4]]
 
+-- | Note that that under load, the returned list could be missing certain slots
+-- or contain more slots than requested. This means that tests using this
+-- function can fail, also see issue #3894.
 testOverrideDelay :: forall m. (IOLike m, MonadTime m, MonadDelay (OverrideDelay m))
                   => SystemStart
                   -> SlotLength
