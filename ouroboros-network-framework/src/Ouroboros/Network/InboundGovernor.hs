@@ -569,5 +569,5 @@ data InboundGovernorTrace peerAddr
     | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
-    | TrInboundGovernorError  !SomeException
+    | TrInboundGovernorError         !SomeException
   deriving Show
