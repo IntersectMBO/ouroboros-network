@@ -189,6 +189,7 @@ data Mempool m blk idx = Mempool {
       -- the current chain.
       --
       -- This does not update the internal state of the mempool.
+      --
     , getLedgerAndSnapshotFor ::
            Point blk
         -> SlotNo
@@ -196,7 +197,9 @@ data Mempool m blk idx = Mempool {
                     , TickedLedgerState blk TrackingMK
                     , MempoolSnapshot blk idx
                     )
-             ) -- FIXME: don't we want to introduce a custom data type for this triple?
+             ) -- One could argue that both ledger states belong inside the
+               -- mempool snapshot type, since such snapshot makes sense wrt
+               -- these states.
 
       -- | Get the mempool's capacity in bytes.
       --
