@@ -684,6 +684,9 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
 data LedgerDbCfg l = LedgerDbCfg {
       ledgerDbCfgSecParam :: !SecurityParam
     , ledgerDbCfg         :: !(LedgerCfg l)
+
+      -- TODO: we might need to add support for specifying the flushing rate and
+      -- policy in this datatype
     }
   deriving (Generic)
 

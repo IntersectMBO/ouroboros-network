@@ -1,7 +1,7 @@
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization

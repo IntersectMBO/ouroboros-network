@@ -81,6 +81,8 @@ data InternalState blk = IS {
       -- INVARIANT: 'isLedgerState' is the ledger resulting from applying the
       -- transactions in 'isTxs' against the ledger identified 'isTip' as tip
       -- after ticking it to 'isSlotNo'.
+      --
+      -- TODO: check this property.
     , isLedgerState  :: !(TickedLedgerState blk TrackingMK)
 
       -- | The tip of the chain that 'isTxs' was validated against
@@ -146,8 +148,9 @@ initInternalState capacityOverride lastTicketNo slot st = IS {
 
 -- | A ValidationResult is created from an InternalState and is used while
 -- revalidating the ledger state or validating transactions, but should never be
--- returned. It merely tracks the result since the last validation and should be
--- used to produce an internal state in the end.
+-- returned to the clients of the mempool API. It merely tracks the result since
+-- the last validation and should be used to produce an internal state in the
+-- end.
 data ValidationResult invalidTx blk = ValidationResult {
       -- | The tip of the chain before applying these transactions
       vrBeforeTip      :: ChainHash blk
@@ -189,7 +192,7 @@ data ValidationResult invalidTx blk = ValidationResult {
       -- be affected.
     , vrLastTicketNo   :: TicketNo
   }
-  
+
 -- | Extend 'ValidationResult' with a previously validated transaction that
 -- may or may not be valid in this ledger state
 --
@@ -267,9 +270,9 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 -- inputs. However, it is important to note that the new state passed as
 -- parameter ('blockLedgerState') potentially includes some values which were
 -- not required by the set of transactions that were used on the last mempool
--- revalidation/sync, therefore not being in 'isLedgerState is'. Then the way to
--- get a state with those new values included is to apply the same accumulated
--- differences from 'isLedgerState is' to 'blockLedgerState'.
+-- revalidation/sync, therefore not being in 'isLedgerState is'. Therefore the
+-- way to get a state with those new values included is to apply the same
+-- accumulated differences from 'isLedgerState is' to 'blockLedgerState'.
 --
 -- When these don't match, the transactions in the internal state will be
 -- revalidated ('revalidateTxsFor') on top of the given ledger state.
@@ -416,4 +419,3 @@ validationResultFromIS is = ValidationResult {
       , isLastTicketNo
       , isCapacity
       } = is
- 
