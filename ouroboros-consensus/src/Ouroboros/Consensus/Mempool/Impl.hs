@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Mempool.Impl (
 import qualified Control.Exception as Exn
 import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)
 import           Control.Monad.Except
+import           Data.Bifunctor (Bifunctor (second), bimap)
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -42,7 +43,6 @@ import           Control.Tracer
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
-import           Data.Bifunctor (Bifunctor (second), bimap)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -114,10 +114,9 @@ mkMempool ::
 mkMempool mpEnv = Mempool
     { tryAddTxs      = implTryAddTxs mpEnv
     , removeTxs      = \txids -> getStatePair mpEnv (StaticLeft ()) (NE.toList txids) [] >>= \case
-        StaticLeft (_is, Nothing) -> pure ()
-          -- FIXME: This case should be impossible! 'getStatePair' will never
-          -- return 'Nothing' since the removals list is nonempty. Shouldn't we
-          -- use 'error' here?
+        StaticLeft (_is, Nothing) ->
+          error $  "Function 'getStatePair' violated its postcondition."
+                <> "It should not return empty since the removals list is nonempty. "
         StaticLeft (is,  Just ls) -> do
           mTrace <- atomically $ runRemoveTxs istate
                                $ pureRemoveTxs cfg capacityOverride txids is (ledgerState ls)
@@ -350,9 +349,9 @@ implSyncWithLedger mpEnv = getStatePair mpEnv (StaticLeft ()) [] [] >>= \case
 -------------------------------------------------------------------------------}
 
 -- | Get the current mempool internal state and the ledger state at the tip of
--- the chain, loaded with all the 'ValuesMK' that are needed to validate the
--- both the transactions in the mempool as well as the transactions provided as
--- parmeters.
+-- the chain, loaded with all the 'ValuesMK' that are needed to validate both
+-- the transactions in the mempool as well as the transactions provided as
+-- parameters.
 --
 -- This function allows to specify the keys in the internal state we do not want
 -- to fetch the inputs from (see @removals@ below).
@@ -367,8 +366,9 @@ implSyncWithLedger mpEnv = getStatePair mpEnv (StaticLeft ()) [] [] >>= \case
 -- In the 'StaticRight' case, if a block point is given and that point is not on
 -- the current chain, then no ledger state is returned.
 --
--- NOTE: The ledger state is not necessarily the anchor of the 'InternalState'!
--- FIXME: What is the anchor of the internal state?
+-- NOTE: The ledger state is not necessarily the anchor of the 'InternalState',
+-- that is the ledger state referenced by 'isSlotNo' and 'isTip', which is the
+-- ledger state on top of which the transactions ('isTxs') were applied.
 getStatePair :: forall m blk b.
      ( IOLike m
      , LedgerSupportsMempool blk
