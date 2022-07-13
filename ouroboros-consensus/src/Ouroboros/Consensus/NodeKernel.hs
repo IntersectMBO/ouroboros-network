@@ -32,6 +32,7 @@ import           Control.Monad.Except
 import           Data.Bifunctor (second)
 import           Data.Hashable (Hashable)
 import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy
@@ -80,6 +81,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
+import           Ouroboros.Consensus.Mempool.TxSeq (zeroTicketNo)
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
@@ -87,8 +89,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
-import qualified Data.List.NonEmpty as NE
-import Ouroboros.Consensus.Mempool.TxSeq (zeroTicketNo)
 
 {-------------------------------------------------------------------------------
   Relay node

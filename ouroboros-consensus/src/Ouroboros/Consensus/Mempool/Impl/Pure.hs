@@ -28,6 +28,7 @@ import           Data.Bifunctor (second)
 import           Data.Maybe (isJust, isNothing)
 import qualified Data.Set as Set
 
+import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -37,7 +38,6 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxTicket (..),
                      zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util.IOLike
-import qualified Data.List.NonEmpty as NE
 
 {-------------------------------------------------------------------------------
   Mempool Implementation
