@@ -60,7 +60,8 @@ https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
 ### Added
 
-- New supported node to client version `NodeToClientV_14`
+- New supported node to client version `NodeToClientV_14` with new queries:
+  - `GetPoolState`: Get the pool state for the given stake pool ids
 
 ## Circa 2022-04-26
 

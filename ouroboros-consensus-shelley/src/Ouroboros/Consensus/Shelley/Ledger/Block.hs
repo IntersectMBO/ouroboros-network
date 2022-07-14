@@ -98,6 +98,7 @@ class
   , EraCrypto era ~ ProtoCrypto proto
     -- Hard-fork related constraints
   , HasPartialConsensusConfig proto
+  , FromCBOR (SL.PState (ProtoCrypto proto))
   ) => ShelleyCompatible proto era
 
 instance ShelleyCompatible proto era => ConvertRawHash (ShelleyBlock proto era) where
