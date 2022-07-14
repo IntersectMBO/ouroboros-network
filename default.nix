@@ -67,5 +67,6 @@ let
       inherit pkgs;
       withHoogle = true;
     };
+    inherit ouroborosNetworkHaskellPackages;
   };
 in self

@@ -23,8 +23,12 @@ let
 
       {
         # Compile all local packages with -Werror:
-        packages = lib.genAttrs projectPackages
-          (name: { configureFlags = [ "--ghc-option=-Werror" ]; });
+        packages = lib.genAttrs projectPackages (name:
+          {
+            configureFlags = [ "--ghc-option=-Werror" ];
+          } // (lib.optionalAttrs (lib.hasPrefix "ouroboros-consensus" name) {
+            components.library.doCoverage = true;
+          }));
       }
       {
         # Apply profiling arg to all library components in the build:
@@ -153,4 +157,14 @@ let
         })
     ];
   };
-in pkgSet
+
+  ouroborosConsensusCoverageReport = haskell-nix.haskellLib.coverageReport {
+    name = "ouroboros-concensus-coverage-report";
+    inherit (pkgSet.ouroboros-consensus-test.components) library;
+    checks = lib.filter lib.isDerivation
+      (lib.concatMap (name: lib.attrValues pkgSet.${name}.checks) projectPackages);
+    mixLibraries = (map
+      (name: pkgSet.${name}.components.library)
+      (lib.filter (lib.hasPrefix "ouroboros-consensus") projectPackages));
+  };
+in pkgSet // { inherit ouroborosConsensusCoverageReport; }
