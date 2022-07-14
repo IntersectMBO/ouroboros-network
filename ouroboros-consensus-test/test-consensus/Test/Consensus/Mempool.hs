@@ -174,8 +174,8 @@ prop_Mempool_removeTxs (TestSetupWithTxInMempool testSetup txToRemove) =
 
 -- | Test that both removing transactions one by one and removing them in one go
 -- produce the same result.
-prop_Mempool_semigroup_removeTxs :: TestSetupWithTxsInMempool -> Property
-prop_Mempool_semigroup_removeTxs (TestSetupWithTxsInMempool testSetup txsToRemove) =
+prop_Mempool_semigroup_removeTxs :: TestSetupWithTxsInMempoolToRemove -> Property
+prop_Mempool_semigroup_removeTxs (TestSetupWithTxsInMempoolToRemove testSetup txsToRemove) =
   withTestMempool testSetup $ \TestMempool {mempool = mempool1} -> do
   removeTxs mempool1 $ NE.map txId txsToRemove
   snapshot1 <- atomically (getSnapshot mempool1)
@@ -691,7 +691,7 @@ instance Arbitrary TestSetupWithTxInMempool where
     , tx' <- testInitialTxs testSetup'
     ]
 
-data TestSetupWithTxsInMempool = TestSetupWithTxsInMempool TestSetup (NE.NonEmpty TestTx)
+data TestSetupWithTxsInMempool = TestSetupWithTxsInMempool TestSetup [TestTx]
   deriving (Show)
 
 instance Arbitrary TestSetupWithTxsInMempool where
@@ -699,9 +699,33 @@ instance Arbitrary TestSetupWithTxsInMempool where
     TestSetupWithTxs { testSetup } <-
       arbitrary `suchThat` (not . null . testInitialTxs . testSetup)
     txs <- sublistOf (testInitialTxs testSetup)
-    return $ TestSetupWithTxsInMempool testSetup $ NE.fromList txs
+    return $ TestSetupWithTxsInMempool testSetup txs
 
   -- TODO shrink
+
+data TestSetupWithTxsInMempoolToRemove =
+    TestSetupWithTxsInMempoolToRemove TestSetup (NE.NonEmpty TestTx)
+  deriving (Show)
+
+instance Arbitrary TestSetupWithTxsInMempoolToRemove where
+  arbitrary = fmap convertToRemove
+            $ arbitrary `suchThat` thereIsAtLeastOneTx
+
+  shrink = fmap convertToRemove
+         . filter thereIsAtLeastOneTx
+         . shrink
+         . revertToRemove
+
+thereIsAtLeastOneTx :: TestSetupWithTxsInMempool -> Bool
+thereIsAtLeastOneTx (TestSetupWithTxsInMempool _ txs) = not $ null txs
+
+convertToRemove :: TestSetupWithTxsInMempool -> TestSetupWithTxsInMempoolToRemove
+convertToRemove (TestSetupWithTxsInMempool ts txs) =
+  TestSetupWithTxsInMempoolToRemove ts (NE.fromList txs)
+
+revertToRemove :: TestSetupWithTxsInMempoolToRemove -> TestSetupWithTxsInMempool
+revertToRemove  (TestSetupWithTxsInMempoolToRemove ts txs) =
+   TestSetupWithTxsInMempool ts (NE.toList txs)
 
 {-------------------------------------------------------------------------------
   TestMempool: a mempool with random contents
