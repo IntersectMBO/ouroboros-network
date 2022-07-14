@@ -276,6 +276,7 @@ test-suite io-tests
                      , ouroboros-network-framework
                      , ouroboros-network-framework:testlib
                      , typed-protocols
+                     , typed-protocols-stateful
                      , typed-protocols-examples
 
   if os(windows)
