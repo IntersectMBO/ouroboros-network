@@ -14,24 +14,33 @@
 module Test.Ouroboros.Network.Driver (tests) where
 
 import Data.Bifunctor (bimap)
+import Data.Functor (($>))
 import Data.List (intercalate)
 import Data.List qualified as List
+import Data.Monoid (Endo (..))
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer.Client (Client)
 import Network.TypedProtocol.Peer.Server (Server)
+import Network.TypedProtocol.Stateful.Codec qualified as Stateful
+import Network.TypedProtocol.Stateful.Peer.Client qualified as Stateful
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.Driver.Simple
+import Ouroboros.Network.Driver.Stateful qualified as Stateful
 
 import Network.TypedProtocol.ReqResp.Client
 import Network.TypedProtocol.ReqResp.Codec
 import Network.TypedProtocol.ReqResp.Examples
 import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Type
+import Network.TypedProtocol.Stateful.ReqResp.Client qualified as Stateful
+import Network.TypedProtocol.Stateful.ReqResp.Examples
+           (ReqRespStateCallbacks (..))
+import Network.TypedProtocol.Stateful.ReqResp.Examples qualified as Stateful
 
 import Network.TypedProtocol.PingPong.Client
 import Network.TypedProtocol.PingPong.Codec
@@ -69,6 +78,10 @@ tests = testGroup "Ouroboros.Network.Driver.Limits"
   , testProperty "channel PingPong ST"             prop_channel_ping_pong_ST
   , testProperty "channel PingPong IO"             prop_channel_ping_pong_IO
   , testProperty "channel PingPong with limits ST" prop_channel_ping_pong_with_limits_ST
+  , testGroup "Stateful"
+    [ testProperty "channel Stateful ReqResp ST"     prop_channel_stateful_reqresp_ST
+    , testProperty "channel Stateful ReqResp IO"     (withMaxSuccess 33 $ prop_channel_stateful_reqresp_IO)
+    ]
   ]
 
 
@@ -190,6 +203,7 @@ prop_channel_reqresp tracer limit reqPayloads = do
           then Just ShouldExceededTimeLimit
           else shouldFail cmds
 
+
 data ReqRespPayloadWithLimit = ReqRespPayloadWithLimit Word (String, DiffTime)
   deriving (Eq, Show)
 
@@ -283,6 +297,82 @@ prop_channel_ping_pong a b n tr = do
   where
     client = pingPongClientPeerPipelined (pingPongClientPipelinedMin n)
     server = pingPongServerPeer  pingPongServerCount
+
+
+data ReqRespState a (st :: ReqResp req resp) where
+    ReqRespState :: a -> ReqRespState a st
+
+
+reqRespStateCallbacks :: (Int -> Int) -> ReqRespStateCallbacks (ReqRespState Int)
+reqRespStateCallbacks f =
+    ReqRespStateCallbacks {
+        rrBusyToIdle = \(ReqRespState a) -> ReqRespState $! f a
+      , rrBusyToBusy = id
+      , rrBusyToDone = \(ReqRespState a) -> ReqRespState $! f a
+      }
+
+
+-- | Run the server peer using @runPeerWithByteLimit@, which will receive requests
+-- with the given payloads.
+--
+prop_channel_stateful_reqresp
+  :: forall m. ( MonadAsync m, MonadDelay m, MonadMask m)
+  => Tracer m (TraceSendRecv (ReqResp String ()))
+  -> [(String, DiffTime)]
+  -- ^ request payloads
+  -> (Int -> Int)
+  -> m Property
+prop_channel_stateful_reqresp tracer reqPayloads f = do
+      (c1, c2) <- createConnectedChannels
+
+      res <- try $
+        (fst <$> runPeer tracer codecReqResp c1 recvPeer)
+          `concurrently`
+        ((\((_, ReqRespState a), _) -> a)
+             <$> Stateful.runPeer tracer (Stateful.liftCodec codecReqResp) c2 (ReqRespState 0) sendPeer)
+
+      pure $ case res :: Either ProtocolLimitFailure ([DiffTime], Int) of
+        Right (_, a)             -> a === appEndo (mconcat (reqPayloads $> Endo f)) 0
+        Left ExceededSizeLimit{} -> property False
+        Left ExceededTimeLimit{} -> property False
+
+    where
+      sendPeer :: Stateful.Client (ReqResp String ()) StIdle (ReqRespState Int) m
+                                  ([()], ReqRespState Int (StDone :: ReqResp String ()))
+      sendPeer = Stateful.reqRespClientPeer
+               $ Stateful.reqRespClientMap
+                   (reqRespStateCallbacks f)
+                   (ReqRespState 0)
+                   (map fst reqPayloads)
+
+      recvPeer :: Server (ReqResp String ()) NonPipelined StIdle m [DiffTime]
+      recvPeer = reqRespServerPeer $ reqRespServerMapAccumL
+        (\a _ -> case a of
+          [] -> error "prop_runPeerWithLimits: empty list"
+          delay : acc -> do
+            threadDelay delay
+            return (acc, ()))
+        (map snd reqPayloads)
+
+
+prop_channel_stateful_reqresp_ST
+  :: ReqRespPayloadWithLimit
+  -> (Int -> Int)
+  -> Property
+prop_channel_stateful_reqresp_ST (ReqRespPayloadWithLimit _limit payload) f =
+  let trace = runSimTrace (prop_channel_stateful_reqresp (Tracer (say . show)) [payload] f)
+  in counterexample (intercalate "\n" $ map show $ traceEvents trace)
+   $ case traceResult True trace of
+       Left e  -> throw e
+       Right x -> x
+
+
+prop_channel_stateful_reqresp_IO
+  :: ReqRespPayloadWithLimit
+  -> (Int -> Int)
+  -> Property
+prop_channel_stateful_reqresp_IO (ReqRespPayloadWithLimit _limit payload) f =
+  ioProperty (prop_channel_stateful_reqresp nullTracer [payload] f)
 
 
 prop_channel_ping_pong_ST
