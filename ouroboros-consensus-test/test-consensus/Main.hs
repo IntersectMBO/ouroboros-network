@@ -13,6 +13,7 @@ import qualified Test.Consensus.MiniProtocol.ChainSync.Client (tests)
 import qualified Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests)
 import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
+import qualified Test.Consensus.Util (tests)
 import qualified Test.Consensus.Util.MonadSTM.RAWLock (tests)
 import qualified Test.Consensus.Util.Versioned (tests)
 
@@ -31,6 +32,7 @@ tests =
   , Test.Consensus.ResourceRegistry.tests
   , Test.Consensus.Util.MonadSTM.RAWLock.tests
   , Test.Consensus.Util.Versioned.tests
+  , Test.Consensus.Util.tests
   , testGroup "HardFork" [
         testGroup "History" [
             Test.Consensus.HardFork.Summary.tests

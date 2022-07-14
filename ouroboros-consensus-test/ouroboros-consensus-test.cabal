@@ -149,6 +149,7 @@ test-suite test-consensus
                        Test.Consensus.Mempool
                        Test.Consensus.Node
                        Test.Consensus.ResourceRegistry
+                       Test.Consensus.Util
                        Test.Consensus.Util.MonadSTM.RAWLock
                        Test.Consensus.Util.Versioned
 
