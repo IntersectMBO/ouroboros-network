@@ -212,6 +212,7 @@ test-suite sim-tests
                      , ouroboros-network-testing
                      , typed-protocols
                      , typed-protocols-cborg
+                     , typed-protocols-stateful
                      , typed-protocols-examples
 
   if os(windows)
@@ -268,6 +269,7 @@ test-suite io-tests
                      , ouroboros-network-framework
                      , ouroboros-network-framework:testlib
                      , typed-protocols
+                     , typed-protocols-stateful
                      , typed-protocols-examples
 
   if os(windows)
