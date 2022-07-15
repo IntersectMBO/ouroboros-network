@@ -13,6 +13,12 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   , prop_diffusionScript_fixupCommands
   , prop_diffusionScript_commandScript_valid
   , diffusionSimulation
+  , Command (..)
+    -- * Re-exports
+  , TestAddress (..)
+  , RelayAccessPoint (..)
+  , Script (..)
+  , module PeerSelection
   ) where
 
 import           Control.Monad (forM, replicateM, (>=>))
@@ -52,12 +58,14 @@ import           Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
+import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..), PortNumber,
                      RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
+import qualified Ouroboros.Network.PeerSelection.Types as PeerSelection
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..), byteLimitsChainSync,
                      timeLimitsChainSync)
@@ -80,7 +88,9 @@ import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
                      NtNAddr, NtNAddr_ (IPAddr), NtNVersion, NtNVersionData,
                      randomBlockGenerationArgs)
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DNSLookupDelay, DNSTimeout)
+                     (DNSLookupDelay (..), DNSTimeout (..))
+import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelection hiding
+                     (tests)
 
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
                      chooseInt, counterexample, frequency, oneof, property,
