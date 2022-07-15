@@ -33,7 +33,7 @@ import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Data.List (delete, nub, (\\))
+import           Data.List (delete, intersperse, nub, (\\))
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -117,13 +117,52 @@ data SimArgs =
     , saDNSLookupDelayScript  :: Script DNSLookupDelay
       -- ^ 'Arguments' 'aDNSLookupDelayScript' value
     }
-    deriving (Show)
+
+instance Show SimArgs where
+    show SimArgs { saSlot, saSeed, saQuota, saMbTime, saRelays, saDomainMap,
+                   saAddr, saLocalRootPeers, saLocalSelectionTargets,
+                   saDNSTimeoutScript, saDNSLookupDelayScript } =
+      concat $ intersperse " " [ "SimArgs"
+                               , show saSlot
+                               , "(" ++ show saSeed ++ ")"
+                               , show saQuota
+                               , "(" ++ show saMbTime ++ ")"
+                               , show saRelays
+                               , "(Map.fromList [" ++ Map.foldMapWithKey (\domain ips -> "(" ++ show domain ++ ", " ++ showIPs ips ++ ")") saDomainMap ++ "])"
+                               , "(" ++ show saAddr ++ ")"
+                               , show saLocalRootPeers
+                               , show saLocalSelectionTargets
+                               , "(" ++ show saDNSTimeoutScript ++ ")"
+                               , "(" ++ show saDNSLookupDelayScript ++ ")"
+                               ]
+      where
+        showIPs :: [IP] -> String
+        showIPs ips = "["
+                   ++ concat (intersperse ", " (map (\ip -> "read \"" ++ show ip ++ "\"") ips))
+                   ++ "]"
+
 
 data Command = JoinNetwork DiffTime (Maybe NtNAddr)
              | Kill DiffTime
              | Reconfigure DiffTime
                            [(Int, Map RelayAccessPoint PeerAdvertise)]
-  deriving (Show, Eq)
+  deriving Eq
+
+instance Show Command where
+    showsPrec d (JoinNetwork delay (Just addr)) = showString "JoinNetwork "
+                                                . showsPrec d delay
+                                                . showString " "
+                                                . showParen True ( showString "Just "
+                                                                 . showParen True (showsPrec d addr))
+    showsPrec d (JoinNetwork delay Nothing)     = showString "JoinNetwork "
+                                                . showsPrec d delay
+                                                . showString " Nothing"
+    showsPrec d (Kill delay)                    = showString "Kill "
+                                                . showsPrec d delay
+    showsPrec d (Reconfigure delay localRoots)  = showString "Reconfigure "
+                                                . showsPrec d delay
+                                                . showString " "
+                                                . showsPrec d localRoots
 
 -- | Generate DNS table
 genDomainMap :: [RelayAccessPoint] -> IP -> Gen (Map Domain [IP])

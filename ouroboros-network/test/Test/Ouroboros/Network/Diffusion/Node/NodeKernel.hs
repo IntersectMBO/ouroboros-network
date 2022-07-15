@@ -91,9 +91,9 @@ instance Arbitrary NtNAddr_ where
       ]
 
 instance Show NtNAddr_ where
-    show (EphemeralIPv4Addr n) = "ephemeral:" ++ show n
-    show (EphemeralIPv6Addr n) = "ephemeral6:" ++ show n
-    show (IPAddr ip port)      = show ip ++ ":" ++ show port
+    show (EphemeralIPv4Addr n) = "EphemeralIPv4Addr " ++ show n
+    show (EphemeralIPv6Addr n) = "EphemeralIPv6Addr " ++ show n
+    show (IPAddr ip port)      = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
 
 instance GlobalAddressScheme NtNAddr_ where
     getAddressType (TestAddress addr) =
