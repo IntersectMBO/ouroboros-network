@@ -239,10 +239,10 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
           getProposedPPUpdates st
         GetStakeDistribution ->
           SL.poolsByTotalStakeFraction globals st
-        GetUTxOByAddress addrs ->
-          SL.getFilteredUTxO st addrs
-        GetUTxOWhole -> -- FIXME:  if we never match this case then we should probaly clarify this to avoid confusions when reading this part of the code.
-          SL.getUTxO st
+        GetUTxOByAddress{} ->
+          error "This code path should be unreachable as we should not answer a WholeL query directly but incrementally"
+        GetUTxOWhole ->
+          error "This code path should be unreachable as we should not answer a WholeL query directly but incrementally"
         DebugEpochState ->
           getEpochState st
         GetCBOR query' ->
@@ -304,10 +304,7 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
           id
       GetUTxOWhole           ->
         IncrementalQueryHandler
-          (\st ->
-             let ShelleyLedgerTables (ApplyValuesMK (HD.UtxoValues vs)) = projectLedgerTables st
-             in SL.UTxO vs
-          )
+          (SL.getUTxO . shelleyLedgerState)
           emptyUtxo
           combUtxo
           id
