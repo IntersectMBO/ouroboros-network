@@ -51,7 +51,13 @@ instance ToJSON DomainAccessPoint where
 --
 data RelayAccessPoint = RelayAccessDomain  !DNS.Domain !Socket.PortNumber
                       | RelayAccessAddress !IP.IP      !Socket.PortNumber
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show RelayAccessPoint where
+    show (RelayAccessDomain domain port) =
+      "RelayAccessDomain " ++ show domain ++ " " ++ show port
+    show (RelayAccessAddress ip port) =
+      "RelayAccessAddress \"" ++ show ip ++ "\" " ++ show port
 
 
 -- | 'RelayDomainAccessPoint' a bidirectional pattern which links
