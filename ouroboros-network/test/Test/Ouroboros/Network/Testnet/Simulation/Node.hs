@@ -41,6 +41,7 @@ import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Void (Void)
 import           System.Random (StdGen, mkStdGen)
+import qualified System.Random as Random
 
 import           Network.DNS (Domain, TTL)
 
@@ -96,7 +97,7 @@ data SimArgs =
   SimArgs
     { saSlot                  :: DiffTime
       -- ^ 'randomBlockGenerationArgs' slot duration argument
-    , saSeed                  :: StdGen
+    , saSeed                  :: Int
       -- ^ 'randomBlockGenerationArgs' seed argument
     , saQuota                 :: Int
       -- ^ 'randomBlockGenerationArgs' quota value
@@ -104,8 +105,6 @@ data SimArgs =
       -- ^ 'LimitsAndTimeouts' argument
     , saRelays                :: [RelayAccessPoint]
       -- ^ 'Interfaces' relays auxiliary value
-    , saRng                   :: StdGen
-      -- ^ 'Interfaces' 'iRng' value
     , saDomainMap             :: Map Domain [IP]
       -- ^ 'Interfaces' 'iDomainMap' value
     , saAddr                  :: NtNAddr
@@ -257,7 +256,7 @@ instance Arbitrary DiffusionScript where
             numberOfNodes   = length [ r | r@(RelayAccessAddress _ _) <- raps ]
             quota = 20 `div` numberOfNodes
             (RelayAccessAddress rapIP _) = rap
-        bgaSeed <- mkStdGen <$> arbitrary
+        seed <- arbitrary
 
         dMap <- genDomainMap rapsWithoutSelf rapIP
 
@@ -275,8 +274,6 @@ instance Arbitrary DiffusionScript where
         -- Taken from ouroboros-consensus/src/Ouroboros/Consensus/Node.hs
         mustReplyTimeout <- Just <$> oneof (pure <$> [90, 135, 180, 224, 269])
 
-        stdGen <- mkStdGen <$> arbitrary
-
         lrp <- genLocalRootPeers rapsWithoutSelf rap
         relays <- sublistOf rapsWithoutSelf
 
@@ -287,11 +284,10 @@ instance Arbitrary DiffusionScript where
         return
          $ SimArgs
             { saSlot                  = bgaSlotDuration
-            , saSeed                  = bgaSeed
+            , saSeed                  = seed
             , saQuota                 = quota
             , saMbTime                = mustReplyTimeout
             , saRelays                = relays
-            , saRng                   = stdGen
             , saDomainMap             = dMap
             , saAddr                  = ntnAddr
             , saLocalRootPeers        = lrp
@@ -519,11 +515,10 @@ diffusionSimulation
             -> m Void
     runNode SimArgs
             { saSlot                  = bgaSlotDuration
-            , saSeed                  = bgaSeed
+            , saSeed                  = seed
             , saQuota                 = quota
             , saMbTime                = mustReplyTimeout
             , saRelays                = raps
-            , saRng                   = stdGen
             , saAddr                  = rap
             , saLocalSelectionTargets = peerSelectionTargets
             , saDNSTimeoutScript      = dnsTimeout
@@ -533,7 +528,8 @@ diffusionSimulation
             ntcSnocket
             lrpVar
             dMapVar =
-      let acceptedConnectionsLimit =
+      let (bgaRng, rng) = Random.split $ mkStdGen seed
+          acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
           diffusionMode = InitiatorAndResponderDiffusionMode
           readLocalRootPeers  = readTVar lrpVar
@@ -549,7 +545,7 @@ diffusionSimulation
           blockGeneratorArgs :: BlockGeneratorArgs Block StdGen
           blockGeneratorArgs =
             randomBlockGenerationArgs bgaSlotDuration
-                                      bgaSeed
+                                      bgaRng
                                       quota
 
           stdChainSyncTimeout :: ChainSyncTimeout
@@ -590,7 +586,7 @@ diffusionSimulation
               , Node.iAcceptVersion     = acceptVersion
               , Node.iNtnDomainResolver = domainResolver raps dMapVar
               , Node.iNtcSnocket        = ntcSnocket
-              , Node.iRng               = stdGen
+              , Node.iRng               = rng
               , Node.iDomainMap         = dMapVar
               , Node.iLedgerPeersConsensusInterface
                                         = LedgerPeersConsensusInterface
