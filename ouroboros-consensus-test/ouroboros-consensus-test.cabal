@@ -255,6 +255,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.VolatileDB.StateMachine
 
   build-depends:       base              >=4.14 && <4.17
+                     , async
                      , bifunctors
                      , binary
                      , bytestring
