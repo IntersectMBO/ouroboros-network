@@ -27,7 +27,8 @@ dist/
 *~
 \#*
 *_flymake.hs
-result*
+result
+result-[0-9]*
 **/tags
 **/TAGS
 .stack-to-nix.cache
