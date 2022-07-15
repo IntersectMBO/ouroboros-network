@@ -63,7 +63,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
+import           Ouroboros.Consensus.Ledger.Basics (StowableLedgerTables (..),
+                     ValuesMK, forgetLedgerTables)
 import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -850,9 +851,20 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
-          => Flip LedgerState mk (ShelleyBlock proto era)
-          -> Flip LedgerState mk (ShelleyBlock proto era)
-        register (Flip st) = Flip st {
+          => Flip LedgerState ValuesMK (ShelleyBlock proto era)
+          -> Flip LedgerState ValuesMK (ShelleyBlock proto era)
+        -- Due to UTxO-HD there is a subtlety here. The functions that register
+        -- the initial funds work on the UTxO inside the LedgerState instead of
+        -- on the tables. This implies that we have to first stow the tables,
+        -- modify the values and then unstow them. However because
+        -- 'unstowLedgerTables' expects an 'EmptyMK' state, we have to
+        -- 'forgetLedgerTables' just to make the types match.
+        --
+        -- It doesn't seem wise to modify the type of 'unstowLedgerTables' to
+        -- accept any 'mk' as now we get the guarantee that whenever we are
+        -- unstowing, we are doing it on an EmptyMK and only in this case (which
+        -- must happen only on tests) we do this trickery.
+        register (Flip st) = Flip $ unstowLedgerTables $ forgetLedgerTables $ st {
               Shelley.shelleyLedgerState =
                 -- We must first register the initial funds, because the stake
                 -- information depends on it.
@@ -860,7 +872,9 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                     (SL.sgStaking genesisShelley)
                 . registerInitialFunds
                     (ListMap.toMap (SL.sgInitialFunds genesisShelley))
-                $ Shelley.shelleyLedgerState st
+                . Shelley.shelleyLedgerState
+                . stowLedgerTables
+                $ st
             }
 
     -- | For each element in the list, a block forging thread will be started.
