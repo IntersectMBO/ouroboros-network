@@ -1342,7 +1342,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              10 -- seconds
+              15 -- seconds
               id
               demotionOpportunities
 
