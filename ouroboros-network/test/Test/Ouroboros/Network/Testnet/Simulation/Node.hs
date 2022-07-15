@@ -74,12 +74,11 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket (BearerInfo (..), FD, withSnocket)
 
-import qualified Test.Ouroboros.Network.Diffusion.Node as Node
+import qualified Test.Ouroboros.Network.Diffusion.Node as NodeKernel
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
                      (BlockGeneratorArgs, NtCAddr, NtCVersion, NtCVersionData,
                      NtNAddr, NtNAddr_ (IPAddr), NtNVersion, NtNVersionData,
                      randomBlockGenerationArgs)
-import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay, DNSTimeout)
 
@@ -556,66 +555,66 @@ diffusionSimulation
                 , mustReplyTimeout
                 }
 
-          limitsAndTimeouts :: Node.LimitsAndTimeouts Block
+          limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts Block
           limitsAndTimeouts
-            = Node.LimitsAndTimeouts
-                { Node.chainSyncLimits     = defaultMiniProtocolsLimit
-                , Node.chainSyncSizeLimits = byteLimitsChainSync (const 0)
-                , Node.chainSyncTimeLimits =
+            = NodeKernel.LimitsAndTimeouts
+                { NodeKernel.chainSyncLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.chainSyncSizeLimits = byteLimitsChainSync (const 0)
+                , NodeKernel.chainSyncTimeLimits =
                     timeLimitsChainSync stdChainSyncTimeout
-                , Node.keepAliveLimits     = defaultMiniProtocolsLimit
-                , Node.keepAliveSizeLimits = byteLimitsKeepAlive (const 0)
-                , Node.keepAliveTimeLimits = timeLimitsKeepAlive
-                , Node.pingPongLimits      = defaultMiniProtocolsLimit
-                , Node.pingPongSizeLimits  =
+                , NodeKernel.keepAliveLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.keepAliveSizeLimits = byteLimitsKeepAlive (const 0)
+                , NodeKernel.keepAliveTimeLimits = timeLimitsKeepAlive
+                , NodeKernel.pingPongLimits      = defaultMiniProtocolsLimit
+                , NodeKernel.pingPongSizeLimits  =
                     ProtocolSizeLimits (const smallByteLimit) (const 0)
-                , Node.pingPongTimeLimits  =
+                , NodeKernel.pingPongTimeLimits  =
                     ProtocolTimeLimits (const (Just 60))
-                , Node.handshakeLimits     = defaultMiniProtocolsLimit
-                , Node.handshakeTimeLimits =
+                , NodeKernel.handshakeLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.handshakeTimeLimits =
                     ProtocolSizeLimits (const (4 * 1440))
                                        (fromIntegral . BL.length)
-                , Node.handhsakeSizeLimits =
+                , NodeKernel.handhsakeSizeLimits =
                     ProtocolTimeLimits (const shortWait)
                 }
 
-          interfaces :: Node.Interfaces m
+          interfaces :: NodeKernel.Interfaces m
           interfaces =
-            Node.Interfaces
-              { Node.iNtnSnocket        = ntnSnocket
-              , Node.iAcceptVersion     = acceptVersion
-              , Node.iNtnDomainResolver = domainResolver raps dMapVar
-              , Node.iNtcSnocket        = ntcSnocket
-              , Node.iRng               = rng
-              , Node.iDomainMap         = dMapVar
-              , Node.iLedgerPeersConsensusInterface
+            NodeKernel.Interfaces
+              { NodeKernel.iNtnSnocket        = ntnSnocket
+              , NodeKernel.iAcceptVersion     = acceptVersion
+              , NodeKernel.iNtnDomainResolver = domainResolver raps dMapVar
+              , NodeKernel.iNtcSnocket        = ntcSnocket
+              , NodeKernel.iRng               = rng
+              , NodeKernel.iDomainMap         = dMapVar
+              , NodeKernel.iLedgerPeersConsensusInterface
                                         = LedgerPeersConsensusInterface
                                         $ \_ -> return Nothing
               }
 
-          arguments :: Node.Arguments m
+          arguments :: NodeKernel.Arguments m
           arguments =
-            Node.Arguments
-              { Node.aIPAddress            = rap
-              , Node.aAcceptedLimits       = acceptedConnectionsLimit
-              , Node.aDiffusionMode        = diffusionMode
-              , Node.aKeepAliveInterval    = 0
-              , Node.aPingPongInterval     = 0
-              , Node.aPeerSelectionTargets = peerSelectionTargets
-              , Node.aReadLocalRootPeers   = readLocalRootPeers
-              , Node.aReadPublicRootPeers  = readPublicRootPeers
-              , Node.aReadUseLedgerAfter   = readUseLedgerAfter
-              , Node.aProtocolIdleTimeout  = 5
-              , Node.aTimeWaitTimeout      = 30
-              , Node.aDNSTimeoutScript     = dnsTimeout
-              , Node.aDNSLookupDelayScript = dnsLookupDelay
+            NodeKernel.Arguments
+              { NodeKernel.aIPAddress            = rap
+              , NodeKernel.aAcceptedLimits       = acceptedConnectionsLimit
+              , NodeKernel.aDiffusionMode        = diffusionMode
+              , NodeKernel.aKeepAliveInterval    = 0
+              , NodeKernel.aPingPongInterval     = 0
+              , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
+              , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
+              , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aReadUseLedgerAfter   = readUseLedgerAfter
+              , NodeKernel.aProtocolIdleTimeout  = 5
+              , NodeKernel.aTimeWaitTimeout      = 30
+              , NodeKernel.aDNSTimeoutScript     = dnsTimeout
+              , NodeKernel.aDNSLookupDelayScript = dnsLookupDelay
               }
 
-       in Node.run blockGeneratorArgs
-                   limitsAndTimeouts
-                   interfaces
-                   arguments
-                   (tracersExtraWithTimeName rap)
+       in NodeKernel.run blockGeneratorArgs
+                         limitsAndTimeouts
+                         interfaces
+                         arguments
+                         (tracersExtraWithTimeName rap)
 
     domainResolver :: [RelayAccessPoint]
                    -> StrictTVar m (Map Domain [(IP, TTL)])
@@ -638,7 +637,7 @@ diffusionSimulation
 
 
 ntnToPeerAddr :: IP -> PortNumber -> NtNAddr
-ntnToPeerAddr a b = TestAddress (Node.IPAddr a b)
+ntnToPeerAddr a b = TestAddress (IPAddr a b)
 
 withAsyncAll :: MonadAsync m => [m a] -> ([Async m a] -> m b) -> m b
 withAsyncAll xs0 action = go [] xs0
