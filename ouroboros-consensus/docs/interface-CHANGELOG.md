@@ -56,6 +56,12 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-07-13
+
+### Added
+
+- New supported node to client version `NodeToClientV_14`
+
 ## Circa 2022-04-26
 
 ### Added

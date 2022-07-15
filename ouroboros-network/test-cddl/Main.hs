@@ -133,7 +133,13 @@ tests CDDLSpecs { cddlChainSync
       [ testProperty "NodeToNode.Handshake"
                                          (prop_encodeHandshakeNodeToNode
                                                cddlHandshakeNodeToNode)
-      , testProperty "NodeToClient.Handshake"
+      , -- If this fails whilst adding a new node-to-client version, ensure that
+        -- all the necessary changes are included:
+        --
+        -- + 'NodeVersion' data type
+        -- + 'NodeToClientVersion' data type
+        -- + 'versionNumber' in the 'handshake-node-to-client.cddl' file
+        testProperty "NodeToClient.Handshake"
                                          (prop_encodeHandshakeNodeToClient
                                                cddlHandshakeNodeToClient)
       , testProperty "ChainSync"         (prop_encodeChainSync
