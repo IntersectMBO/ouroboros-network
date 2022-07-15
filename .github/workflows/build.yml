@@ -8,7 +8,7 @@ jobs:
 
     defaults:
       run:
-        shell: bash
+        shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
 
     strategy:
       fail-fast: false
@@ -21,67 +21,70 @@ jobs:
       SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
 
     steps:
-    - name: Install Haskell
+    - name: "WIN: Setup MSYS2 and libraries"
+      if: runner.os == 'Windows'
+      uses: msys2/setup-msys2@v2
+      with:
+        update: true
+        install: >-
+          base-devel
+          autoconf-wrapper
+          autoconf
+          automake
+          libtool
+          make
+          git
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-libsodium
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-jq
+
+    - name: "LINUX: Setup haskell"
+      if: runner.os != 'Windows'
       uses: haskell/actions/setup@v1
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: 3.6.2.0
 
-    - name: Show Haskell tool versions
+    - name: "WIN: Setup Haskell"
+      id: win-setup-haskell
+      if: runner.os == 'Windows'
       run: |
+        # see https://gitlab.haskell.org/haskell/ghcup-hs/-/blob/master/scripts/bootstrap/bootstrap-haskell
+        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | \
+          BOOTSTRAP_HASKELL_NONINTERACTIVE=1 \
+          BOOTSTRAP_HASKELL_ADJUST_CABAL_CONFIG=1 \
+          BOOTSTRAP_HASKELL_ADJUST_BASHRC=1 \
+          BOOTSTRAP_HASKELL_GHC_VERSION="${{ matrix.ghc }}" \
+          BOOTSTRAP_HASKELL_CABAL_VERSION="3.6.2.0" \
+          sh
+
+        # MSYS2 doesn't inherit $GITHUB_PATH so this is needed
+        cat <(echo "source /c/ghcup/env") ~/.bashrc > ~/.bashrc.new
+        mv ~/.bashrc.new ~/.bashrc
+
+        source ~/.bashrc
+
+        # There is an issue with crt libraries, fixed by prepending the ghc
+        # mingw32 libraries directory to every other library directory.
+        echo "# Original cabal config extra-lib-dirs"
+        grep extra-lib-dirs /c/cabal/config
+
+        sed -i 's/C:\\msys64\\mingw64\\lib/C:\\ghcup\\ghc\\8.10.7\\mingw\\x86_64-w64-mingw32\\lib, C:\\msys64\\mingw64\\lib/g' /c/cabal/config
+
+        echo "# Modified cabal config extra-lib-dirs"
+        grep extra-lib-dirs /c/cabal/config
+
         ghc --version
         cabal --version
-
-    - name: Select build directory
-      run: |
-        if [ "$OS" == Windows_NT ]; then
-          CABAL_BUILDDIR="D:\\a\\_temp\\dist"
-        else
-          CABAL_BUILDDIR="dist-newstyle"
-        fi
-
-        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR"
-        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
+        echo "::set-output name=cabal-store::$(cabal --help | tail -1 | tr -d ' ' | rev | cut -d '/' -f2- | rev)\\store"
 
     - name: Set cache version
       run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
 
-    - name: Install pkgconfiglite
-      if: matrix.os == 'windows-latest'
-      run: choco install -y pkgconfiglite --allow-empty-checksums
-
-    - name: Install libsodium (Windows)
-      if: matrix.os == 'windows-latest'
-      env:
-        RUNNER_TEMP: ${{ runner.temp }}
-      run: |
-        echo "RUNNER_TEMP=$RUNNER_TEMP"
-        cd "$RUNNER_TEMP"
-
-        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
-
-        curl -Ls \
-          --connect-timeout 5 \
-          --max-time 10 \
-          --retry 5 \
-          --retry-delay 0 \
-          --retry-max-time 40 \
-          https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-mingw.tar.gz -o libsodium-1.0.18-mingw.tar.gz
-
-        tar zxvf libsodium-1.0.18-mingw.tar.gz
-        sed -i "s|/d/a/1/s/|$RUNNER_TEMP_FWD\/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
-
-        export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
-
-        export LIBSODIUM_PATH="$(readlink -f libsodium-win64/bin | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
-        echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
-
-    - name: Install build environment
-      if: matrix.os == 'ubuntu-20.04'
+    - name: "LINUX: Install build environment (apt-get)"
+      if: runner.os == 'Linux'
       run: |
         sudo apt-get update
         sudo apt-get -y install libsodium23 libsodium-dev
@@ -89,134 +92,99 @@ jobs:
         sudo apt-get -y remove --purge software-properties-common
         sudo apt-get -y autoremove
 
-    - name: Install secp256k1 (Linux)
-      if: matrix.os == 'ubuntu-20.04'
+    - name: "LINUX: Install build environment (for secp256k1)"
+      if: runner.os == 'Linux'
       run: |
         sudo apt-get -y install autoconf automake libtool
-        mkdir secp256k1-sources
-        cd secp256k1-sources
-        git clone https://github.com/bitcoin-core/secp256k1.git
-        cd secp256k1
-        git reset --hard $SECP256K1_REF
-        ./autogen.sh
-        ./configure --prefix=/usr --enable-module-schnorrsig --enable-experimental
-        make
-        make check
-        sudo make install
-        cd ../..
+        echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
+        echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
 
-    - name: Install secp256k1 (Windows)
-      if: matrix.os == 'windows-latest'
-      env:
-        RUNNER_TEMP: ${{ runner.temp }}
+    - name: "Install secp256k1"
       run: |
-        echo "RUNNER_TEMP=$RUNNER_TEMP"
-        cd "$RUNNER_TEMP"
-
-        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
-
-        curl -Ls \
-          --connect-timeout 5 \
-          --max-time 10 \
-          --retry 5 \
-          --retry-delay 0 \
-          --retry-max-time 40 \
-          https://hydra.iohk.io/job/Cardano/haskell-nix/windows-secp256k1/latest/download/1 -o secp256k1.zip
-        mkdir secp256k1
-        cd secp256k1
-        unzip ../secp256k1.zip
-        cd ..
-        export PKG_CONFIG_PATH="$PKG_CONFIG_PATH;$(readlink -f secp256k1/lib/pkgconfig | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
-        export SECP256K1_PATH="$(readlink -f secp256k1/bin | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "SECP256K1_PATH=$SECP256K1_PATH"
-        echo "$SECP256K1_PATH" >> $GITHUB_PATH
-
-    - name: Set up temp directory
-      env:
-        RUNNER_TEMP: ${{ runner.temp }}
-      run: |
-        echo "TMPDIR=$RUNNER_TEMP"  >> $GITHUB_ENV
-        echo "TMP=$RUNNER_TEMP"     >> $GITHUB_ENV
+        git clone https://github.com/bitcoin-core/secp256k1
+        ( cd secp256k1
+          git switch $SECP256K1_REF --detach
+          ./autogen.sh
+          ./configure $CI_SECP_FLAGS --enable-module-schnorrsig --enable-experimental
+          make
+          make check
+          $CI_SECP_INSTALL_CMD make install
+        )
 
     - uses: actions/checkout@v2
 
     - name: Update Hackage index
       run: cabal update
 
-    - name: Cabal Configure
-      run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
-
-    - name: Record dependencies
+    - name: "Configure cabal.project.local"
       run: |
-        cabal build all --dry-run
-        cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
-        date > date.txt
-
-    - uses: actions/cache@v2
-      name: Cache cabal store
-      with:
-        path: ${{ steps.setup-haskell.outputs.cabal-store }}
-        key: cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
-        restore-keys: |
-          cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
-          cache-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
-
-    - name: Use cabal.project.local.ci
-      run: |
+        # running cabal configure overrides every other configuration already
+        # present in the cabal.project.local file so it is quite disruptive. By
+        # manually adding the options we want, this is always consistent.
         cat ./cabal.project.local.ci >> ./cabal.project.local
 
         cat >> cabal.project.local <<EOF
-        package cardano-crypto-praos
-          flags: -external-libsodium-vrf
-        EOF
 
-        cat ./cabal.project.local
-
-    - name: Install happy
-      run: |
-        cabal --builddir="$CABAL_BUILDDIR" install happy --install-method=copy
-
-    - name: Build dependencies
-      run: cabal --builddir="$CABAL_BUILDDIR" build --only-dependencies all
-
-    - name: Print logs
-      if: always()
-      run: |
-        for x in $(find 'C:\Users\runneradmin\AppData\Roaming\cabal\logs' -name '*.log'); do
-          echo "==== $x ===="
-          cat "$x"
-        done
-
-    - name: Set checkinvariant flag
-      run: |
-        cat >> cabal.project.local <<EOF
+        -- Add strcittvar check
         package io-classes
           flags: +checktvarinvariant
+
+        package cardano-crypto-praos
+          flags: -external-libsodium-vrf
+
+        -- cabal configure --enable-tests
+        ignore-project: False
+        tests: True
         EOF
 
         cat ./cabal.project.local
 
+    - name: Record dependencies
+      id: record-deps
+      run: |
+        cabal build all --dry-run
+        cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
+        echo "::set-output name=weeknum::$(/bin/date -u "+%W")"
+
+    - uses: actions/cache@v2
+      name: "Cache `cabal store`"
+      with:
+        path: ${{ runner.os == 'Windows' && steps.win-setup-haskell.outputs.cabal-store || steps.setup-haskell.outputs.cabal-store }}
+        key: cache-dependencies-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        restore-keys: cache-dependencies-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+
+    - uses: actions/cache@v2
+      name: "Cache `dist-newstyle`"
+      with:
+        path: |
+          dist-newstyle
+          !dist-newstyle/**/.git
+        key: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.record-deps.outputs.weeknum }}
+        restore-keys: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+
+
+    - name: Build dependencies
+      run: cabal build --only-dependencies all
+
     - name: Build projects [build]
-      run: cabal --builddir="$CABAL_BUILDDIR" build all
+      run: cabal build all
 
     # Test network packages
 
     - name: ntp-client [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run ntp-client:test
+      run: cabal run ntp-client:test
 
     - name: network-mux [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run network-mux:test
+      run: cabal run network-mux:test
 
     - name: ourobors-network-testing [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-testing:test
+      run: cabal run ouroboros-network-testing:test
 
     # issue: #1818
     - name: ourobors-network-framework [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
+      run: cabal run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
 
     - name: ouroboros-network [test]
-      run: cabal --builddir="$CABAL_BUILDDIR" run ouroboros-network:test
+      run: cabal run ouroboros-network:test
 
     # Consensus tests take too long on GitHub's Azure machines
