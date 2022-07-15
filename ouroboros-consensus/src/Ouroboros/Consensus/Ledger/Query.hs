@@ -285,6 +285,12 @@ class QuerySat (mk :: MapKind) (fp :: FootprintL)
 
 instance QuerySat mk SmallL
 
+-- 'SL.getFilteredUTxO' works on the UTxO inside the LedgerState instead of on
+-- the tables, so we have to stow the values before calling this, which makes
+-- this instance a requisite, even if it does look counterintuitive to be able
+-- to answer 'LargeL' queries with 'EmptyMK' tables.
+instance QuerySat EmptyMK LargeL
+
 instance QuerySat ValuesMK LargeL
 
 -- | Different queries supported by the ledger, indexed by the result type.
@@ -315,7 +321,7 @@ class IsQuery (BlockQuery blk) => QueryLedger blk where
 
 data IncrementalQueryHandler :: Type -> Type -> Type where
   IncrementalQueryHandler ::
-       (LedgerState blk ValuesMK -> st)
+       (LedgerState blk EmptyMK -> st)
     -> st
     -> (st -> st -> st)
     -> (st -> result)
@@ -356,7 +362,7 @@ handleLargeQuery cfg dlv query = do
     let DiskLedgerView st dbRead _dbReadRange _dbClose = dlv
         keys                                           = prepareQuery query
     values <- dbRead (ExtLedgerStateTables keys)
-    pure $ answerQuery cfg query (st `withLedgerTables` values)
+    pure $ answerQuery cfg query (stowLedgerTables $ st `withLedgerTables` values)
 
 handleWholeQuery ::
      forall blk m result.
@@ -382,11 +388,11 @@ handleWholeQuery dlv query = do
             loop !prev !acc = do
               extValues@(ExtLedgerStateTables values) <-
                 dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
-              if getAll $ foldLedgerTables (All . f) values then pure acc else do
+              if getAll $ foldLedgerTables (All . f) values then pure acc else
                 loop
                   (Just $ mapLedgerTables toKeys extValues)
-                  (comb acc $ partial $ ledgerState st `withLedgerTables` values)
-          in post <$> loop Nothing empty
+                  (comb acc $ partial (stowLedgerTables (ledgerState st `withLedgerTables` values) `withLedgerTables` polyEmptyLedgerTables))
+          in  post <$> loop Nothing empty
   where
 
     DiskLedgerView st _dbRead dbReadRange _dbClose = dlv

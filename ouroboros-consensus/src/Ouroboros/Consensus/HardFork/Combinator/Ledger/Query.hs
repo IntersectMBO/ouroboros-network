@@ -303,8 +303,8 @@ answerWholeBlockQueryIfCurrent =
   where
     go :: All SingleEraBlock xs'
        => (forall st.
-              (LedgerState (HardForkBlock xs') ValuesMK -> Either (MismatchEraInfo xs') st)
-           -> (LedgerState (HardForkBlock xs)  ValuesMK -> Either (MismatchEraInfo xs)  st)
+              (LedgerState (HardForkBlock xs') EmptyMK -> Either (MismatchEraInfo xs') st)
+           -> (LedgerState (HardForkBlock xs)  EmptyMK -> Either (MismatchEraInfo xs)  st)
           )
        -> QueryIfCurrent xs' WholeL result
        -> IncrementalQueryHandler
