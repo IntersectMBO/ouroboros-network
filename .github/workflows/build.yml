@@ -40,16 +40,13 @@ jobs:
           git
           mingw-w64-x86_64-toolchain
           mingw-w64-x86_64-libsodium
+          mingw-w64-x86_64-lmdb
+          mingw-w64-x86_64-cmake
           mingw-w64-x86_64-jq
-
-    - name: "WIN: Setup pkg-config"
-      if: runner.os == 'Windows'
-      run: |
-        pacman --noconfirm -S mingw-w64-x86_64-pkg-config
 
     - name: "LINUX: Setup haskell"
       if: runner.os != 'Windows'
-      uses: haskell/actions/setup@v2
+      uses: haskell/actions/setup@v1
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
