@@ -13,6 +13,12 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   , prop_diffusionScript_fixupCommands
   , prop_diffusionScript_commandScript_valid
   , diffusionSimulation
+  , Command (..)
+    -- * Re-exports
+  , TestAddress (..)
+  , RelayAccessPoint (..)
+  , Script (..)
+  , module PeerSelection
   ) where
 
 import           Control.Monad (forM, replicateM, (>=>))
@@ -33,7 +39,7 @@ import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Data.List (delete, nub, (\\))
+import           Data.List (delete, intersperse, nub, (\\))
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -41,6 +47,7 @@ import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Void (Void)
 import           System.Random (StdGen, mkStdGen)
+import qualified System.Random as Random
 
 import           Network.DNS (Domain, TTL)
 
@@ -51,12 +58,14 @@ import           Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
+import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..), PortNumber,
                      RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
+import qualified Ouroboros.Network.PeerSelection.Types as PeerSelection
 import           Ouroboros.Network.Protocol.ChainSync.Codec
                      (ChainSyncTimeout (..), byteLimitsChainSync,
                      timeLimitsChainSync)
@@ -73,14 +82,15 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
 import           Simulation.Network.Snocket (BearerInfo (..), FD, withSnocket)
 
-import qualified Test.Ouroboros.Network.Diffusion.Node as Node
+import qualified Test.Ouroboros.Network.Diffusion.Node as NodeKernel
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
                      (BlockGeneratorArgs, NtCAddr, NtCVersion, NtCVersionData,
                      NtNAddr, NtNAddr_ (IPAddr), NtNVersion, NtNVersionData,
                      randomBlockGenerationArgs)
-import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DNSLookupDelay, DNSTimeout)
+                     (DNSLookupDelay (..), DNSTimeout (..))
+import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelection hiding
+                     (tests)
 
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
                      chooseInt, counterexample, frequency, oneof, property,
@@ -96,7 +106,7 @@ data SimArgs =
   SimArgs
     { saSlot                  :: DiffTime
       -- ^ 'randomBlockGenerationArgs' slot duration argument
-    , saSeed                  :: StdGen
+    , saSeed                  :: Int
       -- ^ 'randomBlockGenerationArgs' seed argument
     , saQuota                 :: Int
       -- ^ 'randomBlockGenerationArgs' quota value
@@ -104,8 +114,6 @@ data SimArgs =
       -- ^ 'LimitsAndTimeouts' argument
     , saRelays                :: [RelayAccessPoint]
       -- ^ 'Interfaces' relays auxiliary value
-    , saRng                   :: StdGen
-      -- ^ 'Interfaces' 'iRng' value
     , saDomainMap             :: Map Domain [IP]
       -- ^ 'Interfaces' 'iDomainMap' value
     , saAddr                  :: NtNAddr
@@ -119,13 +127,52 @@ data SimArgs =
     , saDNSLookupDelayScript  :: Script DNSLookupDelay
       -- ^ 'Arguments' 'aDNSLookupDelayScript' value
     }
-    deriving (Show)
+
+instance Show SimArgs where
+    show SimArgs { saSlot, saSeed, saQuota, saMbTime, saRelays, saDomainMap,
+                   saAddr, saLocalRootPeers, saLocalSelectionTargets,
+                   saDNSTimeoutScript, saDNSLookupDelayScript } =
+      concat $ intersperse " " [ "SimArgs"
+                               , show saSlot
+                               , "(" ++ show saSeed ++ ")"
+                               , show saQuota
+                               , "(" ++ show saMbTime ++ ")"
+                               , show saRelays
+                               , "(Map.fromList [" ++ Map.foldMapWithKey (\domain ips -> "(" ++ show domain ++ ", " ++ showIPs ips ++ ")") saDomainMap ++ "])"
+                               , "(" ++ show saAddr ++ ")"
+                               , show saLocalRootPeers
+                               , show saLocalSelectionTargets
+                               , "(" ++ show saDNSTimeoutScript ++ ")"
+                               , "(" ++ show saDNSLookupDelayScript ++ ")"
+                               ]
+      where
+        showIPs :: [IP] -> String
+        showIPs ips = "["
+                   ++ concat (intersperse ", " (map (\ip -> "read \"" ++ show ip ++ "\"") ips))
+                   ++ "]"
+
 
 data Command = JoinNetwork DiffTime (Maybe NtNAddr)
              | Kill DiffTime
              | Reconfigure DiffTime
                            [(Int, Map RelayAccessPoint PeerAdvertise)]
-  deriving (Show, Eq)
+  deriving Eq
+
+instance Show Command where
+    showsPrec d (JoinNetwork delay (Just addr)) = showString "JoinNetwork "
+                                                . showsPrec d delay
+                                                . showString " "
+                                                . showParen True ( showString "Just "
+                                                                 . showParen True (showsPrec d addr))
+    showsPrec d (JoinNetwork delay Nothing)     = showString "JoinNetwork "
+                                                . showsPrec d delay
+                                                . showString " Nothing"
+    showsPrec d (Kill delay)                    = showString "Kill "
+                                                . showsPrec d delay
+    showsPrec d (Reconfigure delay localRoots)  = showString "Reconfigure "
+                                                . showsPrec d delay
+                                                . showString " "
+                                                . showsPrec d localRoots
 
 -- | Generate DNS table
 genDomainMap :: [RelayAccessPoint] -> IP -> Gen (Map Domain [IP])
@@ -257,7 +304,7 @@ instance Arbitrary DiffusionScript where
             numberOfNodes   = length [ r | r@(RelayAccessAddress _ _) <- raps ]
             quota = 20 `div` numberOfNodes
             (RelayAccessAddress rapIP _) = rap
-        bgaSeed <- mkStdGen <$> arbitrary
+        seed <- arbitrary
 
         dMap <- genDomainMap rapsWithoutSelf rapIP
 
@@ -275,8 +322,6 @@ instance Arbitrary DiffusionScript where
         -- Taken from ouroboros-consensus/src/Ouroboros/Consensus/Node.hs
         mustReplyTimeout <- Just <$> oneof (pure <$> [90, 135, 180, 224, 269])
 
-        stdGen <- mkStdGen <$> arbitrary
-
         lrp <- genLocalRootPeers rapsWithoutSelf rap
         relays <- sublistOf rapsWithoutSelf
 
@@ -287,11 +332,10 @@ instance Arbitrary DiffusionScript where
         return
          $ SimArgs
             { saSlot                  = bgaSlotDuration
-            , saSeed                  = bgaSeed
+            , saSeed                  = seed
             , saQuota                 = quota
             , saMbTime                = mustReplyTimeout
             , saRelays                = relays
-            , saRng                   = stdGen
             , saDomainMap             = dMap
             , saAddr                  = ntnAddr
             , saLocalRootPeers        = lrp
@@ -519,11 +563,10 @@ diffusionSimulation
             -> m Void
     runNode SimArgs
             { saSlot                  = bgaSlotDuration
-            , saSeed                  = bgaSeed
+            , saSeed                  = seed
             , saQuota                 = quota
             , saMbTime                = mustReplyTimeout
             , saRelays                = raps
-            , saRng                   = stdGen
             , saAddr                  = rap
             , saLocalSelectionTargets = peerSelectionTargets
             , saDNSTimeoutScript      = dnsTimeout
@@ -533,7 +576,8 @@ diffusionSimulation
             ntcSnocket
             lrpVar
             dMapVar =
-      let acceptedConnectionsLimit =
+      let (bgaRng, rng) = Random.split $ mkStdGen seed
+          acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
           diffusionMode = InitiatorAndResponderDiffusionMode
           readLocalRootPeers  = readTVar lrpVar
@@ -549,7 +593,7 @@ diffusionSimulation
           blockGeneratorArgs :: BlockGeneratorArgs Block StdGen
           blockGeneratorArgs =
             randomBlockGenerationArgs bgaSlotDuration
-                                      bgaSeed
+                                      bgaRng
                                       quota
 
           stdChainSyncTimeout :: ChainSyncTimeout
@@ -560,66 +604,66 @@ diffusionSimulation
                 , mustReplyTimeout
                 }
 
-          limitsAndTimeouts :: Node.LimitsAndTimeouts Block
+          limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts Block
           limitsAndTimeouts
-            = Node.LimitsAndTimeouts
-                { Node.chainSyncLimits     = defaultMiniProtocolsLimit
-                , Node.chainSyncSizeLimits = byteLimitsChainSync (const 0)
-                , Node.chainSyncTimeLimits =
+            = NodeKernel.LimitsAndTimeouts
+                { NodeKernel.chainSyncLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.chainSyncSizeLimits = byteLimitsChainSync (const 0)
+                , NodeKernel.chainSyncTimeLimits =
                     timeLimitsChainSync stdChainSyncTimeout
-                , Node.keepAliveLimits     = defaultMiniProtocolsLimit
-                , Node.keepAliveSizeLimits = byteLimitsKeepAlive (const 0)
-                , Node.keepAliveTimeLimits = timeLimitsKeepAlive
-                , Node.pingPongLimits      = defaultMiniProtocolsLimit
-                , Node.pingPongSizeLimits  =
+                , NodeKernel.keepAliveLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.keepAliveSizeLimits = byteLimitsKeepAlive (const 0)
+                , NodeKernel.keepAliveTimeLimits = timeLimitsKeepAlive
+                , NodeKernel.pingPongLimits      = defaultMiniProtocolsLimit
+                , NodeKernel.pingPongSizeLimits  =
                     ProtocolSizeLimits (const smallByteLimit) (const 0)
-                , Node.pingPongTimeLimits  =
+                , NodeKernel.pingPongTimeLimits  =
                     ProtocolTimeLimits (const (Just 60))
-                , Node.handshakeLimits     = defaultMiniProtocolsLimit
-                , Node.handshakeTimeLimits =
+                , NodeKernel.handshakeLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.handshakeTimeLimits =
                     ProtocolSizeLimits (const (4 * 1440))
                                        (fromIntegral . BL.length)
-                , Node.handhsakeSizeLimits =
+                , NodeKernel.handhsakeSizeLimits =
                     ProtocolTimeLimits (const shortWait)
                 }
 
-          interfaces :: Node.Interfaces m
+          interfaces :: NodeKernel.Interfaces m
           interfaces =
-            Node.Interfaces
-              { Node.iNtnSnocket        = ntnSnocket
-              , Node.iAcceptVersion     = acceptVersion
-              , Node.iNtnDomainResolver = domainResolver raps dMapVar
-              , Node.iNtcSnocket        = ntcSnocket
-              , Node.iRng               = stdGen
-              , Node.iDomainMap         = dMapVar
-              , Node.iLedgerPeersConsensusInterface
+            NodeKernel.Interfaces
+              { NodeKernel.iNtnSnocket        = ntnSnocket
+              , NodeKernel.iAcceptVersion     = acceptVersion
+              , NodeKernel.iNtnDomainResolver = domainResolver raps dMapVar
+              , NodeKernel.iNtcSnocket        = ntcSnocket
+              , NodeKernel.iRng               = rng
+              , NodeKernel.iDomainMap         = dMapVar
+              , NodeKernel.iLedgerPeersConsensusInterface
                                         = LedgerPeersConsensusInterface
                                         $ \_ -> return Nothing
               }
 
-          arguments :: Node.Arguments m
+          arguments :: NodeKernel.Arguments m
           arguments =
-            Node.Arguments
-              { Node.aIPAddress            = rap
-              , Node.aAcceptedLimits       = acceptedConnectionsLimit
-              , Node.aDiffusionMode        = diffusionMode
-              , Node.aKeepAliveInterval    = 0
-              , Node.aPingPongInterval     = 0
-              , Node.aPeerSelectionTargets = peerSelectionTargets
-              , Node.aReadLocalRootPeers   = readLocalRootPeers
-              , Node.aReadPublicRootPeers  = readPublicRootPeers
-              , Node.aReadUseLedgerAfter   = readUseLedgerAfter
-              , Node.aProtocolIdleTimeout  = 5
-              , Node.aTimeWaitTimeout      = 30
-              , Node.aDNSTimeoutScript     = dnsTimeout
-              , Node.aDNSLookupDelayScript = dnsLookupDelay
+            NodeKernel.Arguments
+              { NodeKernel.aIPAddress            = rap
+              , NodeKernel.aAcceptedLimits       = acceptedConnectionsLimit
+              , NodeKernel.aDiffusionMode        = diffusionMode
+              , NodeKernel.aKeepAliveInterval    = 0
+              , NodeKernel.aPingPongInterval     = 0
+              , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
+              , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
+              , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aReadUseLedgerAfter   = readUseLedgerAfter
+              , NodeKernel.aProtocolIdleTimeout  = 5
+              , NodeKernel.aTimeWaitTimeout      = 30
+              , NodeKernel.aDNSTimeoutScript     = dnsTimeout
+              , NodeKernel.aDNSLookupDelayScript = dnsLookupDelay
               }
 
-       in Node.run blockGeneratorArgs
-                   limitsAndTimeouts
-                   interfaces
-                   arguments
-                   (tracersExtraWithTimeName rap)
+       in NodeKernel.run blockGeneratorArgs
+                         limitsAndTimeouts
+                         interfaces
+                         arguments
+                         (tracersExtraWithTimeName rap)
 
     domainResolver :: [RelayAccessPoint]
                    -> StrictTVar m (Map Domain [(IP, TTL)])
@@ -642,7 +686,7 @@ diffusionSimulation
 
 
 ntnToPeerAddr :: IP -> PortNumber -> NtNAddr
-ntnToPeerAddr a b = TestAddress (Node.IPAddr a b)
+ntnToPeerAddr a b = TestAddress (IPAddr a b)
 
 withAsyncAll :: MonadAsync m => [m a] -> ([Async m a] -> m b) -> m b
 withAsyncAll xs0 action = go [] xs0

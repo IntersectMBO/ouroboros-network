@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -51,7 +52,6 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
 import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
@@ -63,10 +63,6 @@ import           Simulation.Network.Snocket (BearerInfo (..))
 
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import           Test.Ouroboros.Network.Testnet.Simulation.Node
-                     (DiffusionScript (..), DiffusionSimulationTrace (..),
-                     diffusionSimulation,
-                     prop_diffusionScript_commandScript_valid,
-                     prop_diffusionScript_fixupCommands)
 import           Test.QuickCheck (Property, checkCoverage, classify, conjoin,
                      counterexample, coverTable, property, tabulate)
 import           Test.Tasty
@@ -1346,7 +1342,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              10 -- seconds
+              15 -- seconds
               id
               demotionOpportunities
 
