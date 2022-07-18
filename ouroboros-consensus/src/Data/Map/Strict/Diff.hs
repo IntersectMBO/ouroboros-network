@@ -54,7 +54,6 @@ newtype DiffHistory v = DiffHistory (Seq (DiffEntry v))
   deriving anyclass (NoThunks)
   deriving newtype Semigroup
 
-
 -- | A change to a value in a key-value store.
 --
 -- Note: updates are equivalent to inserts, since we consider them to

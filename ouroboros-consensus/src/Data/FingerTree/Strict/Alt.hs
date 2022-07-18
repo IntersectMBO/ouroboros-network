@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns           #-}
 {-# LANGUAGE ConstraintKinds        #-}
+{-# LANGUAGE DeriveGeneric          #-}
 {-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
@@ -25,6 +26,7 @@ module Data.FingerTree.Strict.Alt (
 
 import           Data.Foldable
 import           Data.Group
+import           GHC.Generics (Generic)
 
 import           NoThunks.Class (NoThunks (..), noThunksInValues)
 
@@ -44,7 +46,7 @@ data Alt vt vi a = Alt  {
     tm       :: vt
   , elements :: !(StrictFingerTree vi a)
   }
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
 
 instance Foldable (Alt vt vi) where
   foldMap f = foldMap f . elements

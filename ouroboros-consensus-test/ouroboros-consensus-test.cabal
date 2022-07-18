@@ -55,6 +55,7 @@ library
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.DiffSeq.Arbitrary
                        Test.Util.Orphans.IOLike
+                       Test.Util.Orphans.NFData
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
                        Test.Util.Orphans.Slotting.Arbitrary
@@ -323,3 +324,39 @@ test-suite test-infra
                        -Wmissing-export-lists
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+
+benchmark bench-storage
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      bench-storage
+  main-is:             Main.hs
+  other-modules:
+                       Bench.Ouroboros.Consensus.Storage.LedgerDB.HD
+  build-depends:       base
+                     , bifunctors
+                     , containers
+                     , criterion
+                     , deepseq
+                     , QuickCheck
+                     , strict-containers
+                     , tasty-bench
+                     , tasty-quickcheck
+                     , transformers
+                     , tree-diff
+                     , vector
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-test
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts
+
+--mixins:              tasty-bench (Test.Tasty.Bench as Criterion, Test.Tasty.Bench as Criterion.Main, Test.Tasty.Bench as Gauge, Test.Tasty.Bench as Gauge.Main)
