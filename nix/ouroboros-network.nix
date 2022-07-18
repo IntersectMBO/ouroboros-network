@@ -47,41 +47,6 @@ let
       # Options specific to the windows cross-compiled build:
       ({ pkgs, ... }:
         lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
-          # Allow reinstallation of Win32
-          nonReinstallablePkgs = [
-            "rts"
-            "ghc-heap"
-            "ghc-prim"
-            "integer-gmp"
-            "integer-simple"
-            "base"
-            "deepseq"
-            "array"
-            "ghc-boot-th"
-            "pretty"
-            "template-haskell"
-            # ghcjs custom packages
-            "ghcjs-prim"
-            "ghcjs-th"
-            "ghc-boot"
-            "ghc"
-            "array"
-            "binary"
-            "bytestring"
-            "containers"
-            "filepath"
-            "ghc-boot"
-            "ghc-compact"
-            "ghc-prim"
-            # "ghci" "haskeline"
-            "hpc"
-            "mtl"
-            "parsec"
-            "text"
-            "transformers"
-            "xhtml"
-            # "stm" "terminfo"
-          ];
           # ruby/perl dependencies cannot be cross-built for cddl tests:
           packages.ouroboros-network.flags.cddl = false;
 
@@ -94,43 +59,6 @@ let
           packages.terminal-size.components.library.build-tools =
             lib.mkForce [ ];
           packages.network.components.library.build-tools = lib.mkForce [ ];
-
-          # Make sure that libsodium DLLs are available for tests
-          packages.ouroboros-consensus-byron-test.components.tests.test.postInstall =
-            ''
-              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
-              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
-            '';
-          packages.ouroboros-consensus-cardano-test.components.tests.test.postInstall =
-            ''
-              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
-              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
-            '';
-          packages.ouroboros-consensus-mock-test.components.tests.test.postInstall =
-            ''
-              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
-              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
-            '';
-          packages.ouroboros-consensus-shelley-test.components.tests.test.postInstall =
-            ''
-              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
-              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
-            '';
-          packages.ouroboros-consensus-test.components.tests.test-consensus.postInstall =
-            ''
-              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
-              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
-            '';
-          packages.ouroboros-consensus-test.components.tests.test-infra.postInstall =
-            ''
-              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
-              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
-            '';
-          packages.ouroboros-consensus-test.components.tests.test-storage.postInstall =
-            ''
-              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
-              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
-            '';
         })
       # Options for when not compiling to windows:
       ({ pkgs, ... }:
