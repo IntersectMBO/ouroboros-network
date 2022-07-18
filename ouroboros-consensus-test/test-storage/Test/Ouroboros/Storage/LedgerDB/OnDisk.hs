@@ -101,10 +101,39 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 tests :: TestTree
 tests = askOption $ \showTrace -> testGroup "OnDisk"
   [ TTT.testPropertyTraceable' "LedgerSimple-InMem" $
-      prop_sequential 100000 (inMemDbEnv showTrace) Uniform
+      prop_sequential 100000 (inMemDbEnv showTrace) uniform
   , TTT.testPropertyTraceable' "LedgerSimple-LMDB" $
-      prop_sequential 2000 (lmdbDbEnv showTrace testLMDBLimits) Custom
+      prop_sequential 2000 (lmdbDbEnv showTrace testLMDBLimits) lmdbCustom
   ]
+  where
+    uniform = CmdDistribution
+        { freqCurrent = 1
+        , freqPush    = 1
+        , freqSwitch  = 1
+        , freqSnap    = 1
+        , freqFlush   = 1
+        , freqRestore = 1
+        , freqCorrupt = 1
+        , freqDrop    = 1
+        }
+
+    -- NOTE: For the LMDB backend we chose this distribution, which reduces the
+    -- probability of generating commands that require re-creating an LMDB
+    -- database. We have investigated reusing the same LMDB database across all
+    -- tests, but this leads to more complex code and dependencies between
+    -- tests. In particular, if we would have chosen this path we would have had
+    -- to introduce modifications in the system under test only to accommodate
+    -- the database sharing functionality needed for tests.
+    lmdbCustom = CmdDistribution
+        { freqCurrent = 10
+        , freqPush    = 10
+        , freqSwitch  = 1
+        , freqSnap    = 1
+        , freqFlush   = 5
+        , freqRestore = 1
+        , freqCorrupt = 1
+        , freqDrop    = 1
+        }
 
 testLMDBLimits :: LMDB.LMDBLimits
 testLMDBLimits = LMDB.LMDBLimits
@@ -1231,53 +1260,43 @@ execCmds secParam = \(QSM.Commands cs) -> go (initModel secParam) cs
   Generator
 -------------------------------------------------------------------------------}
 
--- | Simple distributions.
-data Distribution = Uniform | Custom
-type GenDistribution = Distribution
-
--- | Wrapper around @Int@. ``Forces'' the use of @fromWeight@ to extract the
--- @Int@.
-newtype Weight = Weight Int
-  deriving newtype Num
-
--- | Unwrap a @'Weight'@ given a desired distribution.
+-- | Generated commands distribution frequency used by 'generator'.
 --
--- Ignores the wrapped @Int@ in case we require a uniform distribution.
-fromWeight :: Distribution -> Weight -> Int
-fromWeight Custom  = \(Weight x) -> x
-fromWeight Uniform = const 1
-
--- | Unwrap multiple @'Weights'@s given a desired distribution.
---
--- POSTCONDITION:
--- * If @Distribution == Uniform@, then all @Int@s in
---   the result should be equal to @1@. As a result, all @a@'s in the result
---   are equally weighted, resulting in a uniform distribution.
-fromWeights :: GenDistribution -> [(Weight, a)] -> [(Int, a)]
-fromWeights gd = fmap $ first (fromWeight gd)
+-- The values in this type determine what is passed to QuickCheck's 'frequency'.
+data CmdDistribution = CmdDistribution
+    { freqCurrent :: Int
+    , freqPush    :: Int
+    , freqSwitch  :: Int
+    , freqSnap    :: Int
+    , freqFlush   :: Int
+    , freqRestore :: Int
+    , freqCorrupt :: Int
+    , freqDrop    :: Int
+    }
+    deriving (Generic, Show, Eq)
 
 generator ::
-     GenDistribution
+     CmdDistribution
   -> SecurityParam
   -> Model Symbolic
   -> Maybe (Gen (Cmd :@ Symbolic))
-generator gd secParam (Model mock hs) =
-  Just $ QC.frequency $ fromWeights gd $ concat [
+generator cd secParam (Model mock hs) =
+  Just $ QC.frequency $ concat [
       withoutRef
     , if null possibleCorruptions
         then []
-        else [(1, (At . uncurry Corrupt) <$> QC.elements possibleCorruptions)]
+        else [(freqCorrupt cd, (At . uncurry Corrupt) <$> QC.elements possibleCorruptions)]
     ]
   where
-    withoutRef :: [(Weight, Gen (Cmd :@ Symbolic))]
-    withoutRef = (fmap . second . fmap $ At) [
-          (10, pure Current)
-        , (10, Push <$> genBlockFromLedgerState (mockCurrent mock))
-        , (1,  genSwitchCmd)
-        , (1,  pure Snap)
-        , (5,  pure Flush)
-        , (1,  pure Restore)
-        , (1,  Drop <$> QC.choose (0, mockChainLength mock))
+    withoutRef :: [(Int, Gen (Cmd :@ Symbolic))]
+    withoutRef = fmap (bimap ($cd) (fmap At)) [
+          (freqCurrent, pure Current)
+        , (freqPush,    Push <$> genBlockFromLedgerState (mockCurrent mock))
+        , (freqSwitch,  genSwitchCmd)
+        , (freqSnap,    pure Snap)
+        , (freqFlush,   pure Flush)
+        , (freqRestore, pure Restore)
+        , (freqDrop,    Drop <$> QC.choose (0, mockChainLength mock))
         ]
       where
         mockCurrent :: Mock -> ExtLedgerState TestBlock ValuesMK
@@ -1313,10 +1332,10 @@ generator gd secParam (Model mock hs) =
               Nothing ->
                 -- The snapshot has already been deleted
                 []
-
-    possibleCorruptionsInState :: SnapState -> [Corruption]
-    possibleCorruptionsInState SnapOk        = [Delete, Truncate]
-    possibleCorruptionsInState SnapCorrupted = [Delete]
+          where
+            possibleCorruptionsInState :: SnapState -> [Corruption]
+            possibleCorruptionsInState SnapOk        = [Delete, Truncate]
+            possibleCorruptionsInState SnapCorrupted = [Delete]
 
 shrinker :: Model Symbolic -> Cmd :@ Symbolic -> [Cmd :@ Symbolic]
 shrinker _ (At cmd) =
@@ -1427,16 +1446,16 @@ symbolicResp m c = At <$> traverse (const genSym) resp
 
 sm :: IOLike m
    => SecurityParam
-   -> GenDistribution
+   -> CmdDistribution
    -> StandaloneDB m
    -> StateMachine Model (At Cmd) m (At Resp)
-sm secParam gd db = StateMachine {
+sm secParam cd db = StateMachine {
       initModel     = initModel secParam
     , transition    = transition
     , precondition  = precondition
     , postcondition = postcondition
     , invariant     = Nothing
-    , generator     = generator gd secParam
+    , generator     = generator cd secParam
     , shrinker      = shrinker
     , semantics     = semantics db
     , mock          = symbolicResp
@@ -1450,12 +1469,12 @@ prop_sequential ::
      Int
      -- ^ Number of tests to run
   -> IO (DbEnv IO)
-  -> GenDistribution
+  -> CmdDistribution
   -> SecurityParam
   -> QC.Property
-prop_sequential maxSuccess mkDbEnv gd secParam = QC.withMaxSuccess maxSuccess $
-  forAllCommands (sm secParam gd dbUnused) Nothing $ \cmds ->
-    QC.monadicIO $ QC.run mkDbEnv >>= \e -> propCmds e gd secParam cmds
+prop_sequential maxSuccess mkDbEnv cd secParam = QC.withMaxSuccess maxSuccess $
+  forAllCommands (sm secParam cd dbUnused) Nothing $ \cmds ->
+    QC.monadicIO $ QC.run mkDbEnv >>= \e -> propCmds e cd secParam cmds
 
 mkDbTracer :: TTT.ShowTrace -> Trace.Tracer IO LMDB.TraceDb
 mkDbTracer (TTT.ShowTrace b)
@@ -1492,13 +1511,13 @@ lmdbDbEnv showTrace limits = do
 -- QSM requires monads that implement MonadIO.
 propCmds ::
      DbEnv IO
-  -> GenDistribution
+  -> CmdDistribution
   -> SecurityParam
   -> QSM.Commands (At Cmd) (At Resp)
   -> QC.PropertyM IO ()
-propCmds dbEnv gd secParam cmds = do
+propCmds dbEnv cd secParam cmds = do
     db <- QC.run $ initStandaloneDB dbEnv secParam
-    let sm' = sm secParam gd db
+    let sm' = sm secParam cd db
     (hist, _model, res) <- runCommands sm' cmds
     prettyCommands sm' hist
       $ QC.tabulate
@@ -1669,11 +1688,11 @@ tagEvents k = C.classify [
 
 showLabelledExamples ::
      SecurityParam
-  -> GenDistribution
+  -> CmdDistribution
   -> Maybe Int
   -> (Tag -> Bool) -- ^ Which tag are we interested in?
   -> IO ()
-showLabelledExamples secParam gd mReplay relevant = do
+showLabelledExamples secParam cd mReplay relevant = do
     replaySeed <- case mReplay of
                     Nothing   -> getStdRandom $ randomR (1, 999999)
                     Just seed -> return seed
@@ -1686,7 +1705,7 @@ showLabelledExamples secParam gd mReplay relevant = do
           }
 
     QC.labelledExamplesWith args $
-      forAllCommands (sm secParam gd dbUnused) Nothing $ \cmds ->
+      forAllCommands (sm secParam cd dbUnused) Nothing $ \cmds ->
         repeatedly QC.collect (run cmds) $
           QC.property True
   where
