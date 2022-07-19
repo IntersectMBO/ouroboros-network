@@ -78,10 +78,10 @@ jobs:
 
         ghc --version
         cabal --version
-        echo "::set-output name=cabal-store::$(cabal --help | tail -1 | tr -d ' ' | rev | cut -d '/' -f2- | rev)\\store"
+        echo "::set-output name=cabal-store::$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store"
 
     - name: Set cache version
-      run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
+      run: echo "CACHE_VERSION=20220719" >> $GITHUB_ENV
 
     - name: "LINUX: Install build environment (apt-get)"
       if: runner.os == 'Linux'
