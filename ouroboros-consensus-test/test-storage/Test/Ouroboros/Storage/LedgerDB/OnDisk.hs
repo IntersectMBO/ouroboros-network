@@ -1555,14 +1555,14 @@ data Bucket = Bucket {
 
 -- | Given a bucket size, and value, compute the bucket that the value falls in.
 bucketise :: Int -> Int -> Bucket
-bucketise bucketSize value = Bucket {..}
+bucketise bucketSize value = Bucket bucketNo bucketSize
   where
     bucketNo = value `div` bucketSize
 
 -- We can calculate the shape of the bucket (e.g., "[0,9]" or "[30,39]") just
 -- from the @'bucketNo'@ and @'bucketSize'@.
 instance Show Bucket where
-  show Bucket{..} = mconcat [
+  show Bucket{bucketNo, bucketSize} = mconcat [
     "["
     , show $ bucketNo * bucketSize
     , ","
