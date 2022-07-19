@@ -176,7 +176,8 @@ instance ( IsLedger (LedgerState  blk)
 
 instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuff (ExtLedgerState blk) where
 
-  newtype LedgerTables (ExtLedgerState blk) mk = ExtLedgerStateTables (LedgerTables (LedgerState blk) mk)
+  newtype LedgerTables (ExtLedgerState blk) mk =
+    ExtLedgerStateTables { unExtLedgerStateTables :: LedgerTables (LedgerState blk) mk }
     deriving (Generic)
 
   projectLedgerTables (ExtLedgerState lstate _) =

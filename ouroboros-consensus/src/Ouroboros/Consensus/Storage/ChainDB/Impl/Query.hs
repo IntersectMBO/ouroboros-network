@@ -1,11 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 -- | Queries
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
@@ -135,7 +133,7 @@ getTipPoint
   :: forall m blk. (IOLike m, HasHeader (Header blk))
   => ChainDbEnv m blk -> STM m (Point blk)
 getTipPoint CDB{..} =
-    (castPoint . AF.headPoint) <$> readTVar cdbChain
+    castPoint . AF.headPoint <$> readTVar cdbChain
 
 getBlockComponent ::
      forall m blk b. IOLike m
@@ -235,7 +233,7 @@ getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
       ufs <- LedgerDB.readKeySets (LgrDB.lgrBackingStore cdbLgrDB) rew
       let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk)
       case LedgerDB.forwardTableKeySets chlog ufs of
-        Left err     -> error $ "getCurrentLedgerStateForKeys read lock violation " <> show err
+        Left err     -> error $ "getLedgerStateForKeys: rewind;read;forward failed " <> show err
         Right values -> pure values
 
 getLedgerBackingStoreValueHandle :: forall b m blk.
@@ -374,4 +372,4 @@ getAnyBlockComponent immutableDB volatileDB blockComponent p = do
 
 mustExist :: RealPoint blk -> Maybe b -> Either (ChainDbFailure blk) b
 mustExist p Nothing  = Left  $ ChainDbMissingBlock p
-mustExist _ (Just b) = Right $ b
+mustExist _ (Just b) = Right b

@@ -1007,7 +1007,7 @@ runDB standalone@DB{..} cmd =
       -> ExtValidationError TestBlock
     annLedgerErr' = annLedgerErr
 
-    reader :: TypeOf_readDB m (ExtLedgerState TestBlock)
+    reader :: KeySetsReader m (ExtLedgerState TestBlock)
     reader rewoundTableKeySets = do
       backingStore <- readTVarIO dbBackingStore
       readKeySets backingStore rewoundTableKeySets
