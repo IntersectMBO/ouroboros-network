@@ -1,9 +1,7 @@
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE PatternSynonyms          #-}
-{-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization
@@ -244,7 +242,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
 
       return (chainDB, testing, env)
 
-    _ <- lift $ allocate (Args.cdbRegistry args) (\_ -> return $ chainDB) API.closeDB
+    _ <- lift $ allocate (Args.cdbRegistry args) (\_ -> return chainDB) API.closeDB
 
     return ((chainDB, testing), env)
   where

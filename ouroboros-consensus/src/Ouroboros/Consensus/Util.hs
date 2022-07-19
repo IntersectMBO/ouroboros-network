@@ -72,6 +72,7 @@ module Ouroboros.Consensus.Util (
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
                      hashFromBytesShort)
+import           Data.Bifunctor (Bifunctor (first, second))
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
@@ -412,3 +413,10 @@ eitherToMaybe (Right x) = Just x
 data StaticEither :: Bool -> Type -> Type -> Type where
   StaticLeft  :: l -> StaticEither False l r
   StaticRight :: r -> StaticEither True  l r
+
+instance Bifunctor (StaticEither b) where
+  first f (StaticLeft  l) = StaticLeft  (f l)
+  first _ (StaticRight r) = StaticRight    r
+
+  second _ (StaticLeft l)  = StaticLeft l
+  second f (StaticRight r) = StaticRight (f r)

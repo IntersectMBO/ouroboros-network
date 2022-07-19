@@ -21,7 +21,6 @@ module Ouroboros.Consensus.Mempool.Impl.Types (
   , extendVRNew
   , extendVRPrevApplied
   , revalidateTxsFor
-  , validateIS
   , validateStateFor
     -- * Tick ledger state
   , tickLedgerState
@@ -80,17 +79,16 @@ data InternalState blk = IS {
       -- applying them on top of 'isLedgerState'.
       --
       -- INVARIANT: 'isLedgerState' is the ledger resulting from applying the
-      -- transactions in 'isTxs' against the ledger identified 'isTip' as tip.
+      -- transactions in 'isTxs' against the ledger identified 'isTip' as tip
+      -- after ticking it to 'isSlotNo'.
+      --
+      -- TODO: check this property.
     , isLedgerState  :: !(TickedLedgerState blk TrackingMK)
 
       -- | The tip of the chain that 'isTxs' was validated against
-      --
-      -- This comes from the underlying ledger state ('tickedLedgerState')
     , isTip          :: !(ChainHash blk)
 
       -- | The most recent 'SlotNo' that 'isTxs' was validated against
-      --
-      -- This comes from 'applyChainTick' ('tickedSlotNo').
     , isSlotNo       :: !SlotNo
 
       -- | The mempool 'TicketNo' counter.
@@ -148,6 +146,11 @@ initInternalState capacityOverride lastTicketNo slot st = IS {
   Validation
 -------------------------------------------------------------------------------}
 
+-- | A ValidationResult is created from an InternalState and is used while
+-- revalidating the ledger state or validating transactions, but should never be
+-- returned to the clients of the mempool API. It merely tracks the result since
+-- the last validation and should be used to produce an internal state in the
+-- end.
 data ValidationResult invalidTx blk = ValidationResult {
       -- | The tip of the chain before applying these transactions
       vrBeforeTip      :: ChainHash blk
@@ -173,7 +176,7 @@ data ValidationResult invalidTx blk = ValidationResult {
     , vrNewValid       :: Maybe (Validated (GenTx blk))
 
       -- | The state of the ledger after applying 'vrValid' against the ledger
-      -- state identifeid by 'vrBeforeTip'.
+      -- state identified by 'vrBeforeTip'.
     , vrAfter          :: TickedLedgerState blk TrackingMK
 
       -- | The transactions that were invalid, along with their errors
@@ -193,7 +196,7 @@ data ValidationResult invalidTx blk = ValidationResult {
 -- | Extend 'ValidationResult' with a previously validated transaction that
 -- may or may not be valid in this ledger state
 --
--- n.b. Even previously validated transactions may not be valid in a different
+-- NOTE: Even previously validated transactions may not be valid in a different
 -- ledger state;  it is /still/ useful to indicate whether we have previously
 -- validated this transaction because, if we have, we can utilize 'reapplyTx'
 -- rather than 'applyTx' and, therefore, skip things like cryptographic
@@ -259,29 +262,17 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 
     nextTicketNo = succ vrLastTicketNo
 
--- | Validate the internal state against the current ledger state and the
--- given 'BlockSlot', revalidating if necessary.
-validateIS
-  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
-  => InternalState blk
-  -> LedgerState blk ValuesMK
-  -> LedgerConfig blk
-  -> MempoolCapacityBytesOverride
-  -> ValidationResult (Validated (GenTx blk)) blk
-validateIS istate lstate lconfig capacityOverride =
-    snd $ validateStateFor capacityOverride lconfig (ForgeInUnknownSlot lstate) istate
-
--- | Given a (valid) internal state, validate it against the given ledger
--- state and 'BlockSlot'.
+-- | Given a (previously valid) internal state, validate it against the given
+-- ledger state and slot.
 --
 -- When these match the internal state's 'isTip' and 'isSlotNo', this is very
 -- cheap, as the given internal state will already be valid against the given
--- inputs. The state passed as parameter ('blockLedgerState') potentially
--- includes some values which were not required by the set of transactions that
--- were used on the last mempool revalidation/sync, therefore not being in
--- 'isLedgerState is'. Therefore the way to get a state with those new values
--- included is to apply the same accumulated differences from 'isLedgerState is'
--- to 'blockLedgerState'.
+-- inputs. However, it is important to note that the new state passed as
+-- parameter ('blockLedgerState') potentially includes some values which were
+-- not required by the set of transactions that were used on the last mempool
+-- revalidation/sync, therefore not being in 'isLedgerState is'. Therefore the
+-- way to get a state with those new values included is to apply the same
+-- accumulated differences from 'isLedgerState is' to 'blockLedgerState'.
 --
 -- When these don't match, the transactions in the internal state will be
 -- revalidated ('revalidateTxsFor') on top of the given ledger state.
@@ -298,12 +289,12 @@ validateIS istate lstate lconfig capacityOverride =
 -- is' (before ticking and applying the transactions).
 validateStateFor
   :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
-  => MempoolCapacityBytesOverride
+  => InternalState    blk
   -> LedgerConfig     blk
+  -> MempoolCapacityBytesOverride
   -> ForgeLedgerState blk
-  -> InternalState    blk
   -> (TickedLedgerState blk TrackingMK, ValidationResult (Validated (GenTx blk)) blk)
-validateStateFor capacityOverride cfg blockLedgerState is
+validateStateFor is cfg capacityOverride blockLedgerState
     | isTip    == castHash (getTipHash st')
     , isSlotNo == slot
     = ( -- 'isLedgerState is' is equivalent to st' except in the UTxO set.
@@ -324,33 +315,37 @@ validateStateFor capacityOverride cfg blockLedgerState is
     IS { isTxs, isTip, isSlotNo, isLastTicketNo } = is
     (slot, st') = tickLedgerState cfg blockLedgerState
 
--- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@), which
--- are /all/ the transactions in the Mempool against the given ticked ledger
--- state, which corresponds to the chain's ledger state.
+-- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@), against
+-- the given ticked ledger state.
+--
+-- Note that this function will perform revalidation so it is expected that the
+-- transactions given to it were previously applied, for example if we are
+-- revalidating the whole set of transactions onto a new state, or if we remove
+-- some transactions and revalidate the remaining ones.
 revalidateTxsFor
   :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
   -> SlotNo
   -> TickedLedgerState blk TrackingMK
-  -> TicketNo
-     -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
+  -> TicketNo -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
   -> [TxTicket (Validated (GenTx blk))]
   -> ValidationResult (Validated (GenTx blk)) blk
 revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
     repeatedly
       (extendVRPrevApplied cfg)
       txTickets
-      (validationResultFromIS is)
+      vr
   where
-    is = initInternalState capacityOverride lastTicketNo slot st
+    vr = validationResultFromIS
+       $ initInternalState capacityOverride lastTicketNo slot st
 
 {-------------------------------------------------------------------------------
   Ticking the ledger state
 -------------------------------------------------------------------------------}
 
 -- | Tick the 'LedgerState' using the given 'BlockSlot' or the next slot after
--- the ledger tip.
+-- the ledger state on top of which we are going to apply the transactions.
 tickLedgerState
   :: forall blk. (UpdateLedger blk, ValidateEnvelope blk)
   => LedgerConfig     blk
