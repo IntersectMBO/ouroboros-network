@@ -40,6 +40,7 @@ import           Data.Functor (($>), (<&>))
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import qualified Data.Text as Strict
 import           Foreign (Ptr, alloca, castPtr, copyBytes, peek)
 import           GHC.Generics (Generic)
 
@@ -585,12 +586,16 @@ initFromLMDBs ::
   -> FS.FsPath
      -- ^ The path where the new LMDB database should be initialised.
   -> m ()
-initFromLMDBs tracer limits shfs from0 to0 = do
+initFromLMDBs tracer limits shfs@(FS.SomeHasFS fs) from0 to0 = do
     Trace.traceWith tracer $ TDBInitialisingFromLMDB from0
     from <- guardDbDir GDDMustExist shfs from0
+    -- On Windows, if we don't choose the mapsize carefully it will make the
+    -- snapshot grow. Therefore we are using the current filesize as mapsize
+    -- when opening the snapshot to avoid this.
+    stat <- FS.withFile fs (from0 { FS.fsPathToList = FS.fsPathToList from0 ++ [Strict.pack "data.mdb"] }) FS.ReadMode (FS.hGetSize fs)
     to <- guardDbDirWithRetry GDDMustNotExist shfs to0
     bracket
-      (liftIO $ LMDB.openEnvironment from (unLMDBLimits limits))
+      (liftIO $ LMDB.openEnvironment from ((unLMDBLimits limits) { LMDB.mapSize = fromIntegral stat }))
       (liftIO . LMDB.closeEnvironment)
       (flip (lmdbCopy tracer) to)
     Trace.traceWith tracer $ TDBInitialisedFromLMDBD to0
