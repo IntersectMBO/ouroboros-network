@@ -73,8 +73,8 @@ instance PraosCrypto c => ProtocolHeaderSupportsEnvelope (Praos c) where
         BlockSizeTooLarge (bhviewBSize bhv) maxBodySize
     where
       pp = praosParams cfg
-      (MaxMajorProtVer m) = praosMaxMajorPV pp
-      (ProtVer maxpv _) = hbProtVer $ headerBody hdr
+      (MaxMajorProtVer maxpv) = praosMaxMajorPV pp
+      (ProtVer m _) = lvProtocolVersion lv
       maxHeaderSize = lvMaxHeaderSize lv
       maxBodySize = lvMaxBodySize lv
       bhv = mkHeaderView hdr
