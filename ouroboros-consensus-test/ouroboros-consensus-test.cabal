@@ -53,6 +53,7 @@ library
                        Test.Util.MockChain
                        Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.DiffSeq.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
@@ -228,6 +229,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.DiffSeq
                        Test.Ouroboros.Storage.LedgerDB.HD.LMDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk

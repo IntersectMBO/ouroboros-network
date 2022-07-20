@@ -1,6 +1,13 @@
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Test.Util.Laws (
+    -- * Test tree makers
+    testGroupLaws
+  , testMonoidLaws
+  , testSemigroupLaws
     -- * Properties for @'Semigroup'@ laws
-    associativity
+  , associativity
     -- * Properties for @'Monoid'@ laws
   , concatenation
   , leftIdentity
@@ -11,65 +18,119 @@ module Test.Util.Laws (
   ) where
 
 import           Data.Group
+import           Data.Proxy
 
-import           Test.QuickCheck (Property)
+import           Test.QuickCheck (Arbitrary, Property)
 import qualified Test.QuickCheck as QC
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
 {------------------------------------------------------------------------------
   Semigroup laws
 ------------------------------------------------------------------------------}
 
+testSemigroupLaws ::
+     ( Semigroup a, Arbitrary a
+     , Eq a, Show a
+     )
+  => Proxy a
+  -> TestTree
+testSemigroupLaws p =
+  testGroup "Semigroup laws" [
+      testProperty "Associativity" $
+        associativity p
+    ]
+
 associativity ::
      ( Semigroup a
      , Show a, Eq a
      )
-  => a -> a -> a -> Property
-associativity x y z = x <> (y <> z) QC.=== (x <> y) <> z
+  => Proxy a
+  -> a
+  -> a
+  -> a
+  -> Property
+associativity _ x y z = x <> (y <> z) QC.=== (x <> y) <> z
 
 {------------------------------------------------------------------------------
   Monoid laws
 ------------------------------------------------------------------------------}
 
+testMonoidLaws ::
+     ( Monoid a, Arbitrary a
+     , Eq a, Show a
+     )
+  => Proxy a
+  -> TestTree
+testMonoidLaws p =
+  testGroup "Monoid laws" [
+      testProperty "Right identity" $
+        rightIdentity p
+    , testProperty "Left identity" $
+        leftIdentity p
+    , testProperty "Concatenation" $
+        concatenation p
+    ]
+
 rightIdentity ::
      ( Monoid a
      , Show a, Eq a
      )
-  => a
+  => Proxy a
+  -> a
   -> Property
-rightIdentity x = x <> mempty QC.=== x
+rightIdentity _ x = x <> mempty QC.=== x
 
 leftIdentity ::
      ( Monoid a
      , Show a, Eq a
      )
-  => a
+  => Proxy a
+  -> a
   -> Property
-leftIdentity x = mempty <> x QC.=== x
+leftIdentity _ x = mempty <> x QC.=== x
 
 concatenation ::
      ( Monoid a
      , Show a, Eq a
      )
-  => [a]
+  => Proxy a
+  -> [a]
   -> Property
-concatenation xs = mconcat xs QC.=== foldr (<>) mempty xs
+concatenation _ xs = mconcat xs QC.=== foldr (<>) mempty xs
 
 {------------------------------------------------------------------------------
   Group laws
 ------------------------------------------------------------------------------}
 
+testGroupLaws ::
+     ( Group a, Arbitrary a
+     , Eq a, Show a
+     )
+  => Proxy a
+  -> TestTree
+testGroupLaws p =
+  testGroup "Group laws" [
+      testProperty "Right inverse" $
+        rightInverse p
+    , testProperty "Left inverse" $
+        leftInverse p
+    ]
+
 rightInverse ::
      ( Group a
      , Show a, Eq a
      )
-  => a
+  => Proxy a
+  -> a
   -> Property
-rightInverse x = x <> invert x QC.=== mempty
+rightInverse _ x = x <> invert x QC.=== mempty
 
 leftInverse ::
      ( Group a
      , Show a, Eq a
      )
-  => a
+  => Proxy a
+  -> a
   -> Property
-leftInverse x = invert x <> x QC.=== mempty
+leftInverse _ x = invert x <> x QC.=== mempty

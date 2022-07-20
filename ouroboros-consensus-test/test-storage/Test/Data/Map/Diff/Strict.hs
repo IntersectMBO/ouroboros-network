@@ -7,15 +7,15 @@
 
 module Test.Data.Map.Diff.Strict (tests) where
 
+import           Data.Proxy (Proxy (Proxy))
+
 import           Data.Map.Strict.Diff
 import qualified Data.Map.Strict.Diff2 as D2
 
-import           Test.QuickCheck (Arbitrary)
-import qualified Test.QuickCheck as QC
-import           Test.Tasty
-import           Test.Tasty.QuickCheck (testProperty)
+import           Test.Tasty (TestTree, testGroup)
 
 import           Test.Util.Laws
+import           Test.Util.Orphans.DiffSeq.Arbitrary ()
 
 
 -- | Testing @'Semigroup'@, @'Monoid'@ and @'Group'@ laws for diff datatypes.
@@ -27,6 +27,31 @@ import           Test.Util.Laws
 -- is more general, and so does not fail in these cases.
 tests :: TestTree
 tests = testGroup "Strict" [
+    testGroup "Diff Int Int" [
+        testSemigroupLaws p1
+      , testMonoidLaws p1
+      ]
+  , testGroup "DiffHistory Int" [
+        testSemigroupLaws p2
+      ]
+  , testGroup "D2.Diff Int Int" [
+        testSemigroupLaws p3
+      , testMonoidLaws p3
+      , testGroupLaws p3
+      ]
+  , testGroup "D2.DiffHistory Int" [
+        testSemigroupLaws p4
+      , testMonoidLaws p4
+      , testGroupLaws p4
+      ]
+  ]
+    where
+      p1 = Proxy @(Diff Int Int)
+      p2 = Proxy @(DiffHistory Int)
+      p3 = Proxy @(D2.Diff Int Int)
+      p4 = Proxy @(D2.DiffHistory Int)
+
+{-
     testGroup "Semigroup laws" [
         testGroup "Associativity" [
             testProperty "Diff k v" $
@@ -98,28 +123,4 @@ tests = testGroup "Strict" [
           ]
       ]
   ]
-
-{------------------------------------------------------------------------------
-  Orphan @'Arbitrary'@ instances
-------------------------------------------------------------------------------}
-
-deriving newtype instance (Ord k, Arbitrary k, Arbitrary v)
-                       => Arbitrary (Diff k v)
-deriving newtype instance (Arbitrary v) => Arbitrary (DiffHistory v)
-instance (Arbitrary v) => Arbitrary (DiffEntry v) where
-  arbitrary = do
-    constr <- QC.elements [Insert, Delete]
-    constr <$> QC.arbitrary
-instance (Ord k, Arbitrary k, Arbitrary v) => Arbitrary (AntiDiff k v) where
-  arbitrary = do
-    constr <- QC.elements [Positive, Negative]
-    constr <$> QC.arbitrary
-
-
-deriving newtype instance (Ord k, Arbitrary k, Arbitrary v)
-                       => Arbitrary (D2.Diff k v)
-deriving newtype instance (Arbitrary v) => Arbitrary (D2.DiffHistory v)
-instance (Arbitrary v) => Arbitrary (D2.DiffEntry v) where
-  arbitrary = do
-    constr <- QC.elements [D2.Insert, D2.Delete]
-    constr <$> QC.arbitrary
+-}
