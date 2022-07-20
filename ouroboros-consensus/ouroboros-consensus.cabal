@@ -236,7 +236,6 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.HD
                        Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                        Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
-                       Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq.UTxO
                        Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore
                        Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes
                        Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB

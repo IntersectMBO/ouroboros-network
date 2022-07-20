@@ -8,7 +8,6 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# LANGUAGE UndecidableInstances       #-}
@@ -16,17 +15,20 @@
 module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
     -- * Sequences of diffs
     DiffSeq (..)
-    -- * @'Diffable'@ API: types
-  , DIM
-  , DM
-  , DTM
-  , Diffable (..)
+  , Element (..)
+  , InternalMeasure (..)
+  , Length (..)
+  , SlotNo (..)
+  , TopMeasure (..)
+    -- * Short-hands for type-class constraints
+  , IM
+  , SM
+  , TM
+    -- * API: Type classes
   , HasDiff (..)
   , HasLength (..)
   , HasSlot (..)
-  , Length (..)
-  , SlotNo (..)
-    -- * @'Diffable'@ API: functions
+    -- * API: functions
   , cumulativeDiff
   , emptyDiffSeq
   , extend
@@ -44,12 +46,14 @@ import           Prelude hiding (length, splitAt)
 
 import qualified Control.Exception as Exn
 import           Data.Bifunctor (Bifunctor (bimap))
+import           Data.Group
 import           Data.Monoid (Sum (..))
 import           Data.Semigroup (Max (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Data.FingerTree.Strict.Alt (Alt, InternalMeasured, TopMeasured)
+import           Data.FingerTree.Strict.Alt (Alt, InternalMeasured,
+                     Measured (..), TopMeasured (..))
 import qualified Data.FingerTree.Strict.Alt as Alt
 
 -- import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -70,39 +74,105 @@ newtype DiffSeq (ts :: ToStoreKind) k v =
       (InternalMeasure ts k v)
       (Element ts k v)
     )
-  deriving stock Generic
+  deriving stock (Generic, Show, Eq)
+  deriving anyclass (NoThunks)
 
-deriving stock instance ( Eq (TopMeasure ts k v)
-                        , Eq (InternalMeasure ts k v)
-                        , Eq (Element ts k v)
-                        ) => Eq (DiffSeq ts k v)
 
-deriving stock instance ( Show (TopMeasure ts k v)
-                        , Show (InternalMeasure ts k v)
-                        , Show (Element ts k v)
-                        ) => Show (DiffSeq ts k v)
+-- The @'SlotNo'@ is not included in the top-level measure, since it is
+-- not a @'Group'@ instance.
+data TopMeasure (ts :: ToStoreKind) k v =
+    TopMeasure
+      {-# UNPACK #-} !Length             -- ^ Cumulative length
+                     !(TableDiff ts k v) -- ^ Cumulative diff
+  deriving stock (Generic, Show, Eq)
+  deriving anyclass (NoThunks)
 
-deriving anyclass instance ( NoThunks (TopMeasure ts k v)
-                           , NoThunks (InternalMeasure ts k v)
-                           , NoThunks (Element ts k v)
-                           ) => NoThunks (DiffSeq ts k v)
+data InternalMeasure (ts :: ToStoreKind) k v =
+    InternalMeasure
+      {-# UNPACK #-} !Length         -- ^ Cumulative length
+                     !(Maybe SlotNo) -- ^ Right-most slot number
+  deriving stock (Generic, Show, Eq)
+  deriving anyclass (NoThunks)
+
+data Element (ts :: ToStoreKind) k v =
+    Element
+      {-# UNPACK #-} !SlotNo
+                     !(TableDiff ts k v)
+  deriving stock (Generic, Show, Eq)
+  deriving anyclass (NoThunks)
+
+
+-- | Length as a @'Sum'@.
+newtype Length = Length {unLength :: Int}
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving newtype (Num)
+  deriving anyclass (NoThunks)
+  deriving Semigroup via Sum Int
+  deriving Monoid via Sum Int
+  deriving Group via Sum Int
+
+-- | Right-most slot number as a @'Max'@.
+newtype SlotNo = SlotNo {unSlotNo :: Slot.SlotNo}
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving newtype (Num)
+  deriving anyclass (NoThunks)
+  deriving Semigroup via Max Slot.SlotNo
+  deriving Monoid via Max Slot.SlotNo
 
 {-------------------------------------------------------------------------------
-  @'Diffable'@ API: types
+  Top-measuring
 -------------------------------------------------------------------------------}
 
-class (DTM ts k v, DIM ts k v) => Diffable ts k v where
-  data family Element (ts :: ToStoreKind) k v
-  data family TopMeasure (ts :: ToStoreKind) k v
-  data family InternalMeasure (ts :: ToStoreKind) k v
+instance (Ord k, Eq v) => TopMeasured (TopMeasure ts k v) (Element ts k v) where
+  measureTop (Element _ d) = TopMeasure 1 d
 
-type DTM (ts :: ToStoreKind) k v =
+instance (Ord k, Eq v) => Semigroup (TopMeasure ts k v) where
+  TopMeasure len1 d1 <> TopMeasure len2 d2 =
+      TopMeasure (len1 <> len2) (d1 <> d2)
+
+instance (Ord k, Eq v) => Monoid (TopMeasure ts k v) where
+  mempty = TopMeasure mempty mempty
+
+instance (Ord k, Eq v) => Group (TopMeasure ts k v) where
+  invert (TopMeasure len d) =
+    TopMeasure (invert len) (invert d)
+
+{-------------------------------------------------------------------------------
+  Internal-measuring
+-------------------------------------------------------------------------------}
+
+instance Measured (InternalMeasure ts k v) (Element ts k v) where
+  measure (Element slotNo _d) = InternalMeasure 1 (Just slotNo)
+
+instance Semigroup (InternalMeasure ts k v) where
+  InternalMeasure len1 sl1 <> InternalMeasure len2 sl2 =
+    InternalMeasure (len1 <> len2) (sl1 <> sl2)
+
+instance Monoid (InternalMeasure ts k v) where
+  mempty = InternalMeasure mempty mempty
+
+{-------------------------------------------------------------------------------
+  Short-hands for type-class constraints
+-------------------------------------------------------------------------------}
+
+-- Short-hands for @'TopMeasured'@ and @'InternalMeasured'@ constraints for
+-- the @'DiffSeq'@-related datatypes.
+
+-- | Short-hand for @'Topmeasured'@.
+type TM (ts :: ToStoreKind) k v =
   TopMeasured (TopMeasure ts k v) (Element ts k v)
-type DIM (ts :: ToStoreKind) k v =
-  InternalMeasured (InternalMeasure ts  k v) (Element ts k v)
-type DM (ts :: ToStoreKind) k v =
-  (DTM ts k v, DIM ts k v)
 
+-- | Short-hand for @'InternalMeasured'@.
+type IM (ts :: ToStoreKind) k v =
+  InternalMeasured (InternalMeasure ts  k v) (Element ts k v)
+
+-- | Short-hand for @'SuperMeasured'@.
+type SM (ts :: ToStoreKind) k v =
+  (TM ts k v, IM ts k v)
+
+{-------------------------------------------------------------------------------
+  API: type classes
+-------------------------------------------------------------------------------}
 
 class HasDiff (ts :: ToStoreKind) k v where
   getTableDiffE :: Element ts k v -> TableDiff ts k v
@@ -117,50 +187,50 @@ class HasSlot (ts :: ToStoreKind) k v where
   getElementSlot         :: Element ts k v -> SlotNo
   getInternalMeasureSlot :: InternalMeasure ts k v -> Maybe SlotNo
 
+instance HasDiff ts k v where
+  getTableDiffE (Element _ d) = d
+  getTableDiffTM (TopMeasure _ d) = d
+  mapElement f (Element sl d) = Element sl (mapTableDiff f d)
 
-newtype Length = Length {unLength :: Int}
-  deriving stock (Generic, Show, Eq, Ord)
-  deriving newtype (Num)
-  deriving anyclass (NoThunks)
-  deriving Semigroup via Sum Int
+instance HasLength ts k v where
+  getLength (TopMeasure s _) = s
+  getInternalMeasureLength (InternalMeasure s _) = s
 
-newtype SlotNo = SlotNo {unSlotNo :: Slot.SlotNo}
-  deriving stock (Generic, Show, Eq, Ord)
-  deriving anyclass (NoThunks)
-  deriving Semigroup via Max Slot.SlotNo
+instance HasSlot ts k v where
+  getElementSlot (Element sl _) = sl
+  getInternalMeasureSlot (InternalMeasure _ sl) = sl
 
 {-------------------------------------------------------------------------------
-  @'Diffable'@ API: derived functions
+  API: derived functions
 -------------------------------------------------------------------------------}
 
 emptyDiffSeq ::
      ( TopMeasured (TopMeasure ts k v) (Element ts k v)
      , InternalMeasured (InternalMeasure ts k v) (Element ts k v)
-     ) => DiffSeq ts k v
+     )
+  => DiffSeq ts k v
 emptyDiffSeq = DiffSeq Alt.empty
 
 cumulativeDiff ::
-     ( DTM ts k v
-     , HasDiff ts k v
-     )
+     TM ts k v
   => DiffSeq ts k v
   -> TableDiff ts k v
 cumulativeDiff (DiffSeq alt) = getTableDiffTM $ Alt.measureTop alt
 
 length ::
-       (DTM ts k v, HasLength ts k v)
-    => DiffSeq ts k v -> Int
+     TM ts k v
+  => DiffSeq ts k v -> Int
 length (DiffSeq alt) = unLength . getLength $ Alt.measureTop alt
 
 extend ::
-     DM ts k v
+     SM ts k v
   => DiffSeq ts k v
   -> Element ts k v
   -> DiffSeq ts k v
 extend (DiffSeq alt) el = DiffSeq $ alt Alt.|> el
 
 extend' ::
-     (DM ts k v, HasSlot ts k v)
+     SM ts k v
   => DiffSeq ts k v
   -> Element ts k v
   -> DiffSeq ts k v
@@ -172,7 +242,7 @@ extend' (DiffSeq alt) el =
       Just sl0 -> sl0 <= getElementSlot el
 
 maxSlot ::
-     (DIM ts k v, HasSlot ts k v)
+     IM ts k v
   => DiffSeq ts k v
   -> Maybe Slot.SlotNo
 maxSlot (DiffSeq alt) =
@@ -185,21 +255,21 @@ maxSlot (DiffSeq alt) =
     unwrapInner (Just (SlotNo sl)) = Just sl
 
 split ::
-     DM ts k v
+     SM ts k v
   => (InternalMeasure ts k v -> Bool)
   -> DiffSeq ts k v
   -> (DiffSeq ts k v, DiffSeq ts k v)
 split p (DiffSeq alt) = bimap DiffSeq DiffSeq $ Alt.split p alt
 
 splitAt ::
-     (DM ts k v, HasLength ts k v)
+     SM ts k v
   => Int
   -> DiffSeq ts k v
   -> (DiffSeq ts k v, DiffSeq ts k v)
-splitAt n = split ((<Length n) . getInternalMeasureLength)
+splitAt n = split ((Length n<) . getInternalMeasureLength)
 
 splitAtFromEnd ::
-     (DM ts k v, HasLength ts k v)
+     SM ts k v
   => Int
   -> DiffSeq ts k v
   -> (DiffSeq ts k v, DiffSeq ts k v)
@@ -209,7 +279,7 @@ splitAtFromEnd n dseq =
     len = length dseq
 
 splitAtSlot ::
-     (DM ts k v, HasSlot ts k v)
+     SM ts k v
   => Slot.SlotNo
   -> DiffSeq ts k v
   -> (DiffSeq ts k v, DiffSeq ts k v)
@@ -218,9 +288,8 @@ splitAtSlot sl = split p
     p = maybe True (SlotNo sl <) . getInternalMeasureSlot
 
 mapDiffSeq ::
-       ( DM ts k v
-       , DM ts k v'
-       , HasDiff ts k v
+       ( SM ts k v
+       , SM ts k v'
        )
     => (v -> v')
     -> DiffSeq ts k v

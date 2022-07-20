@@ -19,6 +19,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes (
   , restrictValues
   ) where
 
+import           Data.Group (Group)
 import qualified Data.Map.Merge.Strict as Merge
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -51,7 +52,7 @@ newtype TableKeys (ts :: ToStoreKind) k v = TableKeys (Set k)
 
 newtype TableDiff (ts :: ToStoreKind) k v = TableDiff (Diff k v)
   deriving stock (Generic, Show, Eq)
-  deriving newtype (Semigroup, Monoid)
+  deriving newtype (Semigroup, Monoid, Group)
   deriving anyclass (NoThunks)
 
 {-------------------------------------------------------------------------------
