@@ -114,7 +114,7 @@ initLMDB mayLimits = do
     emptyInit :: LMDB.LMDBInit l
     emptyInit = LMDB.LIInitialiseFromMemory Origin polyEmptyLedgerTables
   bs <- LMDB.newLMDBBackingStore
-    (show `Trace.contramap` Trace.stdoutTracer)
+    Trace.nullTracer
     limits fs emptyInit
   pure (tmpdir, bs)
 

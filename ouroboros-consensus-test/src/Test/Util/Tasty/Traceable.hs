@@ -13,7 +13,10 @@
 -- only when the test fails, instead of showing all traces or none at all.
 module Test.Util.Tasty.Traceable (
     ShowTrace (..)
-  , traceableProperty
+  , testPropertyTraceable
+  , testPropertyTraceable'
+  , withResourceTraceable
+  , withResourceTraceable'
   ) where
 
 import           Data.Coerce
@@ -39,20 +42,64 @@ instance IsOption ShowTrace where
     <> " It is up to the property to choose how to act on this flag."
   optionCLParser = mkFlagCLParser mempty (coerce True)
 
-newtype TraceableTest t = TraceableTest t
+newtype TraceableTest t = TraceableTest (ShowTrace -> t)
 
 instance IsTest t => IsTest (TraceableTest t) where
   testOptions = coerce $ coerce (testOptions :: Tagged t [OptionDescription])
     ++ [Option (Proxy :: Proxy ShowTrace)]
 
-  run os (TraceableTest tree) = run os tree
+  run opts (TraceableTest treeFunc) =
+    let showTrace :: ShowTrace = lookupOption opts
+    in  run opts (treeFunc showTrace)
 
 -- | Create a traceable property that can be tested using the @tasty@ package.
 --
 -- Note: It is up to the underlying property itself (@mk_prop@ in
--- @`traceableProperty name mk_prop`@) to choose how to act on the flag. For
+-- @`testPropertyTraceable name mk_prop`@) to choose how to act on the flag. For
 -- example: (i) the underlying property can choose to ignore the flag entirely,
 -- and (ii) the underlying property can choose which concrete tracer to use.
-traceableProperty :: QC.Testable t => String -> (ShowTrace -> t) -> TestTree
-traceableProperty name mkProp = askOption $ \showTrace ->
-  singleTest name (TraceableTest (QC $ QC.property $ mkProp showTrace))
+testPropertyTraceable :: QC.Testable t => TestName -> (ShowTrace -> t) -> TestTree
+testPropertyTraceable name mkProp =
+  singleTest name $ TraceableTest (QC . QC.property . mkProp)
+
+-- | Version of @`testPropertyTraceable`@ that ignores the @`ShowTrace`@ option.
+--
+-- This version is mostly useful when used in conjunction with
+-- @`withResourceTraceable'`@.
+testPropertyTraceable' :: QC.Testable t => TestName -> t -> TestTree
+testPropertyTraceable' name prop = testPropertyTraceable name (const prop)
+
+-- | Light wrapper that adds a @`ShowTrace`@ function argument in front of a type @a@.
+type WithTrace a = ShowTrace -> a
+
+-- | Version of @`withResource`@ that can be toggled to use tracing on resource
+-- acquisition, resource release, and resource usage.
+--
+-- Note: It is up to the underlying components (acquisition, release, usage) to
+-- choose how to act on the flag.
+withResourceTraceable ::
+     WithTrace (IO a)
+  -> WithTrace (a -> IO ())
+  -> WithTrace (IO a -> TestTree)
+  -> TestTree
+withResourceTraceable acq rel use = askOption $ \showTrace ->
+  withResource
+    (acq showTrace)
+    (rel showTrace)
+    (use showTrace)
+
+-- | Version of @`withResourceTraceable'`@ that can be toggled to use tracing only
+-- on resource acquisition.
+--
+-- Note: It is up to the underlying component (acquisition) to choose how to act on
+-- the flag.
+withResourceTraceable' ::
+     WithTrace (IO a)
+  -> (a -> IO ())
+  -> (IO a -> TestTree)
+  -> TestTree
+withResourceTraceable' acq rel use =
+  withResourceTraceable
+    acq
+    (const rel)
+    (const use)
