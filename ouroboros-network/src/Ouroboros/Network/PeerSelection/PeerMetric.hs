@@ -30,6 +30,7 @@ module Ouroboros.Network.PeerSelection.PeerMetric
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
+import           Data.Bifunctor (Bifunctor (..))
 import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as IntPSQ
 import           Data.Map.Strict (Map)
@@ -194,10 +195,10 @@ headerMetricTracer
     -> PeerMetrics m p
     -> Tracer (STM m) (TraceLabelPeer (ConnectionId p) (SlotNo, Time))
 headerMetricTracer config peerMetrics@PeerMetrics{peerMetricsVar} =
-    (\(TraceLabelPeer con (slotNo, _)) -> TraceLabelPeer (remoteAddress con) slotNo)
+    bimap remoteAddress fst
     `contramap`
     peerRegistryTracer peerMetrics
- <> (\(TraceLabelPeer con d) -> TraceLabelPeer (remoteAddress con) d)
+ <> first remoteAddress
     `contramap`
     metricsTracer
       (headerMetrics <$> readTVar peerMetricsVar)
@@ -222,7 +223,7 @@ fetchedMetricTracer
                                       , Time
                                       ))
 fetchedMetricTracer config peerMetrics@PeerMetrics{peerMetricsVar} =
-    (\(TraceLabelPeer con (_, slot, _)) -> TraceLabelPeer (remoteAddress con) slot)
+    bimap remoteAddress (\(_, slotNo, _) -> slotNo)
     `contramap`
     peerRegistryTracer peerMetrics
  <> (\(TraceLabelPeer con (bytes, slot, time)) ->
