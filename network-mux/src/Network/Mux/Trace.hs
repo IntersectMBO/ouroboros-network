@@ -24,6 +24,7 @@ import           Text.Printf
 import           Control.Exception hiding (throwIO)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
+import           Data.Bifunctor (Bifunctor (..))
 import           Data.Word
 import           GHC.Generics (Generic (..))
 import           Quiet (Quiet (..))
@@ -100,6 +101,9 @@ handleIOException errorMsg e = throwIO MuxError {
 --
 data TraceLabelPeer peerid a = TraceLabelPeer peerid a
   deriving (Eq, Functor, Show)
+
+instance Bifunctor TraceLabelPeer where
+  bimap f g (TraceLabelPeer a b) = TraceLabelPeer (f a) (g b)
 
 -- | Type used for tracing mux events.
 --
