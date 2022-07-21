@@ -17,6 +17,8 @@ let
     # the Haskell.nix package set, reduced to local packages.
     (selectProjectPackages ouroborosNetworkHaskellPackages);
 
+  coveredProject = ouroborosNetworkHaskellPackages.appendModule { coverage = true; };
+
   validate-mainnet = import ./nix/validate-mainnet.nix {
     inherit pkgs;
     byron-db-converter =
@@ -27,7 +29,7 @@ let
   };
 
   self = {
-    inherit haskellPackages network-docs consensus-docs;
+    inherit haskellPackages network-docs consensus-docs coveredProject;
 
     inherit (haskellPackages.ouroboros-network.identifier) version;
 

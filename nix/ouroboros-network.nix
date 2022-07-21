@@ -17,7 +17,17 @@ let
 
   # This creates the Haskell package set.
   # https://input-output-hk.github.io/haskell.nix/user-guide/projects/
-  pkgSet = haskell-nix.cabalProject {
+  pkgSet = haskell-nix.cabalProject [
+    ({ lib, pkgs, buildProject, ... }: {
+      options = {
+        coverage = lib.mkOption {
+          type = lib.types.bool;
+          description = "Enable Haskell Program Coverage for ouroboros-network libraries and test suites.";
+          default = false;
+        };
+      };
+    })
+    ({ config, ...}: {
     inherit compiler-nix-name src;
     modules = [
 
@@ -25,6 +35,13 @@ let
         # Compile all local packages with -Werror:
         packages = lib.genAttrs projectPackages
           (name: { configureFlags = [ "--ghc-option=-Werror" ]; });
+      }
+      {
+        packages = lib.genAttrs projectPackages (name: {
+          # Enable Haskell Program Coverage for all local libraries
+          # and test suites.
+          doCoverage = config.coverage;
+        });
       }
       {
         # Apply profiling arg to all library components in the build:
@@ -80,5 +97,5 @@ let
             [ "-fexternal-interpreter" ];
         })
     ];
-  };
+  })];
 in pkgSet
