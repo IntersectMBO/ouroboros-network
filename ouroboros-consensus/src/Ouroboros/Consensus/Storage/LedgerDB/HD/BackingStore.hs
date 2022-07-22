@@ -162,6 +162,16 @@ data TVarBackingStoreDeserialiseExn =
   deriving anyclass (Exn.Exception)
   deriving stock    (Show)
 
+newtype StoreDirIsIncompatible = StoreDirIsIncompatible FilePath
+  deriving anyclass (Exn.Exception)
+
+instance Show StoreDirIsIncompatible where
+  show (StoreDirIsIncompatible p) =
+       "In-Memory database not found in the database directory: "
+    <> show p
+    <> ".\nPre-UTxO-HD and LMDB implementations are incompatible with the In-Memory \
+       \ implementation. Please delete your ledger database directory."
+
 -- | Use a 'TVar' as a trivial backing store
 newTVarBackingStore ::
      (IOLike m, NoThunks values)
@@ -182,6 +192,10 @@ newTVarBackingStore lookup_ rangeRead_ forwardValues_ enc dec initialization = d
     ref <- do
       (slot, values) <- case initialization of
         Left (FS.SomeHasFS fs, BackingStorePath path) -> do
+          tvarFileExists <- FS.doesFileExist fs (extendPath path)
+          -- simHasFS would error on unsafeToFilePath unless we take advantage
+          -- of lazyness
+          unless tvarFileExists $ Exn.throw . StoreDirIsIncompatible =<< FS.unsafeToFilePath fs path
           FS.withFile fs (extendPath path) FS.ReadMode $ \h -> do
             bs <- FS.hGetAll fs h
             case CBOR.deserialiseFromBytes ((,) <$> CBOR.fromCBOR <*> dec) bs of
