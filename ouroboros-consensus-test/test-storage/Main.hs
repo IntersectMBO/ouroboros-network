@@ -12,7 +12,6 @@ import           Test.Tasty
 import qualified Test.Data.Map.Diff.Strict
 import qualified Test.Ouroboros.Storage
 
-
 main :: IO ()
 main = runTests `race_` heartbeat
   where

@@ -47,10 +47,7 @@ newtype DiffHistory v = DiffHistory (Seq (DiffEntry v))
 --
 -- Note: updates are equivalent to inserts, since we consider them to
 -- overwrite previous values.
---
--- TODO(jdral): Are @'Insert'@ and @'Delete'@ each other's inverse? In that
--- case, we can do away with the @Anti@-* constructors.
-data DiffEntry v = Insert !v | Delete !v | AntiInsert !v | AntiDelete !v
+data DiffEntry v = Insert !v | Delete !v
   deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
 
@@ -117,10 +114,8 @@ isNonEmptyHistory h@(DiffHistory s)
 -- identity element, so it is not a @Monoid@ or @Semigroup@.
 invertDiffEntry :: DiffEntry v -> DiffEntry v
 invertDiffEntry = \case
-  Insert x     -> AntiInsert x
-  Delete x     -> AntiDelete x
-  AntiInsert x -> Insert x
-  AntiDelete x -> Delete x
+  Insert x -> Delete x
+  Delete x -> Insert x
 
 -- | @'areInverses e1 e2@ checks whether @e1@ and @e2@ are each other's
 -- inverse.

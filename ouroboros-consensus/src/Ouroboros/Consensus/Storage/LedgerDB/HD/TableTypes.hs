@@ -74,28 +74,12 @@ forwardValues (TableValues values) (TableDiff (Diff diffs)) =
     newKeys _k (DiffHistory (_es :|> e)) = case e of
       Insert x  -> Just x
       Delete _x -> Nothing
-      _         -> error "impossible"
 
     oldKeys :: k -> v -> DiffHistory v -> Maybe v
     oldKeys _k _v1 (DiffHistory Empty)       = error "impossible"
     oldKeys _k _v1 (DiffHistory (_es :|> e)) = case e of
       Insert x  -> Just x
       Delete _x -> Nothing
-      _         -> error "impossible"
-    {-
-    newKeys :: k -> DiffEntry v -> Maybe v
-    newKeys _k (DiffEntry v diffState) = case diffState of
-      UedsIns       -> Just v
-      UedsInsAndDel -> Nothing
-      UedsDel       -> Nothing -- TODO error "impossible! delete of missing key"
-
-
-    oldKeys :: k -> v -> UtxoEntryDiff v -> Maybe v
-    oldKeys _k _v1 (UtxoEntryDiff _v2 diffState) = case diffState of
-      UedsDel       -> Nothing
-      UedsIns       -> error "impossible! duplicate insert of key"
-      UedsInsAndDel -> error "impossible! duplicate insert of key"
-      -}
 
 mapTableValues :: (v -> v') -> TableValues ts k v -> TableValues ts k v'
 mapTableValues f (TableValues vs) = TableValues $ Map.map f vs
