@@ -127,9 +127,6 @@ jobs:
 
         cat >> cabal.project.local <<EOF
 
-        package lmdb
-          flags: +use-pkg-config
-
         -- Add strcittvar check
         package io-classes
           flags: +checktvarinvariant
