@@ -23,7 +23,7 @@ import           Network.Mux.Types
 -- > |M|    conversation id          |              length           |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 --
--- All fields are in big endian byteorder.
+-- All fields are in big endian byte order.
 --
 encodeMuxSDU :: MuxSDU -> BL.ByteString
 encodeMuxSDU sdu =

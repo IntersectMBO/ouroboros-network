@@ -139,7 +139,7 @@ socketAsMuxBearer sduTimeout tracer sd =
                    traceWith tracer $ Mx.MuxTraceSendEnd
 #if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
                    -- If it was possible to detect if the MuxTraceTCPInfo was
-                   -- enable we woulnd't have to hide the getSockOpt
+                   -- enable we wouldn't have to hide the getSockOpt
                    -- syscall in this ifdef. Instead we would only call it if
                    -- we knew that the information would be traced.
                    tcpi <- Socket.getSockOpt sd TCPInfoSocketOption
