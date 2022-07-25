@@ -286,7 +286,7 @@ timeout monitorState delay action =
       -- this time waiting for the monitoring thread to set it to the
       -- TimeoutTerminated state. But the monitoring thread only sets it to
       -- that state /after/ raising the async exception in this thread. So
-      -- we will never actually rach that terminated state.
+      -- we will never actually reach that terminated state.
       --
       -- Note also that blocking STM txs are points where async exceptions that
       -- are pending (due to our masked state) can be raised. Hence there is no

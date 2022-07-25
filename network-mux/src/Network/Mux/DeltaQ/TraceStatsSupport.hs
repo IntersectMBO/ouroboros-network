@@ -1,11 +1,11 @@
 module Network.Mux.DeltaQ.TraceStatsSupport where
 
--- This module is making use of hackage statisitical libraries. They
--- are not the most efficicient approches for this particlular use
+-- This module is making use of hackage statistical libraries. They
+-- are not the most efficient approaches for this particular use
 -- case, and they may increase the package dependencies for the final
 -- binaries (they have a lot of dependencies).
 --
--- It may well be worthwhile constructing specialsed version for the
+-- It may well be worthwhile constructing specialised version for the
 -- specific use case, but building those and creating the associated
 -- test suite was not deemed a good use of time (at the time of
 -- creation).

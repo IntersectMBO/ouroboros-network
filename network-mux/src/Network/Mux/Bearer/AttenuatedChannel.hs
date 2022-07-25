@@ -131,7 +131,7 @@ newConnectedQueueChannelPair = do
 --
 -- - attenuation applied after reading a message from 'QueueChannel';
 -- - two-way close handshake with 120s timeout.  Read side is closed as soon as
---   an internal 'MsgClose' is received, write side has to be closed explicietly.
+--   an internal 'MsgClose' is received, write side has to be closed explicitly.
 --
 data AttenuatedChannel m = AttenuatedChannel {
     acRead  :: m BL.ByteString,
@@ -180,7 +180,7 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
       msg <- readQueueChannel qc
       t <- getMonotonicTime
       case msg of
-        -- match the 'Bearer.Snocket' behavour and throw 'MuxError'
+        -- match the 'Bearer.Snocket' behaviour and throw 'MuxError'
         -- when null byte is received from the network.
         MsgClose -> do
           case aReadAttenuation t 1 of
