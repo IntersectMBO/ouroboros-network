@@ -15,6 +15,11 @@ this changelog is supposed to be used.
 ### Removed
 - `ouroboros-consensus-cardano/tools/db-analyser` has been removed.
 
+## Circa 2022-07-25
+
+- renamed `TrError` as `TrConnectionHandlerError` which is a constructor of
+  `ConnectionHandlerTrace` type.
+
 ## Circa 2022-05-19
 
 - removed `node-to-client` versions `1` to `8`.  The lowest supported version is

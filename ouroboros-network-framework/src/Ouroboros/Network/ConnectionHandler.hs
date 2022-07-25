@@ -224,7 +224,7 @@ makeConnectionHandler muxTracer singMuxMode
         io
         $ \err -> do
           let cmd = runRethrowPolicy rethrowPolicy ctx err
-          traceWith tracer (TrError ctx err cmd)
+          traceWith tracer (TrConnectionHandlerError ctx err cmd)
           case cmd of
             ShutdownNode -> do
               throwTo mainThreadId (ExceptionInHandler remoteAddress err)
@@ -386,5 +386,5 @@ data ConnectionHandlerTrace versionNumber versionData =
         (HandshakeException versionNumber)
     | TrHandshakeServerError
         (HandshakeException versionNumber)
-    | TrError ErrorContext SomeException ErrorCommand
+    | TrConnectionHandlerError ErrorContext SomeException ErrorCommand
   deriving Show
