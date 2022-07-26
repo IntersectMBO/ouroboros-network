@@ -16,29 +16,29 @@
 -- it is used; eventually it should be simplified and then moved to the
 -- network layer tests; the more sophiscated block abstraction (abstracted over
 -- an Ouroboros protocol) will live in the consensus layer.
-module Ouroboros.Network.Testing.ConcreteBlock (
-    Block (..)
-  , BlockBody (..)
+module Ouroboros.Network.Testing.ConcreteBlock
+  ( Block (..)
   , BlockHeader (..)
+  , BlockBody (..)
+  , hashHeader
   , BodyHash (..)
   , ConcreteHeaderHash (..)
   , hashBody
-  , hashHeader
     -- * Converting slots to times
   , convertSlotToTimeForTestsAssumingNoHardFork
     -- * Creating sample chains
-  , mkAnchoredFragment
-  , mkAnchoredFragmentSimple
   , mkChain
   , mkChainSimple
+  , mkAnchoredFragment
+  , mkAnchoredFragmentSimple
     -- * Generator utilities
-  , fixupAnchoredFragmentFrom
-  , fixupBlock
-  , fixupBlockAfterBlock
-  , fixupBlockHeader
-  , fixupChain
   , mkPartialBlock
   , mkPartialBlockHeader
+  , fixupBlock
+  , fixupBlockHeader
+  , fixupBlockAfterBlock
+  , fixupChain
+  , fixupAnchoredFragmentFrom
   ) where
 
 import           Data.ByteString (ByteString)
@@ -114,7 +114,7 @@ hashHeader (BlockHeader _ b c d e) = HeaderHash (hash (b, c, d, e))
 deriving instance Hashable SlotNo
 deriving instance Hashable BlockNo
 
--- | 'Hashable' instance for 'Hash'.
+-- | 'Hashable' instance for 'Hash'
 --
 -- We don't insist that 'Hashable' in 'StandardHash' because 'Hashable' is
 -- only used in the network layer /tests/.
