@@ -1,11 +1,11 @@
 
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.NodeToClient.Version (
-    NodeToClientVersion (..)
+module Ouroboros.Network.NodeToClient.Version
+  ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-  , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , nodeToClientCodecCBORTerm
   ) where
 
 import           Data.Bits (clearBit, setBit, testBit)
@@ -65,6 +65,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
                            , Nothing)
+
 
 nodeToClientVersionBit :: Int
 nodeToClientVersionBit = 15
