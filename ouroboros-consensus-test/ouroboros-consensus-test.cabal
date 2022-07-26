@@ -241,6 +241,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ImmutableDB.Primary
                        Test.Ouroboros.Storage.ImmutableDB.StateMachine
                        Test.Ouroboros.Storage.LedgerDB
+                       Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.HD
                        Test.Ouroboros.Storage.LedgerDB.HD.LMDB
