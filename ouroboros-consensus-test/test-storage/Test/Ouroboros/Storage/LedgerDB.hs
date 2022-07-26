@@ -2,6 +2,7 @@ module Test.Ouroboros.Storage.LedgerDB (tests) where
 
 import           Test.Tasty
 
+import qualified Test.Ouroboros.Storage.LedgerDB.DbChangelog as DbChangelog
 import qualified Test.Ouroboros.Storage.LedgerDB.DiskPolicy as DiskPolicy
 import qualified Test.Ouroboros.Storage.LedgerDB.HD as HD
 import qualified Test.Ouroboros.Storage.LedgerDB.InMemory as InMemory
@@ -13,4 +14,5 @@ tests = testGroup "LedgerDB" [
     , InMemory.tests
     , OnDisk.tests
     , DiskPolicy.tests
+    , DbChangelog.tests
     ]

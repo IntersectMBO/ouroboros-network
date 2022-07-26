@@ -390,14 +390,6 @@ forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
     forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
       ApplyValuesMK $ forwardValuesAndKeys values keys (cumulativeDiffSeqUtxoDiff diffs)
 
-dbChangelogPrefix ::
-     ( HasHeader blk, HeaderHash blk ~ HeaderHash (l EmptyMK)
-     , GetTip (l EmptyMK)
-     , TableStuff l
-     )
-  => Point blk -> DbChangelog l -> Maybe (DbChangelog l)
-dbChangelogPrefix = prefixDbChangelog
-
 -- | Isolates the prefix of the changelog that should be flushed
 --
 -- TODO take some argument to bound the size of the resulting prefix?
@@ -523,7 +515,7 @@ ledgerDbIsSaturated (SecurityParam k) db =
 -- returned.
 ledgerDbPast ::
      ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
-     , TableStuff l
+     , TableStuff l, StandardHash (l EmptyMK)
      )
   => Point blk
   -> LedgerDB l
@@ -538,7 +530,7 @@ ledgerDbPast pt db = ledgerDbCurrent <$> ledgerDbPrefix pt db
 -- returned.
 ledgerDbPrefix ::
      ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
-     , TableStuff l
+     , TableStuff l, StandardHash (l EmptyMK)
      )
   => Point blk
   -> LedgerDB l
@@ -547,7 +539,7 @@ ledgerDbPrefix pt db
     | pt == castPoint (getTip (ledgerDbAnchor db))
     = Just . LedgerDB . prefixBackToAnchorDbChangelog $ ledgerDbChangelog db
     | otherwise
-    = LedgerDB <$> dbChangelogPrefix pt (ledgerDbChangelog db)
+    = LedgerDB <$> prefixDbChangelog (castPoint pt) (ledgerDbChangelog db)
 
 -- | Transform the underlying 'AnchoredSeq' using the given functions.
 volatileStatesBimap ::
