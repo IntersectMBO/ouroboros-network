@@ -17,12 +17,12 @@ import           Data.Typeable (Typeable)
 
 import qualified Codec.CBOR.Term as CBOR
 
+import           Ouroboros.Network.BlockFetch.ClientState
+                     (WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
                      Acceptable (..))
-import           Ouroboros.Network.BlockFetch.ClientState
-                     (WhetherReceivingTentativeBlocks(..))
 
 
 -- | Enumeration of node to node protocol versions.
