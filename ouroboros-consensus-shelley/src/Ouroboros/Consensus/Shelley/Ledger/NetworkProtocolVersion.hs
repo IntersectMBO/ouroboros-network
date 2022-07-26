@@ -31,7 +31,7 @@ data ShelleyNodeToClientVersion =
     -- | New queries introduced: GetRewardInfoPools
   | ShelleyNodeToClientVersion5
 
-    -- | New queries introduced: GetPoolState
+    -- | New queries introduced: GetPoolState, GetStakeSnapshot
   | ShelleyNodeToClientVersion6
   deriving (Show, Eq, Ord, Enum, Bounded)
 

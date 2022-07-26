@@ -1,11 +1,12 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE DisambiguateRecordFields   #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -17,6 +18,7 @@
 module Ouroboros.Consensus.Shelley.Ledger.Query (
     BlockQuery (.., GetUTxO, GetFilteredUTxO)
   , NonMyopicMemberRewards (..)
+  , StakeSnapshot (..)
   , querySupportedVersion
     -- * Serialisation
   , decodeShelleyQuery
@@ -30,6 +32,8 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise, decode, encode)
+import           Control.DeepSeq (NFData)
+import           Data.Foldable (fold)
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -37,8 +41,10 @@ import           Data.Set (Set)
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
 import           Data.UMap (View (..), domRestrictedView)
+import           GHC.Generics (Generic)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), encodeListLen,
+                     enforceSize)
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      encodePoint, mkSerialised)
@@ -50,11 +56,15 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
+import           Cardano.Ledger.Compactible (Compactible (fromCompact))
 import qualified Cardano.Ledger.Core as LC
+import           Cardano.Ledger.Keys (KeyHash, KeyRole (..))
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.EpochBoundary as SL
 import qualified Cardano.Ledger.Shelley.LedgerState as SL (RewardAccounts)
 import qualified Cardano.Ledger.Shelley.RewardProvenance as SL
                      (RewardProvenance)
+import qualified Data.VMap as VMap
 
 import           Cardano.Ledger.Crypto (Crypto)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
@@ -193,6 +203,11 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
     -> BlockQuery (ShelleyBlock proto era)
                   (SL.PState (EraCrypto era))
 
+  GetStakeSnapshot
+    :: SL.KeyHash 'SL.StakePool (EraCrypto era)
+    -> BlockQuery (ShelleyBlock proto era)
+                  (StakeSnapshot (EraCrypto era))
+
   -- WARNING: please add new queries to the end of the list and stick to this
   -- order in all other pattern matches on queries. This helps in particular
   -- with the en/decoders, as we want the CBOR tags to be ordered.
@@ -273,6 +288,31 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
                 , SL._retiring = Map.restrictKeys (SL._retiring dpsPState) poolIds
                 }
             Nothing -> dpsPState
+        GetStakeSnapshot poolId ->
+          let SL.SnapShots
+                { SL._pstakeMark
+                , SL._pstakeSet
+                , SL._pstakeGo
+                } = SL.esSnapshots . SL.nesEs $ st
+
+              -- | Sum all the stake that is held by the pool
+              getPoolStake :: KeyHash 'StakePool crypto -> SL.SnapShot crypto -> SL.Coin
+              getPoolStake hash ss = fold (Map.map fromCompact $ VMap.toMap s)
+                where
+                  SL.Stake s = SL.poolStake hash (SL._delegations ss) (SL._stake ss)
+
+              -- | Sum the active stake from a snapshot
+              getAllStake :: SL.SnapShot crypto -> SL.Coin
+              getAllStake (SL.SnapShot stake _ _) = foldMap fromCompact (VMap.toMap (SL.unStake stake))
+          in
+          StakeSnapshot
+            { sMarkPool   = getPoolStake poolId _pstakeMark
+            , sSetPool    = getPoolStake poolId _pstakeSet
+            , sGoPool     = getPoolStake poolId _pstakeGo
+            , sMarkTotal  = getAllStake _pstakeMark
+            , sSetTotal   = getAllStake _pstakeSet
+            , sGoTotal    = getAllStake _pstakeGo
+            }
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -387,6 +427,13 @@ instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
     = Nothing
   sameDepIndex (GetPoolState _) _
     = Nothing
+  sameDepIndex (GetStakeSnapshot poolid) (GetStakeSnapshot poolid')
+    | poolid == poolid'
+    = Just Refl
+    | otherwise
+    = Nothing
+  sameDepIndex (GetStakeSnapshot _) _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock proto era) result)
 deriving instance Show (BlockQuery (ShelleyBlock proto era) result)
@@ -413,6 +460,7 @@ instance ShelleyCompatible proto era => ShowQuery (BlockQuery (ShelleyBlock prot
       GetStakePoolParams {}                      -> show
       GetRewardInfoPools                         -> show
       GetPoolState {}                            -> show
+      GetStakeSnapshot {}                        -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) result -> ShelleyNodeToClientVersion -> Bool
@@ -437,6 +485,7 @@ querySupportedVersion = \case
     GetStakePoolParams {}                      -> (>= v4)
     GetRewardInfoPools                         -> (>= v5)
     GetPoolState {}                            -> (>= v6)
+    GetStakeSnapshot {}                        -> (>= v6)
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -524,6 +573,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 18
     GetPoolState poolids ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 19 <> toCBOR poolids
+    GetStakeSnapshot poolId ->
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 20 <> toCBOR poolId
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -552,6 +603,7 @@ decodeShelleyQuery = do
       (2, 17) -> SomeSecond . GetStakePoolParams <$> fromCBOR
       (1, 18) -> return $ SomeSecond GetRewardInfoPools
       (2, 19) -> SomeSecond . GetPoolState <$> fromCBOR
+      (2, 20) -> SomeSecond . GetStakeSnapshot <$> fromCBOR
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -580,6 +632,7 @@ encodeShelleyResult query = case query of
     GetStakePoolParams {}                      -> toCBOR
     GetRewardInfoPools                         -> toCBOR
     GetPoolState {}                            -> toCBOR
+    GetStakeSnapshot {}                        -> toCBOR
 
 decodeShelleyResult ::
      ShelleyCompatible proto era
@@ -606,3 +659,55 @@ decodeShelleyResult query = case query of
     GetStakePoolParams {}                      -> fromCBOR
     GetRewardInfoPools                         -> fromCBOR
     GetPoolState {}                            -> fromCBOR
+    GetStakeSnapshot {}                        -> fromCBOR
+
+-- | The stake snapshot returns information about the mark, set, go ledger snapshots for a pool,
+-- plus the total active stake for each snapshot that can be used in a 'sigma' calculation.
+--
+-- Each snapshot is taken at the end of a different era. The go snapshot is the current one and
+-- was taken two epochs earlier, set was taken one epoch ago, and mark was taken immediately
+-- before the start of the current epoch.
+data StakeSnapshot crypto = StakeSnapshot
+  { sMarkPool  :: !SL.Coin
+  , sSetPool   :: !SL.Coin
+  , sGoPool    :: !SL.Coin
+  , sMarkTotal :: !SL.Coin
+  , sSetTotal  :: !SL.Coin
+  , sGoTotal   :: !SL.Coin
+  } deriving (Eq, Show, Generic)
+
+instance NFData (StakeSnapshot crypto)
+
+instance
+  Crypto crypto =>
+  ToCBOR (StakeSnapshot crypto)
+  where
+  toCBOR
+    StakeSnapshot
+    { sMarkPool
+    , sSetPool
+    , sGoPool
+    , sMarkTotal
+    , sSetTotal
+    , sGoTotal
+    } = encodeListLen 6
+      <> toCBOR sMarkPool
+      <> toCBOR sSetPool
+      <> toCBOR sGoPool
+      <> toCBOR sMarkTotal
+      <> toCBOR sSetTotal
+      <> toCBOR sGoTotal
+
+instance
+  Crypto crypto =>
+  FromCBOR (StakeSnapshot crypto)
+  where
+  fromCBOR = do
+    enforceSize "StakeSnapshot" 6
+    StakeSnapshot
+      <$> fromCBOR
+      <*> fromCBOR
+      <*> fromCBOR
+      <*> fromCBOR
+      <*> fromCBOR
+      <*> fromCBOR
