@@ -12,7 +12,6 @@ maintainer:            operations@iohk.io
 category:              Network
 build-type:            Simple
 cabal-version:         >=1.10
-
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
@@ -232,6 +231,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ImmutableDB.Primary
                        Test.Ouroboros.Storage.ImmutableDB.StateMachine
                        Test.Ouroboros.Storage.LedgerDB
+                       Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.HD
                        Test.Ouroboros.Storage.LedgerDB.HD.LMDB
