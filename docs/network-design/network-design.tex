@@ -498,7 +498,7 @@ properties: the proof can be thought of as starting with
 
 \emph{``For all possible actions of the adversaries \ldots{}'' }
 
-s we refine our design by making more detailed and realistic the
+As we refine our design by making more detailed and realistic the
 mechanisms by which (honest and adversarial) nodes interact, so we also
 expand the threat model, because the more detailed design gives
 adversaries more ways to interact with the honest nodes.
@@ -516,12 +516,12 @@ find one with a plausible argument for bounding the resource use of
 honest nodes, given \emph{all} the possible actions of the adversary
 that are enabled by the design -- otherwise, the security guarantees of
 the mathematical consensus algorithm are negated. This is a high bar --
-even with the caveats of ``plausible'' and ``informal''. The contrasts
+even with the caveats of ``plausible'' and ``informal''. This contrasts
 with the orthodox approach, which only solves the simpler problem of
 solving or mitigating against known classes of attack\footnote{For
   example, much of the critique of Kademlia (ours in
   \cref{kademlia} and others' \cite{MHG18})
-  comes down to the fact that it followed the orthadox design approach.
+  comes down to the fact that it followed the orthodox design approach.
   It does not start with a threat model and establish positive results.
   Many academic papers on Kademlia establish negative results: they find
   flaws and then fix or mitigate them. We must however suspect that
@@ -1226,7 +1226,7 @@ itself that scores well on all the criteria\footnote{Thrift and
   tools, but the CBOR schema schema language is standardised (as
   \href{https://tools.ietf.org/html/rfc8610}{{RFC 8610}}) and the
   validation tools are adequate and are already used in the CI tests for
-  the new Cardano implementation.}. eusing the same choice leads to
+  the new Cardano implementation.}. Reusing the same choice leads to
 significant savings:
 
 \begin{itemize}
@@ -4257,8 +4257,8 @@ The $\Delta{}Q|_G$ value\footnote{The concept of $\Delta{}Q$ is
   explained in \cite{Comp20}. Here is a link to
   \href{https://www.slideshare.net/pnsol-slides/q-and-blockchain-83943683}{{slides
   on applicability to block chain}}.} here is for the round trip time,
-the $\Delta{}Q|_S$ is $8\text{}10^{-8}$ s/o (the
-typical value from tests), and the $\Delta{}Q$ per direction is taken to
+the $\Delta{}Q|_S$ is $8\times{}10^{-8}$ s/o^\footnote{s/o - seconds per octet}
+(the typical value from tests), and the $\Delta{}Q$ per direction is taken to
 be $1/2$ the round trip (reasonable in an AWS environment, not so in an
 asymmetric networking case e.g. residential, SME)
 
@@ -4281,7 +4281,7 @@ times that risk missing the targets set in \cref{business-requirements}.
 \toprule
   \caption{Unrestricted Window Size}\tabularnewline
 \midrule
-                     & \multicolumn{10}{c}{File size (kb)}\tabularnewline
+                     & \multicolumn{10}{c}{File size (ko)}\tabularnewline
   $\Delta{}Q|_G$ (s) & 2 & 5 & 10 & 20 & 50 & 100 & 200 & 500 & 1000 & 2000\tabularnewline
 \midrule
 \endhead
@@ -4500,7 +4500,7 @@ k & Depth of chain for effective immutability &\tabularnewline
 \label{distribution-of-leadership}
 
 From \cite{BGKR17}, the probability of stakeholder $U_i$
-with relative stake $\alpha_{i}$being chosen in any slot is:
+with relative stake $\alpha_{i}$ being chosen in any slot is:
 
 \begin{align*}
 p_{i} &= \phi_{f}(\alpha_{i}) \\
