@@ -165,10 +165,7 @@
 --     @NestedCtxt_@ data family is used to identify what kind of block we are
 --     deserializing. If we have just one block this is trivial.
 --
-module Test.Util.TheTestBlock (
-    NaturalBlock
-  , PayloadSemantics(..)
-  ) where
+module Test.Util.TheTestBlock where
 
 import           Codec.Serialise (Serialise (..))
 import           Data.Hashable (Hashable)
@@ -187,14 +184,8 @@ import           Ouroboros.Network.Point (Block(..))
 import           Ouroboros.Network.Block (Point(..))
 
 import           Ouroboros.Consensus.Block.Abstract 
-import           Ouroboros.Consensus.Ledger.Abstract (ApplyBlock(..), GetTip (..), LedgerCfg)
-import           Ouroboros.Consensus.Ledger.Basics (
-                     ApplyMapKind' (..), DiffMK, EmptyMK, InMemory (..), KeysMK,
-                     LedgerState, MapKind, SeqDiffMK,
-                     ShowLedgerState (..), StowableLedgerTables (..),
-                     TableStuff (..), TickedTableStuff (..), TrackingMK,
-                     ValuesMK, isCandidateForUnstowDefault,
-                     polyEmptyLedgerTables, IsLedger(..), LedgerResult (..), LedgerStateKind, emptyLedgerTables, NameMK (..))
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Ticked (Ticked1)
@@ -218,8 +209,7 @@ data TrivialHeader = TrivialHeader {
     , thBlockNo     :: !BlockNo
     , thChainLength :: !ChainLength
     , thForkNo      :: !Word
-    } deriving (Generic)
-      deriving (Eq)
+    } deriving (Generic, Eq)
 
 type instance HeaderHash TrivialHeader = TestHeaderHash
 instance StandardHash TrivialHeader
@@ -243,8 +233,7 @@ instance GetTip TrivialHeader where
 data WithEBBInfo header = WithEBBInfo {
     weiHeader :: header
   , weiEpochBoundary :: Maybe EpochNo
-  } deriving (Generic)
-    deriving (Eq)
+  } deriving (Generic, Eq)
 
 type instance HeaderHash (WithEBBInfo header) = HeaderHash header
 instance StandardHash header => StandardHash (WithEBBInfo header)
@@ -272,8 +261,7 @@ castChainHash (BlockHash h) = BlockHash h
 data WithBlockBody header body = WithBlockBody {
     wbbHeader :: header
   , wbbBody :: body
-  } deriving (Generic)
-    deriving (Eq)
+  } deriving (Generic, Eq)
 
 type instance HeaderHash (WithBlockBody header body) = HeaderHash header
 instance StandardHash header => StandardHash (WithBlockBody header body)
@@ -534,55 +522,7 @@ instance (forall mk. StandardHash (Ticked1 (LedgerState hdr) mk), HeaderHash hdr
       LedgerResult (zipWith WithBlockBodyAuxLedgerEvent hevs bevs) (TickedWithBlockBodyLedgerState hl bl)
 ----------------------------------------------------------------------------------------------------
 
--- | A Test block is just a header and a body
-type TheTestBlock :: IsEBB Type -> Type
-data TheTestBlock  e = TheTestBlock { -- proto!!
-      testHeader :: !(Header   (TheTestBlock e))
-    , testBody   :: !(TestBody (TheTestBlock e))
-    }
-    deriving (Generic)
-
--- | A Tag to identify an EBB or a regular block. Intended to be used with DataKinds
-data IsEBB ptype = EBB | Regular ptype
-
--- | A NaturalBlock (as nature intended) is a normal block
-newtype NaturalBlock ptype = NaturalBlock (TheTestBlock (Regular ptype))
-  deriving (Generic)
-
--- | For tests that have to do with EBBs (poor souls), this type provides an
--- Either-like structure.
-data TestBlockWithEBBs ptype =
-    TestRegularBlock (NaturalBlock ptype)
-  | TestEBBlock      (TheTestBlock EBB)
-  deriving (Generic)
-
--- | The header parametrized by the type of block
--- data instance Header (TheTestBlock (Regular ptype)) = TestRegularHeader {
---       thHash        :: HeaderHash (Header (TheTestBlock (Regular ptype)))
---     , thPrevHash    :: !(ChainHash (Header (TheTestBlock (Regular ptype))))
---     , thBodyHash    :: !TestBodyHash
---     , thSlotNo      :: !SlotNo
---     , thBlockNo     :: !BlockNo
---     , thChainLength :: !ChainLength
---     , thForkNo      :: !Word
---     } deriving (Generic)
-data instance Header (TheTestBlock  EBB           ) = TestEBBHeader {
-    regularHeader :: Header (TheTestBlock (Regular ()))
-  , epochBoundary :: EpochNo
-  } deriving (Generic)
-
-type family TestBody blk where
-  TestBody (TheTestBlock (Regular ptype)) = TestRegularBody ptype
-  TestBody (TheTestBlock  EBB           ) = ()
-
-
--- | A Body
-data TestRegularBody ptype = TestRegularBody {
-    tbValid   :: !Validity
-  , tbPayload :: !ptype
-  } deriving (Generic)
-
-type instance HeaderHash (TheTestBlock e) = TestHeaderHash
+-- Helper types
 
 newtype TestHeaderHash = TestHeaderHash Int
   deriving stock    (Generic)
@@ -597,37 +537,11 @@ newtype TestBodyHash = TestBodyHash Int
   deriving stock    (Eq, Ord, Show, Generic)
   deriving newtype  (Condense, NoThunks, Hashable, Serialise)
 
-newtype TestHash = UnsafeTestHash {
-      unTestHash :: NE.NonEmpty Word64
-    }
-  deriving stock    (Generic)
-  deriving newtype  (Eq, Ord, Serialise, ToExpr)
-  deriving anyclass (NoThunks)
 
 data Validity = Valid | Invalid
   deriving stock    (Show, Eq, Ord, Enum, Bounded, Generic)
   deriving anyclass (Serialise, NoThunks, ToExpr)
 
-instance StandardHash (TheTestBlock e)
-
-{-------------------------------------------------------------------------------
-  BlockConfig
--------------------------------------------------------------------------------}
-
-newtype instance BlockConfig (NaturalBlock ptype) = NaturalTestBlockConfig {
-    -- | Number of core nodes
-    --
-    -- We need this in order to compute the 'ValidateView', which must
-    -- conjure up a validation key out of thin air
-    testBlockNumCoreNodes :: NumCoreNodes
-  } deriving (Generic)
-
-data instance BlockConfig (TestBlockWithEBBs ptype) = TestBlockConfig {
-  -- | Whether the test block can be EBBs or not. This can vary per test
-  -- case. It will be used by 'validateEnvelope' to forbid EBBs 'False'.
-    testBlockEBBsAllowed  :: !Bool
-  , naturalConfig         :: !(BlockConfig (NaturalBlock ptype))
-  } deriving (Generic)
 
 {-------------------------------------------------------------------------------
   LedgerState
@@ -666,12 +580,12 @@ class ( Typeable ptype
       , NoThunks  (LedgerState ptype SeqDiffMK)
       , NoThunks  (LedgerState ptype DiffMK)
 
-      , TickedTableStuff     (LedgerState (TheTestBlock (Regular ptype)))
-      , StowableLedgerTables (LedgerState (TheTestBlock (Regular ptype)))
-      , ShowLedgerState      (LedgerState (TheTestBlock (Regular ptype)))
+      , TickedTableStuff     (LedgerState ptype)
+      , StowableLedgerTables (LedgerState ptype)
+      , ShowLedgerState      (LedgerState ptype)
 
-      , NoThunks (LedgerTables (LedgerState (TheTestBlock (Regular ptype))) SeqDiffMK)
-      , NoThunks (LedgerTables (LedgerState (TheTestBlock (Regular ptype))) ValuesMK)
+      , NoThunks (LedgerTables (LedgerState ptype) SeqDiffMK)
+      , NoThunks (LedgerTables (LedgerState ptype) ValuesMK)
 
       , Eq        (PayloadDependentError ptype)
       , Show      (PayloadDependentError ptype)
@@ -680,9 +594,9 @@ class ( Typeable ptype
       , Serialise (PayloadDependentError ptype)
       , NoThunks  (PayloadDependentError ptype)
 
-      , NoThunks (CodecConfig (TheTestBlock (Regular ptype)))
+      , NoThunks (CodecConfig ptype)
 
-      , NoThunks (StorageConfig (TheTestBlock (Regular ptype)))
+      , NoThunks (StorageConfig ptype)
       ) => PayloadSemantics ptype where
 
   type PayloadDependentError ptype :: Type
@@ -697,6 +611,38 @@ class ( Typeable ptype
   -- information needed to determine which keys should be retrieved from the
   -- backing store to apply a 'TestBlockWith'.
   getPayloadKeySets :: ptype -> LedgerTables (LedgerState ptype) KeysMK
+
+instance ( PayloadSemantics ptype
+         , NoThunks (WithBlockBody hdr ptype)
+         , Serialise (LedgerState (WithBlockBody hdr ptype) EmptyMK)
+         , TickedTableStuff (LedgerState (WithBlockBody hdr ptype))
+         , NoThunks (CodecConfig (WithBlockBody hdr ptype))
+         , NoThunks (StorageConfig (WithBlockBody hdr ptype))
+         , InMemory (LedgerState hdr)
+         -- to not require PayloadSemantics hdr
+         , Typeable hdr
+         , Eq hdr
+         , Eq (LedgerState hdr EmptyMK)
+         , Eq (LedgerState hdr DiffMK)
+         , Eq (LedgerState hdr ValuesMK)
+         , forall mk. Show (LedgerState hdr mk)
+         , NoThunks (LedgerState hdr EmptyMK)
+         , NoThunks (LedgerState hdr ValuesMK)
+         , NoThunks (LedgerState hdr SeqDiffMK)
+         , NoThunks (LedgerState hdr DiffMK)
+         , StowableLedgerTables (LedgerState hdr)
+         , ShowLedgerState (LedgerState hdr)
+         , NoThunks (LedgerTables (LedgerState hdr) SeqDiffMK)
+         , NoThunks (LedgerTables (LedgerState hdr) ValuesMK)
+         , TableStuff (LedgerState hdr)
+         )
+ => PayloadSemantics (WithBlockBody hdr ptype) where
+  type PayloadDependentError (WithBlockBody hdr ptype) = PayloadDependentError ptype
+  applyPayload (WithBlockBodyLedgerState hls ls) (WithBlockBody _ p) =
+    WithBlockBodyLedgerState (convertMapKind hls) <$> applyPayload ls p
+  getPayloadKeySets (WithBlockBody _ p) =
+    WithBlockBodyLedgerTables polyEmptyLedgerTables $ getPayloadKeySets p
+
 
 {-------------------------------------------------------------------------------
   LedgerTables for blocks without tables
@@ -765,16 +711,10 @@ instance TableStuff (LedgerState Tx) where
   foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
   namesLedgerTables                                                            = TokenToTValue $ NameMK "testblocktables"
 
-deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) EmptyMK)
-deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) DiffMK)
-deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) ValuesMK)
-deriving newtype  instance Eq       (LedgerTables (LedgerState Tx) SeqDiffMK)
-deriving newtype  instance Show     (LedgerTables (LedgerState Tx) (ApplyMapKind' mk))
-deriving anyclass instance ToExpr   (LedgerTables (LedgerState Tx) ValuesMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) EmptyMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) ValuesMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) DiffMK)
-deriving anyclass instance NoThunks (LedgerTables (LedgerState Tx) SeqDiffMK)
+deriving newtype  instance Eq (mk Token TValue) => Eq       (LedgerTables (LedgerState Tx) mk)
+deriving newtype  instance Show (mk Token TValue) => Show     (LedgerTables (LedgerState Tx) mk)
+deriving newtype  instance ToExpr (mk Token TValue) => ToExpr   (LedgerTables (LedgerState Tx) mk)
+deriving newtype  instance NoThunks (mk Token TValue) => NoThunks (LedgerTables (LedgerState Tx) mk)
 
 instance StowableLedgerTables (LedgerState Tx) where
   stowLedgerTables   (UTxTok tbs h _ )  = UTxTok emptyLedgerTables h tbs
@@ -786,24 +726,24 @@ instance TickedTableStuff (LedgerState Tx) where
   withLedgerTablesTicked    (TickedLedgerState st) tables =
     TickedLedgerState $ withLedgerTables st tables
 
--- {-------------------------------------------------------------------------------
---   PayloadSemantics for block without tables
--- -------------------------------------------------------------------------------}
+-- -- {-------------------------------------------------------------------------------
+-- --   PayloadSemantics for block without tables
+-- -- -------------------------------------------------------------------------------}
 
--- instance PayloadSemantics () where
---   data LedgerState () mk = EmptyPLDS
---     deriving stock (Eq, Show, Generic)
---     deriving anyclass (Serialise, NoThunks)
+-- -- instance PayloadSemantics () where
+-- --   data LedgerState () mk = EmptyPLDS
+-- --     deriving stock (Eq, Show, Generic)
+-- --     deriving anyclass (Serialise, NoThunks)
 
---   type PayloadDependentError () = ()
+-- --   type PayloadDependentError () = ()
 
---   applyPayload _ _ = Right EmptyPLDS
+-- --   applyPayload _ _ = Right EmptyPLDS
 
---   getPayloadKeySets = const NoTestLedgerTables
+-- --   getPayloadKeySets = const NoTestLedgerTables
 
--- {-------------------------------------------------------------------------------
---   PayloadSemantics for block with tables
--- -------------------------------------------------------------------------------}
+-- -- {-------------------------------------------------------------------------------
+-- --   PayloadSemantics for block with tables
+-- -- -------------------------------------------------------------------------------}
 
 instance StandardHash Tx
 
@@ -828,15 +768,20 @@ newtype Token = Token { unToken :: Point (LedgerState Tx) }
   deriving stock (Show, Eq, Ord, Generic)
   deriving newtype (Serialise, NoThunks, ToExpr)
 
+type instance HeaderHash Tx = TestHeaderHash
+
 -- | Unit of value associated with the output produced by a transaction.
 --
 -- This is analogous to @TxOut@: it's what the table maps 'Token's to.
 newtype TValue = TValue (WithOrigin SlotNo)
   deriving stock (Show, Eq, Ord, Generic)
-  deriving newtype (Serialise, NoThunks, ToExpr)
+  deriving newtype (Serialise, NoThunks)
+
+instance ToExpr (Point (LedgerState Tx)) where
+  toExpr = undefined
 
 data TxErr
-  = TokenWasAlreadyCreated Token 
+  = TokenWasAlreadyCreated Token
   | TokenDoesNotExist      Token
   deriving stock (Generic, Eq, Show)
   deriving anyclass (NoThunks, Serialise, ToExpr)
@@ -854,7 +799,19 @@ data instance LedgerState Tx (mk :: MapKind) =
 
 newtype instance Ticked1 (LedgerState Tx) mk = TickedLedgerState (LedgerState Tx mk)
 
-instance PayloadSemantics Tx where
+instance ShowLedgerState (LedgerTables (LedgerState Tx)) where
+  showsLedgerState = undefined
+
+deriving instance Eq (mk Token TValue) => Eq (LedgerState Tx mk)
+deriving instance (Show (mk Token TValue), Show (ValuesMK Token TValue)) => Show (LedgerState Tx mk)
+deriving instance NoThunks (mk Token TValue) => NoThunks (LedgerState Tx mk)
+
+instance (forall mk. Show (mk Token TValue)
+         , Serialise (LedgerState Tx EmptyMK)
+         , ShowLedgerState (LedgerState Tx)
+         , NoThunks (CodecConfig Tx)
+         , NoThunks (StorageConfig Tx))
+         => PayloadSemantics Tx where
   type PayloadDependentError Tx = TxErr
 
   -- We need to exercise the HD backend. This requires that we store key-values
@@ -915,71 +872,70 @@ queryKeys ::
   -> a
 queryKeys f (TokenToTValue (ApplyValuesMK (HD.UtxoValues utxovals))) = f utxovals
 
--- {-------------------------------------------------------------------------------
---   Instances
--- -------------------------------------------------------------------------------}
+-- -- {-------------------------------------------------------------------------------
+-- --   Instances
+-- -- -------------------------------------------------------------------------------}
 
--- instance Show (ApplyMapKind' mk' Token TValue) where
---   show ap = showsApplyMapKind ap ""
+-- -- instance Show (ApplyMapKind' mk' Token TValue) where
+-- --   show ap = showsApplyMapKind ap ""
 
--- -- About this instance: we have that the use of
--- --
--- -- > genericToExpr UtxoDiff
--- --
--- -- in instance ToExpr (ApplyMapKind mk Token TValue) requires
--- --
--- -- >  ToExpr Map k (UtxoEntryDiff v )
--- --
--- -- requires
--- --
--- -- > ToExpr (UtxoEntryDiff v )
--- --
--- -- requires
--- --
--- -- > ToExpr UtxoEntryDiffState
--- --
--- instance ToExpr HD.UtxoEntryDiffState where
---   toExpr = genericToExpr
+-- -- -- About this instance: we have that the use of
+-- -- --
+-- -- -- > genericToExpr UtxoDiff
+-- -- --
+-- -- -- in instance ToExpr (ApplyMapKind mk Token TValue) requires
+-- -- --
+-- -- -- >  ToExpr Map k (UtxoEntryDiff v )
+-- -- --
+-- -- -- requires
+-- -- --
+-- -- -- > ToExpr (UtxoEntryDiff v )
+-- -- --
+-- -- -- requires
+-- -- --
+-- -- -- > ToExpr UtxoEntryDiffState
+-- -- --
+-- -- instance ToExpr HD.UtxoEntryDiffState where
+-- --   toExpr = genericToExpr
 
--- -- See instance ToExpr HD.UtxoEntryDiffState
--- instance ToExpr (HD.UtxoEntryDiff TValue) where
---   toExpr = genericToExpr
+-- -- -- See instance ToExpr HD.UtxoEntryDiffState
+-- -- instance ToExpr (HD.UtxoEntryDiff TValue) where
+-- --   toExpr = genericToExpr
 
--- -- Required by the ToExpr (SeqUtxoDiff k v) instance
--- instance ToExpr (HD.SudElement Token TValue) where
---   toExpr = genericToExpr
+-- -- -- Required by the ToExpr (SeqUtxoDiff k v) instance
+-- -- instance ToExpr (HD.SudElement Token TValue) where
+-- --   toExpr = genericToExpr
 
--- -- Required by the ToExpr (HD.SudElement Token TValue) instance
--- instance ToExpr (HD.UtxoDiff Token TValue) where
---   toExpr = genericToExpr
+-- -- -- Required by the ToExpr (HD.SudElement Token TValue) instance
+-- -- instance ToExpr (HD.UtxoDiff Token TValue) where
+-- --   toExpr = genericToExpr
 
--- instance ToExpr (ApplyMapKind' mk' Token TValue) where
---   toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
---   toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
---   toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr keys]
---   toExpr (ApplySeqDiffMK (HD.SeqUtxoDiff seqdiff))
---                                       = App "ApplySeqDiffMK"   [genericToExpr $ toList seqdiff]
---   toExpr (ApplyTrackingMK vals diffs) = App "ApplyTrackingMK"  [ genericToExpr vals
---                                                                , genericToExpr diffs
---                                                                ]
---   toExpr (ApplyValuesMK vals)         = App "ApplyValuesMK"    [genericToExpr vals]
---   toExpr ApplyQueryAllMK              = App "ApplyQueryAllMK"  []
---   toExpr (ApplyQuerySomeMK keys)      = App "ApplyQuerySomeMK" [genericToExpr keys]
+-- -- instance ToExpr (ApplyMapKind' mk' Token TValue) where
+-- --   toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
+-- --   toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
+-- --   toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr keys]
+-- --   toExpr (ApplySeqDiffMK (HD.SeqUtxoDiff seqdiff))
+-- --                                       = App "ApplySeqDiffMK"   [genericToExpr $ toList seqdiff]
+-- --   toExpr (ApplyTrackingMK vals diffs) = App "ApplyTrackingMK"  [ genericToExpr vals
+-- --                                                                , genericToExpr diffs
+-- --                                                                ]
+-- --   toExpr (ApplyValuesMK vals)         = App "ApplyValuesMK"    [genericToExpr vals]
+-- --   toExpr ApplyQueryAllMK              = App "ApplyQueryAllMK"  []
+-- --   toExpr (ApplyQuerySomeMK keys)      = App "ApplyQuerySomeMK" [genericToExpr keys]
 
 
--- instance (FromCBOR (mk Token TValue), ToCBOR (mk Token TValue)) => Serialise (LedgerTables (LedgerState BlockWithPayload) mk) where
---   encode TokenToTValue {testUtxtokTable} = toCBOR testUtxtokTable
---   decode = fmap TokenToTValue fromCBOR
+-- -- instance (FromCBOR (mk Token TValue), ToCBOR (mk Token TValue)) => Serialise (LedgerTables (LedgerState BlockWithPayload) mk) where
+-- --   encode TokenToTValue {testUtxtokTable} = toCBOR testUtxtokTable
+-- --   decode = fmap TokenToTValue fromCBOR
 
--- instance ToCBOR Token where
---   toCBOR (Token pt) = encode pt
+-- -- instance ToCBOR Token where
+-- --   toCBOR (Token pt) = encode pt
 
--- instance FromCBOR Token where
---   fromCBOR = fmap Token decode
+-- -- instance FromCBOR Token where
+-- --   fromCBOR = fmap Token decode
 
--- instance ToCBOR TValue where
---   toCBOR (TValue v) = encode v
+-- -- instance ToCBOR TValue where
+-- --   toCBOR (TValue v) = encode v
 
--- instance FromCBOR TValue where
---   fromCBOR = fmap TValue decode
-
+-- -- instance FromCBOR TValue where
+-- --   fromCBOR = fmap TValue decode

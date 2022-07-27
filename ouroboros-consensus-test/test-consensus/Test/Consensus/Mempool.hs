@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -57,6 +58,8 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck (elements)
+
+import qualified Test.Util.TheTestBlock as TTB
 
 tests :: TestTree
 tests = testGroup "Mempool"
@@ -203,6 +206,8 @@ prop_Mempool_getCapacity mcts =
     MempoolCapacityBytesOverride testCapacity = testMempoolCapOverride testSetup
     MempoolCapTestSetup (TestSetupWithTxs testSetup _txsToAdd) = mcts
 
+type TestBlock = TTB.NonEBBBlocksWithBody TTB.Tx
+
 -- | Test the correctness of 'tryAddTxs' when the Mempool is (or will be) at
 -- capacity.
 --
@@ -338,7 +343,7 @@ prop_Mempool_TraceRemovedTxs setup =
   TestSetup: how to set up a TestMempool
 -------------------------------------------------------------------------------}
 
-type TestBlock = SimpleBftBlock SimpleMockCrypto BftMockCrypto
+-- type TestBlock = SimpleBftBlock SimpleMockCrypto BftMockCrypto
 
 type TestTx = GenTx TestBlock
 
@@ -368,6 +373,12 @@ data TestSetup = TestSetup
     -- ^ These are all valid and will be the initial contents of the Mempool.
   , testMempoolCapOverride :: MempoolCapacityBytesOverride
   } deriving (Show)
+
+instance Show (LedgerState (TTB.WithValidity TTB.Tx) EmptyMK) where
+  show = undefined
+
+instance Show (GenTx TestBlock) where
+  show = undefined
 
 ppTestSetup :: TestSetup -> String
 ppTestSetup TestSetup { testInitialTxs
