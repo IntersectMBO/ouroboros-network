@@ -154,6 +154,7 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
     metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     let policies = simplePeerSelectionPolicy
                         rngVar
@@ -220,6 +221,7 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
     metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     let policies = simplePeerSelectionPolicy
                         rngVar

@@ -298,6 +298,7 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
+                       Test.Ouroboros.Network.PeerSelection.PeerMetric
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
                        Test.Ouroboros.Network.ShrinkCarefully

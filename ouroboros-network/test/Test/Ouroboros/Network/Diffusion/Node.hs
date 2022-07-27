@@ -62,7 +62,8 @@ import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric (newPeerMetric)
+import           Ouroboros.Network.PeerSelection.PeerMetric
+                     (PeerMetricsConfiguration (..), newPeerMetric)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..),
                      RelayAccessPoint (..))
@@ -163,7 +164,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
-        peerMetrics <- newPeerMetric
+        peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
         let -- diffusion interfaces
             interfaces :: Diff.P2P.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                               (NtCFD m) NtCAddr NtCVersion NtCVersionData
