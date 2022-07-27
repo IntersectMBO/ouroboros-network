@@ -357,6 +357,7 @@ mockPeerSelectionActions' tracer
               let interpretScriptDelay NoDelay    = 1
                   interpretScriptDelay ShortDelay = 60
                   interpretScriptDelay LongDelay  = 600
+                  interpretScriptDelay (Delay a)  = a -- not used by the generator
               done <-
                 case demotion of
                   Noop   -> return True
