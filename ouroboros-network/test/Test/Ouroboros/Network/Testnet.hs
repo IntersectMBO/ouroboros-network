@@ -3,6 +3,11 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE CPP                 #-}
+
+#if defined(mingw32_HOST_OS)
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+#endif
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
@@ -95,6 +100,7 @@ tests =
                    prop_diffusionScript_fixupCommands
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
+#if !defined(mingw32_HOST_OS)
     , testProperty "diffusion no livelock"
                    prop_diffusion_nolivelock
     , ignoreTest $
@@ -149,6 +155,9 @@ tests =
     , testProperty "hot diffusion target active root"
                    prop_hot_diffusion_target_active_root
     ]
+#else
+    ]
+#endif
   ]
 
 -- Warning: be careful with writing properties that rely
