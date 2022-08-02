@@ -36,11 +36,11 @@ import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
 import qualified Cardano.Ledger.Address as SL (BootstrapAddress (..))
+import qualified Cardano.Ledger.Core as SL (TxBody, TxOut)
 import qualified Cardano.Ledger.Hashes as SL
+import qualified Cardano.Ledger.Keys.Bootstrap as SL (makeBootstrapWitness)
 import qualified Cardano.Ledger.SafeHash as SL
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.Address.Bootstrap as SL
-                     (makeBootstrapWitness)
+import qualified Cardano.Ledger.Shelley.API as SL hiding (TxBody, TxOut)
 import qualified Cardano.Ledger.Shelley.Tx as SL (WitnessSetHKD (..))
 import qualified Cardano.Ledger.Shelley.UTxO as SL (makeWitnessVKey)
 import           Cardano.Ledger.Val ((<->))
@@ -143,12 +143,12 @@ migrateUTxO migrationInfo curSlot lcfg lst
     let picked :: Map (SL.TxIn c) (SL.TxOut (ShelleyEra c))
         picked = Map.filter pick $ SL.unUTxO utxo
           where
-            pick (SL.TxOut addr _) =
+            pick (SL.ShelleyTxOut addr _) =
                 addr == SL.AddrBootstrap (SL.BootstrapAddress byronAddr)
 
         -- Total held by 'byronAddr'
         pickedCoin :: SL.Coin
-        pickedCoin = foldMap (\(SL.TxOut _ coin) -> coin) picked
+        pickedCoin = foldMap (\(SL.ShelleyTxOut _ coin) -> coin) picked
 
         -- NOTE: The Cardano ThreadNet tests use the
         -- ouroboros-consensus-shelley-test infra's genesis config, which sets
@@ -164,7 +164,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
             pickedCoin <-> spentCoin
 
         body :: SL.TxBody (ShelleyEra c)
-        body = SL.TxBody
+        body = SL.ShelleyTxBody
           { SL._certs    = StrictSeq.fromList $
               [ SL.DCertDeleg $ SL.RegKey $ Shelley.mkCredential stakingSK
               , SL.DCertPool  $ SL.RegPool $ poolParams unspentCoin
@@ -176,7 +176,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
           , SL._inputs   = Map.keysSet picked
           , SL._mdHash   = SL.SNothing
           , SL._outputs  =
-              StrictSeq.singleton $ SL.TxOut shelleyAddr unspentCoin
+              StrictSeq.singleton $ SL.ShelleyTxOut shelleyAddr unspentCoin
           , SL._ttl      = SlotNo maxBound
           , SL._txUpdate = SL.SNothing
           , SL._txfee    = fee
@@ -209,7 +209,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
     in
     if Map.null picked then Nothing else
     (Just . GenTxShelley. mkShelleyTx) $
-    SL.Tx
+    SL.ShelleyTx
       { SL.body          = body
       , SL.auxiliaryData = SL.SNothing
       , SL.wits          = SL.WitnessSet

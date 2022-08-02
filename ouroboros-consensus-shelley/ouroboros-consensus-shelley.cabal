@@ -68,6 +68,7 @@ library
                      , data-default-class
                      , deepseq
                      , measures
+                     , microlens
                      , mtl               >=2.2   && <2.3
                      , nothunks
                      , orphans-deriving-via

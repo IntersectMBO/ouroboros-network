@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.PParams as SL
 
 import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos,
                      TPraosState (..))
@@ -207,7 +208,7 @@ instance ShelleyBasedEra era
   Generators for cardano-ledger-specs
 -------------------------------------------------------------------------------}
 
-instance Arbitrary (SL.PParams' SL.StrictMaybe era) where
+instance Arbitrary (SL.ShelleyPParamsUpdate era) where
   arbitrary = genericArbitraryU
   shrink    = genericShrink
 

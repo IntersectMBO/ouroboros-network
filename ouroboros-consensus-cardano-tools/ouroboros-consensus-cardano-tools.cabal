@@ -50,6 +50,7 @@ library
                      , deepseq
                      , directory
                      , filepath
+                     , microlens
                      , mtl
                      , nothunks
                      , serialise

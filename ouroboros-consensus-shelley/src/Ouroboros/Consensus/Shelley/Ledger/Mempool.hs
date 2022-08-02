@@ -41,6 +41,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Natural (Natural)
 import           GHC.Records
+import           Lens.Micro ((^.))
 import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
@@ -63,10 +64,9 @@ import           Ouroboros.Consensus.Util.Condense
 import           Cardano.Ledger.Alonzo.PParams
 import           Cardano.Ledger.Alonzo.Tx (totExUnits)
 import           Cardano.Ledger.Babbage.PParams
-import qualified Cardano.Ledger.Core as Core (Tx)
-import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq)
+import qualified Cardano.Ledger.Block as SL (txid)
+import           Cardano.Ledger.Core (Tx, TxSeq, bodyTxL, fromTxSeq, sizeTxF)
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.TxIn as SL (txid)
 
 import           Cardano.Ledger.Crypto (Crypto)
 import           Ouroboros.Consensus.Shelley.Eras
@@ -76,7 +76,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Ledger
                      Ticked (TickedShelleyLedgerState, tickedShelleyLedgerState),
                      getPParams)
 
-data instance GenTx (ShelleyBlock proto era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Core.Tx era)
+data instance GenTx (ShelleyBlock proto era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Tx era)
   deriving stock    (Generic)
 
 deriving instance ShelleyBasedEra era => NoThunks (GenTx (ShelleyBlock proto era))
@@ -89,7 +89,7 @@ instance (Typeable era, Typeable proto)
 data instance Validated (GenTx (ShelleyBlock proto era)) =
     ShelleyValidatedTx
       !(SL.TxId (EraCrypto era))
-      !(SL.Validated (Core.Tx era))
+      !(SL.Validated (Tx era))
   deriving stock (Generic)
 
 deriving instance ShelleyBasedEra era => NoThunks (Validated (GenTx (ShelleyBlock proto era)))
@@ -119,7 +119,7 @@ instance Typeable era => ShowProxy (SL.ApplyTxError era) where
 -- more?) transactions extra in that block.
 --
 -- As the sum of the serialised transaction sizes is not equal to the size of
--- the serialised block body ('SL.TxSeq') consisting of those transactions
+-- the serialised block body ('TxSeq') consisting of those transactions
 -- (see cardano-node#1545 for an example), we account for some extra overhead
 -- per transaction as a safety margin.
 --
@@ -146,20 +146,20 @@ instance ShelleyCompatible proto era
 
   txInBlockSize (ShelleyTx _ tx) = txSize + perTxOverhead
     where
-      txSize = fromIntegral $ getField @"txsize" tx
+      txSize = fromIntegral $ tx ^. sizeTxF
 
   txForgetValidated (ShelleyValidatedTx txid vtx) = ShelleyTx txid (SL.extractTx vtx)
 
-mkShelleyTx :: forall era proto. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock proto era)
-mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
+mkShelleyTx :: forall era proto. ShelleyBasedEra era => Tx era -> GenTx (ShelleyBlock proto era)
+mkShelleyTx tx = ShelleyTx (SL.txid @era (tx ^. bodyTxL)) tx
 
 mkShelleyValidatedTx :: forall era proto.
      ShelleyBasedEra era
-  => SL.Validated (Core.Tx era)
+  => SL.Validated (Tx era)
   -> Validated (GenTx (ShelleyBlock proto era))
 mkShelleyValidatedTx vtx = ShelleyValidatedTx txid vtx
   where
-    txid = SL.txid @era (getField @"body" (SL.extractTx vtx))
+    txid = SL.txid @era (SL.extractTx vtx ^. bodyTxL)
 
 newtype instance TxId (GenTx (ShelleyBlock proto era)) = ShelleyTxId (SL.TxId (EraCrypto era))
   deriving newtype (Eq, Ord, NoThunks)
@@ -182,8 +182,8 @@ instance ShelleyBasedEra era => HasTxs (ShelleyBlock proto era) where
       . SL.bbody
       . shelleyBlockRaw
     where
-      txSeqToList :: SL.TxSeq era -> [Core.Tx era]
-      txSeqToList = toList . SL.fromTxSeq @era
+      txSeqToList :: TxSeq era -> [Tx era]
+      txSeqToList = toList . fromTxSeq @era
 
 {-------------------------------------------------------------------------------
   Serialisation

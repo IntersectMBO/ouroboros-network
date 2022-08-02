@@ -19,8 +19,8 @@ import           Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
 import           Data.Maybe.Strict
-import           Data.Sequence.Strict (StrictSeq)
-import           GHC.Records (HasField, getField)
+import           Lens.Micro ((^.))
+import           Lens.Micro.Extras (view)
 
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as CL
@@ -46,20 +46,18 @@ import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
 import           Cardano.Tools.DBAnalyser.HasAnalysis
 
 -- | Usable for each Shelley-based era
-instance ( ShelleyCompatible proto era
-         , HasField "outputs" (Core.TxBody era) (StrictSeq (Core.TxOut era))
-         ) => HasAnalysis (ShelleyBlock proto era) where
+instance ShelleyCompatible proto era => HasAnalysis (ShelleyBlock proto era) where
 
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body -> sum $ fmap countOutputs (CL.fromTxSeq @era body)
     where
       countOutputs :: Core.Tx era -> Int
-      countOutputs = length . getField @"outputs" . getField @"body"
+      countOutputs tx = length $ tx ^. Core.bodyTxL . Core.outputsTxBodyL
 
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body ->
           toList
-        $ fmap (fromIntegral . (getField @"txsize")) (CL.fromTxSeq @era body)
+        $ fmap (fromIntegral . view Core.sizeTxF) (CL.fromTxSeq @era body)
 
   knownEBBs = const Map.empty
 

@@ -44,8 +44,8 @@ data ProtocolUpdate era = ProtocolUpdate {
       protocolUpdateProposal :: UpdateProposal era
     , protocolUpdateState    :: UpdateState (EraCrypto era)
     }
-deriving instance Eq (Core.PParamsDelta era) => Eq (ProtocolUpdate era)
-deriving instance Show (Core.PParamsDelta era) => Show (ProtocolUpdate era)
+deriving instance Eq (Core.PParamsUpdate era) => Eq (ProtocolUpdate era)
+deriving instance Show (Core.PParamsUpdate era) => Show (ProtocolUpdate era)
 
 -- | Update proposal
 --
@@ -54,7 +54,7 @@ data UpdateProposal era = UpdateProposal {
       -- | The protocol parameters changed by this update proposal
       --
       -- An update is /identified/ by how it updates the protocol parameters.
-      proposalParams  :: Core.PParamsDelta era
+      proposalParams  :: Core.PParamsUpdate era
 
       -- | New version (if changed by this proposal)
       --
@@ -71,8 +71,8 @@ data UpdateProposal era = UpdateProposal {
     , proposalEpoch   :: EpochNo
     }
 
-deriving instance Eq (Core.PParamsDelta era) => Eq (UpdateProposal era)
-deriving instance Show (Core.PParamsDelta era) => Show (UpdateProposal era)
+deriving instance Eq (Core.PParamsUpdate era) => Eq (UpdateProposal era)
+deriving instance Show (Core.PParamsUpdate era) => Show (UpdateProposal era)
 
 -- | Proposal state
 --
@@ -124,14 +124,14 @@ protocolUpdates genesis st = [
     | (proposal, votes) <- proposalsInv
     ]
   where
-    proposalsInv :: [(Core.PParamsDelta era, [SL.KeyHash 'SL.Genesis (EraCrypto era)])]
+    proposalsInv :: [(Core.PParamsUpdate era, [SL.KeyHash 'SL.Genesis (EraCrypto era)])]
     proposalsInv =
           groupSplit id
         . sortBy (comparing fst)
         $ map swap (Map.toList proposals)
 
     -- Updated proposed within the proposal window
-    proposals :: Map (SL.KeyHash 'SL.Genesis (EraCrypto era)) (Core.PParamsDelta era)
+    proposals :: Map (SL.KeyHash 'SL.Genesis (EraCrypto era)) (Core.PParamsUpdate era)
     SL.ProposedPPUpdates proposals =
           SL.proposals
         . SL._ppups
@@ -159,10 +159,10 @@ protocolUpdates genesis st = [
 data ShelleyLedgerUpdate era =
     ShelleyUpdatedProtocolUpdates [ProtocolUpdate era]
 
-deriving instance Eq (Core.PParamsDelta era) => Eq (ShelleyLedgerUpdate era)
-deriving instance Show (Core.PParamsDelta era) => Show (ShelleyLedgerUpdate era)
+deriving instance Eq (Core.PParamsUpdate era) => Eq (ShelleyLedgerUpdate era)
+deriving instance Show (Core.PParamsUpdate era) => Show (ShelleyLedgerUpdate era)
 
-instance Show (Core.PParamsDelta era) => Condense (ShelleyLedgerUpdate era) where
+instance Show (Core.PParamsUpdate era) => Condense (ShelleyLedgerUpdate era) where
   condense = show
 
 instance ShelleyBasedEra era => InspectLedger (ShelleyBlock proto era) where
