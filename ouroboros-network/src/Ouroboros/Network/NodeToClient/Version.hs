@@ -3,8 +3,8 @@
 
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
-  , NodeToClientVersionData (..)
   , nodeToClientVersionCodec
+  , NodeToClientVersionData (..)
   , nodeToClientCodecCBORTerm
   ) where
 
