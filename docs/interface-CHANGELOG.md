@@ -5,6 +5,15 @@ team.  See [consensus
 CHANGELOG](../ouroboros-consensus/docs/interface-CHANGELOG.md) file for how
 this changelog is supposed to be used.
 
+## Circa 2022-08-03
+### Added
+
+- new project `ouroboros-consensus-cardano-tools` containing two tools:
+  1. `db-synthesizer` is a new contribution.
+  2. `db-analyser` has been moved over from `ouroboros-consensus-cardano`.
+  
+### Removed
+- `ouroboros-consensus-cardano/tools/db-analyser` has been removed.
 ## Circa 2022-05-19
 
 - removed `node-to-client` versions `1` to `8`.  The lowest supported version is
