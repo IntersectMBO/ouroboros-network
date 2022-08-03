@@ -1,4 +1,4 @@
-{-# LANGUAGE ApplicativeDo   #-}
+{-# LANGUAGE ApplicativeDo #-}
 
 module DBAnalyser.Parsers (parseCmdLine) where
 

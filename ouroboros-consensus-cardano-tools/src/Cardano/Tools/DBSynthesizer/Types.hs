@@ -11,53 +11,48 @@ import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis)
 import           Cardano.Node.Types (ProtocolFilepaths)
 
 
-data NodeConfigStub =
-    NodeConfigStub {
-        ncsNodeConfig         :: !Aeson.Value
-      , ncsAlonzoGenesisFile  :: !FilePath
-      , ncsShelleyGenesisFile :: !FilePath
-      , ncsByronGenesisFile   :: !FilePath
-    }
-    deriving Show
+data NodeConfigStub = NodeConfigStub {
+    ncsNodeConfig         :: !Aeson.Value
+  , ncsAlonzoGenesisFile  :: !FilePath
+  , ncsShelleyGenesisFile :: !FilePath
+  , ncsByronGenesisFile   :: !FilePath
+  }
+  deriving Show
 
-data NodeFilePaths =
-    NodeFilePaths {
-        nfpConfig  :: !FilePath
-      , nfpChainDB :: !FilePath
-    }
-    deriving Show
+data NodeFilePaths = NodeFilePaths {
+    nfpConfig  :: !FilePath
+  , nfpChainDB :: !FilePath
+  }
+  deriving Show
 
-data NodeCredentials =
-    NodeCredentials {
-        credCertFile :: !(Maybe FilePath)
-      , credVRFFile  :: !(Maybe FilePath)
-      , credKESFile  :: !(Maybe FilePath)
-      , credBulkFile :: !(Maybe FilePath)
-    }
-    deriving Show
+data NodeCredentials = NodeCredentials {
+    credCertFile :: !(Maybe FilePath)
+  , credVRFFile  :: !(Maybe FilePath)
+  , credKESFile  :: !(Maybe FilePath)
+  , credBulkFile :: !(Maybe FilePath)
+  }
+  deriving Show
 
 data ForgeLimit =
-    ForgeLimitBlock     !Word64
-  | ForgeLimitSlot      !SlotNo
-  | ForgeLimitEpoch     !Word64
+    ForgeLimitBlock   !Word64
+  | ForgeLimitSlot    !SlotNo
+  | ForgeLimitEpoch   !Word64
   deriving (Eq, Show)
 
 newtype ForgeResult = ForgeResult {resultForged :: Int}
   deriving (Eq, Show)
 
-data DBSynthesizerOptions =
-    DBSynthesizerOptions {
-        synthLimit          :: !ForgeLimit
-      , synthForceDBRemoval :: !Bool
-    }
-    deriving Show
+data DBSynthesizerOptions = DBSynthesizerOptions {
+    synthLimit          :: !ForgeLimit
+  , synthForceDBRemoval :: !Bool
+  }
+  deriving Show
 
-data DBSynthesizerConfig =
-  DBSynthesizerConfig {
-        confConfigStub          :: NodeConfigStub
-      , confOptions             :: DBSynthesizerOptions
-      , confProtocolCredentials :: ProtocolFilepaths
-      , confShelleyGenesis      :: ShelleyGenesis StandardShelley
-      , confDbDir               :: FilePath
+data DBSynthesizerConfig = DBSynthesizerConfig {
+    confConfigStub          :: NodeConfigStub
+  , confOptions             :: DBSynthesizerOptions
+  , confProtocolCredentials :: ProtocolFilepaths
+  , confShelleyGenesis      :: ShelleyGenesis StandardShelley
+  , confDbDir               :: FilePath
   }
   deriving Show
