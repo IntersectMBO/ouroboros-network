@@ -1,5 +1,4 @@
 {-# LANGUAGE ApplicativeDo   #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module DBAnalyser.Parsers (parseCmdLine) where
 
@@ -164,10 +163,9 @@ parseMaybe parser = asum [Just <$> parser, pure Nothing]
 -------------------------------------------------------------------------------}
 
 parseCardanoArgs :: Parser CardanoBlockArgs
-parseCardanoArgs = do
-    configFile           <- parseConfigFile
-    threshold            <- parsePBftSignatureThreshold
-    pure CardanoBlockArgs {..}
+parseCardanoArgs = CardanoBlockArgs
+    <$> parseConfigFile
+    <*> parsePBftSignatureThreshold
 
 parseShelleyArgs :: Parser ShelleyBlockArgs
 parseShelleyArgs = ShelleyBlockArgs

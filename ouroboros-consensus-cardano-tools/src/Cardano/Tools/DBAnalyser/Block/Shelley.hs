@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -89,7 +89,7 @@ instance HasProtocolInfo (ShelleyBlock (TPraos StandardCrypto) StandardShelley) 
       }
     deriving (Show)
 
-  mkProtocolInfo ShelleyBlockArgs {..}  = do
+  mkProtocolInfo ShelleyBlockArgs{configFileShelley, initialNonce} = do
     config <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
     return $ mkShelleyProtocolInfo config initialNonce

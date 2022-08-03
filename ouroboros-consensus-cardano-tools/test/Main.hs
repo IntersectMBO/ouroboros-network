@@ -48,7 +48,7 @@ testAnalyserConfig =
     , validation  = Just ValidateAllBlocks
     , blockType   = CardanoBlock (Cardano.CardanoBlockArgs nodeConfig Nothing)
     , analysis    = CountBlocks
-    , limit       = Unlimited
+    , confLimit   = Unlimited
     }
 
 multiStepTest :: (String -> IO ()) -> Assertion

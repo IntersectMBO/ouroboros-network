@@ -1,5 +1,4 @@
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Cardano.Tools.DBSynthesizer.Run (
@@ -50,7 +49,7 @@ initialize
     -> NodeCredentials
     -> DBSynthesizerOptions
     -> IO (Either String (DBSynthesizerConfig, SomeConsensusProtocol))
-initialize NodeFilePaths{..} NodeCredentials{..} synthOptions = do
+initialize NodeFilePaths{nfpConfig, nfpChainDB} creds synthOptions = do
     relativeToConfig :: (FilePath -> FilePath) <-
         (</>) . takeDirectory <$> makeAbsolute nfpConfig
     runExceptT $ do
@@ -60,23 +59,25 @@ initialize NodeFilePaths{..} NodeCredentials{..} synthOptions = do
   where
     initConf :: (FilePath -> FilePath) -> ExceptT String IO DBSynthesizerConfig
     initConf relativeToConfig = do
-        inp                 <- handleIOExceptT show (BS.readFile nfpConfig)
-        confConfigStub      <- adjustFilePaths relativeToConfig <$> readJson inp
-        confShelleyGenesis  <- readFileJson $ ncsShelleyGenesisFile confConfigStub
-        _                   <- hoistEither $ validateGenesis confShelleyGenesis
+        inp             <- handleIOExceptT show (BS.readFile nfpConfig)
+        configStub      <- adjustFilePaths relativeToConfig <$> readJson inp
+        shelleyGenesis  <- readFileJson $ ncsShelleyGenesisFile configStub
+        _               <- hoistEither $ validateGenesis shelleyGenesis
         let
-            confProtocolCredentials = ProtocolFilepaths {
+            protocolCredentials = ProtocolFilepaths {
               byronCertFile         = Nothing
             , byronKeyFile          = Nothing
-            , shelleyKESFile        = credKESFile
-            , shelleyVRFFile        = credVRFFile
-            , shelleyCertFile       = credCertFile
-            , shelleyBulkCredsFile  = credBulkFile
+            , shelleyKESFile        = credKESFile creds
+            , shelleyVRFFile        = credVRFFile creds
+            , shelleyCertFile       = credCertFile creds
+            , shelleyBulkCredsFile  = credBulkFile creds
             }
         pure DBSynthesizerConfig {
-              confDbDir     = nfpChainDB
-            , confOptions   = synthOptions
-            , ..
+              confConfigStub            = configStub
+            , confOptions               = synthOptions
+            , confProtocolCredentials   = protocolCredentials
+            , confShelleyGenesis        = shelleyGenesis
+            , confDbDir                 = nfpChainDB
             }
 
     initProtocol :: (FilePath -> FilePath) -> DBSynthesizerConfig -> ExceptT String IO SomeConsensusProtocol
@@ -110,7 +111,7 @@ eitherParseJson v = case fromJSON v of
     Success a -> Right a
 
 synthesize :: DBSynthesizerConfig -> SomeConsensusProtocol -> IO ForgeResult
-synthesize DBSynthesizerConfig{confOptions = DBSynthesizerOptions {..}, ..} (SomeConsensusProtocol _ runP) =
+synthesize DBSynthesizerConfig{confOptions, confShelleyGenesis, confDbDir} (SomeConsensusProtocol _ runP) =
     withRegistry $ \registry -> do
         let
             epochSize   = sgEpochLength confShelleyGenesis
@@ -135,6 +136,10 @@ synthesize DBSynthesizerConfig{confOptions = DBSynthesizerOptions {..}, ..} (Som
                 putStrLn "--> no forgers found; leaving possibly existing ChainDB untouched"
                 pure $ ForgeResult 0
   where
+    DBSynthesizerOptions
+        { synthForceDBRemoval
+        , synthLimit
+        } = confOptions
     ProtocolInfo
         { pInfoConfig
         , pInfoBlockForging

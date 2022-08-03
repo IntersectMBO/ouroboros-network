@@ -48,9 +48,9 @@ instance HasProtocolInfo ByronBlock where
         , genesisHash          :: Maybe (Crypto.Hash Raw)
         , threshold            :: Maybe PBftSignatureThreshold
         }
-    mkProtocolInfo ByronBlockArgs {..} = do
-      config <- openGenesisByron configFile genesisHash requiresNetworkMagic
-      return $ mkByronProtocolInfo config threshold
+    mkProtocolInfo args = do
+      config <- openGenesisByron (configFile args) (genesisHash args) (requiresNetworkMagic args)
+      return $ mkByronProtocolInfo config (threshold args)
 
 type ByronBlockArgs = Args ByronBlock
 
@@ -65,9 +65,9 @@ aBlockOrBoundary fromBoundary fromRegular blk = case blk of
       -> fromRegular regularBlk
 
 countTxOutputsByron :: Chain.ABlock ByteString -> Int
-countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
+countTxOutputsByron Chain.ABlock{ blockBody } = countTxPayload bodyTxPayload
   where
-    Chain.ABody { bodyTxPayload } = blockBody
+    Chain.ABody{ bodyTxPayload } = blockBody
 
     countTxPayload :: Chain.ATxPayload a -> Int
     countTxPayload = sum

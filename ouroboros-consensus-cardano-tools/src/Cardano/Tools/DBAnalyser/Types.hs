@@ -24,7 +24,7 @@ data DBAnalyserConfig = DBAnalyserConfig {
   , validation :: Maybe ValidateBlocks
   , blockType  :: BlockType
   , analysis   :: AnalysisName
-  , limit      :: Limit
+  , confLimit  :: Limit
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation

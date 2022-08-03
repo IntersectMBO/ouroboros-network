@@ -2,7 +2,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -46,9 +45,9 @@ import           Cardano.Tools.DBSynthesizer.Types (ForgeLimit (..),
 
 data ForgeState =
   ForgeState {
-    currentSlot  :: {-# UNPACK #-} !SlotNo
-  , forged       :: {-# UNPACK #-} !Word64
-  , currentEpoch :: {-# UNPACK #-} !Word64
+    currentSlot  :: !SlotNo
+  , forged       :: !Word64
+  , currentEpoch :: !Word64
   }
 
 initialForgeState :: ForgeState
@@ -76,14 +75,14 @@ runForge
 runForge epochSize_ opts chainDB blockForging cfg = do
     putStrLn $ "--> epoch size: " ++ show epochSize_
     putStrLn $ "--> will process until: " ++ show opts
-    ForgeState{..} <- go initialForgeState
-    putStrLn $ "--> forged and adopted " ++ show forged ++ " blocks; reached " ++ show currentSlot
-    pure $ ForgeResult $ fromIntegral forged
+    endState <- go initialForgeState
+    putStrLn $ "--> forged and adopted " ++ show (forged endState) ++ " blocks; reached " ++ show (currentSlot endState)
+    pure $ ForgeResult $ fromIntegral $ forged endState
   where
     epochSize = unEpochSize epochSize_
 
     go :: ForgeState -> IO ForgeState
-    go forgeState@ForgeState{..}
+    go forgeState@ForgeState{currentSlot, forged, currentEpoch}
       | forgingDone opts forgeState = pure forgeState
       | otherwise =
         let

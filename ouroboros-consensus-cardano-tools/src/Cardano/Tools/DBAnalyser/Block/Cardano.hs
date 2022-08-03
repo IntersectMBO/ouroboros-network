@@ -5,9 +5,9 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -124,24 +124,25 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
         , threshold            :: Maybe PBftSignatureThreshold
         }
 
-  mkProtocolInfo CardanoBlockArgs {..} = do
+  mkProtocolInfo CardanoBlockArgs{configFile, threshold} = do
     relativeToConfig :: (FilePath -> FilePath) <-
         (</>) . takeDirectory <$> makeAbsolute configFile
 
-    CardanoConfig {..} <- either (error . show) (return . adjustFilePaths relativeToConfig) =<<
-      Aeson.eitherDecodeFileStrict' configFile
+    cc :: CardanoConfig <-
+      either (error . show) (return . adjustFilePaths relativeToConfig) =<<
+        Aeson.eitherDecodeFileStrict' configFile
 
     genesisByron   <-
-      BlockByron.openGenesisByron byronGenesisPath byronGenesisHash requiresNetworkMagic
+      BlockByron.openGenesisByron (byronGenesisPath cc) (byronGenesisHash cc) (requiresNetworkMagic cc)
     genesisShelley <- either (error . show) return =<<
-      Aeson.eitherDecodeFileStrict' shelleyGenesisPath
+      Aeson.eitherDecodeFileStrict' (shelleyGenesisPath cc)
     genesisAlonzo  <- either (error . show) return =<<
-      Aeson.eitherDecodeFileStrict' alonzoGenesisPath
+      Aeson.eitherDecodeFileStrict' (alonzoGenesisPath cc)
 
-    initialNonce <- case shelleyGenesisHash of
+    initialNonce <- case shelleyGenesisHash cc of
       Just h  -> pure h
       Nothing -> do
-        content <- BS.readFile shelleyGenesisPath
+        content <- BS.readFile (shelleyGenesisPath cc)
         pure
           $ Nonce
           $ CryptoClass.castHash
@@ -155,7 +156,7 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
           genesisShelley
           genesisAlonzo
           initialNonce
-          hardForkTriggers
+          (hardForkTriggers cc)
 
 data CardanoConfig = CardanoConfig {
     -- | @RequiresNetworkMagic@ field
@@ -179,11 +180,11 @@ data CardanoConfig = CardanoConfig {
   }
 
 instance AdjustFilePaths CardanoConfig where
-    adjustFilePaths f cc@CardanoConfig{..} =
+    adjustFilePaths f cc =
         cc {
-            byronGenesisPath    = f byronGenesisPath
-          , shelleyGenesisPath  = f shelleyGenesisPath
-          , alonzoGenesisPath   = f alonzoGenesisPath
+            byronGenesisPath    = f $ byronGenesisPath cc
+          , shelleyGenesisPath  = f $ shelleyGenesisPath cc
+          , alonzoGenesisPath   = f $ alonzoGenesisPath cc
           }
 
 -- | Shelley transition arguments
@@ -240,7 +241,15 @@ instance Aeson.FromJSON CardanoConfig where
            "if the Cardano config file sets a Test*HardForkEpoch,"
         <> " it must also set it for all previous eras."
 
-    pure $ CardanoConfig{..}
+    pure $ CardanoConfig
+      { requiresNetworkMagic = requiresNetworkMagic
+      , byronGenesisPath = byronGenesisPath
+      , byronGenesisHash = byronGenesisHash
+      , shelleyGenesisPath = shelleyGenesisPath
+      , shelleyGenesisHash = shelleyGenesisHash
+      , alonzoGenesisPath = alonzoGenesisPath
+      , hardForkTriggers = hardForkTriggers
+      }
 
 instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
