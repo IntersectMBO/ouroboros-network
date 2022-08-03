@@ -10,12 +10,13 @@ module Cardano.Node.Protocol.Alonzo (
   , validateGenesis
   ) where
 
-import           Cardano.Prelude
 import           Prelude (String)
 
-import           Cardano.Api.Any
+import           Cardano.Prelude
 
 import qualified Cardano.Ledger.Alonzo.Genesis as Alonzo
+
+import           Cardano.Api.Any
 
 import           Cardano.Node.Protocol.Shelley (GenesisReadError,
                      readGenesisAny)

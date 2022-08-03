@@ -21,19 +21,6 @@ module Cardano.Tools.DBAnalyser.Block.Cardano (
   , CardanoBlockArgs
   ) where
 
-import           Cardano.Binary (Raw)
-import qualified Cardano.Chain.Genesis as Byron.Genesis
-import qualified Cardano.Chain.Update as Byron.Update
-import           Cardano.Crypto (RequiresNetworkMagic (..))
-import qualified Cardano.Crypto as Crypto
-import qualified Cardano.Crypto.Hash.Class as CryptoClass
-import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
-import           Cardano.Ledger.Crypto
-import qualified Cardano.Ledger.Era as Core
-import qualified Cardano.Tools.DBAnalyser.Block.Byron as BlockByron
-                     (openGenesisByron)
-import           Cardano.Tools.DBAnalyser.Block.Shelley ()
-import           Cardano.Tools.DBAnalyser.HasAnalysis
 import           Control.Monad (when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -43,6 +30,19 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.SOP.Strict
 import           Data.Word (Word16)
+import           System.Directory (makeAbsolute)
+import           System.FilePath (takeDirectory, (</>))
+
+import           Cardano.Binary (Raw)
+import qualified Cardano.Chain.Genesis as Byron.Genesis
+import qualified Cardano.Chain.Update as Byron.Update
+import           Cardano.Crypto (RequiresNetworkMagic (..))
+import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Crypto.Hash.Class as CryptoClass
+import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
+import           Cardano.Ledger.Crypto
+import qualified Cardano.Ledger.Era as Core
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Cardano
@@ -67,8 +67,11 @@ import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node.Praos
 
 import           Cardano.Node.Types (AdjustFilePaths (..))
-import           System.Directory (makeAbsolute)
-import           System.FilePath (takeDirectory, (</>))
+import qualified Cardano.Tools.DBAnalyser.Block.Byron as BlockByron
+                     (openGenesisByron)
+import           Cardano.Tools.DBAnalyser.Block.Shelley ()
+import           Cardano.Tools.DBAnalyser.HasAnalysis
+
 
 analyseBlock ::
      (forall blk. HasAnalysis blk => blk -> a)

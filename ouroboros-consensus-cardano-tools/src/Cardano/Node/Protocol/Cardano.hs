@@ -22,20 +22,20 @@ import qualified Cardano.Chain.Update as Byron
 import           Ouroboros.Consensus.Cardano
 import qualified Ouroboros.Consensus.Cardano as Consensus
 import qualified Ouroboros.Consensus.Cardano.CanHardFork as Consensus
-import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
-import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
-
 import           Ouroboros.Consensus.Cardano.Condense ()
+import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 
 import           Cardano.Api.Any
 import           Cardano.Api.Protocol.Types
-import           Cardano.Node.Types
 
 import qualified Cardano.Node.Protocol.Alonzo as Alonzo
 import qualified Cardano.Node.Protocol.Byron as Byron
 import qualified Cardano.Node.Protocol.Shelley as Shelley
 import           Cardano.Node.Protocol.Types
+import           Cardano.Node.Types
+
 
 ------------------------------------------------------------------------------
 -- Real Cardano protocol

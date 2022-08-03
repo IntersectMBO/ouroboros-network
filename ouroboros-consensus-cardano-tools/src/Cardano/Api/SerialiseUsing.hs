@@ -12,7 +12,6 @@ module Cardano.Api.SerialiseUsing (
 import           Data.Aeson.Types (FromJSON, FromJSONKey, ToJSON (..),
                      ToJSONKey)
 import qualified Data.Aeson.Types as Aeson
-
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Char8 as BSC

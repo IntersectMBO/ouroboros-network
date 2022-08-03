@@ -15,34 +15,32 @@ module Cardano.Node.Protocol.Byron (
   , readLeaderCredentials
   ) where
 
-
-import           Cardano.Prelude
-import           Data.Text as Text (unpack)
 import           Prelude hiding (show, (.))
 
 import           Control.Monad.Trans.Except.Extra (bimapExceptT, firstExceptT,
                      hoistEither, hoistMaybe, left)
 import qualified Data.ByteString.Lazy as LB
+import           Data.Text as Text (unpack)
+
+import           Cardano.Prelude
+
+import qualified Cardano.Chain.Genesis as Genesis
+import qualified Cardano.Chain.UTxO as UTxO
+import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Crypto.Hash as Crypto
+import qualified Cardano.Crypto.Hashing as Byron.Crypto
+import           Cardano.Crypto.ProtocolMagic (RequiresNetworkMagic)
+
+import           Ouroboros.Consensus.Cardano
+import qualified Ouroboros.Consensus.Cardano as Consensus
+import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 
 import           Cardano.Api.Any
 import           Cardano.Api.KeysByron
 import qualified Cardano.Api.Protocol.Types as Protocol
 
-import qualified Cardano.Crypto.Hash as Crypto
-
-import qualified Cardano.Crypto.Hashing as Byron.Crypto
-
-import qualified Cardano.Chain.Genesis as Genesis
-import qualified Cardano.Chain.UTxO as UTxO
-import qualified Cardano.Chain.Update as Update
-import           Cardano.Crypto.ProtocolMagic (RequiresNetworkMagic)
-
-import           Cardano.Node.Types
-import           Ouroboros.Consensus.Cardano
-import qualified Ouroboros.Consensus.Cardano as Consensus
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
-
 import           Cardano.Node.Protocol.Types
+import           Cardano.Node.Types
 
 
 ------------------------------------------------------------------------------

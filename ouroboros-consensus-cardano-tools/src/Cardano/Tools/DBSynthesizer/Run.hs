@@ -7,9 +7,18 @@ module Cardano.Tools.DBSynthesizer.Run (
   , synthesize
   ) where
 
-import           Cardano.Tools.DBSynthesizer.Forging
-import           Cardano.Tools.DBSynthesizer.Orphans ()
-import           Cardano.Tools.DBSynthesizer.Types
+import           Control.Monad (unless)
+import           Control.Monad.Trans.Except (ExceptT)
+import           Control.Monad.Trans.Except.Extra (firstExceptT,
+                     handleIOExceptT, hoistEither, runExceptT)
+import           Data.Aeson as Aeson (FromJSON, Result (..), Value,
+                     eitherDecodeFileStrict', eitherDecodeStrict', fromJSON)
+import           Data.Bool (bool)
+import           Data.ByteString as BS (ByteString, readFile)
+import           System.Directory
+import           System.FilePath (takeDirectory, (</>))
+
+import           Control.Tracer (nullTracer)
 
 import           Ouroboros.Consensus.Config (configSecurityParam, configStorage)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture (dontCheck)
@@ -31,26 +40,9 @@ import           Cardano.Api.Any (displayError)
 import           Cardano.Api.Protocol.Types (protocolInfo)
 import           Cardano.Node.Protocol
 import           Cardano.Node.Types
-
-import           Control.Monad (unless)
-import           Data.Bool (bool)
-import           System.Directory
-import           System.FilePath (takeDirectory, (</>))
-
-import           Data.Aeson as Aeson (FromJSON, Result (..), Value,
-                     eitherDecodeFileStrict', eitherDecodeStrict', fromJSON)
-import           Data.ByteString as BS (ByteString, readFile)
-
-import           Control.Monad.Trans.Except (ExceptT)
-import           Control.Monad.Trans.Except.Extra (firstExceptT,
-                     handleIOExceptT, hoistEither, runExceptT)
-
-import           Control.Tracer (nullTracer)
-{-
-import           Control.Monad.IO.Class
-import           GHC.Clock
-import           System.IO
--}
+import           Cardano.Tools.DBSynthesizer.Forging
+import           Cardano.Tools.DBSynthesizer.Orphans ()
+import           Cardano.Tools.DBSynthesizer.Types
 
 
 initialize

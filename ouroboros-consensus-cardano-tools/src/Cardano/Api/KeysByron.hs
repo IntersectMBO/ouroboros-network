@@ -39,15 +39,14 @@ import           Data.String (IsString)
 import           Data.Text (Text)
 import qualified Data.Text as Text
 
-import qualified Cardano.Crypto.DSIGN.Class as Crypto
-import qualified Cardano.Crypto.Seed as Crypto
-import qualified Cardano.Crypto.Signing as Crypto
-import qualified Cardano.Crypto.Wallet as Crypto.HD
-
 import           Cardano.Binary (toStrictByteString)
 import qualified Cardano.Chain.Common as Byron
+import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Hashing as Byron
+import qualified Cardano.Crypto.Seed as Crypto
 import qualified Cardano.Crypto.Signing as Byron
+import qualified Cardano.Crypto.Signing as Crypto
+import qualified Cardano.Crypto.Wallet as Crypto.HD
 
 import           Cardano.Api.Any
 import           Cardano.Api.Key
