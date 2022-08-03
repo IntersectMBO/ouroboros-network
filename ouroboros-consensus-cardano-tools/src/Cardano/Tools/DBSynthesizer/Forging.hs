@@ -53,13 +53,6 @@ data ForgeState =
 initialForgeState :: ForgeState
 initialForgeState = ForgeState 0 0 0
 
-forgingDone :: ForgeLimit -> ForgeState -> Bool
-forgingDone (ForgeLimitSlot s)  = (s == ) . currentSlot
-forgingDone (ForgeLimitBlock b) = (b == ) . forged
-forgingDone (ForgeLimitEpoch e) = (e == ) . currentEpoch
-{-# INLINE forgingDone #-}
-
-
 -- DUPLICATE: runForge mirrors forging loop from ouroboros-consensus/src/Ouroboros/Consensus/NodeKernel.hs
 -- For an extensive commentary of the forging loop, see there.
 
@@ -81,9 +74,15 @@ runForge epochSize_ opts chainDB blockForging cfg = do
   where
     epochSize = unEpochSize epochSize_
 
+    forgingDone :: ForgeState -> Bool
+    forgingDone = case opts of
+        ForgeLimitSlot s  -> (s == ) . currentSlot
+        ForgeLimitBlock b -> (b == ) . forged
+        ForgeLimitEpoch e -> (e == ) . currentEpoch
+
     go :: ForgeState -> IO ForgeState
     go forgeState@ForgeState{currentSlot, forged, currentEpoch}
-      | forgingDone opts forgeState = pure forgeState
+      | forgingDone forgeState = pure forgeState
       | otherwise =
         let
             currentSlot' = currentSlot + 1
