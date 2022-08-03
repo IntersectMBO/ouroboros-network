@@ -632,7 +632,7 @@ processAllChainDB ::
   -> st
   -> (st -> b -> IO (NextStep, st))
   -> IO st
-processAllChainDB chainDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
+processAllChainDB chainDB registry blockComponent ExtLedgerState{headerState} limit initState callback = do
     itr <- case headerStateTip headerState of
       Origin           -> ChainDB.streamAll
                              chainDB
@@ -667,7 +667,7 @@ processAllImmutableDB ::
   -> st
   -> (st -> b -> IO (NextStep, st))
   -> IO st
-processAllImmutableDB immutableDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
+processAllImmutableDB immutableDB registry blockComponent ExtLedgerState{headerState} limit initState callback = do
     itr <- case headerStateTip headerState of
       Origin           -> ImmutableDB.streamAll
                              immutableDB

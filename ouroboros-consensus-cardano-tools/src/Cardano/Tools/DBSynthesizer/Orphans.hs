@@ -1,6 +1,5 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -32,20 +31,20 @@ instance FromJSON NodeConfigStub where
             <*> v .: "ByronGenesisFile"
 
 instance AdjustFilePaths NodeConfigStub where
-    adjustFilePaths f nc@NodeConfigStub{..} =
+    adjustFilePaths f nc =
         nc {
-            ncsAlonzoGenesisFile    = f ncsAlonzoGenesisFile
-          , ncsShelleyGenesisFile   = f ncsShelleyGenesisFile
-          , ncsByronGenesisFile     = f ncsByronGenesisFile
+            ncsAlonzoGenesisFile    = f $ ncsAlonzoGenesisFile nc
+          , ncsShelleyGenesisFile   = f $ ncsShelleyGenesisFile nc
+          , ncsByronGenesisFile     = f $ ncsByronGenesisFile nc
           }
 
 instance AdjustFilePaths NodeCredentials where
-    adjustFilePaths f nc@NodeCredentials{..} =
+    adjustFilePaths f nc =
         nc {
-            credCertFile  = f <$> credCertFile
-          , credVRFFile   = f <$> credVRFFile
-          , credKESFile   = f <$> credKESFile
-          , credBulkFile  = f <$> credBulkFile
+            credCertFile  = f <$> credCertFile nc
+          , credVRFFile   = f <$> credVRFFile nc
+          , credKESFile   = f <$> credKESFile nc
+          , credBulkFile  = f <$> credBulkFile nc
           }
 
 -- DUPLICATE: mirroring parsers from cardano-node/src/Cardano/Node/Configuration/POM.hs

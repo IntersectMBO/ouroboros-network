@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Cardano.Tools.DBAnalyser.Run (analyse) where
@@ -56,7 +55,7 @@ analyse ::
   => DBAnalyserConfig
   -> Args blk
   -> IO (Maybe AnalysisResult)
-analyse DBAnalyserConfig {..} args =
+analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbose} args =
     withRegistry $ \registry -> do
 
       chainDBTracer  <- mkTracer verbose
@@ -96,7 +95,7 @@ analyse DBAnalyserConfig {..} args =
               , db = Left immutableDB
               , registry
               , ledgerDbFS = ledgerDbFS
-              , limit = limit
+              , limit = confLimit
               , tracer = analysisTracer
               }
             tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
@@ -110,7 +109,7 @@ analyse DBAnalyserConfig {..} args =
               , db = Right chainDB
               , registry
               , ledgerDbFS = ledgerDbFS
-              , limit = limit
+              , limit = confLimit
               , tracer = analysisTracer
               }
             tipPoint <- atomically $ ChainDB.getTipPoint chainDB
