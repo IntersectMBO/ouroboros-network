@@ -53,7 +53,6 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
@@ -145,10 +144,10 @@ type ProtocolShelley = HardForkProtocol '[ ShelleyBlock (TPraos StandardCrypto) 
 -------------------------------------------------------------------------------}
 
 shelleyTransition ::
-     forall era proto mk. ShelleyCompatible proto era
+     forall era proto mk wt. ShelleyCompatible proto era
   => PartialLedgerConfig (ShelleyBlock proto era)
   -> Word16   -- ^ Next era's major protocol version
-  -> LedgerState (ShelleyBlock proto era) mk
+  -> LedgerState (ShelleyBlock proto era) wt mk
   -> Maybe EpochNo
 shelleyTransition ShelleyPartialLedgerConfig{..}
                   transitionMajorVersion
@@ -254,15 +253,16 @@ instance ShelleyCompatible proto era => HasPartialLedgerConfig (ShelleyBlock pro
 
 -- | Forecast from a Shelley-based era to the next Shelley-based era.
 forecastAcrossShelley ::
-     forall protoFrom protoTo eraFrom eraTo mk.
+     forall protoFrom protoTo eraFrom eraTo mk wt.
      ( TranslateProto protoFrom protoTo
      , LedgerSupportsProtocol (ShelleyBlock protoFrom eraFrom)
+     , IsSwitchLedgerTables wt
      )
   => ShelleyLedgerConfig eraFrom
   -> ShelleyLedgerConfig eraTo
   -> Bound  -- ^ Transition between the two eras
   -> SlotNo -- ^ Forecast for this slot
-  -> LedgerState (ShelleyBlock protoFrom eraFrom) mk
+  -> LedgerState (ShelleyBlock protoFrom eraFrom) wt mk
   -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock protoTo eraTo)))
 forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
     | forecastFor < maxFor
@@ -344,11 +344,12 @@ instance ( ShelleyBasedEra era
          , SL.TranslationError era SL.NewEpochState ~ Void
          , SL.TranslationError era TxOutWrapper ~ Void
          , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
-         ) => SL.TranslateEra era (Flip LedgerState (ApplyMapKind' mk) :.: ShelleyBlock proto) where
-  translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition tables))) = do
+         , IsSwitchLedgerTables wt
+         ) => SL.TranslateEra era (Flip2 LedgerState wt (ApplyMapKind' mk) :.: ShelleyBlock proto) where
+  translateEra ctxt (Comp (Flip2 (ShelleyLedgerState tip state _transition tables))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state
-      return $ Comp $ Flip $ ShelleyLedgerState {
+      return $ Comp $ Flip2 $ ShelleyLedgerState {
           shelleyLedgerTip        = tip'
         , shelleyLedgerState      = state'
         , shelleyLedgerTransition = ShelleyTransitionInfo 0
@@ -356,18 +357,23 @@ instance ( ShelleyBasedEra era
         }
 
 translateShelleyTables ::
+     forall era proto wt mk.
      ( SL.TranslateEra     era TxOutWrapper
      , SL.TranslationError era TxOutWrapper ~ Void
      , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+     , IsSwitchLedgerTables wt
      )
   => SL.TranslationContext era
-  -> LedgerTables (LedgerState (ShelleyBlock proto (SL.PreviousEra era))) (ApplyMapKind' mk)
-  -> LedgerTables (LedgerState (ShelleyBlock proto                 era))  (ApplyMapKind' mk)
-translateShelleyTables ctxt (ShelleyLedgerTables utxoTable) =
-      ShelleyLedgerTables
-    $ mapValuesAppliedMK
-        (unTxOutWrapper . SL.translateEra' ctxt . TxOutWrapper)
-        utxoTable
+  -> LedgerTables (LedgerState (ShelleyBlock proto (SL.PreviousEra era))) wt (ApplyMapKind' mk)
+  -> LedgerTables (LedgerState (ShelleyBlock proto                 era))  wt (ApplyMapKind' mk)
+translateShelleyTables ctxt =
+  case sWithLedgerTables (Proxy @wt) of
+    SWithLedgerTables ->
+        ShelleyLedgerTables
+        . mapValuesAppliedMK
+          (unTxOutWrapper . SL.translateEra' ctxt . TxOutWrapper)
+        . shelleyUTxOTable
+    SWithoutLedgerTables -> const NoLedgerTables
 
 instance ( ShelleyBasedEra era
          , SL.TranslateEra era WrapTx

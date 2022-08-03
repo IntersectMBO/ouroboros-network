@@ -279,8 +279,6 @@ class ( CanHardFork xs
         -- therefore this constraint is needed and will have to be satisfied by
         -- each instantiation of 'HardForkBlock'.
       , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs)) WithLedgerTables
-      , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs)) WithoutLedgerTables
-
       ) => SerialiseHFC xs where
 
   encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)

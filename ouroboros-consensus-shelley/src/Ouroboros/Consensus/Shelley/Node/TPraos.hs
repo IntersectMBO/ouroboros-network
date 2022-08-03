@@ -216,15 +216,16 @@ data ProtocolParamsAlonzo c = ProtocolParamsAlonzo {
     }
 
 protocolInfoShelley ::
-     forall m c.
+     forall m c wt.
       ( IOLike m
       , PraosCrypto c
       , ShelleyCompatible (TPraos c) (ShelleyEra c)
       , TxLimits (ShelleyBlock (TPraos c) (ShelleyEra c))
+      , IsSwitchLedgerTables wt
       )
   => ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley c
-  -> ProtocolInfo m (ShelleyBlock (TPraos c)(ShelleyEra c) )
+  -> ProtocolInfo m wt (ShelleyBlock (TPraos c)(ShelleyEra c) )
 protocolInfoShelley protocolParamsShelleyBased
                     ProtocolParamsShelley {
                         shelleyProtVer                = protVer
@@ -237,18 +238,19 @@ protocolInfoShelley protocolParamsShelleyBased
       maxTxCapacityOverrides
 
 protocolInfoTPraosShelleyBased ::
-     forall m era c.
+     forall m era c wt.
       ( IOLike m
       , PraosCrypto c
       , ShelleyCompatible (TPraos c) era
       , TxLimits (ShelleyBlock (TPraos c) era)
       , c ~ EraCrypto era
+      , IsSwitchLedgerTables wt
       )
   => ProtocolParamsShelleyBased era
   -> Core.TranslationContext era
   -> SL.ProtVer
   -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
-  -> ProtocolInfo m     (ShelleyBlock (TPraos c) era)
+  -> ProtocolInfo m     wt (ShelleyBlock (TPraos c) era)
 protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
                              shelleyBasedGenesis           = genesis
                            , shelleyBasedInitialNonce      = initialNonce
@@ -323,7 +325,7 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
         , shelleyStorageConfigSecurityParam     = tpraosSecurityParam     tpraosParams
         }
 
-    initLedgerState :: LedgerState (ShelleyBlock (TPraos c) era) ValuesMK
+    initLedgerState :: LedgerState (ShelleyBlock (TPraos c) era) wt ValuesMK
     initLedgerState =
       let st = registerGenesisStaking (SL.sgStaking genesis) $
                  SL.initialState genesis additionalGenesisConfig
@@ -332,14 +334,16 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
         shelleyLedgerTip        = Origin
       , shelleyLedgerState      = st `withUtxoSL` shelleyUTxOTable polyEmptyLedgerTables
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-      , shelleyLedgerTables     = ShelleyLedgerTables $ projectUtxoSL st
+      , shelleyLedgerTables     = case sWithLedgerTables (Proxy @wt) of
+          SWithLedgerTables -> ShelleyLedgerTables $ projectUtxoSL st
+          SWithoutLedgerTables -> NoLedgerTables
       }
 
     initChainDepState :: TPraosState c
     initChainDepState = TPraosState Origin $
       SL.initialChainDepState initialNonce (SL.sgGenDelegs genesis)
 
-    initExtLedgerState :: ExtLedgerState (ShelleyBlock (TPraos c) era) ValuesMK
+    initExtLedgerState :: ExtLedgerState (ShelleyBlock (TPraos c) era) wt ValuesMK
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState

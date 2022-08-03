@@ -38,7 +38,7 @@ import           Data.Functor ((<&>))
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
-import           GHC.Show (showCommaSpace, showSpace)
+--import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Block
@@ -84,18 +84,18 @@ deriving instance (Show (LedgerState blk wt mk), Show (HeaderState blk))
 deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError    blk)
 deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError    blk)
 
-instance LedgerSupportsProtocol blk => ShowLedgerState (ExtLedgerState blk) where
-  showsLedgerState mk st =
-      showParen True $ showString "ExtLedgerState {"
-        . showSpace      . showString "headerState = " . shows               headerState
-        . showCommaSpace . showString "ledgerState = " . showsLedgerState mk ledgerState
-        . showString " }"
-    where
-      ExtLedgerState _dummy _ = st
-      ExtLedgerState {
-          headerState
-        , ledgerState
-        } = st
+-- instance LedgerSupportsProtocol blk => ShowLedgerState (ExtLedgerState blk) where
+--   showsLedgerState mk st =
+--       showParen True $ showString "ExtLedgerState {"
+--         . showSpace      . showString "headerState = " . shows               headerState
+--         . showCommaSpace . showString "ledgerState = " . showsLedgerState mk ledgerState
+--         . showString " }"
+--     where
+--       ExtLedgerState _dummy _ = st
+--       ExtLedgerState {
+--           headerState
+--         , ledgerState
+--         } = st
 
 -- | We override 'showTypeOf' to show the type of the block
 --

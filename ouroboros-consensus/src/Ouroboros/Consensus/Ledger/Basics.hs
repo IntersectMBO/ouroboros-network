@@ -243,9 +243,8 @@ class ShowLedgerState (l :: LedgerStateKindWithTables) where
 type family LedgerCfg (l :: LedgerStateKindWithTables) :: Type
 
 class ( -- Requirements on the ledger state itself
-       ShowLedgerState l
         -- Requirements on 'LedgerCfg'
-      , NoThunks (LedgerCfg l)
+        NoThunks (LedgerCfg l)
         -- Requirements on 'LedgerErr'
       , Show     (LedgerErr l)
       , Eq       (LedgerErr l)
@@ -480,6 +479,9 @@ instance TableStuff l WithoutLedgerTables where
   foldLedgerTables     _  NoLedgerTables                               = mempty
   foldLedgerTables2    _  NoLedgerTables NoLedgerTables                = mempty
   namesLedgerTables = NoLedgerTables
+
+instance SufficientSerializationForAnyBackingStore l WithoutLedgerTables where
+  codecLedgerTables = NoLedgerTables
 
 overLedgerTables ::
      (TableStuff l wt, IsApplyMapKind mk1, IsApplyMapKind mk2)

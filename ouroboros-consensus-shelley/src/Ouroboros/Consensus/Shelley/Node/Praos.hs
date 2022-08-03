@@ -30,8 +30,7 @@ import           Ouroboros.Consensus.Config (SecurityParam (SecurityParam),
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
                      (HeaderState (HeaderState))
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, ValuesMK,
-                     polyEmptyLedgerTables)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Mempool.TxLimits
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
@@ -147,14 +146,15 @@ data ProtocolParamsBabbage c = ProtocolParamsBabbage
   }
 
 protocolInfoPraosBabbage ::
-  forall m c.
+  forall m c wt.
   ( IOLike m,
     ShelleyCompatible (Praos c) (BabbageEra c),
-    TxLimits (ShelleyBlock (Praos c) (BabbageEra c))
+    TxLimits (ShelleyBlock (Praos c) (BabbageEra c)),
+    IsSwitchLedgerTables wt
   ) =>
   ProtocolParamsShelleyBased (BabbageEra c) ->
   ProtocolParamsBabbage c ->
-  ProtocolInfo m (ShelleyBlock (Praos c) (BabbageEra c))
+  ProtocolInfo m wt (ShelleyBlock (Praos c) (BabbageEra c))
 protocolInfoPraosBabbage
   protocolParamsShelleyBased
   ProtocolParamsBabbage
@@ -168,17 +168,18 @@ protocolInfoPraosBabbage
       maxTxCapacityOverrides
 
 protocolInfoPraosShelleyBased ::
-  forall m era c.
+  forall m era c wt.
   ( IOLike m,
     ShelleyCompatible (Praos c) era,
     TxLimits (ShelleyBlock (Praos c) era),
-    c ~ EraCrypto era
+    c ~ EraCrypto era,
+    IsSwitchLedgerTables wt
   ) =>
   ProtocolParamsShelleyBased era ->
   Core.TranslationContext era ->
   SL.ProtVer ->
   TxLimits.Overrides (ShelleyBlock (Praos c) era) ->
-  ProtocolInfo m (ShelleyBlock (Praos c) era)
+  ProtocolInfo m wt (ShelleyBlock (Praos c) era)
 protocolInfoPraosShelleyBased
   ProtocolParamsShelleyBased
     { shelleyBasedGenesis = genesis,
@@ -258,7 +259,7 @@ protocolInfoPraosShelleyBased
             shelleyStorageConfigSecurityParam = praosSecurityParam praosParams
           }
 
-      initLedgerState :: LedgerState (ShelleyBlock (Praos c) era) ValuesMK
+      initLedgerState :: LedgerState (ShelleyBlock (Praos c) era) wt ValuesMK
       initLedgerState =
         let st = SL.initialState genesis additionalGenesisConfig
         in
@@ -266,7 +267,9 @@ protocolInfoPraosShelleyBased
           { shelleyLedgerTip = Origin,
             shelleyLedgerState = st `withUtxoSL` shelleyUTxOTable polyEmptyLedgerTables,
             shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0},
-            shelleyLedgerTables = ShelleyLedgerTables $ projectUtxoSL st
+            shelleyLedgerTables = case sWithLedgerTables (Proxy @wt) of
+              SWithLedgerTables -> ShelleyLedgerTables $ projectUtxoSL st
+              SWithoutLedgerTables -> NoLedgerTables
           }
 
       initChainDepState :: PraosState c
@@ -281,7 +284,7 @@ protocolInfoPraosShelleyBased
             praosStateLastEpochBlockNonce = initialNonce
           }
 
-      initExtLedgerState :: ExtLedgerState (ShelleyBlock (Praos c) era) ValuesMK
+      initExtLedgerState :: ExtLedgerState (ShelleyBlock (Praos c) era) wt ValuesMK
       initExtLedgerState =
         ExtLedgerState
           { ledgerState = initLedgerState,

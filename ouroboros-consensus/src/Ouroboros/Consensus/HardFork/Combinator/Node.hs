@@ -64,5 +64,4 @@ instance ( CanHardFork xs
          , SerialiseHFC xs
          , LedgerTablesCanHardFork WithLedgerTables xs
          , LedgerTablesCanHardFork WithoutLedgerTables xs
-         , SufficientSerializationForAnyBackingStore (ExtLedgerState (HardForkBlock xs)) WithoutLedgerTables
          ) => RunNode (HardForkBlock xs)

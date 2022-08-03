@@ -206,6 +206,7 @@ data ValidationResult invalidTx blk wt = ValidationResult {
 extendVRPrevApplied :: ( LedgerSupportsMempool blk
                        , HasTxId (GenTx blk)
                        , TickedTableStuff (LedgerState blk) wt
+                       , IsSwitchLedgerTables wt
                        )
                     => LedgerConfig blk
                     -> TxTicket (Validated (GenTx blk))
@@ -232,6 +233,7 @@ extendVRPrevApplied cfg txTicket vr =
 extendVRNew :: ( LedgerSupportsMempool blk
                , HasTxId (GenTx blk)
                , TickedTableStuff (LedgerState blk) wt
+               , IsSwitchLedgerTables wt
                )
             => LedgerConfig blk
             -> (GenTx blk -> TxSizeInBytes)
@@ -342,6 +344,7 @@ revalidateTxsFor
      , HasTxId (GenTx blk)
      , TickedTableStuff (LedgerState blk) wt
      , GetTip (TickedLedgerState blk wt TrackingMK)
+     , IsSwitchLedgerTables wt
      )
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk

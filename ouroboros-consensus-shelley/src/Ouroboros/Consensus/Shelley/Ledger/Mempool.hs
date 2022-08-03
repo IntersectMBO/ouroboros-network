@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE Rank2Types                 #-}
@@ -38,6 +39,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
 import           Control.Monad.Except (Except)
 import           Control.Monad.Identity (Identity (..))
 import           Data.Foldable (toList)
+import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Natural (Natural)
@@ -64,9 +66,10 @@ import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.Alonzo.PParams
 import           Cardano.Ledger.Alonzo.Tx (totExUnits)
+import           Cardano.Ledger.Block as Core
 import           Cardano.Ledger.Babbage.PParams
 import qualified Cardano.Ledger.Core as Core (Tx)
-import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq, getAllTxInputs)
+import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq, getAllTxInputs, Crypto)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.TxIn as SL (txid)
 
@@ -153,11 +156,20 @@ instance ShelleyCompatible proto era
 
   txForgetValidated (ShelleyValidatedTx txid vtx) = ShelleyTx txid (SL.extractTx vtx)
 
+instance ShelleyCompatible proto era => GetsBlockKeySets (LedgerState (ShelleyBlock proto era)) (ShelleyBlock proto era) WithLedgerTables where
+  getBlockKeySets =
+        ShelleyLedger.ShelleyLedgerTables
+      . ApplyKeysMK
+      . HD.UtxoKeys
+      . Core.neededTxInsForBlock
+      . shelleyBlockRaw
+
   getTransactionKeySets (ShelleyTx _ tx) =
         ShelleyLedger.ShelleyLedgerTables
       $ ApplyKeysMK
       $ HD.UtxoKeys
-      $ SL.getAllTxInputs (getField @"body"  tx)
+      $ SL.getAllTxInputs @era (getField @"body"  tx)
+
 
 mkShelleyTx :: forall era proto. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock proto era)
 mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
@@ -227,20 +239,22 @@ instance Show (GenTxId (ShelleyBlock proto era)) where
   Applying transactions
 -------------------------------------------------------------------------------}
 
-applyShelleyTx :: forall era proto.
-     ShelleyBasedEra era
+applyShelleyTx :: forall era proto wt.
+     (ShelleyBasedEra era, IsSwitchLedgerTables wt)
   => LedgerConfig (ShelleyBlock proto era)
   -> WhetherToIntervene
   -> SlotNo
   -> GenTx (ShelleyBlock proto era)
-  -> TickedLedgerState (ShelleyBlock proto era) ValuesMK
+  -> TickedLedgerState (ShelleyBlock proto era) wt ValuesMK
   -> Except (ApplyTxErr (ShelleyBlock proto era))
-       ( TickedLedgerState (ShelleyBlock proto era) TrackingMK
+       ( TickedLedgerState (ShelleyBlock proto era) wt TrackingMK
        , Validated (GenTx (ShelleyBlock proto era))
        )
 applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
-    let st1 :: TickedLedgerState (ShelleyBlock proto era) EmptyMK
-        st1 = ShelleyLedger.cnv $ stowLedgerTables $ ShelleyLedger.vnc st0
+    let st1 :: TickedLedgerState (ShelleyBlock proto era) wt EmptyMK
+        st1 = ShelleyLedger.cnv $ (case sWithLedgerTables (Proxy @wt) of
+                                    SWithLedgerTables -> stowLedgerTables
+                                    SWithoutLedgerTables -> stowLedgerTables) $ ShelleyLedger.vnc st0
 
         innerSt :: SL.NewEpochState era
         innerSt = tickedShelleyLedgerState st1
@@ -253,26 +267,33 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
          wti
          tx
 
-    let st2 :: TickedLedgerState (ShelleyBlock proto era) EmptyMK
+    let st2 :: TickedLedgerState (ShelleyBlock proto era) wt EmptyMK
         st2 = set theLedgerLens mempoolState' st1
 
-        st3 :: TickedLedgerState (ShelleyBlock proto era) ValuesMK
-        st3 = ShelleyLedger.cnv $ unstowLedgerTables $ ShelleyLedger.vnc st2
+        st3 :: TickedLedgerState (ShelleyBlock proto era) wt ValuesMK
+        st3 = ShelleyLedger.cnv $ (case sWithLedgerTables (Proxy @wt) of
+                                    SWithLedgerTables -> unstowLedgerTables
+                                    SWithoutLedgerTables -> unstowLedgerTables) $ ShelleyLedger.vnc st2
 
-        st4 :: TickedLedgerState (ShelleyBlock proto era) TrackingMK
-        st4 = calculateDifferenceTicked st0 st3
+        st4 :: TickedLedgerState (ShelleyBlock proto era) wt TrackingMK
+        st4 = (case sWithLedgerTables (Proxy @wt) of
+                  SWithLedgerTables -> calculateDifferenceTicked
+                  SWithoutLedgerTables -> calculateDifferenceTicked) st0 st3
 
     pure (st4, mkShelleyValidatedTx vtx)
 
 reapplyShelleyTx ::
-     ShelleyBasedEra era
+     forall proto era wt. (ShelleyBasedEra era, IsSwitchLedgerTables wt)
   => LedgerConfig (ShelleyBlock proto era)
   -> SlotNo
   -> Validated (GenTx (ShelleyBlock proto era))
-  -> TickedLedgerState (ShelleyBlock proto era) ValuesMK
-  -> Except (ApplyTxErr (ShelleyBlock proto era)) (TickedLedgerState (ShelleyBlock proto era) TrackingMK)
+  -> TickedLedgerState (ShelleyBlock proto era) wt ValuesMK
+  -> Except (ApplyTxErr (ShelleyBlock proto era)) (TickedLedgerState (ShelleyBlock proto era) wt TrackingMK)
 reapplyShelleyTx cfg slot vgtx st0 = do
-    let st1     = ShelleyLedger.cnv $ stowLedgerTables $ ShelleyLedger.vnc st0
+    let st1 :: TickedLedgerState (ShelleyBlock proto era) wt EmptyMK
+        st1     = ShelleyLedger.cnv $ (case sWithLedgerTables (Proxy @wt) of
+                                         SWithLedgerTables -> stowLedgerTables
+                                         SWithoutLedgerTables -> stowLedgerTables) $ ShelleyLedger.vnc st0
         innerSt = tickedShelleyLedgerState st1
 
     mempoolState' <-
@@ -282,10 +303,21 @@ reapplyShelleyTx cfg slot vgtx st0 = do
           (SL.mkMempoolState innerSt)
           vtx
 
-    let st2 = calculateDifferenceTicked st0
-          $ ShelleyLedger.cnv $ unstowLedgerTables $ ShelleyLedger.vnc
-          $ set theLedgerLens mempoolState' st1
-
+    let st2 :: TickedLedgerState (ShelleyBlock proto era) wt TrackingMK
+        st2 = case sWithLedgerTables (Proxy @wt) of
+                  SWithLedgerTables ->
+                    calculateDifferenceTicked st0
+                    $ ShelleyLedger.cnv
+                    $ unstowLedgerTables
+                    $ ShelleyLedger.vnc
+                    $ set theLedgerLens mempoolState' st1
+                  SWithoutLedgerTables ->
+                    calculateDifferenceTicked st0
+                    $ ShelleyLedger.cnv
+                    $ unstowLedgerTables
+                    $ ShelleyLedger.vnc
+                    $ set theLedgerLens mempoolState' st1
+              
     pure st2
   where
     ShelleyValidatedTx _txid vtx = vgtx
@@ -300,8 +332,8 @@ set lens inner outer =
 theLedgerLens ::
      Functor f
   => (SL.LedgerState era -> f (SL.LedgerState era))
-  -> TickedLedgerState (ShelleyBlock proto era) mk
-  -> f (TickedLedgerState (ShelleyBlock proto era) mk)
+  -> TickedLedgerState (ShelleyBlock proto era) wt mk
+  -> f (TickedLedgerState (ShelleyBlock proto era) wt mk)
 theLedgerLens f x =
         (\y -> x{tickedShelleyLedgerState = y})
     <$> SL.overNewEpochState f (tickedShelleyLedgerState x)

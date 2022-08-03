@@ -6,11 +6,13 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -280,9 +282,14 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
       hst = headerState ext
       st  = shelleyLedgerState lst
 
+  prepareBlockQuery :: forall wt result. IsSwitchLedgerTables wt
+    => BlockQuery (ShelleyBlock proto era) LargeL result
+    -> LedgerTables (LedgerState (ShelleyBlock proto era)) wt KeysMK
   prepareBlockQuery = \case
       GetCBOR q        -> prepareBlockQuery q
-      GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK $ HD.UtxoKeys ks
+      GetUTxOByTxIn ks -> case sWithLedgerTables (Proxy @wt) of
+        SWithLedgerTables -> ShelleyLedgerTables $ ApplyKeysMK $ HD.UtxoKeys ks
+        SWithoutLedgerTables -> NoLedgerTables
 
   answerWholeBlockQuery = \case
       GetCBOR qry            -> case answerWholeBlockQuery qry of

@@ -169,7 +169,7 @@ data ApplyResult wt xs blk = ApplyResult {
 --
 -- The @txIn@ variable is 'GenTx' or 'WrapValidatedGenTx', respectively. See
 -- 'ApplyHelperMode'.
-applyHelper :: forall xs txIn wt. CanHardFork xs
+applyHelper :: forall xs txIn wt. (CanHardFork xs, IsSwitchLedgerTables wt)
   => ApplyHelperMode txIn
   -> LedgerConfig (HardForkBlock xs)
   -> WhetherToIntervene

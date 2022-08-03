@@ -65,6 +65,7 @@ pureTryAddTxs
   :: ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , TickedTableStuff (LedgerState blk) wt
+     , IsSwitchLedgerTables wt
      )
   => LedgerCfg (LedgerState blk)
      -- ^ The ledger configuration.

@@ -1,7 +1,11 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE RankNTypes            #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Node.Serialisation () where
@@ -18,8 +22,9 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Storage.Serialisation
@@ -43,7 +48,8 @@ import           Ouroboros.Consensus.Shelley.Protocol.Abstract
 instance ShelleyCompatible proto era => HasBinaryBlockInfo (ShelleyBlock proto era) where
   getBinaryBlockInfo = shelleyBinaryBlockInfo
 
-instance ShelleyCompatible proto era => SerialiseDiskConstraints (ShelleyBlock proto era)
+instance (LedgerSupportsProtocol (ShelleyBlock proto era), ShelleyCompatible proto era) => SerialiseDiskConstraints (ShelleyBlock proto era) WithLedgerTables
+instance (LedgerSupportsProtocol (ShelleyBlock proto era), ShelleyCompatible proto era) => SerialiseDiskConstraints (ShelleyBlock proto era) WithoutLedgerTables
 
 instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (ShelleyBlock proto era) where
   encodeDisk _ = encodeShelleyBlock
@@ -55,10 +61,12 @@ instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (Hea
 instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (Lazy.ByteString -> Header (ShelleyBlock proto era)) where
   decodeDisk _ = decodeShelleyHeader
 
-instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) EmptyMK) where
+instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) wt EmptyMK) where
   encodeDisk _ = encodeShelleyLedgerState
-instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) EmptyMK) where
-  decodeDisk _ = decodeShelleyLedgerState
+instance (IsSwitchLedgerTables wt, ShelleyCompatible proto era) => DecodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) wt EmptyMK) where
+  decodeDisk _ = case sWithLedgerTables (Proxy @wt) of
+    SWithLedgerTables -> decodeShelleyLedgerState
+    SWithoutLedgerTables -> decodeShelleyLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
 instance (ShelleyCompatible proto era, EraCrypto era ~ c, SL.PraosCrypto c) => EncodeDisk (ShelleyBlock proto era) (TPraosState c) where

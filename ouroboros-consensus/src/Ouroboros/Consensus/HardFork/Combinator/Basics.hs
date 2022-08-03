@@ -62,7 +62,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
-import           Ouroboros.Consensus.Util.Singletons (SingI)
+--import           Ouroboros.Consensus.Util.Singletons (SingI)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -102,28 +102,28 @@ newtype instance LedgerState (HardForkBlock xs) wt mk = HardForkLedgerState {
 
 -- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt SeqDiffMK)
 
-instance (SingI mk, Typeable mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) wt (ApplyMapKind' mk)) where
-  showsPrec p = showParen (p >= 11) . showsLedgerState sMapKind
+-- instance (SingI mk, Typeable mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) wt (ApplyMapKind' mk)) where
+--   showsPrec p = showParen (p >= 11) . showsLedgerState sMapKind
 
-instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
-  showsLedgerState = \mk (HardForkLedgerState hfstate) ->
-        showParen True
-      $ (showString "HardForkLedgerState " .)
-      $ shows
-      $ hcmap proxySingle (showInner mk) hfstate
-    where
-       showInner ::
-            SingleEraBlock x
-         => SMapKind mk
-         -> Flip2 LedgerState wt (ApplyMapKind' mk) x
-         -> AlreadyShown        x
-       showInner mk (Flip2 st) =
-           AlreadyShown
-         $ showParen True
-         $ showString "Flip " . showsLedgerState mk st
+-- instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
+--   showsLedgerState = \mk (HardForkLedgerState hfstate) ->
+--         showParen True
+--       $ (showString "HardForkLedgerState " .)
+--       $ shows
+--       $ hcmap proxySingle (showInner mk) hfstate
+--     where
+--        showInner ::
+--             SingleEraBlock x
+--          => SMapKind mk
+--          -> Flip2 LedgerState wt (ApplyMapKind' mk) x
+--          -> AlreadyShown        x
+--        showInner mk (Flip2 st) =
+--            AlreadyShown
+--          $ showParen True
+--          $ showString "Flip " . showsLedgerState mk st
 
-newtype AlreadyShown x = AlreadyShown {unAlreadyShown :: ShowS}
-instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown
+-- newtype AlreadyShown x = AlreadyShown {unAlreadyShown :: ShowS}
+-- instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown
 
 {-------------------------------------------------------------------------------
   UTxO HD
