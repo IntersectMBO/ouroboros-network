@@ -1,7 +1,6 @@
 name:                  ouroboros-consensus-cardano-tools
 version:               0.1.0.0
-synopsis:              Programmatically synthesize blocks and a ChainDB, without transactions
--- description:
+synopsis:              Programmatically synthesize and analyse a ChainDB
 license:               Apache-2.0
 license-files:
   NOTICE
@@ -103,7 +102,7 @@ library
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
-executable db-analyser2
+executable db-analyser
   hs-source-dirs:      app
   main-is:             db-analyser.hs
   build-depends:       base
