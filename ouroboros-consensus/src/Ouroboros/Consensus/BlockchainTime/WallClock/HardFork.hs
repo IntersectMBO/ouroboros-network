@@ -47,10 +47,10 @@ import           Ouroboros.Consensus.Util.Time
 -- incur computational overhead.)
 newtype BackoffDelay = BackoffDelay NominalDiffTime
 
-data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
+data HardForkBlockchainTimeArgs m blk wt = HardForkBlockchainTimeArgs
   { hfbtBackoffDelay   :: m BackoffDelay
     -- ^ See 'BackoffDelay'
-  , hfbtGetLedgerState :: STM m (LedgerState blk WithoutLedgerTables EmptyMK)
+  , hfbtGetLedgerState :: STM m (LedgerState blk wt EmptyMK)
   , hfbtLedgerConfig   :: LedgerConfig blk
   , hfbtRegistry       :: ResourceRegistry m
   , hfbtSystemTime     :: SystemTime m
@@ -69,12 +69,13 @@ data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
   }
 
 -- | 'BlockchainTime' instance with support for the hard fork history
-hardForkBlockchainTime :: forall m blk.
+hardForkBlockchainTime :: forall m blk wt.
                           ( IOLike m
                           , HasHardForkHistory blk
                           , HasCallStack
+                          , IsSwitchLedgerTables wt
                           )
-                       => HardForkBlockchainTimeArgs m blk
+                       => HardForkBlockchainTimeArgs m blk wt
                        -> m (BlockchainTime m)
 hardForkBlockchainTime args = do
     run <- HF.runWithCachedSummary (summarize <$> getLedgerState)

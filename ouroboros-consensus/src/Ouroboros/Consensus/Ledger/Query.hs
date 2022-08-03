@@ -268,7 +268,7 @@ deriving instance Show (BlockQuery blk fp result) => Show (Query blk fp result)
 
 -- | Answer the given query about the extended ledger state.
 answerQuery ::
-     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, QuerySat mk fp)
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, QuerySat mk fp, IsSwitchLedgerTables wt)
   => ExtLedgerCfg blk
   -> Query          blk fp result
   -> ExtLedgerState blk wt mk
@@ -304,7 +304,7 @@ data family BlockQuery blk :: FootprintL -> Type -> Type
 class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  answerBlockQuery :: QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk wt mk -> result
+  answerBlockQuery :: IsSwitchLedgerTables wt => QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk wt mk -> result
 
   prepareBlockQuery :: IsSwitchLedgerTables wt =>  BlockQuery blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
 
@@ -382,6 +382,7 @@ handleWholeQuery ::
      , TableStuff (LedgerState blk) wt
      , StowableLedgerTables (LedgerState blk) wt
      , TableStuff (ExtLedgerState blk) wt
+     , Promote (LedgerState blk) (ExtLedgerState blk) wt
      )
   => DiskLedgerView m (ExtLedgerState blk) wt
   -> Query blk WholeL result
@@ -401,11 +402,10 @@ handleWholeQuery dlv query = do
             loop !prev !acc = do
               extValues <-
                 dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
-              let values = undefined :: LedgerTables (LedgerState blk) wt ValuesMK
-              if getAll $ foldLedgerTables (All . f) values then pure acc else
+              if getAll $ foldLedgerTables (All . f) (demote extValues :: LedgerTables (LedgerState blk) wt ValuesMK) then pure acc else
                 loop
                   (Just $ mapLedgerTables toKeys extValues)
-                  (comb acc $ partial (stowLedgerTables (ledgerState st `withLedgerTables` values) `withLedgerTables` polyEmptyLedgerTables))
+                  (comb acc $ partial (stowLedgerTables (ledgerState st `withLedgerTables` (demote extValues)) `withLedgerTables` polyEmptyLedgerTables))
           in  post <$> loop Nothing empty
   where
 

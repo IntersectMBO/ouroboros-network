@@ -224,8 +224,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
 
       -- | Customise the 'HardForkBlockchainTimeArgs'
     , llrnCustomiseHardForkBlockchainTimeArgs ::
-           HardForkBlockchainTimeArgs m blk
-        -> HardForkBlockchainTimeArgs m blk
+           HardForkBlockchainTimeArgs m blk wt
+        -> HardForkBlockchainTimeArgs m blk wt
 
       -- | See 'NTN.ChainSyncTimeout'
     , llrnChainSyncTimeout :: m NTN.ChainSyncTimeout
@@ -361,7 +361,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           HardForkBlockchainTimeArgs
             { hfbtBackoffDelay   = pure $ BackoffDelay 60
             , hfbtGetLedgerState =
-                ledgerState <$> undefined -- ChainDB.getCurrentLedger chainDB
+                ledgerState <$> ChainDB.getCurrentLedger chainDB
             , hfbtLedgerConfig   = configLedger cfg
             , hfbtRegistry       = registry
             , hfbtSystemTime     = systemTime

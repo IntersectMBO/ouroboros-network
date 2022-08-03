@@ -50,8 +50,8 @@ data CheckInFuture m blk = CheckInFuture {
        -- | POSTCONDITION:
        -- > checkInFuture vf >>= \(af, fut) ->
        -- >   validatedFragment vf == af <=> null fut
-       checkInFuture :: forall mk wt.
-                        ValidatedFragment (Header blk) (LedgerState blk wt mk)
+       checkInFuture :: forall mk wt. IsSwitchLedgerTables wt
+                     => ValidatedFragment (Header blk) (LedgerState blk wt mk)
                      -> m (AnchoredFragment (Header blk), [InFuture m blk])
     }
   deriving NoThunks

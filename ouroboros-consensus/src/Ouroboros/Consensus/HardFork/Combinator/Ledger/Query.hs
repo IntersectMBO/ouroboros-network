@@ -260,7 +260,7 @@ instance All SingleEraBlock xs => IsQuery (QueryIfCurrent xs) where
     QS qry -> classifyQuery qry
 
 interpretQueryIfCurrent ::
-     forall mk fp result wt xs. (All SingleEraBlock xs, QuerySat mk fp)
+     forall mk fp result wt xs. (All SingleEraBlock xs, QuerySat mk fp, IsSwitchLedgerTables wt)
   => NP ExtLedgerCfg xs
   -> QueryIfCurrent xs fp result
   -> NS (Flip2 ExtLedgerState wt mk) xs
@@ -443,7 +443,7 @@ instance SmallQuery (QueryHardFork xs) where
 instance All SingleEraBlock xs => IsQuery (QueryHardFork xs) where
 
 interpretQueryHardFork ::
-     All SingleEraBlock xs
+     (All SingleEraBlock xs, IsSwitchLedgerTables wt)
   => HardForkLedgerConfig xs
   -> QueryHardFork xs fp result
   -> LedgerState (HardForkBlock xs) wt mk

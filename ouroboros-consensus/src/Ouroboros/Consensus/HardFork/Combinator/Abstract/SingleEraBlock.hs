@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.SOP
 
@@ -75,9 +76,12 @@ class ( LedgerSupportsProtocol blk
       , Show (CannotForge blk)
       , Show (ForgeStateInfo blk)
       , Show (ForgeStateUpdateError blk)
+      -- WithLedgerTables
       , TickedTableStuff (LedgerState blk) WithLedgerTables
       , forall mk. GetTip (LedgerState blk WithLedgerTables mk)
       , forall mk. GetTip (LedgerState blk WithoutLedgerTables mk)
+      , forall mk. GetTip (Ticked1 (LedgerState blk WithLedgerTables) mk)
+      , forall mk. GetTip (Ticked1 (LedgerState blk WithoutLedgerTables) mk)
       , StowableLedgerTables (LedgerState blk) WithLedgerTables
       , GetsBlockKeySets (LedgerState blk) blk WithLedgerTables
       ) => SingleEraBlock blk where

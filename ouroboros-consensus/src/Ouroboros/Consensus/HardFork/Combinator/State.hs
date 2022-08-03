@@ -19,7 +19,7 @@
 module Ouroboros.Consensus.HardFork.Combinator.State (
     module X
     -- * Support for defining instances
-  , getTip
+--  , getTip
     -- * Serialisation support
   , recover
     -- * EpochInfo
@@ -40,7 +40,7 @@ import           Data.SOP.Strict hiding (shape)
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
+import           Ouroboros.Consensus.Ledger.Abstract as Abstract
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 
@@ -64,16 +64,14 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Types as X
 {-------------------------------------------------------------------------------
   GetTip
 -------------------------------------------------------------------------------}
-type instance HeaderHash (Flip2 LedgerState wt mk blk) = HeaderHash (LedgerState blk wt mk)
-
-getTip :: forall a. a
-getTip = undefined
+-- type instance HeaderHash (Flip2 LedgerState wt mk blk) = HeaderHash (LedgerState blk wt mk)
 
 -- instance GetTip (Flip2 LedgerState wt mk blk) => GetTip (LedgerState blk wt mk) where
---   getTip = castPoint . Basics.getTip . Flip2
+--   getTip = castPoint . Abstract.getTip . Flip2
 
--- getTip :: forall (wt :: SwitchLedgerTables) (mk :: MapKind) xs.
+-- getTip :: forall (wt :: SwitchLedgerTables) (mk :: MapKind) x xs xs'.
 --           ( CanHardFork xs
+--           , xs ~ (x ': xs')
 --           , All (Compose GetTip (Flip2 LedgerState wt mk)) xs
 --           )
 --        => (forall blk. ( GetTip (LedgerState blk wt mk)
@@ -81,16 +79,21 @@ getTip = undefined
 --                        ) => LedgerState blk wt mk -> Point blk
 --           )
 --        -> HardForkState (Flip2 LedgerState wt mk) xs -> Point (HardForkBlock xs)
--- getTip getLedgerTip = undefined -- TODO @js
-  --     hcollapse
-  --   . hcmap proxySingle (K . injPoint . getLedgerTip . unFlip2)
-  --   . tip
-  -- where
-  --   injPoint :: forall blk. SingleEraBlock blk
-  --            => Point blk -> Point (HardForkBlock xs)
-  --   injPoint GenesisPoint     = GenesisPoint
-  --   injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
-  --                                 toShortRawHash (Proxy @blk) h
+-- getTip getLedgerTip = hcollapse
+--                       . hcmap proxySingle (K . fun)
+--                       . tip
+--   where
+--     fun :: forall x. ( SingleEraBlock x
+--                        , Compose GetTip (Flip2 LedgerState wt mk) x
+--                        ) => Flip2 LedgerState wt mk x -> Point (HardForkBlock xs)
+
+--     fun = injPoint . getLedgerTip . unFlip2
+
+--     injPoint :: forall x. SingleEraBlock x
+--              => Point x -> Point (HardForkBlock (x ': xs'))
+--     injPoint GenesisPoint     = GenesisPoint
+--     injPoint (BlockPoint s h) = BlockPoint s $ OneEraHash $
+--                                   toShortRawHash (Proxy @x) h
 
 {-------------------------------------------------------------------------------
   Recovery
@@ -131,33 +134,34 @@ recover =
 -- pseb :: Proxy wt -> Proxy mk -> Proxy (SEBandGetTip wt mk)
 -- pseb _ _ = Proxy
 
-mostRecentTransitionInfo :: forall xs wt mk. () --All SingleEraBlock xs
+mostRecentTransitionInfo :: forall xs wt mk. (All SingleEraBlock xs, IsSwitchLedgerTables wt)
                          => HardForkLedgerConfig xs
                          -> HardForkState (Flip2 LedgerState wt mk) xs
                          -> TransitionInfo
-mostRecentTransitionInfo -- HardForkLedgerConfig{..} st
-  = undefined
-  --   hcollapse $
-  --     hczipWith3
-  --       (pseb (Proxy @wt) (Proxy @mk))
-  --       getTransition
-  --       cfgs
-  --       (getExactly (History.getShape hardForkLedgerConfigShape))
-  --       (Telescope.tip (getHardForkState st))
-  -- where
-  --   cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
+mostRecentTransitionInfo HardForkLedgerConfig{..} st =
+    hcollapse $
+      hczipWith3
+        (proxySingle)
+        (case sWithLedgerTables (Proxy @wt) of
+           SWithLedgerTables -> getTransition
+           SWithoutLedgerTables -> getTransition)
+        cfgs
+        (getExactly (History.getShape hardForkLedgerConfigShape))
+        (Telescope.tip (getHardForkState st))
+  where
+    cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
 
-  --   getTransition :: (SingleEraBlock                blk, GetTip (LedgerState blk wt mk))
-  --                 => WrapPartialLedgerConfig       blk
-  --                 -> K History.EraParams           blk
-  --                 -> Current (Flip2 LedgerState wt mk) blk
-  --                 -> K TransitionInfo              blk
-  --   getTransition cfg (K eraParams) Current{..} = K $
-  --       case singleEraTransition' cfg eraParams currentStart (unFlip2 currentState) of
-  --         Nothing -> TransitionUnknown (ledgerTipSlot (unFlip2 currentState))
-  --         Just e  -> TransitionKnown e
+    getTransition :: (SingleEraBlock                blk, GetTip (LedgerState blk wt mk))
+                  => WrapPartialLedgerConfig       blk
+                  -> K History.EraParams           blk
+                  -> Current (Flip2 LedgerState wt mk) blk
+                  -> K TransitionInfo              blk
+    getTransition cfg (K eraParams) Current{..} = K $
+        case singleEraTransition' cfg eraParams currentStart (unFlip2 currentState) of
+          Nothing -> TransitionUnknown (ledgerTipSlot (unFlip2 currentState))
+          Just e  -> TransitionKnown e
 
-reconstructSummaryLedger :: All SingleEraBlock xs
+reconstructSummaryLedger :: (All SingleEraBlock xs, IsSwitchLedgerTables wt)
                          => HardForkLedgerConfig xs
                          -> HardForkState (Flip2 LedgerState wt mk) xs
                          -> History.Summary xs
@@ -171,7 +175,7 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 --
 -- NOTE: The resulting 'EpochInfo' is a snapshot only, with a limited range.
 -- It should not be stored.
-epochInfoLedger :: All SingleEraBlock xs
+epochInfoLedger :: (All SingleEraBlock xs, IsSwitchLedgerTables wt)
                 => HardForkLedgerConfig xs
                 -> HardForkState (Flip2 LedgerState wt mk) xs
                 -> EpochInfo (Except PastHorizonException)

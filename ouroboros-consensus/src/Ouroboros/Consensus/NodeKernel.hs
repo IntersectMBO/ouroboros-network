@@ -259,6 +259,7 @@ initBlockFetchConsensusInterface
        , SupportsNode.ConfigSupportsNode blk
        , History.HasHardForkHistory blk
        , GetTip (LedgerState blk wt EmptyMK)
+       , IsSwitchLedgerTables wt
        )
     => TopLevelConfig blk
     -> ChainDB m blk wt

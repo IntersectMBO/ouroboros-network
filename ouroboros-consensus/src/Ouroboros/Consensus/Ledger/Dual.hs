@@ -596,15 +596,26 @@ instance ( GetsBlockKeySets (LedgerState m) m WithLedgerTables
       m = getBlockKeySets                             dualBlockMain
       a = maybe polyEmptyLedgerTables getBlockKeySets dualBlockAux
 
-  getTransactionKeySets = undefined --tx = undefined
+  -- TODO @js resurrect this. failing because of overlapping instances
+  getTransactionKeySets = undefined -- tx =
       -- combine
-      --   (promote $ (getTransactionKeySets dualGenTxMain :: LedgerTables (LedgerState m) WithLedgerTables KeysMK))
-      --   (promote $ (getTransactionKeySets dualGenTxAux  :: LedgerTables (LedgerState a) WithLedgerTables KeysMK))
-    -- where
-    --   DualGenTx {
-    --       dualGenTxMain
-    --     , dualGenTxAux
-    --     } = tx
+--         (promote $ (getTransactionKeySets dualGenTxMain :: LedgerTables (LedgerState m) WithLedgerTables KeysMK))
+--         (promote $ (getTransactionKeySets dualGenTxAux  :: LedgerTables (LedgerState a) WithLedgerTables KeysMK))
+--     where
+--       DualGenTx {
+--           dualGenTxMain
+--         , dualGenTxAux
+--         } = tx
+
+-- instance Promote (LedgerState m) (LedgerState (DualBlock m a)) WithLedgerTables where
+--   promote x = DualBlockLedgerTables x undefined
+--   demote (DualBlockLedgerTables x _) = x
+
+-- instance Promote (LedgerState a) (LedgerState (DualBlock m a)) WithLedgerTables where
+--   promote x = DualBlockLedgerTables undefined x
+--   demote (DualBlockLedgerTables _ x) = x
+
+-- combine (DualBlockLedgerTables x _) (DualBlockLedgerTables _ y) = DualBlockLedgerTables x y
 
 data instance LedgerState (DualBlock m a) wt mk = DualLedgerState {
       dualLedgerStateMain   :: LedgerState m wt mk
@@ -864,16 +875,6 @@ instance Bridge m a => LedgerSupportsMempool (DualBlock m a) where
           , vDualGenTxAux
           , vDualGenTxBridge
           } = vtx
-
-instance Promote (LedgerState m) (LedgerState (DualBlock m a)) WithLedgerTables where
-  promote x = DualBlockLedgerTables x undefined
-  demote (DualBlockLedgerTables x _) = x
-
-instance Promote (LedgerState a) (LedgerState (DualBlock m a)) WithLedgerTables where
-  promote x = DualBlockLedgerTables undefined x
-  demote (DualBlockLedgerTables _ x) = x
-
--- combine (DualBlockLedgerTables x _) (DualBlockLedgerTables _ y) = DualBlockLedgerTables x y
 
 -- We don't need a pair of IDs, as long as we can unique ID the transaction
 newtype instance TxId (GenTx (DualBlock m a)) = DualGenTxId {

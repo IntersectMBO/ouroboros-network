@@ -272,7 +272,7 @@ instance Promote (LedgerState blk) (ExtLedgerState blk) WithoutLedgerTables wher
 instance GetsBlockKeySets (LedgerState blk)    blk WithLedgerTables
       => GetsBlockKeySets (ExtLedgerState blk) blk WithLedgerTables where
   getBlockKeySets = ExtLedgerStateTables . getBlockKeySets
-  getTransactionKeySets = undefined -- TODO @js
+  getTransactionKeySets = ExtLedgerStateTables . getTransactionKeySets
 
 instance
      ( LedgerSupportsProtocol blk

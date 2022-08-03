@@ -192,6 +192,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.Trivial as Trivial
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 {-------------------------------------------------------------------------------
@@ -514,7 +515,7 @@ restoreBackingStore someHasFs snapshot bss = do
     -- '_tablesPath'.
 
     store <- case (sWithLedgerTables (Proxy @wt), bss) of
-      (SWithoutLedgerTables, _) -> undefined -- TODO @js
+      (SWithoutLedgerTables, _) -> pure $ Trivial.trivialBackingStore (Proxy @m) (Proxy @(LedgerTables l WithoutLedgerTables KeysMK)) polyEmptyLedgerTables (Proxy @(LedgerTables l WithoutLedgerTables DiffMK))
       (SWithLedgerTables, LMDBBackingStore limits) -> LMDB.newLMDBBackingStore mempty limits someHasFs (LMDB.LIInitialiseFromLMDB loadPath)
       (SWithLedgerTables, InMemoryBackingStore) -> BackingStore.newTVarBackingStore
                (zipLedgerTables lookup_)
@@ -548,7 +549,7 @@ newBackingStore ::
   -> m (LedgerBackingStore m l wt)
 newBackingStore tracer bss someHasFS tables = do
   store <- case (sWithLedgerTables (Proxy @wt), bss) of
-    (SWithoutLedgerTables, _) -> undefined -- TODO @js
+    (SWithoutLedgerTables, _) -> pure $ Trivial.trivialBackingStore (Proxy @m) (Proxy @(LedgerTables l WithoutLedgerTables KeysMK)) polyEmptyLedgerTables (Proxy @(LedgerTables l WithoutLedgerTables DiffMK))
     (SWithLedgerTables, LMDBBackingStore limits) ->
       LMDB.newLMDBBackingStore
       tracer

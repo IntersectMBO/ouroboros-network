@@ -236,6 +236,7 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.HD
                        Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                        Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.Trivial
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.LedgerDB.Types
