@@ -5,27 +5,23 @@ This tool was initially developed to help Consensus debugging some issues, while
 
 ## Running the tool
 
-When you run db-analyser without any arguments, it will print out a nice helper message
+When you run db-analyser without any arguments, it will print out a nice helper message:
 
 ```
-cabal build ouroboros-consensus-cardano:db-analyser
+cabal build ouroboros-consensus-cardano-tools:db-analyser
 
 Missing: --db PATH COMMAND
 
-Usage: db-analyser --db PATH
-                   [--verbose]
-                   [--only-immutable-db [--analyse-from SLOT_NUMBER]]
-                   [--validate-all-blocks | --minimum-block-validation]
-				   COMMAND
-                   [--show-slot-block-no |
-				    --count-tx-outputs |
-                    --show-block-header-size |
-					--show-block-txs-size |
-                    --show-ebbs |
-					--store-ledger SLOT_NUMBER]
-                   [--num-blocks-to-process INT]
+Usage: db-analyser --db PATH [--verbose]
+            [--only-immutable-db [--analyse-from SLOT_NUMBER]]
+            [--validate-all-blocks | --minimum-block-validation] COMMAND
+            [--show-slot-block-no | --count-tx-outputs |
+                --show-block-header-size | --show-block-txs-size |
+                --show-ebbs | --store-ledger SLOT_NUMBER | --count-blocks |
+                --checkThunks BLOCK_COUNT | --trace-ledger |
+                --repro-mempool-and-forge INT]
+            [--num-blocks-to-process INT]
   Simple framework used to analyse a Chain DB
-
 ```
 
 Let's now try to break each option down.
@@ -108,3 +104,55 @@ Lastly the user must provide the analysis they want to run on the chain. They mu
 * `--store-ledger SLOT_NUMBER` Will store a snapshot of a ledger state under `DB_PATH/ledger/SLOT_NUMBER_db-analyser`. If there is no block under requested slot number, it will create one on the next available slot number (and issue a warning about this fact).
 
 * `--count-blocks` Will print out the number of blocks it saw on the chain
+
+
+# db-synthesizer
+
+## About
+This tool synthesizes a valid ChainDB, replicating cardano-node's UX. The blocks forged to synthesize the ChainDB won't contain any transactions.
+
+A minimal test case is provided which incorporates a staked genesis and credentials for 2 forgers (cf. `test/config`).
+
+## Running the tool
+When you run db-synthsizer without any arguments, it will print out usage information:
+
+```
+cabal build ouroboros-consensus-cardano-tools:db-synthesizer
+
+Usage: db-synthesizer --config FILE --db PATH
+            [--shelley-operational-certificate FILE]
+            [--shelley-vrf-key FILE] [--shelley-kes-key FILE]
+            [--bulk-credentials-file FILE]
+            ((-s|--slots NUMBER) | (-b|--blocks NUMBER) |
+            (-e|--epochs NUMBER)) [-f]
+
+Available options:
+  --config FILE            Path to the node's config.json
+  --db PATH                Path to the Chain DB
+  --shelley-operational-certificate FILE
+                           Path to the delegation certificate
+  --shelley-vrf-key FILE   Path to the VRF signing key
+  --shelley-kes-key FILE   Path to the KES signing key
+  --bulk-credentials-file FILE
+                           Path to the bulk credentials file
+  -s,--slots NUMBER        Amount of slots to process
+  -b,--blocks NUMBER       Amount of blocks to forge
+  -e,--epochs NUMBER       Amount of epochs to process
+  -f                       Force overwrite an existing Chain DB
+```
+
+* Providing a `cardano-node` configuration file is mandatory. However, only very few values regarding geneses and protocol are actually required. Using a configuration stub would be possible; for expected key-value pairs see the `NodeConfigStub` type as well as its deserialization in module `Cardano.Tools.DBSynthesizer.Orphans`.
+* Specifying a path on the local file system where the ChainDB should be written to is mandatory.
+* Credentials for block forging are mandatory and may be provided as seperate files or in bulk as a single file.
+
+## Options
+
+The options for configuration and credentials are identical to those of `cardano-node`. The other options have the following meaning:
+
+### forcing (over)write
+
+The tool expects the given ChainDB path (`--db` option) to *not* be present. Should a directory by that name already exist, you can tell the tool to clear and reuse it with the flag `-f`. For safety deliberations, it will do so if and only if the directory is either empty, or contains a ChainDB.
+
+### limiting synthesis
+
+A limit must be specified up to which the tool synthesizes a ChainDB. Possible limits are either the number of slots processed (`-s`), the number of epochs processed (`-e`) or the absolute number of blocks in the resulting ChainDB (`-b`).
