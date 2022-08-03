@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
 import           Ouroboros.Consensus.Ledger.Basics (DiffMK, EmptyMK,
-                     LedgerState, LedgerTables)
+                     LedgerState, LedgerTables, IsSwitchLedgerTables)
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
@@ -97,9 +97,10 @@ newtype Translate f x y = Translate {
 -- view in the preceding era might have.
 newtype TranslateForecast f g x y = TranslateForecast {
       translateForecastWith ::
-           Bound    -- 'Bound' of the transition (start of the new era)
+          forall wt. IsSwitchLedgerTables wt
+        => Bound    -- 'Bound' of the transition (start of the new era)
         -> SlotNo   -- 'SlotNo' we're constructing a forecast for
-        -> f x EmptyMK
+        -> f x wt EmptyMK
         -> Except OutsideForecastRange (Ticked (g y))
     }
 
@@ -111,9 +112,10 @@ newtype TranslateForecast f g x y = TranslateForecast {
 data TranslateLedgerState x y = TranslateLedgerState {
         -- | How to translate a Ledger State during the era transition
         translateLedgerStateWith ::
-            EpochNo
-         -> LedgerState x EmptyMK
-         -> LedgerState y DiffMK
+            forall wt. IsSwitchLedgerTables wt
+         => EpochNo
+         -> LedgerState x wt EmptyMK
+         -> LedgerState y wt DiffMK
 
         -- | How to translate tables on an era transition.
         --
@@ -129,8 +131,9 @@ data TranslateLedgerState x y = TranslateLedgerState {
         -- hole and allows us to promote tables from one era into tables from
         -- the next era.
       , translateLedgerTablesWith ::
-            LedgerTables (LedgerState x) DiffMK
-         -> LedgerTables (LedgerState y) DiffMK
+          forall wt. IsSwitchLedgerTables wt
+         => LedgerTables (LedgerState x) wt DiffMK
+         -> LedgerTables (LedgerState y) wt DiffMK
     }
 
 -- | Knowledge in a particular era of the transition to the next era

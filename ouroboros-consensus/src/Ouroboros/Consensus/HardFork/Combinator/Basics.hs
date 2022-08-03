@@ -4,13 +4,17 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -66,7 +70,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 
 {-------------------------------------------------------------------------------
   Hard fork protocol, block, and ledger state
@@ -84,22 +87,22 @@ instance Typeable xs => ShowProxy (HardForkBlock xs) where
 type instance BlockProtocol (HardForkBlock xs) = HardForkProtocol xs
 type instance HeaderHash    (HardForkBlock xs) = OneEraHash       xs
 
-newtype instance LedgerState (HardForkBlock xs) mk = HardForkLedgerState {
-      hardForkLedgerStatePerEra :: HardForkState (Flip LedgerState mk) xs
+newtype instance LedgerState (HardForkBlock xs) wt mk = HardForkLedgerState {
+      hardForkLedgerStatePerEra :: HardForkState (Flip2 LedgerState wt mk) xs
     }
 
-deriving stock   instance CanHardFork xs => Eq       (LedgerState (HardForkBlock xs) EmptyMK)
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) EmptyMK)
+-- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt EmptyMK)
+-- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt EmptyMK)
 
-deriving stock   instance CanHardFork xs => Eq       (LedgerState (HardForkBlock xs) ValuesMK)
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) ValuesMK)
+-- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt ValuesMK)
+-- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt ValuesMK)
 
-deriving stock   instance CanHardFork xs => Eq       (LedgerState (HardForkBlock xs) DiffMK)
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) DiffMK)
+-- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt DiffMK)
+-- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt DiffMK)
 
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) SeqDiffMK)
+-- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt SeqDiffMK)
 
-instance (SingI mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) (ApplyMapKind' mk)) where
+instance (SingI mk, Typeable mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) wt (ApplyMapKind' mk)) where
   showsPrec p = showParen (p >= 11) . showsLedgerState sMapKind
 
 instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
@@ -112,9 +115,9 @@ instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) wher
        showInner ::
             SingleEraBlock x
          => SMapKind mk
-         -> Flip LedgerState (ApplyMapKind' mk) x
+         -> Flip2 LedgerState wt (ApplyMapKind' mk) x
          -> AlreadyShown        x
-       showInner mk (Flip st) =
+       showInner mk (Flip2 st) =
            AlreadyShown
          $ showParen True
          $ showString "Flip " . showsLedgerState mk st
@@ -127,13 +130,13 @@ instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown
 -------------------------------------------------------------------------------}
 
 -- | How to inject each era's ledger tables into their shared ledger tables
-class LedgerTablesCanHardFork xs where
-  hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables xs) xs
+class LedgerTablesCanHardFork wt xs where
+  hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables wt xs) xs
 
-newtype InjectLedgerTables xs x = InjectLedgerTables {
+newtype InjectLedgerTables wt xs x = InjectLedgerTables {
       applyInjectLedgerTables :: forall mk. IsApplyMapKind mk =>
-           LedgerTables (LedgerState                  x) mk
-        -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+           LedgerTables (LedgerState                  x) wt mk
+        -> LedgerTables (LedgerState (HardForkBlock xs)) wt mk
     }
 
 {-------------------------------------------------------------------------------

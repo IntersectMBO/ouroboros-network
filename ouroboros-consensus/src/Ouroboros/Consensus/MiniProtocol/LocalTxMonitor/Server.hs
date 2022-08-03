@@ -16,12 +16,12 @@ import           Ouroboros.Consensus.Util.IOLike
 -- | Local transaction monitoring server, for inspecting the mempool.
 --
 localTxMonitorServer ::
-     forall blk idx m.
+     forall blk idx m wt.
      ( MonadSTM m
      , LedgerSupportsMempool blk
      , Eq idx
      )
-  => Mempool m blk idx
+  => Mempool m blk idx wt
   -> LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
 localTxMonitorServer mempool =
     LocalTxMonitorServer (pure serverStIdle)

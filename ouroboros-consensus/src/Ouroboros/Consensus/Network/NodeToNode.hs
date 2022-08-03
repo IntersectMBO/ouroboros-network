@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -91,6 +92,7 @@ import           Ouroboros.Network.TxSubmission.Outbound
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -169,7 +171,7 @@ data Handlers m peer blk = Handlers {
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer.
+  :: forall m blk remotePeer localPeer wt.
      ( IOLike m
      , MonadTime m
      , MonadTimer m
@@ -177,22 +179,36 @@ mkHandlers
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Ord remotePeer
+     , IsSwitchLedgerTables wt
+     , TableStuff (LedgerState blk) WithLedgerTables
+     , GetTip (LedgerState blk WithLedgerTables EmptyMK)
+     , GetTip (LedgerState blk WithoutLedgerTables EmptyMK)
      )
-  => NodeKernelArgs m remotePeer localPeer blk
-  -> NodeKernel     m remotePeer localPeer blk
+  => NodeKernelArgs m remotePeer localPeer blk wt
+  -> NodeKernel     m remotePeer localPeer blk wt
   -> Handlers       m remotePeer           blk
 mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
         hChainSyncClient = \peer ->
-          chainSyncClient
-            (pipelineDecisionLowHighMark
-              (chainSyncPipeliningLowMark  miniProtocolParameters)
-              (chainSyncPipeliningHighMark miniProtocolParameters))
-            (contramap (TraceLabelPeer peer) (Node.chainSyncClientTracer tracers))
-            getTopLevelConfig
-            (defaultChainDbView getChainDB)
+          case sWithLedgerTables (Proxy @wt) of
+            SWithLedgerTables ->
+               chainSyncClient
+                 (pipelineDecisionLowHighMark
+                   (chainSyncPipeliningLowMark  miniProtocolParameters)
+                   (chainSyncPipeliningHighMark miniProtocolParameters))
+                 (contramap (TraceLabelPeer peer) (Node.chainSyncClientTracer tracers))
+                 getTopLevelConfig
+                 (defaultChainDbView getChainDB)
+            SWithoutLedgerTables ->
+               chainSyncClient
+                 (pipelineDecisionLowHighMark
+                   (chainSyncPipeliningLowMark  miniProtocolParameters)
+                   (chainSyncPipeliningHighMark miniProtocolParameters))
+                 (contramap (TraceLabelPeer peer) (Node.chainSyncClientTracer tracers))
+                 getTopLevelConfig
+                 (defaultChainDbView getChainDB)
       , hChainSyncServer = \_version ->
           chainSyncHeadersServer
             (Node.chainSyncServerHeaderTracer tracers)
@@ -471,7 +487,7 @@ byteLimits = ByteLimits {
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bBF bTX bKA.
+  :: forall m remotePeer localPeer blk e bCS bBF bTX bKA wt.
      ( IOLike m
      , MonadTimer m
      , Ord remotePeer
@@ -481,8 +497,12 @@ mkApps
      , ShowProxy (Header blk)
      , ShowProxy (TxId (GenTx blk))
      , ShowProxy (GenTx blk)
+     , IsSwitchLedgerTables wt
+     , TableStuff (LedgerState blk) WithLedgerTables
+     , GetTip (LedgerState blk WithLedgerTables EmptyMK)
+     , GetTip (LedgerState blk WithoutLedgerTables EmptyMK)
      )
-  => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
+  => NodeKernel m remotePeer localPeer blk wt -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
   -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bKA)
   -> ByteLimits bCS bBF bTX bKA
@@ -508,9 +528,11 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       -- can be used to fetch blocks for that chain.
       bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
-        bracketChainSyncClient
+        bracketChainSyncClient @m @blk @remotePeer @wt
             (contramap (TraceLabelPeer them) (Node.chainSyncClientTracer (getTracers kernel)))
-            (defaultChainDbView (getChainDB kernel))
+            (case sWithLedgerTables (Proxy @wt) of
+               SWithLedgerTables ->  defaultChainDbView $ getChainDB kernel
+               SWithoutLedgerTables -> defaultChainDbView $ getChainDB kernel)
             (getNodeCandidates kernel)
             them
             version $ \varCandidate -> do

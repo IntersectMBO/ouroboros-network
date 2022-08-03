@@ -13,7 +13,6 @@ import           Data.These (These (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.Extended
@@ -31,19 +30,19 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 -------------------------------------------------------------------------------}
 
 protocolInfoBinary ::
-     forall m blk1 blk2.
+     forall m blk1 blk2 wt.
      (CanHardFork '[blk1, blk2], Monad m)
      -- First era
-  => ProtocolInfo m blk1
+  => ProtocolInfo m wt blk1
   -> History.EraParams
   -> (ConsensusConfig (BlockProtocol blk1) -> PartialConsensusConfig (BlockProtocol blk1))
   -> (LedgerConfig blk1 -> PartialLedgerConfig blk1)
      -- Second era
-  -> ProtocolInfo m blk2
+  -> ProtocolInfo m wt blk2
   -> History.EraParams
   -> (ConsensusConfig (BlockProtocol blk2) -> PartialConsensusConfig (BlockProtocol blk2))
   -> (LedgerConfig blk2 -> PartialLedgerConfig blk2)
-  -> ProtocolInfo m (HardForkBlock '[blk1, blk2])
+  -> ProtocolInfo m wt (HardForkBlock '[blk1, blk2])
 protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialLedgerConfig1
                    protocolInfo2 eraParams2 toPartialConsensusConfig2 toPartialLedgerConfig2 =
     ProtocolInfo {
@@ -81,7 +80,7 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
       , pInfoInitLedger = ExtLedgerState {
             ledgerState =
               HardForkLedgerState $
-                initHardForkState (Flip initLedgerState1)
+                initHardForkState (Flip2 initLedgerState1)
           , headerState =
               genesisHeaderState $
                 initHardForkState $

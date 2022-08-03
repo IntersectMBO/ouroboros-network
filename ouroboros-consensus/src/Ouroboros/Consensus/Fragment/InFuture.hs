@@ -50,8 +50,8 @@ data CheckInFuture m blk = CheckInFuture {
        -- | POSTCONDITION:
        -- > checkInFuture vf >>= \(af, fut) ->
        -- >   validatedFragment vf == af <=> null fut
-       checkInFuture :: forall mk.
-                        ValidatedFragment (Header blk) (LedgerState blk mk)
+       checkInFuture :: forall mk wt.
+                        ValidatedFragment (Header blk) (LedgerState blk wt mk)
                      -> m (AnchoredFragment (Header blk), [InFuture m blk])
     }
   deriving NoThunks
@@ -110,7 +110,7 @@ clockSkewInSeconds = ClockSkew . secondsToNominalDiffTime
   Reference implementation
 -------------------------------------------------------------------------------}
 
-reference :: forall m blk. (Monad m, UpdateLedger blk, HasHardForkHistory blk)
+reference :: forall m blk. (Monad m, ApplyBlock (LedgerState blk) blk, HasHardForkHistory blk)
           => LedgerConfig blk
           -> ClockSkew
           -> SystemTime m

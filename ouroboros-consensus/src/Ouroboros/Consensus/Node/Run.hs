@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DataKinds             #-}
 
 -- | Infrastructure required to run a node
 --
@@ -27,6 +29,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
@@ -91,7 +94,8 @@ class ( LedgerSupportsProtocol           blk
       , ConvertRawHash                   blk
       , CommonProtocolParams             blk
       , HasBinaryBlockInfo               blk
-      , SerialiseDiskConstraints         blk
+      , SerialiseDiskConstraints         blk WithLedgerTables
+      , SerialiseDiskConstraints         blk WithoutLedgerTables
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
       , LedgerSupportsPeerSelection      blk

@@ -12,6 +12,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 
 -- | Types used throughout the implementation: handle, state, environment,
 -- types, trace types, etc.
@@ -77,7 +78,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
-import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Storage.LedgerDB.Types
@@ -108,20 +110,20 @@ import           Ouroboros.Consensus.Util.TentativeState (TentativeState (..))
 
 -- | All the serialisation related constraints needed by the ChainDB.
 class ( ImmutableDbSerialiseConstraints blk
-      , LgrDbSerialiseConstraints blk
+      , LgrDbSerialiseConstraints blk wt
       , VolatileDbSerialiseConstraints blk
         -- Needed for Follower
       , EncodeDiskDep (NestedCtxt Header) blk
-      ) => SerialiseDiskConstraints blk
+      ) => SerialiseDiskConstraints blk wt
 
 -- | A handle to the internal ChainDB state
-newtype ChainDbHandle m blk = CDBHandle (StrictTVar m (ChainDbState m blk))
+newtype ChainDbHandle m blk wt = CDBHandle (StrictTVar m (ChainDbState m blk wt))
 
 -- | Check if the ChainDB is open, if so, executing the given function on the
 -- 'ChainDbEnv', otherwise, throw a 'CloseDBError'.
-getEnv :: forall m blk r. (IOLike m, HasCallStack, HasHeader blk)
-       => ChainDbHandle m blk
-       -> (ChainDbEnv m blk -> m r)
+getEnv :: forall m blk wt r. (IOLike m, HasCallStack, HasHeader blk)
+       => ChainDbHandle m blk wt
+       -> (ChainDbEnv m blk wt -> m r)
        -> m r
 getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
     ChainDbOpen env -> f env
@@ -129,23 +131,23 @@ getEnv (CDBHandle varState) f = atomically (readTVar varState) >>= \case
 
 -- | Variant 'of 'getEnv' for functions taking one argument.
 getEnv1 :: (IOLike m, HasCallStack, HasHeader blk)
-        => ChainDbHandle m blk
-        -> (ChainDbEnv m blk -> a -> m r)
+        => ChainDbHandle m blk wt
+        -> (ChainDbEnv m blk wt -> a -> m r)
         -> a -> m r
 getEnv1 h f a = getEnv h (\env -> f env a)
 
 -- | Variant 'of 'getEnv' for functions taking two arguments.
 getEnv2 :: (IOLike m, HasCallStack, HasHeader blk)
-        => ChainDbHandle m blk
-        -> (ChainDbEnv m blk -> a -> b -> m r)
+        => ChainDbHandle m blk wt
+        -> (ChainDbEnv m blk wt -> a -> b -> m r)
         -> a -> b -> m r
 getEnv2 h f a b = getEnv h (\env -> f env a b)
 
 
 -- | Variant of 'getEnv' that works in 'STM'.
-getEnvSTM :: forall m blk r. (IOLike m, HasCallStack, HasHeader blk)
-          => ChainDbHandle m blk
-          -> (ChainDbEnv m blk -> STM m r)
+getEnvSTM :: forall m blk wt r. (IOLike m, HasCallStack, HasHeader blk)
+          => ChainDbHandle m blk wt
+          -> (ChainDbEnv m blk wt -> STM m r)
           -> STM m r
 getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
     ChainDbOpen env -> f env
@@ -153,23 +155,30 @@ getEnvSTM (CDBHandle varState) f = readTVar varState >>= \case
 
 -- | Variant of 'getEnv1' that works in 'STM'.
 getEnvSTM1 ::
-     forall m blk a r. (IOLike m, HasCallStack, HasHeader blk)
-  => ChainDbHandle m blk
-  -> (ChainDbEnv m blk -> a -> STM m r)
+     forall m blk wt a r. (IOLike m, HasCallStack, HasHeader blk)
+  => ChainDbHandle m blk wt
+  -> (ChainDbEnv m blk wt -> a -> STM m r)
   -> a -> STM m r
 getEnvSTM1 (CDBHandle varState) f a = readTVar varState >>= \case
     ChainDbOpen env -> f env a
     ChainDbClosed   -> throwSTM $ ClosedDBError @blk prettyCallStack
 
-data ChainDbState m blk
-  = ChainDbOpen   !(ChainDbEnv m blk)
+data ChainDbState m blk wt
+  = ChainDbOpen   !(ChainDbEnv m blk wt)
   | ChainDbClosed
-  deriving (Generic, NoThunks)
+  deriving (Generic)
 
-data ChainDbEnv m blk = CDB
+deriving instance ( IOLike m
+                  , LedgerSupportsProtocol blk
+                  , Typeable wt
+                  , NoThunks (LedgerState blk wt EmptyMK)
+                  , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+                  ) => NoThunks (ChainDbState m blk wt)
+
+data ChainDbEnv m blk wt = CDB
   { cdbImmutableDB     :: !(ImmutableDB m blk)
   , cdbVolatileDB      :: !(VolatileDB m blk)
-  , cdbLgrDB           :: !(LgrDB m blk)
+  , cdbLgrDB           :: !(LgrDB m blk wt)
   , cdbChain           :: !(StrictTVar m (AnchoredFragment (Header blk)))
     -- ^ Contains the current chain fragment.
     --
@@ -238,7 +247,7 @@ data ChainDbEnv m blk = CDB
     -- Note that 'copyToImmutableDB' can still be executed concurrently with all
     -- others functions, just not with itself.
   , cdbTracer          :: !(Tracer m (TraceEvent blk))
-  , cdbTraceLedger     :: !(Tracer m (LedgerDB' blk))
+  , cdbTraceLedger     :: !(Tracer m (LedgerDB' blk wt))
   , cdbRegistry        :: !(ResourceRegistry m)
     -- ^ Resource registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.
@@ -278,8 +287,13 @@ data ChainDbEnv m blk = CDB
 -- | We include @blk@ in 'showTypeOf' because it helps resolving type families
 -- (but avoid including @m@ because we cannot impose @Typeable m@ as a
 -- constraint and still have it work with the simulator)
-instance (IOLike m, LedgerSupportsProtocol blk)
-      => NoThunks (ChainDbEnv m blk) where
+instance ( IOLike m
+         , LedgerSupportsProtocol blk
+         , Typeable wt
+         , NoThunks (LedgerState blk wt EmptyMK)
+         , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+         )
+      => NoThunks (ChainDbEnv m blk wt) where
     showTypeOf _ = "ChainDbEnv m " ++ show (typeRep (Proxy @blk))
 
 {-------------------------------------------------------------------------------

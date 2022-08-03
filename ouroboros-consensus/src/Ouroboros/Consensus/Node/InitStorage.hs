@@ -36,5 +36,5 @@ class NodeInitStorage blk where
   -- useful for the definition of combinators (which may need to turn a
   -- 'InitChainDB' for one type of block into an 'InitChainDB' for a closely
   -- related type of block).
-  nodeInitChainDB :: IOLike m => StorageConfig blk -> InitChainDB m blk -> m ()
+  nodeInitChainDB :: IOLike m => StorageConfig blk -> InitChainDB m wt blk -> m ()
   nodeInitChainDB _ _ = return ()

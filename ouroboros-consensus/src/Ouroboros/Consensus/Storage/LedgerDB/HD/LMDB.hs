@@ -1,6 +1,9 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PatternSynonyms     #-}
@@ -66,14 +69,14 @@ import qualified Database.LMDB.Simple.Internal as LMDB.Internal
 
 type LMDBBackingStore l m =
   HD.BackingStore m
-    (LedgerTables l KeysMK)
-    (LedgerTables l ValuesMK)
-    (LedgerTables l DiffMK)
+    (LedgerTables l WithLedgerTables KeysMK)
+    (LedgerTables l WithLedgerTables ValuesMK)
+    (LedgerTables l WithLedgerTables DiffMK)
 
 type LMDBValueHandle l m =
   HD.BackingStoreValueHandle m
-    (LedgerTables l KeysMK)
-    (LedgerTables l ValuesMK)
+    (LedgerTables l WithLedgerTables KeysMK)
+    (LedgerTables l WithLedgerTables ValuesMK)
 
 {-------------------------------------------------------------------------------
  Tracing
@@ -175,7 +178,7 @@ prettyPrintDbErr = \case
 -------------------------------------------------------------------------------}
 
 -- | The LMDB database that underlies the backing store.
-data Db m l = Db {
+data Db m (l :: LedgerStateKindWithTables) = Db {
     -- | The LMDB environment is a pointer to the directory that contains the
     -- @`Db`@.
     dbEnv           :: !(LMDB.Environment LMDB.ReadWrite)
@@ -186,7 +189,7 @@ data Db m l = Db {
     -- The current sequence number of the @`Db`@.
   , dbState         :: !(LMDB.Database () DbState)
     -- | The LMDB tables with the key-value stores.
-  , dbBackingTables :: !(LedgerTables l LMDBMK)
+  , dbBackingTables :: !(LedgerTables l WithLedgerTables LMDBMK)
   , dbFilePath      :: !FilePath
   , dbTracer        :: !(Trace.Tracer m TraceDb)
   , dbOpenHandles   :: !(IOLike.TVar m (Map Int (ValueHandle m)))
@@ -550,7 +553,7 @@ guardDbDirWithRetry gdd shfs@(FS.SomeHasFS fs) path =
 -- | How to initialise an LMDB Backing store.
 data LMDBInit l =
     -- | Initialise with these values.
-    LIInitialiseFromMemory (WithOrigin SlotNo) (LedgerTables l ValuesMK)
+    LIInitialiseFromMemory (WithOrigin SlotNo) (LedgerTables l WithLedgerTables ValuesMK)
     -- | Initialise by copying from an LMDB database at a given path.
   | LIInitialiseFromLMDB FS.FsPath
     -- | The database is already initialised.
@@ -559,10 +562,10 @@ data LMDBInit l =
 
 -- | Initialise an LMDB database from these provided values.
 initFromVals ::
-     (TableStuff l, SufficientSerializationForAnyBackingStore l, MonadIO m)
+     (TableStuff l WithLedgerTables, SufficientSerializationForAnyBackingStore l WithLedgerTables, MonadIO m)
   => WithOrigin SlotNo
      -- ^ The slot number up to which the ledger tables contain values.
-  -> LedgerTables l ValuesMK
+  -> LedgerTables l WithLedgerTables ValuesMK
      -- ^ The ledger tables to initialise the LMDB database tables with.
   -> Db m l
      -- ^ The LMDB database.
@@ -621,7 +624,7 @@ lmdbCopy tracer dbEnv to = do
 
 -- | Initialise a backing store.
 newLMDBBackingStore ::
-     forall m l. (TableStuff l, SufficientSerializationForAnyBackingStore l, MonadIO m, IOLike m)
+     forall m l. (TableStuff l WithLedgerTables, SufficientSerializationForAnyBackingStore l WithLedgerTables, MonadIO m, IOLike m)
   => Trace.Tracer m TraceDb
   -> LMDBLimits
      -- ^ Configuration parameters for the LMDB database that we
@@ -689,7 +692,7 @@ newLMDBBackingStore dbTracer limits sfs initDb = do
 
     bsValueHandle = mkLMDBBackingStoreValueHandle db
 
-    bsWrite :: SlotNo -> LedgerTables l DiffMK -> m ()
+    bsWrite :: SlotNo -> LedgerTables l WithLedgerTables DiffMK -> m ()
     bsWrite slot diffs = do
       oldSlot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbStateRW dbState $ \s@DbState{dbsSeq} -> do
         -- TODO This should be <. However the test harness does call bsWrite with the same slot
@@ -766,7 +769,7 @@ mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
 -- @`LMDBValueHandle`@ exposes an interface for performing reads and range
 -- queries /using/ a value handle perform them.
 mkLMDBBackingStoreValueHandle ::
-     forall l m. (TableStuff l, SufficientSerializationForAnyBackingStore l, MonadIO m, IOLike m)
+     forall l m. (TableStuff l WithLedgerTables, SufficientSerializationForAnyBackingStore l WithLedgerTables, MonadIO m, IOLike m)
   => Db m l
      -- ^ The LMDB database for which the backing store value handle is
      -- created.
@@ -781,13 +784,13 @@ mkLMDBBackingStoreValueHandle Db{..} = do
     bsvhClose :: m ()
     bsvhClose = vhClose vh
 
-    bsvhRead :: LedgerTables l KeysMK -> m (LedgerTables l ValuesMK)
+    bsvhRead :: LedgerTables l WithLedgerTables KeysMK -> m (LedgerTables l WithLedgerTables ValuesMK)
     bsvhRead keys = vhSubmit vh (Just <$> zipLedgerTables2A readLMDBTable dbBackingTables codecLedgerTables keys)
         >>= \case
               Nothing -> throwIO DbErrBadRead
               Just x  -> pure x
 
-    bsvhRangeRead :: HD.RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK)
+    bsvhRangeRead :: HD.RangeQuery (LedgerTables l WithLedgerTables KeysMK) -> m (LedgerTables l WithLedgerTables ValuesMK)
     bsvhRangeRead HD.RangeQuery{rqPrev, rqCount} = let
       transaction = Just <$> case rqPrev of
         Nothing -> zipLedgerTablesA (initRangeReadLMDBTable rqCount) dbBackingTables codecLedgerTables

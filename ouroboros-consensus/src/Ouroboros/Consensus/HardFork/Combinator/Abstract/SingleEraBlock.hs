@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
-
+{-# LANGUAGE QuantifiedConstraints #-}
 module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
     -- * Single era block
     SingleEraBlock (..)
@@ -75,7 +75,11 @@ class ( LedgerSupportsProtocol blk
       , Show (CannotForge blk)
       , Show (ForgeStateInfo blk)
       , Show (ForgeStateUpdateError blk)
-      , StowableLedgerTables (LedgerState blk)
+      , TickedTableStuff (LedgerState blk) WithLedgerTables
+      , forall mk. GetTip (LedgerState blk WithLedgerTables mk)
+      , forall mk. GetTip (LedgerState blk WithoutLedgerTables mk)
+      , StowableLedgerTables (LedgerState blk) WithLedgerTables
+      , GetsBlockKeySets (LedgerState blk) blk WithLedgerTables
       ) => SingleEraBlock blk where
 
   -- | Era transition
@@ -89,7 +93,7 @@ class ( LedgerSupportsProtocol blk
   singleEraTransition :: PartialLedgerConfig blk
                       -> EraParams -- ^ Current era parameters
                       -> Bound     -- ^ Start of this era
-                      -> LedgerState blk mk
+                      -> LedgerState blk wt mk
                       -> Maybe EpochNo
 
   -- | Era information (for use in error messages)
@@ -102,7 +106,7 @@ singleEraTransition' :: SingleEraBlock blk
                      => WrapPartialLedgerConfig blk
                      -> EraParams
                      -> Bound
-                     -> LedgerState blk mk -> Maybe EpochNo
+                     -> LedgerState blk wt mk -> Maybe EpochNo
 singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig
 
 {-------------------------------------------------------------------------------

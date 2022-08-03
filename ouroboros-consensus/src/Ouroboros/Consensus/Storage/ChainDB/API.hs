@@ -118,7 +118,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 --
 -- The ChainDB instantiates all the various type parameters of these databases
 -- to conform to the unified interface we provide here.
-data ChainDB m blk = ChainDB {
+data ChainDB m blk wt = ChainDB {
       -- | Add a block to the heap of blocks
       --
       -- We do /not/ assume that the block is valid (under the legder rules);
@@ -169,7 +169,7 @@ data ChainDB m blk = ChainDB {
     , getCurrentChain    :: STM m (AnchoredFragment (Header blk))
 
       -- | Return the LedgerDB containing the last @k@ ledger states.
-    , getLedgerDB        :: STM m (LedgerDB (ExtLedgerState blk))
+    , getLedgerDB        :: STM m (LedgerDB (ExtLedgerState blk) wt)
 
       -- | Get block at the tip of the chain, if one exists
       --
@@ -334,13 +334,13 @@ data ChainDB m blk = ChainDB {
     , getLedgerStateForKeys ::
         forall b a.
              StaticEither b () (Point blk)
-          -> (   ExtLedgerState blk EmptyMK
-              -> m (a, LedgerTables (ExtLedgerState blk) KeysMK)
+          -> (   ExtLedgerState blk wt EmptyMK
+              -> m (a, LedgerTables (ExtLedgerState blk) wt KeysMK)
              )
           -> m (StaticEither
                  b
-                        (a, LedgerTables (ExtLedgerState blk) ValuesMK)
-                 (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
+                        (a, LedgerTables (ExtLedgerState blk) wt ValuesMK)
+                 (Maybe (a, LedgerTables (ExtLedgerState blk) wt ValuesMK))
                )
 
       -- | Get a 'LedgerDB' and a handle to a value of the backing store
@@ -360,14 +360,14 @@ data ChainDB m blk = ChainDB {
           -> StaticEither b () (Point blk)
           -> m (StaticEither
                  b
-                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-                 , LedgerDB' blk
+                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk) wt
+                 , LedgerDB' blk wt
                  , m ()
                  )
                  (Either
                     (Point blk)
-                    ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-                    , LedgerDB' blk
+                    ( LedgerBackingStoreValueHandle m (ExtLedgerState blk) wt
+                    , LedgerDB' blk wt
                     , m ()
                     )
                  )
@@ -387,23 +387,23 @@ data ChainDB m blk = ChainDB {
     }
 
 getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
-              => ChainDB m blk -> STM m (Network.Tip blk)
+              => ChainDB m blk wt -> STM m (Network.Tip blk)
 getCurrentTip = fmap (AF.anchorToTip . AF.headAnchor) . getCurrentChain
 
 getTipBlockNo :: (Monad (STM m), HasHeader (Header blk))
-              => ChainDB m blk -> STM m (WithOrigin BlockNo)
+              => ChainDB m blk wt -> STM m (WithOrigin BlockNo)
 getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 
 -- | Get current ledger
 getCurrentLedger ::
-     (Monad (STM m), IsLedger (LedgerState blk))
-  => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
+     (Monad (STM m), GetTip (LedgerState blk wt EmptyMK))
+  => ChainDB m blk wt -> STM m (ExtLedgerState blk wt EmptyMK)
 getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
 
 -- | Get the immutable ledger, i.e., typically @k@ blocks back.
 getImmutableLedger ::
      Monad (STM m)
-  => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
+  => ChainDB m blk wt -> STM m (ExtLedgerState blk wt EmptyMK)
 getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 
 -- | Get the ledger for the given point.
@@ -412,8 +412,8 @@ getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 -- chain (i.e., older than @k@ or not on the current chain), 'Nothing' is
 -- returned.
 getPastLedger ::
-     (Monad (STM m), LedgerSupportsProtocol blk)
-  => ChainDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk EmptyMK))
+     (Monad (STM m), LedgerSupportsProtocol blk, TableStuff (ExtLedgerState blk) wt, GetTip (LedgerState blk wt EmptyMK))
+  => ChainDB m blk wt  -> Point blk -> STM m (Maybe (ExtLedgerState blk wt EmptyMK))
 getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
 
 -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
@@ -422,13 +422,13 @@ getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
 -- FIXME: with the introduction of UTxO HD this has now become more expensive
 -- that it should since at least the spine of the anchored sequence will be
 -- forced when performing a bimap on the elements of the anchored sequence.
-getHeaderStateHistory :: forall m blk.
+getHeaderStateHistory :: forall m blk wt.
      Monad (STM m)
-  => ChainDB m blk -> STM m (HeaderStateHistory blk)
+  => ChainDB m blk wt -> STM m (HeaderStateHistory blk)
 getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
   where
     toHeaderStateHistory ::
-         LedgerDB (ExtLedgerState blk)
+         LedgerDB (ExtLedgerState blk) wt
       -> HeaderStateHistory blk
     toHeaderStateHistory =
           HeaderStateHistory
@@ -472,21 +472,21 @@ data AddBlockPromise m blk = AddBlockPromise
 
 -- | Add a block synchronously: wait until the block has been written to disk
 -- (see 'blockWrittenToDisk').
-addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m Bool
+addBlockWaitWrittenToDisk :: IOLike m => ChainDB m blk wt -> InvalidBlockPunishment m -> blk -> m Bool
 addBlockWaitWrittenToDisk chainDB punish blk = do
     promise <- addBlockAsync chainDB punish blk
     atomically $ blockWrittenToDisk promise
 
 -- | Add a block synchronously: wait until the block has been processed (see
 -- 'blockProcessed'). The new tip of the ChainDB is returned.
-addBlock :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m (Point blk)
+addBlock :: IOLike m => ChainDB m blk wt -> InvalidBlockPunishment m -> blk -> m (Point blk)
 addBlock chainDB punish blk = do
     promise <- addBlockAsync chainDB punish blk
     atomically $ blockProcessed promise
 
 -- | Add a block synchronously. Variant of 'addBlock' that doesn't return the
 -- new tip of the ChainDB.
-addBlock_ :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m ()
+addBlock_ :: IOLike m => ChainDB m blk wt -> InvalidBlockPunishment m -> blk -> m ()
 addBlock_  = void ..: addBlock
 
 {-------------------------------------------------------------------------------
@@ -530,8 +530,8 @@ getSerialisedHeaderWithPoint =
 -------------------------------------------------------------------------------}
 
 toChain ::
-     forall m blk. (HasCallStack, IOLike m, HasHeader blk)
-  => ChainDB m blk -> m (Chain blk)
+     forall m blk wt. (HasCallStack, IOLike m, HasHeader blk)
+  => ChainDB m blk wt -> m (Chain blk)
 toChain chainDB = withRegistry $ \registry ->
     streamAll chainDB registry GetBlock >>= go Genesis
   where
@@ -545,10 +545,10 @@ toChain chainDB = withRegistry $ \registry ->
           error "block on the current chain was garbage-collected"
 
 fromChain ::
-     forall m blk. IOLike m
-  => m (ChainDB m blk)
+     forall m blk wt. IOLike m
+  => m (ChainDB m blk wt)
   -> Chain blk
-  -> m (ChainDB m blk)
+  -> m (ChainDB m blk wt)
 fromChain openDB chain = do
     chainDB <- openDB
     mapM_ (addBlock_ chainDB InvalidBlockPunishment.noPunishment) $ Chain.toOldestFirst chain
@@ -612,7 +612,7 @@ data UnknownRange blk =
 -- | Stream all blocks from the current chain.
 streamAll ::
      (MonadSTM m, HasHeader blk, HasCallStack)
-  => ChainDB m blk
+  => ChainDB m blk wt
   -> ResourceRegistry m
   -> BlockComponent blk b
   -> m (Iterator m blk b)
@@ -634,7 +634,7 @@ streamAll = streamFrom (StreamFromExclusive GenesisPoint)
 streamFrom ::
      (MonadSTM m, HasHeader blk, HasCallStack)
   => StreamFrom blk
-  -> ChainDB m blk
+  -> ChainDB m blk wt
   -> ResourceRegistry m
   -> BlockComponent blk b
   -> m (Iterator m blk b)

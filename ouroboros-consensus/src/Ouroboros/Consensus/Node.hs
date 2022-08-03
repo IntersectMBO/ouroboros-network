@@ -1,14 +1,18 @@
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE FlexibleContexts    #-}
+
 -- | Run the whole Node
 --
 -- Intended for qualified import.
@@ -89,8 +93,9 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
                      ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..), Promote)
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
@@ -151,7 +156,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB
 
 -- | Arguments expected from any invocation of 'runWith', whether by deployed
 -- code, tests, etc.
-data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
+data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) wt = RunNodeArgs {
       -- | Consensus tracers
       rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
@@ -162,14 +167,14 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
     , rnTraceNTC :: NTC.Tracers m (ConnectionId addrNTC) blk DeserialiseFailure
 
       -- | Protocol info
-    , rnProtocolInfo :: ProtocolInfo m blk
+    , rnProtocolInfo :: ProtocolInfo m wt blk
 
       -- | Hook called after the initialisation of the 'NodeKernel'
       --
       -- Called on the 'NodeKernel' after creating it, but before the network
       -- layer is initialised.
     , rnNodeKernelHook :: ResourceRegistry m
-                       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+                       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
                        -> m ()
 
       -- | Network P2P Mode switch
@@ -186,7 +191,7 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
 -- abbreviation, which uses 'stdLowLevelRunNodeArgsIO' to indirectly specify
 -- these low-level values from the higher-level 'StdRunNodeArgs'.
 data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
-                         (p2p :: Diffusion.P2P) =
+                         (p2p :: Diffusion.P2P) wt =
    LowLevelRunNodeArgs {
 
       -- | An action that will receive a marker indicating whether the previous
@@ -194,22 +199,22 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
       -- create a clean file on exit if needed. See
       -- 'Ouroboros.Consensus.Node.Recovery.runWithCheckedDB'.
       llrnWithCheckedDB :: forall a. (  LastShutDownWasClean
-                                     -> (ChainDB m blk -> m a -> m a)
+                                     -> (ChainDB m blk wt -> m a -> m a)
                                      -> m a)
                         -> m a
 
       -- | The " static " ChainDB arguments
-    , llrnChainDbArgsDefaults :: ChainDbArgs Defaults m blk
+    , llrnChainDbArgsDefaults :: ChainDbArgs Defaults m blk wt
 
       -- | Customise the 'ChainDbArgs'
     , llrnCustomiseChainDbArgs ::
-           ChainDbArgs Identity m blk
-        -> ChainDbArgs Identity m blk
+           ChainDbArgs Identity m blk wt
+        -> ChainDbArgs Identity m blk wt
 
       -- | Customise the 'NodeArgs'
     , llrnCustomiseNodeKernelArgs ::
-           NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-        -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+           NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
+        -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
 
       -- | Ie 'bfcSalt'
     , llrnBfcSalt :: Int
@@ -266,12 +271,35 @@ deriving instance Show (NetworkP2PMode p2p)
 
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
-run :: forall blk p2p.
-     RunNode blk
-  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
+run :: forall blk p2p wt.
+     ( RunNode blk
+     , UTXO_HD blk wt
+     , UTXO_HD blk WithLedgerTables
+     , UTXO_HD blk WithoutLedgerTables
+     , forall mk. GetTip (LedgerState blk wt mk)
+     )
+  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
 run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
+
+type UTXO_HD blk wt = ( TickedTableStuff (LedgerState blk) wt
+                      , TableStuff (ExtLedgerState blk) wt
+                      , TickedTableStuff (ExtLedgerState blk) wt
+                      , StowableLedgerTables (LedgerState blk) wt
+                      , StowableLedgerTables (ExtLedgerState blk) wt
+                      , GetTip (LedgerState blk wt EmptyMK)
+                      , GetTip (LedgerState blk wt ValuesMK)
+                      , GetTip (TickedLedgerState blk wt TrackingMK)
+                      , Promote (LedgerState blk) (ExtLedgerState blk) wt
+                      , GetsBlockKeySets (LedgerState blk) blk wt
+                      , GetsBlockKeySets (ExtLedgerState blk) blk wt
+                      , IsSwitchLedgerTables wt
+                      , SerialiseDiskConstraints blk wt
+                      , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+                      , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
+                      , NoThunks (LedgerState blk wt EmptyMK)
+                      )
 
 -- | Start a node.
 --
@@ -279,13 +307,17 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
+runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p wt.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
+     , UTXO_HD blk wt
+     , UTXO_HD blk WithLedgerTables
+     , UTXO_HD blk WithoutLedgerTables
+     , forall mk. GetTip (LedgerState blk wt mk)
      )
-  => RunNodeArgs m addrNTN addrNTC blk p2p
-  -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
+  => RunNodeArgs m addrNTN addrNTC blk p2p wt
+  -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p wt
   -> m ()
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
@@ -329,7 +361,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           HardForkBlockchainTimeArgs
             { hfbtBackoffDelay   = pure $ BackoffDelay 60
             , hfbtGetLedgerState =
-                ledgerState <$> ChainDB.getCurrentLedger chainDB
+                ledgerState <$> undefined -- ChainDB.getCurrentLedger chainDB
             , hfbtLedgerConfig   = configLedger cfg
             , hfbtRegistry       = registry
             , hfbtSystemTime     = systemTime
@@ -376,8 +408,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
     codecConfig = configCodec cfg
 
     mkNodeToNodeApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
+      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
       -> PeerMetrics m addrNTN
       -> BlockNodeToNodeVersion blk
       -> NTN.Apps m
@@ -398,8 +430,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
+      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
       -> BlockNodeToClientVersion blk
       -> NodeToClientVersion
       -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ByteString ()
@@ -428,7 +460,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NTC.Apps
                m (ConnectionId addrNTC) ByteString ByteString ByteString ByteString ()
         )
-      -> NodeKernel m remotePeer localPeer blk
+      -> NodeKernel m remotePeer localPeer blk wt
       -> PeerMetrics m addrNTN
       -> ( Diffusion.Applications
              addrNTN NodeToNodeVersion   versionDataNTN
@@ -502,11 +534,11 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 -- Run the body action with the DB locked.
 --
 stdWithCheckedDB ::
-     forall blk a. (StandardHash blk, Typeable blk)
+     forall blk a wt. (StandardHash blk, Typeable blk)
   => Proxy blk
   -> FilePath
   -> NetworkMagic
-  -> (LastShutDownWasClean -> (ChainDB IO blk -> IO a -> IO a) -> IO a)  -- ^ Body action with last shutdown was clean.
+  -> (LastShutDownWasClean -> (ChainDB IO blk wt -> IO a -> IO a) -> IO a)  -- ^ Body action with last shutdown was clean.
   -> IO a
 stdWithCheckedDB pb databasePath networkMagic body = do
 
@@ -524,35 +556,35 @@ stdWithCheckedDB pb databasePath networkMagic body = do
     hasFS      = ioHasFS mountPoint
 
 openChainDB
-  :: forall m blk. (RunNode blk, IOLike m)
+  :: forall m blk wt. (RunNode blk, IOLike m, UTXO_HD blk wt)
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk ValuesMK
+  -> ExtLedgerState blk wt ValuesMK
      -- ^ Initial ledger
-  -> ChainDbArgs Defaults m blk
-  -> (ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk)
+  -> ChainDbArgs Defaults m blk wt
+  -> (ChainDbArgs Identity m blk wt -> ChainDbArgs Identity m blk wt)
       -- ^ Customise the 'ChainDbArgs'
-  -> m (ChainDB m blk)
+  -> m (ChainDB m blk wt)
 openChainDB registry inFuture cfg initLedger defArgs customiseArgs =
     ChainDB.openDB args
   where
-    args :: ChainDbArgs Identity m blk
+    args :: ChainDbArgs Identity m blk wt
     args = customiseArgs $
              mkChainDbArgs registry inFuture cfg initLedger
              (nodeImmutableDbChunkInfo (configStorage cfg))
              defArgs
 
 mkChainDbArgs
-  :: forall m blk. (RunNode blk, IOLike m)
+  :: forall m blk wt. (RunNode blk, IOLike m)
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk ValuesMK
+  -> ExtLedgerState blk wt ValuesMK
      -- ^ Initial ledger
   -> ChunkInfo
-  -> ChainDbArgs Defaults m blk
-  -> ChainDbArgs Identity m blk
+  -> ChainDbArgs Defaults m blk wt
+  -> ChainDbArgs Identity m blk wt
 mkChainDbArgs
   registry
   inFuture
@@ -571,7 +603,7 @@ mkChainDbArgs
     }
 
 mkNodeKernelArgs
-  :: forall m addrNTN addrNTC blk. (RunNode blk, IOLike m)
+  :: forall m addrNTN addrNTC blk wt. (RunNode blk, IOLike m)
   => ResourceRegistry m
   -> Int
   -> StdGen
@@ -579,8 +611,8 @@ mkNodeKernelArgs
   -> m [BlockForging m blk]
   -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> BlockchainTime m
-  -> ChainDB m blk
-  -> m (NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
+  -> ChainDB m blk wt
+  -> m (NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt)
 mkNodeKernelArgs
   registry
   bfcSalt
@@ -621,8 +653,8 @@ mkNodeKernelArgs
 -- values. This function makes sure we don't exceed those limits and that the
 -- values are consistent.
 nodeKernelArgsEnforceInvariants
-  :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
+  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
 nodeKernelArgsEnforceInvariants nodeKernelArgs = nodeKernelArgs
     { miniProtocolParameters = miniProtocolParameters
         -- If 'blockFetchPipeliningMax' exceeds the configured default, it
@@ -745,8 +777,8 @@ data StdRunNodeArgs m blk (p2p :: Diffusion.P2P) = StdRunNodeArgs
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
 -- non-testing invocation.
 stdLowLevelRunNodeArgsIO ::
-     forall blk p2p. RunNode blk
-  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
+     forall blk p2p wt. RunNode blk
+  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
   -> IO (LowLevelRunNodeArgs
           IO
@@ -755,7 +787,8 @@ stdLowLevelRunNodeArgsIO ::
           NodeToNodeVersionData
           NodeToClientVersionData
           blk
-          p2p)
+          p2p
+          wt)
 stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStoreSelector } StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
@@ -815,8 +848,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStor
     networkMagic = getNetworkMagic $ configBlock $ pInfoConfig rnProtocolInfo
 
     updateChainDbDefaults ::
-         ChainDbArgs Defaults IO blk
-      -> ChainDbArgs Defaults IO blk
+         ChainDbArgs Defaults IO blk wt
+      -> ChainDbArgs Defaults IO blk wt
     updateChainDbDefaults =
         (\x -> x { ChainDB.cdbTracer = srnTraceChainDB }) .
         (if not srnChainDbValidateOverride then id else \x -> x
@@ -825,8 +858,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStor
           })
 
     llrnCustomiseNodeKernelArgs ::
-         NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+         NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
+      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
     llrnCustomiseNodeKernelArgs =
         overBlockFetchConfiguration modifyBlockFetchConfiguration
       . modifyMempoolCapacityOverride
@@ -862,8 +895,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStor
 
 overBlockFetchConfiguration ::
      (BlockFetchConfiguration -> BlockFetchConfiguration)
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
+  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
 overBlockFetchConfiguration f args = args {
       blockFetchConfiguration = f blockFetchConfiguration
     }

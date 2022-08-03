@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.Util.IOLike
 localTxSubmissionServer
   :: MonadSTM m
   => Tracer m (TraceLocalTxSubmissionServerEvent blk)
-  -> Mempool m blk idx
+  -> Mempool m blk idx wt
   -> LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 localTxSubmissionServer tracer mempool =
     server

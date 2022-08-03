@@ -75,7 +75,7 @@ import           Ouroboros.Consensus.Util.IOLike
 --
 -- This shows that @'tryAddTxs' wti@ is an homomorphism from '++' and '>>',
 -- which informally makes these operations "distributive".
-data Mempool m blk idx = Mempool {
+data Mempool m blk idx wt = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
       -- As long as we keep the mempool entirely in-memory this could live in
@@ -193,8 +193,8 @@ data Mempool m blk idx = Mempool {
     , getLedgerAndSnapshotFor ::
            Point blk
         -> SlotNo
-        -> m (Maybe ( ExtLedgerState blk EmptyMK
-                    , TickedLedgerState blk TrackingMK
+        -> m (Maybe ( ExtLedgerState blk wt EmptyMK
+                    , TickedLedgerState blk wt TrackingMK
                     , MempoolSnapshot blk idx
                     )
              ) -- One could argue that both ledger states belong inside the
@@ -254,8 +254,8 @@ isMempoolTxRejected _                   = False
 --
 -- See the necessary invariants on the Haddock for 'tryAddTxs'.
 addTxs
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: MonadSTM m
+  => Mempool m blk idx wt
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
 addTxs mempool = addTxsHelper mempool DoNotIntervene
@@ -264,16 +264,16 @@ addTxs mempool = addTxsHelper mempool DoNotIntervene
 --
 -- See 'Intervene'.
 addLocalTxs
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: MonadSTM m
+  => Mempool m blk idx wt
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
 addLocalTxs mempool = addTxsHelper mempool Intervene
 
 -- | See 'addTxs'
 addTxsHelper
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: forall m blk idx wt. MonadSTM m
+  => Mempool m blk idx wt
   -> WhetherToIntervene
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
@@ -317,12 +317,12 @@ addTxsHelper mempool wti = \txs -> do
 -- ledger: the update system might be updated, scheduled delegations might be
 -- applied, etc., and such changes should take effect before we validate any
 -- transactions.
-data ForgeLedgerState blk =
+data ForgeLedgerState blk wt =
     -- | The slot number of the block is known
     --
     -- This will only be the case when we realized that we are the slot leader
     -- and we are actually producing a block.
-    ForgeInKnownSlot SlotNo (LedgerState blk ValuesMK)
+    ForgeInKnownSlot SlotNo (LedgerState blk wt ValuesMK)
 
     -- | The slot number of the block is not yet known
     --
@@ -330,9 +330,9 @@ data ForgeLedgerState blk =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | ForgeInUnknownSlot (LedgerState blk ValuesMK)
+  | ForgeInUnknownSlot (LedgerState blk wt ValuesMK)
 
-forgeLedgerState :: ForgeLedgerState blk -> LedgerState blk ValuesMK
+forgeLedgerState :: ForgeLedgerState blk wt -> LedgerState blk wt ValuesMK
 forgeLedgerState (ForgeInKnownSlot _ ls) = ls
 forgeLedgerState (ForgeInUnknownSlot ls) = ls
 
@@ -361,7 +361,7 @@ data MempoolCapacityBytesOverride
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => TickedLedgerState blk mk
+  => TickedLedgerState blk wt mk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity st = \case

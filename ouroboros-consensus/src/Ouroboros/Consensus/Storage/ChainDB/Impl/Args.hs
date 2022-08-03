@@ -44,7 +44,7 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
   Arguments
 -------------------------------------------------------------------------------}
 
-data ChainDbArgs f m blk = ChainDbArgs {
+data ChainDbArgs f m blk wt = ChainDbArgs {
 
       -- HasFS instances
       cdbHasFSImmutableDB       :: SomeHasFS m
@@ -61,13 +61,13 @@ data ChainDbArgs f m blk = ChainDbArgs {
     , cdbTopLevelConfig         :: HKD f (TopLevelConfig blk)
     , cdbChunkInfo              :: HKD f ChunkInfo
     , cdbCheckIntegrity         :: HKD f (blk -> Bool)
-    , cdbGenesis                :: HKD f (m (ExtLedgerState blk ValuesMK))
+    , cdbGenesis                :: HKD f (m (ExtLedgerState blk wt ValuesMK))
     , cdbCheckInFuture          :: HKD f (CheckInFuture m blk)
     , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
 
       -- Misc
     , cdbTracer                 :: Tracer m (TraceEvent blk)
-    , cdbTraceLedger            :: Tracer m (LedgerDB' blk)
+    , cdbTraceLedger            :: Tracer m (LedgerDB' blk wt)
     , cdbRegistry               :: HKD f (ResourceRegistry m)
     , cdbGcDelay                :: DiffTime
     , cdbGcInterval             :: DiffTime
@@ -137,12 +137,12 @@ defaultSpecificArgs = ChainDbSpecificArgs {
 -- and 'defaultSpecificArgs' for a list of which fields are not given a default
 -- and must therefore be set explicitly.
 defaultArgs ::
-     forall m blk.
+     forall m blk wt.
      Monad m
   => (RelativeMountPoint -> SomeHasFS m)
   -> DiskPolicy
   -> BackingStoreSelector m
-  -> ChainDbArgs Defaults m blk
+  -> ChainDbArgs Defaults m blk wt
 defaultArgs mkFS diskPolicy bss =
   toChainDbArgs (ImmutableDB.defaultArgs immFS)
                 (VolatileDB.defaultArgs  volFS)
@@ -158,11 +158,11 @@ defaultArgs mkFS diskPolicy bss =
 -- | Internal: split 'ChainDbArgs' into 'ImmutableDbArgs', 'VolatileDbArgs,
 -- 'LgrDbArgs', and 'ChainDbSpecificArgs'.
 fromChainDbArgs ::
-     forall m blk f. MapHKD f
-  => ChainDbArgs f m blk
+     forall m blk f wt. MapHKD f
+  => ChainDbArgs f m blk wt
   -> ( ImmutableDB.ImmutableDbArgs f m blk
      , VolatileDB.VolatileDbArgs   f m blk
-     , LgrDB.LgrDbArgs             f m blk
+     , LgrDB.LgrDbArgs             f m blk wt
      , ChainDbSpecificArgs         f m blk
      )
 fromChainDbArgs ChainDbArgs{..} = (
@@ -210,9 +210,9 @@ fromChainDbArgs ChainDbArgs{..} = (
 toChainDbArgs ::
      ImmutableDB.ImmutableDbArgs f m blk
   -> VolatileDB.VolatileDbArgs   f m blk
-  -> LgrDB.LgrDbArgs             f m blk
+  -> LgrDB.LgrDbArgs             f m blk wt
   -> ChainDbSpecificArgs         f m blk
-  -> ChainDbArgs                 f m blk
+  -> ChainDbArgs                 f m blk wt
 toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
               VolatileDB.VolatileDbArgs {..}
               LgrDB.LgrDbArgs {..}

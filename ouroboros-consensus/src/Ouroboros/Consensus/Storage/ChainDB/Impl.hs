@@ -48,6 +48,9 @@ import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
@@ -79,44 +82,65 @@ import           Ouroboros.Consensus.Util.TentativeState
 -------------------------------------------------------------------------------}
 
 withDB
-  :: forall m blk a.
+  :: forall m blk wt a.
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , SerialiseDiskConstraints blk
+     , SerialiseDiskConstraints blk wt
+     , TickedTableStuff (ExtLedgerState blk) wt
+     , GetTip (LedgerState blk wt EmptyMK)
+     , GetsBlockKeySets (ExtLedgerState blk) blk wt
+     , IsSwitchLedgerTables wt
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
+     , NoThunks (LedgerState blk wt EmptyMK)
      )
-  => ChainDbArgs Identity m blk
-  -> (ChainDB m blk -> m a)
+  => ChainDbArgs Identity m blk wt
+  -> (ChainDB m blk wt -> m a)
   -> m a
 withDB args = bracket (fst <$> openDBInternal args True) API.closeDB
 
 openDB
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , SerialiseDiskConstraints blk
+     , SerialiseDiskConstraints blk wt
+     , TickedTableStuff (ExtLedgerState blk) wt
+     , GetTip (LedgerState blk wt EmptyMK)
+     , GetsBlockKeySets (ExtLedgerState blk) blk wt
+     , IsSwitchLedgerTables wt
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
+     , NoThunks (LedgerState blk wt EmptyMK)
      )
-  => ChainDbArgs Identity m blk
-  -> m (ChainDB m blk)
+  => ChainDbArgs Identity m blk wt
+  -> m (ChainDB m blk wt)
 openDB args = fst <$> openDBInternal args True
 
 openDBInternal
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , SerialiseDiskConstraints blk
+     , SerialiseDiskConstraints blk wt
+     , TickedTableStuff (ExtLedgerState blk) wt
+     , GetTip (LedgerState blk wt EmptyMK)
+     , GetsBlockKeySets (ExtLedgerState blk) blk wt
+     , IsSwitchLedgerTables wt
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
+     , NoThunks (LedgerState blk wt EmptyMK)
      )
-  => ChainDbArgs Identity m blk
+  => ChainDbArgs Identity m blk wt
   -> Bool -- ^ 'True' = Launch background tasks
-  -> m (ChainDB m blk, Internal m blk)
+  -> m (ChainDB m blk wt, Internal m blk)
 openDBInternal args launchBgTasks = runWithTempRegistry $ do
     lift $ traceWith tracer $ TraceOpenEvent StartedOpeningDB
     lift $ traceWith tracer $ TraceOpenEvent StartedOpeningImmutableDB
@@ -254,7 +278,7 @@ innerOpenCont ::
      IOLike m
   => (innerDB -> m ())
   -> WithTempRegistry st m (innerDB, st)
-  -> WithTempRegistry (ChainDbEnv m blk) m innerDB
+  -> WithTempRegistry (ChainDbEnv m blk wt) m innerDB
 innerOpenCont closer m =
   runInnerWithTempRegistry
     (fmap (\(innerDB, st) -> (innerDB, st, innerDB)) m)
@@ -265,18 +289,18 @@ innerOpenCont closer m =
       -- identifying data is only in the handle's closure, not
       -- accessible because of our intentional encapsulation choices.
 
-isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
+isOpen :: IOLike m => ChainDbHandle m blk wt -> STM m Bool
 isOpen (CDBHandle varState) = readTVar varState <&> \case
     ChainDbClosed    -> False
     ChainDbOpen _env -> True
 
 closeDB
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , HasHeader (Header blk)
      , HasCallStack
      )
-  => ChainDbHandle m blk -> m ()
+  => ChainDbHandle m blk wt -> m ()
 closeDB (CDBHandle varState) = do
     mbOpenEnv <- atomically $ readTVar varState >>= \case
       -- Idempotent
