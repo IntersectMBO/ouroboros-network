@@ -241,15 +241,16 @@ instance Aeson.FromJSON CardanoConfig where
            "if the Cardano config file sets a Test*HardForkEpoch,"
         <> " it must also set it for all previous eras."
 
-    pure $ CardanoConfig
-      { requiresNetworkMagic = requiresNetworkMagic
-      , byronGenesisPath = byronGenesisPath
-      , byronGenesisHash = byronGenesisHash
-      , shelleyGenesisPath = shelleyGenesisPath
-      , shelleyGenesisHash = shelleyGenesisHash
-      , alonzoGenesisPath = alonzoGenesisPath
-      , hardForkTriggers = hardForkTriggers
-      }
+    pure $
+      CardanoConfig
+        { requiresNetworkMagic = requiresNetworkMagic
+        , byronGenesisPath = byronGenesisPath
+        , byronGenesisHash = byronGenesisHash
+        , shelleyGenesisPath = shelleyGenesisPath
+        , shelleyGenesisHash = shelleyGenesisHash
+        , alonzoGenesisPath = alonzoGenesisPath
+        , hardForkTriggers = hardForkTriggers
+        }
 
 instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
