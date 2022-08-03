@@ -3,11 +3,6 @@
 
 module DBAnalyser.Parsers (parseCmdLine) where
 
-import           Cardano.Tools.DBAnalyser.Block.Byron
-import           Cardano.Tools.DBAnalyser.Block.Cardano
-import           Cardano.Tools.DBAnalyser.Block.Shelley
-import           Cardano.Tools.DBAnalyser.Types
-
 import           Data.Foldable (asum)
 import           Options.Applicative
 
@@ -16,6 +11,11 @@ import           Ouroboros.Consensus.Block (SlotNo (..))
 import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..))
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..))
+
+import           Cardano.Tools.DBAnalyser.Block.Byron
+import           Cardano.Tools.DBAnalyser.Block.Cardano
+import           Cardano.Tools.DBAnalyser.Block.Shelley
+import           Cardano.Tools.DBAnalyser.Types
 
 
 {-------------------------------------------------------------------------------

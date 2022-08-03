@@ -1,11 +1,11 @@
 -- | This tool aims to synthesize a valid ChainDB, replicating cardano-node's UX
 module Main (main) where
 
-import           DBSynthesizer.Parsers
+import           System.Exit
 
 import           Cardano.Tools.DBSynthesizer.Run
 
-import           System.Exit
+import           DBSynthesizer.Parsers
 
 
 main :: IO ()

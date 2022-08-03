@@ -14,10 +14,10 @@ module Cardano.Node.Protocol.Types (
   , SomeConsensusProtocol (..)
   ) where
 
-import           Cardano.Prelude (Generic, NFData)
-
 import           Data.Aeson
 import           NoThunks.Class (NoThunks)
+
+import           Cardano.Prelude (Generic, NFData)
 
 import qualified Cardano.Api.Protocol.Types as Cardano
 

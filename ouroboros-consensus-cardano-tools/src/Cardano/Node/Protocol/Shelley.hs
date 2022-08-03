@@ -21,19 +21,21 @@ module Cardano.Node.Protocol.Shelley (
   , validateGenesis
   ) where
 
-import           Cardano.Prelude
 import           Prelude (String, id)
 
+import           Control.Monad.Trans.Except.Extra (firstExceptT,
+                     handleIOExceptT, hoistEither, left, newExceptT)
 import qualified Data.Aeson as Aeson (FromJSON (..), eitherDecodeStrict')
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
-import           Control.Monad.Trans.Except.Extra (firstExceptT,
-                     handleIOExceptT, hoistEither, left, newExceptT)
+import           Cardano.Prelude
 
 import qualified Cardano.Crypto.Hash.Class as Crypto
+import           Cardano.Ledger.BaseTypes (ProtVer (..))
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Cardano.Ledger.Keys (coerceKeyRole)
+import qualified Cardano.Ledger.Shelley.Genesis as Shelley
 
 import qualified Ouroboros.Consensus.Cardano as Consensus
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
@@ -44,9 +46,6 @@ import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
                      ProtocolParamsShelley (..),
                      ProtocolParamsShelleyBased (..), ShelleyGenesis (..),
                      ShelleyLeaderCredentials (..))
-
-import           Cardano.Ledger.BaseTypes (ProtVer (..))
-import qualified Cardano.Ledger.Shelley.Genesis as Shelley
 
 import           Cardano.Api.Any hiding (FileError (..))
 import qualified Cardano.Api.Any as Api (FileError (..))
@@ -59,6 +58,7 @@ import           Cardano.Api.SerialiseTextEnvelope
 
 import           Cardano.Node.Protocol.Types
 import           Cardano.Node.Types
+
 
 ------------------------------------------------------------------------------
 -- Shelley protocol

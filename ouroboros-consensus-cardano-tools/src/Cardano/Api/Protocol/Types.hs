@@ -24,21 +24,20 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.ByronHFC (ByronBlockHFC)
 import           Ouroboros.Consensus.Cardano.Node
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
+import qualified Ouroboros.Consensus.Ledger.SupportsProtocol as Consensus
+                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolClientInfo (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.Node.Run (RunNode)
-import qualified Ouroboros.Consensus.Protocol.TPraos as Consensus
-import           Ouroboros.Consensus.Shelley.Node.Praos
-import           Ouroboros.Consensus.Shelley.ShelleyHFC (ShelleyBlockHFC)
-import           Ouroboros.Consensus.Util.IOLike (IOLike)
-
-import qualified Ouroboros.Consensus.Ledger.SupportsProtocol as Consensus
-                     (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import qualified Ouroboros.Consensus.Protocol.TPraos as Consensus
 import qualified Ouroboros.Consensus.Shelley.Eras as Consensus (ShelleyEra)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Consensus
                      (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Ouroboros.Consensus.Shelley.Node.Praos
+import           Ouroboros.Consensus.Shelley.ShelleyHFC (ShelleyBlockHFC)
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
 
 
 class (RunNode blk, IOLike m) => Protocol m blk where

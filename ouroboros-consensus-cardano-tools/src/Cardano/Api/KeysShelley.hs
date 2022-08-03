@@ -48,10 +48,9 @@ import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Hash.Class as Crypto
 import qualified Cardano.Crypto.Seed as Crypto
 import qualified Cardano.Crypto.Wallet as Crypto.HD
+import           Cardano.Ledger.Crypto (StandardCrypto)
 import qualified Cardano.Ledger.Crypto as Shelley (DSIGN)
 import qualified Cardano.Ledger.Keys as Shelley
-
-import           Cardano.Ledger.Crypto (StandardCrypto)
 
 import           Cardano.Api.Any
 import           Cardano.Api.Key

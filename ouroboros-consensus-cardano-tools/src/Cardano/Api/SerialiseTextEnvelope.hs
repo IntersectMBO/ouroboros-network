@@ -28,6 +28,12 @@ module Cardano.Api.SerialiseTextEnvelope (
   , AsType (..)
   ) where
 
+import           Control.Monad (unless)
+import           Control.Monad.Trans.Except (ExceptT (..), runExceptT)
+import           Control.Monad.Trans.Except.Extra (firstExceptT,
+                     handleIOExceptT, hoistEither)
+import           Data.Aeson as Aeson (FromJSON (..), ToJSON (..),
+                     eitherDecodeStrict', object, withObject, (.:), (.=))
 import           Data.Bifunctor (first)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -36,14 +42,6 @@ import qualified Data.List as List
 import           Data.Maybe (fromMaybe)
 import           Data.String (IsString)
 import qualified Data.Text.Encoding as Text
-
-import           Data.Aeson as Aeson (FromJSON (..), ToJSON (..),
-                     eitherDecodeStrict', object, withObject, (.:), (.=))
-
-import           Control.Monad (unless)
-import           Control.Monad.Trans.Except (ExceptT (..), runExceptT)
-import           Control.Monad.Trans.Except.Extra (firstExceptT,
-                     handleIOExceptT, hoistEither)
 
 import           Cardano.Binary (DecoderError)
 

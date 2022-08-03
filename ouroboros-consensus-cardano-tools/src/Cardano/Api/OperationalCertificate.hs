@@ -24,6 +24,7 @@ import           Data.Word
 
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import qualified Cardano.Ledger.Serialization as CBOR (CBORGroup (..))
+import qualified Cardano.Protocol.TPraos.OCert as Shelley
 
 import           Cardano.Api.Any
 import           Cardano.Api.Key
@@ -32,7 +33,6 @@ import           Cardano.Api.KeysPraos
 import           Cardano.Api.KeysShelley
 import           Cardano.Api.SerialiseTextEnvelope
 
-import qualified Cardano.Protocol.TPraos.OCert as Shelley
 
 -- ----------------------------------------------------------------------------
 -- Operational certificates

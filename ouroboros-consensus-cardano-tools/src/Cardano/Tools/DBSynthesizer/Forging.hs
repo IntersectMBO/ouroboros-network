@@ -8,9 +8,6 @@
 
 module Cardano.Tools.DBSynthesizer.Forging (runForge) where
 
-import           Cardano.Tools.DBSynthesizer.Types (ForgeLimit (..),
-                     ForgeResult (..))
-
 import           Control.Monad (when)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.IO.Class (liftIO)
@@ -19,32 +16,32 @@ import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Word (Word64)
 
+import           Control.Tracer as Trace (nullTracer)
+
 import           Ouroboros.Consensus.Block.Abstract as Block
 import           Ouroboros.Consensus.Block.Forging as Block (BlockForging (..),
                      ShouldForge (..), checkShouldForge)
-import           Ouroboros.Consensus.HeaderValidation
-                     (BasicEnvelopeValidation (..), HeaderState (..))
-
-import           Ouroboros.Consensus.Storage.ChainDB.API as ChainDB (ChainDB,
-                     addBlockAsync, blockProcessed, getCurrentChain,
-                     getPastLedger)
-import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
-                     (noPunishment)
-
-import           Ouroboros.Network.AnchoredFragment as AF (Anchor (..),
-                     AnchoredFragment, AnchoredSeq (..), headPoint)
-
 import           Ouroboros.Consensus.Config (TopLevelConfig, configConsensus,
                      configLedger)
 import           Ouroboros.Consensus.Forecast (forecastFor)
+import           Ouroboros.Consensus.HeaderValidation
+                     (BasicEnvelopeValidation (..), HeaderState (..))
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState,
                      tickChainDepState)
+import           Ouroboros.Consensus.Storage.ChainDB.API as ChainDB (ChainDB,
+                     addBlockAsync, blockProcessed, getCurrentChain,
+                     getPastLedger)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
+                     (noPunishment)
 import           Ouroboros.Consensus.Util.IOLike (atomically)
+import           Ouroboros.Network.AnchoredFragment as AF (Anchor (..),
+                     AnchoredFragment, AnchoredSeq (..), headPoint)
 
-import           Control.Tracer as Trace (nullTracer)
+import           Cardano.Tools.DBSynthesizer.Types (ForgeLimit (..),
+                     ForgeResult (..))
 
 
 data ForgeState =

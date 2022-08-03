@@ -2,7 +2,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | Database analyse tool.
+-- | Database analysis tool.
 module Main (main) where
 
 import           DBAnalyser.Parsers
