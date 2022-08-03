@@ -19,7 +19,7 @@ chainDB     = "test/disk/chaindb"
 testSynthOptions :: DBSynthesizerOptions
 testSynthOptions =
     DBSynthesizerOptions {
-        synthLimit          = ForgeLimitEpoch 1
+        synthLimit          = ForgeLimitSlot 8192
       , synthForceDBRemoval = True
     }
 
@@ -51,8 +51,14 @@ testAnalyserConfig =
     , confLimit   = Unlimited
     }
 
-multiStepTest :: (String -> IO ()) -> Assertion
-multiStepTest logStep = do
+-- | A multi-step test including synthesis and analaysis 'SomeConsensusProtocol' using the Cardano instance.
+--
+-- 1. step: synthesize a ChainDB and counts the amount of blocks forged in the proces.
+-- 2. step: analyze the ChainDB from previous step and confirm the block count.
+
+--
+blockCountTest :: (String -> IO ()) -> Assertion
+blockCountTest logStep = do
     logStep "intializing synthesis"
     (protocol, options) <- either assertFailure pure
         =<< DBSynthesizer.initialize
@@ -70,12 +76,14 @@ multiStepTest logStep = do
         CardanoBlock b  -> DBAnalyser.analyse testAnalyserConfig b
         _               -> assertFailure "expexcting test case for Cardano block type"
 
-    resultAnalysis == Just (ResultCountBlock blockCount) @? "wrong number of blocks counted during analysis"
+    resultAnalysis == Just (ResultCountBlock blockCount) @?
+        "wrong number of blocks encountered during analysis \
+        \ (counted: " ++ show resultAnalysis ++ "; expected: " ++ show blockCount ++ ")"
 
 tests :: TestTree
 tests =
     testGroup "cardano-tools"
-      [ testCaseSteps "synthesize and analyse" multiStepTest
+      [ testCaseSteps "synthesize and analyse: blockCount" blockCountTest
       ]
 
 main :: IO ()
