@@ -36,7 +36,7 @@ import           Control.Monad.Class.MonadST (MonadST)
 import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
                      MonadSTM (STM, atomically), MonadTraceSTM, StrictTVar,
-                     modifyTVar', newTVar, readTVar)
+                     modifyTVar', readTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)

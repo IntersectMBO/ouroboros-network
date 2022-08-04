@@ -759,8 +759,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   conn <- mkConnection tr bearerInfo connId
                   writeTVar fdVarLocal (FDConnecting connId conn)
                   modifyTVar (nsConnections state)
-                             (Map.insert (normaliseId connId)
-                                         (dualConnection conn))
+                             (Map.insert (normaliseId connId) conn)
                   -- so far it looks like normal open, it still might turn up
                   -- a simultaneous open if the other side will open the
                   -- connection before it would be put on its accept loop
@@ -859,6 +858,9 @@ mkSnocket state tr = Snocket { getLocalAddr
                 atomically $ modifyTVar (nsConnections state)
                                         (Map.delete (normaliseId connId))
                 throwIO e
+
+              -- TODO: SimOpen and NormalOpen are irrelevant here
+              -- If 'o' is SimOpen then 'connState' is already 'ESTABLISHED'
               Right (fd_', o) -> do
                 -- successful open
 
