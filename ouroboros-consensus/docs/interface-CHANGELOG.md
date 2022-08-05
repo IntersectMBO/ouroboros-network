@@ -56,6 +56,13 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-07-26
+
+### Added
+
+- `GetPoolState`: Get the pool state for the given stake pool ids
+  New addition to client version `NodeToClientV_14`
+
 ## Circa 2022-07-20
 
 ### Fixed
