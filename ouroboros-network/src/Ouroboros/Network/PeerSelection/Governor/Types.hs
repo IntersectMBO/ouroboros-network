@@ -593,8 +593,11 @@ data TracePeerSelection peeraddr =
      | TracePromoteColdDone    Int Int peeraddr
      -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
-     -- | local per-group (target active, actual active), selected peers
-     | TracePromoteWarmLocalPeers [(Int, Int)] (Set peeraddr)
+     -- | Promote local peers to warm
+     | TracePromoteWarmLocalPeers
+         [(Int, Int)]   -- ^ local per-group `(target active, actual active)`,
+                        -- only limited to groups which are below their target.
+         (Set peeraddr) -- ^ selected peers
      -- | target active, actual active, peer, reason
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
      -- | target active, actual active, peer
