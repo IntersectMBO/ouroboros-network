@@ -28,6 +28,7 @@ module Ouroboros.Network.PeerSelection.PeerMetric
   , newPeerMetric'
   ) where
 
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
@@ -357,24 +358,25 @@ metricsTracer
     -> (SlotMetric p -> STM m ()) -- ^ update metrics
     -> PeerMetricsConfiguration
     -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
-metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTrack } = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
-    metrics <- getMetrics
-    case IntPSQ.lookup (slotToInt slot) metrics of
-         Nothing -> do
-             let metrics'  = IntPSQ.insert (slotToInt slot) slot (peer, time) metrics
+metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTrack } =
+    Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
+      metrics <- getMetrics
+      case IntPSQ.lookup (slotToInt slot) metrics of
+           Nothing -> do
+             let metrics' = IntPSQ.insert (slotToInt slot) slot (peer, time) metrics
              if IntPSQ.size metrics' > maxEntriesToTrack
-                then
-                  case IntPSQ.minView metrics' of
-                       Nothing -> error "impossible empty pq" -- We just inserted an element!
-                       Just (_, minSlotNo, _, metrics'') ->
-                            if minSlotNo == slot
-                               then return ()
-                               else writeMetrics metrics''
+             -- drop last element if the metric board is too large
+             then case IntPSQ.minView metrics' of
+                    Nothing -> error "impossible empty pq"
+                            -- We just inserted an element!
+                    Just (_, minSlotNo, _, metrics'') ->
+                         when (minSlotNo /= slot) $
+                              writeMetrics metrics''
              else writeMetrics metrics'
-         Just (_, (_, oldTime)) ->
-             if oldTime <= time
-                then return ()
-                else writeMetrics (IntPSQ.insert (slotToInt slot) slot (peer, time) metrics)
+           Just (_, (_, oldTime)) ->
+               when (oldTime > time) $
+                    writeMetrics (IntPSQ.insert (slotToInt slot) slot
+                                                (peer, time) metrics)
 
 
 joinedPeerMetricAt
