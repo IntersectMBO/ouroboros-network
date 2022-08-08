@@ -75,6 +75,7 @@ newtype DiffSeq (ts :: ToStoreKind) k v =
       (Element ts k v)
     )
   deriving stock (Generic, Show, Eq)
+  deriving newtype (Semigroup, Monoid)
   deriving anyclass (NoThunks)
 
 

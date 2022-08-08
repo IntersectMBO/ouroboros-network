@@ -17,7 +17,7 @@ import           Data.Map.Strict.Diff2 (Diff (..), DiffEntry (..),
                      DiffHistory (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      SudElement (..), SudMeasure (..), UtxoDiff (..),
-                     UtxoEntryDiff (..), UtxoEntryDiffState (..),
+                     UtxoEntryDiff (..), UtxoEntryDiffState (..), UtxoKeys (..),
                      UtxoValues (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq (..),
                      Element (..), InternalMeasure (..), Length (..),
@@ -39,6 +39,8 @@ instance (NFData a, NFData v, Measured v a) => NFData (StrictFingerTree v a) whe
 -------------------------------------------------------------------------------}
 
 deriving newtype instance (NFData k, NFData v) => NFData (UtxoValues k v)
+
+deriving newtype instance NFData k => NFData (UtxoKeys k v)
 
 deriving anyclass instance NFData UtxoEntryDiffState
 deriving anyclass instance NFData v => NFData (UtxoEntryDiff v)

@@ -9,8 +9,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes (
     TableDiff (..)
   , TableKeys (..)
   , TableValues (..)
+    -- * Constructing table contents
+  , valuesFromList
     -- * Interactions between keys, values and diffs
   , castTableKeys
+  , diffKeys
   , differenceTableValues
   , forwardValues
   , forwardValuesAndKeys
@@ -54,6 +57,13 @@ newtype TableDiff (ts :: ToStoreKind) k v = TableDiff (Diff k v)
   deriving stock (Generic, Show, Eq)
   deriving newtype (Semigroup, Monoid, Group)
   deriving anyclass (NoThunks)
+
+{-------------------------------------------------------------------------------
+  Constructing table contents
+-------------------------------------------------------------------------------}
+
+valuesFromList :: Ord k => [(k, v)] -> TableValues ts k v
+valuesFromList = TableValues . Map.fromList
 
 {-------------------------------------------------------------------------------
   Interactions between keys, values and diffs
@@ -114,3 +124,6 @@ mapTableDiff :: (v -> v') -> TableDiff ts k v -> TableDiff ts k v'
 mapTableDiff f (TableDiff (Diff m)) = TableDiff $ Diff $ fmap g m
   where
     g (DiffHistory s) = DiffHistory $ fmap (fmap f) s
+
+diffKeys :: TableDiff ts k v -> TableKeys ts k v
+diffKeys (TableDiff (Diff m)) = TableKeys $ Map.keysSet m

@@ -55,6 +55,12 @@ instance NoThunks a => NoThunks (Alt vt vi a) where
   showTypeOf _ = "Alt"
   wNoThunks ctxt = noThunksInValues ctxt . toList
 
+instance (Semigroup vt, Measured vi a) => Semigroup (Alt vt vi a) where
+  Alt tm1 xs1 <> Alt tm2 xs2 = Alt (tm1 <> tm2) (xs1 <> xs2)
+
+instance (Monoid vt, Measured vi a) => Monoid (Alt vt vi a) where
+  mempty = Alt mempty mempty
+
 {-------------------------------------------------------------------------------
   Measuring
 -------------------------------------------------------------------------------}

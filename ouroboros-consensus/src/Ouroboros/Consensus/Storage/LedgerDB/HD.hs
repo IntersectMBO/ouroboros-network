@@ -1,8 +1,10 @@
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 -- | How to mediate access to an on-disk UTxO table
 --
@@ -82,7 +84,8 @@ import           Ouroboros.Consensus.Util.CBOR.Simple
 -- TODO should we use the bespoke @compact-map@ that the ledger team recently
 -- developed? We don't need to, if this type is only every use for tests.
 newtype UtxoValues k v = UtxoValues (Map k v)
-  deriving (Eq, Generic, NoThunks, Show)
+  deriving (Eq, Generic, Show)
+  deriving anyclass NoThunks
 
 instance Ord k => Monoid (UtxoValues k v) where
   mempty = UtxoValues Map.empty
@@ -112,7 +115,8 @@ mapUtxoValues f (UtxoValues vs) = UtxoValues $ Map.map f vs
 
 -- | The differences that could be applied to a 'UtxoValues'
 newtype UtxoDiff k v = UtxoDiff (Map k (UtxoEntryDiff v))
-  deriving (Eq, Generic, NoThunks, Show)
+  deriving (Eq, Generic, Show)
+  deriving anyclass NoThunks
 
 instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (UtxoDiff k v) where
   toCBOR (UtxoDiff m) = versionZeroProductToCBOR [toCBOR m]
@@ -122,7 +126,8 @@ instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (UtxoDiff k v) where
 
 -- | The key's value and how it changed
 data UtxoEntryDiff v = UtxoEntryDiff !v !UtxoEntryDiffState
-  deriving (Eq, Generic, NoThunks, Show)
+  deriving (Eq, Generic, Show)
+  deriving anyclass NoThunks
 
 instance ToCBOR v => ToCBOR (UtxoEntryDiff v) where
   toCBOR (UtxoEntryDiff v diffstate) =
@@ -135,7 +140,8 @@ instance FromCBOR v => FromCBOR (UtxoEntryDiff v) where
 
 -- | Whether an entry was deleted, inserted, or inserted-and-then-deleted
 data UtxoEntryDiffState = UedsDel | UedsIns | UedsInsAndDel
-  deriving (Eq, Generic, NoThunks, Show)
+  deriving (Eq, Generic, Show)
+  deriving anyclass NoThunks
 
 instance ToCBOR UtxoEntryDiffState where
   toCBOR = (CBOR.encodeListLen 1 <>) . \case
@@ -202,7 +208,8 @@ differenceUtxoValues (UtxoValues m1) (UtxoValues m2) =
 
 -- | Just the keys
 newtype UtxoKeys k v = UtxoKeys (Set k)
-  deriving (Eq, Generic, NoThunks, Show)
+  deriving (Eq, Generic, Show)
+  deriving anyclass NoThunks
 
 instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (UtxoKeys k v) where
   toCBOR (UtxoKeys m) = versionZeroProductToCBOR [toCBOR m]
@@ -285,7 +292,9 @@ forwardValuesAndKeys values@(UtxoValues v) (UtxoKeys keys) (UtxoDiff diffs) =
 -- See 'SudElement' and 'SudMeasure'.
 newtype SeqUtxoDiff k v =
     SeqUtxoDiff (StrictFingerTree (SudMeasure k v) (SudElement k v))
-  deriving (Eq, Generic, NoThunks, Show)
+  deriving (Eq, Generic, Show)
+  deriving anyclass NoThunks
+  deriving newtype (Semigroup, Monoid)
 
 instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SeqUtxoDiff k v) where
   toCBOR (SeqUtxoDiff ft) = versionZeroProductToCBOR [toCBOR (toList ft)]
@@ -355,7 +364,8 @@ instance Ord k => Semigroup (SudMeasure k v) where
 
 -- | An element of the sequence
 data SudElement k v = SudElement {-# UNPACK #-} !SlotNo !(UtxoDiff k v)
-  deriving (Eq, Generic, NoThunks, Show)
+  deriving (Eq, Generic, Show)
+  deriving anyclass NoThunks
 
 instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SudElement k v) where
   toCBOR (SudElement slot diff) = versionZeroProductToCBOR [toCBOR slot, toCBOR diff]

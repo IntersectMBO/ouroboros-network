@@ -14,6 +14,8 @@ module Data.Map.Strict.Diff2 (
     Diff (..)
   , DiffEntry (..)
   , DiffHistory (..)
+  , singletonDelete
+  , singletonInsert
   ) where
 
 import           Data.Group
@@ -42,6 +44,15 @@ newtype Diff k v = Diff (Map k (DiffHistory v))
 newtype DiffHistory v = DiffHistory (Seq (DiffEntry v))
   deriving stock (Generic, Show, Eq)
   deriving anyclass (NoThunks)
+
+singleton :: DiffEntry v -> DiffHistory v
+singleton = DiffHistory . Seq.singleton
+
+singletonInsert :: v -> DiffHistory v
+singletonInsert = singleton . Insert
+
+singletonDelete :: v -> DiffHistory v
+singletonDelete = singleton . Delete
 
 -- | A change to a value in a key-value store.
 --

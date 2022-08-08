@@ -54,6 +54,7 @@ library
                        Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.DiffSeq.Arbitrary
+                       Test.Util.Orphans.Isomorphism
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NFData
                        Test.Util.Orphans.NoThunks
