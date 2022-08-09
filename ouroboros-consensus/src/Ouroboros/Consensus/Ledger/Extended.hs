@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -18,6 +19,7 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
     ExtLedgerCfg (..)
   , ExtLedgerState (..)
+  , LedgerMustSupportUTxOHD'
   , ExtValidationError (..)
     -- * Serialisation
   , decodeExtLedgerState
@@ -49,6 +51,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -170,6 +173,10 @@ instance ( IsLedger (LedgerState  blk)
 
       ledgerResult = applyChainTickLedgerResult lcfg slot ledger
 
+instance ExtractLedgerTables (LedgerState blk) => ExtractLedgerTables (ExtLedgerState blk) where
+  extractLedgerTables ExtLedgerState{..} = ExtLedgerState{ledgerState = extractLedgerTables ledgerState,..}
+  destroyTables ExtLedgerState{..} = ExtLedgerState{ledgerState = destroyTables ledgerState,..}
+
 instance IgnoresMapKind (LedgerState blk) => IgnoresMapKind (ExtLedgerState blk) where
   convertMapKind ExtLedgerState{..} = ExtLedgerState{ledgerState = convertMapKind ledgerState, ..}
 
@@ -214,6 +221,11 @@ instance (NoThunks (LedgerTables (LedgerState blk) WithLedgerTables mk), Typeabl
 -- instance InMemory (LedgerTables (LedgerState blk)) => InMemory (LedgerTables (ExtLedgerState blk)) where
 --   convertMapKind (ExtLedgerStateTables st) =
 --       ExtLedgerStateTables $ convertMapKind st
+
+type LedgerMustSupportUTxOHD' blk wt = ( LedgerMustSupportUTxOHD ExtLedgerState blk wt
+                                       , LedgerMustSupportUTxOHD LedgerState blk wt
+                                       , Promote (LedgerState blk) (ExtLedgerState blk) wt
+                                       )
 
 instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk) WithLedgerTables) => TickedTableStuff (ExtLedgerState blk) WithLedgerTables where
   projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =

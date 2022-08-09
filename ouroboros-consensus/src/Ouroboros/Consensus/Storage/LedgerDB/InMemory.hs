@@ -279,13 +279,12 @@ toRealPoint (Weaken ap)      = toRealPoint ap
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c (l :: Type -> LedgerStateKindWithTables) blk wt
+applyBlock :: forall m c l blk wt
             . ( ApplyBlock (l blk) blk
               , Monad m
               , c
               , HasCallStack
               , LedgerMustSupportUTxOHD l blk wt
-              , IsSwitchLedgerTables wt
               )
            => LedgerCfg (l blk)
            -> Ap m (l blk) wt blk c
@@ -644,12 +643,11 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-ledgerDbPush :: forall m c (l :: Type -> LedgerStateKindWithTables) blk wt
+ledgerDbPush :: forall m c l blk wt
               . ( ApplyBlock       (l blk) blk
                 , Monad m
                 , c
                 , HasCallStack
-                , IsSwitchLedgerTables wt
                 , LedgerMustSupportUTxOHD l blk wt
                 )
              => LedgerDbCfg (l blk)
@@ -660,12 +658,11 @@ ledgerDbPush cfg ap db =
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany ::
-     forall m c (l :: Type -> LedgerStateKindWithTables) blk wt.
+     forall m c l blk wt.
      ( ApplyBlock       (l blk) blk
      , Monad m
      , c
      , HasCallStack
-     , IsSwitchLedgerTables wt
      , LedgerMustSupportUTxOHD l blk wt
      )
   => (Pushing blk -> m ())
@@ -683,7 +680,6 @@ ledgerDbSwitch :: ( ApplyBlock       (l blk) blk
                   , Monad m
                   , c
                   , HasCallStack
-                  , IsSwitchLedgerTables wt
                   , LedgerMustSupportUTxOHD l blk wt
                   )
                => LedgerDbCfg (l blk)
@@ -742,7 +738,6 @@ pureBlock = ReapplyVal
 ledgerDbPush' :: ( ApplyBlock            (l blk) blk
                  , ReadsKeySets Identity (l blk) wt
                  , HasCallStack
-                 , IsSwitchLedgerTables        wt
                  , LedgerMustSupportUTxOHD l blk wt
                  )
               => LedgerDbCfg (l blk) -> blk -> LedgerDB (l blk) wt -> LedgerDB (l blk) wt
@@ -751,18 +746,15 @@ ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 ledgerDbPushMany' :: ( ApplyBlock            (l blk) blk
                      , ReadsKeySets Identity (l blk) wt
                      , HasCallStack
-                     , IsSwitchLedgerTables wt
                      , LedgerMustSupportUTxOHD l blk wt
                      )
                   => LedgerDbCfg (l blk) -> [blk] -> LedgerDB (l blk) wt -> LedgerDB (l blk) wt
 ledgerDbPushMany' cfg bs =
   runIdentity . ledgerDbPushMany (const $ pure ()) cfg (map pureBlock bs)
 
-ledgerDbSwitch' :: forall l blk wt.
-                   ( ApplyBlock            (l blk) blk
+ledgerDbSwitch' :: ( ApplyBlock            (l blk) blk
                    , ReadsKeySets Identity (l blk) wt
                    , HasCallStack
-                   , IsSwitchLedgerTables wt
                    , LedgerMustSupportUTxOHD l blk wt
                    )
                 => LedgerDbCfg (l blk)

@@ -370,13 +370,13 @@ instance Isomorphic AnnTip where
 
   inject (AnnTip s b nfo) = AnnTip s b (OneEraTipInfo (Z (WrapTipInfo nfo)))
 
-instance Functor m => Isomorphic (InitChainDB m wt) where
+instance Functor m => Isomorphic (InitChainDB m) where
   project :: forall blk. NoHardForks blk
-          => InitChainDB m wt (HardForkBlock '[blk]) -> InitChainDB m wt blk
+          => InitChainDB m (HardForkBlock '[blk]) -> InitChainDB m blk
   project = InitChainDB.map (inject' (Proxy @(I blk))) (unFlip2 . project . Flip2)
 
   inject :: forall blk. NoHardForks blk
-         => InitChainDB m wt blk -> InitChainDB m wt (HardForkBlock '[blk])
+         => InitChainDB m blk -> InitChainDB m (HardForkBlock '[blk])
   inject = InitChainDB.map (project' (Proxy @(I blk))) (unFlip2 . inject . Flip2)
 
 instance Isomorphic ProtocolClientInfo where
@@ -501,9 +501,9 @@ instance Functor m => Isomorphic (BlockForging m) where
           . State.fromTZ
           . tickedHardForkChainDepStatePerEra
 
-instance Functor m => Isomorphic (ProtocolInfo m wt) where
+instance Functor m => Isomorphic (ProtocolInfo m) where
   project :: forall blk. NoHardForks blk
-          => ProtocolInfo m wt (HardForkBlock '[blk]) -> ProtocolInfo m wt blk
+          => ProtocolInfo m (HardForkBlock '[blk]) -> ProtocolInfo m blk
   project ProtocolInfo {..} = ProtocolInfo {
         pInfoConfig       = project pInfoConfig
       , pInfoInitLedger   = unFlip2 $ project $ Flip2 pInfoInitLedger
@@ -511,7 +511,7 @@ instance Functor m => Isomorphic (ProtocolInfo m wt) where
       }
 
   inject :: forall blk. NoHardForks blk
-         => ProtocolInfo m wt blk -> ProtocolInfo m wt (HardForkBlock '[blk])
+         => ProtocolInfo m blk -> ProtocolInfo m (HardForkBlock '[blk])
   inject ProtocolInfo {..} = ProtocolInfo {
         pInfoConfig       = inject pInfoConfig
       , pInfoInitLedger   = unFlip2 $ inject $ Flip2 pInfoInitLedger

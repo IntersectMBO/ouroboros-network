@@ -156,7 +156,6 @@ import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Tracer
-import           Data.Kind
 import qualified Data.List as List
 import qualified Data.Map as Map
 import           Data.Maybe (isJust, mapMaybe)
@@ -329,10 +328,7 @@ initLedgerDB ::
        , LedgerSupportsProtocol blk
        , InspectLedger blk
        , HasCallStack
-       , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
        , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-       , LedgerSupportsUTxOHD ExtLedgerState blk
-       , IsSwitchLedgerTables wt
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
@@ -340,7 +336,7 @@ initLedgerDB ::
   -> (forall s. Decoder s (ExtLedgerState blk wt EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
-  -> m (ExtLedgerState blk wt ValuesMK) -- ^ Genesis ledger state
+  -> m (ExtLedgerState blk WithoutLedgerTables ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
   -> BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk wt, Word64, LedgerBackingStore' m blk wt)
@@ -355,6 +351,13 @@ initLedgerDB replayTracer
              bss = do
     listSnapshots hasFS >>= tryNewestFirst id
   where
+
+    f :: m (ExtLedgerState blk wt ValuesMK)
+    f = case findOutWT (Proxy @wt) of
+      SWithLedgerTables -> extractLedgerTables <$> getGenesisLedger
+      SWithoutLedgerTables -> getGenesisLedger
+
+    
     tryNewestFirst :: (InitLog blk -> InitLog blk)
                    -> [DiskSnapshot]
                    -> m ( InitLog   blk
@@ -365,7 +368,7 @@ initLedgerDB replayTracer
     tryNewestFirst acc [] = do
       -- We're out of snapshots. Start at genesis
       traceWith replayTracer ReplayFromGenesis
-      genesisLedger <- getGenesisLedger
+      genesisLedger <- f
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
           initDb        = ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
       backingStore <- newBackingStore nullTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
@@ -438,7 +441,6 @@ replayStartingWith ::
        , InspectLedger blk
        , HasCallStack
        , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-       , IsSwitchLedgerTables wt
        )
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
@@ -490,11 +492,9 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 -------------------------------------------------------------------------------}
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
-restoreBackingStore :: forall m (l :: Type -> LedgerStateKindWithTables) blk wt.
+restoreBackingStore :: forall m l blk wt.
      ( IOLike m
-     , NoThunks (LedgerTables (l blk) wt ValuesMK)
-     , LedgerSupportsUTxOHD l blk
-     , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD l blk wt
      )
   => SomeHasFS m
   -> DiskSnapshot
@@ -536,11 +536,9 @@ restoreBackingStore someHasFs snapshot bss = do
 
 -- | Create a backing store from the given genesis ledger state
 newBackingStore ::
-     forall m (l :: Type -> LedgerStateKindWithTables) blk wt.
+     forall m l blk wt.
      ( IOLike m
-     , NoThunks (LedgerTables (l blk) wt ValuesMK)
-     , LedgerSupportsUTxOHD l blk
-     , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD l blk wt
      )
   => Tracer m LMDB.TraceDb
   -> BackingStoreSelector m

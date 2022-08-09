@@ -1,5 +1,8 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- | Intended for qualified import
 --
 -- > import Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
@@ -12,6 +15,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Init (
 
 import           Prelude hiding (map)
 
+import Data.Proxy
+
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
@@ -20,29 +25,31 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Restricted interface to the 'ChainDB' used on node initialization
-data InitChainDB m wt blk = InitChainDB {
+data InitChainDB m blk = InitChainDB {
       -- | Add a block to the DB
       addBlock         :: blk -> m ()
 
       -- | Return the current ledger state
-    , getCurrentLedger :: m (LedgerState blk wt EmptyMK)
+    , getCurrentLedger :: m (LedgerState blk WithoutLedgerTables EmptyMK)
     }
 
 fromFull ::
-     (IOLike m, GetTip (LedgerState blk wt EmptyMK))
-  => ChainDB m blk wt -> InitChainDB m wt blk
+     forall m blk wt. (IOLike m, GetTip (LedgerState blk wt EmptyMK), IsSwitchLedgerTables wt, ExtractLedgerTables (LedgerState blk))
+  => ChainDB m blk wt -> InitChainDB m blk
 fromFull db = InitChainDB {
       addBlock         =
         ChainDB.addBlock_ db InvalidBlockPunishment.noPunishment
-    , getCurrentLedger =
-        atomically $ ledgerState <$> ChainDB.getCurrentLedger db
+    , getCurrentLedger = atomically f
     }
+  where f = case findOutWT (Proxy @wt) of
+          SWithLedgerTables -> destroyTables . ledgerState <$> ChainDB.getCurrentLedger db
+          SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger db
 
 map ::
      Functor m
   => (blk' -> blk)
-  -> (LedgerState blk wt EmptyMK -> LedgerState blk' wt EmptyMK)
-  -> InitChainDB m wt blk -> InitChainDB m wt blk'
+  -> (LedgerState blk WithoutLedgerTables EmptyMK -> LedgerState blk' WithoutLedgerTables EmptyMK)
+  -> InitChainDB m blk -> InitChainDB m blk'
 map f g db = InitChainDB {
       addBlock         = addBlock db . f
     , getCurrentLedger = g <$> getCurrentLedger db

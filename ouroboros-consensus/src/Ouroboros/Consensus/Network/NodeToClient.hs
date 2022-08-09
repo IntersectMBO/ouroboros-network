@@ -122,7 +122,6 @@ mkHandlers
      , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , LedgerMustSupportUTxOHD LedgerState blk wt
      , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , IsSwitchLedgerTables wt
      )
   => NodeKernelArgs m remotePeer localPeer blk wt
   -> NodeKernel     m remotePeer localPeer blk wt

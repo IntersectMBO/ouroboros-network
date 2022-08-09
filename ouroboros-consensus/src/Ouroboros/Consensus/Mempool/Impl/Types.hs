@@ -303,10 +303,9 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 validateStateFor
   :: forall blk wt. (
        LedgerSupportsMempool blk
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , LedgerMustSupportUTxOHD LedgerState blk wt
-     , IsSwitchLedgerTables wt
      )
   => InternalState    blk wt
   -> LedgerConfig     blk
@@ -375,7 +374,6 @@ tickLedgerState
      ( ApplyBlock (LedgerState blk) blk
      , ValidateEnvelope blk
      , LedgerMustSupportUTxOHD LedgerState blk wt
-     , IsSwitchLedgerTables wt
      )
   => LedgerConfig     blk
   -> ForgeLedgerState blk wt

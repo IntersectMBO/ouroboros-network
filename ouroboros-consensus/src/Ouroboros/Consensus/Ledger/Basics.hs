@@ -109,6 +109,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , IgnoresMapKindTicked (..)
   , IgnoresTables (..)
   , StowableLedgerTables (..)
+  , ExtractLedgerTables (..)
     -- ** Serialization
   , SufficientSerializationForAnyBackingStore (..)
   , valuesMKDecoder
@@ -474,19 +475,22 @@ class TableStuff (l :: LedgerStateKindWithTables) (wt :: SwitchLedgerTables) whe
   namesLedgerTables :: LedgerTables l wt NameMK
 
 instance IgnoresMapKind l => TableStuff l WithoutLedgerTables where
-  data instance LedgerTables l WithoutLedgerTables mk = NoLedgerTables deriving (Eq, Show, Generic, NoThunks)
-  projectLedgerTables  _    = NoLedgerTables
-  withLedgerTables     st _ = convertMapKind st
-  pureLedgerTables     _    = NoLedgerTables
-  mapLedgerTables      _  NoLedgerTables                               = NoLedgerTables
+
+  data instance LedgerTables l WithoutLedgerTables mk = NoLedgerTables
+    deriving (Eq, Show, Generic, NoThunks)
+
+  projectLedgerTables  _                                               =      NoLedgerTables
+  withLedgerTables     st _                                            = convertMapKind st
+  pureLedgerTables     _                                               =      NoLedgerTables
+  mapLedgerTables      _  NoLedgerTables                               =      NoLedgerTables
   traverseLedgerTables _  NoLedgerTables                               = pure NoLedgerTables
-  zipLedgerTables      _  NoLedgerTables NoLedgerTables                = NoLedgerTables
-  zipLedgerTables2     _  NoLedgerTables NoLedgerTables NoLedgerTables = NoLedgerTables
+  zipLedgerTables      _  NoLedgerTables NoLedgerTables                =      NoLedgerTables
+  zipLedgerTables2     _  NoLedgerTables NoLedgerTables NoLedgerTables =      NoLedgerTables
   zipLedgerTablesA     _  NoLedgerTables NoLedgerTables                = pure NoLedgerTables
   zipLedgerTables2A    _  NoLedgerTables NoLedgerTables NoLedgerTables = pure NoLedgerTables
   foldLedgerTables     _  NoLedgerTables                               = mempty
   foldLedgerTables2    _  NoLedgerTables NoLedgerTables                = mempty
-  namesLedgerTables = NoLedgerTables
+  namesLedgerTables                                                    =      NoLedgerTables
 
 instance SufficientSerializationForAnyBackingStore l WithoutLedgerTables where
   codecLedgerTables = NoLedgerTables
@@ -1081,7 +1085,7 @@ data DiskLedgerView m l wt =
   code we should move this to the appropriate module.
 -------------------------------------------------------------------------------}
 
-class IgnoresTables (l :: LedgerStateKindWithTables) where
+class IgnoresTables l where
 
   -- | If the ledger state is always in memory, then l mk will be isomorphic to
   -- l mk' for all mk, mk'. As a result, we can convert between ledgers states
@@ -1091,13 +1095,22 @@ class IgnoresTables (l :: LedgerStateKindWithTables) where
   -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
   convertTables :: l wt mk -> l wt' mk'
 
-class IgnoresMapKind (l :: LedgerStateKindWithTables) where
-  convertMapKind :: l WithoutLedgerTables mk -> l WithoutLedgerTables mk'
+class IgnoresMapKind l where
+  convertMapKind :: l WithoutLedgerTables mk
+                 -> l WithoutLedgerTables mk'
 
-class IgnoresMapKindTicked (l :: LedgerStateKindWithTables) where
-  convertMapKindTicked :: Ticked1 (l WithoutLedgerTables) mk -> Ticked1 (l WithoutLedgerTables) mk'
+class IgnoresMapKindTicked l where
+  convertMapKindTicked :: Ticked1 (l WithoutLedgerTables) mk
+                       -> Ticked1 (l WithoutLedgerTables) mk'
 
-class StowableLedgerTables (l :: LedgerStateKindWithTables) (wt :: SwitchLedgerTables) where
+class ExtractLedgerTables l where
+  extractLedgerTables :: l WithoutLedgerTables ValuesMK
+                      -> l WithLedgerTables    ValuesMK
+
+  destroyTables :: l WithLedgerTables    mk
+                -> l WithoutLedgerTables mk
+
+class StowableLedgerTables l wt where
   stowLedgerTables     :: l wt ValuesMK -> l wt EmptyMK
   unstowLedgerTables   :: l wt EmptyMK  -> l wt ValuesMK
 

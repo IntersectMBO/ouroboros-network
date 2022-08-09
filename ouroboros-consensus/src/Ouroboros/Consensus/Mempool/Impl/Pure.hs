@@ -135,7 +135,6 @@ pureRemoveTxs
      , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , IsSwitchLedgerTables wt
      )
   => LedgerConfig blk
   -> MempoolCapacityBytesOverride
@@ -210,7 +209,6 @@ pureSyncWithLedger
      , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , IsSwitchLedgerTables wt
      )
   => InternalState blk wt
   -> LedgerState blk wt ValuesMK
@@ -238,7 +236,6 @@ pureGetSnapshotAndTickedFor
      , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , IsSwitchLedgerTables wt
      )
   => InternalState blk wt
   -> LedgerConfig blk

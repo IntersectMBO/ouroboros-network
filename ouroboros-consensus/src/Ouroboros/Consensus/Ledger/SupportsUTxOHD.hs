@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Ledger.SupportsUTxOHD (
 import Ouroboros.Consensus.Ledger.Basics
 import Ouroboros.Consensus.Ledger.SupportsMempool
 import Ouroboros.Consensus.Ticked
+import NoThunks.Class
 
 class ( LedgerMustSupportUTxOHD l blk WithLedgerTables
       , LedgerMustSupportUTxOHD l blk WithoutLedgerTables
@@ -29,4 +30,9 @@ class ( TickedTableStuff                             (l blk)     wt
       , GetTip (Ticked1 (l blk wt) TrackingMK)
       , GetTip (Ticked1 (l blk wt) ValuesMK)
       , GetTip (Ticked1 (l blk wt) EmptyMK)
+      , NoThunks (LedgerTables (l blk) wt ValuesMK) -- for backing store inmem
+      , NoThunks (l blk wt EmptyMK)                 -- for DbChangelog
+      , NoThunks (LedgerTables (l blk) wt SeqDiffMK) -- for DBChangelog
+      , IsSwitchLedgerTables wt
+      , ExtractLedgerTables (l blk)
       ) => LedgerMustSupportUTxOHD l blk wt where

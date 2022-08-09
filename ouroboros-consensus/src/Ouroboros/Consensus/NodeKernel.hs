@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -122,20 +123,24 @@ data NodeKernel m remotePeer localPeer blk wt = NodeKernel {
     }
 
 -- | Arguments required when initializing a node
-data NodeKernelArgs m remotePeer localPeer blk wt = NodeKernelArgs {
+data NodeKernelArgs m remotePeer localPeer blk wt where
+  NodeKernelArgs :: ( LedgerMustSupportUTxOHD' blk wt
+                    , Promote (LedgerState blk) (ExtLedgerState blk) wt
+                    , IsSwitchLedgerTables wt
+                    ) => {
       tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
     , btime                   :: BlockchainTime m
     , chainDB                 :: ChainDB m blk wt
-    , initChainDB             :: StorageConfig blk -> InitChainDB m wt blk -> m ()
+    , initChainDB             :: StorageConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
     , blockForging            :: [BlockForging m blk]
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
     , blockFetchConfiguration :: BlockFetchConfiguration
     , keepAliveRng            :: StdGen
-    }
+    } -> NodeKernelArgs m remotePeer localPeer blk wt
 
 initNodeKernel
     :: forall m remotePeer localPeer blk wt.
@@ -144,10 +149,6 @@ initNodeKernel
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
-       , Promote (LedgerState blk) (ExtLedgerState blk) wt
-       , LedgerMustSupportUTxOHD LedgerState blk wt
-       , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-       , IsSwitchLedgerTables wt
        )
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (NodeKernel m remotePeer localPeer blk wt)
@@ -189,7 +190,12 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
   Internal node components
 -------------------------------------------------------------------------------}
 
-data InternalState m remotePeer localPeer blk wt = IS {
+data InternalState m remotePeer localPeer blk wt where
+  IS :: ( LedgerMustSupportUTxOHD LedgerState blk wt
+                    , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+                    , Promote (LedgerState blk) (ExtLedgerState blk) wt
+                    , IsSwitchLedgerTables wt
+                    ) => {
       tracers             :: Tracers m remotePeer localPeer blk
     , cfg                 :: TopLevelConfig blk
     , registry            :: ResourceRegistry m
@@ -199,7 +205,7 @@ data InternalState m remotePeer localPeer blk wt = IS {
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
     , mempool             :: Mempool m blk TicketNo wt
-    }
+    } -> InternalState m remotePeer localPeer blk wt
 
 initInternalState
     :: forall m remotePeer localPeer blk wt.
@@ -208,14 +214,10 @@ initInternalState
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk
-       , IsSwitchLedgerTables wt
-       , Promote (LedgerState blk) (ExtLedgerState blk) wt
-       , LedgerMustSupportUTxOHD LedgerState blk wt
-       , LedgerMustSupportUTxOHD ExtLedgerState blk wt
        )
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (InternalState m remotePeer localPeer blk wt)
-initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
+initInternalState NodeKernelArgs { tracers, chainDB = (chainDB :: ChainDB m blk wt), registry, cfg
                                  , blockFetchSize, btime
                                  , mempoolCapacityOverride
                                  } = do
@@ -469,7 +471,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
 
 forkBlockForging
     :: forall m remotePeer localPeer blk wt.
-       (IOLike m, RunNode blk, IsSwitchLedgerTables wt, GetTip (LedgerState blk wt EmptyMK))
+       (IOLike m, RunNode blk)
     => InternalState m remotePeer localPeer blk wt
     -> BlockForging m blk
     -> m ()
@@ -824,10 +826,9 @@ getPeersFromCurrentLedger kernel p = do
 -- | Like 'getPeersFromCurrentLedger' but with a \"after slot number X\"
 -- condition.
 getPeersFromCurrentLedgerAfterSlot ::
-     forall m blk localPeer remotePeer wt.
      ( IOLike m
      , LedgerSupportsPeerSelection blk
-     , forall mk. GetTip (LedgerState blk wt mk)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      )
   => NodeKernel m remotePeer localPeer blk wt
   -> SlotNo
@@ -835,7 +836,6 @@ getPeersFromCurrentLedgerAfterSlot ::
 getPeersFromCurrentLedgerAfterSlot kernel slotNo =
     getPeersFromCurrentLedger kernel afterSlotNo
   where
-    afterSlotNo :: LedgerState blk wt mk -> Bool
     afterSlotNo st =
       case ledgerTipSlot st of
         Origin        -> False

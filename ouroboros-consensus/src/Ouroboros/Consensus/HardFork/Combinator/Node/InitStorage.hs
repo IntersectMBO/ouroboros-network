@@ -7,7 +7,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
 
 import           Data.SOP.Strict
 
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Util.SOP
 
@@ -45,7 +45,7 @@ instance CanHardFork xs => NodeInitStorage (HardForkBlock xs) where
   --
   -- In most cases, this will be the first era, except when one or more hard
   -- forks are statically scheduled at the first slot.
-  nodeInitChainDB cfg (initChainDB :: InitChainDB m wt (HardForkBlock xs)) =
+  nodeInitChainDB cfg (initChainDB :: InitChainDB m (HardForkBlock xs)) =
       case isNonEmpty (Proxy @xs) of
         ProofNonEmpty {} -> do
           currentLedger <- getCurrentLedger initChainDB
@@ -62,7 +62,7 @@ instance CanHardFork xs => NodeInitStorage (HardForkBlock xs) where
            SingleEraBlock blk
         => Index xs blk
         -> StorageConfig blk
-        -> Flip2 LedgerState wt EmptyMK blk
+        -> Flip2 LedgerState WithoutLedgerTables EmptyMK blk
         -> K (m ()) blk
       aux index cfg' (Flip2 currentLedger) = K $
           nodeInitChainDB cfg' InitChainDB {

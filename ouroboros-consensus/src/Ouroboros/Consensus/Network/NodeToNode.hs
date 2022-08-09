@@ -181,7 +181,6 @@ mkHandlers
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Ord remotePeer
-     , IsSwitchLedgerTables wt
      , LedgerMustSupportUTxOHD LedgerState blk wt
      , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )

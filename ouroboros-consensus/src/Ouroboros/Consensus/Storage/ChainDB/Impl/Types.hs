@@ -96,8 +96,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
                      (InvalidBlockPunishment)
 import           Ouroboros.Consensus.Storage.Serialisation
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB',
-                     LgrDB, LgrDbSerialiseConstraints)
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB, LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB,
                      ImmutableDbSerialiseConstraints)
@@ -247,7 +246,6 @@ data ChainDbEnv m blk wt = CDB
     -- Note that 'copyToImmutableDB' can still be executed concurrently with all
     -- others functions, just not with itself.
   , cdbTracer          :: !(Tracer m (TraceEvent blk))
-  , cdbTraceLedger     :: !(Tracer m (LedgerDB' blk wt))
   , cdbRegistry        :: !(ResourceRegistry m)
     -- ^ Resource registry that will be used to (re)start the background
     -- threads, see 'cdbBgThreads'.

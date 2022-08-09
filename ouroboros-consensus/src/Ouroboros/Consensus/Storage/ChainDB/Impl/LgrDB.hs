@@ -167,12 +167,11 @@ type LgrDbSerialiseConstraints blk wt =
   Initialization
 -------------------------------------------------------------------------------}
 
-data LgrDbArgs f m blk wt = LgrDbArgs {
+data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy           :: DiskPolicy
-    , lgrGenesis              :: HKD f (m (ExtLedgerState blk wt ValuesMK))
+    , lgrGenesis              :: HKD f (m (ExtLedgerState blk WithoutLedgerTables ValuesMK))
     , lgrHasFS                :: SomeHasFS m
     , lgrTopLevelConfig       :: HKD f (TopLevelConfig blk)
-    , lgrTraceLedger          :: Tracer m (LedgerDB' blk wt)
     , lgrTracer               :: Tracer m (TraceEvent blk)
     , lgrBackingStoreSelector :: !(BackingStoreSelector m)
     }
@@ -183,13 +182,12 @@ defaultArgs ::
   => SomeHasFS m
   -> DiskPolicy
   -> BackingStoreSelector m
-  -> LgrDbArgs Defaults m blk wt
+  -> LgrDbArgs Defaults m blk
 defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
       lgrDiskPolicy     = diskPolicy
     , lgrGenesis        = NoDefault
     , lgrHasFS
     , lgrTopLevelConfig = NoDefault
-    , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
     , lgrBackingStoreSelector = bss
     }
@@ -202,16 +200,11 @@ openDB :: forall m blk wt.
           ( IOLike m
           , LedgerSupportsProtocol blk
           , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-          , LedgerSupportsUTxOHD ExtLedgerState blk
           , LgrDbSerialiseConstraints blk wt
           , InspectLedger blk
           , HasCallStack
-          , IsSwitchLedgerTables wt
-          , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
-          , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
-          , NoThunks (LedgerState blk wt EmptyMK)
           )
-       => LgrDbArgs Identity m blk wt
+       => LgrDbArgs Identity m blk
        -- ^ Stateless initializaton arguments
        -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
        -- ^ Used to trace the progress while replaying blocks against the
@@ -275,14 +268,11 @@ initFromDisk
      ( IOLike m
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , LedgerSupportsUTxOHD ExtLedgerState blk
      , LgrDbSerialiseConstraints blk wt
      , InspectLedger blk
      , HasCallStack
-     , IsSwitchLedgerTables wt
-     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
      )
-  => LgrDbArgs Identity m blk wt
+  => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> ImmutableDB m blk
   -> m (LedgerDB' blk wt, Word64, LedgerBackingStore m (ExtLedgerState blk) wt)
@@ -316,7 +306,7 @@ mkLgrDB :: StrictTVar m (LedgerDB' blk wt)
         -> LedgerBackingStore m (ExtLedgerState blk) wt
         -> Lock.RAWLock m ()
         -> (RealPoint blk -> m blk)
-        -> LgrDbArgs Identity m blk wt
+        -> LgrDbArgs Identity m blk
         -> LgrDB m blk wt
 mkLgrDB varDB varPrevApplied lgrBackingStore lgrFlushLock resolveBlock args = LgrDB {..}
   where
@@ -414,7 +404,6 @@ validate :: forall m blk wt.
             , LedgerSupportsProtocol blk
             , LedgerMustSupportUTxOHD ExtLedgerState blk wt
             , HasCallStack
-            , IsSwitchLedgerTables wt
             )
          => LgrDB m blk wt
          -> LedgerDB' blk wt

@@ -53,7 +53,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
@@ -99,9 +98,7 @@ initialChainSelection
   :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , GetTip (LedgerState blk wt EmptyMK)
-     , IsSwitchLedgerTables wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ImmutableDB m blk
   -> VolatileDB m blk
@@ -269,9 +266,7 @@ addBlockSync
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
-     , GetTip (LedgerState blk wt EmptyMK)
-     , IsSwitchLedgerTables wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ChainDbEnv m blk wt
   -> BlockToAdd m blk
@@ -399,9 +394,7 @@ chainSelectionForFutureBlocks
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
-     , GetTip (LedgerState blk wt EmptyMK)
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ChainDbEnv m blk wt -> BlockCache blk -> m (Point blk)
 chainSelectionForFutureBlocks cdb@CDB{..} blockCache = do
@@ -460,9 +453,7 @@ chainSelectionForBlock
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
-     , GetTip (LedgerState blk wt EmptyMK)
-     , IsSwitchLedgerTables wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ChainDbEnv m blk wt
   -> BlockCache blk
@@ -796,7 +787,6 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish =
           mkTraceEvent events (mkNewTipInfo newLedger) curChain newChain
         whenJust (strictMaybeToMaybe prevTentativeHeader) $ traceWith $
           PipeliningEvent . OutdatedTentativeHeader >$< addBlockTracer
-        traceWith cdbTraceLedger newLedger
 
         return $ castPoint $ AF.headPoint newChain
       where
@@ -889,9 +879,7 @@ chainSelection
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
-     , IsSwitchLedgerTables wt
-     , GetTip (LedgerState blk wt EmptyMK)
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ChainSelEnv m blk wt
   -> NonEmpty (ChainDiff (Header blk))
@@ -1070,9 +1058,7 @@ ledgerValidateCandidate
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
-     , IsSwitchLedgerTables wt
-     , GetTip (LedgerState blk wt EmptyMK)
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ChainSelEnv m blk wt
   -> ChainDiff (Header blk)
@@ -1238,9 +1224,7 @@ validateCandidate
   :: ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
-     , IsSwitchLedgerTables wt
-     , GetTip (LedgerState blk wt EmptyMK)
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ChainSelEnv m blk wt
   -> ChainDiff (Header blk)

@@ -49,7 +49,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
-import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
@@ -71,11 +70,8 @@ openMempool
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD LedgerState blk wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
-     , IsSwitchLedgerTables wt
      )
   => ResourceRegistry m
   -> LedgerInterface m blk wt
@@ -97,11 +93,8 @@ openMempoolWithoutSyncThread
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD LedgerState blk wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
-     , IsSwitchLedgerTables wt
      )
   => LedgerInterface m blk wt
   -> LedgerConfig blk
@@ -116,11 +109,8 @@ mkMempool ::
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD LedgerState blk wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
-     , IsSwitchLedgerTables wt
      )
   => MempoolEnv m blk wt -> Mempool m blk TicketNo wt
 mkMempool mpEnv = Mempool
@@ -183,8 +173,7 @@ data LedgerInterface m blk wt = LedgerInterface
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
 chainDBLedgerInterface ::
      ( IOLike m
-     , GetTip (LedgerState blk wt EmptyMK)
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ChainDB m blk wt -> LedgerInterface m blk wt
 chainDBLedgerInterface chainDB = LedgerInterface
@@ -215,9 +204,8 @@ data MempoolEnv m blk wt = MempoolEnv {
 initMempoolEnv :: ( IOLike m
 --                  , NoThunks (GenTxId blk)   -- TODO how to use this with the TMVar?
                   , LedgerSupportsMempool blk
+                  , LedgerMustSupportUTxOHD' blk wt
                   , ValidateEnvelope blk
-                  , LedgerMustSupportUTxOHD LedgerState blk wt
-                  , IsSwitchLedgerTables wt
                   )
                => LedgerInterface m blk wt
                -> LedgerConfig blk
@@ -244,11 +232,8 @@ forkSyncStateOnTipPointChange :: forall m blk wt. (
                                    IOLike m
                                  , LedgerSupportsMempool blk
                                  , LedgerSupportsProtocol blk
-                                 , LedgerMustSupportUTxOHD LedgerState blk wt
-                                 , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-                                 , Promote (LedgerState blk) (ExtLedgerState blk) wt
+                                 , LedgerMustSupportUTxOHD' blk wt
                                  , HasTxId (GenTx blk)
-                                 , IsSwitchLedgerTables wt
                                  )
                               => ResourceRegistry m
                               -> MempoolEnv m blk wt
@@ -298,11 +283,8 @@ implTryAddTxs
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD LedgerState blk wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
-     , IsSwitchLedgerTables wt
      )
   => MempoolEnv m blk wt
   -> WhetherToIntervene
@@ -345,11 +327,8 @@ implSyncWithLedger ::
        IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
-     , LedgerMustSupportUTxOHD LedgerState blk wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , IsSwitchLedgerTables wt
      )
   => MempoolEnv m blk wt
   -> m (MempoolSnapshot blk TicketNo)
@@ -400,12 +379,9 @@ implSyncWithLedger mpEnv = getStatePair mpEnv (StaticLeft ()) [] [] >>= \case
 getStatePair :: forall m blk wt b.
      ( IOLike m
      , LedgerSupportsMempool blk
-     , LedgerMustSupportUTxOHD LedgerState blk wt
-     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      , Typeable b
-     , Typeable wt
      )
   => MempoolEnv m blk wt
   -> StaticEither b () (Point blk)
