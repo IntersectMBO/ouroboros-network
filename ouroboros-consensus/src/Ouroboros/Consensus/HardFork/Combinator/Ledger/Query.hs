@@ -116,8 +116,7 @@ data instance BlockQuery (HardForkBlock xs) :: FootprintL -> Type -> Type where
 
 instance
      ( All SingleEraBlock xs
-     , LedgerTablesCanHardFork WithLedgerTables xs
-     , LedgerTablesCanHardFork WithoutLedgerTables xs
+     , LedgerTablesCanHardFork xs
      )
   => QueryLedger (HardForkBlock xs) where
   answerBlockQuery
@@ -148,7 +147,7 @@ instance
 
   prepareBlockQuery :: forall wt result. IsSwitchLedgerTables wt => BlockQuery (HardForkBlock xs) LargeL result -> LedgerTables (LedgerState (HardForkBlock xs)) wt KeysMK
   prepareBlockQuery = \case
-      QueryIfCurrent queryIfCurrent  -> rf (Proxy @(LedgerTablesCanHardForkFlipped xs)) (Proxy @wt) $ prepareQueryIfCurrent queryIfCurrent
+      QueryIfCurrent queryIfCurrent  -> prepareQueryIfCurrent queryIfCurrent
       QueryAnytime queryAnytime _era -> proveNotLargeQuery    queryAnytime
       QueryHardFork queryHardFork    -> proveNotLargeQuery    queryHardFork
 
@@ -280,17 +279,18 @@ interpretQueryIfCurrent = go
 
 prepareQueryIfCurrent ::
   forall xs wt result.
-     (All SingleEraBlock xs, LedgerTablesCanHardFork wt xs, IsSwitchLedgerTables wt)
+     (All SingleEraBlock xs, IsSwitchLedgerTables wt, LedgerTablesCanHardFork xs)
   => QueryIfCurrent xs LargeL result
   -> LedgerTables (LedgerState (HardForkBlock xs)) wt KeysMK
-prepareQueryIfCurrent =
-    \qic -> go qic hardForkInjectLedgerTablesKeysMK
+prepareQueryIfCurrent = case findOutWT (Proxy @wt) of
+  SWithLedgerTables -> (`go` hardForkInjectLedgerTablesKeysMK)
+  SWithoutLedgerTables -> const NoLedgerTables
   where
     go ::
          All SingleEraBlock ys
       => QueryIfCurrent ys LargeL result
-      -> NP (InjectLedgerTables wt xs) ys
-      -> LedgerTables (LedgerState (HardForkBlock xs)) wt KeysMK
+      -> NP (InjectLedgerTables xs) ys
+      -> LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables KeysMK
     go (QS qic) (_   :* injs) = go qic injs
     go (QZ bq)  (inj :* _)    =
       applyInjectLedgerTables inj $ prepareBlockQuery bq

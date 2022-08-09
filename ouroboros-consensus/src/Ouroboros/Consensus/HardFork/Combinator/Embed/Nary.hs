@@ -49,7 +49,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 class Inject f where
   inject ::
-       forall x xs. (CanHardFork xs, LedgerTablesCanHardFork WithLedgerTables xs, LedgerTablesCanHardFork WithoutLedgerTables xs)
+       forall x xs. (CanHardFork xs, LedgerTablesCanHardFork xs)
     => Exactly xs History.Bound
        -- ^ Start bound of each era
     -> Index xs x
@@ -60,8 +60,7 @@ inject' ::
      forall f a b x xs.
      ( Inject f
      , CanHardFork xs
-     , LedgerTablesCanHardFork WithLedgerTables xs
-     , LedgerTablesCanHardFork WithoutLedgerTables xs
+     , LedgerTablesCanHardFork xs
      , Coercible a (f x)
      , Coercible b (f (HardForkBlock xs))
      )

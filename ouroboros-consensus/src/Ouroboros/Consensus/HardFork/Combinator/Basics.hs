@@ -23,7 +23,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * UTxO HD
   , InjectLedgerTables (..)
   , LedgerTablesCanHardFork (..)
-  , LedgerTablesCanHardForkFlipped
     -- * Config
   , BlockConfig (..)
   , CodecConfig (..)
@@ -127,17 +126,14 @@ newtype instance LedgerState (HardForkBlock xs) wt mk = HardForkLedgerState {
 -------------------------------------------------------------------------------}
 
 -- | How to inject each era's ledger tables into their shared ledger tables
-class LedgerTablesCanHardFork wt xs where
-  hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables wt xs) xs
+class LedgerTablesCanHardFork xs where
+  hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables xs) xs
 
-newtype InjectLedgerTables wt xs x = InjectLedgerTables {
+newtype InjectLedgerTables xs x = InjectLedgerTables {
       applyInjectLedgerTables :: forall mk. IsApplyMapKind mk =>
-           LedgerTables (LedgerState                  x) wt mk
-        -> LedgerTables (LedgerState (HardForkBlock xs)) wt mk
+           LedgerTables (LedgerState                  x) WithLedgerTables mk
+        -> LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables mk
     }
-
-class LedgerTablesCanHardFork wt xs => LedgerTablesCanHardForkFlipped xs wt
-instance LedgerTablesCanHardFork wt xs => LedgerTablesCanHardForkFlipped xs wt
 
 {-------------------------------------------------------------------------------
   Protocol config

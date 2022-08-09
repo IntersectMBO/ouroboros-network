@@ -129,7 +129,7 @@ instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
       . getHardForkValidatedGenTx
 
 instance ( CanHardFork xs
-         , LedgerTablesCanHardFork WithLedgerTables xs
+         , LedgerTablesCanHardFork xs
          ) => GetsBlockKeySets (LedgerState (HardForkBlock xs)) (HardForkBlock xs) WithLedgerTables where
   getBlockKeySets (HardForkBlock (OneEraBlock ns)) =
         hcollapse
@@ -137,7 +137,7 @@ instance ( CanHardFork xs
     where
       f ::
            SingleEraBlock                                           x
-        => InjectLedgerTables WithLedgerTables xs                   x
+        => InjectLedgerTables xs                   x
         -> I                                                        x
         -> K (LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables KeysMK) x
       f inj (I blk) = K $ applyInjectLedgerTables inj $ getBlockKeySets blk
@@ -148,7 +148,7 @@ instance ( CanHardFork xs
     where
       f ::
            SingleEraBlock                                           x
-        => InjectLedgerTables WithLedgerTables xs                                    x
+        => InjectLedgerTables xs                                    x
         -> GenTx                                                    x
         -> K (LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables KeysMK) x
       f inj tx = K $ applyInjectLedgerTables inj $ getTransactionKeySets tx
