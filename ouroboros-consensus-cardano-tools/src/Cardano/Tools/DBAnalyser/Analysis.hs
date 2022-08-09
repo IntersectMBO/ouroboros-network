@@ -7,9 +7,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
-module Analysis (
+module Cardano.Tools.DBAnalyser.Analysis (
     AnalysisEnv (..)
   , AnalysisName (..)
+  , AnalysisResult (..)
   , Limit (..)
   , runAnalysis
   ) where
@@ -57,8 +58,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes,
                      encodeDisk)
 
-import           HasAnalysis (HasAnalysis)
-import qualified HasAnalysis
+import           Cardano.Tools.DBAnalyser.HasAnalysis (HasAnalysis)
+import qualified Cardano.Tools.DBAnalyser.HasAnalysis as HasAnalysis
 
 {-------------------------------------------------------------------------------
   Run the requested analysis
@@ -78,6 +79,12 @@ data AnalysisName =
   | ReproMempoolAndForge Int
   deriving Show
 
+data AnalysisResult =
+    ResultCountBlock Int
+  | ResultMaxHeaderSize Word16
+  deriving (Eq, Show)
+
+
 runAnalysis ::
      forall blk .
      ( HasAnalysis blk
@@ -89,23 +96,24 @@ runAnalysis ::
      )
   => AnalysisName -> Analysis blk
 runAnalysis analysisName env@(AnalysisEnv { tracer }) = do
-  traceWith tracer (StartedEvent analysisName)
-  go analysisName
-  traceWith tracer DoneEvent
+    traceWith tracer (StartedEvent analysisName)
+    result <- go analysisName
+    traceWith tracer DoneEvent
+    pure result
   where
     go ShowSlotBlockNo             = showSlotBlockNo env
     go CountTxOutputs              = countTxOutputs env
     go ShowBlockHeaderSize         = showHeaderSize env
     go ShowBlockTxsSize            = showBlockTxsSize env
     go ShowEBBs                    = showEBBs env
-    go OnlyValidation              = return ()
+    go OnlyValidation              = pure Nothing
     go (StoreLedgerStateAt slotNo) = (storeLedgerStateAt slotNo) env
     go CountBlocks                 = countBlocks env
     go (CheckNoThunksEvery nBks)   = checkNoThunksEvery nBks env
     go TraceLedgerProcessing       = traceLedgerProcessing env
     go (ReproMempoolAndForge nBks) = reproMempoolForge nBks env
 
-type Analysis blk = AnalysisEnv IO blk -> IO ()
+type Analysis blk = AnalysisEnv IO blk -> IO (Maybe AnalysisResult)
 
 data AnalysisEnv m blk = AnalysisEnv {
       cfg        :: TopLevelConfig blk
@@ -223,6 +231,7 @@ instance HasAnalysis blk => Show (TraceEvent blk) where
 showSlotBlockNo :: forall blk. HasAnalysis blk => Analysis blk
 showSlotBlockNo AnalysisEnv { db, registry, initLedger, limit, tracer } =
     processAll_ db registry GetHeader initLedger limit process
+        >> pure Nothing
   where
     process :: Header blk -> IO ()
     process hdr = traceWith tracer $ BlockSlotEvent (blockNo hdr) (blockSlot hdr)
@@ -234,6 +243,7 @@ showSlotBlockNo AnalysisEnv { db, registry, initLedger, limit, tracer } =
 countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
 countTxOutputs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     void $ processAll db registry GetBlock initLedger limit 0 process
+    pure Nothing
   where
     process :: Int -> blk -> IO Int
     process cumulative blk = do
@@ -256,6 +266,7 @@ showHeaderSize AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     maxHeaderSize <-
       processAll db registry ((,) <$> GetHeader <*> GetHeaderSize) initLedger limit 0 process
     traceWith tracer $ MaxHeaderSizeEvent maxHeaderSize
+    pure $ Just $ ResultMaxHeaderSize maxHeaderSize
   where
     process :: Word16 -> (Header blk, Word16) -> IO Word16
     process maxHeaderSize (hdr, headerSize) = do
@@ -270,8 +281,9 @@ showHeaderSize AnalysisEnv { db, registry, initLedger, limit, tracer } = do
 -------------------------------------------------------------------------------}
 
 showBlockTxsSize :: forall blk. HasAnalysis blk => Analysis blk
-showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit, tracer } =
+showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     processAll_ db registry GetBlock initLedger limit process
+    pure Nothing
   where
     process :: blk -> IO ()
     process blk =
@@ -291,8 +303,9 @@ showBlockTxsSize AnalysisEnv { db, registry, initLedger, limit, tracer } =
 -------------------------------------------------------------------------------}
 
 showEBBs :: forall blk. HasAnalysis blk => Analysis blk
-showEBBs AnalysisEnv { db, registry, initLedger, limit, tracer } =
+showEBBs AnalysisEnv { db, registry, initLedger, limit, tracer } = do
     processAll_ db registry GetBlock initLedger limit process
+    pure Nothing
   where
     process :: blk -> IO ()
     process blk =
@@ -317,8 +330,9 @@ storeLedgerStateAt ::
      , LedgerSupportsProtocol blk
      )
   => SlotNo -> Analysis blk
-storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, ledgerDbFS, tracer }) =
+storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, ledgerDbFS, tracer }) = do
     void $ processAllUntil db registry GetBlock initLedger limit initLedger process
+    pure Nothing
   where
     process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
     process oldLedger blk = do
@@ -367,6 +381,7 @@ countBlocks ::
 countBlocks (AnalysisEnv { db, registry, initLedger, limit, tracer }) = do
     counted <- processAll db registry (GetPure ()) initLedger limit 0 process
     traceWith tracer $ CountedBlocksEvent counted
+    pure $ Just $ ResultCountBlock counted
   where
     process :: Int -> () -> IO Int
     process count _ = pure $ count + 1
@@ -387,6 +402,7 @@ checkNoThunksEvery
     putStrLn $
       "Checking for thunks in each block where blockNo === 0 (mod " <> show nBlocks <> ")."
     void $ processAll db registry GetBlock initLedger limit initLedger process
+    pure Nothing
   where
     process :: ExtLedgerState blk -> blk -> IO (ExtLedgerState blk)
     process oldLedger blk = do
@@ -419,6 +435,7 @@ traceLedgerProcessing ::
 traceLedgerProcessing
   (AnalysisEnv {db, registry, initLedger, cfg, limit}) = do
     void $ processAll db registry GetBlock initLedger limit initLedger process
+    pure Nothing
   where
     process
       :: ExtLedgerState blk
@@ -469,6 +486,7 @@ reproMempoolForge numBlks env = do
       LedgerSupportsMempool.txInBlockSize
 
     void $ processAll db registry GetBlock initLedger limit Nothing (process howManyBlocks ref mempool)
+    pure Nothing
   where
     AnalysisEnv {
       cfg
@@ -614,7 +632,7 @@ processAllChainDB ::
   -> st
   -> (st -> b -> IO (NextStep, st))
   -> IO st
-processAllChainDB chainDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
+processAllChainDB chainDB registry blockComponent ExtLedgerState{headerState} limit initState callback = do
     itr <- case headerStateTip headerState of
       Origin           -> ChainDB.streamAll
                              chainDB
@@ -649,7 +667,7 @@ processAllImmutableDB ::
   -> st
   -> (st -> b -> IO (NextStep, st))
   -> IO st
-processAllImmutableDB immutableDB registry blockComponent (ExtLedgerState {..}) limit initState callback = do
+processAllImmutableDB immutableDB registry blockComponent ExtLedgerState{headerState} limit initState callback = do
     itr <- case headerStateTip headerState of
       Origin           -> ImmutableDB.streamAll
                              immutableDB

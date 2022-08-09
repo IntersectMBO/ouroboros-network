@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -9,19 +9,18 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Block.Shelley (
+module Cardano.Tools.DBAnalyser.Block.Shelley (
     Args (..)
   , ShelleyBlockArgs
   ) where
 
 import qualified Data.Aeson as Aeson
-import           Data.Foldable (asum, toList)
+import           Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
 import           Data.Maybe.Strict
 import           Data.Sequence.Strict (StrictSeq)
 import           GHC.Records (HasField, getField)
-import           Options.Applicative
 
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as CL
@@ -44,7 +43,7 @@ import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
                      ProtocolParamsShelleyBased (..), ShelleyGenesis,
                      protocolInfoShelley)
 
-import           HasAnalysis
+import           Cardano.Tools.DBAnalyser.HasAnalysis
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyCompatible proto era
@@ -90,8 +89,7 @@ instance HasProtocolInfo (ShelleyBlock (TPraos StandardCrypto) StandardShelley) 
       }
     deriving (Show)
 
-  argsParser _ = parseShelleyArgs
-  mkProtocolInfo ShelleyBlockArgs {..}  = do
+  mkProtocolInfo ShelleyBlockArgs{configFileShelley, initialNonce} = do
     config <- either (error . show) return =<<
       Aeson.eitherDecodeFileStrict' configFileShelley
     return $ mkShelleyProtocolInfo config initialNonce
@@ -113,19 +111,3 @@ mkShelleyProtocolInfo genesis initialNonce =
           shelleyProtVer                = SL.ProtVer 2 0
         , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
-
-parseShelleyArgs :: Parser ShelleyBlockArgs
-parseShelleyArgs = ShelleyBlockArgs
-    <$> strOption (mconcat [
-            long "configShelley"
-          , help "Path to config file"
-          , metavar "PATH"
-          ])
-    <*> asum [ Nonce  <$> parseNonce
-             , pure NeutralNonce]
-  where
-    parseNonce = strOption (mconcat [
-            long "nonce"
-          , help "Initial nonce, i.e., hash of the genesis config file"
-          , metavar "NONCE"
-          ])

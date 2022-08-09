@@ -5,9 +5,9 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -16,19 +16,11 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Block.Cardano (CardanoBlockArgs) where
+module Cardano.Tools.DBAnalyser.Block.Cardano (
+    Args (..)
+  , CardanoBlockArgs
+  ) where
 
-import qualified Block.Byron as BlockByron
-import           Block.Shelley ()
-import           Cardano.Binary (Raw)
-import qualified Cardano.Chain.Genesis as Byron.Genesis
-import qualified Cardano.Chain.Update as Byron.Update
-import           Cardano.Crypto (RequiresNetworkMagic (..))
-import qualified Cardano.Crypto as Crypto
-import qualified Cardano.Crypto.Hash.Class as CryptoClass
-import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
-import           Cardano.Ledger.Crypto
-import qualified Cardano.Ledger.Era as Core
 import           Control.Monad (when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -38,7 +30,19 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust)
 import           Data.SOP.Strict
 import           Data.Word (Word16)
-import           HasAnalysis
+import           System.Directory (makeAbsolute)
+import           System.FilePath (takeDirectory, (</>))
+
+import           Cardano.Binary (Raw)
+import qualified Cardano.Chain.Genesis as Byron.Genesis
+import qualified Cardano.Chain.Update as Byron.Update
+import           Cardano.Crypto (RequiresNetworkMagic (..))
+import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Crypto.Hash.Class as CryptoClass
+import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
+import           Cardano.Ledger.Crypto
+import qualified Cardano.Ledger.Era as Core
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Cardano
@@ -61,6 +65,13 @@ import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node.Praos
+
+import           Cardano.Node.Types (AdjustFilePaths (..))
+import qualified Cardano.Tools.DBAnalyser.Block.Byron as BlockByron
+                     (openGenesisByron)
+import           Cardano.Tools.DBAnalyser.Block.Shelley ()
+import           Cardano.Tools.DBAnalyser.HasAnalysis
+
 
 analyseBlock ::
      (forall blk. HasAnalysis blk => blk -> a)
@@ -113,26 +124,25 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
         , threshold            :: Maybe PBftSignatureThreshold
         }
 
-  argsParser _ = do
-    configFile           <- BlockByron.parseConfigFile
-    threshold            <- BlockByron.parsePBftSignatureThreshold
-    pure CardanoBlockArgs {..}
+  mkProtocolInfo CardanoBlockArgs{configFile, threshold} = do
+    relativeToConfig :: (FilePath -> FilePath) <-
+        (</>) . takeDirectory <$> makeAbsolute configFile
 
-  mkProtocolInfo CardanoBlockArgs {..} = do
-    CardanoConfig {..} <- either (error . show) return =<<
-      Aeson.eitherDecodeFileStrict' configFile
+    cc :: CardanoConfig <-
+      either (error . show) (return . adjustFilePaths relativeToConfig) =<<
+        Aeson.eitherDecodeFileStrict' configFile
 
     genesisByron   <-
-      BlockByron.openGenesisByron byronGenesisPath byronGenesisHash requiresNetworkMagic
+      BlockByron.openGenesisByron (byronGenesisPath cc) (byronGenesisHash cc) (requiresNetworkMagic cc)
     genesisShelley <- either (error . show) return =<<
-      Aeson.eitherDecodeFileStrict' shelleyGenesisPath
+      Aeson.eitherDecodeFileStrict' (shelleyGenesisPath cc)
     genesisAlonzo  <- either (error . show) return =<<
-      Aeson.eitherDecodeFileStrict' alonzoGenesisPath
+      Aeson.eitherDecodeFileStrict' (alonzoGenesisPath cc)
 
-    initialNonce <- case shelleyGenesisHash of
+    initialNonce <- case shelleyGenesisHash cc of
       Just h  -> pure h
       Nothing -> do
-        content <- BS.readFile shelleyGenesisPath
+        content <- BS.readFile (shelleyGenesisPath cc)
         pure
           $ Nonce
           $ CryptoClass.castHash
@@ -146,7 +156,7 @@ instance HasProtocolInfo (CardanoBlock StandardCrypto) where
           genesisShelley
           genesisAlonzo
           initialNonce
-          hardForkTriggers
+          (hardForkTriggers cc)
 
 data CardanoConfig = CardanoConfig {
     -- | @RequiresNetworkMagic@ field
@@ -168,6 +178,14 @@ data CardanoConfig = CardanoConfig {
     -- | @Test*HardForkAtEpoch@ for each Shelley era
   , hardForkTriggers     :: NP STA (CardanoShelleyEras StandardCrypto)
   }
+
+instance AdjustFilePaths CardanoConfig where
+    adjustFilePaths f cc =
+        cc {
+            byronGenesisPath    = f $ byronGenesisPath cc
+          , shelleyGenesisPath  = f $ shelleyGenesisPath cc
+          , alonzoGenesisPath   = f $ alonzoGenesisPath cc
+          }
 
 -- | Shelley transition arguments
 data STA :: Type -> Type where
@@ -205,10 +223,6 @@ instance Aeson.FromJSON CardanoConfig where
             $           (fmap TriggerHardForkAtEpoch <$> (v Aeson..:? nm))
               Aeson..!= (TriggerHardForkAtVersion majProtVer)
 
-      -- Note: we must skip major protocol version 6, which coincides with the
-      -- era between the Alonzo intra-era hard-fork and Babbage hard-fork. The
-      -- intra-era hard-fork only introduced changes at the ledger level and
-      -- not at the consensus level, so protocol version 6 can be skipped.
       stas <- hsequence' $
         f "TestShelleyHardForkAtEpoch" 2 (\_ -> ()) :*
         f "TestAllegraHardForkAtEpoch" 3 (\_ -> ()) :*
@@ -227,7 +241,16 @@ instance Aeson.FromJSON CardanoConfig where
            "if the Cardano config file sets a Test*HardForkEpoch,"
         <> " it must also set it for all previous eras."
 
-    pure $ CardanoConfig{..}
+    pure $
+      CardanoConfig
+        { requiresNetworkMagic = requiresNetworkMagic
+        , byronGenesisPath = byronGenesisPath
+        , byronGenesisHash = byronGenesisHash
+        , shelleyGenesisPath = shelleyGenesisPath
+        , shelleyGenesisHash = shelleyGenesisHash
+        , alonzoGenesisPath = alonzoGenesisPath
+        , hardForkTriggers = hardForkTriggers
+        }
 
 instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs

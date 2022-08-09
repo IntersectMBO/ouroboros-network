@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
-module HasAnalysis (
+module Cardano.Tools.DBAnalyser.HasAnalysis (
     HasAnalysis (..)
   , HasProtocolInfo (..)
   , SizeInBytes
@@ -7,7 +7,6 @@ module HasAnalysis (
   ) where
 
 import           Data.Map.Strict (Map)
-import           Options.Applicative
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
@@ -36,5 +35,4 @@ class (HasAnnTip blk, GetPrevHash blk) => HasAnalysis blk where
 
 class HasProtocolInfo blk where
   data Args blk
-  argsParser     :: proxy blk -> Parser (Args blk)
   mkProtocolInfo :: Args blk -> IO (ProtocolInfo IO blk)

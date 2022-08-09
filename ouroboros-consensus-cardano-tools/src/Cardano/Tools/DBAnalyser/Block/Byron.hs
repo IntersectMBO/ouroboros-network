@@ -5,19 +5,15 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Block.Byron (
+module Cardano.Tools.DBAnalyser.Block.Byron (
     Args (..)
   , ByronBlockArgs
   , openGenesisByron
-    -- * Exported for re-use by "Block.Cardano"
-  , parseConfigFile
-  , parsePBftSignatureThreshold
   ) where
 
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import           Options.Applicative
 
 import           Cardano.Binary (Raw, unAnnotated)
 import           Cardano.Crypto (RequiresNetworkMagic (..))
@@ -36,7 +32,7 @@ import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..),
                      ProtocolParamsByron (..), protocolInfoByron)
 
-import           HasAnalysis
+import           Cardano.Tools.DBAnalyser.HasAnalysis
 
 instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron
@@ -52,40 +48,11 @@ instance HasProtocolInfo ByronBlock where
         , genesisHash          :: Maybe (Crypto.Hash Raw)
         , threshold            :: Maybe PBftSignatureThreshold
         }
-    argsParser _ = parseByronArgs
-    mkProtocolInfo ByronBlockArgs {..} = do
-      config <- openGenesisByron configFile genesisHash requiresNetworkMagic
-      return $ mkByronProtocolInfo config threshold
+    mkProtocolInfo args = do
+      config <- openGenesisByron (configFile args) (genesisHash args) (requiresNetworkMagic args)
+      return $ mkByronProtocolInfo config (threshold args)
 
 type ByronBlockArgs = Args ByronBlock
-
-parseConfigFile :: Parser FilePath
-parseConfigFile = strOption $ mconcat [
-      long "config"
-    , help "Path to config file"
-    , metavar "PATH"
-    ]
-
-parsePBftSignatureThreshold :: Parser (Maybe PBftSignatureThreshold)
-parsePBftSignatureThreshold = optional $ fmap PBftSignatureThreshold $ option auto $ mconcat [
-      long "threshold"
-    , help "PBftSignatureThreshold"
-    , metavar "THRESHOLD"
-    ]
-
-parseByronArgs :: Parser ByronBlockArgs
-parseByronArgs = ByronBlockArgs
-    <$> parseConfigFile
-    <*> flag RequiresNoMagic RequiresMagic (mconcat [
-            long "requires-magic"
-          , help "The DB contains blocks from a testnet, requiring network magic, rather than mainnet"
-          ])
-    <*> optional (option auto (mconcat [
-            long "genesisHash"
-          , help "Expected genesis hash"
-          , metavar "HASH"
-          ]))
-    <*> parsePBftSignatureThreshold
 
 -- | Equivalent of 'either' for 'ABlockOrBoundary'.
 aBlockOrBoundary :: (Chain.ABoundaryBlock ByteString -> a)
@@ -98,9 +65,9 @@ aBlockOrBoundary fromBoundary fromRegular blk = case blk of
       -> fromRegular regularBlk
 
 countTxOutputsByron :: Chain.ABlock ByteString -> Int
-countTxOutputsByron Chain.ABlock{..} = countTxPayload bodyTxPayload
+countTxOutputsByron Chain.ABlock{ blockBody } = countTxPayload bodyTxPayload
   where
-    Chain.ABody { bodyTxPayload } = blockBody
+    Chain.ABody{ bodyTxPayload } = blockBody
 
     countTxPayload :: Chain.ATxPayload a -> Int
     countTxPayload = sum
