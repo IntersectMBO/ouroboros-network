@@ -32,6 +32,7 @@ import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxTicket (..),
@@ -63,9 +64,8 @@ data TryAddTxs blk wt =
 -- documentation of 'implTryAddTxs' for some more context.
 pureTryAddTxs
   :: ( LedgerSupportsMempool blk
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
-     , TickedTableStuff (LedgerState blk) wt
-     , IsSwitchLedgerTables wt
      )
   => LedgerCfg (LedgerState blk)
      -- ^ The ledger configuration.
@@ -132,12 +132,10 @@ runRemoveTxs stateVar (WriteRemoveTxs is t) = do
 -- mempool, returning inside it an updated InternalState.
 pureRemoveTxs
   :: ( LedgerSupportsMempool blk
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , TickedTableStuff (LedgerState blk) wt
      , IsSwitchLedgerTables wt
-     , GetTip (LedgerState blk wt ValuesMK)
-     , GetTip (TickedLedgerState blk wt TrackingMK)
      )
   => LedgerConfig blk
   -> MempoolCapacityBytesOverride
@@ -209,12 +207,10 @@ runSyncWithLedger stateVar (NewSyncedState is msp mTrace) = do
 -- See the documentation of 'runSyncWithLedger' for more context.
 pureSyncWithLedger
   :: ( LedgerSupportsMempool blk
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , TickedTableStuff (LedgerState blk) wt
      , IsSwitchLedgerTables wt
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , GetTip (LedgerState blk wt ValuesMK)
      )
   => InternalState blk wt
   -> LedgerState blk wt ValuesMK
@@ -239,12 +235,10 @@ pureSyncWithLedger istate lstate lcfg capacityOverride =
 pureGetSnapshotAndTickedFor
   :: forall blk wt.
      ( LedgerSupportsMempool blk
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , TickedTableStuff (LedgerState blk) wt
      , IsSwitchLedgerTables wt
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , GetTip (LedgerState blk wt ValuesMK)
      )
   => InternalState blk wt
   -> LedgerConfig blk

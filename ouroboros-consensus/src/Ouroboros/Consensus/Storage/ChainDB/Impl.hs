@@ -50,8 +50,8 @@ import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
@@ -89,13 +89,13 @@ withDB
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk wt
-     , TickedTableStuff (ExtLedgerState blk) wt
      , GetTip (LedgerState blk wt EmptyMK)
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
      , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
      , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
      , NoThunks (LedgerState blk wt EmptyMK)
+     , LedgerSupportsUTxOHD ExtLedgerState blk
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainDbArgs Identity m blk wt
   -> (ChainDB m blk wt -> m a)
@@ -110,13 +110,13 @@ openDB
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk wt
-     , TickedTableStuff (ExtLedgerState blk) wt
      , GetTip (LedgerState blk wt EmptyMK)
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
      , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
      , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
      , NoThunks (LedgerState blk wt EmptyMK)
+     , LedgerSupportsUTxOHD ExtLedgerState blk
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainDbArgs Identity m blk wt
   -> m (ChainDB m blk wt)
@@ -130,13 +130,13 @@ openDBInternal
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk wt
-     , TickedTableStuff (ExtLedgerState blk) wt
      , GetTip (LedgerState blk wt EmptyMK)
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
      , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
      , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
      , NoThunks (LedgerState blk wt EmptyMK)
+     , LedgerSupportsUTxOHD ExtLedgerState blk
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainDbArgs Identity m blk wt
   -> Bool -- ^ 'True' = Launch background tasks

@@ -6,18 +6,14 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types                 #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
+
+{-# LANGUAGE UndecidableInstances #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Hard fork protocol, block, and ledger state
@@ -27,6 +23,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * UTxO HD
   , InjectLedgerTables (..)
   , LedgerTablesCanHardFork (..)
+  , LedgerTablesCanHardForkFlipped
     -- * Config
   , BlockConfig (..)
   , CodecConfig (..)
@@ -139,13 +136,16 @@ newtype InjectLedgerTables wt xs x = InjectLedgerTables {
         -> LedgerTables (LedgerState (HardForkBlock xs)) wt mk
     }
 
+class LedgerTablesCanHardFork wt xs => LedgerTablesCanHardForkFlipped xs wt
+instance LedgerTablesCanHardFork wt xs => LedgerTablesCanHardForkFlipped xs wt
+
 {-------------------------------------------------------------------------------
   Protocol config
 -------------------------------------------------------------------------------}
 
 data instance ConsensusConfig (HardForkProtocol xs) = HardForkConsensusConfig {
       -- | The value of @k@ cannot change at hard fork boundaries
-      hardForkConsensusConfigK :: !(SecurityParam)
+      hardForkConsensusConfigK :: !SecurityParam
 
       -- | The shape of the hard fork
       --

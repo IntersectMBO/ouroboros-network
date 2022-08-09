@@ -131,7 +131,7 @@ instance SerialiseHFC xs
 instance (SerialiseHFC xs, IsSwitchLedgerTables wt)
       => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) wt EmptyMK) where
   encodeDisk cfg =
-        encodeTelescope (hcmap pSHFC (fn . (case sWithLedgerTables (Proxy @wt) of
+        encodeTelescope (hcmap pSHFC (fn . (case findOutWT (Proxy @wt) of
                                               SWithLedgerTables -> aux
                                               SWithoutLedgerTables -> aux)) cfgs)
       . hardForkLedgerStatePerEra
@@ -145,7 +145,7 @@ instance (SerialiseHFC xs, IsSwitchLedgerTables wt)
       => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) wt EmptyMK) where
   decodeDisk cfg =
         fmap HardForkLedgerState
-      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip2 . (case sWithLedgerTables (Proxy @wt) of
+      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip2 . (case findOutWT (Proxy @wt) of
                                                              SWithLedgerTables -> decodeDisk
                                                              SWithoutLedgerTables -> decodeDisk)) cfgs)
     where

@@ -72,8 +72,7 @@ class ( ApplyBlock (LedgerState blk) blk
   txInvariant = const True
 
   -- | Apply an unvalidated transaction
-  applyTx :: IsSwitchLedgerTables wt
-          => LedgerConfig blk
+  applyTx :: LedgerConfig blk
           -> WhetherToIntervene
           -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
@@ -86,7 +85,7 @@ class ( ApplyBlock (LedgerState blk) blk
   -- When we re-apply a transaction to a potentially different ledger state
   -- expensive checks such as cryptographic hashes can be skipped, but other
   -- checks (such as checking for double spending) must still be done.
-  reapplyTx :: (HasCallStack, IsSwitchLedgerTables wt)
+  reapplyTx :: HasCallStack
             => LedgerConfig blk
             -> SlotNo -- ^ Slot number of the block containing the tx
             -> Validated (GenTx blk)

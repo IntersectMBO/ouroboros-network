@@ -2,10 +2,8 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MonadComprehensions #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -94,7 +92,6 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
                      ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Basics
-import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..), Promote)
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
@@ -128,6 +125,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 
 {-------------------------------------------------------------------------------
@@ -272,34 +270,18 @@ deriving instance Show (NetworkP2PMode p2p)
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
 run :: forall blk p2p wt.
-     ( RunNode blk
-     , UTXO_HD blk wt
-     , UTXO_HD blk WithLedgerTables
-     , UTXO_HD blk WithoutLedgerTables
-     , forall mk. GetTip (LedgerState blk wt mk)
-     )
+     (RunNode blk, IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
+     , NoThunks (LedgerState blk wt EmptyMK)
+     , SerialiseDiskConstraints blk wt)
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
 run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
-
-type UTXO_HD blk wt = ( TickedTableStuff (LedgerState blk) wt
-                      , TableStuff (ExtLedgerState blk) wt
-                      , TickedTableStuff (ExtLedgerState blk) wt
-                      , StowableLedgerTables (LedgerState blk) wt
-                      , StowableLedgerTables (ExtLedgerState blk) wt
-                      , GetTip (LedgerState blk wt EmptyMK)
-                      , GetTip (LedgerState blk wt ValuesMK)
-                      , GetTip (TickedLedgerState blk wt TrackingMK)
-                      , Promote (LedgerState blk) (ExtLedgerState blk) wt
-                      , GetsBlockKeySets (LedgerState blk) blk wt
-                      , GetsBlockKeySets (ExtLedgerState blk) blk wt
-                      , IsSwitchLedgerTables wt
-                      , SerialiseDiskConstraints blk wt
-                      , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
-                      , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
-                      , NoThunks (LedgerState blk wt EmptyMK)
-                      )
 
 -- | Start a node.
 --
@@ -311,10 +293,14 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p wt.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
-     , UTXO_HD blk wt
-     , UTXO_HD blk WithLedgerTables
-     , UTXO_HD blk WithoutLedgerTables
-     , forall mk. GetTip (LedgerState blk wt mk)
+     , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , Promote (LedgerState blk) (ExtLedgerState blk) wt
+     , SerialiseDiskConstraints blk wt
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
+     , NoThunks (LedgerState blk wt EmptyMK)
      )
   => RunNodeArgs m addrNTN addrNTC blk p2p wt
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p wt
@@ -361,7 +347,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           HardForkBlockchainTimeArgs
             { hfbtBackoffDelay   = pure $ BackoffDelay 60
             , hfbtGetLedgerState =
-                ledgerState <$> ChainDB.getCurrentLedger chainDB
+                ledgerState <$> rf (Proxy @(FlipGetTip LedgerState blk EmptyMK)) (Proxy @wt) (ChainDB.getCurrentLedger chainDB)
             , hfbtLedgerConfig   = configLedger cfg
             , hfbtRegistry       = registry
             , hfbtSystemTime     = systemTime
@@ -523,7 +509,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 ],
             Diffusion.daLedgerPeersCtx =
               LedgerPeersConsensusInterface
-                (getPeersFromCurrentLedgerAfterSlot kernel)
+                (undefined -- getPeersFromCurrentLedgerAfterSlot kernel
+                )
           }
 
         localRethrowPolicy :: RethrowPolicy
@@ -556,7 +543,17 @@ stdWithCheckedDB pb databasePath networkMagic body = do
     hasFS      = ioHasFS mountPoint
 
 openChainDB
-  :: forall m blk wt. (RunNode blk, IOLike m, UTXO_HD blk wt)
+  :: forall m blk wt.
+     ( RunNode blk
+     , IOLike m
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , SerialiseDiskConstraints blk wt
+     , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
+     , NoThunks (LedgerState blk wt EmptyMK)
+     )
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk

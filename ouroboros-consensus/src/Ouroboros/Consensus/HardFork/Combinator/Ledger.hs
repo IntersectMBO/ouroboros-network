@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense
@@ -108,45 +109,58 @@ type instance HeaderHash (Flip2 LedgerState wt mk blk) = HeaderHash blk
 instance GetTip (LedgerState blk wt mk) => GetTip (Flip2 LedgerState wt mk blk) where
   getTip = castPoint . getTip @(LedgerState blk wt mk) . unFlip2
 
+
+
 instance ( CanHardFork xs
          , All (And SingleEraBlock (Compose (Coercible (OneEraHash xs)) WrapHeaderHash)) xs
          , IsSwitchLedgerTables wt
          ) => GetTip (LedgerState (HardForkBlock xs) wt mk) where
   getTip = hcollapse
-         . hcmap (proxyComp (Proxy @xs)) (case sWithLedgerTables (Proxy @wt) of
-                                             SWithLedgerTables -> f
-                                             SWithoutLedgerTables -> f)
+         . hcmap (proxyComp (Proxy @xs)) f'
          . State.tip
          . hardForkLedgerStatePerEra
-        where f :: forall x . ( GetTip (LedgerState x wt mk)
-                              , Coercible (OneEraHash xs) (WrapHeaderHash x)
-                              )
-                =>     Flip2 LedgerState wt mk x
-                -> K (Point (LedgerState (HardForkBlock xs) wt mk)) x
-              f = K
-                . castPoint
-                . getTip
-                . unFlip2
+    where
+      f' :: forall x.
+           ( LedgerSupportsUTxOHD LedgerState x
+           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           )
+        => Flip2 LedgerState wt mk x
+        -> K (Point (LedgerState (HardForkBlock xs) wt mk)) x
+      f' = rf (Proxy @(And (TableStuff (LedgerState x)) (FlipGetTip LedgerState x EmptyMK))) (Proxy @wt) f
+
+      f :: forall x .
+           ( GetTip (LedgerState x wt EmptyMK)
+           , TableStuff (LedgerState x) wt
+           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           )
+        =>     Flip2 LedgerState wt mk x
+        -> K (Point (LedgerState (HardForkBlock xs) wt mk)) x
+      f = K . castPoint . getTip . forgetLedgerTables . unFlip2
 
 instance ( CanHardFork xs
          , All (And SingleEraBlock (Compose (Coercible (OneEraHash xs)) WrapHeaderHash)) xs
          , IsSwitchLedgerTables wt
          ) => GetTip (Ticked1 (LedgerState (HardForkBlock xs) wt) mk) where
   getTip = hcollapse
-         . hcmap (proxyComp (Proxy @xs)) (case sWithLedgerTables (Proxy @wt) of
-                                             SWithLedgerTables -> f
-                                             SWithoutLedgerTables -> f)
+         . hcmap (proxyComp (Proxy @xs)) f'
          . tickedHardForkLedgerStatePerEra
-         where
-           f :: forall x. ( GetTip (Ticked1 (LedgerState x wt) mk)
-                          , Coercible (OneEraHash xs) (WrapHeaderHash x)
-                          )
-             => FlipTickedLedgerState mk wt x
-             -> K (Point (Ticked1 (LedgerState (HardForkBlock xs) wt) mk)) x
-           f = K
-             . castPoint
-             . getTip
-             . getFlipTickedLedgerState
+    where
+      f' :: forall x.
+           ( LedgerSupportsUTxOHD LedgerState x
+           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           )
+        => FlipTickedLedgerState mk wt x
+        -> K (Point (Ticked1 (LedgerState (HardForkBlock xs) wt) mk)) x
+      f' = rf (Proxy @(And (TickedTableStuff (LedgerState x)) (FlipGetTip LedgerState x EmptyMK))) (Proxy @wt) f
+
+      f :: forall x.
+           ( GetTip (Ticked1 (LedgerState x wt) EmptyMK)
+           , TickedTableStuff (LedgerState x) wt
+           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           )
+        => FlipTickedLedgerState mk wt x
+        -> K (Point (Ticked1 (LedgerState (HardForkBlock xs) wt) mk)) x
+      f = K . castPoint . getTip . forgetLedgerTablesTicked . getFlipTickedLedgerState
 
 {-------------------------------------------------------------------------------
   Ticking
@@ -195,9 +209,7 @@ instance ( CanHardFork xs
                                   (Ticked1 (LedgerState (HardForkBlock xs) wt) DiffMK)
   applyChainTickLedgerResult cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
       sequenceHardForkState
-        (hcizipWith (proxySingle) (case sWithLedgerTables (Proxy @wt) of
-                                         SWithLedgerTables -> tickOne ei slot
-                                         SWithoutLedgerTables -> tickOne ei slot) cfgs extended) <&> \l' ->
+        (hcizipWith (proxySingle) (tickOne' ei slot) cfgs extended) <&> \l' ->
       TickedHardForkLedgerState {
           tickedHardForkLedgerStateTransition =
             -- We are bundling a 'TransitionInfo' with a /ticked/ ledger state,
@@ -229,7 +241,22 @@ instance ( CanHardFork xs
 
       extended = State.extendToSlot cfg slot st
 
-tickOne :: (SingleEraBlock blk, TickedTableStuff (LedgerState blk) wt, IsSwitchLedgerTables wt)
+      tickOne' :: forall blk.
+           SingleEraBlock blk
+        => EpochInfo (Except PastHorizonException)
+        -> SlotNo
+        -> Index                                          xs   blk
+        -> WrapPartialLedgerConfig                             blk
+        -> (Flip2 LedgerState wt DiffMK)                       blk
+        -> (     LedgerResult (LedgerState (HardForkBlock xs))
+             :.: FlipTickedLedgerState DiffMK wt
+           )                                                   blk
+      tickOne' = rf (Proxy @(TickedTableStuff (LedgerState blk))) (Proxy @wt) tickOne
+
+tickOne :: ( SingleEraBlock blk
+           , TickedTableStuff (LedgerState blk) wt
+           , IsSwitchLedgerTables wt
+           )
         => EpochInfo (Except PastHorizonException)
         -> SlotNo
         -> Index                                          xs   blk
@@ -520,15 +547,26 @@ instance ( BlockSupportsProtocol  (HardForkBlock xs)
       annForecast = HardForkState $
           hczipWith3
             proxySingle
-            (case sWithLedgerTables (Proxy @wt) of
-               SWithoutLedgerTables -> forecastOne
-               SWithLedgerTables -> forecastOne)
+            forecastOne'
             pcfgs
             (getExactly (History.getShape hardForkLedgerConfigShape))
             (getHardForkState ledgerSt)
 
+      forecastOne' ::
+             forall blk. SingleEraBlock blk
+          => WrapPartialLedgerConfig blk
+          -> K EraParams blk
+          -> Current (Flip2 LedgerState wt mk) blk
+          -> Current (AnnForecast LedgerState WrapLedgerView wt) blk
+      forecastOne' = rf (Proxy @(And (FlipGetTip LedgerState blk EmptyMK)
+                                     (TableStuff (LedgerState blk))))
+                        (Proxy @wt)
+                        forecastOne
+
       forecastOne ::
-             forall blk. (SingleEraBlock blk, GetTip (LedgerState blk wt mk), TableStuff (LedgerState blk) wt)
+             forall blk. ( SingleEraBlock blk
+                         , GetTip (LedgerState blk wt EmptyMK)
+                         , TableStuff (LedgerState blk) wt)
           => WrapPartialLedgerConfig blk
           -> K EraParams blk
           -> Current (Flip2 LedgerState wt mk) blk
@@ -539,7 +577,7 @@ instance ( BlockSupportsProtocol  (HardForkBlock xs)
                 annForecast      = mapForecast WrapTickedLedgerView $
                                      ledgerViewForecastAt cfg' st
               , annForecastState = forgetLedgerTables st
-              , annForecastTip   = ledgerTipSlot st
+              , annForecastTip   = ledgerTipSlot $ forgetLedgerTables st
               , annForecastEnd   = History.mkUpperBound params start <$>
                                      singleEraTransition' cfg params start st
               }

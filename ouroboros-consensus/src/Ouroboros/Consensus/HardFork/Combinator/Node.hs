@@ -27,7 +27,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
 import Ouroboros.Consensus.Ledger.Basics
-import Ouroboros.Consensus.Ledger.Extended
+import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
+
 {-------------------------------------------------------------------------------
   ConfigSupportsNode
 -------------------------------------------------------------------------------}
@@ -64,4 +66,6 @@ instance ( CanHardFork xs
          , SerialiseHFC xs
          , LedgerTablesCanHardFork WithLedgerTables xs
          , LedgerTablesCanHardFork WithoutLedgerTables xs
+         , LedgerSupportsUTxOHD LedgerState (HardForkBlock xs)
+         , LedgerSupportsUTxOHD ExtLedgerState (HardForkBlock xs)
          ) => RunNode (HardForkBlock xs)

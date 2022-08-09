@@ -3,7 +3,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -62,13 +62,6 @@ data ExtLedgerState blk wt (mk :: MapKind) = ExtLedgerState {
     , headerState :: !(HeaderState blk)
     }
   deriving (Generic)
-
--- instance InMemory (LedgerState blk) => InMemory (ExtLedgerState blk wt) where
---   convertMapKind est =
---     ExtLedgerState {
---         ledgerState = convertMapKind $ ledgerState est
---       , headerState = headerState est
---       }
 
 data ExtValidationError blk =
     ExtValidationErrorLedger !(LedgerError blk)
@@ -177,6 +170,12 @@ instance ( IsLedger (LedgerState  blk)
 
       ledgerResult = applyChainTickLedgerResult lcfg slot ledger
 
+instance IgnoresMapKind (LedgerState blk) => IgnoresMapKind (ExtLedgerState blk) where
+  convertMapKind ExtLedgerState{..} = ExtLedgerState{ledgerState = convertMapKind ledgerState, ..}
+
+instance IgnoresTables (LedgerState blk) => IgnoresTables (ExtLedgerState blk) where
+  convertTables ExtLedgerState{..} = ExtLedgerState{ledgerState = convertTables ledgerState, ..}
+
 instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk) WithLedgerTables) => TableStuff (ExtLedgerState blk) WithLedgerTables where
 
   newtype LedgerTables (ExtLedgerState blk) WithLedgerTables mk =
@@ -224,7 +223,7 @@ instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk) WithLed
     (ExtLedgerStateTables tables) =
       TickedExtLedgerState (lstate `withLedgerTablesTicked` tables) view hstate
 
-instance (LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk) blk where
+instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
   applyBlockLedgerResult cfg blk TickedExtLedgerState{..} = do
     ledgerResult <-
         withExcept ExtValidationErrorLedger
@@ -239,10 +238,10 @@ instance (LedgerSupportsProtocol blk) => ApplyBlock (ExtLedgerState blk) blk whe
           tickedLedgerView
           (getHeader blk)
           tickedHeaderState
-    pure $ (\l -> ExtLedgerState l hdr) <$> castLedgerResult ledgerResult
+    pure $ (`ExtLedgerState` hdr) <$> castLedgerResult ledgerResult
 
   reapplyBlockLedgerResult cfg blk TickedExtLedgerState{..} =
-      (\l -> ExtLedgerState l hdr) <$> castLedgerResult ledgerResult
+      (`ExtLedgerState` hdr) <$> castLedgerResult ledgerResult
     where
       ledgerResult =
         reapplyBlockLedgerResult

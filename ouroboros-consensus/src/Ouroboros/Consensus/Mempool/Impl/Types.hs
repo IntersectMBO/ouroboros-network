@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
@@ -34,6 +35,7 @@ import           Control.Monad.Except
 import           Data.Maybe (isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.SOP
 import           Data.Typeable
 import           GHC.Generics (Generic)
 
@@ -41,6 +43,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..))
@@ -127,7 +130,7 @@ isMempoolSize = TxSeq.toMempoolSize . isTxs
 
 initInternalState
   :: ( LedgerSupportsMempool blk
-     , GetTip (TickedLedgerState blk wt TrackingMK)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      )
   => MempoolCapacityBytesOverride
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
@@ -203,10 +206,10 @@ data ValidationResult invalidTx blk wt = ValidationResult {
 -- validated this transaction because, if we have, we can utilize 'reapplyTx'
 -- rather than 'applyTx' and, therefore, skip things like cryptographic
 -- signatures.
-extendVRPrevApplied :: ( LedgerSupportsMempool blk
+extendVRPrevApplied :: forall blk wt. (
+                         LedgerSupportsMempool blk
                        , HasTxId (GenTx blk)
-                       , TickedTableStuff (LedgerState blk) wt
-                       , IsSwitchLedgerTables wt
+                       , LedgerMustSupportUTxOHD LedgerState blk wt
                        )
                     => LedgerConfig blk
                     -> TxTicket (Validated (GenTx blk))
@@ -230,10 +233,10 @@ extendVRPrevApplied cfg txTicket vr =
 -- PRECONDITION: 'vrNewValid' is 'Nothing'. In other words: new transactions
 -- should be validated one-by-one, not by calling 'extendVRNew' on its result
 -- again.
-extendVRNew :: ( LedgerSupportsMempool blk
+extendVRNew :: forall blk wt. (
+                 LedgerSupportsMempool blk
                , HasTxId (GenTx blk)
-               , TickedTableStuff (LedgerState blk) wt
-               , IsSwitchLedgerTables wt
+               , LedgerMustSupportUTxOHD LedgerState blk wt
                )
             => LedgerConfig blk
             -> (GenTx blk -> TxSizeInBytes)
@@ -298,13 +301,12 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 -- superset of the keys that were used to retrieve the values in 'isLedgerState
 -- is' (before ticking and applying the transactions).
 validateStateFor
-  :: ( LedgerSupportsMempool blk
+  :: forall blk wt. (
+       LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     , TickedTableStuff (LedgerState blk) wt
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      , IsSwitchLedgerTables wt
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , GetTip (LedgerState blk wt ValuesMK)
      )
   => InternalState    blk wt
   -> LedgerConfig     blk
@@ -322,15 +324,16 @@ validateStateFor is cfg capacityOverride blockLedgerState
     | otherwise
     = ( st'
       , revalidateTxsFor
-        capacityOverride
-        cfg
-        slot
-        st'
-        isLastTicketNo
-        (TxSeq.toList isTxs))
+          capacityOverride
+          cfg
+          slot
+          st'
+          isLastTicketNo
+          (TxSeq.toList isTxs))
   where
     IS { isTxs, isTip, isSlotNo, isLastTicketNo } = is
     (slot, st') = tickLedgerState cfg blockLedgerState
+
 
 -- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@), against
 -- the given ticked ledger state.
@@ -340,11 +343,10 @@ validateStateFor is cfg capacityOverride blockLedgerState
 -- revalidating the whole set of transactions onto a new state, or if we remove
 -- some transactions and revalidate the remaining ones.
 revalidateTxsFor
-  :: ( LedgerSupportsMempool blk
+  :: forall blk wt.
+     ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
-     , TickedTableStuff (LedgerState blk) wt
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD LedgerState blk wt
      )
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
@@ -369,12 +371,12 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
 -- | Tick the 'LedgerState' using the given 'BlockSlot' or the next slot after
 -- the ledger state on top of which we are going to apply the transactions.
 tickLedgerState
-  :: forall blk wt. ( ApplyBlock (LedgerState blk) blk
-                    , ValidateEnvelope blk
-                    , TickedTableStuff (LedgerState blk) wt
-                    , IsSwitchLedgerTables wt
-                    , GetTip (LedgerState blk wt ValuesMK)
-                    )
+  :: forall blk wt.
+     ( ApplyBlock (LedgerState blk) blk
+     , ValidateEnvelope blk
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , IsSwitchLedgerTables wt
+     )
   => LedgerConfig     blk
   -> ForgeLedgerState blk wt
   -> (SlotNo, TickedLedgerState blk wt TrackingMK)

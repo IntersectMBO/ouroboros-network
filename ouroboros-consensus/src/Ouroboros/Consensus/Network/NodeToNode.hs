@@ -109,6 +109,8 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
+import Ouroboros.Consensus.Ledger.Extended
 
 {-------------------------------------------------------------------------------
   Handlers
@@ -180,9 +182,8 @@ mkHandlers
      , LedgerSupportsProtocol blk
      , Ord remotePeer
      , IsSwitchLedgerTables wt
-     , TableStuff (LedgerState blk) WithLedgerTables
-     , GetTip (LedgerState blk WithLedgerTables EmptyMK)
-     , GetTip (LedgerState blk WithoutLedgerTables EmptyMK)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => NodeKernelArgs m remotePeer localPeer blk wt
   -> NodeKernel     m remotePeer localPeer blk wt
@@ -192,17 +193,7 @@ mkHandlers
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
     Handlers {
         hChainSyncClient = \peer ->
-          case sWithLedgerTables (Proxy @wt) of
-            SWithLedgerTables ->
-               chainSyncClient
-                 (pipelineDecisionLowHighMark
-                   (chainSyncPipeliningLowMark  miniProtocolParameters)
-                   (chainSyncPipeliningHighMark miniProtocolParameters))
-                 (contramap (TraceLabelPeer peer) (Node.chainSyncClientTracer tracers))
-                 getTopLevelConfig
-                 (defaultChainDbView getChainDB)
-            SWithoutLedgerTables ->
-               chainSyncClient
+          chainSyncClient
                  (pipelineDecisionLowHighMark
                    (chainSyncPipeliningLowMark  miniProtocolParameters)
                    (chainSyncPipeliningHighMark miniProtocolParameters))
@@ -497,10 +488,8 @@ mkApps
      , ShowProxy (Header blk)
      , ShowProxy (TxId (GenTx blk))
      , ShowProxy (GenTx blk)
-     , IsSwitchLedgerTables wt
-     , TableStuff (LedgerState blk) WithLedgerTables
-     , GetTip (LedgerState blk WithLedgerTables EmptyMK)
-     , GetTip (LedgerState blk WithoutLedgerTables EmptyMK)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => NodeKernel m remotePeer localPeer blk wt -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
@@ -530,9 +519,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
         (getFetchClientRegistry kernel) them $
         bracketChainSyncClient @m @blk @remotePeer @wt
             (contramap (TraceLabelPeer them) (Node.chainSyncClientTracer (getTracers kernel)))
-            (case sWithLedgerTables (Proxy @wt) of
-               SWithLedgerTables ->  defaultChainDbView $ getChainDB kernel
-               SWithoutLedgerTables -> defaultChainDbView $ getChainDB kernel)
+            (defaultChainDbView $ getChainDB kernel)
             (getNodeCandidates kernel)
             them
             version $ \varCandidate -> do

@@ -92,6 +92,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
@@ -257,7 +258,8 @@ class (
       , Serialise (BridgeTx     m a)
       , Show      (BridgeTx     m a)
 
-      , TickedTableStuff (LedgerState a) WithLedgerTables
+      , LedgerSupportsUTxOHD LedgerState m
+      , LedgerSupportsUTxOHD LedgerState a
       ) => Bridge m a where
 
   -- | Additional information relating both ledgers
@@ -369,11 +371,11 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
   type AuxLedgerEvent (LedgerState (DualBlock m a)) = AuxLedgerEvent (LedgerState m)
 
   applyChainTickLedgerResult ::
-          forall wt. IsSwitchLedgerTables wt
-       => LedgerCfg (LedgerState (DualBlock m a))
-       -> SlotNo
-       -> (LedgerState (DualBlock m a)) wt EmptyMK
-       -> LedgerResult (LedgerState (DualBlock m a)) (Ticked1 ((LedgerState (DualBlock m a)) wt) DiffMK)
+       forall wt. IsSwitchLedgerTables wt
+    => LedgerCfg (LedgerState (DualBlock m a))
+    -> SlotNo
+    -> LedgerState (DualBlock m a) wt EmptyMK
+    -> LedgerResult (LedgerState (DualBlock m a)) (Ticked1 (LedgerState (DualBlock m a) wt) DiffMK)
   applyChainTickLedgerResult DualLedgerConfig{..}
                              slot
                              DualLedgerState{..} =
@@ -383,25 +385,17 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                                            dualLedgerConfigAux
                                            slot
                                           dualLedgerStateAux
-        , tickedDualLedgerStateAuxOrig =
-            case sWithLedgerTables (Proxy @wt) of
-              SWithLedgerTables -> forgetLedgerTables dualLedgerStateAux
-              SWithoutLedgerTables -> forgetLedgerTables dualLedgerStateAux
+        , tickedDualLedgerStateAuxOrig = rf (Proxy @(TableStuff (LedgerState a))) (Proxy @wt) $ forgetLedgerTables dualLedgerStateAux
         , tickedDualLedgerStateBridge  = dualLedgerStateBridge
         }
     where
       ledgerResult :: LedgerResult (LedgerState m) (Ticked1 (LedgerState m wt) DiffMK)
-      ledgerResult = case sWithLedgerTables (Proxy @wt) of
-              SWithLedgerTables -> applyChainTickLedgerResult
-                                   dualLedgerConfigMain
-                                   slot
-                                   dualLedgerStateMain
-              SWithoutLedgerTables -> applyChainTickLedgerResult
-                                   dualLedgerConfigMain
-                                   slot
-                                   dualLedgerStateMain
+      ledgerResult = applyChainTickLedgerResult
+                       dualLedgerConfigMain
+                       slot
+                       dualLedgerStateMain
 
-instance (Bridge m a, TableStuff (LedgerState m) WithLedgerTables) => TableStuff (LedgerState (DualBlock m a)) WithLedgerTables where
+instance Bridge m a => TableStuff (LedgerState (DualBlock m a)) WithLedgerTables where
 
   data LedgerTables (LedgerState (DualBlock m a)) WithLedgerTables mk =
       DualBlockLedgerTables
@@ -490,9 +484,7 @@ deriving instance
      )
   => Eq (LedgerTables (LedgerState (DualBlock m a)) WithLedgerTables mk)
 
-instance ( TickedTableStuff (LedgerState m) WithLedgerTables
-         , TickedTableStuff (LedgerState a) WithLedgerTables
-         , Bridge m a) => TickedTableStuff (LedgerState (DualBlock m a)) WithLedgerTables where
+instance Bridge m a => TickedTableStuff (LedgerState (DualBlock m a)) WithLedgerTables where
 
   projectLedgerTablesTicked TickedDualLedgerState{..} =
       DualBlockLedgerTables
@@ -533,17 +525,13 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
               (dualLedgerConfigMain cfg)
               dualBlockMain
               tickedDualLedgerStateMain
-          , case sWithLedgerTables (Proxy @wt) of
-              SWithLedgerTables -> applyMaybeBlock
-                                      (dualLedgerConfigAux cfg)
-                                      dualBlockAux
-                                      tickedDualLedgerStateAux
-                                      tickedDualLedgerStateAuxOrig
-              SWithoutLedgerTables -> applyMaybeBlock
-                                      (dualLedgerConfigAux cfg)
-                                      dualBlockAux
-                                      tickedDualLedgerStateAux
-                                      tickedDualLedgerStateAuxOrig
+          , rf (Proxy @(TableStuff (LedgerState a)))
+               (Proxy @wt)
+            $ applyMaybeBlock
+               (dualLedgerConfigAux cfg)
+               dualBlockAux
+               tickedDualLedgerStateAux
+               tickedDualLedgerStateAuxOrig
           )
       return $ castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
           dualLedgerStateMain   = main'
@@ -564,17 +552,14 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
                            TickedDualLedgerState{..} =
     castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
         dualLedgerStateMain   = main'
-      , dualLedgerStateAux    = case sWithLedgerTables (Proxy @wt) of
-          SWithLedgerTables -> reapplyMaybeBlock
-                                  (dualLedgerConfigAux cfg)
-                                  dualBlockAux
-                                  tickedDualLedgerStateAux
-                                  tickedDualLedgerStateAuxOrig
-          SWithoutLedgerTables -> reapplyMaybeBlock
-                                  (dualLedgerConfigAux cfg)
-                                  dualBlockAux
-                                  tickedDualLedgerStateAux
-                                  tickedDualLedgerStateAuxOrig
+      , dualLedgerStateAux    =
+         rf (Proxy @(TableStuff (LedgerState a)))
+            (Proxy @wt)
+         $ reapplyMaybeBlock
+             (dualLedgerConfigAux cfg)
+             dualBlockAux
+             tickedDualLedgerStateAux
+             tickedDualLedgerStateAuxOrig
 
       , dualLedgerStateBridge = updateBridgeWithBlock
                                   block

@@ -7,7 +7,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 -- | Monadic side of the Mempool implementation.
 --
@@ -50,6 +49,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
@@ -71,16 +71,11 @@ openMempool
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , HasTxId (GenTx blk)
-     , TickedTableStuff (LedgerState blk) wt
-     , TableStuff (ExtLedgerState blk) wt
-     , GetTip (LedgerState blk wt ValuesMK)
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , IsSwitchLedgerTables wt
-     , StowableLedgerTables (LedgerState blk) wt
-     , GetTip (LedgerState blk wt EmptyMK)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , GetsBlockKeySets (LedgerState blk) blk wt
+     , HasTxId (GenTx blk)
+     , IsSwitchLedgerTables wt
      )
   => ResourceRegistry m
   -> LedgerInterface m blk wt
@@ -102,16 +97,11 @@ openMempoolWithoutSyncThread
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , HasTxId (GenTx blk)
-     , TickedTableStuff (LedgerState blk) wt
-     , TableStuff (ExtLedgerState blk) wt
-     , GetTip (LedgerState blk wt ValuesMK)
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , IsSwitchLedgerTables wt
-     , StowableLedgerTables (LedgerState blk) wt
-     , GetTip (LedgerState blk wt EmptyMK)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , GetsBlockKeySets (LedgerState blk) blk wt
+     , HasTxId (GenTx blk)
+     , IsSwitchLedgerTables wt
      )
   => LedgerInterface m blk wt
   -> LedgerConfig blk
@@ -126,15 +116,11 @@ mkMempool ::
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , HasTxId (GenTx blk)
-     , TickedTableStuff (LedgerState blk) wt
-     , TableStuff (ExtLedgerState blk) wt
-     , GetTip (LedgerState blk wt ValuesMK)
-     , GetTip (LedgerState blk wt EmptyMK)
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , GetsBlockKeySets (LedgerState blk) blk wt
+     , HasTxId (GenTx blk)
+     , IsSwitchLedgerTables wt
      )
   => MempoolEnv m blk wt -> Mempool m blk TicketNo wt
 mkMempool mpEnv = Mempool
@@ -230,11 +216,8 @@ initMempoolEnv :: ( IOLike m
 --                  , NoThunks (GenTxId blk)   -- TODO how to use this with the TMVar?
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
-                  , TickedTableStuff (LedgerState blk) wt
+                  , LedgerMustSupportUTxOHD LedgerState blk wt
                   , IsSwitchLedgerTables wt
-                  , GetTip (LedgerState blk wt ValuesMK)
-                  , StowableLedgerTables (LedgerState blk) wt
-                  , GetTip (TickedLedgerState blk wt TrackingMK)
                   )
                => LedgerInterface m blk wt
                -> LedgerConfig blk
@@ -261,15 +244,11 @@ forkSyncStateOnTipPointChange :: forall m blk wt. (
                                    IOLike m
                                  , LedgerSupportsMempool blk
                                  , LedgerSupportsProtocol blk
-                                 , HasTxId (GenTx blk)
-                                 , GetTip (LedgerState blk wt EmptyMK)
-                                 , TickedTableStuff (LedgerState blk) wt
-                                 , IsSwitchLedgerTables wt
-                                 , GetTip (TickedLedgerState blk wt TrackingMK)
-                                 , GetTip (LedgerState blk wt ValuesMK)
+                                 , LedgerMustSupportUTxOHD LedgerState blk wt
+                                 , LedgerMustSupportUTxOHD ExtLedgerState blk wt
                                  , Promote (LedgerState blk) (ExtLedgerState blk) wt
-                                 , GetsBlockKeySets (LedgerState blk) blk wt
-                                 , TableStuff (ExtLedgerState blk) wt
+                                 , HasTxId (GenTx blk)
+                                 , IsSwitchLedgerTables wt
                                  )
                               => ResourceRegistry m
                               -> MempoolEnv m blk wt
@@ -319,15 +298,11 @@ implTryAddTxs
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
-     , HasTxId (GenTx blk)
-     , TickedTableStuff (LedgerState blk) wt
-     , IsSwitchLedgerTables wt
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , GetTip (LedgerState blk wt ValuesMK)
-     , GetTip (LedgerState blk wt EmptyMK)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , GetsBlockKeySets (LedgerState blk) blk wt
-     , TableStuff (ExtLedgerState blk) wt
+     , HasTxId (GenTx blk)
+     , IsSwitchLedgerTables wt
      )
   => MempoolEnv m blk wt
   -> WhetherToIntervene
@@ -371,14 +346,10 @@ implSyncWithLedger ::
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , HasTxId (GenTx blk)
-     , TickedTableStuff (LedgerState blk) wt
-     , IsSwitchLedgerTables wt
-     , GetTip (TickedLedgerState blk wt TrackingMK)
-     , GetTip (LedgerState blk wt ValuesMK)
-     , GetTip (LedgerState blk wt EmptyMK)
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , GetsBlockKeySets (LedgerState blk) blk wt
-     , TableStuff (ExtLedgerState blk) wt
+     , IsSwitchLedgerTables wt
      )
   => MempoolEnv m blk wt
   -> m (MempoolSnapshot blk TicketNo)
@@ -429,14 +400,12 @@ implSyncWithLedger mpEnv = getStatePair mpEnv (StaticLeft ()) [] [] >>= \case
 getStatePair :: forall m blk wt b.
      ( IOLike m
      , LedgerSupportsMempool blk
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , Promote (LedgerState blk) (ExtLedgerState blk) wt
      , HasTxId (GenTx blk)
      , Typeable b
      , Typeable wt
-     , GetTip (LedgerState blk wt EmptyMK)
-     , Promote (LedgerState blk) (ExtLedgerState blk) wt
-     , TableStuff (LedgerState blk) wt
-     , TableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (LedgerState blk) blk wt
      )
   => MempoolEnv m blk wt
   -> StaticEither b () (Point blk)

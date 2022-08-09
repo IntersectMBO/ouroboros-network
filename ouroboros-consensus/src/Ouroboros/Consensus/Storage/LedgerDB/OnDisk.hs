@@ -156,6 +156,7 @@ import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Tracer
+import           Data.Kind
 import qualified Data.List as List
 import qualified Data.Map as Map
 import           Data.Maybe (isJust, mapMaybe)
@@ -177,7 +178,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
                      (HeaderState (headerStateTip), annTipPoint)
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -328,12 +329,10 @@ initLedgerDB ::
        , LedgerSupportsProtocol blk
        , InspectLedger blk
        , HasCallStack
-       , SufficientSerializationForAnyBackingStore (ExtLedgerState blk) wt
-       , TickedTableStuff (ExtLedgerState blk) wt
        , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
-       , GetsBlockKeySets (ExtLedgerState blk) blk wt
+       , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+       , LedgerSupportsUTxOHD ExtLedgerState blk
        , IsSwitchLedgerTables wt
-       , GetTip (LedgerState blk wt EmptyMK)
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
@@ -438,10 +437,8 @@ replayStartingWith ::
        , LedgerSupportsProtocol blk
        , InspectLedger blk
        , HasCallStack
-       , TickedTableStuff (ExtLedgerState blk) wt
-       , GetsBlockKeySets (ExtLedgerState blk) blk wt
+       , LedgerMustSupportUTxOHD ExtLedgerState blk wt
        , IsSwitchLedgerTables wt
-       , GetTip (LedgerState blk wt EmptyMK)
        )
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
@@ -493,17 +490,16 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 -------------------------------------------------------------------------------}
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
-restoreBackingStore :: forall m l wt.
+restoreBackingStore :: forall m (l :: Type -> LedgerStateKindWithTables) blk wt.
      ( IOLike m
-     , NoThunks (LedgerTables l wt ValuesMK)
-     , TableStuff l wt
-     , SufficientSerializationForAnyBackingStore l wt
+     , NoThunks (LedgerTables (l blk) wt ValuesMK)
+     , LedgerSupportsUTxOHD l blk
      , IsSwitchLedgerTables wt
      )
   => SomeHasFS m
   -> DiskSnapshot
   -> BackingStoreSelector m
-  -> m (LedgerBackingStore m l wt)
+  -> m (LedgerBackingStore m (l blk) wt)
 restoreBackingStore someHasFs snapshot bss = do
     -- TODO a backing store that actually resides on-disk during use should have
     -- a @new*@ function that receives both the location it should load from (ie
@@ -514,8 +510,13 @@ restoreBackingStore someHasFs snapshot bss = do
     -- The in-memory backing store, on the other hand, keeps nothing at
     -- '_tablesPath'.
 
-    store <- case (sWithLedgerTables (Proxy @wt), bss) of
-      (SWithoutLedgerTables, _) -> pure $ Trivial.trivialBackingStore (Proxy @m) (Proxy @(LedgerTables l WithoutLedgerTables KeysMK)) polyEmptyLedgerTables (Proxy @(LedgerTables l WithoutLedgerTables DiffMK))
+    store <- case (findOutWT (Proxy @wt), bss) of
+      (SWithoutLedgerTables, _) ->
+          Trivial.trivialBackingStore
+            (Proxy @m)
+            (Proxy @(LedgerTables (l blk) WithoutLedgerTables KeysMK))
+            polyEmptyLedgerTables
+            (Proxy @(LedgerTables (l blk) WithoutLedgerTables DiffMK))
       (SWithLedgerTables, LMDBBackingStore limits) -> LMDB.newLMDBBackingStore mempty limits someHasFs (LMDB.LIInitialiseFromLMDB loadPath)
       (SWithLedgerTables, InMemoryBackingStore) -> BackingStore.newTVarBackingStore
                (zipLedgerTables lookup_)
@@ -535,21 +536,25 @@ restoreBackingStore someHasFs snapshot bss = do
 
 -- | Create a backing store from the given genesis ledger state
 newBackingStore ::
-     forall m l wt.
+     forall m (l :: Type -> LedgerStateKindWithTables) blk wt.
      ( IOLike m
-     , NoThunks (LedgerTables l wt ValuesMK)
-     , TableStuff l wt
-     , SufficientSerializationForAnyBackingStore l wt
+     , NoThunks (LedgerTables (l blk) wt ValuesMK)
+     , LedgerSupportsUTxOHD l blk
      , IsSwitchLedgerTables wt
      )
   => Tracer m LMDB.TraceDb
   -> BackingStoreSelector m
   -> SomeHasFS m
-  -> LedgerTables l wt ValuesMK
-  -> m (LedgerBackingStore m l wt)
+  -> LedgerTables (l blk) wt ValuesMK
+  -> m (LedgerBackingStore m (l blk) wt)
 newBackingStore tracer bss someHasFS tables = do
-  store <- case (sWithLedgerTables (Proxy @wt), bss) of
-    (SWithoutLedgerTables, _) -> pure $ Trivial.trivialBackingStore (Proxy @m) (Proxy @(LedgerTables l WithoutLedgerTables KeysMK)) polyEmptyLedgerTables (Proxy @(LedgerTables l WithoutLedgerTables DiffMK))
+  store <- case (findOutWT (Proxy @wt), bss) of
+    (SWithoutLedgerTables, _) ->
+        Trivial.trivialBackingStore
+          (Proxy @m)
+          (Proxy @(LedgerTables (l blk) WithoutLedgerTables KeysMK))
+          polyEmptyLedgerTables
+          (Proxy @(LedgerTables (l blk) WithoutLedgerTables DiffMK))
     (SWithLedgerTables, LMDBBackingStore limits) ->
       LMDB.newLMDBBackingStore
       tracer

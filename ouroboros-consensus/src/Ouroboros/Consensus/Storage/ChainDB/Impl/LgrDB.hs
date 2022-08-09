@@ -77,7 +77,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
@@ -109,6 +108,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCac
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.Serialisation
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk wt = LgrDB {
@@ -201,16 +201,15 @@ defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
 openDB :: forall m blk wt.
           ( IOLike m
           , LedgerSupportsProtocol blk
+          , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+          , LedgerSupportsUTxOHD ExtLedgerState blk
           , LgrDbSerialiseConstraints blk wt
           , InspectLedger blk
           , HasCallStack
-          , GetTip (LedgerState blk wt EmptyMK)
+          , IsSwitchLedgerTables wt
           , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
           , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
           , NoThunks (LedgerState blk wt EmptyMK)
-          , TickedTableStuff (ExtLedgerState blk) wt
-          , GetsBlockKeySets (ExtLedgerState blk) blk wt
-          , IsSwitchLedgerTables wt
           )
        => LgrDbArgs Identity m blk wt
        -- ^ Stateless initializaton arguments
@@ -275,14 +274,13 @@ initFromDisk
   :: forall blk m wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerSupportsUTxOHD ExtLedgerState blk
      , LgrDbSerialiseConstraints blk wt
      , InspectLedger blk
      , HasCallStack
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
-     , GetTip (LedgerState blk wt EmptyMK)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt ValuesMK)
      )
   => LgrDbArgs Identity m blk wt
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
@@ -414,11 +412,9 @@ data ValidateResult blk wt =
 validate :: forall m blk wt.
             ( IOLike m
             , LedgerSupportsProtocol blk
+            , LedgerMustSupportUTxOHD ExtLedgerState blk wt
             , HasCallStack
-            , TickedTableStuff (ExtLedgerState blk) wt
-            , GetsBlockKeySets (ExtLedgerState blk) blk wt
             , IsSwitchLedgerTables wt
-            , GetTip (LedgerState blk wt EmptyMK)
             )
          => LgrDB m blk wt
          -> LedgerDB' blk wt

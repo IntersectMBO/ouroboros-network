@@ -190,7 +190,12 @@ instance Inject (Flip2 ExtLedgerState wt mk) where
 -- problematic, but extending 'ledgerViewForecastAt' is a lot more subtle; see
 -- @forecastNotFinal@.
 injectInitialExtLedgerState ::
-     forall x wt xs. (CanHardFork (x ': xs), TableStuff (LedgerState (HardForkBlock (x : xs))) wt, IsSwitchLedgerTables wt)
+     forall x wt xs.
+     ( CanHardFork (x ': xs)
+     , TableStuff (LedgerState (HardForkBlock (x : xs))) wt
+     , TableStuff (LedgerState x) wt
+     , IsSwitchLedgerTables wt
+     )
   => TopLevelConfig (HardForkBlock (x ': xs))
   -> ExtLedgerState x wt ValuesMK
   -> ExtLedgerState (HardForkBlock (x ': xs)) wt ValuesMK
@@ -218,9 +223,7 @@ injectInitialExtLedgerState cfg extLedgerState0 =
              (State.extendToSlot
                 (configLedger cfg)
                 (SlotNo 0)
-                (initHardForkState $ Flip2 $ (case sWithLedgerTables (Proxy @wt) of
-                                               SWithLedgerTables -> forgetLedgerTables
-                                               SWithoutLedgerTables -> forgetLedgerTables) $ ledgerState extLedgerState0)))
+                (initHardForkState $ Flip2 $ forgetLedgerTables $ ledgerState extLedgerState0)))
 
     firstEraChainDepState :: HardForkChainDepState (x ': xs)
     firstEraChainDepState =

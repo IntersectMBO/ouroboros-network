@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 -- |
 
 module Ouroboros.Consensus.Storage.LedgerDB.HD.Trivial (trivialBackingStore) where
@@ -7,19 +8,23 @@ import Data.Proxy
 import Cardano.Slotting.Slot
 
 import Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+import Ouroboros.Consensus.Util.IOLike
 
 trivialBackingStore ::
-     Applicative m
+     IOLike m
   => Proxy m
   -> Proxy keys
   -> values
   -> Proxy diffs
-  -> BackingStore m keys values diff
-trivialBackingStore m keys emptyValues _ = BackingStore {
+  -> m (BackingStore m keys values diff)
+trivialBackingStore m keys emptyValues _ = do
+  slot <- newTVarIO Origin
+  pure BackingStore {
     bsClose       =         pure ()
   , bsCopy        = \_ _ -> pure ()
-  , bsValueHandle =         pure (At 0, trivialBackingStoreValueHandle m keys emptyValues)
-  , bsWrite       = \_ _ -> pure ()
+  , bsValueHandle =         (, trivialBackingStoreValueHandle m keys emptyValues) <$> atomically (readTVar slot)
+  , bsWrite       = \newSlot _ -> do
+      atomically $ writeTVar slot (At newSlot)
   }
 
 trivialBackingStoreValueHandle ::

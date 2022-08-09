@@ -61,7 +61,6 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
@@ -80,6 +79,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (TimeSinceLast (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (Enclosing' (..))
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
   Launch background tasks
@@ -92,10 +92,9 @@ launchBgTasks
      , InspectLedger blk
      , HasHardForkHistory blk
      , LgrDbSerialiseConstraints blk wt
-     , GetTip (LedgerState blk wt EmptyMK)
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , GetTip (LedgerState blk wt EmptyMK)
      )
   => ChainDbEnv m blk wt
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
@@ -247,7 +246,7 @@ copyAndSnapshotRunner
      , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk wt
      , GetTip (LedgerState blk wt EmptyMK)
-     , TableStuff (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainDbEnv m blk wt
   -> GcSchedule m
@@ -313,7 +312,7 @@ updateLedgerSnapshots ::
      ( IOLike m
      , LgrDbSerialiseConstraints blk wt
      , LedgerSupportsProtocol blk
-     , TableStuff (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , GetTip (LedgerState blk wt EmptyMK)
      )
   => ChainDbEnv m blk wt -> m ()
@@ -543,9 +542,8 @@ addBlockRunner
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
-     , TickedTableStuff (ExtLedgerState blk) wt
      , GetTip (LedgerState blk wt EmptyMK)
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , IsSwitchLedgerTables wt
      )
   => ChainDbEnv m blk wt

@@ -12,12 +12,16 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Functors (
 import           Data.Kind
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
+import Codec.Serialise
 
 data Product2 f g x y = Pair2 (f x y) (g x y)
   deriving (Eq, Generic, Show)
 
 newtype Flip f x y = Flip {unFlip :: f y x}
   deriving (Eq, Generic, NoThunks, Show)
+
+instance Serialise (f y x) => Serialise (Flip f x y) where
+  encode = encode . unFlip
 
 type Flip2 :: (blk -> wt -> mk -> Type) -> wt -> mk -> blk -> Type
 newtype Flip2 f x y z = Flip2 {unFlip2 :: f z x y}

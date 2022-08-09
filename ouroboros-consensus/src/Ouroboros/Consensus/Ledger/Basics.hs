@@ -1,8 +1,6 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveFoldable        #-}
-{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE DerivingVia           #-}
@@ -29,6 +27,7 @@
 module Ouroboros.Consensus.Ledger.Basics (
     -- * GetTip
     GetTip (..)
+  , FlipGetTip
   , getTipHash
   , getTipSlot
     -- * Ledger Events
@@ -94,6 +93,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , calculateDifferenceTicked
   , emptyLedgerTables
   , forgetLedgerTables
+  , forgetLedgerTablesTicked
   , forgetLedgerTablesDiffs
   , forgetLedgerTablesDiffsTicked
   , forgetLedgerTablesValues
@@ -105,7 +105,9 @@ module Ouroboros.Consensus.Ledger.Basics (
   , prependLedgerTablesTrackingDiffs
   , reapplyTrackingTicked
     -- ** Special classes of ledger states
-  , InMemory (..)
+  , IgnoresMapKind (..)
+  , IgnoresMapKindTicked (..)
+  , IgnoresTables (..)
   , StowableLedgerTables (..)
     -- ** Serialization
   , SufficientSerializationForAnyBackingStore (..)
@@ -133,7 +135,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , IsSwitchLedgerTables
   , LedgerStateKindWithTables
   , LedgerTables (..)
-  , sWithLedgerTables
+  , findOutWT
+  , rf
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -144,6 +147,7 @@ import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import qualified Data.Map as Map
 import           Data.Monoid (Sum (..))
+import           Data.Proxy
 import           Data.Typeable (Typeable)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
@@ -169,8 +173,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
 
-import Unsafe.Coerce
-
 {-------------------------------------------------------------------------------
   Tip
 -------------------------------------------------------------------------------}
@@ -190,6 +192,9 @@ getTipHash = pointHash . getTip
 
 getTipSlot :: GetTip l => l -> WithOrigin SlotNo
 getTipSlot = pointSlot . getTip
+
+class (GetTip (l blk wt mk), GetTip (Ticked1 (l blk wt) mk)) => FlipGetTip l blk mk wt
+instance (GetTip (l blk wt mk), GetTip (Ticked1 (l blk wt) mk)) => FlipGetTip l blk mk wt
 
 {-------------------------------------------------------------------------------
   Events directly from the ledger
@@ -330,8 +335,17 @@ noNewTickingDiffs ::
   -> l wt DiffMK
 noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables
 
--- this can't be in IsLedger because we have a compositional IsLedger instance
--- for LedgerState HardForkBlock but we will not (at least ast first) have a
+rf :: forall c wt ans. (c WithLedgerTables, c WithoutLedgerTables, IsSwitchLedgerTables wt)
+ => Proxy c
+  -> Proxy wt
+  -> (c wt => ans)
+  -> ans
+rf _  _ f = case findOutWT (Proxy @wt) of
+  SWithLedgerTables -> f
+  SWithoutLedgerTables -> f
+
+
+-- for LedgerState HardrfForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
 class TableStuff (l :: LedgerStateKindWithTables) (wt :: SwitchLedgerTables) where
 
@@ -459,13 +473,7 @@ class TableStuff (l :: LedgerStateKindWithTables) (wt :: SwitchLedgerTables) whe
 
   namesLedgerTables :: LedgerTables l wt NameMK
 
-instance InMemory (l WithoutLedgerTables) where
-  convertMapKind = unsafeCoerce
-
-instance InMemory (Ticked1 (l WithoutLedgerTables)) where
-  convertMapKind = unsafeCoerce
-
-instance TableStuff l WithoutLedgerTables where
+instance IgnoresMapKind l => TableStuff l WithoutLedgerTables where
   data instance LedgerTables l WithoutLedgerTables mk = NoLedgerTables deriving (Eq, Show, Generic, NoThunks)
   projectLedgerTables  _    = NoLedgerTables
   withLedgerTables     st _ = convertMapKind st
@@ -527,9 +535,9 @@ class TableStuff l wt => TickedTableStuff (l :: LedgerStateKindWithTables) (wt :
   -- it's on 'withLedgerTables
   withLedgerTablesTicked    :: IsApplyMapKind mk => Ticked1 (l wt) any -> LedgerTables l wt mk -> Ticked1 (l wt) mk
 
-instance TickedTableStuff l WithoutLedgerTables where
+instance (TableStuff l WithoutLedgerTables, IgnoresMapKindTicked l) => TickedTableStuff l WithoutLedgerTables where
   projectLedgerTablesTicked _ = NoLedgerTables
-  withLedgerTablesTicked st _ = convertMapKind st
+  withLedgerTablesTicked st _ = convertMapKindTicked st
 
 overLedgerTablesTicked ::
      (TickedTableStuff l wt, IsApplyMapKind mk1, IsApplyMapKind mk2)
@@ -609,7 +617,7 @@ valuesMKDecoder = do
       else do
         mapLen <- CBOR.decodeMapLen
         ret    <- traverseLedgerTables (go mapLen) codecLedgerTables
-        Exn.assert ((getSum (foldLedgerTables (\_ -> Sum 1) ret)) == numTables)
+        Exn.assert (getSum (foldLedgerTables (\_ -> Sum 1) ret) == numTables)
           $ return ret
  where
   go :: Ord k
@@ -644,6 +652,12 @@ forgetLedgerTables ::
   => l wt mk
   -> l wt EmptyMK
 forgetLedgerTables l = withLedgerTables l emptyLedgerTables
+
+forgetLedgerTablesTicked ::
+     TickedTableStuff l wt
+  => Ticked1 (l wt) mk
+  -> Ticked1 (l wt) EmptyMK
+forgetLedgerTablesTicked l = withLedgerTablesTicked l emptyLedgerTables
 
 -- Forget values
 
@@ -784,8 +798,8 @@ data instance Sing (sw :: SwitchLedgerTables) :: Type where
   SWithLedgerTables    :: Sing WithLedgerTables
   SWithoutLedgerTables :: Sing WithoutLedgerTables
 
-sWithLedgerTables :: IsSwitchLedgerTables wt => proxy wt -> Sing wt
-sWithLedgerTables _ = sing
+findOutWT :: IsSwitchLedgerTables wt => proxy wt -> Sing wt
+findOutWT _ = sing
 
 instance SingI WithLedgerTables    where sing = SWithLedgerTables
 instance SingI WithoutLedgerTables where sing = SWithoutLedgerTables
@@ -1067,7 +1081,7 @@ data DiskLedgerView m l wt =
   code we should move this to the appropriate module.
 -------------------------------------------------------------------------------}
 
-class InMemory (l :: LedgerStateKind) where
+class IgnoresTables (l :: LedgerStateKindWithTables) where
 
   -- | If the ledger state is always in memory, then l mk will be isomorphic to
   -- l mk' for all mk, mk'. As a result, we can convert between ledgers states
@@ -1075,13 +1089,19 @@ class InMemory (l :: LedgerStateKind) where
   --
   -- This function is useful to combine functions that operate on functions that
   -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
-  convertMapKind :: l mk -> l mk'
+  convertTables :: l wt mk -> l wt' mk'
+
+class IgnoresMapKind (l :: LedgerStateKindWithTables) where
+  convertMapKind :: l WithoutLedgerTables mk -> l WithoutLedgerTables mk'
+
+class IgnoresMapKindTicked (l :: LedgerStateKindWithTables) where
+  convertMapKindTicked :: Ticked1 (l WithoutLedgerTables) mk -> Ticked1 (l WithoutLedgerTables) mk'
 
 class StowableLedgerTables (l :: LedgerStateKindWithTables) (wt :: SwitchLedgerTables) where
   stowLedgerTables     :: l wt ValuesMK -> l wt EmptyMK
   unstowLedgerTables   :: l wt EmptyMK  -> l wt ValuesMK
 
-instance StowableLedgerTables l WithoutLedgerTables where
+instance IgnoresMapKind l => StowableLedgerTables l WithoutLedgerTables where
   stowLedgerTables   = convertMapKind
   unstowLedgerTables = convertMapKind
 

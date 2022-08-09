@@ -89,6 +89,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
   Handlers
@@ -118,12 +119,10 @@ mkHandlers
      , LedgerSupportsProtocol blk
      , QueryLedger blk
      , ConfigSupportsNode blk
-     , StowableLedgerTables (ExtLedgerState blk) wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+     , LedgerMustSupportUTxOHD LedgerState blk wt
+     , Promote (LedgerState blk) (ExtLedgerState blk) wt
      , IsSwitchLedgerTables wt
-     , TableStuff (LedgerState blk) WithLedgerTables
-     , StowableLedgerTables (LedgerState blk) WithLedgerTables
-     , GetTip (LedgerState blk WithLedgerTables EmptyMK)
-     , GetTip (LedgerState blk WithoutLedgerTables EmptyMK)
      )
   => NodeKernelArgs m remotePeer localPeer blk wt
   -> NodeKernel     m remotePeer localPeer blk wt
@@ -139,8 +138,7 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
             (Node.localTxSubmissionServerTracer tracers)
             getMempool
       , hStateQueryServer = \rreg ->
-          case sWithLedgerTables (Proxy @wt) of
-            SWithLedgerTables -> localStateQueryServer @m @blk @wt
+          localStateQueryServer @m @blk @wt
               (ExtLedgerCfg cfg)
               (\seP -> do
                   se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
@@ -149,16 +147,6 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
                     StaticLeft         x  -> pure $ StaticLeft  $         LedgerDB.mkDiskLedgerView x
                     StaticRight (Right x) -> pure $ StaticRight $ Right $ LedgerDB.mkDiskLedgerView x
               )
-            SWithoutLedgerTables -> localStateQueryServer @m @blk @wt
-                (ExtLedgerCfg cfg)
-                (\seP -> do
-                    se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
-                    case se of
-                      StaticRight (Left p)  -> pure $ StaticRight (Left p)
-                      StaticLeft         x  -> pure $ StaticLeft  $         LedgerDB.mkDiskLedgerView x
-                      StaticRight (Right x) -> pure $ StaticRight $ Right $ LedgerDB.mkDiskLedgerView x
-                )
-
       , hTxMonitorServer =
           localTxMonitorServer
             getMempool

@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -149,9 +148,7 @@ instance
 
   prepareBlockQuery :: forall wt result. IsSwitchLedgerTables wt => BlockQuery (HardForkBlock xs) LargeL result -> LedgerTables (LedgerState (HardForkBlock xs)) wt KeysMK
   prepareBlockQuery = \case
-      QueryIfCurrent queryIfCurrent  -> case sWithLedgerTables (Proxy @wt) of
-        SWithLedgerTables -> prepareQueryIfCurrent queryIfCurrent
-        SWithoutLedgerTables -> prepareQueryIfCurrent queryIfCurrent
+      QueryIfCurrent queryIfCurrent  -> rf (Proxy @(LedgerTablesCanHardForkFlipped xs)) (Proxy @wt) $ prepareQueryIfCurrent queryIfCurrent
       QueryAnytime queryAnytime _era -> proveNotLargeQuery    queryAnytime
       QueryHardFork queryHardFork    -> proveNotLargeQuery    queryHardFork
 

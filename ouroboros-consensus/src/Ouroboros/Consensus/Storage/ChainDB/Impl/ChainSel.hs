@@ -4,10 +4,8 @@
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE MultiWayIf           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -55,7 +53,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.IOLike
@@ -102,9 +100,8 @@ initialChainSelection
      ( IOLike m
      , LedgerSupportsProtocol blk
      , GetTip (LedgerState blk wt EmptyMK)
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ImmutableDB m blk
   -> VolatileDB m blk
@@ -273,9 +270,8 @@ addBlockSync
      , HasHardForkHistory blk
      , HasCallStack
      , GetTip (LedgerState blk wt EmptyMK)
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainDbEnv m blk wt
   -> BlockToAdd m blk
@@ -404,8 +400,7 @@ chainSelectionForFutureBlocks
      , HasHardForkHistory blk
      , HasCallStack
      , GetTip (LedgerState blk wt EmptyMK)
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      , IsSwitchLedgerTables wt
      )
   => ChainDbEnv m blk wt -> BlockCache blk -> m (Point blk)
@@ -466,9 +461,8 @@ chainSelectionForBlock
      , HasHardForkHistory blk
      , HasCallStack
      , GetTip (LedgerState blk wt EmptyMK)
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainDbEnv m blk wt
   -> BlockCache blk
@@ -595,7 +589,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish =
           -- If there are no suffixes after @b@, just use the suffix just
           -- containing @b@ as the sole candidate.
           Nothing              ->
-            return $ (AF.fromOldestFirst curHead [hdr]) NE.:| []
+            return $ AF.fromOldestFirst curHead [hdr] NE.:| []
           Just suffixesAfterB' ->
             -- We can start with an empty cache, because we're only looking
             -- up the headers /after/ b, so they won't be on the current
@@ -895,10 +889,9 @@ chainSelection
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
      , GetTip (LedgerState blk wt EmptyMK)
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainSelEnv m blk wt
   -> NonEmpty (ChainDiff (Header blk))
@@ -1077,10 +1070,9 @@ ledgerValidateCandidate
      ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
      , GetTip (LedgerState blk wt EmptyMK)
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainSelEnv m blk wt
   -> ChainDiff (Header blk)
@@ -1246,10 +1238,9 @@ validateCandidate
   :: ( IOLike m
      , LedgerSupportsProtocol blk
      , HasCallStack
-     , TickedTableStuff (ExtLedgerState blk) wt
-     , GetsBlockKeySets (ExtLedgerState blk) blk wt
      , IsSwitchLedgerTables wt
      , GetTip (LedgerState blk wt EmptyMK)
+     , LedgerMustSupportUTxOHD ExtLedgerState blk wt
      )
   => ChainSelEnv m blk wt
   -> ChainDiff (Header blk)

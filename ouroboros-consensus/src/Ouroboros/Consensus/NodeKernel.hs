@@ -90,6 +90,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
   Relay node
@@ -143,15 +144,10 @@ initNodeKernel
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
-       , GetTip (LedgerState blk wt EmptyMK)
-       , GetTip (LedgerState blk wt ValuesMK)
-       , TickedTableStuff (LedgerState blk) wt
-       , TableStuff (ExtLedgerState blk) wt
-       , IsSwitchLedgerTables wt
-       , StowableLedgerTables (LedgerState blk) wt
-       , GetTip (TickedLedgerState blk wt TrackingMK)
        , Promote (LedgerState blk) (ExtLedgerState blk) wt
-       , GetsBlockKeySets (LedgerState blk) blk wt
+       , LedgerMustSupportUTxOHD LedgerState blk wt
+       , LedgerMustSupportUTxOHD ExtLedgerState blk wt
+       , IsSwitchLedgerTables wt
        )
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (NodeKernel m remotePeer localPeer blk wt)
@@ -212,15 +208,10 @@ initInternalState
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk
-       , TickedTableStuff (LedgerState blk) wt
-       , TableStuff (ExtLedgerState blk) wt
        , IsSwitchLedgerTables wt
-       , StowableLedgerTables (LedgerState blk) wt
-       , GetTip (TickedLedgerState blk wt TrackingMK)
-       , GetTip (LedgerState blk wt ValuesMK)
-       , GetTip (LedgerState blk wt EmptyMK)
        , Promote (LedgerState blk) (ExtLedgerState blk) wt
-       , GetsBlockKeySets (LedgerState blk) blk wt
+       , LedgerMustSupportUTxOHD LedgerState blk wt
+       , LedgerMustSupportUTxOHD ExtLedgerState blk wt
        )
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (InternalState m remotePeer localPeer blk wt)

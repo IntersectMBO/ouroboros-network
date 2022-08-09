@@ -8,7 +8,6 @@
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -17,7 +16,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE ViewPatterns #-}
+
 -- TODO stylish haskell insists on deleting this pragma if placed in the group above.
 {-# LANGUAGE DerivingStrategies         #-}
 
@@ -97,6 +96,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import qualified Ouroboros.Consensus.Ledger.Extended as Extended
 import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
@@ -279,20 +279,18 @@ toRealPoint (Weaken ap)      = toRealPoint ap
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c (l :: LedgerStateKindWithTables) blk wt
-            . ( ApplyBlock l blk
+applyBlock :: forall m c (l :: Type -> LedgerStateKindWithTables) blk wt
+            . ( ApplyBlock (l blk) blk
               , Monad m
               , c
               , HasCallStack
-              , TickedTableStuff l wt
-              , GetsBlockKeySets l blk wt
+              , LedgerMustSupportUTxOHD l blk wt
               , IsSwitchLedgerTables wt
-              , GetTip (l wt EmptyMK)
               )
-           => LedgerCfg l
-           -> Ap m l wt blk c
-           -> LedgerDB l wt
-           -> m (l wt DiffMK)
+           => LedgerCfg (l blk)
+           -> Ap m (l blk) wt blk c
+           -> LedgerDB (l blk) wt
+           -> m (l blk wt DiffMK)
 applyBlock cfg ap db = case ap of
   ReapplyVal b -> withBlockReadSets b $ \lh ->
     return $ tickThenReapply cfg b lh
@@ -319,13 +317,13 @@ applyBlock cfg ap db = case ap of
 
   where
     withBlockReadSets
-      :: ReadsKeySets m l wt
+      :: ReadsKeySets m (l blk) wt
       => blk
-      -> (l wt ValuesMK -> m (l wt DiffMK))
-      -> m (l wt DiffMK)
+      -> (l blk wt ValuesMK -> m (l blk wt DiffMK))
+      -> m (l blk wt DiffMK)
     withBlockReadSets b f = do
-      let ks = getBlockKeySets b :: LedgerTables l wt KeysMK
-      let aks = rewindTableKeySets (ledgerDbChangelog db) ks :: RewoundTableKeySets l wt
+      let ks = getBlockKeySets b :: LedgerTables (l blk) wt KeysMK
+      let aks = rewindTableKeySets (ledgerDbChangelog db) ks :: RewoundTableKeySets (l blk) wt
       urs <- readDb aks
       case withHydratedLedgerState urs f of
         Left err ->
@@ -343,8 +341,8 @@ applyBlock cfg ap db = case ap of
         Right res -> res
 
     withHydratedLedgerState
-      :: UnforwardedReadSets l wt
-      -> (l wt ValuesMK -> a)
+      :: UnforwardedReadSets (l blk) wt
+      -> (l blk wt ValuesMK -> a)
       -> Either (WithOrigin SlotNo, WithOrigin SlotNo) a
     withHydratedLedgerState urs f = do
       fwd <- forwardTableKeySets (ledgerDbChangelog db) urs
@@ -597,9 +595,7 @@ ledgerDbPrune k db = db {
 
 -- | Push an updated ledger state
 pushLedgerState ::
-     ( TickedTableStuff l wt
-     , GetTip (l wt EmptyMK)
-     )
+     (GetTip (l wt EmptyMK), TableStuff l wt)
   => SecurityParam
   -> l wt DiffMK -- ^ Updated ledger state
   -> LedgerDB l wt -> LedgerDB l wt
@@ -648,37 +644,33 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-ledgerDbPush :: forall m c l blk wt
-              . ( ApplyBlock       l blk
-                , TickedTableStuff l     wt
-                , GetsBlockKeySets l blk wt
+ledgerDbPush :: forall m c (l :: Type -> LedgerStateKindWithTables) blk wt
+              . ( ApplyBlock       (l blk) blk
                 , Monad m
                 , c
                 , HasCallStack
                 , IsSwitchLedgerTables wt
-                , GetTip (l wt EmptyMK)
+                , LedgerMustSupportUTxOHD l blk wt
                 )
-             => LedgerDbCfg l
-             -> Ap m l wt blk c -> LedgerDB l wt -> m (LedgerDB l wt)
+             => LedgerDbCfg (l blk)
+             -> Ap m (l blk) wt blk c -> LedgerDB (l blk) wt -> m (LedgerDB (l blk) wt)
 ledgerDbPush cfg ap db =
     (\current' -> pushLedgerState (ledgerDbCfgSecParam cfg) current' db) <$>
       applyBlock (ledgerDbCfg cfg) ap db
 
 -- | Push a bunch of blocks (oldest first)
 ledgerDbPushMany ::
-     forall m c l blk wt.
-     ( ApplyBlock       l blk
-     , TickedTableStuff l     wt
-     , GetsBlockKeySets l blk wt
+     forall m c (l :: Type -> LedgerStateKindWithTables) blk wt.
+     ( ApplyBlock       (l blk) blk
      , Monad m
      , c
      , HasCallStack
      , IsSwitchLedgerTables wt
-     , GetTip (l wt EmptyMK)
+     , LedgerMustSupportUTxOHD l blk wt
      )
   => (Pushing blk -> m ())
-  -> LedgerDbCfg l
-  -> [Ap m l wt blk c] -> LedgerDB l wt -> m (LedgerDB l wt)
+  -> LedgerDbCfg (l blk)
+  -> [Ap m (l blk) wt blk c] -> LedgerDB (l blk) wt -> m (LedgerDB (l blk) wt)
 ledgerDbPushMany trace cfg = repeatedlyM pushAndTrace
   where
     pushAndTrace ap db = do
@@ -687,21 +679,19 @@ ledgerDbPushMany trace cfg = repeatedlyM pushAndTrace
       ledgerDbPush cfg ap db
 
 -- | Switch to a fork
-ledgerDbSwitch :: ( ApplyBlock       l blk
-                  , TickedTableStuff l     wt
-                  , GetsBlockKeySets l blk wt
+ledgerDbSwitch :: ( ApplyBlock       (l blk) blk
                   , Monad m
                   , c
                   , HasCallStack
                   , IsSwitchLedgerTables wt
-                  , GetTip (l wt EmptyMK)
+                  , LedgerMustSupportUTxOHD l blk wt
                   )
-               => LedgerDbCfg l
+               => LedgerDbCfg (l blk)
                -> Word64          -- ^ How many blocks to roll back
                -> (UpdateLedgerDbTraceEvent blk -> m ())
-               -> [Ap m l wt blk c]  -- ^ New blocks to apply
-               -> LedgerDB l wt
-               -> m (Either ExceededRollback (LedgerDB l wt))
+               -> [Ap m (l blk) wt blk c]  -- ^ New blocks to apply
+               -> LedgerDB (l blk) wt
+               -> m (Either ExceededRollback (LedgerDB (l blk) wt))
 ledgerDbSwitch cfg numRollbacks trace newBlocks db =
     case rollback numRollbacks db of
       Nothing ->
@@ -749,40 +739,34 @@ instance ( HeaderHash (l wt EmptyMK) ~ HeaderHash l
 pureBlock :: blk -> Ap m l wt blk (ReadsKeySets m l wt)
 pureBlock = ReapplyVal
 
-ledgerDbPush' :: ( ApplyBlock            l blk
-                 , TickedTableStuff      l     wt
-                 , GetsBlockKeySets      l blk wt
-                 , ReadsKeySets Identity l     wt
+ledgerDbPush' :: ( ApplyBlock            (l blk) blk
+                 , ReadsKeySets Identity (l blk) wt
                  , HasCallStack
                  , IsSwitchLedgerTables        wt
-                 , GetTip (l wt EmptyMK)
+                 , LedgerMustSupportUTxOHD l blk wt
                  )
-              => LedgerDbCfg l -> blk -> LedgerDB l wt -> LedgerDB l wt
+              => LedgerDbCfg (l blk) -> blk -> LedgerDB (l blk) wt -> LedgerDB (l blk) wt
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
-ledgerDbPushMany' :: ( ApplyBlock            l blk
-                     , TickedTableStuff      l     wt
-                     , GetsBlockKeySets      l blk wt
-                     , ReadsKeySets Identity l     wt
+ledgerDbPushMany' :: ( ApplyBlock            (l blk) blk
+                     , ReadsKeySets Identity (l blk) wt
                      , HasCallStack
                      , IsSwitchLedgerTables wt
-                     , GetTip (l wt EmptyMK)
+                     , LedgerMustSupportUTxOHD l blk wt
                      )
-                  => LedgerDbCfg l -> [blk] -> LedgerDB l wt -> LedgerDB l wt
+                  => LedgerDbCfg (l blk) -> [blk] -> LedgerDB (l blk) wt -> LedgerDB (l blk) wt
 ledgerDbPushMany' cfg bs =
   runIdentity . ledgerDbPushMany (const $ pure ()) cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: forall l blk wt.
-                   ( ApplyBlock            l blk
-                   , TickedTableStuff      l     wt
-                   , GetsBlockKeySets      l blk wt
-                   , ReadsKeySets Identity l     wt
+                   ( ApplyBlock            (l blk) blk
+                   , ReadsKeySets Identity (l blk) wt
                    , HasCallStack
                    , IsSwitchLedgerTables wt
-                   , GetTip (l wt EmptyMK)
+                   , LedgerMustSupportUTxOHD l blk wt
                    )
-                => LedgerDbCfg l
-                -> Word64 -> [blk] -> LedgerDB l wt -> Maybe (LedgerDB l wt)
+                => LedgerDbCfg (l blk)
+                -> Word64 -> [blk] -> LedgerDB (l blk) wt -> Maybe (LedgerDB (l blk) wt)
 ledgerDbSwitch' cfg n bs db =
     case runIdentity $ ledgerDbSwitch cfg n (const $ pure ()) (map pureBlock bs) db of
       Left  ExceededRollback{} -> Nothing
