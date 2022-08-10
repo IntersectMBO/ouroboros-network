@@ -115,7 +115,7 @@ hashHeader (BlockHeader _ b c d e) = HeaderHash (hash (b, c, d, e))
 deriving instance Hashable SlotNo
 deriving instance Hashable BlockNo
 
--- | 'Hashable' instance for 'Hash'
+-- | 'Hashable' instance for 'Hash'.
 --
 -- We don't insist that 'Hashable' in 'StandardHash' because 'Hashable' is
 -- only used in the network layer /tests/.
