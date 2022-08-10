@@ -123,6 +123,7 @@ import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
@@ -549,7 +550,7 @@ instance CardanoHardForkConstraints c => TableStuff (LedgerState (CardanoBlock c
   -- latest era, ie a sum of maps instead of a map of sums. I'm not sure the
   -- trade-offs.
   newtype LedgerTables (LedgerState (CardanoBlock c)) WithLedgerTables mk = CardanoLedgerTables {
-        cardanoUTxOTable :: ApplyMapKind mk (SL.TxIn c) (CardanoTxOut c)
+        cardanoUTxOTable :: mk (SL.TxIn c) (CardanoTxOut c)
       }
     deriving (Generic)
 
@@ -581,13 +582,16 @@ instance CardanoHardForkConstraints c
       => SufficientSerializationForAnyBackingStore (LedgerState (CardanoBlock c)) WithLedgerTables where
     codecLedgerTables = CardanoLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
 
+
+
 -- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
 -- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
 -- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => Eq (LedgerTables (LedgerState (CardanoBlock c)) DiffMK)
 
--- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) EmptyMK)
--- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) ValuesMK)
--- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) SeqDiffMK)
+-- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) WithLedgerTables EmptyMK)
+-- deriving newtype instance (Praos.PraosCrypto c, TPraos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) WithLedgerTables ValuesMK)
+deriving newtype instance ( NoThunks (mk (SL.TxIn c) (CardanoTxOut c))
+                  ) => NoThunks (LedgerTables (LedgerState (CardanoBlock c)) WithLedgerTables mk)
 
 -- instance (TPraos.PraosCrypto c, Praos.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody)) => ShowLedgerState (LedgerTables (LedgerState (CardanoBlock c))) where
 --   showsLedgerState _mk (CardanoLedgerTables utxo) =
@@ -672,7 +676,7 @@ instance CardanoHardForkConstraints c => TickedTableStuff (LedgerState (CardanoB
               tables
         }
 
-instance CardanoHardForkConstraints c => LedgerTablesCanHardFork WithLedgerTables (CardanoEras c) where
+instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c) where
   hardForkInjectLedgerTablesKeysMK =
          byron
       :* shelley IZ
@@ -682,13 +686,13 @@ instance CardanoHardForkConstraints c => LedgerTablesCanHardFork WithLedgerTable
       :* shelley (IS (IS (IS (IS IZ))))
       :* Nil
     where
-      byron :: InjectLedgerTables WithLedgerTables (CardanoEras c) ByronBlock
+      byron :: InjectLedgerTables (CardanoEras c) ByronBlock
       byron = InjectLedgerTables $ \NoByronLedgerTables -> polyEmptyLedgerTables
 
       shelley ::
            forall era proto. SL.Crypto era ~ c
         => Index (ShelleyBasedEras c) era
-        -> InjectLedgerTables WithLedgerTables (CardanoEras c) (ShelleyBlock proto era)
+        -> InjectLedgerTables (CardanoEras c) (ShelleyBlock proto era)
       shelley idx =
           InjectLedgerTables
         $ \(ShelleyLedgerTables lt) -> CardanoLedgerTables $ mapValuesAppliedMK f lt
@@ -751,14 +755,17 @@ translateLedgerStateByronToShelleyWrapper =
                 , ..
                 }
   where
-    translateLedgerStateWith :: forall wt. IsSwitchLedgerTables wt
+    translateLedgerStateWith ::
+         forall wt.
+         ( TableStuff (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))) wt
+         , StowableLedgerTables (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))) wt
+         )
       => LedgerCfg (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c)))
       -> EpochNo
       -> LedgerState ByronBlock wt EmptyMK
       -> LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c)) wt DiffMK
     translateLedgerStateWith cfgShelley = \epochNo ledgerByron ->
-      case sWithLedgerTables (Proxy @wt) of
-        SWithLedgerTables -> forgetLedgerTablesValues
+                                   forgetLedgerTablesValues
                                  . calculateAdditions
                                  . unstowLedgerTables
                                  $ ShelleyLedgerState {
@@ -775,27 +782,13 @@ translateLedgerStateByronToShelleyWrapper =
                       ShelleyTransitionInfo{shelleyAfterVoting = 0}
             , shelleyLedgerTables = polyEmptyLedgerTables
             }
-        SWithoutLedgerTables -> ShelleyLedgerState {
-            shelleyLedgerTip =
-                translatePointByronToShelley
-                      (ledgerTipPoint ledgerByron)
-                      (byronLedgerTipBlockNo ledgerByron)
-            , shelleyLedgerState =
-                      SL.translateToShelleyLedgerState
-                        (shelleyLedgerGenesis cfgShelley)
-                        epochNo
-                        (byronLedgerState ledgerByron)
-            , shelleyLedgerTransition =
-                      ShelleyTransitionInfo{shelleyAfterVoting = 0}
-            , shelleyLedgerTables = NoLedgerTables
-            }
 
-    translateLedgerTablesWith :: forall wt. IsSwitchLedgerTables wt
+    translateLedgerTablesWith ::
+         forall wt.
+         TableStuff (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))) wt
       => LedgerTables (LedgerState ByronBlock) wt DiffMK
       -> LedgerTables (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))) wt DiffMK
-    translateLedgerTablesWith = case sWithLedgerTables (Proxy @wt) of
-      SWithLedgerTables -> \NoByronLedgerTables -> polyEmptyLedgerTables
-      SWithoutLedgerTables -> \NoLedgerTables -> NoLedgerTables
+    translateLedgerTablesWith = const polyEmptyLedgerTables
 
 translateChainDepStateByronToShelleyWrapper ::
      RequiringBoth
@@ -909,11 +902,12 @@ translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
       TranslateLedgerState {..}
   where
-    translateLedgerStateWith :: forall wt. IsSwitchLedgerTables wt
+    translateLedgerStateWith ::
+         forall wt. IsSwitchLedgerTables wt
          => EpochNo
          -> LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c)) wt EmptyMK
          -> LedgerState (ShelleyBlock (TPraos c) (AllegraEra c)) wt DiffMK
-    translateLedgerStateWith = case sWithLedgerTables (Proxy @wt) of
+    translateLedgerStateWith = case findOutWT (Proxy @wt) of
       SWithoutLedgerTables -> \_epochNo -> (`withLedgerTables` NoLedgerTables)
                                          . unFlip2
                                          . unComp
@@ -966,10 +960,11 @@ translateLedgerStateShelleyToAllegraWrapper =
 
               in resultingState `withLedgerTables` avvmsAsDeletions
 
-    translateLedgerTablesWith :: forall wt. IsSwitchLedgerTables wt
+    translateLedgerTablesWith ::
+         forall wt. IsSwitchLedgerTables wt
       => LedgerTables (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))) wt DiffMK
       -> LedgerTables (LedgerState (ShelleyBlock (TPraos c) (AllegraEra c))) wt DiffMK
-    translateLedgerTablesWith = case sWithLedgerTables (Proxy @wt) of
+    translateLedgerTablesWith = case findOutWT (Proxy @wt) of
             SWithLedgerTables -> \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
                                    ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
                                                          . HD.UtxoDiff
@@ -1009,19 +1004,14 @@ translateLedgerStateAllegraToMaryWrapper =
     ignoringBoth $
       TranslateLedgerState {..}
   where
-    translateLedgerStateWith :: forall wt. IsSwitchLedgerTables wt
-      =>EpochNo
+    translateLedgerStateWith :: forall wt.
+         ( TableStuff (LedgerState (ShelleyBlock (TPraos c) (MaryEra c))) wt
+         , IsSwitchLedgerTables wt
+         )
+      => EpochNo
       -> LedgerState (ShelleyBlock (TPraos c) (AllegraEra c)) wt EmptyMK
       -> LedgerState (ShelleyBlock (TPraos c) (MaryEra c)) wt DiffMK
-    translateLedgerStateWith = \_epochNo -> case sWithLedgerTables (Proxy @wt) of
-      SWithLedgerTables ->
-                noNewTickingDiffs
-              . unFlip2
-              . unComp
-              . SL.translateEra' ()
-              . Comp
-              . Flip2
-      SWithoutLedgerTables ->
+    translateLedgerStateWith = \_epochNo ->
                 noNewTickingDiffs
               . unFlip2
               . unComp
@@ -1031,7 +1021,7 @@ translateLedgerStateAllegraToMaryWrapper =
     translateLedgerTablesWith :: forall wt. IsSwitchLedgerTables wt
       => LedgerTables (LedgerState (ShelleyBlock (TPraos c) (AllegraEra c))) wt DiffMK
       -> LedgerTables (LedgerState (ShelleyBlock (TPraos c) (MaryEra c))) wt DiffMK
-    translateLedgerTablesWith = case sWithLedgerTables (Proxy @wt) of
+    translateLedgerTablesWith = case findOutWT (Proxy @wt) of
       SWithLedgerTables ->
             \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
              ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
@@ -1079,20 +1069,15 @@ translateLedgerStateMaryToAlonzoWrapper =
         , ..
         }
   where
-    translateLedgerStateWith :: forall wt. IsSwitchLedgerTables wt
+    translateLedgerStateWith :: forall wt.
+         ( TableStuff (LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c))) wt
+         , IsSwitchLedgerTables wt
+         )
       => WrapLedgerConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
       -> EpochNo
       -> LedgerState (ShelleyBlock (TPraos c) (MaryEra c)) wt EmptyMK
       -> LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) wt DiffMK
-    translateLedgerStateWith cfgAlonzo = \_epochNo -> case sWithLedgerTables (Proxy @wt) of
-      SWithLedgerTables ->
-                noNewTickingDiffs
-              . unFlip2
-              . unComp
-              . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo)
-              . Comp
-              . Flip2
-      SWithoutLedgerTables ->
+    translateLedgerStateWith cfgAlonzo = \_epochNo ->
                 noNewTickingDiffs
               . unFlip2
               . unComp
@@ -1102,7 +1087,7 @@ translateLedgerStateMaryToAlonzoWrapper =
     translateLedgerTablesWith :: forall wt. IsSwitchLedgerTables wt
       => LedgerTables (LedgerState (ShelleyBlock (TPraos c) (MaryEra c))) wt DiffMK
       -> LedgerTables (LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c))) wt DiffMK
-    translateLedgerTablesWith = case sWithLedgerTables (Proxy @wt) of
+    translateLedgerTablesWith = case findOutWT (Proxy @wt) of
       SWithLedgerTables ->
             \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
              ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
@@ -1155,21 +1140,15 @@ translateLedgerStateAlonzoToBabbageWrapper =
         , ..
         }
   where
-    translateLedgerStateWith :: forall wt. IsSwitchLedgerTables wt
+    translateLedgerStateWith :: forall wt.
+         ( IsSwitchLedgerTables wt
+         , TableStuff (LedgerState (ShelleyBlock (Praos c) (BabbageEra c))) wt
+         )
       => WrapLedgerConfig (ShelleyBlock (Praos c) (BabbageEra c))
       -> EpochNo
       -> LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) wt EmptyMK
       -> LedgerState (ShelleyBlock (Praos c) (BabbageEra c)) wt DiffMK
-    translateLedgerStateWith cfgBabbage = \_epochNo -> case sWithLedgerTables (Proxy @wt) of
-      SWithLedgerTables ->
-                noNewTickingDiffs
-              . unFlip2
-              . unComp
-              . SL.translateEra' (getBabbageTranslationContext cfgBabbage)
-              . Comp
-              . Flip2
-              . transPraosLS
-      SWithoutLedgerTables ->
+    translateLedgerStateWith cfgBabbage = \_epochNo ->
                 noNewTickingDiffs
               . unFlip2
               . unComp
@@ -1187,7 +1166,7 @@ translateLedgerStateAlonzoToBabbageWrapper =
         { shelleyLedgerTip        = fmap castShelleyTip wo
         , shelleyLedgerState      = nes
         , shelleyLedgerTransition = st
-        , shelleyLedgerTables     = case sWithLedgerTables (Proxy @wt) of
+        , shelleyLedgerTables     = case findOutWT (Proxy @wt) of
             SWithLedgerTables    -> polyEmptyLedgerTables
             SWithoutLedgerTables -> NoLedgerTables
         }
@@ -1195,7 +1174,7 @@ translateLedgerStateAlonzoToBabbageWrapper =
     translateLedgerTablesWith :: forall wt. IsSwitchLedgerTables wt
       => LedgerTables (LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c))) wt DiffMK
       -> LedgerTables (LedgerState (ShelleyBlock (Praos c) (BabbageEra c))) wt DiffMK
-    translateLedgerTablesWith = case sWithLedgerTables (Proxy @wt) of
+    translateLedgerTablesWith = case findOutWT (Proxy @wt) of
       SWithLedgerTables ->
             \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
              ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
@@ -1246,3 +1225,17 @@ translateValidatedTxAlonzoToBabbageWrapper ctxt = InjectValidatedTx $
   transPraosValidatedTx (WrapValidatedGenTx x) = case x of
     ShelleyValidatedTx txid vtx -> WrapValidatedGenTx $
       ShelleyValidatedTx txid (SL.coerceValidated vtx)
+
+
+instance CardanoHardForkConstraints c =>  LedgerSupportsUTxOHD LedgerState (CardanoBlock c)
+
+-- instance GetTip (LedgerState (CardanoBlock c) WithLedgerTables TrackingMK)
+-- instance GetTip (LedgerState (CardanoBlock c) WithLedgerTables EmptyMK)
+-- instance GetTip (LedgerState (CardanoBlock c) WithLedgerTables ValuesMK)
+-- instance GetTip (Ticked1 (LedgerState (CardanoBlock c) WithLedgerTables) TrackingMK)
+-- instance GetTip (Ticked1 (LedgerState (CardanoBlock c) WithLedgerTables) ValuesMK)
+-- instance GetTip (Ticked1 (LedgerState (CardanoBlock c) WithLedgerTables) EmptyMK)
+-- instance NoThunks (LedgerState (CardanoBlock c) WithLedgerTables EmptyMK)                 -- for DbChangelog
+
+instance CardanoHardForkConstraints c => LedgerMustSupportUTxOHD LedgerState (CardanoBlock c) WithLedgerTables
+instance CardanoHardForkConstraints c => LedgerMustSupportUTxOHD LedgerState (CardanoBlock c) WithoutLedgerTables

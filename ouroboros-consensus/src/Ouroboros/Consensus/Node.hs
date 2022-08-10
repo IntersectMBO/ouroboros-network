@@ -155,7 +155,7 @@ import Data.SOP.Strict (And)
 
 -- | Arguments expected from any invocation of 'runWith', whether by deployed
 -- code, tests, etc.
-data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
+data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) wt = RunNodeArgs {
       -- | Consensus tracers
       rnTraceConsensus :: Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
 
@@ -172,7 +172,7 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
       --
       -- Called on the 'NodeKernel' after creating it, but before the network
       -- layer is initialised.
-    , rnNodeKernelHook :: forall wt. ResourceRegistry m
+    , rnNodeKernelHook :: ResourceRegistry m
                        -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
                        -> m ()
 
@@ -271,9 +271,12 @@ deriving instance Show (NetworkP2PMode p2p)
 
 
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
-run :: forall blk p2p.
-     RunNode blk
-  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
+run :: forall blk p2p wt.
+     (RunNode blk
+     , SerialiseDiskConstraints blk wt
+     , LedgerMustSupportUTxOHD' blk wt
+     )
+  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
 run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
@@ -284,12 +287,14 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 -- network layer.
 --
 -- This function runs forever unless an exception is thrown.
-runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
+runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p wt.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
+     , SerialiseDiskConstraints blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
-  => RunNodeArgs m addrNTN addrNTC blk p2p
+  => RunNodeArgs m addrNTN addrNTC blk p2p wt
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
   -> m ()
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
@@ -333,8 +338,9 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           llrnCustomiseHardForkBlockchainTimeArgs $
           HardForkBlockchainTimeArgs
             { hfbtBackoffDelay   = pure $ BackoffDelay 60
-            , hfbtGetLedgerState =
-                ledgerState <$> ChainDB.getCurrentLedger chainDB
+            , hfbtGetLedgerState = case findOutWT (Proxy @wt) of
+                SWithLedgerTables -> destroyTables . ledgerState <$> ChainDB.getCurrentLedger chainDB
+                SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger chainDB
             , hfbtLedgerConfig   = configLedger cfg
             , hfbtRegistry       = registry
             , hfbtSystemTime     = systemTime
@@ -760,8 +766,8 @@ data StdRunNodeArgs m blk (p2p :: Diffusion.P2P) = StdRunNodeArgs
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
 -- non-testing invocation.
 stdLowLevelRunNodeArgsIO ::
-     forall blk p2p. RunNode blk
-  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
+     forall blk p2p wt. RunNode blk
+  => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
   -> IO (LowLevelRunNodeArgs
           IO
@@ -840,8 +846,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStor
           })
 
     llrnCustomiseNodeKernelArgs ::
-         NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
-      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt
+         forall addrNTN addrNTC m wt'. NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt'
+      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk wt'
     llrnCustomiseNodeKernelArgs =
         overBlockFetchConfiguration modifyBlockFetchConfiguration
       . modifyMempoolCapacityOverride

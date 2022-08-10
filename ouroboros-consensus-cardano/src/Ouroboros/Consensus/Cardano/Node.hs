@@ -484,7 +484,7 @@ data ProtocolTransitionParamsShelleyBased era = ProtocolTransitionParamsShelleyB
 -- PRECONDITION: only a single set of Shelley credentials is allowed when used
 -- for mainnet (check against @'SL.gNetworkId' 'shelleyBasedGenesis'@).
 protocolInfoCardano ::
-     forall c m wt. (IOLike m, CardanoHardForkConstraints c, IsSwitchLedgerTables wt)
+     forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
   -> ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley c
@@ -497,7 +497,7 @@ protocolInfoCardano ::
   -> ProtocolTransitionParamsShelleyBased (MaryEra c)
   -> ProtocolTransitionParamsShelleyBased (AlonzoEra c)
   -> ProtocolTransitionParamsShelleyBased (BabbageEra c)
-  -> ProtocolInfo m wt (CardanoBlock c)
+  -> ProtocolInfo m (CardanoBlock c)
 protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                         byronGenesis                = genesisByron
                       , byronLeaderCredentials      = mCredsByron
@@ -573,7 +573,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           , topLevelConfigBlock    = blockConfigByron
           }
       , pInfoInitLedger = initExtLedgerStateByron
-      } = protocolInfoByron @m @wt protocolParamsByron
+      } = protocolInfoByron @m protocolParamsByron
 
     partialConsensusConfigByron :: PartialConsensusConfig (BlockProtocol ByronBlock)
     partialConsensusConfigByron = consensusConfigByron
@@ -801,27 +801,20 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- When the initial ledger state is not in the Byron era, register the
     -- initial staking and initial funds (if provided in the genesis config) in
     -- the ledger state.
-    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c) wt ValuesMK
+    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c) WithoutLedgerTables ValuesMK
     initExtLedgerStateCardano = ExtLedgerState {
           headerState = initHeaderState
         , ledgerState = overShelleyBasedLedgerState register initLedgerState
         }
       where
         initHeaderState :: HeaderState (CardanoBlock c)
-        initLedgerState :: LedgerState (CardanoBlock c) wt ValuesMK
-        ExtLedgerState initLedgerState initHeaderState =
-          case sWithLedgerTables (Proxy @wt) of
-            SWithLedgerTables ->
-              injectInitialExtLedgerState cfg
-              $ initExtLedgerStateByron
-            SWithoutLedgerTables ->
-              injectInitialExtLedgerState cfg
-              $ initExtLedgerStateByron
+        initLedgerState :: LedgerState (CardanoBlock c) WithoutLedgerTables ValuesMK
+        ExtLedgerState initLedgerState initHeaderState = injectInitialExtLedgerState cfg initExtLedgerStateByron
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
-          => Flip2 LedgerState wt ValuesMK (ShelleyBlock proto era)
-          -> Flip2 LedgerState wt ValuesMK (ShelleyBlock proto era)
+          => Flip2 LedgerState WithoutLedgerTables ValuesMK (ShelleyBlock proto era)
+          -> Flip2 LedgerState WithoutLedgerTables ValuesMK (ShelleyBlock proto era)
         -- Due to UTxO-HD there is a subtlety here. The functions that register
         -- the initial funds work on the UTxO inside the LedgerState instead of
         -- on the tables. This implies that we have to first stow the tables,
@@ -833,20 +826,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         -- accept any 'mk' as now we get the guarantee that whenever we are
         -- unstowing, we are doing it on an EmptyMK and only in this case (which
         -- must happen only on tests) we do this trickery.
-        register (Flip2 st) = case sWithLedgerTables (Proxy @wt) of
-          SWithLedgerTables -> Flip2 $ unstowLedgerTables $ forgetLedgerTables $ st {
-              Shelley.shelleyLedgerState =
-                -- We must first register the initial funds, because the stake
-                -- information depends on it.
-                  registerGenesisStaking
-                    (SL.sgStaking genesisShelley)
-                . registerInitialFunds
-                    (ListMap.toMap (SL.sgInitialFunds genesisShelley))
-                . Shelley.shelleyLedgerState
-                . stowLedgerTables
-                $ st
-            }
-          SWithoutLedgerTables -> Flip2 $ st {
+        register (Flip2 st) = Flip2 $ st {
               Shelley.shelleyLedgerState =
                 -- We must first register the initial funds, because the stake
                 -- information depends on it.

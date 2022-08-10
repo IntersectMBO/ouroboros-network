@@ -173,68 +173,6 @@ instance ( IsLedger (LedgerState  blk)
 
       ledgerResult = applyChainTickLedgerResult lcfg slot ledger
 
-instance ExtractLedgerTables (LedgerState blk) => ExtractLedgerTables (ExtLedgerState blk) where
-  extractLedgerTables ExtLedgerState{..} = ExtLedgerState{ledgerState = extractLedgerTables ledgerState,..}
-  destroyTables ExtLedgerState{..} = ExtLedgerState{ledgerState = destroyTables ledgerState,..}
-
-instance IgnoresMapKind (LedgerState blk) => IgnoresMapKind (ExtLedgerState blk) where
-  convertMapKind ExtLedgerState{..} = ExtLedgerState{ledgerState = convertMapKind ledgerState, ..}
-
-instance IgnoresTables (LedgerState blk) => IgnoresTables (ExtLedgerState blk) where
-  convertTables ExtLedgerState{..} = ExtLedgerState{ledgerState = convertTables ledgerState, ..}
-
-instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk) WithLedgerTables) => TableStuff (ExtLedgerState blk) WithLedgerTables where
-
-  newtype LedgerTables (ExtLedgerState blk) WithLedgerTables mk =
-    ExtLedgerStateTables { unExtLedgerStateTables :: LedgerTables (LedgerState blk) WithLedgerTables mk }
-    deriving (Generic)
-
-  projectLedgerTables (ExtLedgerState lstate _) =
-      ExtLedgerStateTables (projectLedgerTables lstate)
-  withLedgerTables (ExtLedgerState lstate hstate) (ExtLedgerStateTables tables) =
-      ExtLedgerState (lstate `withLedgerTables` tables) hstate
-
-  traverseLedgerTables f (ExtLedgerStateTables l) =
-    ExtLedgerStateTables <$> traverseLedgerTables f l
-
-  pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState blk) f
-  mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState blk) f
-  zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState blk) f
-  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState blk) f
-  foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState blk) f
-  foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState blk) f
-  namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState blk)
-  zipLedgerTablesA  f (ExtLedgerStateTables l) (ExtLedgerStateTables r) =
-    ExtLedgerStateTables <$> zipLedgerTablesA f l r
-  zipLedgerTables2A  f (ExtLedgerStateTables l) (ExtLedgerStateTables c) (ExtLedgerStateTables r) =
-     ExtLedgerStateTables <$> zipLedgerTables2A f l c r
-
-instance ( LedgerSupportsProtocol blk
-         , SufficientSerializationForAnyBackingStore (LedgerState blk) WithLedgerTables
-         )
-      => SufficientSerializationForAnyBackingStore (ExtLedgerState blk) WithLedgerTables where
-  codecLedgerTables = ExtLedgerStateTables codecLedgerTables
-
-deriving instance Eq        (LedgerTables (LedgerState blk) WithLedgerTables mk)               => Eq       (LedgerTables (ExtLedgerState blk) WithLedgerTables mk)
-instance (NoThunks (LedgerTables (LedgerState blk) WithLedgerTables mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) WithLedgerTables mk)
-
--- instance InMemory (LedgerTables (LedgerState blk)) => InMemory (LedgerTables (ExtLedgerState blk)) where
---   convertMapKind (ExtLedgerStateTables st) =
---       ExtLedgerStateTables $ convertMapKind st
-
-type LedgerMustSupportUTxOHD' blk wt = ( LedgerMustSupportUTxOHD ExtLedgerState blk wt
-                                       , LedgerMustSupportUTxOHD LedgerState blk wt
-                                       , Promote (LedgerState blk) (ExtLedgerState blk) wt
-                                       )
-
-instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk) WithLedgerTables) => TickedTableStuff (ExtLedgerState blk) WithLedgerTables where
-  projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =
-      ExtLedgerStateTables (projectLedgerTablesTicked lstate)
-  withLedgerTablesTicked
-    (TickedExtLedgerState lstate view hstate)
-    (ExtLedgerStateTables tables) =
-      TickedExtLedgerState (lstate `withLedgerTablesTicked` tables) view hstate
-
 instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
   applyBlockLedgerResult cfg blk TickedExtLedgerState{..} = do
     ledgerResult <-
@@ -266,42 +204,6 @@ instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
           tickedLedgerView
           (getHeader blk)
           tickedHeaderState
-
-class Promote l l' wt where
-  promote :: LedgerTables l wt mk -> LedgerTables l' wt mk
-  demote :: LedgerTables l' wt mk -> LedgerTables l wt mk
-
-instance Promote (LedgerState blk) (ExtLedgerState blk) WithLedgerTables where
-  promote = ExtLedgerStateTables
-  demote = unExtLedgerStateTables
-
-instance Promote (LedgerState blk) (ExtLedgerState blk) WithoutLedgerTables where
-  promote = const NoLedgerTables
-  demote = const NoLedgerTables
-
-
-instance GetsBlockKeySets (LedgerState blk)    blk WithLedgerTables
-      => GetsBlockKeySets (ExtLedgerState blk) blk WithLedgerTables where
-  getBlockKeySets = ExtLedgerStateTables . getBlockKeySets
-  getTransactionKeySets = ExtLedgerStateTables . getTransactionKeySets
-
-instance
-     ( LedgerSupportsProtocol blk
-     , StowableLedgerTables (LedgerState blk) WithLedgerTables
-     )
-  => StowableLedgerTables (ExtLedgerState blk) WithLedgerTables where
-
-  stowLedgerTables ExtLedgerState{headerState, ledgerState} =
-      ExtLedgerState {
-          headerState
-        , ledgerState = stowLedgerTables ledgerState
-        }
-
-  unstowLedgerTables ExtLedgerState{headerState, ledgerState} =
-      ExtLedgerState {
-          headerState
-        , ledgerState = unstowLedgerTables ledgerState
-        }
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -354,3 +256,106 @@ castExtLedgerState ExtLedgerState{..} = ExtLedgerState {
       ledgerState = coerce ledgerState
     , headerState = castHeaderState headerState
     }
+
+{-------------------------------------------------------------------------------
+  UTxO-HD
+-------------------------------------------------------------------------------}
+
+instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk) WithLedgerTables) => TableStuff (ExtLedgerState blk) WithLedgerTables where
+
+  newtype LedgerTables (ExtLedgerState blk) WithLedgerTables mk =
+    ExtLedgerStateTables { unExtLedgerStateTables :: LedgerTables (LedgerState blk) WithLedgerTables mk }
+    deriving (Generic)
+
+  projectLedgerTables (ExtLedgerState lstate _) =
+      ExtLedgerStateTables (projectLedgerTables lstate)
+  withLedgerTables (ExtLedgerState lstate hstate) (ExtLedgerStateTables tables) =
+      ExtLedgerState (lstate `withLedgerTables` tables) hstate
+
+  traverseLedgerTables f (ExtLedgerStateTables l) =
+    ExtLedgerStateTables <$> traverseLedgerTables f l
+
+  pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState blk) f
+  mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState blk) f
+  zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState blk) f
+  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState blk) f
+  foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState blk) f
+  foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState blk) f
+  namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState blk)
+  zipLedgerTablesA  f (ExtLedgerStateTables l) (ExtLedgerStateTables r) =
+    ExtLedgerStateTables <$> zipLedgerTablesA f l r
+  zipLedgerTables2A  f (ExtLedgerStateTables l) (ExtLedgerStateTables c) (ExtLedgerStateTables r) =
+     ExtLedgerStateTables <$> zipLedgerTables2A f l c r
+
+deriving instance Eq        (LedgerTables (LedgerState blk) WithLedgerTables mk)               => Eq       (LedgerTables (ExtLedgerState blk) WithLedgerTables mk)
+instance          (NoThunks (LedgerTables (LedgerState blk) WithLedgerTables mk), Typeable mk) => NoThunks (LedgerTables (ExtLedgerState blk) WithLedgerTables mk)
+
+instance ( LedgerSupportsProtocol blk
+         , StowableLedgerTables (LedgerState blk) WithLedgerTables
+         )
+      => StowableLedgerTables (ExtLedgerState blk) WithLedgerTables where
+
+  stowLedgerTables ExtLedgerState{headerState, ledgerState} =
+      ExtLedgerState {
+          headerState
+        , ledgerState = stowLedgerTables ledgerState
+        }
+
+  unstowLedgerTables ExtLedgerState{headerState, ledgerState} =
+      ExtLedgerState {
+          headerState
+        , ledgerState = unstowLedgerTables ledgerState
+        }
+
+instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk) WithLedgerTables) => TickedTableStuff (ExtLedgerState blk) WithLedgerTables where
+  projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =
+      ExtLedgerStateTables (projectLedgerTablesTicked lstate)
+  withLedgerTablesTicked
+    (TickedExtLedgerState lstate view hstate)
+    (ExtLedgerStateTables tables) =
+      TickedExtLedgerState (lstate `withLedgerTablesTicked` tables) view hstate
+
+instance ExtractLedgerTables (LedgerState blk) => ExtractLedgerTables (ExtLedgerState blk) where
+  extractLedgerTables ExtLedgerState{..} = ExtLedgerState{ledgerState = extractLedgerTables ledgerState,..}
+  destroyTables ExtLedgerState{..} = ExtLedgerState{ledgerState = destroyTables ledgerState,..}
+
+instance IgnoresMapKind (LedgerState blk) => IgnoresMapKind (ExtLedgerState blk) where
+  convertMapKind ExtLedgerState{..} = ExtLedgerState{ledgerState = convertMapKind ledgerState, ..}
+
+instance IgnoresMapKindTicked (LedgerState blk) => IgnoresMapKindTicked (ExtLedgerState blk) where
+  convertMapKindTicked TickedExtLedgerState{..} = TickedExtLedgerState{tickedLedgerState = convertMapKindTicked tickedLedgerState, ..}
+
+instance IgnoresTables (LedgerState blk) => IgnoresTables (ExtLedgerState blk) where
+  convertTables ExtLedgerState{..} = ExtLedgerState{ledgerState = convertTables ledgerState, ..}
+
+instance ( LedgerSupportsProtocol blk
+         , SufficientSerializationForAnyBackingStore (LedgerState blk) WithLedgerTables
+         )
+      => SufficientSerializationForAnyBackingStore (ExtLedgerState blk) WithLedgerTables where
+  codecLedgerTables = ExtLedgerStateTables codecLedgerTables
+
+class Promote l l' wt where
+  promote :: LedgerTables l wt mk -> LedgerTables l' wt mk
+  demote :: LedgerTables l' wt mk -> LedgerTables l wt mk
+
+instance Promote (LedgerState blk) (ExtLedgerState blk) WithLedgerTables where
+  promote = ExtLedgerStateTables
+  demote = unExtLedgerStateTables
+
+instance Promote (LedgerState blk) (ExtLedgerState blk) WithoutLedgerTables where
+  promote = const NoLedgerTables
+  demote = const NoLedgerTables
+
+instance GetsBlockKeySets (LedgerState blk)    blk WithLedgerTables
+      => GetsBlockKeySets (ExtLedgerState blk) blk WithLedgerTables where
+  getBlockKeySets = ExtLedgerStateTables . getBlockKeySets
+  getTransactionKeySets = ExtLedgerStateTables . getTransactionKeySets
+
+type LedgerMustSupportUTxOHD' blk wt = ( LedgerMustSupportUTxOHD ExtLedgerState blk wt
+                                       , LedgerMustSupportUTxOHD LedgerState blk wt
+                                       , Promote (LedgerState blk) (ExtLedgerState blk) wt
+                                       )
+
+instance (LedgerSupportsProtocol blk, LedgerMustSupportUTxOHD LedgerState blk WithLedgerTables)    => LedgerMustSupportUTxOHD ExtLedgerState blk WithLedgerTables
+instance (LedgerSupportsProtocol blk, LedgerMustSupportUTxOHD LedgerState blk WithoutLedgerTables) => LedgerMustSupportUTxOHD ExtLedgerState blk WithoutLedgerTables
+instance (LedgerSupportsProtocol blk, LedgerSupportsUTxOHD    LedgerState blk                    ) => LedgerSupportsUTxOHD    ExtLedgerState blk

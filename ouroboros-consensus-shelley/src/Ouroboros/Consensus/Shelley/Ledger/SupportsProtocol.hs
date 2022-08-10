@@ -123,7 +123,7 @@ instance
           { shelleyLedgerTip = coerceTip <$> shelleyLedgerTip st,
             shelleyLedgerState = shelleyLedgerState st,
             shelleyLedgerTransition = shelleyLedgerTransition st,
-            shelleyLedgerTables = case sWithLedgerTables (Proxy @wt) of
+            shelleyLedgerTables = case findOutWT (Proxy @wt) of
               SWithLedgerTables -> polyEmptyLedgerTables
               SWithoutLedgerTables -> polyEmptyLedgerTables
           }

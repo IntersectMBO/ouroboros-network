@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Util.SOP
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
+import Data.Coerce
 
 {-------------------------------------------------------------------------------
   SingleEraBlock

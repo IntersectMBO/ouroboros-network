@@ -101,28 +101,23 @@ data HardForkLedgerError xs =
   GetTip
 -------------------------------------------------------------------------------}
 
-proxyComp :: Proxy xs -> Proxy (And SingleEraBlock (Compose (Coercible (OneEraHash xs)) WrapHeaderHash))
-proxyComp _ = Proxy
-
 type instance HeaderHash (Flip2 LedgerState wt mk blk) = HeaderHash blk
 
 instance GetTip (LedgerState blk wt mk) => GetTip (Flip2 LedgerState wt mk blk) where
   getTip = castPoint . getTip @(LedgerState blk wt mk) . unFlip2
 
-
-
 instance ( CanHardFork xs
-         , All (And SingleEraBlock (Compose (Coercible (OneEraHash xs)) WrapHeaderHash)) xs
+         , All SingleEraBlock xs
          , IsSwitchLedgerTables wt
          ) => GetTip (LedgerState (HardForkBlock xs) wt mk) where
   getTip = hcollapse
-         . hcmap (proxyComp (Proxy @xs)) f'
+         . hcmap proxySingle f'
          . State.tip
          . hardForkLedgerStatePerEra
     where
       f' :: forall x.
            ( LedgerSupportsUTxOHD LedgerState x
-           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           , ConvertRawHash x
            )
         => Flip2 LedgerState wt mk x
         -> K (Point (LedgerState (HardForkBlock xs) wt mk)) x
@@ -131,23 +126,25 @@ instance ( CanHardFork xs
       f :: forall x .
            ( GetTip (LedgerState x wt EmptyMK)
            , TableStuff (LedgerState x) wt
-           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           , ConvertRawHash x
            )
         =>     Flip2 LedgerState wt mk x
         -> K (Point (LedgerState (HardForkBlock xs) wt mk)) x
-      f = K . castPoint . getTip . forgetLedgerTables . unFlip2
+      f = K . (\case
+                  GenesisPoint -> GenesisPoint
+                  BlockPoint slot h -> BlockPoint slot $ OneEraHash $ toShortRawHash (Proxy @x) h) . getTip . forgetLedgerTables . unFlip2
 
 instance ( CanHardFork xs
-         , All (And SingleEraBlock (Compose (Coercible (OneEraHash xs)) WrapHeaderHash)) xs
+         , All SingleEraBlock xs
          , IsSwitchLedgerTables wt
          ) => GetTip (Ticked1 (LedgerState (HardForkBlock xs) wt) mk) where
   getTip = hcollapse
-         . hcmap (proxyComp (Proxy @xs)) f'
+         . hcmap proxySingle f'
          . tickedHardForkLedgerStatePerEra
     where
       f' :: forall x.
            ( LedgerSupportsUTxOHD LedgerState x
-           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           , ConvertRawHash x
            )
         => FlipTickedLedgerState mk wt x
         -> K (Point (Ticked1 (LedgerState (HardForkBlock xs) wt) mk)) x
@@ -156,11 +153,13 @@ instance ( CanHardFork xs
       f :: forall x.
            ( GetTip (Ticked1 (LedgerState x wt) EmptyMK)
            , TickedTableStuff (LedgerState x) wt
-           , Coercible (OneEraHash xs) (WrapHeaderHash x)
+           , ConvertRawHash x
            )
         => FlipTickedLedgerState mk wt x
         -> K (Point (Ticked1 (LedgerState (HardForkBlock xs) wt) mk)) x
-      f = K . castPoint . getTip . forgetLedgerTablesTicked . getFlipTickedLedgerState
+      f = K . (\case
+                  GenesisPoint -> GenesisPoint
+                  BlockPoint slot h -> BlockPoint slot $ OneEraHash $ toShortRawHash (Proxy @x) h) . getTip . forgetLedgerTablesTicked . getFlipTickedLedgerState
 
 {-------------------------------------------------------------------------------
   Ticking
@@ -987,3 +986,18 @@ injectLedgerEvent index =
       OneEraLedgerEvent
     . injectNS index
     . WrapLedgerEvent
+
+{-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------}
+
+instance CanHardFork xs
+      => IgnoresMapKind (LedgerState (HardForkBlock xs)) where
+  convertMapKind (HardForkLedgerState st) = HardForkLedgerState $ hcmap proxySingle (Flip2 . convertMapKind . unFlip2) st
+
+instance CanHardFork xs
+      => IgnoresMapKindTicked (LedgerState (HardForkBlock xs)) where
+  convertMapKindTicked st = st { tickedHardForkLedgerStatePerEra = hcmap proxySingle (FlipTickedLedgerState . convertMapKindTicked . getFlipTickedLedgerState) $ tickedHardForkLedgerStatePerEra st }
+
+instance CanHardFork xs => ExtractLedgerTables (LedgerState (HardForkBlock xs)) where
+  extractLedgerTables (HardForkLedgerState st) = HardForkLedgerState $ hcmap proxySingle (Flip2 . extractLedgerTables . unFlip2) st
+  destroyTables (HardForkLedgerState st) = HardForkLedgerState $ hcmap proxySingle (Flip2 . destroyTables . unFlip2) st

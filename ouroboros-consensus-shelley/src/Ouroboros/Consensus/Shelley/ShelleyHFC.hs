@@ -58,6 +58,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import qualified Ouroboros.Consensus.Util.SOP as SOP
@@ -367,7 +369,7 @@ translateShelleyTables ::
   -> LedgerTables (LedgerState (ShelleyBlock proto (SL.PreviousEra era))) wt (ApplyMapKind' mk)
   -> LedgerTables (LedgerState (ShelleyBlock proto                 era))  wt (ApplyMapKind' mk)
 translateShelleyTables ctxt =
-  case sWithLedgerTables (Proxy @wt) of
+  case findOutWT (Proxy @wt) of
     SWithLedgerTables ->
         ShelleyLedgerTables
         . mapValuesAppliedMK
@@ -476,3 +478,19 @@ instance (SOP.All ShelleyBasedEra eras, Typeable eras) => FromCBOR (ShelleyTxOut
 
 newtype ADecoder eras =
   ADecoder {unADecoder :: forall s. CBOR.Decoder s (ShelleyTxOut eras)}
+
+instance ( LedgerSupportsProtocol (ShelleyBlock proto era)
+         , ShelleyCompatible proto era
+         ) => LedgerMustSupportUTxOHD
+                         LedgerState
+                         (ShelleyBlockHFC proto era)
+                         WithoutLedgerTables
+instance ( LedgerSupportsProtocol (ShelleyBlock proto era)
+         , ShelleyCompatible proto era
+         ) => LedgerMustSupportUTxOHD
+                         LedgerState
+                         (ShelleyBlockHFC proto era)
+                         WithLedgerTables
+instance ( LedgerSupportsProtocol (ShelleyBlock proto era)
+         , ShelleyCompatible proto era
+         ) => LedgerSupportsUTxOHD LedgerState (ShelleyBlockHFC proto era)

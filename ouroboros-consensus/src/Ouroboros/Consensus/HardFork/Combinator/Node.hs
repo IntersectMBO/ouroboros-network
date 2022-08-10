@@ -26,7 +26,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 
-import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
@@ -65,5 +64,4 @@ instance ( CanHardFork xs
          , SerialiseHFC xs
          , LedgerTablesCanHardFork xs
          , LedgerSupportsUTxOHD LedgerState (HardForkBlock xs)
-         , LedgerSupportsUTxOHD ExtLedgerState (HardForkBlock xs)
          ) => RunNode (HardForkBlock xs)

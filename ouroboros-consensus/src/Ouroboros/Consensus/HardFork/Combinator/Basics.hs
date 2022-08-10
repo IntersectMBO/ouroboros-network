@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -88,7 +89,8 @@ newtype instance LedgerState (HardForkBlock xs) wt mk = HardForkLedgerState {
     }
 
 -- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt EmptyMK)
--- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt EmptyMK)
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) WithLedgerTables EmptyMK)
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) WithoutLedgerTables EmptyMK)
 
 -- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt ValuesMK)
 -- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt ValuesMK)

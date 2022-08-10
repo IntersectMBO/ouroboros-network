@@ -39,7 +39,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
 import           Control.Monad.Except (Except)
 import           Control.Monad.Identity (Identity (..))
 import           Data.Foldable (toList)
-import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Natural (Natural)
@@ -59,6 +58,7 @@ import           Cardano.Ledger.Alonzo.Scripts (ExUnits, ExUnits',
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.TxLimits
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Util (ShowProxy (..))
@@ -69,7 +69,7 @@ import           Cardano.Ledger.Alonzo.Tx (totExUnits)
 import           Cardano.Ledger.Block as Core
 import           Cardano.Ledger.Babbage.PParams
 import qualified Cardano.Ledger.Core as Core (Tx)
-import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq, getAllTxInputs, Crypto)
+import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq, getAllTxInputs)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.TxIn as SL (txid)
 
@@ -170,6 +170,10 @@ instance ShelleyCompatible proto era => GetsBlockKeySets (LedgerState (ShelleyBl
       $ HD.UtxoKeys
       $ SL.getAllTxInputs @era (getField @"body"  tx)
 
+instance (ShelleyCompatible proto era, ShelleyBasedEra era) => LedgerSupportsUTxOHD LedgerState (ShelleyBlock proto era)
+instance (ShelleyCompatible proto era, ShelleyBasedEra era) => LedgerMustSupportUTxOHD LedgerState (ShelleyBlock proto era) WithLedgerTables
+instance ShelleyBasedEra era => LedgerMustSupportUTxOHD LedgerState (ShelleyBlock proto era) WithoutLedgerTables
+
 
 mkShelleyTx :: forall era proto. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock proto era)
 mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
@@ -252,7 +256,7 @@ applyShelleyTx :: forall era proto wt.
        )
 applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
     let st1 :: TickedLedgerState (ShelleyBlock proto era) wt EmptyMK
-        st1 = ShelleyLedger.cnv $ (case sWithLedgerTables (Proxy @wt) of
+        st1 = ShelleyLedger.cnv $ (case findOutWT (Proxy @wt) of
                                     SWithLedgerTables -> stowLedgerTables
                                     SWithoutLedgerTables -> stowLedgerTables) $ ShelleyLedger.vnc st0
 
@@ -271,12 +275,12 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
         st2 = set theLedgerLens mempoolState' st1
 
         st3 :: TickedLedgerState (ShelleyBlock proto era) wt ValuesMK
-        st3 = ShelleyLedger.cnv $ (case sWithLedgerTables (Proxy @wt) of
+        st3 = ShelleyLedger.cnv $ (case findOutWT (Proxy @wt) of
                                     SWithLedgerTables -> unstowLedgerTables
                                     SWithoutLedgerTables -> unstowLedgerTables) $ ShelleyLedger.vnc st2
 
         st4 :: TickedLedgerState (ShelleyBlock proto era) wt TrackingMK
-        st4 = (case sWithLedgerTables (Proxy @wt) of
+        st4 = (case findOutWT (Proxy @wt) of
                   SWithLedgerTables -> calculateDifferenceTicked
                   SWithoutLedgerTables -> calculateDifferenceTicked) st0 st3
 
@@ -291,7 +295,7 @@ reapplyShelleyTx ::
   -> Except (ApplyTxErr (ShelleyBlock proto era)) (TickedLedgerState (ShelleyBlock proto era) wt TrackingMK)
 reapplyShelleyTx cfg slot vgtx st0 = do
     let st1 :: TickedLedgerState (ShelleyBlock proto era) wt EmptyMK
-        st1     = ShelleyLedger.cnv $ (case sWithLedgerTables (Proxy @wt) of
+        st1     = ShelleyLedger.cnv $ (case findOutWT (Proxy @wt) of
                                          SWithLedgerTables -> stowLedgerTables
                                          SWithoutLedgerTables -> stowLedgerTables) $ ShelleyLedger.vnc st0
         innerSt = tickedShelleyLedgerState st1
@@ -304,7 +308,7 @@ reapplyShelleyTx cfg slot vgtx st0 = do
           vtx
 
     let st2 :: TickedLedgerState (ShelleyBlock proto era) wt TrackingMK
-        st2 = case sWithLedgerTables (Proxy @wt) of
+        st2 = case findOutWT (Proxy @wt) of
                   SWithLedgerTables ->
                     calculateDifferenceTicked st0
                     $ ShelleyLedger.cnv

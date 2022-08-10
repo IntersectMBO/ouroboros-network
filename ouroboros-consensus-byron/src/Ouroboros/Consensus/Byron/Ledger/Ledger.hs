@@ -164,6 +164,19 @@ getByronTip state =
   Ticked ledger state
 -------------------------------------------------------------------------------}
 
+instance IgnoresMapKind (LedgerState ByronBlock) where
+  convertMapKind = convertTables
+
+instance IgnoresMapKindTicked (LedgerState ByronBlock) where
+  convertMapKindTicked TickedByronLedgerState{..} = TickedByronLedgerState{..}
+
+instance IgnoresTables (LedgerState ByronBlock) where
+  convertTables ByronLedgerState{..} = ByronLedgerState{..}
+
+instance ExtractLedgerTables (LedgerState ByronBlock) where
+  extractLedgerTables = convertTables
+  destroyTables = convertTables
+
 -- | The ticked Byron ledger state
 data instance Ticked1 (LedgerState ByronBlock wt) mk = TickedByronLedgerState {
       tickedByronLedgerState        :: !CC.ChainValidationState
@@ -220,8 +233,8 @@ instance TickedTableStuff (LedgerState ByronBlock) WithLedgerTables where
 --   showsLedgerState _sing = shows
 
 instance StowableLedgerTables (LedgerState ByronBlock) WithLedgerTables where
-  stowLedgerTables     = coerce . stowLedgerTables @(LedgerState ByronBlock)
-  unstowLedgerTables   = coerce . unstowLedgerTables @(LedgerState ByronBlock)
+  stowLedgerTables     = convertTables
+  unstowLedgerTables   = convertTables
 
 {-------------------------------------------------------------------------------
   Supporting the various consensus interfaces

@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.ByronHFC (ByronBlockHFC) where
@@ -9,6 +10,8 @@ import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Storage.Serialisation
 
@@ -78,3 +81,13 @@ instance SerialiseHFC '[ByronBlock] where
         reconstructNestedCtxt (Proxy @(Header ByronBlock)) prefix blockSize
   getHfcBinaryBlockInfo (DegenBlock b) =
       getBinaryBlockInfo b
+
+instance LedgerMustSupportUTxOHD
+                         LedgerState
+                         ByronBlockHFC
+                         WithoutLedgerTables
+instance LedgerMustSupportUTxOHD
+                         LedgerState
+                         ByronBlockHFC
+                         WithLedgerTables
+instance LedgerSupportsUTxOHD LedgerState ByronBlockHFC

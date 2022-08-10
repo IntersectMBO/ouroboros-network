@@ -31,7 +31,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
 import           Ouroboros.Consensus.Ledger.Basics (DiffMK, EmptyMK,
-                     LedgerState, LedgerTables, IsSwitchLedgerTables)
+                     LedgerState, LedgerTables, IsSwitchLedgerTables, TableStuff, StowableLedgerTables)
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
@@ -112,7 +112,11 @@ newtype TranslateForecast f g x y = TranslateForecast {
 data TranslateLedgerState x y = TranslateLedgerState {
         -- | How to translate a Ledger State during the era transition
         translateLedgerStateWith ::
-            forall wt. IsSwitchLedgerTables wt
+            forall wt.
+            ( TableStuff (LedgerState y) wt
+            , StowableLedgerTables (LedgerState y) wt
+            , IsSwitchLedgerTables wt
+            )
          => EpochNo
          -> LedgerState x wt EmptyMK
          -> LedgerState y wt DiffMK
@@ -131,7 +135,10 @@ data TranslateLedgerState x y = TranslateLedgerState {
         -- hole and allows us to promote tables from one era into tables from
         -- the next era.
       , translateLedgerTablesWith ::
-          forall wt. IsSwitchLedgerTables wt
+          forall wt.
+            ( TableStuff (LedgerState y) wt
+            , IsSwitchLedgerTables wt
+            )
          => LedgerTables (LedgerState x) wt DiffMK
          -> LedgerTables (LedgerState y) wt DiffMK
     }

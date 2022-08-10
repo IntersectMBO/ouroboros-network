@@ -276,12 +276,14 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
               -> History.Bound
               -> Current (Flip2 LedgerState wt DiffMK) blk
               -> (K Past blk, Current (Flip2 LedgerState wt DiffMK) blk')
-    howExtend' = rf (Proxy @(And (TableStuff (LedgerState blk'))
-                                 (TableStuff (LedgerState blk))))
+    howExtend' = rf (Proxy @(And (And (TableStuff (LedgerState blk'))
+                                      (TableStuff (LedgerState blk)))
+                                  (StowableLedgerTables (LedgerState blk'))))
                     (Proxy @wt)
                     howExtend
 
     howExtend :: ( TableStuff (LedgerState blk) wt
+                 , StowableLedgerTables (LedgerState blk') wt
                  , TableStuff (LedgerState blk') wt
                  )
               => TranslateLedgerState blk blk'
@@ -320,3 +322,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     translate :: InPairs TranslateLedgerState xs
     translate = InPairs.requiringBoth cfgs $
                   translateLedgerState hardForkEraTranslation
+
+{--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------}

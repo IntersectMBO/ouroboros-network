@@ -331,7 +331,7 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 -- generate new values, so this function can be used to wrap the call to the
 -- ledger rules that perform the tick.
 noNewTickingDiffs ::
-     TickedTableStuff l wt
+     TableStuff l wt
   => l wt any
   -> l wt DiffMK
 noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables

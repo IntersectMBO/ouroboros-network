@@ -213,7 +213,15 @@ data instance LedgerState (ShelleyBlock proto era) wt mk = ShelleyLedgerState {
   deriving (Generic)
 
 -- deriving instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerState (ShelleyBlock proto era) wt mk)
--- deriving instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerState (ShelleyBlock proto era) wt mk)
+deriving instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerState (ShelleyBlock proto era) WithLedgerTables mk)
+deriving instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerState (ShelleyBlock proto era) WithoutLedgerTables mk)
+
+instance ShelleyBasedEra era => ExtractLedgerTables (LedgerState (ShelleyBlock proto era)) where
+  extractLedgerTables st = st { shelleyLedgerState = shelleyLedgerState st `withUtxoSL` shelleyUTxOTable polyEmptyLedgerTables
+                              , shelleyLedgerTables = ShelleyLedgerTables $ projectUtxoSL $ shelleyLedgerState st
+                              }
+
+  destroyTables st = st { shelleyLedgerTables = NoLedgerTables }
 
 -- instance (ShelleyBasedEra era, SingI mk) => Show (LedgerState (ShelleyBlock proto era) wt (ApplyMapKind' mk)) where
 --   showsPrec _prec = showsLedgerState sMapKind
@@ -332,8 +340,14 @@ instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock prot
         , tickedShelleyLedgerState
         } = st
 
+instance IgnoresMapKind (LedgerState (ShelleyBlock proto era)) where
+  convertMapKind ShelleyLedgerState{..} = ShelleyLedgerState{shelleyLedgerTables = NoLedgerTables, ..}
+
+instance IgnoresMapKindTicked (LedgerState (ShelleyBlock proto era)) where
+  convertMapKindTicked TickedShelleyLedgerState{..} = TickedShelleyLedgerState{tickedShelleyLedgerTables = NoLedgerTables, ..}
+
 -- deriving newtype  instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerTables (LedgerState (ShelleyBlock proto era)) WithLedgerTables mk)
--- deriving anyclass instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerTables (LedgerState (ShelleyBlock proto era)) WithLedgerTables mk)
+deriving anyclass instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerTables (LedgerState (ShelleyBlock proto era)) WithLedgerTables mk)
 
 instance ShelleyBasedEra era => SufficientSerializationForAnyBackingStore (LedgerState (ShelleyBlock proto era)) WithLedgerTables where
     codecLedgerTables = ShelleyLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
@@ -470,7 +484,7 @@ instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock proto era)) 
             else
               shelleyLedgerTransition
         , tickedShelleyLedgerState      = l'
-        , tickedShelleyLedgerTables     = case sWithLedgerTables (Proxy @wt) of
+        , tickedShelleyLedgerTables     = case findOutWT (Proxy @wt) of
             SWithLedgerTables -> polyEmptyLedgerTables
             SWithoutLedgerTables -> polyEmptyLedgerTables
         }
@@ -525,7 +539,7 @@ instance ShelleyCompatible proto era
               (LedgerResult (LedgerState (ShelleyBlock proto era))
                             (LedgerState (ShelleyBlock proto era) wt DiffMK))
   applyBlockLedgerResult =
-      (case sWithLedgerTables (Proxy @wt) of
+      (case findOutWT (Proxy @wt) of
         SWithLedgerTables -> applyHelper
         SWithoutLedgerTables -> applyHelper
       ) (swizzle ..: appBlk)
@@ -566,7 +580,7 @@ instance ShelleyCompatible proto era
     -> (LedgerResult (LedgerState (ShelleyBlock proto era))
                      (LedgerState (ShelleyBlock proto era) wt DiffMK))
   reapplyBlockLedgerResult =
-      runIdentity ..: (case sWithLedgerTables (Proxy @wt) of
+      runIdentity ..: (case findOutWT (Proxy @wt) of
         SWithLedgerTables -> applyHelper
         SWithoutLedgerTables -> applyHelper
       ) (swizzle ..: reappBlk)

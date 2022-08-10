@@ -45,7 +45,6 @@ import           Ouroboros.Consensus.Storage.ChainDB
                      VolatileDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
 import Ouroboros.Consensus.Ledger.SupportsUTxOHD
-import Ouroboros.Consensus.Ledger.Extended
 
 {-------------------------------------------------------------------------------
   RunNode proper
@@ -113,7 +112,6 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy            (BlockQuery blk)
       , ShowProxy           (TxId (GenTx blk))
       , LedgerSupportsUTxOHD LedgerState blk
-      , LedgerSupportsUTxOHD ExtLedgerState blk
       ) => RunNode blk
   -- This class is intentionally empty. It is not necessarily compositional - ie
   -- the instance for 'HardForkBlock' might do more than merely delegate to the

@@ -64,7 +64,7 @@ instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (Laz
 instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) wt EmptyMK) where
   encodeDisk _ = encodeShelleyLedgerState
 instance (IsSwitchLedgerTables wt, ShelleyCompatible proto era) => DecodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) wt EmptyMK) where
-  decodeDisk _ = case sWithLedgerTables (Proxy @wt) of
+  decodeDisk _ = case findOutWT (Proxy @wt) of
     SWithLedgerTables -> decodeShelleyLedgerState
     SWithoutLedgerTables -> decodeShelleyLedgerState
 
