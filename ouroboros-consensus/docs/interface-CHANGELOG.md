@@ -56,6 +56,17 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-08-03
+### Added
+
+- new project `ouroboros-consensus-cardano-tools` containing two tools:
+  1. `db-synthesizer` is a new contribution.
+  2. `db-analyser` has been moved over from `ouroboros-consensus-cardano`.
+  
+### Removed
+- `ouroboros-consensus-cardano/tools/db-analyser` has been removed.
+
+
 ## Circa 2022-07-26
 
 ### Added
