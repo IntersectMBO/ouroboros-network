@@ -26,6 +26,7 @@ import           Test.Tasty.QuickCheck
 
 import           Test.Util.Orphans.IOLike ()
 
+
 tests :: TestTree
 tests = testProperty "RAWLock correctness" prop_RAWLock_correctness
 

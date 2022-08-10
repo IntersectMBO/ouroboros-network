@@ -93,7 +93,7 @@ type family BlockProtocol blk :: Type
   Configuration
 -------------------------------------------------------------------------------}
 
--- | Static configuration required to work with this type of blocks
+-- | Static configuration required to work with this type of blocks.
 data family BlockConfig blk :: Type
 
 -- | Static configuration required for serialisation and deserialisation of
