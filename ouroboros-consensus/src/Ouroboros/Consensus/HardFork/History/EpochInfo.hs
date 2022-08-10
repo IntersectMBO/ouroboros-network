@@ -12,6 +12,7 @@ module Ouroboros.Consensus.HardFork.History.EpochInfo (
 
 import           Control.Exception (throw)
 import           Control.Monad.Except (Except, runExcept, throwError)
+import           Data.Functor.Identity
 import           GHC.Stack
 
 import           Cardano.Slotting.EpochInfo.API
@@ -60,8 +61,5 @@ dummyEpochInfo = EpochInfo {
 --
 -- As per usual, this should only be used when the pure exception would
 -- indicate a bug.
-toPureEpochInfo ::
-     Applicative f
-  => EpochInfo (Except PastHorizonException)
-  -> EpochInfo f
+toPureEpochInfo :: EpochInfo (Except PastHorizonException) -> EpochInfo Identity
 toPureEpochInfo = hoistEpochInfo (either throw pure . runExcept)
