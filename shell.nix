@@ -4,21 +4,6 @@
 , pkgs ? import ./nix { inherit config sourcesOverride; } }:
 with pkgs;
 let
-  # Haskell-language-server is pulled in with niv directly from its repositories
-  # at specific commit because the version we want is not yet in our hackage
-  # index (dictated by haskell.nix's version). Once it arrives we can pull it in
-  # specifying a version on the tools attribute set, something like:
-  #
-  # > tools = {
-  # >   ...
-  # >   haskell-language-server = "1.5.1.0";
-  #
-  # Note that the tools attribute comes from haskell-nix when defining the
-  # shellFor function. At the same time, the niv depencency will not be needed
-  # and it can be removed with `niv drop hls-released` (or manually removing the
-  # relevant entries from `sources.json`).
-  hls = import ./nix/hls.nix { inherit pkgs; };
-
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
   shell = ouroborosNetworkHaskellPackages.shellFor {
@@ -38,15 +23,13 @@ let
       pkgconfig
       nixfmt
       stylish-haskell
-      hls.hls
-      hls.hls-wrapper
-      hls.implicit-hie
     ];
 
     tools = {
       # IDE tools
       ghcid = "0.8.7";
       hasktags = "0.71.2";
+      haskell-language-server = "latest";
       # Draw graph of module dependencies
       graphmod = "1.4.4";
       # Profiling tools

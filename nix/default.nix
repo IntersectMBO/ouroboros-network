@@ -15,7 +15,7 @@ let
       sources.nixpkgs)
   else
     (builtins.trace "Using haskell.nix's nixpkgs. Good. Sharing is caring"
-      haskellNix.sources.nixpkgs-2111);
+      haskellNix.sources.nixpkgs-unstable);
   # for inclusion in pkgs:
   overlays =
     # Haskell.nix (https://github.com/input-output-hk/haskell.nix)
