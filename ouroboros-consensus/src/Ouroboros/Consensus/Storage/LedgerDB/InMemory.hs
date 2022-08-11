@@ -97,8 +97,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Ledger.Extended as Extended
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as DS
+import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
                      PushStart (..), Pushing (..),
                      UpdateLedgerDbTraceEvent (..))
@@ -383,13 +382,13 @@ forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
     seqNo = changelogDiffAnchor dblog
 
     forward ::
-         (Ord k, Eq v)
+         Ord k
       => ApplyMapKind ValuesMK  k v
       -> ApplyMapKind KeysMK    k v
       -> ApplyMapKind SeqDiffMK k v
       -> ApplyMapKind ValuesMK  k v
     forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
-      ApplyValuesMK $ DS.forwardValuesAndKeys values keys (DS.cumulativeDiff diffs)
+      ApplyValuesMK $ forwardValuesAndKeys values keys (cumulativeDiffSeqUtxoDiff diffs)
 
 -- | Isolates the prefix of the changelog that should be flushed
 --

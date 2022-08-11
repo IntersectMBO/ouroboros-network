@@ -39,7 +39,6 @@ import           Data.Foldable (for_)
 import           Data.Functor (($>), (<&>))
 import           Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import qualified Data.Text as Strict
 import           Foreign (Ptr, alloca, castPtr, copyBytes, peek)
@@ -50,9 +49,8 @@ import           Cardano.Slotting.Slot (SlotNo, WithOrigin (At))
 import           Ouroboros.Consensus.Ledger.Basics
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
--- import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as DS
 import           Ouroboros.Consensus.Util (foldlM')
 import           Ouroboros.Consensus.Util.IOLike (Exception (..), IOLike,
                      MonadCatch (..), MonadThrow (..), bracket, onException)
@@ -61,8 +59,6 @@ import qualified Database.LMDB.Raw as LMDB
 import qualified Database.LMDB.Simple as LMDB
 import qualified Database.LMDB.Simple.Extra as LMDB
 import qualified Database.LMDB.Simple.Internal as LMDB.Internal
-
-import qualified Data.Map.Strict.Diff2 as Diff
 
 {-------------------------------------------------------------------------------
  Backing Store interface
@@ -373,7 +369,7 @@ initRangeReadLMDBTable count (LMDBMK _ db) codecMK =
       -- TODO improve lmdb-simple bindings to give better access to cursors
       wrangle <$> foldrWithKey go (Right Map.empty) codecMK db
       where
-        wrangle = either DS.TableValues DS.TableValues
+        wrangle = either HD.UtxoValues HD.UtxoValues
         go k v acc = do
           m <- acc
           when (Map.size m >= count) $ Left m
@@ -392,7 +388,7 @@ rangeReadLMDBTable ::
   -> CodecMK k v
   -> KeysMK  k v
   -> LMDB.Transaction mode (ValuesMK k v)
-rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (DS.TableKeys keys)) =
+rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) =
     ApplyValuesMK <$> lmdbRangeReadTable
   where
     lmdbRangeReadTable =
@@ -400,10 +396,10 @@ rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (DS.TableKeys keys))
           -- This is inadequate. We are folding over the whole table, the
           -- fiddling with either is to short circuit as best we can.
           -- TODO improve llvm-simple bindings to give better access to cursors
-          Nothing -> pure $ DS.TableValues Map.empty
+          Nothing -> pure $ HD.UtxoValues Map.empty
           Just lastExcludedKey ->
             let
-              wrangle = either DS.TableValues DS.TableValues
+              wrangle = either HD.UtxoValues HD.UtxoValues
               go k v acc
                 | k <= lastExcludedKey = acc
                 | otherwise = do
@@ -418,7 +414,7 @@ initLMDBTable ::
   -> CodecMK  k v
   -> ValuesMK k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
-initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK (DS.TableValues utxoVals)) =
+initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVals)) =
     ApplyEmptyMK <$ lmdbInitTable
   where
     lmdbInitTable  = do
@@ -438,10 +434,10 @@ readLMDBTable ::
   -> CodecMK k v
   -> KeysMK  k v
   -> LMDB.Transaction mode (ValuesMK k v)
-readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK (DS.TableKeys keys)) =
+readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) =
     ApplyValuesMK <$> lmdbReadTable
   where
-    lmdbReadTable = DS.TableValues <$> foldlM' go Map.empty (Set.toList keys)
+    lmdbReadTable = HD.UtxoValues <$> foldlM' go Map.empty (Set.toList keys)
       where
         go m k = get codecMK db k <&> \case
           Nothing -> m
@@ -452,14 +448,20 @@ writeLMDBTable ::
   -> CodecMK k v
   -> DiffMK  k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
-writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK (DS.TableDiff (Diff.Diff diff))) =
+writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK (HD.UtxoDiff diff)) =
     ApplyEmptyMK <$ lmdbWriteTable
   where
     lmdbWriteTable = void $ Map.traverseWithKey go diff
       where
-        go k (Diff.DiffHistory (Diff.Insert v Seq.:<| Seq.Empty)) = put codecMK db k (Just v)
-        go k (Diff.DiffHistory (Diff.Delete _v Seq.:<| Seq.Empty)) = put codecMK db k Nothing
-        go _ _ = error "impossible"
+        go k (HD.UtxoEntryDiff v reason) = put codecMK db k value
+          where
+            value = case reason of
+              HD.UedsDel ->
+                Nothing
+              HD.UedsInsAndDel ->
+                Nothing
+              HD.UedsIns ->
+                Just v
 
 {-------------------------------------------------------------------------------
  Db Settings

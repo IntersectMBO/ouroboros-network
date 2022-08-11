@@ -188,15 +188,10 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
---import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as DS
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-
-import qualified Data.Map.Strict.Diff2 as Diff
-import qualified Data.Sequence as Seq
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -562,14 +557,14 @@ lookup_ ::
   -> ApplyMapKind ValuesMK k v
   -> ApplyMapKind ValuesMK k v
 lookup_ (ApplyKeysMK ks) (ApplyValuesMK vs) =
-  ApplyValuesMK (DS.restrictValues vs ks)
+  ApplyValuesMK (HD.restrictValues vs ks)
 
 rangeRead0_ ::
      Int
   -> ApplyMapKind ValuesMK k v
   -> ApplyMapKind ValuesMK k v
-rangeRead0_ n (ApplyValuesMK (DS.TableValues vs)) =
-  ApplyValuesMK $ DS.TableValues $ Map.take n vs
+rangeRead0_ n (ApplyValuesMK (HD.UtxoValues vs)) =
+  ApplyValuesMK $ HD.UtxoValues $ Map.take n vs
 
 rangeRead_ ::
      Ord k
@@ -577,12 +572,12 @@ rangeRead_ ::
   -> ApplyMapKind KeysMK   k v
   -> ApplyMapKind ValuesMK k v
   -> ApplyMapKind ValuesMK k v
-rangeRead_ n prev (ApplyValuesMK (DS.TableValues vs)) =
+rangeRead_ n prev (ApplyValuesMK (HD.UtxoValues vs)) =
     case Set.lookupMax ks of
-      Nothing -> ApplyValuesMK $ DS.TableValues Map.empty
-      Just  k -> ApplyValuesMK $ DS.TableValues $ Map.take n $ snd $ Map.split k vs
+      Nothing -> ApplyValuesMK $ HD.UtxoValues Map.empty
+      Just  k -> ApplyValuesMK $ HD.UtxoValues $ Map.take n $ snd $ Map.split k vs
   where
-    ApplyKeysMK (DS.TableKeys ks) = prev
+    ApplyKeysMK (HD.UtxoKeys ks) = prev
 
 applyDiff_ ::
      Ord k
@@ -590,7 +585,7 @@ applyDiff_ ::
   -> ApplyMapKind DiffMK   k v
   -> ApplyMapKind ValuesMK k v
 applyDiff_ (ApplyValuesMK values) (ApplyDiffMK diff) =
-  ApplyValuesMK (DS.forwardValues values diff)
+  ApplyValuesMK (HD.forwardValues values diff)
 
 -- | A handle to the backing store for the ledger tables
 newtype LedgerBackingStore m l = LedgerBackingStore
@@ -658,10 +653,10 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
       close
   where
     prj ::
-         (Ord k, Eq v)
+         Ord k
       => ApplyMapKind SeqDiffMK k v
       -> ApplyMapKind DiffMK k v
-    prj (ApplySeqDiffMK sq) = ApplyDiffMK (DS.cumulativeDiff sq)
+    prj (ApplySeqDiffMK sq) = ApplyDiffMK (HD.cumulativeDiffSeqUtxoDiff sq)
 
     -- remove all diff elements that are <= to the greatest given key
     doDropLTE ::
@@ -669,24 +664,22 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
       => ApplyMapKind KeysMK k v
       -> ApplyMapKind DiffMK k v
       -> ApplyMapKind DiffMK k v
-    doDropLTE (ApplyKeysMK (DS.TableKeys ks)) (ApplyDiffMK (DS.TableDiff (Diff.Diff ds))) =
+    doDropLTE (ApplyKeysMK (HD.UtxoKeys ks)) (ApplyDiffMK (HD.UtxoDiff ds)) =
         ApplyDiffMK
-      $ DS.TableDiff
-      $ Diff.Diff
+      $ HD.UtxoDiff
       $ case Set.lookupMax ks of
           Nothing -> ds
           Just k  -> Map.filterWithKey (\dk _dv -> dk > k) ds
 
     -- NOTE: this is counting the deletions wrt disk.
     numDeletesDiffMK :: ApplyMapKind DiffMK k v -> Int
-    numDeletesDiffMK (ApplyDiffMK (DS.TableDiff (Diff.Diff m))) =
+    numDeletesDiffMK (ApplyDiffMK (HD.UtxoDiff m)) =
       getSum $ foldMap (Sum . oneIfDel) m
       where
-        oneIfDel (Diff.DiffHistory (e Seq.:<| Seq.Empty)) = case e of
-          Diff.Delete _ -> 1
-          _             -> 0
-        oneIfDel _ = error "impossible"
-
+        oneIfDel (HD.UtxoEntryDiff _v diffstate) = case diffstate of
+          HD.UedsDel       -> 1
+          HD.UedsIns       -> 0
+          HD.UedsInsAndDel -> 0
 
     -- INVARIANT: nrequested > 0
     --
@@ -729,10 +722,10 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
       -> ApplyMapKind ValuesMK k v
     doFixupReadResult
       nrequested
-      (ApplyDiffMK (DS.TableDiff (Diff.Diff ds)))
-      (ApplyValuesMK (DS.TableValues vs)) =
+      (ApplyDiffMK (HD.UtxoDiff ds))
+      (ApplyValuesMK (HD.UtxoValues vs)) =
         let includingAllKeys        =
-              DS.forwardValues (DS.TableValues vs) (DS.TableDiff (Diff.Diff ds))
+              HD.forwardValues (HD.UtxoValues vs) (HD.UtxoDiff ds)
             definitelyNoMoreToFetch = Map.size vs < nrequested
         in
         ApplyValuesMK
@@ -743,9 +736,9 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
               else error $ "Size of values " <> show (Map.size vs) <> ", nrequested " <> show nrequested
           Just ((k, _v), vs') ->
             if definitelyNoMoreToFetch then includingAllKeys else
-            DS.forwardValues
-              (DS.TableValues vs')
-              (DS.TableDiff . Diff.Diff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
+            HD.forwardValues
+              (HD.UtxoValues vs')
+              (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
 
 readKeySets :: forall m l.
      IOLike m
@@ -830,10 +823,10 @@ flush (LedgerBackingStore backingStore) dblog =
           (mapLedgerTables prj $ changelogDiffs dblog)
   where
     prj ::
-         (Ord k, Eq v)
+         Ord k
       => ApplyMapKind SeqDiffMK k v
       -> ApplyMapKind DiffMK k v
-    prj (ApplySeqDiffMK sq) = ApplyDiffMK (DS.cumulativeDiff sq)
+    prj (ApplySeqDiffMK sq) = ApplyDiffMK (HD.cumulativeDiffSeqUtxoDiff sq)
 
 {-------------------------------------------------------------------------------
   Disk snapshots

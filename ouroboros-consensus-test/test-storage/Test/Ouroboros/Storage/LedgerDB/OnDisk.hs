@@ -79,15 +79,9 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import qualified Ouroboros.Consensus.Storage.FS.IO as FSIO
---import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
-import qualified Data.Map.Strict.Diff2 as Diff
-import qualified Data.Sequence as Seq
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq.UTxO as DSU
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as TT
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore as TS
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 import qualified Test.Util.Classify as C
@@ -251,7 +245,7 @@ instance PayloadSemantics Tx where
           utxtokAfter  = testUtxtokTable $ utxtoktables stAfter
 
   getPayloadKeySets Tx{consumed} =
-    TokenToTValue $ ApplyKeysMK $ TT.TableKeys $ Set.singleton consumed
+    TokenToTValue $ ApplyKeysMK $ HD.UtxoKeys $ Set.singleton consumed
 
 deriving stock    instance (Eq        (PayloadDependentState Tx EmptyMK))
 deriving stock    instance (Eq        (PayloadDependentState Tx DiffMK))
@@ -271,14 +265,14 @@ onValues ::
 onValues f TokenToTValue {testUtxtokTable} = TokenToTValue $ updateMap testUtxtokTable
   where
     updateMap :: ApplyMapKind ValuesMK Token TValue -> ApplyMapKind ValuesMK Token TValue
-    updateMap (ApplyValuesMK (TT.TableValues utxovals)) =
-      ApplyValuesMK $ TT.TableValues $ f utxovals
+    updateMap (ApplyValuesMK (HD.UtxoValues utxovals)) =
+      ApplyValuesMK $ HD.UtxoValues $ f utxovals
 
 queryKeys ::
      (Map Token TValue -> a)
   -> LedgerTables (LedgerState TestBlock) ValuesMK
   -> a
-queryKeys f (TokenToTValue (ApplyValuesMK (TT.TableValues utxovals))) = f utxovals
+queryKeys f (TokenToTValue (ApplyValuesMK (HD.UtxoValues utxovals))) = f utxovals
 
 {-------------------------------------------------------------------------------
   Instances required for HD storage of ledger state tables
@@ -356,7 +350,7 @@ instance ToExpr (ApplyMapKind' mk' Token TValue) where
   toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
   toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
   toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr keys]
-  toExpr (ApplySeqDiffMK (DS.DiffSeq seqdiff))
+  toExpr (ApplySeqDiffMK (HD.SeqUtxoDiff seqdiff))
                                       = App "ApplySeqDiffMK"   [genericToExpr $ toList seqdiff]
   toExpr (ApplyTrackingMK vals diffs) = App "ApplyTrackingMK"  [ genericToExpr vals
                                                                , genericToExpr diffs
@@ -381,9 +375,11 @@ instance ToExpr (ApplyMapKind' mk' Token TValue) where
 --
 -- > ToExpr UtxoEntryDiffState
 --
+instance ToExpr HD.UtxoEntryDiffState where
+  toExpr = genericToExpr
 
--- See instance ToExpr Diff.DiffEntry
-instance ToExpr (Diff.DiffEntry TValue) where
+-- See instance ToExpr HD.UtxoEntryDiffState
+instance ToExpr (HD.UtxoEntryDiff TValue) where
   toExpr = genericToExpr
 
 instance ToExpr (ExtLedgerState TestBlock ValuesMK) where
@@ -393,31 +389,22 @@ instance ToExpr (LedgerState (TestBlockWith Tx) ValuesMK) where
   toExpr = genericToExpr
 
 -- Required by the ToExpr (SeqUtxoDiff k v) instance
-instance ToExpr (DSU.Element TS.UTxO Token TValue) where
+instance ToExpr (HD.SudElement Token TValue) where
   toExpr = genericToExpr
 
-instance ToExpr (TT.TableDiff TS.UTxO Token TValue) where
-  toExpr = genericToExpr
-
-instance ToExpr (DS.SlotNo) where
-  toExpr = genericToExpr
-
-instance ToExpr (Diff.DiffHistory TValue) where
-  toExpr = genericToExpr
-
--- Required by the ToExpr (DSU.Element Token TValue) instance
-instance ToExpr (Diff.Diff Token TValue) where
+-- Required by the ToExpr (HD.SudElement Token TValue) instance
+instance ToExpr (HD.UtxoDiff Token TValue) where
   toExpr = genericToExpr
 
 instance ToExpr (LedgerTables (LedgerState TestBlock) ValuesMK) where
   toExpr = genericToExpr
 
 -- Required by the genericToExpr application on RewoundKeys
-instance ToExpr (TT.TableKeys TS.UTxO Token TValue) where
+instance ToExpr (HD.UtxoKeys Token TValue) where
   toExpr = genericToExpr
 
 -- Required by the genericToExpr application on RewoundKeys
-instance ToExpr (TT.TableValues TS.UTxO Token TValue) where
+instance ToExpr (HD.UtxoValues Token TValue) where
   toExpr = genericToExpr
 
 {-------------------------------------------------------------------------------
@@ -453,7 +440,7 @@ initialTestLedgerState :: PayloadDependentState Tx ValuesMK
 initialTestLedgerState = UTxTok {
     utxtoktables =   TokenToTValue
                    $ ApplyValuesMK
-                   $ TT.TableValues
+                   $ HD.UtxoValues
                    $ Map.singleton initialToken (pointTValue initialToken)
   , utxhist      = Set.singleton initialToken
 

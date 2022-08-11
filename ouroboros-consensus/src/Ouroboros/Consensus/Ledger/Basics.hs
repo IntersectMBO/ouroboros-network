@@ -158,14 +158,9 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.Singletons
 
+import           Ouroboros.Consensus.Storage.LedgerDB.HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq)
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq.UTxO as DSU
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as DS
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore
-                     (ToStoreKind (..))
 
 {-------------------------------------------------------------------------------
   Tip
@@ -383,14 +378,14 @@ class ( ShowLedgerState (LedgerTables l)
 
   pureLedgerTables ::
        (forall k v.
-            (Ord k, Eq v)
+            Ord k
          => mk k v
        )
     -> LedgerTables l mk
 
   mapLedgerTables ::
        (forall k v.
-            (Ord k, Eq v)
+            Ord k
          => mk1 k v
          -> mk2 k v
        )
@@ -408,7 +403,7 @@ class ( ShowLedgerState (LedgerTables l)
 
   zipLedgerTables ::
        (forall k v.
-            (Ord k, Eq v)
+            Ord k
          => mk1 k v
          -> mk2 k v
          -> mk3 k v
@@ -419,7 +414,7 @@ class ( ShowLedgerState (LedgerTables l)
 
   zipLedgerTables2 ::
        (forall k v.
-            (Ord k, Eq v)
+            Ord k
          => mk1 k v
          -> mk2 k v
          -> mk3 k v
@@ -501,7 +496,7 @@ mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
 zipOverLedgerTables ::
      (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
   => (forall k v.
-          (Ord k, Eq v)
+          Ord k
        => mk1 k v
        -> mk2 k v
        -> mk3 k v
@@ -546,7 +541,7 @@ mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
 zipOverLedgerTablesTicked ::
      (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
   => (forall k v.
-         (Ord k, Eq v)
+         Ord k
       => mk1 k v
       -> mk2 k v
       -> mk3 k v
@@ -581,7 +576,7 @@ valuesMKEncoder tables =
     <> foldLedgerTables2 go codecLedgerTables tables
   where
     go :: CodecMK k v -> ApplyMapKind ValuesMK k v -> CBOR.Encoding
-    go (CodecMK encK encV _decK _decV) (ApplyValuesMK (DS.TableValues m)) =
+    go (CodecMK encK encV _decK _decV) (ApplyValuesMK (UtxoValues m)) =
          CBOR.encodeMapLen (fromIntegral $ Map.size m)
       <> Map.foldMapWithKey (\k v -> encK k <> encV v) m
 
@@ -610,7 +605,7 @@ valuesMKDecoder = do
      -> CodecMK k v
      -> CBOR.Decoder s (ApplyMapKind ValuesMK k v)
   go len (CodecMK _encK _encV decK decV) =
-        ApplyValuesMK . DS.TableValues . Map.fromList
+        ApplyValuesMK . UtxoValues . Map.fromList
     <$> sequence (replicate len ((,) <$> decK <*> decV))
 
 {-------------------------------------------------------------------------------
@@ -650,11 +645,11 @@ forgetLedgerTablesDiffsTicked = mapOverLedgerTablesTicked rawForgetDiffs
 -- Prepend diffs
 
 rawPrependDiffs ::
-     (Ord k, Eq v)
+     Ord k
   => DiffMK k v -- ^ Earlier differences
   -> DiffMK k v -- ^ Later differences
   -> DiffMK k v
-rawPrependDiffs (ApplyDiffMK (DS.TableDiff d1)) (ApplyDiffMK (DS.TableDiff d2)) = ApplyDiffMK (DS.TableDiff (d1 <> d2))
+rawPrependDiffs (ApplyDiffMK (UtxoDiff d1)) (ApplyDiffMK (UtxoDiff d2)) = ApplyDiffMK (UtxoDiff (d1 `Map.union` d2))
 
 prependLedgerTablesDiffsRaw        ::       TableStuff l => LedgerTables l DiffMK ->         l DiffMK ->         l DiffMK
 prependLedgerTablesDiffs           ::       TableStuff l =>              l DiffMK ->         l DiffMK ->         l DiffMK
@@ -672,7 +667,7 @@ rawApplyDiffs ::
   => ValuesMK k v -- ^ Values to which differences are applied
   -> DiffMK   k v -- ^ Differences to apply
   -> ValuesMK k v
-rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (DS.forwardValues vals diffs)
+rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (forwardValues vals diffs)
 
 applyLedgerTablesDiffs       ::       TableStuff l => l ValuesMK ->         l DiffMK ->         l ValuesMK
 applyLedgerTablesDiffsTicked :: TickedTableStuff l => l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
@@ -686,7 +681,7 @@ rawCalculateDifference ::
   => ValuesMK   k v
   -> ValuesMK   k v
   -> TrackingMK k v
-rawCalculateDifference (ApplyValuesMK before) (ApplyValuesMK after) = ApplyTrackingMK after (DS.differenceTableValues before after)
+rawCalculateDifference (ApplyValuesMK before) (ApplyValuesMK after) = ApplyTrackingMK after (differenceUtxoValues before after)
 
 calculateAdditions        ::       TableStuff l =>         l ValuesMK ->                               l TrackingMK
 calculateDifference       :: TickedTableStuff l => Ticked1 l ValuesMK ->         l ValuesMK ->         l TrackingMK
@@ -701,7 +696,7 @@ rawAttachAndApplyDiffs ::
   -> ValuesMK   k v
   -> TrackingMK k v
 rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) =
-  ApplyTrackingMK (DS.forwardValues v d) d
+  ApplyTrackingMK (forwardValues v d) d
 
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them
@@ -715,7 +710,7 @@ attachAndApplyDiffsTicked after before =
   $ projectLedgerTables before
 
 rawPrependTrackingDiffs ::
-      (Ord k, Eq v)
+   Ord k
    => TrackingMK k v
    -> TrackingMK k v
    -> TrackingMK k v
@@ -739,7 +734,7 @@ rawReapplyTracking ::
   -> ValuesMK   k v
   -> TrackingMK k v
 rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) =
-  ApplyTrackingMK (DS.forwardValues v d) d
+  ApplyTrackingMK (forwardValues v d) d
 
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them
@@ -789,25 +784,25 @@ newtype NameMK k v = NameMK String
 type ApplyMapKind mk = mk
 
 data ApplyMapKind' :: MapKind' -> Type -> Type -> Type where
-  ApplyDiffMK     :: !(DS.TableDiff 'UTxO    k v)                             -> ApplyMapKind' DiffMK'       k v
-  ApplyEmptyMK    ::                                                             ApplyMapKind' EmptyMK'      k v
-  ApplyKeysMK     :: !(DS.TableKeys 'UTxO k v)                                -> ApplyMapKind' KeysMK'       k v
-  ApplySeqDiffMK  :: !(DiffSeq 'UTxO k v)                                     -> ApplyMapKind' SeqDiffMK'    k v
-  ApplyTrackingMK :: !(DS.TableValues 'UTxO k v) -> !(DS.TableDiff 'UTxO k v) -> ApplyMapKind' TrackingMK'   k v
-  ApplyValuesMK   :: !(DS.TableValues 'UTxO  k v)                             -> ApplyMapKind' ValuesMK'     k v
+  ApplyDiffMK     :: !(UtxoDiff    k v)                    -> ApplyMapKind' DiffMK'       k v
+  ApplyEmptyMK    ::                                          ApplyMapKind' EmptyMK'      k v
+  ApplyKeysMK     :: !(UtxoKeys    k v)                    -> ApplyMapKind' KeysMK'       k v
+  ApplySeqDiffMK  :: !(SeqUtxoDiff k v)                    -> ApplyMapKind' SeqDiffMK'    k v
+  ApplyTrackingMK :: !(UtxoValues  k v) -> !(UtxoDiff k v) -> ApplyMapKind' TrackingMK'   k v
+  ApplyValuesMK   :: !(UtxoValues  k v)                    -> ApplyMapKind' ValuesMK'     k v
 
-  ApplyQueryAllMK  ::                                                            ApplyMapKind' QueryMK'      k v
-  ApplyQuerySomeMK :: !(DS.TableKeys 'UTxO k v) ->                               ApplyMapKind' QueryMK'      k v
+  ApplyQueryAllMK  ::                    ApplyMapKind' QueryMK' k v
+  ApplyQuerySomeMK :: !(UtxoKeys k v) -> ApplyMapKind' QueryMK' k v
 
-emptyAppliedMK :: (Ord k, Eq v) => SMapKind mk -> ApplyMapKind' mk k v
+emptyAppliedMK :: Ord k => SMapKind mk -> ApplyMapKind' mk k v
 emptyAppliedMK = \case
     SEmptyMK    -> ApplyEmptyMK
-    SKeysMK     -> ApplyKeysMK     mempty
-    SValuesMK   -> ApplyValuesMK   mempty
-    STrackingMK -> ApplyTrackingMK mempty mempty
-    SDiffMK     -> ApplyDiffMK     mempty
-    SSeqDiffMK  -> ApplySeqDiffMK  DS.emptyDiffSeq
-    SQueryMK    -> ApplyQuerySomeMK mempty
+    SKeysMK     -> ApplyKeysMK     emptyUtxoKeys
+    SValuesMK   -> ApplyValuesMK   emptyUtxoValues
+    STrackingMK -> ApplyTrackingMK emptyUtxoValues emptyUtxoDiff
+    SDiffMK     -> ApplyDiffMK     emptyUtxoDiff
+    SSeqDiffMK  -> ApplySeqDiffMK  emptySeqUtxoDiff
+    SQueryMK    -> ApplyQuerySomeMK emptyUtxoKeys
 
 instance Ord k => Semigroup (ApplyMapKind' KeysMK' k v) where
   ApplyKeysMK l <> ApplyKeysMK r = ApplyKeysMK (l <> r)
@@ -815,17 +810,17 @@ instance Ord k => Semigroup (ApplyMapKind' KeysMK' k v) where
 instance Ord k => Monoid (ApplyMapKind' KeysMK' k v) where
   mempty = ApplyKeysMK mempty
 
-mapValuesAppliedMK :: (DS.Diffable UTxO k v, Ord k, Eq v') => (v -> v') -> ApplyMapKind' mk k v ->  ApplyMapKind' mk k v'
+mapValuesAppliedMK :: Ord k => (v -> v') -> ApplyMapKind' mk k v ->  ApplyMapKind' mk k v'
 mapValuesAppliedMK f = \case
   ApplyEmptyMK            -> ApplyEmptyMK
-  ApplyKeysMK ks          -> ApplyKeysMK     (DS.castTableKeys ks)
-  ApplyValuesMK vs        -> ApplyValuesMK   (DS.mapTableValues f vs)
-  ApplyTrackingMK vs diff -> ApplyTrackingMK (DS.mapTableValues f vs) (DS.mapTableDiff f diff)
-  ApplyDiffMK diff        -> ApplyDiffMK     (DS.mapTableDiff f diff)
-  ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (DS.mapDiffSeq f diffs)
+  ApplyKeysMK ks          -> ApplyKeysMK     (castUtxoKeys ks)
+  ApplyValuesMK vs        -> ApplyValuesMK   (mapUtxoValues f vs)
+  ApplyTrackingMK vs diff -> ApplyTrackingMK (mapUtxoValues f vs)     (mapUtxoDiff f diff)
+  ApplyDiffMK diff        -> ApplyDiffMK     (mapUtxoDiff f diff)
+  ApplySeqDiffMK diffs    -> ApplySeqDiffMK  (mapSeqUtxoDiff f diffs)
 
   ApplyQueryAllMK         -> ApplyQueryAllMK
-  ApplyQuerySomeMK ks     -> ApplyQuerySomeMK (DS.castTableKeys ks)
+  ApplyQuerySomeMK ks     -> ApplyQuerySomeMK (castUtxoKeys ks)
 
 instance (Ord k, Eq v) => Eq (ApplyMapKind' mk k v) where
   ApplyEmptyMK          == _                     = True
@@ -851,19 +846,18 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind' mk k v) wher
 
   showTypeOf _ = "ApplyMapKind"
 
--- TODO(jdral): Reinstate instance
 instance
      (Typeable mk, Ord k, ToCBOR k, ToCBOR v, SingI mk)
   => ToCBOR (ApplyMapKind' mk k v) where
   toCBOR = \case
       ApplyEmptyMK            -> encodeArityAndTag 0 []
-      ApplyKeysMK ks          -> encodeArityAndTag 1 []
-      ApplyValuesMK vs        -> encodeArityAndTag 2 []
-      ApplyTrackingMK vs diff -> encodeArityAndTag 3 []
-      ApplyDiffMK diff        -> encodeArityAndTag 4 []
-      ApplySeqDiffMK diffs    -> encodeArityAndTag 5 []
+      ApplyKeysMK ks          -> encodeArityAndTag 1 [toCBOR ks]
+      ApplyValuesMK vs        -> encodeArityAndTag 2 [toCBOR vs]
+      ApplyTrackingMK vs diff -> encodeArityAndTag 3 [toCBOR vs, toCBOR diff]
+      ApplyDiffMK diff        -> encodeArityAndTag 4 [toCBOR diff]
+      ApplySeqDiffMK diffs    -> encodeArityAndTag 5 [toCBOR diffs]
       ApplyQueryAllMK         -> encodeArityAndTag 7 []
-      ApplyQuerySomeMK ks     -> encodeArityAndTag 7 []
+      ApplyQuerySomeMK ks     -> encodeArityAndTag 7 [toCBOR ks]
     where
       encodeArityAndTag :: Word8 -> [CBOR.Encoding] -> CBOR.Encoding
       encodeArityAndTag tag xs =
@@ -871,24 +865,23 @@ instance
         <> CBOR.encodeWord8 tag
         <> mconcat xs
 
--- TODO(jdral): Reinstate instance
 instance
      (Typeable mk, Ord k, FromCBOR k, FromCBOR v, SingI mk)
   => FromCBOR (ApplyMapKind' mk k v) where
   fromCBOR = do
     case smk of
       SEmptyMK    -> decodeArityAndTag 0 0 *> (ApplyEmptyMK    <$  pure ())
-      SKeysMK     -> decodeArityAndTag 1 1 *> (ApplyKeysMK     <$> undefined)
-      SValuesMK   -> decodeArityAndTag 1 2 *> (ApplyValuesMK   <$> undefined)
-      STrackingMK -> decodeArityAndTag 2 3 *> (ApplyTrackingMK <$> undefined <*> undefined)
-      SDiffMK     -> decodeArityAndTag 1 4 *> (ApplyDiffMK     <$> undefined)
-      SSeqDiffMK  -> decodeArityAndTag 1 5 *> (ApplySeqDiffMK  <$> undefined)
+      SKeysMK     -> decodeArityAndTag 1 1 *> (ApplyKeysMK     <$> fromCBOR)
+      SValuesMK   -> decodeArityAndTag 1 2 *> (ApplyValuesMK   <$> fromCBOR)
+      STrackingMK -> decodeArityAndTag 2 3 *> (ApplyTrackingMK <$> fromCBOR <*> fromCBOR)
+      SDiffMK     -> decodeArityAndTag 1 4 *> (ApplyDiffMK     <$> fromCBOR)
+      SSeqDiffMK  -> decodeArityAndTag 1 5 *> (ApplySeqDiffMK  <$> fromCBOR)
       SQueryMK    -> do
         len <- CBOR.decodeListLen
         tag <- CBOR.decodeWord8
         case (len, tag) of
           (2, 7) -> pure ApplyQueryAllMK
-          (3, 8) -> ApplyQuerySomeMK <$> undefined
+          (3, 8) -> ApplyQuerySomeMK <$> fromCBOR
           o      -> fail $ "decode @ApplyMapKind SQueryMK, " <> show o
     where
       smk = sMapKind @(ApplyMapKind' mk)
@@ -1114,7 +1107,7 @@ emptyDbChangeLog ::
 emptyDbChangeLog anchor =
     DbChangelog {
         changelogDiffAnchor      = getTipSlot anchor
-      , changelogDiffs           = pureLedgerTables (ApplySeqDiffMK DS.emptyDiffSeq)
+      , changelogDiffs           = pureLedgerTables (ApplySeqDiffMK emptySeqUtxoDiff)
       , changelogImmutableStates = AS.Empty (DbChangelogState anchor)
       , changelogVolatileStates  = AS.Empty (DbChangelogState anchor)
       }
@@ -1147,12 +1140,12 @@ extendDbChangelog dblog newState =
       At s   -> s
 
     ext ::
-         (Ord k, Eq v)
+         Ord k
       => SeqDiffMK k v
       -> DiffMK    k v
       -> SeqDiffMK k v
     ext (ApplySeqDiffMK sq) (ApplyDiffMK diff) =
-      ApplySeqDiffMK $ DS.extend' sq (DSU.UtxoElement (DS.SlotNo slot) diff)
+      ApplySeqDiffMK $ extendSeqUtxoDiff sq slot diff
 
 pruneVolatilePartDbChangelog ::
      GetTip (l EmptyMK)
@@ -1210,12 +1203,12 @@ flushDbChangelog DbChangelogFlushAllImmutable dblog =
 
     -- TODO #2 by point, not by count, so sequences can be ragged
     split ::
-         (Ord k, Eq v)
+         Ord k
       => SeqDiffMK k v
       -> (SeqDiffMK k v, SeqDiffMK k v)
     split (ApplySeqDiffMK sq) =
         bimap ApplySeqDiffMK ApplySeqDiffMK
-      $ DS.splitAt (AS.length imm) sq
+      $ splitAtSeqUtxoDiff (AS.length imm) sq
 
     -- TODO #1 one pass
     l = mapLedgerTables (fst . split) changelogDiffs
@@ -1290,10 +1283,10 @@ prefixBackToAnchorDbChangelog dblog =
       mapLedgerTables (trunc ndropped) changelogDiffs
 
 trunc ::
-     (DS.Diffable 'UTxO k v)
+     Ord k
   => Int -> SeqDiffMK k v -> SeqDiffMK k v
 trunc n (ApplySeqDiffMK sq) =
-  ApplySeqDiffMK $ fst $ DS.splitAtFromEnd n sq
+  ApplySeqDiffMK $ fst $ splitAtFromEndSeqUtxoDiff n sq
 
 rollbackDbChangelog ::
      (GetTip (l EmptyMK), TableStuff l)
