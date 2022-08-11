@@ -235,6 +235,10 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.HD
                        Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq.UTxO
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes
                        Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
@@ -252,6 +256,9 @@ library
 
                        -- Strict wrapper around SOP
                        Data.SOP.Strict
+                       Data.FingerTree.Strict.Alt
+                       Data.Map.Strict.Diff
+                       Data.Map.Strict.Diff2
   if os(windows)
      exposed-modules:
                        -- TODO Delete this module once all our projects have upgraded to at least
@@ -312,6 +319,7 @@ library
                      , directory         >=1.3   && <1.4
                      , filelock
                      , filepath          >=1.4   && <1.5
+                     , groups
                      , hashable
                      , measures
                      , mtl               >=2.2   && <2.3

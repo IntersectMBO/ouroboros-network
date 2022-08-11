@@ -48,6 +48,7 @@ library
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
+                       Test.Util.Laws
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Nightly
@@ -93,6 +94,7 @@ library
                      , filepath
                      , generics-sop
                      , graphviz
+                     , groups
                      , mtl               >=2.2   && <2.3
                      , nothunks
                      , QuickCheck
@@ -236,6 +238,8 @@ test-suite test-storage
                        Test.Ouroboros.Storage.VolatileDB.Mock
                        Test.Ouroboros.Storage.VolatileDB.Model
                        Test.Ouroboros.Storage.VolatileDB.StateMachine
+
+                       Test.Data.Map.Diff.Strict
 
   build-depends:       base
                      , async

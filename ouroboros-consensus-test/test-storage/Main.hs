@@ -9,7 +9,9 @@ import           System.IO (hFlush, stdout)
 import           System.IO.Temp
 import           Test.Tasty
 
+import qualified Test.Data.Map.Diff.Strict
 import qualified Test.Ouroboros.Storage
+
 
 main :: IO ()
 main = runTests `race_` heartbeat
@@ -24,4 +26,5 @@ tests :: FilePath -> TestTree
 tests tmpDir =
   testGroup "ouroboros-storage"
   [ Test.Ouroboros.Storage.tests tmpDir
+  , Test.Data.Map.Diff.Strict.tests
   ]
