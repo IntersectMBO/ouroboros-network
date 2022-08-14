@@ -72,7 +72,6 @@ import           Control.Monad.Trans.Class (MonadTrans, lift)
 import           Control.Monad.Trans.State (StateT (..), gets, modify)
 import           Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           Test.QuickCheck hiding (Result)
@@ -98,44 +97,32 @@ benchmarks :: Benchmark
 benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
       env (setup @Int) $ \ ~(newCmds, legacyCmds, model) ->
         bgroup "Comparative performance analysis" [
-            bcompareWithin 0.4 0.7 "$NF == \"LegacyDiff\"" $
-              bench "AntiDiff"    $
-                nf (interpretAsFold @New @Int @Int) newCmds
-          ,   bench "LegacyDiff"  $
-                nf (interpretAsFold @Legacy @Int @Int) legacyCmds
-          , testProperty "AntiDiff == LegacyDiff" $
-                interpretAsFold @New @Int @Int newCmds
-              ===
-                to (interpretAsFold @Legacy @Int @Int legacyCmds)
-          , testProperty "Sanity check AntiDiff" $
-              sanityCheck' model newCmds (interpretAsFold newCmds)
-          , testProperty "Sanity check LegacyDiff" $
-              sanityCheck' model legacyCmds (interpretAsFold legacyCmds)
-          ]
+          bgroup "AntiDiff" [
+              bcompareWithin 0.3 0.6 target $
+                bench "Benchmark interpret" $
+                  nf interpretNew newCmds
+            , testProperty "Sanity check" $
+                sanityCheck model newCmds (interpretNew newCmds)
+            ]
+        , bgroup "LegacyDiff" [
+                bench "Benchmark interpret" $
+                  nf interpretLegacy legacyCmds
+            , testProperty "Sanity check" $
+                sanityCheck model legacyCmds (interpretLegacy legacyCmds)
+            ]
+        ]
     , testProperty "deterministic: interpret AntiDiff == interpret LegacyDiff" $
         forAll (fst <$> makeSized generator' defaultGenConfig) $
           \cmds ->
-              interpretAsFold @New @Int @Int cmds
+              interpret @New @Int @Int cmds
             ===
-              inside (interpretAsFold @Legacy @Int @Int) cmds
+              inside (interpret @Legacy @Int @Int) cmds
     , testProperty "non-deterministic: interpret AntiDiff == interpret LegacyDiff" $
         forAll (fst <$> makeSized generator defaultGenConfig) $
           \cmds ->
-              interpretAsFold @New @Int @Int cmds
+              interpret @New @Int @Int cmds
             ===
-              inside (interpretAsFold @Legacy @Int @Int) cmds
-    , testProperty "deterministic: interpret AntiDiff == interpretAsFold AntiDiff" $
-        forAll (fst <$> makeSized generator' defaultGenConfig) $
-          \cmds ->
-              fromMaybe mempty (lastDS $ interpret @New @Int @Int cmds)
-            ===
-              interpretAsFold cmds
-    , testProperty "non-deterministic: interpret AntiDiff == interpretAsFold AntiDiff" $
-        forAll (fst <$> makeSized generator defaultGenConfig) $
-          \cmds ->
-              fromMaybe mempty (lastDS $ interpret @New @Int @Int cmds)
-            ===
-              interpretAsFold cmds
+              inside (interpret @Legacy @Int @Int) cmds
     ]]
   where
     setup :: forall v. (Eq v, Arbitrary v) => IO ([Cmd New Int v], [Cmd Legacy Int v], Model Int v)
@@ -143,35 +130,24 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
       (cmds, m) <- generate $ generator' defaultGenConfig
       pure (cmds, from cmds, m)
 
+    interpretNew    = interpret @New @Int @Int
+    interpretLegacy = interpret @Legacy @Int @Int
+
+    target :: String
+    target = "$(NF-1) == \"LegacyDiff\" && $NF == \"Benchmark interpret\""
+
 {-------------------------------------------------------------------------------
-  Commands and results
+  Commands
 -------------------------------------------------------------------------------}
 
 data Imp = Legacy | New
 
 data Cmd (i :: Imp) k v =
-    Push     (DiffSeq i k v) (SlotNo i)      (Diff i k v)
-  | Flush    Int             (DiffSeq i k v)
-  | Rollback Int             (DiffSeq i k v)
-  | Forward  (Values i k v)  (Keys i k v)    (DiffSeq i k v)
+    Push     (SlotNo i)      (Diff i k v)
+  | Flush    Int
+  | Rollback Int
+  | Forward  (Values i k v)  (Keys i k v)
   deriving stock Generic
-
-data Result (i :: Imp) k v =
-    RPush     !(DiffSeq i k v)
-  | RFlush    !(DiffSeq i k v) !(DiffSeq i k v)
-  | RRollback !(DiffSeq i k v) !(DiffSeq i k v)
-  | RForward  !(Values i k v)
-  deriving stock Generic
-
-lastDS :: [Result i k v] -> Maybe (DiffSeq i k v)
-lastDS = firstDS . reverse
-  where
-    firstDS []     = Nothing
-    firstDS (x:xs) = case x of
-      RPush ds       -> Just ds
-      RFlush _l r    -> Just r
-      RRollback l _r -> Just l
-      RForward _vs   -> firstDS xs
 
 -- TODO: Add trace to custom instance that shows when forced, don't keep in benchmark code.
 -- TODO: Look at output with -ddump-deriv.
@@ -182,16 +158,6 @@ deriving anyclass instance ( NFData (DiffSeq i k v)
                            , NFData (SlotNo i)
                            ) => NFData (Cmd i k v)
 
-deriving anyclass instance ( NFData (DiffSeq i k v)
-                           , NFData (Diff i k v)
-                           , NFData (Values i k v)
-                           ) => NFData (Result i k v)
-
-deriving stock instance ( Eq (DiffSeq i k v)
-                        , Eq (Diff i k v)
-                        , Eq (Values i k v)
-                        ) => Eq (Result i k v)
-
 deriving stock instance ( Show (DiffSeq i k v)
                         , Show (Diff i k v)
                         , Show (Values i k v)
@@ -199,49 +165,48 @@ deriving stock instance ( Show (DiffSeq i k v)
                         , Show (SlotNo i)
                         ) => Show (Cmd i k v)
 
-deriving stock instance ( Show (DiffSeq i k v)
-                        , Show (Diff i k v)
-                        , Show (Values i k v)
-                        ) => Show (Result i k v)
+instance (Ord k, Eq v) => Isomorphism (Cmd New k v) (Cmd Legacy k v) where
+  to :: Cmd New k v -> Cmd Legacy k v
+  to (Push sl d)     = Push (to sl) (to d)
+  to (Flush n)       = Flush n
+  to (Rollback n)    = Rollback n
+  to (Forward vs ks) = Forward (to vs) (to ks)
+
+instance (Ord k, Eq v) => Isomorphism (Cmd Legacy k v) (Cmd New k v) where
+  to :: Cmd Legacy k v -> Cmd New k v
+  to (Push sl d)     = Push (to sl) (to d)
+  to (Flush n)       = Flush n
+  to (Rollback n)    = Rollback n
+  to (Forward vs ks) = Forward (to vs) (to ks)
 
 {-------------------------------------------------------------------------------
   Interpreter
 -------------------------------------------------------------------------------}
 
--- | Interpretation of @Cmd@s as an @fmap@.
-interpret :: forall i k v. (Ord k, Eq v, Comparable i) => [Cmd i k v] -> [Result i k v]
-interpret = map go'
-  where
-    go' :: Cmd i k v -> Result i k v
-    go' (Push ds sl d)     = RPush $ push ds sl d
-    go' (Flush n ds)       = uncurry RFlush $ flush n ds
-    go' (Rollback n ds)    = uncurry RRollback $ rollback n ds
-    go' (Forward vs ks ds) = RForward $ forward vs ks ds
-
 -- | Interpretation of @Cmd@s as a fold.
-interpretAsFold ::
+interpret ::
      forall i k v.
      (Ord k, Eq v, Comparable i, Monoid (DiffSeq i k v), NFData (DiffSeq i k v))
   => [Cmd i k v]
   -> DiffSeq i k v
-interpretAsFold = foldl go mempty
+interpret = foldl go mempty
   where
     go :: DiffSeq i k v -> Cmd i k v -> DiffSeq i k v
     go ds = \case
-      Push _ds sl d     -> push ds sl d
+      Push sl d     -> push ds sl d
       -- We @'deepseq'@ the left part of the flush result, because that is the
       -- part that would be written to disk, for which it must be fully
       -- evaluated.
-      Flush n _ds       -> let (l, r) = flush n ds
-                           in  l `deepseq` r
+      Flush n       -> let (l, r) = flush n ds
+                       in  l `deepseq` r
       -- We do not @'deepseq'@ the right part of the rollback result, becase we
       -- can forget about it.
-      Rollback n _ds    -> let (l, _r) = rollback n ds
-                           in l
+      Rollback n    -> let (l, _r) = rollback n ds
+                       in l
       -- FIXME(jdral): Should we @'seq'@ or @'deepseq'@ the forwarding result?
       -- Or, is there something else we should do with the result of @vs'@?
-      Forward vs ks _ds -> let vs' = forward vs ks ds
-                           in  vs' `seq` ds
+      Forward vs ks -> let vs' = forward vs ks ds
+                       in  vs' `seq` ds
 
 class Comparable (i :: Imp) where
   type DiffSeq i k v = r | r -> i k v
@@ -529,7 +494,7 @@ genPush conf = do
     , nrGenerated = nrGenerated st + 1
     })
 
-  pure (Push ds (fromIntegral t) d)
+  pure $ Push (fromIntegral t) d
 
 -- | Generate a @'Flush'@ command.
 --
@@ -560,7 +525,7 @@ genFlush GenConfig{securityParameter = k} = do
     , nrGenerated = nrGenerated st + 1
     })
 
-  pure $ Flush n ds
+  pure $ Flush n
 
 -- | Generate a @'Rollback'@ command.
 --
@@ -597,7 +562,7 @@ genRollback GenConfig{securityParameter = k, rollbackConfig} = do
       , nrGenerated = nrGenerated st + 1
       })
 
-    pure $ Rollback n ds
+    pure $ Rollback n
   where
     ofK :: Float -> Int
     ofK p =
@@ -645,22 +610,14 @@ genForward conf = do
       nrGenerated = nrGenerated st + 1
     })
 
-  pure $ Forward vs ks ds
+  pure $ Forward vs ks
 
 {-------------------------------------------------------------------------------
   Sanity checks
 -------------------------------------------------------------------------------}
 
--- | Sanity checks for interpretation as @fmap@.
---
--- Examples of sanity checks: No empty flushes, push has monotonically
--- increasing slots, nr. of backing values does not decrease drastically or
--- increase drastically.
-_sanityCheck :: Model k v -> [Cmd i k v] -> [Result i k v] -> Bool
-_sanityCheck _model cmds rs = length cmds == length rs
-
 -- | Sanity checks for interpretation as fold.
-sanityCheck' ::
+sanityCheck ::
      ( Eq k, Eq v, Show k, Show v
      , Isomorphism (DiffSeq i k v) (DS.DiffSeq 'TS.UTxO k v)
      )
@@ -668,39 +625,4 @@ sanityCheck' ::
   -> [Cmd i k v]
   -> DiffSeq i k v
   -> Property
-sanityCheck' model _cmds result = diffs model === to result
-
-{-------------------------------------------------------------------------------
-  @'Legacy'@ and @'New'@ commands/results are isomorphic
--------------------------------------------------------------------------------}
-
--- | Given that @'Legacy'@ and
-instance (Ord k, Eq v) => Isomorphism (Cmd New k v) (Cmd Legacy k v) where
-  to :: Cmd New k v -> Cmd Legacy k v
-  to (Push ds sl d)    = Push (to ds) (to sl) (to d)
-  to (Flush n ds)      = Flush n (to ds)
-  to (Rollback n ds)   = Rollback n (to ds)
-  to (Forward vs ks d) = Forward (to vs) (to ks) (to d)
-
-instance (Ord k, Eq v) => Isomorphism (Cmd Legacy k v) (Cmd New k v) where
-  to :: Cmd Legacy k v -> Cmd New k v
-  to (Push ds sl d)    = Push (to ds) (to sl) (to d)
-  to (Flush n ds)      = Flush n (to ds)
-  to (Rollback n ds)   = Rollback n (to ds)
-  to (Forward vs ks d) = Forward (to vs) (to ks) (to d)
-
-instance (Ord k, Eq v)
-      => Isomorphism (Result New k v) (Result Legacy k v) where
-  to :: Result New k v -> Result Legacy k v
-  to (RPush ds)      = RPush $ to ds
-  to (RFlush l r)    = RFlush (to l) (to r)
-  to (RRollback l r) = RRollback (to l) (to r)
-  to (RForward vs)   = RForward $ to vs
-
-instance (Ord k, Eq v)
-      => Isomorphism (Result Legacy k v) (Result New k v) where
-  to :: Result Legacy k v -> Result New k v
-  to (RPush ds)      = RPush $ to ds
-  to (RFlush l r)    = RFlush (to l) (to r)
-  to (RRollback l r) = RRollback (to l) (to r)
-  to (RForward vs)   = RForward $ to vs
+sanityCheck model _cmds result = diffs model === to result
