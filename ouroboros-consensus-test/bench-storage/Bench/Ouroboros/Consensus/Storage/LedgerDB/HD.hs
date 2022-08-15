@@ -329,7 +329,7 @@ data Model k v = Model {
 genInitialModel :: (Eq v, Arbitrary v) => GenConfig -> Gen (Model Int v)
 genInitialModel GenConfig{nrInitialValues} = do
     kvs <- mapM genKeyValue [0 .. nrInitialValues - 1]
-    pure $ Model DS.emptyDiffSeq 0 (TT.valuesFromList kvs) nrInitialValues 0
+    pure $ Model mempty 0 (TT.valuesFromList kvs) nrInitialValues 0
 
 genKeyValue :: Arbitrary v => k -> Gen (k, v)
 genKeyValue x = (x,) <$> arbitrary

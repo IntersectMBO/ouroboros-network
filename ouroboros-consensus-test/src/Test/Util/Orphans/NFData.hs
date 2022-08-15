@@ -10,9 +10,8 @@ module Test.Util.Orphans.NFData () where
 import           Control.DeepSeq (NFData (..))
 import           Data.Foldable
 
-import           Data.FingerTree.Strict (Measured (..), StrictFingerTree (..))
 import qualified Data.FingerTree.Strict as FT
-import           Data.FingerTree.Strict.Alt (Alt)
+import           Data.FingerTree.TopMeasured.Strict as TMFT
 import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
                      DiffHistory (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
@@ -31,7 +30,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes
 -- 'fingertree' package does not export all necessary constructors to
 -- automatically derive the NFData instance for the underlying
 -- @'FingerTree'@.
-instance (NFData a, NFData v, Measured v a) => NFData (StrictFingerTree v a) where
+instance (NFData a, NFData v, FT.Measured v a)
+      => NFData (FT.StrictFingerTree v a) where
   rnf ft = rnf (FT.measure ft) `seq` rnf (toList ft)
 
 {-------------------------------------------------------------------------------
@@ -56,7 +56,7 @@ deriving newtype instance (Ord k, NFData k, NFData v) => NFData (SeqUtxoDiff k v
 
 deriving anyclass instance ( NFData vt, NFData vi, NFData a
                            , Measured vi a
-                           ) => NFData (Alt vt vi a)
+                           ) => NFData (TMFT.StrictFingerTree vt vi a)
 
 deriving anyclass instance NFData v => NFData (DiffEntry v)
 deriving newtype instance NFData v => NFData (DiffHistory v)

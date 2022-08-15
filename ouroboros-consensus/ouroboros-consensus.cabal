@@ -255,7 +255,7 @@ library
 
                        -- Strict wrapper around SOP
                        Data.SOP.Strict
-                       Data.FingerTree.Strict.Alt
+                       Data.FingerTree.TopMeasured.Strict
                        Data.Map.Diff.Strict
   if os(windows)
      exposed-modules:

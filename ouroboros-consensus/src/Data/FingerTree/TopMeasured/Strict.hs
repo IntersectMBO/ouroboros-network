@@ -8,8 +8,8 @@
 
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
-module Data.FingerTree.Strict.Alt (
-    Alt
+module Data.FingerTree.TopMeasured.Strict (
+    StrictFingerTree
     -- * Top-measuring
   , InternalMeasured
   , Measured (..)
@@ -30,7 +30,7 @@ import           GHC.Generics (Generic)
 
 import           NoThunks.Class (NoThunks (..), noThunksInValues)
 
-import           Data.FingerTree.Strict (Measured, StrictFingerTree)
+import           Data.FingerTree.Strict (Measured)
 import qualified Data.FingerTree.Strict as FT
 
 -- TODO(jdral): Should we force strictness anywhere? Or more generally, where
@@ -42,24 +42,26 @@ import qualified Data.FingerTree.Strict as FT
 
 -- | A @StrictFingerTree@ with elements of type @a@, an internal measure
 -- of type @vi@, and a top-level measure of type @vt@.
-data Alt vt vi a = Alt  {
+data StrictFingerTree vt vi a = StrictFingerTree  {
     tm       :: vt
-  , elements :: !(StrictFingerTree vi a)
+  , elements :: !(FT.StrictFingerTree vi a)
   }
   deriving (Show, Eq, Ord, Generic)
 
-instance Foldable (Alt vt vi) where
+instance Foldable (StrictFingerTree vt vi) where
   foldMap f = foldMap f . elements
 
-instance NoThunks a => NoThunks (Alt vt vi a) where
+instance NoThunks a => NoThunks (StrictFingerTree vt vi a) where
   showTypeOf _ = "Alt"
   wNoThunks ctxt = noThunksInValues ctxt . toList
 
-instance (Semigroup vt, Measured vi a) => Semigroup (Alt vt vi a) where
-  Alt tm1 xs1 <> Alt tm2 xs2 = Alt (tm1 <> tm2) (xs1 <> xs2)
+instance (Semigroup vt, Measured vi a)
+      => Semigroup (StrictFingerTree vt vi a) where
+  StrictFingerTree tm1 xs1 <> StrictFingerTree tm2 xs2 =
+    StrictFingerTree (tm1 <> tm2) (xs1 <> xs2)
 
-instance (Monoid vt, Measured vi a) => Monoid (Alt vt vi a) where
-  mempty = Alt mempty mempty
+instance (Monoid vt, Measured vi a) => Monoid (StrictFingerTree vt vi a) where
+  mempty = StrictFingerTree mempty mempty
 
 {-------------------------------------------------------------------------------
   Measuring
@@ -72,7 +74,7 @@ measureInternal :: Measured v a => a -> v
 measureInternal = FT.measure
 
 -- | All values of type @Alt@ are internal-measured.
-instance Measured vi a => Measured vi (Alt vt vi a) where
+instance Measured vi a => Measured vi (StrictFingerTree vt vi a) where
   measure = FT.measure . elements
 
 -- | Re-iteration of @'Measured'@, but for top-level measures.
@@ -88,7 +90,7 @@ class Group v => TopMeasured v a | a -> v where
   measureTop :: a -> v
 
 -- | All values of type @Alt@ are top-measured.
-instance TopMeasured vt a => TopMeasured vt (Alt vt vi a) where
+instance TopMeasured vt a => TopMeasured vt (StrictFingerTree vt vi a) where
   measureTop = tm
 
 -- | Wrapper for when we need both @TopMeasured@ and @InternalMeasured@
@@ -100,14 +102,19 @@ type SuperMeasured vt vi a = (TopMeasured vt a, InternalMeasured vi a)
 
 infixl 5 |>
 
-(|>) :: SuperMeasured v0 v a => Alt v0 v a -> a -> Alt v0 v a
-Alt v0 sft |> a = Alt (v0 <> measureTop a) (sft FT.|> a)
+(|>) ::
+     SuperMeasured v0 v a
+  => StrictFingerTree v0 v a
+  -> a
+  -> StrictFingerTree v0 v a
+StrictFingerTree v0 sft |> (!a) =
+  StrictFingerTree (v0 <> measureTop a) (sft FT.|> a)
 
-fromList :: SuperMeasured v0 v a => [a] -> Alt v0 v a
-fromList !xs = Alt (foldMap measureTop xs) (FT.fromList xs)
+fromList :: SuperMeasured v0 v a => [a] -> StrictFingerTree v0 v a
+fromList !xs = StrictFingerTree (foldMap measureTop xs) (FT.fromList xs)
 
-empty :: SuperMeasured v0 v a => Alt v0 v a
-empty = Alt mempty FT.empty
+empty :: SuperMeasured v0 v a => StrictFingerTree v0 v a
+empty = StrictFingerTree mempty mempty
 
 -- | Note: linear time reconstruction of @v02@ from @v01@.
 fmap' ::
@@ -115,9 +122,9 @@ fmap' ::
      , SuperMeasured v02 v2 a2
      )
   => (a1 -> a2)
-  -> Alt v01 v1 a1
-  -> Alt v02 v2 a2
-fmap' f (Alt _ sft) = Alt v0' sft'
+  -> StrictFingerTree v01 v1 a1
+  -> StrictFingerTree v02 v2 a2
+fmap' f (StrictFingerTree _ sft) = StrictFingerTree v0' sft'
   where
     sft' = FT.fmap' f sft
     v0' = foldMap measureTop sft'
@@ -130,9 +137,9 @@ fmap'' ::
      )
   => (a1 -> a2)
   -> (v01 -> v02)
-  -> Alt v01 v1 a1
-  -> Alt v02 v2 a2
-fmap'' f g (Alt v0 sft) = Alt v0' sft'
+  -> StrictFingerTree v01 v1 a1
+  -> StrictFingerTree v02 v2 a2
+fmap'' f g (StrictFingerTree v0 sft) = StrictFingerTree v0' sft'
   where
     sft' = FT.fmap' f sft
     v0' = g v0
@@ -142,9 +149,14 @@ fmap'' f g (Alt v0 sft) = Alt v0' sft'
 split ::
      SuperMeasured v0 v a
   => (v -> Bool)
-  -> Alt v0 v a
-  -> (Alt v0 v a, Alt v0 v a)
-split p (Alt v0 sft) = (Alt v0Delta left, Alt (invert v0Delta <> v0) right)
+  -> StrictFingerTree v0 v a
+  -> ( StrictFingerTree v0 v a
+     , StrictFingerTree v0 v a
+     )
+split p (StrictFingerTree v0 sft) =
+    ( StrictFingerTree v0Delta left
+    , StrictFingerTree (invert v0Delta <> v0) right
+    )
   where
       (left, right) = FT.split p sft
       -- TODO(jdral): Should we invert inside the definition of @v0Delta@ instead?

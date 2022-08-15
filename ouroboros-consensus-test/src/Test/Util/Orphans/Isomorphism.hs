@@ -16,7 +16,7 @@ import qualified Data.Sequence as Seq
 
 import qualified Data.FingerTree.Strict as FT
 
-import qualified Data.FingerTree.Strict.Alt as Alt
+import qualified Data.FingerTree.TopMeasured.Strict as TMFT
 import qualified Data.Map.Diff.Strict as MapDiff
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
@@ -61,14 +61,14 @@ instance (Isomorphism a c, Isomorphism b d) => Isomorphism (a, b) (c, d) where
 instance (Ord k, Eq v)
       => Isomorphism (DS.DiffSeq ts k v) (HD.SeqUtxoDiff k v) where
   to :: DS.DiffSeq ts k v -> HD.SeqUtxoDiff k v
-  to (DS.DiffSeq alt) = HD.SeqUtxoDiff . FT.fromList . map to' . toList $ alt
+  to (DS.DiffSeq ft) = HD.SeqUtxoDiff . FT.fromList . map to' . toList $ ft
     where
       to' (DS.Element slot d)= HD.SudElement (to slot) (to d)
 
 instance (Ord k, Eq v)
       => Isomorphism (HD.SeqUtxoDiff k v) (DS.DiffSeq ts k v) where
   to :: HD.SeqUtxoDiff k v -> DS.DiffSeq ts k v
-  to (HD.SeqUtxoDiff ft) = DS.DiffSeq . Alt.fromList . map to' . toList $ ft
+  to (HD.SeqUtxoDiff ft) = DS.DiffSeq . TMFT.fromList . map to' . toList $ ft
     where
       to' (HD.SudElement slot d) = DS.Element (to slot) (to d)
 

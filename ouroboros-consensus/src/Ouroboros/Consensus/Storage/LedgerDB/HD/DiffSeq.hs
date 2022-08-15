@@ -30,7 +30,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
   , HasSlot (..)
     -- * API: functions
   , cumulativeDiff
-  , emptyDiffSeq
   , extend
   , extend'
   , length
@@ -52,9 +51,8 @@ import           Data.Semigroup (Max (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Data.FingerTree.Strict.Alt (Alt, InternalMeasured,
-                     Measured (..), TopMeasured (..))
-import qualified Data.FingerTree.Strict.Alt as Alt
+import           Data.FingerTree.TopMeasured.Strict hiding (split)
+import qualified Data.FingerTree.TopMeasured.Strict as TMFT (split)
 
 -- import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import qualified Cardano.Slotting.Slot as Slot
@@ -69,7 +67,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore (ToStoreKind)
 
 newtype DiffSeq (ts :: ToStoreKind) k v =
   DiffSeq
-    (Alt
+    (StrictFingerTree
       (TopMeasure ts k v)
       (InternalMeasure ts k v)
       (Element ts k v)
@@ -205,40 +203,33 @@ instance HasSlot ts k v where
   API: derived functions
 -------------------------------------------------------------------------------}
 
-emptyDiffSeq ::
-     ( TopMeasured (TopMeasure ts k v) (Element ts k v)
-     , InternalMeasured (InternalMeasure ts k v) (Element ts k v)
-     )
-  => DiffSeq ts k v
-emptyDiffSeq = DiffSeq Alt.empty
-
 cumulativeDiff ::
      TM ts k v
   => DiffSeq ts k v
   -> TableDiff ts k v
-cumulativeDiff (DiffSeq alt) = getTableDiffTM $ Alt.measureTop alt
+cumulativeDiff (DiffSeq ft) = getTableDiffTM $ measureTop ft
 
 length ::
      TM ts k v
   => DiffSeq ts k v -> Int
-length (DiffSeq alt) = unLength . getLength $ Alt.measureTop alt
+length (DiffSeq ft) = unLength . getLength $ measureTop ft
 
 extend ::
      SM ts k v
   => DiffSeq ts k v
   -> Element ts k v
   -> DiffSeq ts k v
-extend (DiffSeq alt) el = DiffSeq $ alt Alt.|> el
+extend (DiffSeq ft) el = DiffSeq $ ft |> el
 
 extend' ::
      SM ts k v
   => DiffSeq ts k v
   -> Element ts k v
   -> DiffSeq ts k v
-extend' (DiffSeq alt) el =
-    Exn.assert invariant $ DiffSeq $ alt Alt.|> el
+extend' (DiffSeq ft) el =
+    Exn.assert invariant $ DiffSeq $ ft |> el
   where
-    invariant = case getInternalMeasureSlot (Alt.measure el) of
+    invariant = case getInternalMeasureSlot (measure el) of
       Nothing  -> True
       Just sl0 -> sl0 <= getElementSlot el
 
@@ -246,8 +237,8 @@ maxSlot ::
      IM ts k v
   => DiffSeq ts k v
   -> Maybe Slot.SlotNo
-maxSlot (DiffSeq alt) =
-    unwrapInner $ getInternalMeasureSlot $ Alt.measureInternal alt
+maxSlot (DiffSeq ft) =
+    unwrapInner $ getInternalMeasureSlot $ measureInternal ft
   where
     -- We care about /real/ slot numbers, so we should return a
     -- @'Slot.SlotNo'@.
@@ -260,7 +251,7 @@ split ::
   => (InternalMeasure ts k v -> Bool)
   -> DiffSeq ts k v
   -> (DiffSeq ts k v, DiffSeq ts k v)
-split p (DiffSeq alt) = bimap DiffSeq DiffSeq $ Alt.split p alt
+split p (DiffSeq ft) = bimap DiffSeq DiffSeq $ TMFT.split p ft
 
 splitAt ::
      SM ts k v
@@ -295,4 +286,4 @@ mapDiffSeq ::
     => (v -> v')
     -> DiffSeq ts k v
     -> DiffSeq ts k v'
-mapDiffSeq f (DiffSeq alt) = DiffSeq $ Alt.fmap' (mapElement f) alt
+mapDiffSeq f (DiffSeq ft) = DiffSeq $ fmap' (mapElement f) ft
