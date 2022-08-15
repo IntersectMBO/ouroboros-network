@@ -1,22 +1,20 @@
-{-# LANGUAGE DataKinds               #-}
-{-# LANGUAGE DeriveAnyClass          #-}
-{-# LANGUAGE DeriveGeneric           #-}
-{-# LANGUAGE DerivingStrategies      #-}
-{-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE GADTs                   #-}
-{-# LANGUAGE InstanceSigs            #-}
-{-# LANGUAGE LambdaCase              #-}
-{-# LANGUAGE MultiParamTypeClasses   #-}
-{-# LANGUAGE NamedFieldPuns          #-}
-{-# LANGUAGE ScopedTypeVariables     #-}
-{-# LANGUAGE StandaloneDeriving      #-}
-{-# LANGUAGE TupleSections           #-}
-{-# LANGUAGE TypeApplications        #-}
-{-# LANGUAGE TypeFamilyDependencies  #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
-
-{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE DeriveAnyClass         #-}
+{-# LANGUAGE DeriveGeneric          #-}
+{-# LANGUAGE DerivingStrategies     #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE InstanceSigs           #-}
+{-# LANGUAGE LambdaCase             #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE NamedFieldPuns         #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE StandaloneDeriving     #-}
+{-# LANGUAGE TupleSections          #-}
+{-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 {- | Comparative benchmarks for legacy/anti-diff approaches to diff sequences.
 
@@ -53,7 +51,7 @@
   such that we can benchmark just the evaluation of the operations.
 
   > generator :: Model -> [Cmd]
-  > evaluate :: [Cmd] -> [Result]
+  > evaluate :: [Cmd] -> Result
 
   As an example scenario, consider flushing. The part of evaluating a flush
   that is relevant to our benchmarks is just the splitting of the cumulative
@@ -191,7 +189,12 @@ instance (Ord k, Eq v) => Isomorphism (Cmd Legacy k v) (Cmd New k v) where
 -- | Interpretation of @Cmd@s as a fold.
 interpret ::
      forall i k v.
-     (Ord k, Eq v, Comparable i, Monoid (DiffSeq i k v), NFData (DiffSeq i k v))
+     ( Ord k
+     , Eq v
+     , Comparable i
+     , Monoid (DiffSeq i k v)
+     , NFData (DiffSeq i k v)
+     )
   => [Cmd i k v]
   -> DiffSeq i k v
 interpret = foldl go mempty
@@ -207,12 +210,13 @@ interpret = foldl go mempty
       -- We do not @'deepseq'@ the right part of the rollback result, becase we
       -- can forget about it.
       Rollback n    -> let (l, _r) = rollback n ds
-                       in l
+                       in  l
       -- FIXME(jdral): Should we @'seq'@ or @'deepseq'@ the forwarding result?
       -- Or, is there something else we should do with the result of @vs'@?
       Forward vs ks -> let vs' = forward vs ks ds
                        in  vs' `seq` ds
 
+-- | Common interface to diff sequence implementations.
 class Comparable (i :: Imp) where
   type DiffSeq i k v = r | r -> i k v
   type Diff i k v    = r | r -> i k v
@@ -257,7 +261,7 @@ instance Comparable New where
   Command generator: Configuration
 -------------------------------------------------------------------------------}
 
--- | Configuration parameters for @'generator'@.
+-- | Configuration parameters for generators.
 data GenConfig = GenConfig {
     -- | Desired length of command sequence
     nrCommands        :: Int
@@ -278,11 +282,13 @@ data PushConfig = PushConfig {
   , nrToInsert :: Int
   }
 
+-- | Configuration parameters for @'Forward'@ command generation.
 newtype ForwardConfig = ForwardConfig {
     -- | How many keys to forward
     nrToForward :: Int
   }
 
+-- | Configuration parameters for @'Rollback'@ command generation.
 newtype RollbackConfig = RollbackConfig {
     -- | Distribution of rollback sizes with respect to the security parameter
     -- @k@.
@@ -316,6 +322,7 @@ defaultGenConfig = GenConfig {
   Command generator: Model
 -------------------------------------------------------------------------------}
 
+-- | Model for keeping track of state during generation of the command sequence.
 data Model k v = Model {
     diffs         :: DS.DiffSeq 'TS.UTxO k v     -- ^ The current diff sequence
   , tip           :: Int                         -- ^ The tip of the diff
@@ -428,6 +435,8 @@ genCmds' conf = do
       else
         pure []
 
+    -- FIXME(jdral): Replace by @'Data.List.singleton'@ when we update
+    -- the @base@ dependency to @base 4.15<=@
     singleton :: a -> [a]
     singleton x = [x]
 
@@ -450,7 +459,7 @@ genCmd conf = do
 -- | Generate a @'Push'@ command.
 --
 -- > data Cmd (i :: Imp) k v =
--- >    Push (DiffSeq i k v) (SlotNo i) (Diff i k v)
+-- >    Push (SlotNo i) (Diff i k v)
 -- >    -- ...
 --
 -- Steps to generate a @'Push'@ command:
@@ -458,8 +467,7 @@ genCmd conf = do
 -- * "Simulate a transaction" by generating a diff that:
 --   1. Deletes one or more values that exist in the forwarded backing values.
 --   2. Inserts one or more values with globally unique keys.
--- * Return the previous diff sequence, a strictly increasing slot number, and
---   the new diff.
+-- * Return a strictly increasing slot number, and the new diff.
 -- BOOKKEEPING: Push the new diff onto the model's diff sequence.
 --
 -- Note: https://iohk.io/en/blog/posts/2018/07/03/self-organisation-in-coin-selection/
@@ -503,13 +511,13 @@ genPush conf = do
 --
 -- >  data Cmd (i :: Imp) k v =
 -- >    -- ...
--- >    | Flush Int (DiffSeq i k v)
+-- >    | Flush Int
 -- >    -- ...
 --
 -- Steps to generate a @'Flush'@ command:
 -- * Compute how many diffs @n@ in the diff sequence have a slot number that
 --   exceeds the security parameter @k@.
--- * Return the current diff sequence and @n@.
+-- * Return @n@.
 -- BOOKKEEPING: Remove the first @n@ diffs from the models' diff sequence and
 -- use them to forward the model's backing values.
 genFlush :: Eq v => GenConfig -> CmdGen v (Cmd 'New Int v)
@@ -534,14 +542,13 @@ genFlush GenConfig{securityParameter = k} = do
 --
 -- >  data Cmd (i :: Imp) k v =
 -- >    -- ...
--- >    | Rollback Int (DiffSeq i k v)
+-- >    | Rollback Int
 -- >    -- ...
 --
 -- Steps to generate a @'Rollback'@ command:
--- * Pick how much to rollback, i.e. an integer @n@.
---   * With high probability, we perform small rollbacks of around @0.05 * k@.
---   * With low probability, we perform large rollbacks of around @0.95 * k@.
--- * Return the current diff sequence and @n@.
+-- * Pick how much to rollback, i.e. an integer @n@ (depends on the
+--   configuration parameter).
+-- * Return @n@.
 -- BOOKKEEPING: Remove the last @n@ diffs from the models' diff sequence.
 --
 -- Note: We assume that pushes do not skip any slots.
@@ -579,14 +586,13 @@ genRollback GenConfig{securityParameter = k, rollbackConfig} = do
 --
 -- >  data Cmd (i :: Imp) k v =
 -- >    -- ...
--- >    | Forward (Values i k v) (Keys i k v) (DiffSeq i k v)
+-- >    | Forward (Values i k v) (Keys i k v)
 --
 -- Steps to generate a @'Forward'@ command:
 -- * Determine which keys to forward.
 -- * Retrieve (a subset of) the backing values from the model, i.e.,
 --   /read/ the keys (obtained in previous step) from the backing values.
--- * Retrieve the current diff sequence from the model.
--- * Return the previous three combined.
+-- * Return the previous two combined.
 -- BOOKKEEPING: None, since forwarding doesn't alter any model state.
 --
 -- Note: The keys to forward should be a superset of the keys of the backing

@@ -1,6 +1,5 @@
 module Main (main) where
 
---import           Criterion.Main
 import           Test.Tasty.Bench
 
 import qualified Bench.Ouroboros.Consensus.Storage.LedgerDB.HD as HD

@@ -54,7 +54,6 @@ import           NoThunks.Class (NoThunks)
 import           Data.FingerTree.TopMeasured.Strict hiding (split)
 import qualified Data.FingerTree.TopMeasured.Strict as TMFT (split)
 
--- import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import qualified Cardano.Slotting.Slot as Slot
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes

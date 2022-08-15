@@ -333,17 +333,13 @@ benchmark bench-storage
   other-modules:
                        Bench.Ouroboros.Consensus.Storage.LedgerDB.HD
   build-depends:       base
-                     , bifunctors
                      , containers
-                     , criterion
                      , deepseq
                      , QuickCheck
                      , strict-containers
                      , tasty-bench
                      , tasty-quickcheck
                      , transformers
-                     , tree-diff
-                     , vector
 
                      , ouroboros-consensus
                      , ouroboros-consensus-test
