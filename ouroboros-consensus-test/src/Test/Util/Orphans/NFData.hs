@@ -13,7 +13,7 @@ import           Data.Foldable
 import           Data.FingerTree.Strict (Measured (..), StrictFingerTree (..))
 import qualified Data.FingerTree.Strict as FT
 import           Data.FingerTree.Strict.Alt (Alt)
-import           Data.Map.Strict.Diff2 (Diff (..), DiffEntry (..),
+import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
                      DiffHistory (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      SudElement (..), SudMeasure (..), UtxoDiff (..),

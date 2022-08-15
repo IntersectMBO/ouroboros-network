@@ -34,7 +34,7 @@ import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
-import           Data.Map.Strict.Diff2 (Diff (..), DiffEntry (..),
+import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
                      DiffHistory (..))
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore (ToStoreKind)

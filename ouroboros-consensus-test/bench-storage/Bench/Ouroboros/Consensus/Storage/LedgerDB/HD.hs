@@ -78,7 +78,7 @@ import           Test.QuickCheck hiding (Result)
 import           Test.Tasty.Bench
 import           Test.Tasty.QuickCheck (testProperty)
 
-import qualified Data.Map.Strict.Diff2 as D2
+import qualified Data.Map.Diff.Strict as MapDiff
 
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
@@ -483,9 +483,9 @@ genPush conf = do
     lift $ mapM genKeyValue [kc .. kc + nrToInsert - 1]
 
   let
-    d = TT.TableDiff . D2.Diff $
-         Map.fromList [(k, D2.singletonDelete v) | (k,v) <- taken]
-      <> Map.fromList [(k, D2.singletonInsert v) | (k,v) <- made]
+    d = TT.TableDiff . MapDiff.Diff $
+         Map.fromList [(k, MapDiff.singletonDelete v) | (k,v) <- taken]
+      <> Map.fromList [(k, MapDiff.singletonInsert v) | (k,v) <- made]
 
   modify (\st -> st {
       diffs = DS.extend' ds $ DS.Element (fromIntegral t) d

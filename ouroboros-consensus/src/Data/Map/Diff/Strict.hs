@@ -10,7 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
-module Data.Map.Strict.Diff2 (
+module Data.Map.Diff.Strict (
     Diff (..)
   , DiffEntry (..)
   , DiffHistory (..)

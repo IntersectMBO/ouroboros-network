@@ -256,8 +256,7 @@ library
                        -- Strict wrapper around SOP
                        Data.SOP.Strict
                        Data.FingerTree.Strict.Alt
-                       Data.Map.Strict.Diff
-                       Data.Map.Strict.Diff2
+                       Data.Map.Diff.Strict
   if os(windows)
      exposed-modules:
                        -- TODO Delete this module once all our projects have upgraded to at least

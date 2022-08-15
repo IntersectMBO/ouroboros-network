@@ -20,13 +20,8 @@ import           Test.Util.Orphans.DiffSeq.Arbitrary ()
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore
 
--- | Testing @'Semigroup'@, @'Monoid'@ and @'Group'@ laws for diff datatypes.
---
--- Note: We expect the tests for @'AntiDiff'@s to fail, since the
--- @'AntiDiff'@ datatype makes assumptions about the shape of the underlying
--- diff. For example, in the context of consensus, we should currently never
--- expect to encounter a negative diff as a top-level result. The @'D2.Diff'@
--- is more general, and so does not fail in these cases.
+-- | Testing @'Semigroup'@, @'Monoid'@ and @'Group'@ laws for the measures used
+-- in the diff sequence datatype.
 tests :: forall (ts :: ToStoreKind). TestTree
 tests = testGroup "DiffSeq" [
     testGroup "TopMeasure ts Int Int" [

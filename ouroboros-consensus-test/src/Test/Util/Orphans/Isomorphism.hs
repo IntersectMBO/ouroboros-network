@@ -17,8 +17,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.FingerTree.Strict as FT
 
 import qualified Data.FingerTree.Strict.Alt as Alt
-import qualified Data.Map.Strict.Diff2 as D2
-
+import qualified Data.Map.Diff.Strict as MapDiff
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
@@ -74,32 +73,32 @@ instance (Ord k, Eq v)
       to' (HD.SudElement slot d) = DS.Element (to slot) (to d)
 
 instance Isomorphism (TT.TableDiff ts k v) (HD.UtxoDiff k v) where
-  to (TT.TableDiff (D2.Diff m)) = HD.UtxoDiff (fmap to' m)
+  to (TT.TableDiff (MapDiff.Diff m)) = HD.UtxoDiff (fmap to' m)
     where
-      to' :: D2.DiffHistory v -> HD.UtxoEntryDiff v
+      to' :: MapDiff.DiffHistory v -> HD.UtxoEntryDiff v
       to' = \case
-        D2.DiffHistory (_xs Seq.:|> x) ->
+        MapDiff.DiffHistory (_xs Seq.:|> x) ->
           to'' x
         _ ->
           error "A DiffHistory is isomorphic to a UtxoEntryDiff under the \
                 \ assumption that diff histories contain exactly one element."
-      to'' :: D2.DiffEntry v -> HD.UtxoEntryDiff v
+      to'' :: MapDiff.DiffEntry v -> HD.UtxoEntryDiff v
       to'' = \case
-        D2.Insert v -> HD.UtxoEntryDiff v HD.UedsIns
-        D2.Delete v -> HD.UtxoEntryDiff v HD.UedsDel
+        MapDiff.Insert v -> HD.UtxoEntryDiff v HD.UedsIns
+        MapDiff.Delete v -> HD.UtxoEntryDiff v HD.UedsDel
 
 instance Isomorphism (HD.UtxoDiff k v) (TT.TableDiff ts k v) where
   to :: HD.UtxoDiff k v -> TT.TableDiff ts k v
-  to (HD.UtxoDiff m) = TT.TableDiff . D2.Diff $ fmap to' m
+  to (HD.UtxoDiff m) = TT.TableDiff . MapDiff.Diff $ fmap to' m
     where
-      to' :: HD.UtxoEntryDiff v -> D2.DiffHistory v
+      to' :: HD.UtxoEntryDiff v -> MapDiff.DiffHistory v
       to' (HD.UtxoEntryDiff v st) = case st of
         HD.UedsIns ->
-          D2.DiffHistory $ Seq.singleton $ D2.Insert v
+          MapDiff.DiffHistory $ Seq.singleton $ MapDiff.Insert v
         HD.UedsDel ->
-          D2.DiffHistory $ Seq.singleton $ D2.Delete v
+          MapDiff.DiffHistory $ Seq.singleton $ MapDiff.Delete v
         HD.UedsInsAndDel ->
-          D2.DiffHistory $ Seq.fromList [D2.Insert v, D2.Delete v]
+          MapDiff.DiffHistory $ Seq.fromList [MapDiff.Insert v, MapDiff.Delete v]
 
 instance Isomorphism (TT.TableValues ts k v) (HD.UtxoValues k v) where
   to :: TT.TableValues ts k v -> HD.UtxoValues k v
