@@ -68,7 +68,7 @@ module Bench.Ouroboros.Consensus.Storage.LedgerDB.HD (benchmarks) where
 import           Control.DeepSeq
 import qualified Control.Exception as Exn
 import           Control.Monad (replicateM)
-import           Control.Monad.Trans.Class (MonadTrans, lift)
+import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.State (StateT (..), gets, modify)
 import           Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
@@ -88,6 +88,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore as TS
 
 import           Test.Util.Orphans.Isomorphism (Isomorphism (..), from, inside)
 import           Test.Util.Orphans.NFData ()
+import           Test.Util.QuickCheck (frequency')
 
 -- TODO(jdral): Instead of nf on diff sequence, alternative like
 -- * read and forward all values
@@ -110,19 +111,23 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
             , testProperty "Sanity check" $
                 sanityCheck model legacyCmds (interpretLegacy legacyCmds)
             ]
+        , testProperty "interpret AntiDiff == interpret LegacyDiff" $
+              interpret newCmds
+            ===
+              to (interpret legacyCmds)
         ]
     , testProperty "deterministic: interpret AntiDiff == interpret LegacyDiff" $
         forAll (fst <$> makeSized generator' defaultGenConfig) $
           \cmds ->
-              interpret @New @Int @Int cmds
+              interpretNew cmds
             ===
-              inside (interpret @Legacy @Int @Int) cmds
+              inside interpretLegacy cmds
     , testProperty "non-deterministic: interpret AntiDiff == interpret LegacyDiff" $
         forAll (fst <$> makeSized generator defaultGenConfig) $
           \cmds ->
-              interpret @New @Int @Int cmds
+              interpretNew cmds
             ===
-              inside (interpret @Legacy @Int @Int) cmds
+              inside interpretLegacy cmds
     ]]
   where
     setup :: forall v. (Eq v, Arbitrary v) => IO ([Cmd New Int v], [Cmd Legacy Int v], Model Int v)
@@ -353,8 +358,8 @@ generator' conf = do
   m <- genInitialModel conf
   runStateT (genCmds' conf) m
 
--- | Adapt a @GenConfig@ured generator to override the configured @nrCommands@
--- parameter with a value that depends on the QuickCheck size parameter.
+-- | Adapt a @GenConfig@ured generator to multiply the configured @nrCommands@
+-- parameter with a factor that depends on the QuickCheck size parameter.
 makeSized ::
      (GenConfig -> Gen a)
   -> GenConfig
@@ -362,7 +367,17 @@ makeSized ::
 makeSized fgen conf = do
   n <- getSize
   k <- choose (0, n)
-  fgen (conf {nrCommands = k})
+  let
+    p :: Float
+    p =
+      if n == 0 then
+        0
+      else
+        fromIntegral k / fromIntegral n
+    nr :: Float
+    nr = fromIntegral (nrCommands conf)
+
+  fgen (conf {nrCommands = round $ p * nr})
 
 type CmdGen v a = StateT (Model Int v) Gen a
 
@@ -418,18 +433,6 @@ genCmds' conf = do
 
     genN :: Int -> CmdGen v [Cmd 'New Int v] -> CmdGen v [Cmd 'New Int v]
     genN n gen = concat <$> replicateM n gen
-
--- | Variant of 'frequency' that allows for transformers of 'Gen'
-frequency' :: (MonadTrans t, Monad (t Gen)) => [(Int, t Gen a)] -> t Gen a
-frequency' [] = error "frequency' used with empty list"
-frequency' xs0 = lift (choose (1, tot)) >>= (`pick` xs0)
-  where
-    tot = sum (map fst xs0)
-
-    pick n ((k,x):xs)
-      | n <= k    = x
-      | otherwise = pick (n-k) xs
-    pick _ _  = error "pick used with empty list"
 
 genCmd :: (Eq v, Arbitrary v) => GenConfig -> CmdGen v (Cmd 'New Int v)
 genCmd conf = do
