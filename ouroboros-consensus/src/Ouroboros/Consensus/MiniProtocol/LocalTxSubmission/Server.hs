@@ -10,6 +10,7 @@ module Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server (
   ) where
 
 import           Control.Tracer
+import           Data.List.NonEmpty
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
@@ -32,7 +33,7 @@ localTxSubmissionServer tracer mempool =
     server = LocalTxSubmissionServer {
       recvMsgSubmitTx = \tx -> do
         traceWith tracer $ TraceReceivedTx tx
-        res <- addLocalTxs mempool [tx]
+        res <- addLocalTxs mempool (tx :| [])
         case res of
           [addTxRes] -> case addTxRes of
             MempoolTxAdded _tx             -> return (SubmitSuccess, server)

@@ -25,7 +25,7 @@ module Ouroboros.Consensus.NodeKernel (
   ) where
 
 
-
+import Control.Monad.Class.MonadTimer
 import           Control.DeepSeq (force)
 import           Control.Monad
 import           Control.Monad.Except
@@ -142,6 +142,7 @@ initNodeKernel
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
+       , MonadTimer m
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
@@ -202,6 +203,7 @@ initInternalState
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk
+       , MonadTimer m
        )
     => NodeKernelArgs m remotePeer localPeer blk
     -> m (InternalState m remotePeer localPeer blk)

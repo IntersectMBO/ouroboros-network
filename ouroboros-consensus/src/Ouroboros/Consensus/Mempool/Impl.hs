@@ -6,9 +6,13 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE BangPatterns #-}
 -- | Monadic side of the Mempool implementation.
 --
 -- Using the functions defined in Ouroboros.Consensus.Mempool.Impl.Pure,
@@ -29,8 +33,10 @@ module Ouroboros.Consensus.Mempool.Impl (
   , openMempoolWithoutSyncThread
   ) where
 
+import Control.Monad.Class.MonadTimer
+import Data.Foldable (foldl')
 import qualified Control.Exception as Exn
-import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)
+import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Except
 import           Data.Bifunctor (Bifunctor (second), bimap)
 import qualified Data.List.NonEmpty as NE
@@ -72,6 +78,7 @@ openMempool
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , HasTxId (GenTx blk)
+     , MonadTimer m
      )
   => ResourceRegistry m
   -> LedgerInterface m blk
@@ -83,6 +90,7 @@ openMempool
 openMempool registry ledger cfg capacityOverride tracer txSize = do
     env <- initMempoolEnv ledger cfg capacityOverride tracer txSize
     forkSyncStateOnTipPointChange registry env
+    void $ forkLinkedThread registry "Mempool.loopAddTxs" $ loopAddTxs registry env
     return $ mkMempool env
 
 -- | Unlike 'openMempool', this function does not fork a background thread
@@ -112,7 +120,9 @@ mkMempool ::
      )
   => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool mpEnv = Mempool
-    { tryAddTxs      = implTryAddTxs mpEnv
+    { pushTxs      = \txs -> atomically $ do
+        t' <- takeTMVar (mpEnvTxBuffer mpEnv)
+        putTMVar (mpEnvTxBuffer mpEnv) $ t' ++ [txs]
     , removeTxs      = \txids -> getStatePair mpEnv (StaticLeft ()) (NE.toList txids) [] >>= \case
         StaticLeft (_is, Nothing) ->
           error $  "Function 'getStatePair' violated its postcondition."
@@ -196,6 +206,7 @@ data MempoolEnv m blk = MempoolEnv {
     , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
     , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
     , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
+    , mpEnvTxBuffer         :: StrictTMVar m [TxsToAdd m blk]
     }
 
 initMempoolEnv :: ( IOLike m
@@ -213,10 +224,12 @@ initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ ledgerState <$> getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg $ ForgeInUnknownSlot $ unstowLedgerTables st
     isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
+    buf <- newTMVarIO []
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
       , mpEnvStateVar         = isVar
+      , mpEnvTxBuffer         = buf
       , mpEnvTracer           = tracer
       , mpEnvTxSize           = txSize
       , mpEnvCapacityOverride = capacityOverride
@@ -254,6 +267,67 @@ forkSyncStateOnTipPointChange registry menv =
           ledgerTipPoint (Proxy @blk) . ledgerState
       <$> getCurrentLedgerState (mpEnvLedger menv)
 
+-- | A recursive function that every 0.5 seconds or if the mempool would already
+-- fill up with the current data we have, tries to add pending transactions to
+-- the mempool, reporting back the results on a TMVar.
+loopAddTxs :: forall m blk.
+              ( IOLike m
+              , LedgerSupportsMempool blk
+              , LedgerSupportsProtocol blk
+              , HasTxId (GenTx blk)
+              , MonadTimer m
+              )
+           => ResourceRegistry m
+           -> MempoolEnv m blk
+           -> m ()
+loopAddTxs registry menv = do
+  let theTimer = do
+        t <- newTimeout 0.5
+        atomically (do
+                       _ <- awaitTimeout t
+                       readTMVar (mpEnvTxBuffer menv)
+                   )
+
+      theWatcher = atomically $ do
+        txs <- readTMVar (mpEnvTxBuffer menv)
+        st  <- readTMVar (mpEnvStateVar menv)
+
+        let capacity       = getMempoolCapacityBytes . isCapacity     $ st
+            currentSize    = msNumBytes . TxSeq.toMempoolSize . isTxs $ st
+            remainingCap   = capacity - currentSize
+            totalSizeToAdd = foldl' (\acc tx -> acc + mpEnvTxSize menv tx) 0 (concatMap (NE.toList . ttaTxs) txs)
+
+        -- The size of the current pending transactions is already bigger than
+        -- the remaining capacity and we have something meaningful to do, i.e.
+        -- at least one transaction can be added to the mempool.
+        check
+              (totalSizeToAdd > remainingCap && case txs of
+                  TxsToAdd{ ttaTxs = tx NE.:| _ }:_ -> mpEnvTxSize menv tx < remainingCap
+                  _ -> False
+              )
+
+        pure txs
+
+
+  txs <- either id id <$> race theTimer theWatcher
+
+  let go :: [TxsToAdd m blk] -> m ()
+      go = \case
+        [] -> return ()
+        tx@TxsToAdd{..}:more -> do
+          (added, toAdd) <- implTryAddTxs menv ttaWhetherToIntervene ttaTxs
+          atomically $ do putTMVar ttaWriteResultTo (Just added)
+          if null toAdd
+            then do
+              atomically $ putTMVar ttaWriteResultTo Nothing
+              go more
+            else
+              atomically . putTMVar (mpEnvTxBuffer menv) $ tx { ttaTxs = NE.fromList toAdd }:more
+
+  go txs
+
+  loopAddTxs registry menv
+
 -- | Add a list of transactions (oldest to newest) by interpreting a 'TryAddTxs'
 -- from 'pureTryAddTxs'.
 --
@@ -282,10 +356,12 @@ implTryAddTxs
      )
   => MempoolEnv m blk
   -> WhetherToIntervene
-  -> [GenTx blk]
+  -> NE.NonEmpty (GenTx blk)
   -> m ([MempoolAddTxResult blk], [GenTx blk])
-implTryAddTxs mpEnv wti =
-    go []
+implTryAddTxs mpEnv wti = \txs -> do
+  getStatePair mpEnv (StaticLeft ()) [] (NE.toList txs) >>= \case
+    StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
+    StaticLeft (is0,  Just ls) -> go ls is0 [] (NE.toList txs)
   where
     MempoolEnv {
         mpEnvCapacityOverride = capacityOverride
@@ -295,26 +371,22 @@ implTryAddTxs mpEnv wti =
       , mpEnvTxSize           = txSize
       } = mpEnv
 
-    -- TODO batch the txs
-    go acc = \case
+    go ls is0 acc = \case
       []     -> pure (reverse acc, [])
       tx:txs -> do
-        getStatePair mpEnv (StaticLeft ()) [] [tx] >>= \case
-          StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
-          StaticLeft (is0,  Just ls) -> do
-            let p@(NewSyncedState is1 _snapshot mTrace) =
-                  -- this is approximately a noop if the state is already in
-                  -- sync
-                  pureSyncWithLedger is0 (ledgerState ls) cfg capacityOverride
-            whenJust mTrace (traceWith trcr)
-            case pureTryAddTxs cfg txSize wti tx is1 of
-              NoSpaceLeft               -> do
-                void $ atomically $ runSyncWithLedger istate p
-                pure (reverse acc, tx:txs)
-              TryAddTxs mbIs2 result ev -> do
-                atomically $ putTMVar istate $ fromMaybe is1 mbIs2
-                traceWith trcr ev
-                go (result:acc) txs
+        let p@(NewSyncedState is1 _snapshot mTrace) =
+              -- this is approximately a noop if the state is already in
+              -- sync
+              pureSyncWithLedger is0 (ledgerState ls) cfg capacityOverride
+        whenJust mTrace (traceWith trcr)
+        case pureTryAddTxs cfg txSize wti tx is1 of
+          NoSpaceLeft               -> do
+            void $ atomically $ runSyncWithLedger istate p
+            pure (reverse acc, tx:txs)
+          TryAddTxs mbIs2 result ev -> do
+            atomically $ putTMVar istate $ fromMaybe is1 mbIs2
+            traceWith trcr ev
+            go ls is1 (result:acc) txs
 
 implSyncWithLedger ::
      forall m blk. (

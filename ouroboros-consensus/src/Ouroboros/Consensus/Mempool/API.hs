@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Mempool.API (
     -- * Mempool
     Mempool (..)
   , MempoolAddTxResult (..)
+  , TxsToAdd (..)
   , isMempoolTxAdded
   , isMempoolTxRejected
   , mempoolTxAddedToMaybe
@@ -143,11 +144,8 @@ data Mempool m blk idx = Mempool {
       -- an index of transaction hashes that have been included on the
       -- blockchain.
       --
-      tryAddTxs      :: WhetherToIntervene
-                     -> [GenTx blk]
-                     -> m ( [MempoolAddTxResult blk]
-                          , [GenTx blk]
-                          )
+      pushTxs      :: TxsToAdd m blk
+                   -> m ()
 
       -- | Manually remove the given transactions from the mempool.
     , removeTxs      :: NE.NonEmpty (GenTxId blk) -> m ()
@@ -258,7 +256,7 @@ addTxs
   => Mempool m blk idx
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
-addTxs mempool = addTxsHelper mempool DoNotIntervene
+addTxs mempool txs = maybe (pure []) (addTxsHelper mempool DoNotIntervene) (NE.nonEmpty txs)
 
 -- | Variation on 'addTxs' that is more forgiving when possible
 --
@@ -266,43 +264,36 @@ addTxs mempool = addTxsHelper mempool DoNotIntervene
 addLocalTxs
   :: forall m blk idx. MonadSTM m
   => Mempool m blk idx
-  -> [GenTx blk]
+  -> NE.NonEmpty (GenTx blk)
   -> m [MempoolAddTxResult blk]
 addLocalTxs mempool = addTxsHelper mempool Intervene
+
+data TxsToAdd m blk  = TxsToAdd
+  { ttaWhetherToIntervene :: WhetherToIntervene
+  , ttaTxs :: NE.NonEmpty (GenTx blk)
+  , ttaWriteResultTo :: StrictTMVar m (Maybe [MempoolAddTxResult blk])
+  }
 
 -- | See 'addTxs'
 addTxsHelper
   :: forall m blk idx. MonadSTM m
   => Mempool m blk idx
   -> WhetherToIntervene
-  -> [GenTx blk]
+  -> NE.NonEmpty (GenTx blk)
   -> m [MempoolAddTxResult blk]
 addTxsHelper mempool wti = \txs -> do
-    (processed, toAdd) <- tryAddTxs mempool wti txs
-    case toAdd of
-      [] -> return processed
-      _  -> go [processed] toAdd
+    t <- atomically newEmptyTMVar
+    pushTxs mempool $ TxsToAdd wti txs t
+    recurse t []
   where
-    go
-      :: [[MempoolAddTxResult blk]]
-         -- ^ The outer list is in reverse order, but all the inner lists will
-         -- be in the right order.
-      -> [GenTx blk]
-      -> m [MempoolAddTxResult blk]
-    go acc []         = return (concat (reverse acc))
-    go acc txs@(tx:_) = do
-      let firstTxSize = getTxSize mempool tx
-      -- Wait until there's at least room for the first transaction we're
-      -- trying to add, otherwise there's no point in trying to add it.
-      atomically $ do
-        curSize <- msNumBytes . snapshotMempoolSize <$> getSnapshot mempool
-        MempoolCapacityBytes capacity <- getCapacity mempool
-        check (curSize + firstTxSize <= capacity)
-      -- It is possible that between the check above and the call below, other
-      -- transactions are added, stealing our spot, but that's fine, we'll
-      -- just recurse again without progress.
-      (added, toAdd) <- tryAddTxs mempool wti txs
-      go (added:acc) toAdd
+    recurse :: StrictTMVar m (Maybe [MempoolAddTxResult blk])
+            -> [MempoolAddTxResult blk]
+            -> m [MempoolAddTxResult blk]
+    recurse placeHolder acc = do
+      res <- atomically $ takeTMVar placeHolder
+      case res of
+        Nothing -> return acc
+        Just res' -> recurse placeHolder (acc++res')
 
 {-------------------------------------------------------------------------------
   Ledger state considered for forging
