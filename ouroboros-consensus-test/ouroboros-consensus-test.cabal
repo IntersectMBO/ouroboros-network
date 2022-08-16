@@ -36,6 +36,7 @@ library
 
                        Test.Util.Blob
                        Test.Util.BoolProps
+                       Test.Util.ChainDB
                        Test.Util.ChainUpdates
                        Test.Util.ChunkInfo
                        Test.Util.Classify
