@@ -32,6 +32,8 @@ module Test.Ouroboros.Storage.LedgerDB.OnDisk (
 
 import           Prelude hiding (elem)
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept)
@@ -313,8 +315,9 @@ instance SufficientSerializationForAnyBackingStore (LedgerState TestBlock) where
   codecLedgerTables = TokenToTValue $ CodecMK toCBOR toCBOR fromCBOR fromCBOR
 
 instance Serialise (LedgerTables (LedgerState TestBlock) EmptyMK) where
-  encode TokenToTValue {testUtxtokTable} = toCBOR testUtxtokTable
-  decode = fmap TokenToTValue fromCBOR
+  encode (TokenToTValue (_ :: EmptyMK Token TValue))
+         = CBOR.encodeNull
+  decode = TokenToTValue ApplyEmptyMK <$ CBOR.decodeNull
 
 instance ToCBOR Token where
   toCBOR (Token pt) = S.encode pt
