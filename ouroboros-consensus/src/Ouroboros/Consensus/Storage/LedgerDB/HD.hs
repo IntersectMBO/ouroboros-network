@@ -47,10 +47,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD (
   , SudMeasure (..)
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
-import           Data.Foldable (toList)
 import           Data.Map (Map)
 import qualified Data.Map.Merge.Strict as MapMerge
 import qualified Data.Map.Strict as Map
@@ -114,43 +111,13 @@ mapUtxoValues f (UtxoValues vs) = UtxoValues $ Map.map f vs
 newtype UtxoDiff k v = UtxoDiff (Map k (UtxoEntryDiff v))
   deriving (Eq, Generic, NoThunks, Show)
 
-instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (UtxoDiff k v) where
-  toCBOR (UtxoDiff m) = versionZeroProductToCBOR [toCBOR m]
-
-instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (UtxoDiff k v) where
-  fromCBOR = versionZeroProductFromCBOR "UtxoDiff" 1 $ UtxoDiff <$> fromCBOR
-
 -- | The key's value and how it changed
 data UtxoEntryDiff v = UtxoEntryDiff !v !UtxoEntryDiffState
   deriving (Eq, Generic, NoThunks, Show)
 
-instance ToCBOR v => ToCBOR (UtxoEntryDiff v) where
-  toCBOR (UtxoEntryDiff v diffstate) =
-      versionZeroProductToCBOR [toCBOR v, toCBOR diffstate]
-
-instance FromCBOR v => FromCBOR (UtxoEntryDiff v) where
-  fromCBOR =
-        versionZeroProductFromCBOR "UtxoEntryDiff" 2
-      $ UtxoEntryDiff <$> fromCBOR <*> fromCBOR
-
 -- | Whether an entry was deleted, inserted, or inserted-and-then-deleted
 data UtxoEntryDiffState = UedsDel | UedsIns | UedsInsAndDel
   deriving (Eq, Generic, NoThunks, Show)
-
-instance ToCBOR UtxoEntryDiffState where
-  toCBOR = (CBOR.encodeListLen 1 <>) . \case
-    UedsDel       -> CBOR.encodeWord 0
-    UedsIns       -> CBOR.encodeWord 1
-    UedsInsAndDel -> CBOR.encodeWord 2
-
-instance FromCBOR UtxoEntryDiffState where
-  fromCBOR = do
-      CBOR.decodeListLenOf 1
-      CBOR.decodeWord >>= \case
-        0 -> pure UedsDel
-        1 -> pure UedsIns
-        2 -> pure UedsInsAndDel
-        o -> fail $ "UtxoEntryDiffState unknown tag: " <> show o
 
 -- | Assumes the colliding value is equivalent, since UTxO map is functional
 --
@@ -203,12 +170,6 @@ differenceUtxoValues (UtxoValues m1) (UtxoValues m2) =
 -- | Just the keys
 newtype UtxoKeys k v = UtxoKeys (Set k)
   deriving (Eq, Generic, NoThunks, Show)
-
-instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (UtxoKeys k v) where
-  toCBOR (UtxoKeys m) = versionZeroProductToCBOR [toCBOR m]
-
-instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (UtxoKeys k v) where
-  fromCBOR = versionZeroProductFromCBOR "UtxoKeys" 1 $ UtxoKeys <$> fromCBOR
 
 instance Ord k => Monoid (UtxoKeys k v) where
   mempty = UtxoKeys Set.empty
@@ -287,14 +248,6 @@ newtype SeqUtxoDiff k v =
     SeqUtxoDiff (StrictFingerTree (SudMeasure k v) (SudElement k v))
   deriving (Eq, Generic, NoThunks, Show)
 
-instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SeqUtxoDiff k v) where
-  toCBOR (SeqUtxoDiff ft) = versionZeroProductToCBOR [toCBOR (toList ft)]
-
-instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SeqUtxoDiff k v) where
-  fromCBOR =
-        versionZeroProductFromCBOR "SeqUtxoDiff" 1
-      $ (SeqUtxoDiff . FT.fromList) <$> fromCBOR
-
 -- TODO no Semigroup instance just because I don't think we need it
 
 emptySeqUtxoDiff :: Ord k => SeqUtxoDiff k v
@@ -310,25 +263,6 @@ data SudMeasure k v =
       {-# UNPACK #-} !SlotNo   -- ^ rightmost, ie maximum
                      !(UtxoDiff k v)   -- ^ cumulative diff
   deriving (Eq, Generic, Show)
-
-instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SudMeasure k v) where
-  toCBOR = \case
-    SudMeasureNothing             -> CBOR.encodeListLen 1 <> CBOR.encodeWord 0
-    SudMeasureJust size slot diff ->
-         CBOR.encodeListLen 4
-      <> CBOR.encodeWord 1
-      <> toCBOR size
-      <> toCBOR slot
-      <> toCBOR diff
-
-instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SudMeasure k v) where
-  fromCBOR = do
-      len <- CBOR.decodeListLen
-      tag <- CBOR.decodeWord
-      case (len, tag) of
-        (1, 0) -> pure SudMeasureNothing
-        (4, 1) -> SudMeasureJust <$> fromCBOR <*> fromCBOR <*> fromCBOR
-        o      -> fail $ "SudMeasure unknown len and tag: " <> show o
 
 sizeSudMeasure :: SudMeasure k v -> Int
 sizeSudMeasure = \case
@@ -356,14 +290,6 @@ instance Ord k => Semigroup (SudMeasure k v) where
 -- | An element of the sequence
 data SudElement k v = SudElement {-# UNPACK #-} !SlotNo !(UtxoDiff k v)
   deriving (Eq, Generic, NoThunks, Show)
-
-instance (Ord k, ToCBOR k, ToCBOR v) => ToCBOR (SudElement k v) where
-  toCBOR (SudElement slot diff) = versionZeroProductToCBOR [toCBOR slot, toCBOR diff]
-
-instance (Ord k, FromCBOR k, FromCBOR v) => FromCBOR (SudElement k v) where
-  fromCBOR =
-        versionZeroProductFromCBOR "SudElement" 1
-      $ SudElement <$> fromCBOR <*> fromCBOR
 
 instance
      Ord k
