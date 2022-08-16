@@ -158,7 +158,7 @@ data ChainDB m blk = ChainDB {
       --   (which does not correspond to an actual block)
       --
       -- * The volatile DB suffered some data loss
-      --   Typically (but not necessarily) the immutable DB will not be empty
+      --   Typically (but not necessarily) the volatile DB will not be empty
       --   and the anchor will be pointing to the tip of the immutable DB.
       --
       -- POSTCONDITION: The Chain DB will be able to switch to any fork starting
