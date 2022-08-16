@@ -210,6 +210,11 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
     -> BlockQuery (ShelleyBlock proto era)
                   (StakeSnapshots (EraCrypto era))
 
+  GetPoolDistr
+    :: Maybe (Set (SL.KeyHash 'SL.StakePool (EraCrypto era)))
+    -> BlockQuery (ShelleyBlock proto era)
+                  (SL.PoolDistr (EraCrypto era))
+
   -- WARNING: please add new queries to the end of the list and stick to this
   -- order in all other pattern matches on queries. This helps in particular
   -- with the en/decoders, as we want the CBOR tags to be ordered.
@@ -330,6 +335,12 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
                 , ssSetTotal       = getAllStake _pstakeSet
                 , ssGoTotal        = getAllStake _pstakeGo
                 }
+        GetPoolDistr mPoolIds ->
+          let poolDistr = SL.calculatePoolDistr . SL._pstakeSet . SL.esSnapshots $ getEpochState st in
+          case mPoolIds of
+            Just poolIds -> SL.PoolDistr $ Map.restrictKeys (SL.unPoolDistr poolDistr) poolIds
+            Nothing -> poolDistr
+
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -451,6 +462,13 @@ instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
     = Nothing
   sameDepIndex (GetStakeSnapshots _) _
     = Nothing
+  sameDepIndex (GetPoolDistr poolids) (GetPoolDistr poolids')
+    | poolids == poolids'
+    = Just Refl
+    | otherwise
+    = Nothing
+  sameDepIndex (GetPoolDistr _) _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock proto era) result)
 deriving instance Show (BlockQuery (ShelleyBlock proto era) result)
@@ -478,6 +496,7 @@ instance ShelleyCompatible proto era => ShowQuery (BlockQuery (ShelleyBlock prot
       GetRewardInfoPools                         -> show
       GetPoolState {}                            -> show
       GetStakeSnapshots {}                       -> show
+      GetPoolDistr {}                            -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) result -> ShelleyNodeToClientVersion -> Bool
@@ -503,6 +522,7 @@ querySupportedVersion = \case
     GetRewardInfoPools                         -> (>= v5)
     GetPoolState {}                            -> (>= v6)
     GetStakeSnapshots {}                       -> (>= v6)
+    GetPoolDistr {}                            -> (>= v6)
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -592,6 +612,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 19 <> toCBOR poolids
     GetStakeSnapshots poolId ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 20 <> toCBOR poolId
+    GetPoolDistr poolids ->
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 21 <> toCBOR poolids
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -621,6 +643,7 @@ decodeShelleyQuery = do
       (1, 18) -> return $ SomeSecond GetRewardInfoPools
       (2, 19) -> SomeSecond . GetPoolState <$> fromCBOR
       (2, 20) -> SomeSecond . GetStakeSnapshots <$> fromCBOR
+      (2, 21) -> SomeSecond . GetPoolDistr <$> fromCBOR
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -650,6 +673,7 @@ encodeShelleyResult query = case query of
     GetRewardInfoPools                         -> toCBOR
     GetPoolState {}                            -> toCBOR
     GetStakeSnapshots {}                       -> toCBOR
+    GetPoolDistr {}                            -> toCBOR
 
 decodeShelleyResult ::
      ShelleyCompatible proto era
@@ -677,6 +701,7 @@ decodeShelleyResult query = case query of
     GetRewardInfoPools                         -> fromCBOR
     GetPoolState {}                            -> fromCBOR
     GetStakeSnapshots {}                       -> fromCBOR
+    GetPoolDistr {}                            -> fromCBOR
 
 -- | The stake snapshot returns information about the mark, set, go ledger snapshots for a pool,
 -- plus the total active stake for each snapshot that can be used in a 'sigma' calculation.
