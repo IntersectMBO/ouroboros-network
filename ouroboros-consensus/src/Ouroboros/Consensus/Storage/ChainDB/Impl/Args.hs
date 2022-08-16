@@ -49,7 +49,11 @@ data ChainDbArgs f m blk = ChainDbArgs {
 
       -- Policy
     , cdbImmutableDbValidation  :: ImmutableDB.ValidationPolicy
+    -- ^ Which chunks of the ImmutableDB to validate on opening: all chunks, or
+    -- only the most recent chunk?
     , cdbVolatileDbValidation   :: VolatileDB.BlockValidationPolicy
+    -- ^ Should the parser for the VolatileDB fail when it encounters a
+    -- corrupt/invalid block?
     , cdbMaxBlocksPerFile       :: VolatileDB.BlocksPerFile
     , cdbDiskPolicy             :: LgrDB.DiskPolicy
 
@@ -57,6 +61,9 @@ data ChainDbArgs f m blk = ChainDbArgs {
     , cdbTopLevelConfig         :: HKD f (TopLevelConfig blk)
     , cdbChunkInfo              :: HKD f ChunkInfo
     , cdbCheckIntegrity         :: HKD f (blk -> Bool)
+    -- ^ Predicate to check for integrity of
+    -- 'Ouroboros.Consensus.Storage.Common.GetVerifiedBlock' components when
+    -- extracting them from both the VolatileDB and the ImmutableDB.
     , cdbGenesis                :: HKD f (m (ExtLedgerState blk))
     , cdbCheckInFuture          :: HKD f (CheckInFuture m blk)
     , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
