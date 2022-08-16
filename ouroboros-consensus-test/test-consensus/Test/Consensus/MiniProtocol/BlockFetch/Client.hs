@@ -37,6 +37,7 @@ import           Network.TypedProtocol.Codec (AnyMessageAndAgency (..))
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
+import           Test.Util.ChainDB
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -63,23 +64,11 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..),
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Fragment.InFuture
-                     (CheckInFuture (CheckInFuture))
-import           Ouroboros.Consensus.Fragment.Validated
-                     (ValidatedFragment (validatedFragment))
-import           Ouroboros.Consensus.HardFork.History.EraParams
-                     (EraParams (eraEpochSize))
 import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface as BlockFetchClientInterface
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDBImpl
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (SomeHasFS))
-import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (SnapshotInterval (DefaultSnapshotInterval),
-                     defaultDiskPolicy)
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -87,8 +76,6 @@ import           Ouroboros.Consensus.Util.STM (blockUntilJust,
                      forkLinkedWatcher)
 
 import           Test.Util.ChainUpdates
-import qualified Test.Util.FS.Sim.MockFS as MockFS
-import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.LogicalClock (Tick (..))
 import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.Orphans.IOLike ()
@@ -252,27 +239,16 @@ runBlockFetchTest BlockFetchClientTestSetup{..} = withRegistry \registry -> do
       -> m (BlockFetchClientInterface.ChainDbView m TestBlock)
     mkChainDbView registry tracer = do
         chainDbArgs <- do
-          cdbHasFSImmutableDB <- mockedHasFS
-          cdbHasFSVolatileDB  <- mockedHasFS
-          cdbHasFSLgrDB       <- mockedHasFS
-          let cdbImmutableDbValidation  = ImmutableDB.ValidateAllChunks
-              cdbVolatileDbValidation   = VolatileDB.ValidateAll
-              cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-              cdbDiskPolicy             =
-                defaultDiskPolicy securityParam DefaultSnapshotInterval
-              cdbTopLevelConfig         = topLevelConfig
-              cdbChunkInfo              = ImmutableDB.simpleChunkInfo epochSize
-              cdbCheckIntegrity _blk    = True
-              cdbGenesis                = pure testInitExtLedger
-              cdbCheckInFuture          = CheckInFuture checkInFuture
-              cdbImmutableDbCacheConfig = ImmutableDB.CacheConfig 2 60
-              cdbTraceLedger            = nullTracer
-              cdbRegistry               = registry
-              cdbBlocksToAddSize        = 1
-              -- not relevant for this test
-              cdbGcDelay                = 1
-              cdbGcInterval             = 1
-          pure ChainDbArgs {..}
+          nodeDBs <- emptyNodeDBs
+          let args = fromMinimalChainDbArgs $ MinimalChainDbArgs {
+                  mcdbTopLevelConfig = topLevelConfig
+                , mcdbChunkInfo = mkTestChunkInfo topLevelConfig
+                , mcdbInitLedger = testInitExtLedger
+                , mcdbRegistry = registry
+                , mcdbNodeDBs = nodeDBs
+                }
+          -- TODO: Test with more interesting behaviour for cdbCheckInFuture
+          pure $ args { cdbTracer = cdbTracer }
         (_, (chainDB, ChainDBImpl.Internal{intAddBlockRunner})) <-
           allocate
             registry
@@ -292,17 +268,12 @@ runBlockFetchTest BlockFetchClientTestSetup{..} = withRegistry \registry -> do
         -- switching to any chain is never too deep.
         securityParam  = SecurityParam 1000
         topLevelConfig = singleNodeTestConfigWithK securityParam
-        epochSize      = eraEpochSize $ topLevelConfigLedger topLevelConfig
-
-        mockedHasFS = SomeHasFS . simHasFS <$> newTVarIO MockFS.empty
 
         cdbTracer = Tracer \case
             ChainDBImpl.TraceAddBlockEvent ev ->
               traceWith tracer $ "ChainDB: " <> show ev
             _ -> pure ()
 
-        -- TODO generate more interesting behavior here
-        checkInFuture vf = pure (validatedFragment vf, [])
 
     mkTestBlockFetchConsensusInterface ::
          STM m (Map PeerId (AnchoredFragment (Header TestBlock)))

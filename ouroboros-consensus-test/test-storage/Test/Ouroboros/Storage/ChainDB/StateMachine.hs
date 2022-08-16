@@ -55,6 +55,8 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, localOption, testGroup)
 import           Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
 
+import           Test.Util.ChainDB
+
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
@@ -86,15 +88,9 @@ import           Ouroboros.Consensus.Storage.ChainDB hiding
                      (TraceFollowerEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
-import           Ouroboros.Consensus.Storage.ImmutableDB
-                     (ValidationPolicy (ValidateAllChunks))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -110,7 +106,6 @@ import           Test.Util.ChunkInfo
 import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
@@ -1490,12 +1485,9 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
       (tracer, getTrace) <- recordingTracerIORef
       varCurSlot         <- uncheckedNewTVarM 0
       varNextId          <- uncheckedNewTVarM 0
-      fsVars@(_, varVolatileDbFs, _) <- (,,)
-        <$> uncheckedNewTVarM Mock.empty
-        <*> uncheckedNewTVarM Mock.empty
-        <*> uncheckedNewTVarM Mock.empty
-      let args = mkArgs testCfg maxClockSkew chunkInfo testInitExtLedger tracer
-            threadRegistry varCurSlot fsVars
+      nodeDBs            <- emptyNodeDBs
+      let args = mkArgs testCfg chunkInfo testInitExtLedger threadRegistry nodeDBs tracer
+                   maxClockSkew varCurSlot
 
       (hist, model, res, trace) <- bracket
         (open args >>= newMVar)
@@ -1510,7 +1502,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
                 , registry = iteratorRegistry
                 , varCurSlot
                 , varNextId
-                , varVolatileDbFs
+                , varVolatileDbFs = nodeDBsVol nodeDBs
                 , args
                 }
               sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger maxClockSkew
@@ -1532,14 +1524,9 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
       closeRegistry iteratorRegistry
 
       -- Read the final MockFS of each database
-      let (immutableDbFsVar, volatileDbFsVar, lgrDbFsVar) = fsVars
-      fses <- atomically $ (,,)
-        <$> readTVar immutableDbFsVar
-        <*> readTVar volatileDbFsVar
-        <*> readTVar lgrDbFsVar
-
-      let modelChain = Model.currentChain $ dbModel model
-          (immutableDbFs, volatileDbFs, lgrDbFs) = fses
+      fses <- atomically $ traverse readTVar nodeDBs
+      let
+          modelChain = Model.currentChain $ dbModel model
           prop =
             counterexample ("Model chain: " <> condense modelChain)      $
             counterexample ("TraceEvents: " <> unlines (map show trace)) $
@@ -1548,11 +1535,11 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
             res === Ok .&&.
             prop_trace trace .&&.
             counterexample "ImmutableDB is leaking file handles"
-                           (Mock.numOpenHandles immutableDbFs === 0) .&&.
+                           (Mock.numOpenHandles (nodeDBsImm fses) === 0) .&&.
             counterexample "VolatileDB is leaking file handles"
-                           (Mock.numOpenHandles volatileDbFs === 0) .&&.
+                           (Mock.numOpenHandles (nodeDBsVol fses) === 0) .&&.
             counterexample "LedgerDB is leaking file handles"
-                           (Mock.numOpenHandles lgrDbFs === 0) .&&.
+                           (Mock.numOpenHandles (nodeDBsLgr fses) === 0) .&&.
             counterexample "There were registered clean-up actions"
                            (remainingCleanups === 0)
       return (hist, prop)
@@ -1620,47 +1607,27 @@ traceEventName = \case
 
 mkArgs :: IOLike m
        => TopLevelConfig Blk
-       -> MaxClockSkew
        -> ImmutableDB.ChunkInfo
        -> ExtLedgerState Blk
-       -> Tracer m (TraceEvent Blk)
        -> ResourceRegistry m
+       -> NodeDBs (StrictTVar m MockFS)
+       -> Tracer m (TraceEvent Blk)
+       -> MaxClockSkew
        -> StrictTVar m SlotNo
-       -> (StrictTVar m MockFS, StrictTVar m MockFS, StrictTVar m MockFS)
-          -- ^ ImmutableDB, VolatileDB, LedgerDB
        -> ChainDbArgs Identity m Blk
-mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varCurSlot
-       (immutableDbFsVar, volatileDbFsVar, lgrDbFsVar) = ChainDbArgs
-    { -- HasFS instances
-      cdbHasFSImmutableDB      = SomeHasFS $ simHasFS immutableDbFsVar
-    , cdbHasFSVolatileDB       = SomeHasFS $ simHasFS volatileDbFsVar
-    , cdbHasFSLgrDB            = SomeHasFS $ simHasFS lgrDbFsVar
-
-      -- Policy
-    , cdbImmutableDbValidation  = ValidateAllChunks
-    , cdbVolatileDbValidation   = VolatileDB.ValidateAll
-    , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-    , cdbDiskPolicy             = defaultDiskPolicy (configSecurityParam cfg) DefaultSnapshotInterval
-
-      -- Integration
-    , cdbTopLevelConfig         = cfg
-    , cdbChunkInfo              = chunkInfo
-    , cdbCheckIntegrity         = testBlockIsValid
-    , cdbGenesis                = return initLedger
-    , cdbCheckInFuture          = InFuture.miracle
-                                    (readTVar varCurSlot)
-                                    maxClockSkew
-    , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
-
-    -- Misc
-    , cdbTracer                 = tracer
-    , cdbTraceLedger            = nullTracer
-    , cdbRegistry               = registry
-    , cdbBlocksToAddSize        = 2
-      -- We don't run the background threads, so these are not used
-    , cdbGcDelay                = 1
-    , cdbGcInterval             = 1
-    }
+mkArgs cfg chunkInfo initLedger registry nodeDBs tracer (MaxClockSkew maxClockSkew) varCurSlot =
+  let args = fromMinimalChainDbArgs MinimalChainDbArgs {
+            mcdbTopLevelConfig = cfg
+          , mcdbChunkInfo = chunkInfo
+          , mcdbInitLedger = initLedger
+          , mcdbRegistry = registry
+          , mcdbNodeDBs = nodeDBs
+          }
+  in args { cdbCheckInFuture = InFuture.miracle (readTVar varCurSlot) maxClockSkew
+          , cdbCheckIntegrity = testBlockIsValid
+          , cdbBlocksToAddSize = 2
+          , cdbTracer = tracer
+          }
 
 tests :: TestTree
 tests = testGroup "ChainDB q-s-m"
