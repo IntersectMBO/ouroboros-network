@@ -132,13 +132,10 @@ module Ouroboros.Consensus.Ledger.Basics (
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
-import           Control.Monad (when)
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
 import qualified Data.Map as Map
 import           Data.Monoid (Sum (..))
-import           Data.Typeable (Typeable)
-import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
@@ -845,61 +842,6 @@ instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind' mk k v) wher
     ApplyQuerySomeMK ks     -> [noThunks ctxt ks]
 
   showTypeOf _ = "ApplyMapKind"
-
-instance
-     (Typeable mk, Ord k, ToCBOR k, ToCBOR v, SingI mk)
-  => ToCBOR (ApplyMapKind' mk k v) where
-  toCBOR = \case
-      ApplyEmptyMK            -> encodeArityAndTag 0 []
-      ApplyKeysMK ks          -> encodeArityAndTag 1 [toCBOR ks]
-      ApplyValuesMK vs        -> encodeArityAndTag 2 [toCBOR vs]
-      ApplyTrackingMK vs diff -> encodeArityAndTag 3 [toCBOR vs, toCBOR diff]
-      ApplyDiffMK diff        -> encodeArityAndTag 4 [toCBOR diff]
-      ApplySeqDiffMK diffs    -> encodeArityAndTag 5 [toCBOR diffs]
-      ApplyQueryAllMK         -> encodeArityAndTag 7 []
-      ApplyQuerySomeMK ks     -> encodeArityAndTag 7 [toCBOR ks]
-    where
-      encodeArityAndTag :: Word8 -> [CBOR.Encoding] -> CBOR.Encoding
-      encodeArityAndTag tag xs =
-           CBOR.encodeListLen (1 + toEnum (length xs))
-        <> CBOR.encodeWord8 tag
-        <> mconcat xs
-
-instance
-     (Typeable mk, Ord k, FromCBOR k, FromCBOR v, SingI mk)
-  => FromCBOR (ApplyMapKind' mk k v) where
-  fromCBOR = do
-    case smk of
-      SEmptyMK    -> decodeArityAndTag 0 0 *> (ApplyEmptyMK    <$  pure ())
-      SKeysMK     -> decodeArityAndTag 1 1 *> (ApplyKeysMK     <$> fromCBOR)
-      SValuesMK   -> decodeArityAndTag 1 2 *> (ApplyValuesMK   <$> fromCBOR)
-      STrackingMK -> decodeArityAndTag 2 3 *> (ApplyTrackingMK <$> fromCBOR <*> fromCBOR)
-      SDiffMK     -> decodeArityAndTag 1 4 *> (ApplyDiffMK     <$> fromCBOR)
-      SSeqDiffMK  -> decodeArityAndTag 1 5 *> (ApplySeqDiffMK  <$> fromCBOR)
-      SQueryMK    -> do
-        len <- CBOR.decodeListLen
-        tag <- CBOR.decodeWord8
-        case (len, tag) of
-          (2, 7) -> pure ApplyQueryAllMK
-          (3, 8) -> ApplyQuerySomeMK <$> fromCBOR
-          o      -> fail $ "decode @ApplyMapKind SQueryMK, " <> show o
-    where
-      smk = sMapKind @(ApplyMapKind' mk)
-
-      decodeArityAndTag :: Int -> Word8 -> CBOR.Decoder s ()
-      decodeArityAndTag len tag = do
-        len' <- CBOR.decodeListLen
-        tag' <- CBOR.decodeWord8
-        -- @len@ here ought to match the @length xs@ in @encodeArityAndTag@ in
-        -- the corresponding 'ToCBOR' instance, so we need to add one in order
-        -- to match the length recorded in the CBOR stream (ie @len'@)
-        --
-        -- This use of 'when' corresponds to the use of 'decodeListLenOf'
-        -- throughout most of our CBOR decoders: it catches encoder/decoder
-        -- mismatches.
-        when
-          (1 + len /= len' || tag /= tag')
-          (fail $ "decode @ApplyMapKind " <> show (smk, len, tag, len', tag'))
 
 showsApplyMapKind :: (Show k, Show v) => ApplyMapKind' mk k v -> ShowS
 showsApplyMapKind = \case
