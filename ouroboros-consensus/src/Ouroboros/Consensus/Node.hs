@@ -67,6 +67,7 @@ import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import qualified Ouroboros.Network.Diffusion as Diffusion
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
 import qualified Ouroboros.Network.Diffusion.P2P as P2P
+import qualified Ouroboros.Network.Diffusion.Policies as Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (ConnectionId, LocalAddress,
                      LocalSocket, NodeToClientVersionData (..), combineVersions,
@@ -77,7 +78,7 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode (..),
                      defaultMiniProtocolParameters)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..),
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
                      newPeerMetric, reportMetric)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 import           Ouroboros.Network.RethrowPolicy
@@ -347,7 +348,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
         nodeKernel <- initNodeKernel nodeKernelArgs
         rnNodeKernelHook registry nodeKernel
 
-        peerMetrics <- newPeerMetric
+        peerMetrics <- newPeerMetric Diffusion.peerMetricsConfiguration
         let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
             ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
             (apps, appsExtra) = mkDiffusionApplications
@@ -389,7 +390,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           (NTN.defaultCodecs codecConfig version)
           NTN.byteLimits
           llrnChainSyncTimeout
-          (reportMetric peerMetrics)
+          (reportMetric Diffusion.peerMetricsConfiguration peerMetrics)
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps

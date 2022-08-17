@@ -95,7 +95,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      PeerSelectionCounters (..), TracePeerSelection (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), withPeerStateActions)
@@ -231,6 +231,20 @@ data ArgumentsExtra m = ArgumentsExtra {
       -- is using @TIME_WAIT@.
       --
     , daTimeWaitTimeout :: DiffTime
+
+      -- | Churn interval between churn events in deadline mode.  A small fuzz
+      -- is added (max 10 minutes) so that not all nodes churn at the same time.
+      --
+      -- By default it is set to 3300 seconds.
+      --
+    , daDeadlineChurnInterval :: DiffTime
+
+      -- | Churn interval between churn events in bulk sync mode.  A small fuzz
+      -- is added (max 1 minute) so that not all nodes churn at the same time.
+      --
+      -- By default it is set to 300 seconds.
+      --
+    , daBulkChurnInterval :: DiffTime
     }
 
 --
@@ -606,6 +620,8 @@ runM Interfaces
        , daReadUseLedgerAfter
        , daProtocolIdleTimeout
        , daTimeWaitTimeout
+       , daDeadlineChurnInterval
+       , daBulkChurnInterval
        }
      Applications
        { daApplicationInitiatorMode
@@ -879,6 +895,8 @@ runM Interfaces
                           Async.withAsync
                           (Governor.peerChurnGovernor
                             dtTracePeerSelectionTracer
+                            daDeadlineChurnInterval
+                            daBulkChurnInterval
                             daPeerMetrics
                             churnModeVar
                             churnRng
@@ -1026,6 +1044,8 @@ runM Interfaces
                                   Async.withAsync
                                     (Governor.peerChurnGovernor
                                       dtTracePeerSelectionTracer
+                                      daDeadlineChurnInterval
+                                      daBulkChurnInterval
                                       daPeerMetrics
                                       churnModeVar
                                       churnRng

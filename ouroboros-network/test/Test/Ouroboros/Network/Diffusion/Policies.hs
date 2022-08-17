@@ -153,16 +153,14 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     let rng = mkStdGen seed
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
-    hVar <- newTVarIO apaHeaderMetric
-    fVar <- newTVarIO apaFetchedMetric
-
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     let policies = simplePeerSelectionPolicy
                         rngVar
                         (readTVar cmVar)
                         metrics
                         (ReconnectDelay 10)
-        metrics = PeerMetrics hVar fVar
     picked <- atomically $ policyPickHotPeersToDemote policies
                   (const PeerSourceLocalRoot)
                   peerConnectFailCount
@@ -185,11 +183,11 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     noneWorse metrics pickedSet = do
         scores <- atomically $ case apaChurnMode of
                       ChurnModeNormal -> do
-                          hup <- upstreamyness <$> getHeaderMetrics metrics
-                          bup <- fetchynessBlocks <$> getFetchedMetrics metrics
+                          hup <- upstreamyness metrics
+                          bup <- fetchynessBlocks metrics
                           return $ Map.unionWith (+) hup bup
-                      ChurnModeBulkSync -> fetchynessBytes <$>
-                          getFetchedMetrics metrics
+                      ChurnModeBulkSync ->
+                          fetchynessBytes metrics
         let (picked, notPicked) = Map.partitionWithKey fn scores
             maxPicked = maximum $ Map.elems picked
             minNotPicked = minimum $ Map.elems notPicked
@@ -209,7 +207,7 @@ prop_randomDemotion :: ArbitraryPolicyArguments
 prop_randomDemotion args seed = runSimOrThrow $ prop_randomDemotionM args seed
 
 
--- Verifies that Tepid (formely hot) or failing peers are more likely to get
+-- Verifies that Tepid (formerly hot) or failing peers are more likely to get
 -- demoted/forgotten.
 prop_randomDemotionM :: forall m.
                         ( MonadSTM m
@@ -222,16 +220,14 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
     let rng = mkStdGen seed
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
-    hVar <- newTVarIO apaHeaderMetric
-    fVar <- newTVarIO apaFetchedMetric
-
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     let policies = simplePeerSelectionPolicy
                         rngVar
                         (readTVar cmVar)
                         metrics
                         (ReconnectDelay 10)
-        metrics = PeerMetrics hVar fVar
     doDemotion numberOfTries policies Map.empty
 
 
