@@ -65,9 +65,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
-import qualified Cardano.Ledger.Era as Core
+import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.Constraints as SL (makeTxOut)
 import qualified Cardano.Ledger.Shelley.LedgerState as SL
                      (incrementalStakeDistr, updateStakeDistribution)
 import           Cardano.Ledger.Val (coin, inject, (<->))
@@ -471,7 +470,7 @@ registerInitialFunds initialFunds nes = nes {
           (txIn, txOut)
         | (addr, amount) <- Map.toList initialFunds
         ,  let txIn  = SL.initialFundsPseudoTxIn addr
-               txOut = SL.makeTxOut (Proxy @era) addr (inject amount)
+               txOut = Core.mkBasicTxOut addr (inject amount)
         ]
 
     utxo' = mergeUtxoNoOverlap utxo initialFundsUtxo

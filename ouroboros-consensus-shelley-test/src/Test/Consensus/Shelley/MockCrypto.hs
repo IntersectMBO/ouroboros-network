@@ -22,7 +22,6 @@ import           Cardano.Crypto.VRF (MockVRF)
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.Tx as SL (ValidateScript)
 import qualified Cardano.Protocol.TPraos.API as SL
 import           Control.State.Transition.Extended (PredicateFailure)
 
@@ -65,7 +64,7 @@ type CanMock proto era =
   , LedgerSupportsProtocol (ShelleyBlock proto era)
   , SL.Mock (EraCrypto era)
   , Praos.PraosCrypto (EraCrypto era)
-  , SL.ValidateScript era
+  , Core.EraTx era
   , Arbitrary (Core.AuxiliaryData era)
   , Arbitrary (Core.PParams era)
   , Arbitrary (Core.Script era)
@@ -73,7 +72,7 @@ type CanMock proto era =
   , Arbitrary (Core.Tx era)
   , Arbitrary (Core.TxOut era)
   , Arbitrary (Core.Value era)
-  , Arbitrary (PredicateFailure (SL.UTXOW era))
+  , Arbitrary (PredicateFailure (SL.ShelleyUTXOW era))
   , Arbitrary (Core.Witnesses era)
   , Arbitrary (StashedAVVMAddresses era)
   )

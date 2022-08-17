@@ -76,14 +76,13 @@ import           Test.Util.Time (dawnOfTime)
 import           Cardano.Ledger.BaseTypes (boundRational)
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
-import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import qualified Cardano.Ledger.Keys
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.PParams as SL (emptyPParams,
-                     emptyPParamsUpdate)
+import qualified Cardano.Ledger.Shelley.PParams as SL (ShelleyPParamsUpdate,
+                     emptyPParams, emptyPParamsUpdate)
 import qualified Cardano.Ledger.Shelley.Tx as SL (WitnessSetHKD (..))
 import qualified Cardano.Ledger.Shelley.UTxO as SL (makeWitnessesVKey)
 import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
@@ -333,7 +332,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       where
         nbCoreNodes = fromIntegral (length coreNodes)
 
-    pparams :: SL.PParams era
+    pparams :: SL.ShelleyPParams era
     pparams = SL.emptyPParams
       { SL._d               =
           unsafeBoundRational (decentralizationParamToRational d)
@@ -449,7 +448,7 @@ mkSetDecentralizationParamTxs ::
 mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
-    SL.Tx
+    SL.ShelleyTx
       { body            = body
       , wits            = witnessSet
       , auxiliaryData   = SL.SNothing
@@ -477,8 +476,8 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 
     -- Nothing but the parameter update and the obligatory touching of an
     -- input.
-    body :: SL.TxBody (ShelleyEra c)
-    body = SL.TxBody
+    body :: Core.TxBody (ShelleyEra c)
+    body = SL.ShelleyTxBody
       { _certs    = Seq.empty
       , _inputs   = Set.singleton (fst touchCoins)
       , _mdHash   = SL.SNothing
@@ -494,12 +493,12 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     -- We use the input of the first node, but we just put it all right back.
     --
     -- ASSUMPTION: This transaction runs in the first slot.
-    touchCoins :: (SL.TxIn c, SL.TxOut (ShelleyEra c))
+    touchCoins :: (SL.TxIn c, Core.TxOut (ShelleyEra c))
     touchCoins = case coreNodes of
         []   -> error "no nodes!"
         cn:_ ->
             ( SL.initialFundsPseudoTxIn addr
-            , SL.TxOut addr coin
+            , SL.ShelleyTxOut addr coin
             )
           where
             addr = SL.Addr networkId
@@ -563,10 +562,10 @@ networkId = SL.Testnet
 mkMASetDecentralizationParamTxs ::
      forall proto era.
      ( ShelleyBasedEra era
-     , Core.Tx era ~ SL.Tx era
-     , Core.TxBody era ~ MA.TxBody era
-     , Core.PParams era ~ SL.PParams era
-     , Core.PParamsDelta era ~ SL.PParams' SL.StrictMaybe era
+     , MA.ShelleyMAEraTxBody era
+     , Core.Tx era ~ SL.ShelleyTx era
+     , Core.TxBody era ~ MA.MATxBody era
+     , Core.PParamsUpdate era ~ SL.ShelleyPParamsUpdate era
      , Core.Witnesses era ~ SL.WitnessSet era
      )
   => [CoreNode (Core.Crypto era)]
@@ -577,7 +576,7 @@ mkMASetDecentralizationParamTxs ::
 mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
-    SL.Tx
+    SL.ShelleyTx
       { body          = body
       , wits          = witnessSet
       , auxiliaryData = SL.SNothing
@@ -605,8 +604,8 @@ mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
 
     -- Nothing but the parameter update and the obligatory touching of an
     -- input.
-    body :: MA.TxBody era
-    body = MA.TxBody
+    body :: MA.MATxBody era
+    body = MA.MATxBody
         inputs
         outputs
         certs
@@ -635,12 +634,12 @@ mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
     -- We use the input of the first node, but we just put it all right back.
     --
     -- ASSUMPTION: This transaction runs in the first slot.
-    touchCoins :: (SL.TxIn (Core.Crypto era), SL.TxOut era)
+    touchCoins :: (SL.TxIn (Core.Crypto era), SL.ShelleyTxOut era)
     touchCoins = case coreNodes of
         []   -> error "no nodes!"
         cn:_ ->
             ( SL.initialFundsPseudoTxIn addr
-            , SL.TxOut addr coin
+            , SL.ShelleyTxOut addr coin
             )
           where
             addr = SL.Addr networkId

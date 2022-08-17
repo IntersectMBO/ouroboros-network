@@ -44,39 +44,32 @@ import           GHC.Records
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
 
-import           Cardano.Binary (Annotator, FromCBOR, ToCBOR)
-
+import           Cardano.Binary (FromCBOR, ToCBOR)
 import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Alonzo (AlonzoEra)
 import           Cardano.Ledger.Alonzo.PParams
-import qualified Cardano.Ledger.Alonzo.Rules.Utxo as Alonzo
-import qualified Cardano.Ledger.Alonzo.Rules.Utxos as Alonzo
-import qualified Cardano.Ledger.Alonzo.Rules.Utxow as Alonzo
+import qualified Cardano.Ledger.Alonzo.Rules as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import           Cardano.Ledger.Babbage (BabbageEra)
-import           Cardano.Ledger.Babbage.PParams (PParams' (..))
-import qualified Cardano.Ledger.Babbage.Rules.Utxo as Babbage
-import qualified Cardano.Ledger.Babbage.Rules.Utxow as Babbage
+import           Cardano.Ledger.Babbage.PParams (BabbagePParamsHKD (..))
+import qualified Cardano.Ledger.Babbage.Rules as Babbage
 import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
-import qualified Cardano.Ledger.Core as Core
+import           Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)
-import           Cardano.Ledger.Era (Crypto, SupportsSegWit (..))
-import qualified Cardano.Ledger.Era as Core
-import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (DSignable, Hash)
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
-import           Cardano.Ledger.Serialization
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.LedgerState as SL
 import qualified Cardano.Ledger.Shelley.Rules.Ledger as SL
 import qualified Cardano.Ledger.Shelley.Rules.Utxow as SL
 import           Cardano.Ledger.ShelleyMA ()
 import qualified Cardano.Protocol.TPraos.API as SL
-import           Control.State.Transition (State)
+import           Control.State.Transition (PredicateFailure, State)
 import           Data.Data (Proxy (Proxy))
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
@@ -115,9 +108,8 @@ type EraCrypto era = Crypto era
   Era polymorphism
 -------------------------------------------------------------------------------}
 
--- | The ledger already defines 'SL.ShelleyBasedEra' as /the/ top-level
--- constraint on an era, however, consensus often needs some more functionality
--- than the ledger currently provides.
+-- | Consensus often needs some more functionality than the ledger currently
+-- provides.
 --
 -- Either the functionality shouldn't or can't live in the ledger, in which case
 -- it can be part and remain part of 'ShelleyBasedEra'. Or, the functionality
@@ -125,15 +117,17 @@ type EraCrypto era = Crypto era
 -- hasn't yet been propagated to this repository, in which case it can be added
 -- to this class until that is the case.
 --
--- By having the same name as the class defined in ledger, we can, if this class
--- becomes redundant, switch to the ledger-defined one without having to update
--- all the code using it. We can just export the right one from this module.
+-- If this class becomes redundant, We can move it to ledger and re-export it
+-- from here.
 --
 -- TODO Currently we include some constraints on the update state which are
 -- needed to determine the hard fork point. In the future this should be
 -- replaced with an appropriate API - see
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
-class ( SL.ShelleyBasedEra era
+class ( Core.EraSegWits era
+      , SL.ApplyTx era
+      , SL.ApplyBlock era
+      , SL.CanStartFromGenesis era
 
         -- TODO This constraint is quite tight, since it fixes things to the
         -- original TPraos ledger view. We would like to ultimately remove it.
@@ -150,13 +144,7 @@ class ( SL.ShelleyBasedEra era
       , HasField "_rho" (Core.PParams era) UnitInterval
       , HasField "_tau" (Core.PParams era) UnitInterval
 
-      , Core.ValidateScript era
-
-      , FromCBOR (Core.PParams era)
-      , ToCBOR (Core.PParams era)
-
-      , HasField "_protocolVersion" (Core.PParamsDelta era) (SL.StrictMaybe SL.ProtVer)
-      , FromCBOR (Core.PParamsDelta era)
+      , HasField "_protocolVersion" (Core.PParamsUpdate era) (SL.StrictMaybe SL.ProtVer)
 
         -- TODO This constraint is a little weird. The translation context
         -- reflects things needed in comparison to the previous era, whereas the
@@ -164,16 +152,22 @@ class ( SL.ShelleyBasedEra era
         -- this and potentially add a new API for dealing with the relationship
         -- between `GenesisConfig` and `TranslationContext`.
       , SL.AdditionalGenesisConfig era ~ Core.TranslationContext era
-      , ToCBORGroup (TxSeq era)
 
+      , NoThunks (SL.StashedAVVMAddresses era)
+      , FromCBOR (SL.StashedAVVMAddresses era)
+      , ToCBOR (SL.StashedAVVMAddresses era)
+      , Show (SL.StashedAVVMAddresses era)
+      , Eq (SL.StashedAVVMAddresses era)
+
+      , FromCBOR (PredicateFailure (EraRule "DELEGS" era))
+      , ToCBOR (PredicateFailure (EraRule "DELEGS" era))
+      , FromCBOR (PredicateFailure (EraRule "UTXOW" era))
+      , ToCBOR (PredicateFailure (EraRule "UTXOW" era))
+
+      , DSignable (EraCrypto era) (Hash (EraCrypto era) EraIndependentTxBody)
+      , NoThunks (PredicateFailure (Core.EraRule "BBODY" era))
       , NoThunks (Core.TranslationContext era)
-
-      , FromCBOR (Annotator (Core.Witnesses era))
-      , ToCBOR (Core.Witnesses era)
-
-      , Eq (TxSeq era)
-      , Show (TxSeq era)
-      , FromCBOR (Annotator (TxSeq era))
+      , NoThunks (Core.Value era)
 
       ) => ShelleyBasedEra era where
 
@@ -183,13 +177,13 @@ class ( SL.ShelleyBasedEra era
 
   applyShelleyBasedTx ::
        SL.Globals
-    -> SL.LedgerEnv    era
-    -> SL.MempoolState era
+    -> SL.LedgerEnv era
+    -> SL.LedgerState era
     -> WhetherToIntervene
-    -> Core.Tx           era
+    -> Core.Tx era
     -> Except
          (SL.ApplyTxError era)
-         ( SL.MempoolState era
+         ( SL.LedgerState era
          , SL.Validated (Core.Tx era)
          )
 
@@ -198,13 +192,13 @@ class ( SL.ShelleyBasedEra era
 defaultApplyShelleyBasedTx ::
      ShelleyBasedEra era
   => SL.Globals
-  -> SL.LedgerEnv    era
-  -> SL.MempoolState era
+  -> SL.LedgerEnv era
+  -> SL.LedgerState era
   -> WhetherToIntervene
-  -> Core.Tx         era
+  -> Core.Tx era
   -> Except
        (SL.ApplyTxError era)
-       ( SL.MempoolState era
+       ( SL.LedgerState era
        , SL.Validated (Core.Tx era)
        )
 defaultApplyShelleyBasedTx globals ledgerEnv mempoolState _wti tx =
@@ -245,17 +239,17 @@ instance (Praos.PraosCrypto c) => ShelleyBasedEra (BabbageEra c) where
 applyAlonzoBasedTx :: forall era.
   ( ShelleyBasedEra era,
     SupportsTwoPhaseValidation era,
-    Core.Tx era ~ Alonzo.ValidatedTx era
+    Core.Tx era ~ Alonzo.AlonzoTx era
   ) =>
   Globals ->
   SL.LedgerEnv era ->
   SL.LedgerState era ->
   WhetherToIntervene ->
-  Alonzo.ValidatedTx era ->
+  Alonzo.AlonzoTx era ->
   Except
     (SL.ApplyTxError era)
     ( SL.LedgerState era,
-      SL.Validated (Alonzo.ValidatedTx era)
+      SL.Validated (Alonzo.AlonzoTx era)
     )
 applyAlonzoBasedTx globals ledgerEnv mempoolState wti tx = do
       (mempoolState', vtx) <-
@@ -305,7 +299,7 @@ class SupportsTwoPhaseValidation era where
 instance SupportsTwoPhaseValidation (AlonzoEra c) where
   incorrectClaimedFlag _ pf = case pf of
     SL.UtxowFailure
-      ( Alonzo.WrappedShelleyEraFailure
+      ( Alonzo.ShelleyInAlonzoUtxowPredFailure
           ( SL.UtxoFailure
               ( Alonzo.UtxosFailure
                   ( Alonzo.ValidationTagMismatch
@@ -321,10 +315,10 @@ instance SupportsTwoPhaseValidation (AlonzoEra c) where
 instance SupportsTwoPhaseValidation (BabbageEra c) where
   incorrectClaimedFlag _ pf = case pf of
     SL.UtxowFailure
-      ( Babbage.FromAlonzoUtxowFail
-          ( Alonzo.WrappedShelleyEraFailure
+      ( Babbage.AlonzoInBabbageUtxowPredFailure
+          ( Alonzo.ShelleyInAlonzoUtxowPredFailure
               ( SL.UtxoFailure
-                  ( Babbage.FromAlonzoUtxoFail
+                  ( Babbage.AlonzoInBabbageUtxoPredFailure
                       ( Alonzo.UtxosFailure
                           ( Alonzo.ValidationTagMismatch
                               (Alonzo.IsValid claimedFlag)
@@ -363,11 +357,11 @@ data UnexpectedAlonzoLedgerErrors =
 newtype WrapTx era = WrapTx {unwrapTx :: Core.Tx era}
 
 instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) WrapTx where
-  type TranslationError (AllegraEra c) WrapTx = Core.TranslationError (AllegraEra c) SL.Tx
+  type TranslationError (AllegraEra c) WrapTx = Core.TranslationError (AllegraEra c) SL.ShelleyTx
   translateEra ctxt = fmap WrapTx . Core.translateEra ctxt . unwrapTx
 
 instance ShelleyBasedEra (MaryEra c) => Core.TranslateEra (MaryEra c) WrapTx where
-  type TranslationError (MaryEra c) WrapTx = Core.TranslationError (MaryEra c) SL.Tx
+  type TranslationError (MaryEra c) WrapTx = Core.TranslationError (MaryEra c) SL.ShelleyTx
   translateEra ctxt = fmap WrapTx . Core.translateEra ctxt . unwrapTx
 
 instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) WrapTx where
