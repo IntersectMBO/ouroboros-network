@@ -13,10 +13,22 @@ module Data.Map.Diff.Strict (
     Diff (..)
   , DiffEntry (..)
   , DiffHistory (..)
-  , length
+    -- * Construction
+  , diff
   , singletonDelete
   , singletonInsert
+    -- * Utility
+  , length
   , splitAt
+    -- * Values and keys
+  , Keys (..)
+  , Values (..)
+  , diffKeys
+  , restrictValues
+  , valuesFromList
+    -- * Forwarding keys and values
+  , forwardValues
+  , forwardValuesAndKeys
   ) where
 
 import           Prelude hiding (length, splitAt)
@@ -25,9 +37,13 @@ import           Data.Bifunctor
 import           Data.Group
 import qualified Data.Map.Merge.Strict as Merge
 import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
 
 {------------------------------------------------------------------------------
@@ -36,7 +52,7 @@ import           NoThunks.Class (NoThunks)
 
 -- | A diff for key-value stores.
 newtype Diff k v = Diff (Map k (DiffHistory v))
-  deriving stock (Generic, Show, Eq)
+  deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
 
 -- | A history of changes to a value in a key-value store.
@@ -46,7 +62,7 @@ newtype Diff k v = Diff (Map k (DiffHistory v))
 -- /earliest/ change, while the right-most element in the history is the
 -- /latest/ change.
 newtype DiffHistory v = DiffHistory (Seq (DiffEntry v))
-  deriving stock (Generic, Show, Eq)
+  deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
 
 -- | A change to a value in a key-value store.
@@ -60,6 +76,15 @@ data DiffEntry v = Insert !v | Delete !v
 {------------------------------------------------------------------------------
   Construction
 ------------------------------------------------------------------------------}
+
+diff :: Ord k => Map k v -> Map k v -> Diff k v
+diff m1 m2 = Diff $
+  Merge.merge
+    (Merge.mapMissing $ \_k v -> singletonDelete v)
+    (Merge.mapMissing $ \_k v -> singletonInsert v)
+    (Merge.zipWithMaybeMatched $ \ _k _v1 v2 -> Just $ singletonInsert v2)
+    m1
+    m2
 
 singleton :: DiffEntry v -> DiffHistory v
 singleton = DiffHistory . Seq.singleton
@@ -172,3 +197,61 @@ length (DiffHistory s) = Seq.length s
 
 splitAt :: Int -> DiffHistory v -> (DiffHistory v, DiffHistory v)
 splitAt n (DiffHistory s) = bimap DiffHistory DiffHistory $ Seq.splitAt n s
+
+{------------------------------------------------------------------------------
+  Values and keys
+------------------------------------------------------------------------------}
+
+-- | A key-value store.
+newtype Values k v = Values (Map k v)
+  deriving stock (Generic, Show, Eq, Functor)
+  deriving anyclass (NoThunks)
+
+newtype Keys k v = Keys (Set k)
+  deriving stock (Generic, Show, Eq, Functor)
+  deriving anyclass (NoThunks)
+
+valuesFromList :: Ord k => [(k, v)] -> Values k v
+valuesFromList = Values . Map.fromList
+
+diffKeys :: Diff k v -> Set k
+diffKeys (Diff m) = Map.keysSet m
+
+restrictValues :: Ord k => Values k v -> Keys k v -> Values k v
+restrictValues (Values m) (Keys s) = Values (Map.restrictKeys m s)
+
+{------------------------------------------------------------------------------
+  Forwarding values and keys
+------------------------------------------------------------------------------}
+
+forwardValues :: (Ord k, HasCallStack) => Values k v -> Diff k v -> Values k v
+forwardValues (Values values) (Diff diffs) = Values $
+    Merge.merge
+      Merge.preserveMissing
+      (Merge.mapMaybeMissing     newKeys)
+      (Merge.zipWithMaybeMatched oldKeys)
+      values
+      diffs
+  where
+    newKeys :: k -> DiffHistory v -> Maybe v
+    newKeys _k (DiffHistory Empty)       = error "impossible"
+    newKeys _k (DiffHistory (_es :|> e)) = case e of
+      Insert x  -> Just x
+      Delete _x -> Nothing
+
+    oldKeys :: k -> v -> DiffHistory v -> Maybe v
+    oldKeys _k _v1 (DiffHistory Empty)       = error "impossible"
+    oldKeys _k _v1 (DiffHistory (_es :|> e)) = case e of
+      Insert x  -> Just x
+      Delete _x -> Nothing
+
+forwardValuesAndKeys ::
+     (Ord k, HasCallStack)
+  => Values k v
+  -> Keys k v
+  -> Diff k v
+  -> Values k v
+forwardValuesAndKeys v@(Values values) (Keys keys) (Diff diffs) =
+  forwardValues
+    v
+    (Diff $ diffs `Map.restrictKeys` (Map.keysSet values `Set.union` keys))

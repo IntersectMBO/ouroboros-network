@@ -81,8 +81,6 @@ import qualified Data.Map.Diff.Strict as MapDiff
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as TT
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore as TS
 
 import           Test.Util.Orphans.Isomorphism (Isomorphism (..), from, inside)
 import           Test.Util.Orphans.NFData ()
@@ -246,16 +244,16 @@ instance Comparable Legacy where
   forward vs ks ds = HD.forwardValuesAndKeys vs ks (HD.cumulativeDiffSeqUtxoDiff ds)
 
 instance Comparable New where
-  type DiffSeq New k v = DS.DiffSeq TS.UTxO k v
-  type Diff New k v    = TT.TableDiff TS.UTxO k v
-  type Values New k v  = TT.TableValues TS.UTxO k v
-  type Keys New k v    = TT.TableKeys TS.UTxO k v
+  type DiffSeq New k v = DS.DiffSeq k v
+  type Diff New k v    = MapDiff.Diff k v
+  type Values New k v  = MapDiff.Values k v
+  type Keys New k v    = MapDiff.Keys k v
   type SlotNo New      = DS.SlotNo
 
   push ds slot d   = DS.extend' ds (DS.Element slot d)
   flush            = DS.splitAt
   rollback         = DS.splitAtFromEnd
-  forward vs ks ds = TT.forwardValuesAndKeys vs ks (DS.cumulativeDiff ds)
+  forward vs ks ds = MapDiff.forwardValuesAndKeys vs ks (DS.cumulativeDiff ds)
 
 {-------------------------------------------------------------------------------
   Command generator: Configuration
@@ -324,16 +322,16 @@ defaultGenConfig = GenConfig {
 
 -- | Model for keeping track of state during generation of the command sequence.
 data Model k v = Model {
-    diffs         :: DS.DiffSeq 'TS.UTxO k v     -- ^ The current diff sequence
-  , tip           :: Int                         -- ^ The tip of the diff
-                                                 --   sequence
-  , backingValues :: TT.TableValues 'TS.UTxO k v -- ^ Values that have been
-                                                 --   flushed to a backing store
-  , keyCounter    :: Int                         -- ^ A counter used to generate
-                                                 --   unique keys
-  , nrGenerated   :: Int                         -- ^ A counter for the number
-                                                 --   of commands generated
-                                                 --   up until now
+    diffs         :: DS.DiffSeq k v     -- ^ The current diff sequence
+  , tip           :: Int                -- ^ The tip of the diff
+                                        --   sequence
+  , backingValues :: MapDiff.Values k v -- ^ Values that have been
+                                        --   flushed to a backing store
+  , keyCounter    :: Int                -- ^ A counter used to generate
+                                        --   unique keys
+  , nrGenerated   :: Int                -- ^ A counter for the number
+                                        --   of commands generated
+                                        --   up until now
   }
   deriving stock Generic
   deriving anyclass NFData
@@ -341,7 +339,7 @@ data Model k v = Model {
 genInitialModel :: (Eq v, Arbitrary v) => GenConfig -> Gen (Model Int v)
 genInitialModel GenConfig{nrInitialValues} = do
     kvs <- mapM genKeyValue [0 .. nrInitialValues - 1]
-    pure $ Model mempty 0 (TT.valuesFromList kvs) nrInitialValues 0
+    pure $ Model mempty 0 (MapDiff.valuesFromList kvs) nrInitialValues 0
 
 genKeyValue :: Arbitrary v => k -> Gen (k, v)
 genKeyValue x = (x,) <$> arbitrary
@@ -486,7 +484,7 @@ genPush conf = do
   kc <- gets keyCounter
 
   let
-    _vs'@(TT.TableValues m) = TT.forwardValues vs (DS.cumulativeDiff ds)
+    _vs'@(MapDiff.Values m) = MapDiff.forwardValues vs (DS.cumulativeDiff ds)
 
   taken :: [(Int, v)] <-
     take nrToDelete <$> lift (shuffle (Map.toList m))
@@ -494,7 +492,7 @@ genPush conf = do
     lift $ mapM genKeyValue [kc .. kc + nrToInsert - 1]
 
   let
-    d = TT.TableDiff . MapDiff.Diff $
+    d = MapDiff.Diff $
          Map.fromList [(k, MapDiff.singletonDelete v) | (k,v) <- taken]
       <> Map.fromList [(k, MapDiff.singletonInsert v) | (k,v) <- made]
 
@@ -532,7 +530,7 @@ genFlush GenConfig{securityParameter = k} = do
 
   modify (\st -> st {
       diffs         = r
-    , backingValues = TT.forwardValues vs (DS.cumulativeDiff l)
+    , backingValues = MapDiff.forwardValues vs (DS.cumulativeDiff l)
     , nrGenerated = nrGenerated st + 1
     })
 
@@ -606,14 +604,14 @@ genForward conf = do
   bvs <- gets backingValues
 
   let
-    d              = DS.cumulativeDiff ds
-    TT.TableKeys s = TT.diffKeys d
+    d = DS.cumulativeDiff ds
+    s = MapDiff.diffKeys d
 
   ksList <- take nrToForward <$> lift (shuffle (toList s))
 
   let
-    ks = TT.TableKeys . Set.fromList $ ksList
-    vs = TT.restrictValues bvs ks
+    ks = MapDiff.Keys $ Set.fromList ksList
+    vs = MapDiff.restrictValues bvs ks
 
   modify (\st -> st{
       nrGenerated = nrGenerated st + 1
@@ -628,7 +626,7 @@ genForward conf = do
 -- | Sanity checks for interpretation as fold.
 sanityCheck ::
      ( Eq k, Eq v, Show k, Show v
-     , Isomorphism (DiffSeq i k v) (DS.DiffSeq 'TS.UTxO k v)
+     , Isomorphism (DiffSeq i k v) (DS.DiffSeq k v)
      )
   => Model k v
   -> [Cmd i k v]

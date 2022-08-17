@@ -1,12 +1,4 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-
-{-# OPTIONS_GHC -Wno-orphans #-}
-{-# OPTIONS_GHC -Wno-unused-foralls #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Test.Ouroboros.Storage.LedgerDB.HD.DiffSeq (tests) where
 
@@ -18,11 +10,10 @@ import           Test.Util.Laws
 import           Test.Util.Orphans.DiffSeq.Arbitrary ()
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ToStore
 
 -- | Testing @'Semigroup'@, @'Monoid'@ and @'Group'@ laws for the measures used
 -- in the diff sequence datatype.
-tests :: forall (ts :: ToStoreKind). TestTree
+tests :: TestTree
 tests = testGroup "DiffSeq" [
     testGroup "TopMeasure ts Int Int" [
         testSemigroupLaws p1
@@ -35,5 +26,5 @@ tests = testGroup "DiffSeq" [
       ]
   ]
     where
-      p1 = Proxy @(TopMeasure ts Int Int)
-      p2 = Proxy @(InternalMeasure ts Int Int)
+      p1 = Proxy @(TopMeasure Int Int)
+      p2 = Proxy @(InternalMeasure Int Int)

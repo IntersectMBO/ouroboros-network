@@ -10,7 +10,6 @@ import           Test.QuickCheck hiding (Fixed (..))
 
 import qualified Data.Map.Diff.Strict as MapDiff
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as TT
 
 import           Test.Util.Orphans.Slotting.Arbitrary ()
 
@@ -31,14 +30,11 @@ instance (Arbitrary v) => Arbitrary (MapDiff.DiffEntry v) where
 ------------------------------------------------------------------------------}
 
 instance (Ord k, Arbitrary k, Arbitrary v)
-      => Arbitrary (DS.TopMeasure ts k v) where
+      => Arbitrary (DS.TopMeasure k v) where
   arbitrary = DS.TopMeasure <$> arbitrary <*> arbitrary
 
-instance Arbitrary (DS.InternalMeasure ts k v) where
+instance Arbitrary (DS.InternalMeasure k v) where
   arbitrary = DS.InternalMeasure <$> arbitrary <*> arbitrary
-
-deriving newtype instance (Ord k, Arbitrary k, Arbitrary v)
-                       => Arbitrary (TT.TableDiff ts k v)
 
 deriving newtype instance Arbitrary DS.Length
 deriving newtype instance Arbitrary DS.SlotNo

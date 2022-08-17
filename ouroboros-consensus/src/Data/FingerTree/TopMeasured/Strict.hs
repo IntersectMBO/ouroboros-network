@@ -13,6 +13,7 @@ module Data.FingerTree.TopMeasured.Strict (
     StrictFingerTree
     -- * Measuring
   , Measured (..)
+  , SuperMeasured
   , TopMeasured (..)
     -- * Construction
   , fromList

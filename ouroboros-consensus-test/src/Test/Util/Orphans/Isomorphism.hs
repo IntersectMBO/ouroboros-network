@@ -21,7 +21,6 @@ import qualified Data.Map.Diff.Strict as MapDiff
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes as TT
 
 {------------------------------------------------------------------------------
   @'Isomorphism'@ class
@@ -59,21 +58,21 @@ instance (Isomorphism a c, Isomorphism b d) => Isomorphism (a, b) (c, d) where
   to (x, y) = (to x, to y)
 
 instance (Ord k, Eq v)
-      => Isomorphism (DS.DiffSeq ts k v) (HD.SeqUtxoDiff k v) where
-  to :: DS.DiffSeq ts k v -> HD.SeqUtxoDiff k v
+      => Isomorphism (DS.DiffSeq k v) (HD.SeqUtxoDiff k v) where
+  to :: DS.DiffSeq k v -> HD.SeqUtxoDiff k v
   to (DS.DiffSeq ft) = HD.SeqUtxoDiff . FT.fromList . map to' . toList $ ft
     where
       to' (DS.Element slot d)= HD.SudElement (to slot) (to d)
 
 instance (Ord k, Eq v)
-      => Isomorphism (HD.SeqUtxoDiff k v) (DS.DiffSeq ts k v) where
-  to :: HD.SeqUtxoDiff k v -> DS.DiffSeq ts k v
+      => Isomorphism (HD.SeqUtxoDiff k v) (DS.DiffSeq k v) where
+  to :: HD.SeqUtxoDiff k v -> DS.DiffSeq k v
   to (HD.SeqUtxoDiff ft) = DS.DiffSeq . TMFT.fromList . map to' . toList $ ft
     where
       to' (HD.SudElement slot d) = DS.Element (to slot) (to d)
 
-instance Isomorphism (TT.TableDiff ts k v) (HD.UtxoDiff k v) where
-  to (TT.TableDiff (MapDiff.Diff m)) = HD.UtxoDiff (fmap to' m)
+instance Isomorphism (MapDiff.Diff k v) (HD.UtxoDiff k v) where
+  to (MapDiff.Diff m) = HD.UtxoDiff (fmap to' m)
     where
       to' :: MapDiff.DiffHistory v -> HD.UtxoEntryDiff v
       to' = \case
@@ -87,9 +86,9 @@ instance Isomorphism (TT.TableDiff ts k v) (HD.UtxoDiff k v) where
         MapDiff.Insert v -> HD.UtxoEntryDiff v HD.UedsIns
         MapDiff.Delete v -> HD.UtxoEntryDiff v HD.UedsDel
 
-instance Isomorphism (HD.UtxoDiff k v) (TT.TableDiff ts k v) where
-  to :: HD.UtxoDiff k v -> TT.TableDiff ts k v
-  to (HD.UtxoDiff m) = TT.TableDiff . MapDiff.Diff $ fmap to' m
+instance Isomorphism (HD.UtxoDiff k v) (MapDiff.Diff k v) where
+  to :: HD.UtxoDiff k v -> MapDiff.Diff k v
+  to (HD.UtxoDiff m) = MapDiff.Diff $ fmap to' m
     where
       to' :: HD.UtxoEntryDiff v -> MapDiff.DiffHistory v
       to' (HD.UtxoEntryDiff v st) = case st of
@@ -100,21 +99,21 @@ instance Isomorphism (HD.UtxoDiff k v) (TT.TableDiff ts k v) where
         HD.UedsInsAndDel ->
           MapDiff.DiffHistory $ Seq.fromList [MapDiff.Insert v, MapDiff.Delete v]
 
-instance Isomorphism (TT.TableValues ts k v) (HD.UtxoValues k v) where
-  to :: TT.TableValues ts k v -> HD.UtxoValues k v
-  to (TT.TableValues m) = HD.UtxoValues m
+instance Isomorphism (MapDiff.Values k v) (HD.UtxoValues k v) where
+  to :: MapDiff.Values k v-> HD.UtxoValues k v
+  to (MapDiff.Values m) = HD.UtxoValues m
 
-instance Isomorphism (HD.UtxoValues k v) (TT.TableValues ts k v) where
-  to :: HD.UtxoValues k v -> TT.TableValues ts k v
-  to (HD.UtxoValues m) = TT.TableValues m
+instance Isomorphism (HD.UtxoValues k v) (MapDiff.Values k v) where
+  to :: HD.UtxoValues k v -> MapDiff.Values k v
+  to (HD.UtxoValues m) = MapDiff.Values m
 
-instance Isomorphism (TT.TableKeys ts k v) (HD.UtxoKeys k v) where
-  to :: TT.TableKeys ts k v -> HD.UtxoKeys k v
-  to (TT.TableKeys m) = HD.UtxoKeys m
+instance Isomorphism (MapDiff.Keys k v) (HD.UtxoKeys k v) where
+  to :: MapDiff.Keys k v -> HD.UtxoKeys k v
+  to (MapDiff.Keys m) = HD.UtxoKeys m
 
-instance Isomorphism (HD.UtxoKeys k v) (TT.TableKeys ts k v) where
-  to :: HD.UtxoKeys k v -> TT.TableKeys ts k v
-  to (HD.UtxoKeys m) = TT.TableKeys m
+instance Isomorphism (HD.UtxoKeys k v) (MapDiff.Keys k v) where
+  to :: HD.UtxoKeys k v -> MapDiff.Keys k v
+  to (HD.UtxoKeys m) = MapDiff.Keys m
 
 instance Isomorphism DS.SlotNo Block.SlotNo where
   to :: DS.SlotNo -> Block.SlotNo

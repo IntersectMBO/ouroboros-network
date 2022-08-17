@@ -13,7 +13,7 @@ import           Data.Foldable
 import qualified Data.FingerTree.Strict as FT
 import           Data.FingerTree.TopMeasured.Strict as TMFT
 import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
-                     DiffHistory (..))
+                     DiffHistory (..), Keys (..), Values (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      SudElement (..), SudMeasure (..), UtxoDiff (..),
                      UtxoEntryDiff (..), UtxoEntryDiffState (..), UtxoKeys (..),
@@ -21,9 +21,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq (..),
                      Element (..), InternalMeasure (..), Length (..),
                      SlotNo (..), TopMeasure (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.TableTypes
-                     (TableDiff (..), TableKeys (..), TableValues (..))
-
 
 -- | FIXME: We should verify that this instance is sufficient. Unfortunately,
 -- we can not automaticaly derive the @'NFData'@ instance, since the
@@ -61,15 +58,13 @@ deriving anyclass instance ( NFData vt, NFData vi, NFData a
 deriving anyclass instance NFData v => NFData (DiffEntry v)
 deriving newtype instance NFData v => NFData (DiffHistory v)
 deriving newtype instance (NFData k, NFData v) => NFData (Diff k v)
-
-deriving newtype instance (NFData k, NFData v) => NFData (TableDiff ts k v)
-deriving newtype instance NFData k => NFData (TableKeys ts k v)
-deriving newtype instance (NFData k, NFData v) => NFData (TableValues ts k v)
+deriving newtype instance NFData k => NFData (Keys k v)
+deriving newtype instance (NFData k, NFData v) => NFData (Values k v)
 
 deriving newtype instance NFData Length
 deriving newtype instance NFData SlotNo
 
-deriving anyclass instance (NFData k, NFData v) => NFData (TopMeasure ts k v)
-deriving anyclass instance (NFData k, NFData v) => NFData (InternalMeasure ts k v)
-deriving anyclass instance (NFData k, NFData v) => NFData (Element ts k v)
-deriving newtype instance (NFData k, NFData v) => NFData (DiffSeq ts k v)
+deriving anyclass instance (NFData k, NFData v) => NFData (TopMeasure k v)
+deriving anyclass instance (NFData k, NFData v) => NFData (InternalMeasure k v)
+deriving anyclass instance (NFData k, NFData v) => NFData (Element k v)
+deriving newtype instance (NFData k, NFData v) => NFData (DiffSeq k v)
