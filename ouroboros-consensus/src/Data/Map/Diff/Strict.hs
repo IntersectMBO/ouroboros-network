@@ -1,23 +1,27 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 
 module Data.Map.Diff.Strict (
     Diff (..)
   , DiffEntry (..)
   , DiffHistory (..)
+  , length
   , singletonDelete
   , singletonInsert
+  , splitAt
   ) where
 
+import           Prelude hiding (length, splitAt)
+
+import           Data.Bifunctor
 import           Data.Group
 import qualified Data.Map.Merge.Strict as Merge
 import           Data.Map.Strict (Map)
@@ -45,15 +49,6 @@ newtype DiffHistory v = DiffHistory (Seq (DiffEntry v))
   deriving stock (Generic, Show, Eq)
   deriving anyclass (NoThunks)
 
-singleton :: DiffEntry v -> DiffHistory v
-singleton = DiffHistory . Seq.singleton
-
-singletonInsert :: v -> DiffHistory v
-singletonInsert = singleton . Insert
-
-singletonDelete :: v -> DiffHistory v
-singletonDelete = singleton . Delete
-
 -- | A change to a value in a key-value store.
 --
 -- Note: updates are equivalent to inserts, since we consider them to
@@ -63,9 +58,24 @@ data DiffEntry v = Insert !v | Delete !v
   deriving anyclass (NoThunks)
 
 {------------------------------------------------------------------------------
+  Construction
+------------------------------------------------------------------------------}
+
+singleton :: DiffEntry v -> DiffHistory v
+singleton = DiffHistory . Seq.singleton
+
+singletonInsert :: v -> DiffHistory v
+singletonInsert = singleton . Insert
+
+singletonDelete :: v -> DiffHistory v
+singletonDelete = singleton . Delete
+
+{------------------------------------------------------------------------------
   Class instances for @'Diff'@
 ------------------------------------------------------------------------------}
 
+-- Note: The use of @'isNonEmptyHistory'@ prevents the merged @'Diff'@s from
+-- getting bloated with empty @'DiffHistory'@s.
 instance (Ord k, Eq v) => Semigroup (Diff k v) where
   Diff m1 <> Diff m2 = Diff $
     Merge.merge
@@ -87,6 +97,27 @@ instance (Ord k, Eq v) => Group (Diff k v) where
   Class instances for @'DiffHistory'@
 ------------------------------------------------------------------------------}
 
+-- | @h1 <> h2@ sums @h1@ and @h2@ by cancelling out as many consecutive diff
+-- entries as possible.
+--
+-- Diff entries that are each other's inverse can cancel out. In this case,
+-- both diff entries are removed the diff history.
+--
+-- Examples:
+-- > [Ins 1, Ins 2] <> [Del 2, Del 1]        = []
+-- > [Ins 1, Del 2] <> [Ins 2, Del 3]        = [Ins 1, Del 3]
+-- > [Ins 1, Del 1] <> []                    = [Ins 1, Del 1]
+--
+-- Note: The implementation does not make any assumptions about the inputs it is
+-- given, and the results it produces. Because of this, the resulting diff
+-- history can be nonsenical. To illustrate, consider example 2 given above:
+-- how could we expect to delete a value @3@ if we inserted a value @1@? As
+-- such, it is the using code's responsibility to ensure that the inputs given
+-- to the sum lead to sensible results.
+--
+-- Note: We do not cancel out consecutive elements in @h1@ and @h2@
+-- individually. It is only at the border between @h1@ and @h2@ that we cancel
+-- out elements (see the third example given above).
 instance Eq v => Semigroup (DiffHistory v) where
   DiffHistory s1 <> DiffHistory s2 = DiffHistory $ s1 `mappend'` s2
     where
@@ -100,7 +131,7 @@ instance Eq v => Semigroup (DiffHistory v) where
       mappend' xs ys                         = xs Seq.>< ys
 
 instance Eq v => Monoid (DiffHistory v) where
-  mempty = DiffHistory $ mempty
+  mempty = DiffHistory mempty
 
 instance Eq v => Group (DiffHistory v) where
   invert (DiffHistory s) = DiffHistory $ Seq.reverse . fmap invertDiffEntry $ s
@@ -119,7 +150,7 @@ isNonEmptyHistory h@(DiffHistory s)
   | Seq.null s = Nothing
   | otherwise  = Just h
 
--- | @`invertDiffEntry` e@ inverts a @'DiffEntry' e@ to its Anti- counterpart.
+-- | @`invertDiffEntry` e@ inverts a @'DiffEntry' e@ to its counterpart.
 --
 -- Note: We invert @DiffEntry@s, but it is not a @Group@: We do not have an
 -- identity element, so it is not a @Monoid@ or @Semigroup@.
@@ -135,3 +166,9 @@ invertDiffEntry = \case
 -- the second argument. That is, inversion should be invertible.
 areInverses :: Eq v => DiffEntry v -> DiffEntry v -> Bool
 areInverses e1 e2 = invertDiffEntry e1 == e2
+
+length :: DiffHistory v -> Int
+length (DiffHistory s) = Seq.length s
+
+splitAt :: Int -> DiffHistory v -> (DiffHistory v, DiffHistory v)
+splitAt n (DiffHistory s) = bimap DiffHistory DiffHistory $ Seq.splitAt n s

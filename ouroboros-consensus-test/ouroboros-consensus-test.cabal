@@ -258,6 +258,7 @@ test-suite test-storage
                      , contra-tracer
                      , directory
                      , generics-sop
+                     , groups
                      , hashable
                      , mtl
                      , nothunks
