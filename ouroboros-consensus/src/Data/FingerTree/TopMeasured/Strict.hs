@@ -6,22 +6,22 @@
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
 
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
-
+-- Note: Parts of the documentation are based on/are directly copied from
+-- documentation in the @Data.FingerTree.Strict@ module.
 module Data.FingerTree.TopMeasured.Strict (
+    -- * Strict finger trees with top-level measures
     StrictFingerTree
-    -- * Top-measuring
-  , InternalMeasured
+    -- * Measuring
   , Measured (..)
   , TopMeasured (..)
-  , measureInternal
-    -- * API
-  , empty
+    -- * Construction
+  , fromList
+  , (|>)
+    -- * Splitting
+  , split
+    -- * Maps
   , fmap'
   , fmap''
-  , fromList
-  , split
-  , (|>)
   ) where
 
 import           Data.Foldable
@@ -33,16 +33,13 @@ import           NoThunks.Class (NoThunks (..), noThunksInValues)
 import           Data.FingerTree.Strict (Measured)
 import qualified Data.FingerTree.Strict as FT
 
--- TODO(jdral): Should we force strictness anywhere? Or more generally, where
--- should we guide evaluation?
-
 {-------------------------------------------------------------------------------
   Strict finger trees with top-level measures
 -------------------------------------------------------------------------------}
 
 -- | A @StrictFingerTree@ with elements of type @a@, an internal measure
 -- of type @vi@, and a top-level measure of type @vt@.
-data StrictFingerTree vt vi a = StrictFingerTree  {
+data StrictFingerTree vt vi a = SFT {
     tm       :: vt
   , elements :: !(FT.StrictFingerTree vi a)
   }
@@ -52,28 +49,21 @@ instance Foldable (StrictFingerTree vt vi) where
   foldMap f = foldMap f . elements
 
 instance NoThunks a => NoThunks (StrictFingerTree vt vi a) where
-  showTypeOf _ = "Alt"
+  showTypeOf _ = "StrictFingerTree'"
   wNoThunks ctxt = noThunksInValues ctxt . toList
 
 instance (Semigroup vt, Measured vi a)
       => Semigroup (StrictFingerTree vt vi a) where
-  StrictFingerTree tm1 xs1 <> StrictFingerTree tm2 xs2 =
-    StrictFingerTree (tm1 <> tm2) (xs1 <> xs2)
+  SFT tm1 xs1 <> SFT tm2 xs2 = SFT (tm1 <> tm2) (xs1 <> xs2)
 
 instance (Monoid vt, Measured vi a) => Monoid (StrictFingerTree vt vi a) where
-  mempty = StrictFingerTree mempty mempty
+  mempty = SFT mempty mempty
 
 {-------------------------------------------------------------------------------
   Measuring
 -------------------------------------------------------------------------------}
 
--- | Internal measures are used by the internal @'StrictFingerTree'@.
-type InternalMeasured v a = Measured v a
-
-measureInternal :: Measured v a => a -> v
-measureInternal = FT.measure
-
--- | All values of type @Alt@ are internal-measured.
+-- | All @StrictFingerTree@s are internal-measured.
 instance Measured vi a => Measured vi (StrictFingerTree vt vi a) where
   measure = FT.measure . elements
 
@@ -89,76 +79,103 @@ instance Measured vi a => Measured vi (StrictFingerTree vt vi a) where
 class Group v => TopMeasured v a | a -> v where
   measureTop :: a -> v
 
--- | All values of type @Alt@ are top-measured.
+-- | All @StrictFingerTree@s are top-measured.
 instance TopMeasured vt a => TopMeasured vt (StrictFingerTree vt vi a) where
   measureTop = tm
 
--- | Wrapper for when we need both @TopMeasured@ and @InternalMeasured@
-type SuperMeasured vt vi a = (TopMeasured vt a, InternalMeasured vi a)
+-- | Conjunction of @TopMeasured@ and @InternalMeasured@ constraints.
+type SuperMeasured vt vi a = (TopMeasured vt a, Measured vi a)
 
 {-------------------------------------------------------------------------------
-  API
+  Construction
 -------------------------------------------------------------------------------}
 
 infixl 5 |>
 
+-- | /O(1)/. Add an element to the right end of a sequence.
+-- Mnemonic: a triangle with the single element at the pointy end.
 (|>) ::
-     SuperMeasured v0 v a
-  => StrictFingerTree v0 v a
+     SuperMeasured vt vi a
+  => StrictFingerTree vt vi a
   -> a
-  -> StrictFingerTree v0 v a
-StrictFingerTree v0 sft |> (!a) =
-  StrictFingerTree (v0 <> measureTop a) (sft FT.|> a)
+  -> StrictFingerTree vt vi a
+SFT vt sft |> (!a) = SFT (vt <> measureTop a) (sft FT.|> a)
 
-fromList :: SuperMeasured v0 v a => [a] -> StrictFingerTree v0 v a
-fromList !xs = StrictFingerTree (foldMap measureTop xs) (FT.fromList xs)
+-- | /O(n)/. Create a sequence from a finite list of elements.
+-- The opposite operation 'toList' is supplied by the 'Foldable' instance.
+fromList :: SuperMeasured vt vi a => [a] -> StrictFingerTree vt vi a
+fromList !xs = SFT (foldMap measureTop xs) (FT.fromList xs)
 
-empty :: SuperMeasured v0 v a => StrictFingerTree v0 v a
-empty = StrictFingerTree mempty mempty
+{-------------------------------------------------------------------------------
+  Splitting
+-------------------------------------------------------------------------------}
 
--- | Note: linear time reconstruction of @v02@ from @v01@.
-fmap' ::
-     ( SuperMeasured v01 v1 a1
-     , SuperMeasured v02 v2 a2
-     )
-  => (a1 -> a2)
-  -> StrictFingerTree v01 v1 a1
-  -> StrictFingerTree v02 v2 a2
-fmap' f (StrictFingerTree _ sft) = StrictFingerTree v0' sft'
-  where
-    sft' = FT.fmap' f sft
-    v0' = foldMap measureTop sft'
-
--- | Version of @fmap'@ that also requires function of top-level measure to
--- top-level measure.
-fmap'' ::
-     ( SuperMeasured v01 v1 a1
-     , SuperMeasured v02 v2 a2
-     )
-  => (a1 -> a2)
-  -> (v01 -> v02)
-  -> StrictFingerTree v01 v1 a1
-  -> StrictFingerTree v02 v2 a2
-fmap'' f g (StrictFingerTree v0 sft) = StrictFingerTree v0' sft'
-  where
-    sft' = FT.fmap' f sft
-    v0' = g v0
-
-
--- TODO: Choice of left- or right-Delta should depend on sizes.
+-- | /O(?)/. Split a sequence at a point where the predicate on the accumulated
+-- /internal/ measure of the prefix changes from 'False' to 'True'.
+--
+-- For predictable results, one should ensure that there is only one such
+-- point, i.e. that the predicate is /monotonic/.
+--
+-- TODO(jdral): Complexity analysis.
 split ::
-     SuperMeasured v0 v a
-  => (v -> Bool)
-  -> StrictFingerTree v0 v a
-  -> ( StrictFingerTree v0 v a
-     , StrictFingerTree v0 v a
+     SuperMeasured vt vi a
+  => (vi -> Bool)
+  -> StrictFingerTree vt vi a
+  -> ( StrictFingerTree vt vi a
+     , StrictFingerTree vt vi a
      )
-split p (StrictFingerTree v0 sft) =
-    ( StrictFingerTree v0Delta left
-    , StrictFingerTree (invert v0Delta <> v0) right
+split p (SFT vt sft) =
+    ( SFT vtDelta left
+    , SFT (invert vtDelta <> vt) right
     )
   where
-      (left, right) = FT.split p sft
-      -- TODO(jdral): Should we invert inside the definition of @v0Delta@ instead?
-      -- > @v0Delta = foldMap (invert . measureTop) left
-      v0Delta = foldMap measureTop left
+    -- TODO(jdral): There are two options for constructing the results from
+    -- @left@ and @right@ parts that are obtained here. Either we invert the
+    -- top-level measure of the @left@ part and use that in our construction,
+    -- or we invert the top-level measure of the @right@ part and use that in
+    -- our construction. The choice depends on the sizes of @left@ and
+    -- @right@. Should the @split@ function take this into account, or should
+    -- we introduce variants of the @split@ function?
+    (left, right) = FT.split p sft
+    -- TODO(jdral): Should we invert inside the definition of @vtDelta@
+    -- instead? Example:
+    -- > @vtDelta = foldMap (invert . measureTop) left
+    vtDelta = foldMap measureTop left
+
+{-------------------------------------------------------------------------------
+  Maps
+-------------------------------------------------------------------------------}
+
+-- | Like @'fmap'@, but with constraints on the element types.
+--
+-- Note: @vt2@ is reconstructed in time linear in the size of the finger tree.
+fmap' ::
+     ( SuperMeasured vt1 vi1 a1
+     , SuperMeasured vt2 vi2 a2
+     )
+  => (a1 -> a2)
+  -> StrictFingerTree vt1 vi1 a1
+  -> StrictFingerTree vt2 vi2 a2
+fmap' f (SFT _ sft) = SFT vt' sft'
+  where
+    sft' = FT.fmap' f sft
+    vt' = foldMap measureTop sft'
+
+-- | Like @'fmap''@, but without the linear-time reconstruction of the top-level
+-- measure.
+--
+-- Though similar to @'fmap''@, this function also requires a function parameter
+-- of top-level measures to top-level measures. This function ensures that we
+-- do not have to reconstruct @vt2@ from the elements of the finger tree.
+fmap'' ::
+     ( SuperMeasured vt1 vi1 a1
+     , SuperMeasured vt2 vi2 a2
+     )
+  => (a1 -> a2)
+  -> (vt1 -> vt2)
+  -> StrictFingerTree vt1 vi1 a1
+  -> StrictFingerTree vt2 vi2 a2
+fmap'' f g (SFT vt sft) = SFT vt' sft'
+  where
+    sft' = FT.fmap' f sft
+    vt' = g vt

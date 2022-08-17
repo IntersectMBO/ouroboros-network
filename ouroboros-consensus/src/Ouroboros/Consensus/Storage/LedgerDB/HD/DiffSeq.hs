@@ -162,7 +162,7 @@ type TM (ts :: ToStoreKind) k v =
 
 -- | Short-hand for @'InternalMeasured'@.
 type IM (ts :: ToStoreKind) k v =
-  InternalMeasured (InternalMeasure ts  k v) (Element ts k v)
+  Measured (InternalMeasure ts  k v) (Element ts k v)
 
 -- | Short-hand for @'SuperMeasured'@.
 type SM (ts :: ToStoreKind) k v =
@@ -237,7 +237,7 @@ maxSlot ::
   => DiffSeq ts k v
   -> Maybe Slot.SlotNo
 maxSlot (DiffSeq ft) =
-    unwrapInner $ getInternalMeasureSlot $ measureInternal ft
+    unwrapInner $ getInternalMeasureSlot $ measure ft
   where
     -- We care about /real/ slot numbers, so we should return a
     -- @'Slot.SlotNo'@.
