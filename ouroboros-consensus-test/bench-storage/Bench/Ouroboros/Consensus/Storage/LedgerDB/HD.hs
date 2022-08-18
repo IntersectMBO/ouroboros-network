@@ -69,7 +69,9 @@ import           Control.Monad (replicateM)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.State (StateT (..), gets, modify)
 import           Data.Foldable (toList)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           Test.QuickCheck hiding (Result)
@@ -126,7 +128,9 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
               inside interpretLegacy cmds
     ]]
   where
-    setup :: forall v. (Eq v, Arbitrary v) => IO ([Cmd New Int v], [Cmd Legacy Int v], Model Int v)
+    setup ::
+         forall v. (Eq v, Arbitrary v)
+      => IO ([Cmd New Int v], [Cmd Legacy Int v], Model Int v)
     setup = do
       (cmds, m) <- generate $ generator' defaultGenConfig
       pure (cmds, from cmds, m)
@@ -150,7 +154,8 @@ data Cmd (i :: Imp) k v =
   | Forward  (Values i k v)  (Keys i k v)
   deriving stock Generic
 
--- TODO: Add trace to custom instance that shows when forced, don't keep in benchmark code.
+-- TODO: Add trace to custom instance that shows when forced, don't keep in
+-- benchmark code.
 -- TODO: Look at output with -ddump-deriv.
 deriving anyclass instance ( NFData (DiffSeq i k v)
                            , NFData (Diff i k v)
@@ -391,7 +396,16 @@ genCmds :: (Eq v, Arbitrary v) => GenConfig -> CmdGen v [Cmd 'New Int v]
 genCmds conf = mapM (const $ genCmd conf) [1 .. nrCommands conf]
 
 -- | Generate a list of commands in deterministic order.
-genCmds' :: forall v. (Eq v, Arbitrary v) => GenConfig -> CmdGen v [Cmd 'New Int v]
+--
+-- The @'guard'@ function ensures early stopping if the number of generated
+-- commands has reached the configured size @'nrCommands'@ parameter.
+--
+-- Note: The order of commands is deterministic, the inputs for these commands
+-- are often semi-randomly generated.
+genCmds' ::
+     forall v. (Eq v, Arbitrary v)
+  => GenConfig
+  -> CmdGen v [Cmd 'New Int v]
 genCmds' conf = do
     cmds <- go (nrCommands conf)
     pure $ Exn.assert (length cmds == nrCommands conf) cmds
@@ -410,7 +424,9 @@ genCmds' conf = do
         xs0' <- go (n - len)
         pure $ xs0 ++ xs0'
 
-    genForwardPushFlush :: CmdGen v [Cmd 'New Int v] -> CmdGen v [Cmd 'New Int v]
+    genForwardPushFlush ::
+         CmdGen v [Cmd 'New Int v]
+      -> CmdGen v [Cmd 'New Int v]
     genForwardPushFlush gen = do
       fps <- gen
       f   <- guard (singleton <$> genFlush conf)
@@ -473,37 +489,40 @@ genCmd conf = do
 -- TODO: Use coin selection other than random choice.
 -- TODO: Generate unique, /random/ keys, instead of just incremental keys.
 -- TODO: Skip some slots, instead of strictly incrementing @t@.
-genPush :: (Eq v, Arbitrary v) => GenConfig -> CmdGen v (Cmd 'New Int v)
+genPush ::
+     forall v. (Eq v, Arbitrary v)
+  => GenConfig
+  -> CmdGen v (Cmd 'New Int v)
 genPush conf = do
-  let
+    ds <- gets diffs
+    t  <- gets tip
+    vs <- gets backingValues
+    kc <- gets keyCounter
+
+    let
+      _vs'@(MapDiff.Values m) = MapDiff.forwardValues vs (DS.cumulativeDiff ds)
+
+    d1 <- MapDiff.fromList MapDiff.singletonDelete <$> valuesToDelete m
+    d2 <- MapDiff.fromList MapDiff.singletonInsert <$> valuesToInsert kc
+    let
+      d = d1 <> d2
+
+    modify (\st -> st {
+        diffs = DS.extend' ds $ DS.Element (fromIntegral t) d
+      , tip = t + 1
+      , keyCounter = kc + nrToInsert
+      , nrGenerated = nrGenerated st + 1
+      })
+
+    pure $ Push (fromIntegral t) d
+  where
     PushConfig{nrToInsert, nrToDelete} = pushConfig conf
 
-  ds <- gets diffs
-  t  <- gets tip
-  vs <- gets backingValues
-  kc <- gets keyCounter
+    valuesToDelete :: Map Int v -> CmdGen v [(Int, v)]
+    valuesToDelete m = take nrToDelete <$> lift (shuffle (Map.toList m))
 
-  let
-    _vs'@(MapDiff.Values m) = MapDiff.forwardValues vs (DS.cumulativeDiff ds)
-
-  taken :: [(Int, v)] <-
-    take nrToDelete <$> lift (shuffle (Map.toList m))
-  made :: [(Int, v)]  <-
-    lift $ mapM genKeyValue [kc .. kc + nrToInsert - 1]
-
-  let
-    d = MapDiff.Diff $
-         Map.fromList [(k, MapDiff.singletonDelete v) | (k,v) <- taken]
-      <> Map.fromList [(k, MapDiff.singletonInsert v) | (k,v) <- made]
-
-  modify (\st -> st {
-      diffs = DS.extend' ds $ DS.Element (fromIntegral t) d
-    , tip = t + 1
-    , keyCounter = kc + nrToInsert
-    , nrGenerated = nrGenerated st + 1
-    })
-
-  pure $ Push (fromIntegral t) d
+    valuesToInsert :: Int -> CmdGen v [(Int, v)]
+    valuesToInsert k = lift $ mapM genKeyValue [k .. k + nrToInsert - 1]
 
 -- | Generate a @'Flush'@ command.
 --
@@ -519,22 +538,24 @@ genPush conf = do
 -- BOOKKEEPING: Remove the first @n@ diffs from the models' diff sequence and
 -- use them to forward the model's backing values.
 genFlush :: Eq v => GenConfig -> CmdGen v (Cmd 'New Int v)
-genFlush GenConfig{securityParameter = k} = do
-  ds <- gets diffs
-  t  <- gets tip
-  vs <- gets backingValues
+genFlush conf = do
+    ds <- gets diffs
+    t  <- gets tip
+    vs <- gets backingValues
 
-  let
-    (l, r) = DS.splitAtSlot (fromIntegral $ t - k) ds
-    n      = DS.length l
+    let
+      (l, r) = DS.splitAtSlot (fromIntegral $ t - k) ds
+      n      = DS.length l
 
-  modify (\st -> st {
-      diffs         = r
-    , backingValues = MapDiff.forwardValues vs (DS.cumulativeDiff l)
-    , nrGenerated = nrGenerated st + 1
-    })
+    modify (\st -> st {
+        diffs         = r
+      , backingValues = MapDiff.forwardValues vs (DS.cumulativeDiff l)
+      , nrGenerated = nrGenerated st + 1
+      })
 
-  pure $ Flush n
+    pure $ Flush n
+  where
+    GenConfig{securityParameter = k} = conf
 
 -- | Generate a @'Rollback'@ command.
 --
@@ -551,14 +572,11 @@ genFlush GenConfig{securityParameter = k} = do
 --
 -- Note: We assume that pushes do not skip any slots.
 genRollback :: Eq v => GenConfig -> CmdGen v (Cmd 'New Int v)
-genRollback GenConfig{securityParameter = k, rollbackConfig} = do
+genRollback conf = do
     ds <- gets diffs
     t  <- gets tip
 
-    let
-      RollbackConfig{distribution = dist} =  rollbackConfig
-
-    m <- frequency' [(x, pure $ ofK y) | (x, y) <- dist]
+    m <- frequency' [(x, pure $ fractionOfK y) | (x, y) <- dist]
 
     let
       n      = min m $ DS.length ds
@@ -572,13 +590,12 @@ genRollback GenConfig{securityParameter = k, rollbackConfig} = do
 
     pure $ Rollback n
   where
-    ofK :: Float -> Int
-    ofK p =
-      let
-        x :: Float
-        x = p * fromIntegral k
-      in
-        round x
+    GenConfig{securityParameter = k, rollbackConfig} = conf
+    RollbackConfig{distribution = dist} =  rollbackConfig
+
+    -- | Take a fraction @p@ of the security parameter @k@.
+    fractionOfK :: Float -> Int
+    fractionOfK p = round (p * fromIntegral k)
 
 -- | Generate a @'Forward'@ command.
 --
@@ -597,27 +614,25 @@ genRollback GenConfig{securityParameter = k, rollbackConfig} = do
 -- values that we retrieve from the model.
 genForward :: Eq v => GenConfig -> CmdGen v (Cmd 'New Int v)
 genForward conf = do
-  let
+    ds  <- gets diffs
+    bvs <- gets backingValues
+
+    ksTF <- keysToForward (MapDiff.diffKeys $ DS.cumulativeDiff ds)
+
+    let
+      ks = MapDiff.Keys $ Set.fromList ksTF
+      vs = MapDiff.restrictValues bvs ks
+
+    modify (\st -> st{
+        nrGenerated = nrGenerated st + 1
+      })
+
+    pure $ Forward vs ks
+  where
     ForwardConfig{nrToForward} = forwardConfig conf
 
-  ds  <- gets diffs
-  bvs <- gets backingValues
-
-  let
-    d = DS.cumulativeDiff ds
-    s = MapDiff.diffKeys d
-
-  ksList <- take nrToForward <$> lift (shuffle (toList s))
-
-  let
-    ks = MapDiff.Keys $ Set.fromList ksList
-    vs = MapDiff.restrictValues bvs ks
-
-  modify (\st -> st{
-      nrGenerated = nrGenerated st + 1
-    })
-
-  pure $ Forward vs ks
+    keysToForward :: Set k -> CmdGen v [k]
+    keysToForward ks = take nrToForward <$> lift (shuffle (toList ks))
 
 {-------------------------------------------------------------------------------
   Sanity checks

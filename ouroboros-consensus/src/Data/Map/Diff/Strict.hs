@@ -15,6 +15,7 @@ module Data.Map.Diff.Strict (
   , DiffHistory (..)
     -- * Construction
   , diff
+  , fromList
   , singletonDelete
   , singletonInsert
     -- * Utility
@@ -85,6 +86,9 @@ diff m1 m2 = Diff $
     (Merge.zipWithMaybeMatched $ \ _k _v1 v2 -> Just $ singletonInsert v2)
     m1
     m2
+
+fromList :: Ord k => (v -> DiffHistory v) -> [(k, v)] -> Diff k v
+fromList f = Diff . Map.fromList . fmap (fmap f)
 
 singleton :: DiffEntry v -> DiffHistory v
 singleton = DiffHistory . Seq.singleton
