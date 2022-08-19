@@ -41,7 +41,7 @@ traceSize (Tracer f) = Tracer $ \a -> do
   Ledger DB specific
 -------------------------------------------------------------------------------}
 
-data LedgerDbSize (l :: LedgerStateKind) = LedgerDbSize {
+data LedgerDbSize (l :: LedgerStateKindWithTables) = LedgerDbSize {
       -- | The tip of the ledger DB
       ledgerDbTip       :: Point l
 
@@ -57,10 +57,10 @@ data LedgerDbSize (l :: LedgerStateKind) = LedgerDbSize {
 --
 -- Only traces slots for which the predicate results true (genesis will be
 -- considered to be slot 0).
-traceLedgerDbSize :: forall m l. (MonadIO m, forall mk. GetTip (l mk), HeaderHash (l EmptyMK) ~ HeaderHash l)
+traceLedgerDbSize :: forall m l wt. (MonadIO m, forall mk. GetTip (l wt mk), HeaderHash (l wt EmptyMK) ~ HeaderHash l)
                   => (Word64 -> Bool)
                   -> Tracer m (LedgerDbSize l)
-                  -> Tracer m (LedgerDB l)
+                  -> Tracer m (LedgerDB l wt)
 traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
     let !ledger = LedgerDB.ledgerDbCurrent db
         !tip    = castPoint $ getTip ledger

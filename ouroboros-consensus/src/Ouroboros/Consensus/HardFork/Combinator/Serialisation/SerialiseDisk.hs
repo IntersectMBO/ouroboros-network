@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -20,10 +22,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK,
-                     SufficientSerializationForAnyBackingStore)
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
@@ -31,8 +33,10 @@ import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 instance ( SerialiseHFC xs
-         , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs)))
-      => SerialiseDiskConstraints  (HardForkBlock xs)
+         , SufficientSerializationForAnyBackingStore (ExtLedgerState (HardForkBlock xs)) wt
+         , IsSwitchLedgerTables wt
+         )
+      => SerialiseDiskConstraints  (HardForkBlock xs) wt
 
 {-------------------------------------------------------------------------------
   'ReconstructNestedCtxt'
@@ -114,8 +118,7 @@ instance SerialiseHFC xs
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
-      aux :: SerialiseDiskConstraints blk
-          => CodecConfig blk -> WrapChainDepState blk -> K Encoding blk
+      aux :: EncodeDisk blk (ChainDepState (BlockProtocol blk)) => CodecConfig blk -> WrapChainDepState blk -> K Encoding blk
       aux cfg' (WrapChainDepState st) = K $ encodeDisk cfg' st
 
 instance SerialiseHFC xs
@@ -125,18 +128,25 @@ instance SerialiseHFC xs
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
-instance SerialiseHFC xs
-      => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) EmptyMK) where
+instance (SerialiseHFC xs, IsSwitchLedgerTables wt)
+      => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) wt EmptyMK) where
   encodeDisk cfg =
-        encodeTelescope (hcmap pSHFC (\cfg' -> fn (K . encodeDisk cfg' . unFlip)) cfgs)
+        encodeTelescope (hcmap pSHFC (fn . (case singByProxy (Proxy @wt) of
+                                              SWithLedgerTables    -> aux
+                                              SWithoutLedgerTables -> aux)) cfgs)
       . hardForkLedgerStatePerEra
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
-instance SerialiseHFC xs
-      => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) EmptyMK) where
+      aux :: EncodeDisk blk (LedgerState blk wt EmptyMK) => CodecConfig blk -> Flip2 LedgerState wt EmptyMK blk -> K Encoding blk
+      aux cfg' st = K $ encodeDisk cfg' . unFlip2 $ st
+
+instance (SerialiseHFC xs, IsSwitchLedgerTables wt)
+      => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) wt EmptyMK) where
   decodeDisk cfg =
         fmap HardForkLedgerState
-      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip . decodeDisk) cfgs)
+      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip2 . (case singByProxy (Proxy @wt) of
+                                                             SWithLedgerTables -> decodeDisk
+                                                             SWithoutLedgerTables -> decodeDisk)) cfgs)
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)

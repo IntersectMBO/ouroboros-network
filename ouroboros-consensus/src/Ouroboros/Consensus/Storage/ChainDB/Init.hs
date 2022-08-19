@@ -1,5 +1,8 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 -- | Intended for qualified import
 --
 -- > import Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
@@ -11,6 +14,8 @@ module Ouroboros.Consensus.Storage.ChainDB.Init (
   ) where
 
 import           Prelude hiding (map)
+
+import           Data.Proxy
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -25,23 +30,25 @@ data InitChainDB m blk = InitChainDB {
       addBlock         :: blk -> m ()
 
       -- | Return the current ledger state
-    , getCurrentLedger :: m (LedgerState blk EmptyMK)
+    , getCurrentLedger :: m (LedgerState blk WithoutLedgerTables EmptyMK)
     }
 
 fromFull ::
-     (IOLike m, IsLedger (LedgerState blk))
-  => ChainDB m blk -> InitChainDB m blk
+     forall m blk wt. (IOLike m, GetTip (LedgerState blk wt EmptyMK), IsSwitchLedgerTables wt, ExtractLedgerTables (LedgerState blk))
+  => ChainDB m blk wt -> InitChainDB m blk
 fromFull db = InitChainDB {
       addBlock         =
         ChainDB.addBlock_ db InvalidBlockPunishment.noPunishment
-    , getCurrentLedger =
-        atomically $ ledgerState <$> ChainDB.getCurrentLedger db
+    , getCurrentLedger = atomically f
     }
+  where f = case singByProxy (Proxy @wt) of
+          SWithLedgerTables -> destroyTables . ledgerState <$> ChainDB.getCurrentLedger db
+          SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger db
 
 map ::
      Functor m
   => (blk' -> blk)
-  -> (LedgerState blk EmptyMK -> LedgerState blk' EmptyMK)
+  -> (LedgerState blk WithoutLedgerTables EmptyMK -> LedgerState blk' WithoutLedgerTables EmptyMK)
   -> InitChainDB m blk -> InitChainDB m blk'
 map f g db = InitChainDB {
       addBlock         = addBlock db . f

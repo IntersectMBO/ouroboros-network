@@ -5,7 +5,6 @@
 module Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol (..)) where
 
 import           Control.Monad.Except
-import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
@@ -14,16 +13,16 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | Link protocol to ledger
-class ( BlockSupportsProtocol blk
-      , UpdateLedger          blk
-      , ValidateEnvelope      blk
+class ( BlockSupportsProtocol        blk
+      , ApplyBlock (LedgerState blk) blk
+      , ValidateEnvelope             blk
       ) => LedgerSupportsProtocol blk where
   -- | Extract ticked ledger view from ticked ledger state
   --
   -- See 'ledgerViewForecastAt' for a discussion and precise definition of the
   -- relation between this and forecasting.
   protocolLedgerView :: LedgerConfig blk
-                     -> TickedLedgerState blk mk
+                     -> TickedLedgerState blk wt mk
                      -> Ticked (LedgerView (BlockProtocol blk))
 
   -- | Get a forecast at the given ledger state.
@@ -62,9 +61,9 @@ class ( BlockSupportsProtocol blk
   --
   -- See 'lemma_ledgerViewForecastAt_applyChainTick'.
   ledgerViewForecastAt ::
-       HasCallStack
+       IsSwitchLedgerTables wt
     => LedgerConfig blk
-    -> LedgerState blk mk
+    -> LedgerState blk wt mk
     -> Forecast (LedgerView (BlockProtocol blk))
 
 -- | Relation between 'ledgerViewForecastAt' and 'applyChainTick'
@@ -72,9 +71,11 @@ _lemma_ledgerViewForecastAt_applyChainTick
   :: ( LedgerSupportsProtocol blk
      , Eq   (Ticked (LedgerView (BlockProtocol blk)))
      , Show (Ticked (LedgerView (BlockProtocol blk)))
+     , GetTip (LedgerState blk wt EmptyMK)
+     , IsSwitchLedgerTables wt
      )
   => LedgerConfig blk
-  -> LedgerState blk EmptyMK
+  -> LedgerState blk wt EmptyMK
   -> Forecast (LedgerView (BlockProtocol blk))
   -> SlotNo
   -> Either String ()

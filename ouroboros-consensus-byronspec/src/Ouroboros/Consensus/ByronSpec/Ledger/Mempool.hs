@@ -61,4 +61,8 @@ instance LedgerSupportsMempool ByronSpecBlock where
 
   txForgetValidated = forgetValidatedByronSpecGenTx
 
+instance GetsBlockKeySets (LedgerState ByronSpecBlock) ByronSpecBlock WithLedgerTables where
+
+  getBlockKeySets _ = polyEmptyLedgerTables
+
   getTransactionKeySets _ = polyEmptyLedgerTables

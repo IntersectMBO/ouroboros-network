@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -19,12 +20,13 @@ import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Forging ()
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger (CanHardFork')
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams ()
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
+
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode
@@ -56,8 +58,10 @@ getSameConfigValue getValue blockConfig = getSameValue values
   RunNode
 -------------------------------------------------------------------------------}
 
-instance ( CanHardFork' xs
+instance ( CanHardFork xs
            -- Instances that must be defined for specific values of @b@:
          , SupportedNetworkProtocolVersion (HardForkBlock xs)
          , SerialiseHFC xs
+         , LedgerTablesCanHardFork xs
+         , LedgerSupportsUTxOHD (LedgerState (HardForkBlock xs)) (HardForkBlock xs)
          ) => RunNode (HardForkBlock xs)

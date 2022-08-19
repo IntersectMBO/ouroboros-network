@@ -52,10 +52,10 @@ import           Ouroboros.Consensus.Storage.Serialisation
 --
 -- Otherwise, execute the given function on the 'ChainDbEnv'.
 getFollower ::
-     forall m blk r. (IOLike m, HasCallStack, HasHeader blk)
-  => ChainDbHandle m blk
+     forall m blk wt r. (IOLike m, HasCallStack, HasHeader blk)
+  => ChainDbHandle m blk wt
   -> FollowerKey
-  -> (ChainDbEnv m blk -> m r)
+  -> (ChainDbEnv m blk wt -> m r)
   -> m r
 getFollower (CDBHandle varState) followerKey f = do
     env <- atomically $ readTVar varState >>= \case
@@ -69,10 +69,10 @@ getFollower (CDBHandle varState) followerKey f = do
 
 -- | Variant 'of 'getFollower' for functions taking one argument.
 getFollower1 ::
-     forall m blk a r. (IOLike m, HasHeader blk)
-  => ChainDbHandle m blk
+     forall m blk wt a r. (IOLike m, HasHeader blk)
+  => ChainDbHandle m blk wt
   -> FollowerKey
-  -> (ChainDbEnv m blk -> a -> m r)
+  -> (ChainDbEnv m blk wt -> a -> m r)
   -> a -> m r
 getFollower1 h followerKey f a = getFollower h followerKey (\env -> f env a)
 
@@ -81,14 +81,14 @@ getFollower1 h followerKey f a = getFollower h followerKey (\env -> f env a)
 -------------------------------------------------------------------------------}
 
 newFollower ::
-     forall m blk b.
+     forall m blk wt b.
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
      , HasNestedContent Header blk
      , EncodeDiskDep (NestedCtxt Header) blk
      )
-  => ChainDbHandle m blk
+  => ChainDbHandle m blk wt
   -> ResourceRegistry m
   -> ChainType
   -> BlockComponent blk b
@@ -119,14 +119,14 @@ newFollower h registry chainType blockComponent = getEnv h $ \CDB{..} -> do
       }
 
 makeNewFollower ::
-     forall m blk b.
+     forall m blk wt b.
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
      , HasNestedContent Header blk
      , EncodeDiskDep (NestedCtxt Header) blk
      )
-  => ChainDbHandle m blk
+  => ChainDbHandle m blk wt
   -> FollowerKey
   -> StrictTVar m (FollowerState m blk b)
   -> ChainType
@@ -160,10 +160,10 @@ makeNewFollower h followerKey varFollower chainType registry blockComponent = Fo
 -- Unlike 'closeAllFollowers', this is meant to be called by the user of the
 -- ChainDB.Follower.
 close ::
-     forall m blk b. IOLike m
+     forall m blk wt b. IOLike m
   => FollowerKey
   -> StrictTVar m (FollowerState m blk b)
-  -> ChainDbEnv m blk
+  -> ChainDbEnv m blk wt
   -> m ()
 close followerKey varFollower CDB { cdbFollowers } = do
     -- If the FollowerKey is not present in the map, the Follower must have been
@@ -197,7 +197,7 @@ closeFollowerState = \case
 -- When in the 'FollowerInMem' state, we may have to block when we have reached
 -- the end of the current chain.
 instructionHelper ::
-     forall m blk b f.
+     forall m blk wt b f.
      ( IOLike m
      , HasHeader blk
      , GetHeader blk
@@ -215,7 +215,7 @@ instructionHelper ::
      -- 'ChainUpdate' in one that returns the right return type: use @fmap
      -- Identity . 'blockUntilJust'@ to block or 'id' to just return the
      -- @Maybe@.
-  -> ChainDbEnv m blk
+  -> ChainDbEnv m blk wt
   -> m (f (ChainUpdate blk b))
 instructionHelper registry varFollower chainType blockComponent fromMaybeSTM CDB{..} = do
     -- In one transaction: check in which state we are, if in the
@@ -416,7 +416,7 @@ instructionSTM rollState curChain saveRollState =
       AF.withinFragmentBounds (castPoint (followerRollStatePoint rollState))
 
 forward ::
-     forall m blk b.
+     forall m blk wt b.
      ( IOLike m
      , HasCallStack
      , HasHeader blk
@@ -425,7 +425,7 @@ forward ::
   => ResourceRegistry m
   -> StrictTVar m (FollowerState m blk b)
   -> BlockComponent blk b
-  -> ChainDbEnv m blk
+  -> ChainDbEnv m blk wt
   -> [Point blk]
   -> m (Maybe (Point blk))
 forward registry varFollower blockComponent CDB{..} = \pts -> do
@@ -584,7 +584,7 @@ switchFork ipoint newChain followerState =
 -- | Close all open block and header 'Follower's.
 closeAllFollowers ::
      IOLike m
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> m ()
 closeAllFollowers CDB{..} = do
     followerHandles <- atomically $ do

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -28,6 +29,7 @@ import           Ouroboros.Network.Block (Serialised (..), unwrapCBORinCBOR,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -45,16 +47,17 @@ import           Ouroboros.Consensus.Byron.Protocol
 instance HasBinaryBlockInfo ByronBlock where
   getBinaryBlockInfo = byronBinaryBlockInfo
 
-instance SerialiseDiskConstraints ByronBlock
+instance SerialiseDiskConstraints ByronBlock WithLedgerTables
+instance SerialiseDiskConstraints ByronBlock WithoutLedgerTables
 
 instance EncodeDisk ByronBlock ByronBlock where
   encodeDisk _ = encodeByronBlock
 instance DecodeDisk ByronBlock (Lazy.ByteString -> ByronBlock) where
   decodeDisk ccfg = decodeByronBlock (getByronEpochSlots ccfg)
 
-instance EncodeDisk ByronBlock (LedgerState ByronBlock mk) where
+instance EncodeDisk ByronBlock (LedgerState ByronBlock wt mk) where
   encodeDisk _ = encodeByronLedgerState
-instance DecodeDisk ByronBlock (LedgerState ByronBlock mk) where
+instance DecodeDisk ByronBlock (LedgerState ByronBlock wt mk) where
   decodeDisk _ = decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@

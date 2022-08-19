@@ -28,7 +28,6 @@ import           Ouroboros.Consensus.Util.SOP
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 
 {-------------------------------------------------------------------------------
   TxGen class
@@ -52,7 +51,7 @@ class TxGen blk where
              -> SlotNo
              -> TopLevelConfig blk
              -> TxGenExtra blk
-             -> LedgerState blk ValuesMK
+             -> LedgerState blk WithoutLedgerTables ValuesMK
              -> Gen [GenTx blk]
 
 {-------------------------------------------------------------------------------
@@ -81,7 +80,7 @@ testGenTxsHfc ::
   -> SlotNo
   -> TopLevelConfig (HardForkBlock xs)
   -> NP WrapTxGenExtra xs
-  -> LedgerState (HardForkBlock xs) ValuesMK
+  -> LedgerState (HardForkBlock xs) WithoutLedgerTables ValuesMK
   -> Gen [GenTx (HardForkBlock xs)]
 testGenTxsHfc coreNodeId numCoreNodes curSlotNo cfg extras state =
     hcollapse $
@@ -102,8 +101,8 @@ testGenTxsHfc coreNodeId numCoreNodes curSlotNo cfg extras state =
       => Index xs blk
       -> TopLevelConfig blk
       -> WrapTxGenExtra blk
-      -> Flip LedgerState ValuesMK blk
+      -> Flip2 LedgerState WithoutLedgerTables ValuesMK blk
       -> K (Gen [GenTx (HardForkBlock xs)]) blk
-    aux index cfg' (WrapTxGenExtra extra') (Flip state') = K $
+    aux index cfg' (WrapTxGenExtra extra') (Flip2 state') = K $
         fmap (injectNS' (Proxy @GenTx) index)
           <$> testGenTxs coreNodeId numCoreNodes curSlotNo cfg' extra' state'

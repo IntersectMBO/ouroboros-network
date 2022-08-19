@@ -180,6 +180,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      readIncremental)
 import           Ouroboros.Consensus.Util.IOLike
@@ -191,6 +192,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.Trivial as Trivial
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 {-------------------------------------------------------------------------------
@@ -321,22 +323,23 @@ data InitFailure blk =
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
 initLedgerDB ::
-     forall m blk. (
+     forall m blk wt. (
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
        , HasCallStack
-       , SufficientSerializationForAnyBackingStore (ExtLedgerState blk))
+       , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
+       )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
+  -> (forall s. Decoder s (ExtLedgerState blk wt EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
-  -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
+  -> m (ExtLedgerState blk WithoutLedgerTables ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
   -> BackingStoreSelector m
-  -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
+  -> m (InitLog blk, LedgerDB' blk wt, Word64, LedgerBackingStore' m blk wt)
 initLedgerDB replayTracer
              tracer
              hasFS
@@ -348,17 +351,24 @@ initLedgerDB replayTracer
              bss = do
     listSnapshots hasFS >>= tryNewestFirst id
   where
+
+    f :: m (ExtLedgerState blk wt ValuesMK)
+    f = case singByProxy (Proxy @wt) of
+      SWithLedgerTables    -> extractLedgerTables <$> getGenesisLedger
+      SWithoutLedgerTables -> getGenesisLedger
+
+
     tryNewestFirst :: (InitLog blk -> InitLog blk)
                    -> [DiskSnapshot]
                    -> m ( InitLog   blk
-                        , LedgerDB' blk
+                        , LedgerDB' blk wt
                         , Word64
-                        , LedgerBackingStore' m blk
+                        , LedgerBackingStore' m blk wt
                         )
     tryNewestFirst acc [] = do
       -- We're out of snapshots. Start at genesis
       traceWith replayTracer ReplayFromGenesis
-      genesisLedger <- getGenesisLedger
+      genesisLedger <- f
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
           initDb        = ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
       backingStore <- newBackingStore nullTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
@@ -400,7 +410,7 @@ initLedgerDB replayTracer
               tryNewestFirst (acc . InitFailure s InitFailureGenesis) []
 
             NotOrigin tip -> do
-              backingStore <- restoreBackingStore hasFS s bss -- TODO this needs to go in the resource registry
+              backingStore <- restoreBackingStore hasFS s bss $ Just $ pointSlot initialPoint -- TODO this needs to go in the resource registry
               traceWith replayTracer $
                 ReplayFromSnapshot s tip (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
@@ -425,25 +435,26 @@ initLedgerDB replayTracer
 --
 -- It will also return the number of blocks that were replayed.
 replayStartingWith ::
-     forall m blk. (
+     forall m blk wt. (
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
        , HasCallStack
+       , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
        )
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
-  -> LedgerBackingStore' m blk
+  -> LedgerBackingStore' m blk wt
   -> StreamAPI m blk blk
-  -> LedgerDB' blk
-  -> ExceptT (InitFailure blk) m (LedgerDB' blk, Word64)
+  -> LedgerDB' blk wt
+  -> ExceptT (InitFailure blk) m (LedgerDB' blk wt, Word64)
 replayStartingWith tracer cfg backingStore streamAPI initDb = do
     (\(a, b, _) -> (a, b)) <$> streamAll streamAPI (castPoint (ledgerDbTip initDb))
         InitFailureTooRecent
         (initDb, 0, 0)
         push
   where
-    push :: blk -> (LedgerDB' blk, Word64, Word64) -> m (LedgerDB' blk, Word64, Word64)
+    push :: blk -> (LedgerDB' blk wt, Word64, Word64) -> m (LedgerDB' blk wt, Word64, Word64)
     push blk (!db, !replayed, !sinceLast) = do
         !db' <- defaultReadKeySets (readKeySets backingStore) $
                   ledgerDbPush cfg (ReapplyVal blk) db
@@ -481,16 +492,16 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 -------------------------------------------------------------------------------}
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
-restoreBackingStore ::
+restoreBackingStore :: forall m l blk wt.
      ( IOLike m
-     , NoThunks (LedgerTables l ValuesMK)
-     , TableStuff l
-     , SufficientSerializationForAnyBackingStore l)
+     , LedgerMustSupportUTxOHD (l blk) blk wt
+     )
   => SomeHasFS m
   -> DiskSnapshot
   -> BackingStoreSelector m
-  -> m (LedgerBackingStore m l)
-restoreBackingStore someHasFs snapshot bss = do
+  -> Maybe (WithOrigin SlotNo)
+  -> m (LedgerBackingStore m (l blk) wt)
+restoreBackingStore someHasFs snapshot bss ms = do
     -- TODO a backing store that actually resides on-disk during use should have
     -- a @new*@ function that receives both the location it should load from (ie
     -- 'loadPath') and also the location at which it should maintain itself (ie
@@ -500,9 +511,16 @@ restoreBackingStore someHasFs snapshot bss = do
     -- The in-memory backing store, on the other hand, keeps nothing at
     -- '_tablesPath'.
 
-    store <- case bss of
-      LMDBBackingStore limits -> LMDB.newLMDBBackingStore mempty limits someHasFs (LMDB.LIInitialiseFromLMDB loadPath)
-      InMemoryBackingStore -> BackingStore.newTVarBackingStore
+    store <- case (singByProxy (Proxy @wt), bss) of
+      (SWithoutLedgerTables, _) ->
+          Trivial.trivialBackingStore
+            (Proxy @m)
+            (Proxy @(LedgerTables (l blk) WithoutLedgerTables KeysMK))
+            polyEmptyLedgerTables
+            (Proxy @(LedgerTables (l blk) WithoutLedgerTables DiffMK))
+            ms
+      (SWithLedgerTables, LMDBBackingStore limits) -> LMDB.newLMDBBackingStore mempty limits someHasFs (LMDB.LIInitialiseFromLMDB loadPath)
+      (SWithLedgerTables, InMemoryBackingStore) -> BackingStore.newTVarBackingStore
                (zipLedgerTables lookup_)
                (\rq values -> case BackingStore.rqPrev rq of
                    Nothing   ->
@@ -520,24 +538,31 @@ restoreBackingStore someHasFs snapshot bss = do
 
 -- | Create a backing store from the given genesis ledger state
 newBackingStore ::
+     forall m l blk wt.
      ( IOLike m
-     , NoThunks (LedgerTables l ValuesMK)
-     , TableStuff l
-     , SufficientSerializationForAnyBackingStore l)
+     , LedgerMustSupportUTxOHD (l blk) blk wt
+     )
   => Tracer m LMDB.TraceDb
   -> BackingStoreSelector m
   -> SomeHasFS m
-  -> LedgerTables l ValuesMK
-  -> m (LedgerBackingStore m l)
+  -> LedgerTables (l blk) wt ValuesMK
+  -> m (LedgerBackingStore m (l blk) wt)
 newBackingStore tracer bss someHasFS tables = do
-  store <- case bss of
-    LMDBBackingStore limits ->
+  store <- case (singByProxy (Proxy @wt), bss) of
+    (SWithoutLedgerTables, _) ->
+        Trivial.trivialBackingStore
+          (Proxy @m)
+          (Proxy @(LedgerTables (l blk) WithoutLedgerTables KeysMK))
+          polyEmptyLedgerTables
+          (Proxy @(LedgerTables (l blk) WithoutLedgerTables DiffMK))
+          Nothing
+    (SWithLedgerTables, LMDBBackingStore limits) ->
       LMDB.newLMDBBackingStore
       tracer
       limits
       someHasFS
       (LMDB.LIInitialiseFromMemory Origin tables)
-    InMemoryBackingStore -> BackingStore.newTVarBackingStore
+    (SWithLedgerTables, InMemoryBackingStore) -> BackingStore.newTVarBackingStore
                (zipLedgerTables lookup_)
                (\rq values -> case BackingStore.rqPrev rq of
                    Nothing   ->
@@ -588,20 +613,20 @@ applyDiff_ (ApplyValuesMK values) (ApplyDiffMK diff) =
   ApplyValuesMK (HD.forwardValues values diff)
 
 -- | A handle to the backing store for the ledger tables
-newtype LedgerBackingStore m l = LedgerBackingStore
+newtype LedgerBackingStore m l wt = LedgerBackingStore
     (BackingStore.BackingStore m
-      (LedgerTables l KeysMK)
-      (LedgerTables l ValuesMK)
-      (LedgerTables l DiffMK)
+      (LedgerTables l wt KeysMK)
+      (LedgerTables l wt ValuesMK)
+      (LedgerTables l wt DiffMK)
     )
   deriving newtype (NoThunks)
 
 -- | A handle to the backing store for the ledger tables
-data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
+data LedgerBackingStoreValueHandle m l wt = LedgerBackingStoreValueHandle
     !(WithOrigin SlotNo)
     !(BackingStore.BackingStoreValueHandle m
-      (LedgerTables l KeysMK)
-      (LedgerTables l ValuesMK)
+      (LedgerTables l wt KeysMK)
+      (LedgerTables l wt ValuesMK)
     )
   deriving stock    (Generic)
   deriving anyclass (NoThunks)
@@ -609,9 +634,9 @@ data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
 type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)
 
 mkDiskLedgerView ::
-     (GetTip (l EmptyMK), IOLike m, TableStuff l)
-  => (LedgerBackingStoreValueHandle m l, LedgerDB l, m ())
-  -> DiskLedgerView m l
+     (GetTip (l wt EmptyMK), IOLike m, TableStuff l wt)
+  => (LedgerBackingStoreValueHandle m l wt, LedgerDB l wt, m ())
+  -> DiskLedgerView m l wt
 mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
     DiskLedgerView
       (ledgerDbCurrent ldb)
@@ -740,19 +765,19 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
               (HD.UtxoValues vs')
               (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
 
-readKeySets :: forall m l.
+readKeySets :: forall m l wt.
      IOLike m
-  => LedgerBackingStore m l
-  -> RewoundTableKeySets l
-  -> m (UnforwardedReadSets l)
+  => LedgerBackingStore m l wt
+  -> RewoundTableKeySets l wt
+  -> m (UnforwardedReadSets l wt)
 readKeySets (LedgerBackingStore backingStore) rew = do
     readKeySetsVH (BackingStore.bsRead backingStore) rew
 
-readKeySetsVH :: forall m l.
+readKeySetsVH :: forall m l wt.
      IOLike m
-  => (LedgerTables l KeysMK -> m (WithOrigin SlotNo, LedgerTables l ValuesMK))
-  -> RewoundTableKeySets l
-  -> m (UnforwardedReadSets l)
+  => (LedgerTables l wt KeysMK -> m (WithOrigin SlotNo, LedgerTables l wt ValuesMK))
+  -> RewoundTableKeySets l wt
+  -> m (UnforwardedReadSets l wt)
 readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
     (slot, values) <- readKeys rew
     pure UnforwardedReadSets {
@@ -811,8 +836,8 @@ readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
 -- Which solution to use depends on the desired behaviour, which in turn
 -- depends on which diffs are /supposed/ to be flushed.
 flush ::
-     (Applicative m, TableStuff l, GetTip (l EmptyMK))
-  => LedgerBackingStore m l -> DbChangelog l -> m ()
+     (Applicative m, TableStuff l wt, GetTip (l wt EmptyMK))
+  => LedgerBackingStore m l wt -> DbChangelog l wt -> m ()
 flush (LedgerBackingStore backingStore) dblog =
     case youngestImmutableSlotDbChangelog dblog of
       Origin  -> pure ()   -- the diff is necessarily empty
@@ -928,15 +953,15 @@ snapshotFromPath fileName = do
 --
 -- TODO: Should we delete the file if an error occurs during writing?
 takeSnapshot ::
-     forall m blk.
+     forall m blk wt.
      ( MonadThrow m
-     , LedgerSupportsProtocol blk
+     , GetTip (LedgerState blk wt EmptyMK)
      )
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> LedgerBackingStore' m blk
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
-  -> LedgerDB' blk
+  -> LedgerBackingStore' m blk wt
+  -> (ExtLedgerState blk wt EmptyMK -> Encoding)
+  -> LedgerDB' blk wt
   -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot tracer hasFS backingStore encLedger db =
     case pointToWithOriginRealPoint (castPoint (getTip lastFlushed)) of
@@ -953,17 +978,17 @@ takeSnapshot tracer hasFS backingStore encLedger db =
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where
-    lastFlushed :: ExtLedgerState blk EmptyMK
+    lastFlushed :: ExtLedgerState blk wt EmptyMK
     lastFlushed = ledgerDbLastFlushedState db
 
 -- | Write snapshot to disk
 writeSnapshot ::
-     forall m blk. MonadThrow m
+     forall m blk wt. MonadThrow m
   => SomeHasFS m
-  -> LedgerBackingStore' m blk
-  -> (ExtLedgerState blk EmptyMK -> Encoding)
+  -> LedgerBackingStore' m blk wt
+  -> (ExtLedgerState blk wt EmptyMK -> Encoding)
   -> DiskSnapshot
-  -> ExtLedgerState blk EmptyMK
+  -> ExtLedgerState blk wt EmptyMK
   -> m ()
 writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
     createDirectory hasFS (snapshotToDirPath snapshot)
@@ -974,7 +999,7 @@ writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
       (SomeHasFS hasFS)
       (BackingStore.BackingStorePath (snapshotToTablesPath snapshot))
   where
-    encode :: ExtLedgerState blk EmptyMK -> Encoding
+    encode :: ExtLedgerState blk wt EmptyMK -> Encoding
     encode = encodeSnapshot encLedger
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
@@ -1008,18 +1033,18 @@ deleteSnapshot (SomeHasFS HasFS{..}) =
 
 -- | Read snapshot from disk
 readSnapshot ::
-     forall m blk. IOLike m
+     forall m blk wt. IOLike m
   => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
+  -> (forall s. Decoder s (ExtLedgerState blk wt EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk wt EmptyMK)
 readSnapshot hasFS decLedger decHash = do
       ExceptT
     . readIncremental hasFS decoder
     . snapshotToStatePath
   where
-    decoder :: Decoder s (ExtLedgerState blk EmptyMK)
+    decoder :: Decoder s (ExtLedgerState blk wt EmptyMK)
     decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
 
 -- | List on-disk snapshots, highest number first.

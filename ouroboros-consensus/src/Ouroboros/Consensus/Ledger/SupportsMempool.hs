@@ -1,11 +1,14 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Consensus.Ledger.SupportsMempool (
     ApplyTxErr
   , GenTx
   , GenTxId
+  , GetsBlockKeySets (..)
   , HasTxId (..)
   , HasTxs (..)
   , LedgerSupportsMempool (..)
@@ -56,12 +59,9 @@ data WhetherToIntervene
     -- arrives over NTC, we reject it in order to avoid the ledger penalizing
     -- them for it.
 
-class ( UpdateLedger blk
+class ( ApplyBlock (LedgerState blk) blk
       , NoThunks (GenTx blk)
       , NoThunks (Validated (GenTx blk))
-      , NoThunks (TickedLedgerState blk EmptyMK)
-      , NoThunks (TickedLedgerState blk ValuesMK)
-      , NoThunks (TickedLedgerState blk SeqDiffMK)
       , Show (GenTx blk)
       , Show (Validated (GenTx blk))
       , Show (ApplyTxErr blk)
@@ -72,12 +72,13 @@ class ( UpdateLedger blk
   txInvariant = const True
 
   -- | Apply an unvalidated transaction
-  applyTx :: LedgerConfig blk
+  applyTx :: IsSwitchLedgerTables wt
+          => LedgerConfig blk
           -> WhetherToIntervene
           -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
-          -> TickedLedgerState blk ValuesMK
-          -> Except (ApplyTxErr blk) (TickedLedgerState blk TrackingMK, Validated (GenTx blk))
+          -> TickedLedgerState blk wt ValuesMK
+          -> Except (ApplyTxErr blk) (TickedLedgerState blk wt TrackingMK, Validated (GenTx blk))
 
   -- | Apply a previously validated transaction to a potentially different
   -- ledger state
@@ -85,12 +86,14 @@ class ( UpdateLedger blk
   -- When we re-apply a transaction to a potentially different ledger state
   -- expensive checks such as cryptographic hashes can be skipped, but other
   -- checks (such as checking for double spending) must still be done.
-  reapplyTx :: HasCallStack
+  reapplyTx :: ( IsSwitchLedgerTables wt
+               , HasCallStack
+               )
             => LedgerConfig blk
             -> SlotNo -- ^ Slot number of the block containing the tx
             -> Validated (GenTx blk)
-            -> TickedLedgerState blk ValuesMK
-            -> Except (ApplyTxErr blk) (TickedLedgerState blk TrackingMK)
+            -> TickedLedgerState blk wt ValuesMK
+            -> Except (ApplyTxErr blk) (TickedLedgerState blk wt TrackingMK)
 
   -- | The maximum number of bytes worth of transactions that can be put into
   -- a block according to the currently adopted protocol parameters of the
@@ -98,7 +101,7 @@ class ( UpdateLedger blk
   --
   -- This is (conservatively) computed by subtracting the header size and any
   -- other fixed overheads from the maximum block size.
-  txsMaxBytes :: TickedLedgerState blk mk -> Word32
+  txsMaxBytes :: TickedLedgerState blk wt mk -> Word32
 
   -- | Return the post-serialisation size in bytes of a 'GenTx' /when it is
   -- embedded in a block/. This size might differ from the size of the
@@ -123,13 +126,26 @@ class ( UpdateLedger blk
   -- | Discard the evidence that transaction has been previously validated
   txForgetValidated :: Validated (GenTx blk) -> GenTx blk
 
+class GetsBlockKeySets l blk wt where
+  -- | Given a block, get the key-sets that we need to apply it to a ledger
+  -- state.
+  --
+  -- TODO: this might not be the best place to define this function. Maybe we
+  -- want to make the on-disk ledger state storage concern orthogonal to the
+  -- ledger state transformation concern.
+  getBlockKeySets :: blk -> LedgerTables l wt KeysMK
+
   -- | Given a transaction, get the key-sets that we need to apply it to a
   -- ledger state.
   --
   -- TODO: this might not be the best place to define this function. Maybe we
   -- want to make the on-disk ledger state storage concern orthogonal to the
   -- ledger state transformation concern.
-  getTransactionKeySets :: GenTx blk -> LedgerTables (LedgerState blk) KeysMK
+  getTransactionKeySets :: GenTx blk -> LedgerTables l wt KeysMK
+
+instance GetsBlockKeySets l blk WithoutLedgerTables where
+  getBlockKeySets = const NoLedgerTables
+  getTransactionKeySets = const NoLedgerTables
 
 -- | A generalized transaction, 'GenTx', identifier.
 data family TxId tx :: Type

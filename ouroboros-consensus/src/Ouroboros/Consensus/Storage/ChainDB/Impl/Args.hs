@@ -21,14 +21,13 @@ import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
-import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 import           Ouroboros.Consensus.Storage.FS.API
 
-import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (TraceEvent (..))
@@ -61,13 +60,12 @@ data ChainDbArgs f m blk = ChainDbArgs {
     , cdbTopLevelConfig         :: HKD f (TopLevelConfig blk)
     , cdbChunkInfo              :: HKD f ChunkInfo
     , cdbCheckIntegrity         :: HKD f (blk -> Bool)
-    , cdbGenesis                :: HKD f (m (ExtLedgerState blk ValuesMK))
+    , cdbGenesis                :: HKD f (m (ExtLedgerState blk WithoutLedgerTables ValuesMK))
     , cdbCheckInFuture          :: HKD f (CheckInFuture m blk)
     , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
 
       -- Misc
     , cdbTracer                 :: Tracer m (TraceEvent blk)
-    , cdbTraceLedger            :: Tracer m (LedgerDB' blk)
     , cdbRegistry               :: HKD f (ResourceRegistry m)
     , cdbGcDelay                :: DiffTime
     , cdbGcInterval             :: DiffTime
@@ -190,7 +188,6 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceLedgerEvent cdbTracer
-        , lgrTraceLedger      = cdbTraceLedger
         , lgrBackingStoreSelector = cdbBackingStoreSelector
         }
     , ChainDbSpecificArgs {
@@ -235,7 +232,6 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
     , cdbImmutableDbCacheConfig = immCacheConfig
       -- Misc
     , cdbTracer                 = cdbsTracer
-    , cdbTraceLedger            = lgrTraceLedger
     , cdbRegistry               = cdbsRegistry
     , cdbGcDelay                = cdbsGcDelay
     , cdbGcInterval             = cdbsGcInterval

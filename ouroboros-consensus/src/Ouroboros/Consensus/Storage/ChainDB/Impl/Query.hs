@@ -74,12 +74,12 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 -- account, as we know they /must/ have been \"immutable\" at some point, and,
 -- therefore, /must/ still be \"immutable\".
 getCurrentChain
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , HasHeader (Header blk)
      , ConsensusProtocol (BlockProtocol blk)
      )
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> STM m (AnchoredFragment (Header blk))
 getCurrentChain CDB{..} =
     AF.anchorNewest k <$> readTVar cdbChain
@@ -88,16 +88,16 @@ getCurrentChain CDB{..} =
 
 getLedgerDB ::
      IOLike m
-  => ChainDbEnv m blk -> STM m (LgrDB.LedgerDB' blk)
+  => ChainDbEnv m blk wt -> STM m (LgrDB.LedgerDB' blk wt)
 getLedgerDB CDB{..} = LgrDB.getCurrent cdbLgrDB
 
 getTipBlock
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
      )
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> m (Maybe blk)
 getTipBlock cdb@CDB{..} = do
     tipPoint <- atomically $ getTipPoint cdb
@@ -106,12 +106,12 @@ getTipBlock cdb@CDB{..} = do
       NotOrigin p -> Just <$> getAnyKnownBlock cdbImmutableDB cdbVolatileDB p
 
 getTipHeader
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , HasHeader blk
      , HasHeader (Header blk)
      )
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> m (Maybe (Header blk))
 getTipHeader CDB{..} = do
     anchorOrHdr <- AF.head <$> atomically (readTVar cdbChain)
@@ -130,21 +130,21 @@ getTipHeader CDB{..} = do
             Just <$> ImmutableDB.getKnownBlockComponent cdbImmutableDB GetHeader p
 
 getTipPoint
-  :: forall m blk. (IOLike m, HasHeader (Header blk))
-  => ChainDbEnv m blk -> STM m (Point blk)
+  :: forall m blk wt. (IOLike m, HasHeader (Header blk))
+  => ChainDbEnv m blk wt -> STM m (Point blk)
 getTipPoint CDB{..} =
     castPoint . AF.headPoint <$> readTVar cdbChain
 
 getBlockComponent ::
-     forall m blk b. IOLike m
-  => ChainDbEnv m blk
+     forall m blk b wt. IOLike m
+  => ChainDbEnv m blk wt
   -> BlockComponent blk b
   -> RealPoint blk -> m (Maybe b)
 getBlockComponent CDB{..} = getAnyBlockComponent cdbImmutableDB cdbVolatileDB
 
 getIsFetched ::
-     forall m blk. IOLike m
-  => ChainDbEnv m blk -> STM m (Point blk -> Bool)
+     forall m blk wt. IOLike m
+  => ChainDbEnv m blk wt -> STM m (Point blk -> Bool)
 getIsFetched CDB{..} = basedOnHash <$> VolatileDB.getIsMember cdbVolatileDB
   where
     -- The volatile DB indexes by hash only, not by points. However, it should
@@ -157,15 +157,15 @@ getIsFetched CDB{..} = basedOnHash <$> VolatileDB.getIsMember cdbVolatileDB
           GenesisHash    -> False
 
 getIsInvalidBlock ::
-     forall m blk. (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk
+     forall m blk wt. (IOLike m, HasHeader blk)
+  => ChainDbEnv m blk wt
   -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 getIsInvalidBlock CDB{..} =
   fmap (fmap (fmap invalidBlockReason) . flip Map.lookup) <$> readTVar cdbInvalid
 
 getIsValid ::
-     forall m blk. (IOLike m, HasHeader blk)
-  => ChainDbEnv m blk
+     forall m blk wt. (IOLike m, HasHeader blk)
+  => ChainDbEnv m blk wt
   -> STM m (RealPoint blk -> Maybe Bool)
 getIsValid CDB{..} = do
     prevApplied <- LgrDB.getPrevApplied cdbLgrDB
@@ -180,8 +180,8 @@ getIsValid CDB{..} = do
          | otherwise                 -> Nothing
 
 getMaxSlotNo ::
-     forall m blk. (IOLike m, HasHeader (Header blk))
-  => ChainDbEnv m blk -> STM m MaxSlotNo
+     forall m blk wt. (IOLike m, HasHeader (Header blk))
+  => ChainDbEnv m blk wt -> STM m MaxSlotNo
 getMaxSlotNo CDB{..} = do
     -- Note that we need to look at both the current chain and the VolatileDB
     -- in all cases (even when the VolatileDB is not empty), because the
@@ -196,15 +196,19 @@ getMaxSlotNo CDB{..} = do
     volatileDbMaxSlotNo    <- VolatileDB.getMaxSlotNo cdbVolatileDB
     return $ curChainMaxSlotNo `max` volatileDbMaxSlotNo
 
-getLedgerStateForKeys :: forall m blk b a.
-     (IOLike m, LedgerSupportsProtocol blk)
-  => ChainDbEnv m blk
+getLedgerStateForKeys :: forall m blk b a wt.
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , GetTip (LedgerState blk wt EmptyMK)
+     , TableStuff (ExtLedgerState blk) wt
+     )
+  => ChainDbEnv m blk wt
   -> StaticEither b () (Point blk)
-  -> (ExtLedgerState blk EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) KeysMK))
+  -> (ExtLedgerState blk wt EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) wt KeysMK))
   -> m (StaticEither
          b
-         (a, LedgerTables (ExtLedgerState blk) ValuesMK)
-         (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
+         (a, LedgerTables (ExtLedgerState blk) wt ValuesMK)
+         (Maybe (a, LedgerTables (ExtLedgerState blk) wt ValuesMK))
        )
 getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
     ldb0 <- atomically $ LgrDB.getCurrent cdbLgrDB
@@ -220,37 +224,41 @@ getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
   where
     finish ::
          a
-      -> LedgerTables (ExtLedgerState blk) KeysMK
-      -> LedgerDB.LedgerDB' blk
-      -> m (a, LedgerTables (ExtLedgerState blk) ValuesMK)
+      -> LedgerTables (ExtLedgerState blk) wt KeysMK
+      -> LedgerDB.LedgerDB' blk wt
+      -> m (a, LedgerTables (ExtLedgerState blk) wt ValuesMK)
     finish a ks ldb = (,) a <$> do
-      let chlog :: DbChangelog (ExtLedgerState blk)
+      let chlog :: DbChangelog (ExtLedgerState blk) wt
           chlog = LedgerDB.ledgerDbChangelog ldb
 
-          rew :: LedgerDB.RewoundTableKeySets (ExtLedgerState blk)
+          rew :: LedgerDB.RewoundTableKeySets (ExtLedgerState blk) wt
           rew = LedgerDB.rewindTableKeySets chlog ks
 
       ufs <- LedgerDB.readKeySets (LgrDB.lgrBackingStore cdbLgrDB) rew
-      let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk)
+      let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk) wt
       case LedgerDB.forwardTableKeySets chlog ufs of
         Left err     -> error $ "getLedgerStateForKeys: rewind;read;forward failed " <> show err
         Right values -> pure values
 
-getLedgerBackingStoreValueHandle :: forall b m blk.
-     (IOLike m, LedgerSupportsProtocol blk)
-  => ChainDbEnv m blk
+getLedgerBackingStoreValueHandle :: forall b m blk wt.
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , GetTip (LedgerState blk wt EmptyMK)
+     , TableStuff (ExtLedgerState blk) wt
+     )
+  => ChainDbEnv m blk wt
   -> RR.ResourceRegistry m
   -> StaticEither b () (Point blk)
   -> m (StaticEither
          b
-         ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-         , LedgerDB.LedgerDB' blk
+         ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk) wt
+         , LedgerDB.LedgerDB' blk wt
          , m ()
          )
          (Either
             (Point blk)
-            ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-            , LedgerDB.LedgerDB' blk
+            ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk) wt
+            , LedgerDB.LedgerDB' blk wt
             , m ()
             )
          )
@@ -264,9 +272,9 @@ getLedgerBackingStoreValueHandle CDB{..} rreg seP = LgrDB.withReadLock cdbLgrDB 
         Just ldb -> Right <$> finish ldb
   where
     finish ::
-         LedgerDB.LedgerDB' blk
-      -> m ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-           , LedgerDB.LedgerDB' blk
+         LedgerDB.LedgerDB' blk wt
+      -> m ( LedgerDB.LedgerBackingStoreValueHandle m (ExtLedgerState blk) wt
+           , LedgerDB.LedgerDB' blk wt
            , m ()
            )
     finish ldb = do

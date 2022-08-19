@@ -43,7 +43,7 @@ import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto,
 -------------------------------------------------------------------------------}
 
 forgeShelleyBlock ::
-     forall m era proto mk.
+     forall m era proto mk wt.
       (ShelleyCompatible proto era, TxLimits (ShelleyBlock proto era), Monad m)
   => HotKey (EraCrypto era) m
   -> CanBeLeader proto
@@ -52,7 +52,7 @@ forgeShelleyBlock ::
                                                    --   capacity defined by ledger
   -> BlockNo                                       -- ^ Current block number
   -> SlotNo                                        -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock proto era) mk -- ^ Current ledger
+  -> TickedLedgerState (ShelleyBlock proto era) wt mk -- ^ Current ledger
   -> [Validated (GenTx (ShelleyBlock proto era))]  -- ^ Txs to add in the block
   -> IsLeader proto
   -> m (ShelleyBlock proto era)

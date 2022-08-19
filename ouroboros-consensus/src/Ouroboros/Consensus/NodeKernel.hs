@@ -3,8 +3,10 @@
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -81,6 +83,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.TxSeq (zeroTicketNo)
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
@@ -95,12 +98,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 -------------------------------------------------------------------------------}
 
 -- | Interface against running relay node
-data NodeKernel m remotePeer localPeer blk = NodeKernel {
+data NodeKernel m remotePeer localPeer blk wt = NodeKernel {
       -- | The 'ChainDB' of the node
-      getChainDB             :: ChainDB m blk
+      getChainDB             :: ChainDB m blk wt
 
       -- | The node's mempool
-    , getMempool             :: Mempool m blk TicketNo
+    , getMempool             :: Mempool m blk TicketNo wt
 
       -- | The node's top-level static configuration
     , getTopLevelConfig      :: TopLevelConfig blk
@@ -120,12 +123,14 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
     }
 
 -- | Arguments required when initializing a node
-data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
+data NodeKernelArgs m remotePeer localPeer blk wt where
+  NodeKernelArgs :: LedgerMustSupportUTxOHD' blk wt
+    => {
       tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
     , btime                   :: BlockchainTime m
-    , chainDB                 :: ChainDB m blk
+    , chainDB                 :: ChainDB m blk wt
     , initChainDB             :: StorageConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
     , blockForging            :: [BlockForging m blk]
@@ -133,18 +138,18 @@ data NodeKernelArgs m remotePeer localPeer blk = NodeKernelArgs {
     , miniProtocolParameters  :: MiniProtocolParameters
     , blockFetchConfiguration :: BlockFetchConfiguration
     , keepAliveRng            :: StdGen
-    }
+    } -> NodeKernelArgs m remotePeer localPeer blk wt
 
 initNodeKernel
-    :: forall m remotePeer localPeer blk.
+    :: forall m remotePeer localPeer blk wt.
        ( IOLike m
        , RunNode blk
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
        )
-    => NodeKernelArgs m remotePeer localPeer blk
-    -> m (NodeKernel m remotePeer localPeer blk)
+    => NodeKernelArgs m remotePeer localPeer blk wt
+    -> m (NodeKernel m remotePeer localPeer blk wt)
 initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
                                    , blockForging, chainDB, initChainDB
                                    , blockFetchConfiguration
@@ -183,29 +188,31 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
   Internal node components
 -------------------------------------------------------------------------------}
 
-data InternalState m remotePeer localPeer blk = IS {
+data InternalState m remotePeer localPeer blk wt where
+  IS :: LedgerMustSupportUTxOHD' blk wt
+    => {
       tracers             :: Tracers m remotePeer localPeer blk
     , cfg                 :: TopLevelConfig blk
     , registry            :: ResourceRegistry m
     , btime               :: BlockchainTime m
-    , chainDB             :: ChainDB m blk
+    , chainDB             :: ChainDB m blk wt
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
-    , mempool             :: Mempool m blk TicketNo
-    }
+    , mempool             :: Mempool m blk TicketNo wt
+    } -> InternalState m remotePeer localPeer blk wt
 
 initInternalState
-    :: forall m remotePeer localPeer blk.
+    :: forall m remotePeer localPeer blk wt.
        ( IOLike m
        , LedgerSupportsProtocol blk
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk
        )
-    => NodeKernelArgs m remotePeer localPeer blk
-    -> m (InternalState m remotePeer localPeer blk)
-initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
+    => NodeKernelArgs m remotePeer localPeer blk wt
+    -> m (InternalState m remotePeer localPeer blk wt)
+initInternalState NodeKernelArgs { tracers, chainDB = (chainDB :: ChainDB m blk wt), registry, cfg
                                  , blockFetchSize, btime
                                  , mempoolCapacityOverride
                                  } = do
@@ -234,15 +241,16 @@ initInternalState NodeKernelArgs { tracers, chainDB, registry, cfg
     return IS {..}
 
 initBlockFetchConsensusInterface
-    :: forall m peer blk.
+    :: forall m peer wt blk.
        ( IOLike m
        , BlockSupportsProtocol blk
        , SupportsNode.ConfigSupportsNode blk
        , History.HasHardForkHistory blk
-       , IsLedger (LedgerState blk)
+       , GetTip (LedgerState blk wt EmptyMK)
+       , IsSwitchLedgerTables wt
        )
     => TopLevelConfig blk
-    -> ChainDB m blk
+    -> ChainDB m blk wt
     -> STM m (Map peer (AnchoredFragment (Header blk)))
     -> (Header blk -> SizeInBytes)
     -> BlockchainTime m
@@ -294,7 +302,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     pure BlockFetchConsensusInterface {..}
   where
     toSummary ::
-         ExtLedgerState blk EmptyMK
+         ExtLedgerState blk wt EmptyMK
       -> History.Summary (History.HardForkIndices blk)
     toSummary = History.hardForkSummary (configLedger cfg) . ledgerState
 
@@ -457,9 +465,9 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     compareCandidateChains = compareAnchoredFragments bcfg
 
 forkBlockForging
-    :: forall m remotePeer localPeer blk.
+    :: forall m remotePeer localPeer blk wt.
        (IOLike m, RunNode blk)
-    => InternalState m remotePeer localPeer blk
+    => InternalState m remotePeer localPeer blk wt
     -> BlockForging m blk
     -> m ()
 forkBlockForging IS{..} blockForging =
@@ -593,7 +601,7 @@ forkBlockForging IS{..} blockForging =
 
         trace $ TraceForgedBlock
                   currentSlot
-                  (ledgerTipPoint (Proxy @blk) (ledgerState unticked))
+                  (ledgerTipPoint (ledgerState unticked))
                   newBlock
                   (snapshotMempoolSize mempoolSnapshot)
 
@@ -737,12 +745,12 @@ mkCurrentBlockContext currentSlot c = case c of
 -------------------------------------------------------------------------------}
 
 getMempoolReader
-  :: forall m blk.
+  :: forall m blk wt.
      ( LedgerSupportsMempool blk
      , IOLike m
      , HasTxId (GenTx blk)
      )
-  => Mempool m blk TicketNo
+  => Mempool m blk TicketNo wt
   -> TxSubmissionMempoolReader (GenTxId blk) (Validated (GenTx blk)) TicketNo m
 getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
     { mempoolZeroIdx     = zeroTicketNo
@@ -768,7 +776,7 @@ getMempoolWriter
      , IOLike m
      , HasTxId (GenTx blk)
      )
-  => Mempool m blk TicketNo
+  => Mempool m blk TicketNo wt
   -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
     { Inbound.txId          = txId
@@ -797,8 +805,8 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 -- justifies merging the future and current stake pools.
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
-  => NodeKernel m remotePeer localPeer blk
-  -> (LedgerState blk EmptyMK -> Bool)
+  => NodeKernel m remotePeer localPeer blk wt
+  -> (LedgerState blk wt EmptyMK -> Bool)
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedger kernel p = do
     immutableLedger <-
@@ -813,18 +821,16 @@ getPeersFromCurrentLedger kernel p = do
 -- | Like 'getPeersFromCurrentLedger' but with a \"after slot number X\"
 -- condition.
 getPeersFromCurrentLedgerAfterSlot ::
-     forall m blk localPeer remotePeer.
      ( IOLike m
      , LedgerSupportsPeerSelection blk
-     , UpdateLedger blk
+     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
      )
-  => NodeKernel m remotePeer localPeer blk
+  => NodeKernel m remotePeer localPeer blk wt
   -> SlotNo
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedgerAfterSlot kernel slotNo =
     getPeersFromCurrentLedger kernel afterSlotNo
   where
-    afterSlotNo :: LedgerState blk mk -> Bool
     afterSlotNo st =
       case ledgerTipSlot st of
         Origin        -> False

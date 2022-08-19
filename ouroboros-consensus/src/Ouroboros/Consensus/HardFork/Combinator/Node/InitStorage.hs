@@ -7,7 +7,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
 
 import           Data.SOP.Strict
 
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Util.SOP
 
@@ -16,7 +16,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 
@@ -63,9 +62,9 @@ instance CanHardFork xs => NodeInitStorage (HardForkBlock xs) where
            SingleEraBlock blk
         => Index xs blk
         -> StorageConfig blk
-        -> Flip LedgerState EmptyMK blk
+        -> Flip2 LedgerState WithoutLedgerTables EmptyMK blk
         -> K (m ()) blk
-      aux index cfg' (Flip currentLedger) = K $
+      aux index cfg' (Flip2 currentLedger) = K $
           nodeInitChainDB cfg' InitChainDB {
               addBlock         = addBlock initChainDB
                                . injectNS' (Proxy @I) index

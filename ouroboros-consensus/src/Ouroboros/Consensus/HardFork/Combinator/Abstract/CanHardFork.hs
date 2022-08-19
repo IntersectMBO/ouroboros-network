@@ -28,7 +28,10 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
   CanHardFork
 -------------------------------------------------------------------------------}
 
-class (All SingleEraBlock xs, Typeable xs, IsNonEmpty xs) => CanHardFork xs where
+class ( All SingleEraBlock xs
+      , Typeable xs
+      , IsNonEmpty xs
+      ) => CanHardFork xs where
   hardForkEraTranslation :: EraTranslation xs
   hardForkChainSel       :: Tails AcrossEraSelection xs
   hardForkInjectTxs      ::

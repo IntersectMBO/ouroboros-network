@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE InstanceSigs             #-}
 {-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE MultiWayIf               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
@@ -31,6 +32,7 @@ import           Ouroboros.Consensus.HardFork.History.Util
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import qualified Ouroboros.Consensus.Protocol.Praos.Views as Praos
@@ -106,16 +108,23 @@ instance
   -- view. Since we can convert them, we piggy-back on this to get a Praos
   -- ledger view. Ultimately, we will want to liberalise the ledger code
   -- slightly.
+  ledgerViewForecastAt ::
+       forall wt mk. IsSwitchLedgerTables wt
+    => LedgerConfig (ShelleyBlock (Praos crypto) era)
+    -> LedgerState (ShelleyBlock (Praos crypto) era) wt mk
+    -> Forecast (LedgerView (BlockProtocol (ShelleyBlock (Praos crypto) era)))
   ledgerViewForecastAt cfg st =
     mapForecast (translateTickedLedgerView @(TPraos crypto) @(Praos crypto)) $
       ledgerViewForecastAt @(ShelleyBlock (TPraos crypto) era) cfg st'
     where
-      st' :: LedgerState (ShelleyBlock (TPraos crypto) era) EmptyMK
+      st' :: LedgerState (ShelleyBlock (TPraos crypto) era) wt EmptyMK
       st' =
         ShelleyLedgerState
           { shelleyLedgerTip = coerceTip <$> shelleyLedgerTip st,
             shelleyLedgerState = shelleyLedgerState st,
             shelleyLedgerTransition = shelleyLedgerTransition st,
-            shelleyLedgerTables = polyEmptyLedgerTables
+            shelleyLedgerTables = case findOutWT (Proxy @wt) of
+              SWithLedgerTables    -> polyEmptyLedgerTables
+              SWithoutLedgerTables -> polyEmptyLedgerTables
           }
       coerceTip (ShelleyTip slot block hash) = ShelleyTip slot block (coerce hash)

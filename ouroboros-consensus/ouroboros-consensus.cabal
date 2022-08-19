@@ -122,6 +122,7 @@ library
                        Ouroboros.Consensus.Ledger.SupportsMempool
                        Ouroboros.Consensus.Ledger.SupportsPeerSelection
                        Ouroboros.Consensus.Ledger.SupportsProtocol
+                       Ouroboros.Consensus.Ledger.SupportsUTxOHD
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl
@@ -236,6 +237,7 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.HD
                        Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                        Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.Trivial
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.LedgerDB.Types

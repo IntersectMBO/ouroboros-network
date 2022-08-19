@@ -6,6 +6,8 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -94,7 +96,7 @@ instance Typeable xs => ShowProxy (GenTx (HardForkBlock xs)) where
 
 type instance ApplyTxErr (HardForkBlock xs) = HardForkApplyTxErr xs
 
-instance CanHardFork' xs => LedgerSupportsMempool (HardForkBlock xs) where
+instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
   applyTx   = applyHelper ModeApply
 
   reapplyTx = \cfg slot vtx tls ->
@@ -126,6 +128,20 @@ instance CanHardFork' xs => LedgerSupportsMempool (HardForkBlock xs) where
       . getOneEraValidatedGenTx
       . getHardForkValidatedGenTx
 
+instance ( CanHardFork xs
+         , LedgerTablesCanHardFork xs
+         ) => GetsBlockKeySets (LedgerState (HardForkBlock xs)) (HardForkBlock xs) WithLedgerTables where
+  getBlockKeySets (HardForkBlock (OneEraBlock ns)) =
+        hcollapse
+      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
+    where
+      f ::
+           SingleEraBlock                                           x
+        => InjectLedgerTables xs                   x
+        -> I                                                        x
+        -> K (LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables KeysMK) x
+      f inj (I blk) = K $ applyInjectLedgerTables inj $ getBlockKeySets blk
+
   getTransactionKeySets (HardForkGenTx (OneEraGenTx ns)) =
         hcollapse
       $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
@@ -134,8 +150,9 @@ instance CanHardFork' xs => LedgerSupportsMempool (HardForkBlock xs) where
            SingleEraBlock                                           x
         => InjectLedgerTables xs                                    x
         -> GenTx                                                    x
-        -> K (LedgerTables (LedgerState (HardForkBlock xs)) KeysMK) x
+        -> K (LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables KeysMK) x
       f inj tx = K $ applyInjectLedgerTables inj $ getTransactionKeySets tx
+
 
 -- | A private type used only to clarify the parameterization of 'applyHelper'
 data ApplyHelperMode :: (Type -> Type) -> Type where
@@ -143,8 +160,8 @@ data ApplyHelperMode :: (Type -> Type) -> Type where
   ModeReapply :: ApplyHelperMode WrapValidatedGenTx
 
 -- | A private type used only to clarify the definition of 'applyHelper'
-data ApplyResult xs blk = ApplyResult {
-    arState       :: Ticked1 (LedgerState blk) TrackingMK
+data ApplyResult wt xs blk = ApplyResult {
+    arState       :: Ticked1 (LedgerState blk wt) TrackingMK
   , arValidatedTx :: Validated (GenTx (HardForkBlock xs))
   }
 
@@ -152,16 +169,19 @@ data ApplyResult xs blk = ApplyResult {
 --
 -- The @txIn@ variable is 'GenTx' or 'WrapValidatedGenTx', respectively. See
 -- 'ApplyHelperMode'.
-applyHelper :: forall xs txIn. CanHardFork xs
+applyHelper :: forall xs txIn wt.
+     ( CanHardFork xs
+     , IsSwitchLedgerTables wt
+     )
   => ApplyHelperMode txIn
   -> LedgerConfig (HardForkBlock xs)
   -> WhetherToIntervene
   -> SlotNo
   -> txIn (HardForkBlock xs)
-  -> TickedLedgerState (HardForkBlock xs) ValuesMK
+  -> TickedLedgerState (HardForkBlock xs) wt ValuesMK
   -> Except
       (HardForkApplyTxErr xs)
-      ( TickedLedgerState (HardForkBlock xs) TrackingMK
+      ( TickedLedgerState (HardForkBlock xs) wt TrackingMK
       , Validated (GenTx (HardForkBlock xs))
       )
 applyHelper mode
@@ -195,9 +215,9 @@ applyHelper mode
           result <-
               hsequence'
             $ hcizipWith proxySingle modeApplyCurrent cfgs matched
-          let _ = result :: State.HardForkState (ApplyResult xs) xs
+          let _ = result :: State.HardForkState (ApplyResult wt xs) xs
 
-              st' :: State.HardForkState (FlipTickedLedgerState TrackingMK) xs
+              st' :: State.HardForkState (FlipTickedLedgerState TrackingMK wt) xs
               st' = (FlipTickedLedgerState . arState) `hmap` result
 
               vtx :: Validated (GenTx (HardForkBlock xs))
@@ -239,9 +259,9 @@ applyHelper mode
          SingleEraBlock                                blk
       => Index xs                                      blk
       -> WrapLedgerConfig                              blk
-      -> Product txIn (FlipTickedLedgerState ValuesMK) blk
+      -> Product txIn (FlipTickedLedgerState ValuesMK wt) blk
       -> (     Except (HardForkApplyTxErr xs)
-           :.: ApplyResult xs
+           :.: ApplyResult wt xs
          )                                             blk
     modeApplyCurrent index cfg (Pair tx' (FlipTickedLedgerState st)) =
           Comp
@@ -297,8 +317,8 @@ instance All HasTxs xs => HasTxs (HardForkBlock xs) where
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk mk. SingleEraBlock blk
-           => State.Current (FlipTickedLedgerState mk) blk -> LedgerEraInfo blk
+ledgerInfo :: forall blk wt mk. SingleEraBlock blk
+           => State.Current (FlipTickedLedgerState wt mk) blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 injectApplyTxErr :: Index xs blk -> ApplyTxErr blk -> HardForkApplyTxErr xs

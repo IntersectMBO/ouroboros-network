@@ -89,10 +89,10 @@ exceptionRequiresRecovery pb e = case toExitReason pb e of
 --   (see 'exceptionRequiresRecovery') that indicate corruption, for which we
 --   want the next startup to do revalidation.
 runWithCheckedDB
-  :: forall a m h blk. (IOLike m, StandardHash blk, Typeable blk)
+  :: forall a m h wt blk. (IOLike m, StandardHash blk, Typeable blk)
   => Proxy blk
   -> HasFS m h
-  -> (LastShutDownWasClean -> (ChainDB m blk -> m a -> m a) -> m a)
+  -> (LastShutDownWasClean -> (ChainDB m blk wt -> m a -> m a) -> m a)
   -> m a
 runWithCheckedDB pb hasFS body = do
     -- When we shut down cleanly, we create a marker file so that the next
