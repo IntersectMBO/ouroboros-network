@@ -32,7 +32,9 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer (..), traceWith)
 
+#if !defined(mingw32_HOST_OS)
 import           System.Directory (getModificationTime)
+#endif
 
 import           Data.IP (IP (..))
 import           Network.DNS (DNSError)
@@ -89,11 +91,34 @@ withResource' tracer = go
 constantResource :: Applicative m => a -> Resource m err a
 constantResource a = Resource (pure (Right a, constantResource a))
 
+
+#if !defined(mingw32_HOST_OS)
+type TimeStamp = UTCTime
+#else
+type TimeStamp = Time
+#endif
+
+#if defined(mingw32_HOST_OS)
+-- | on Windows we will reinitialise the dns library every 60s.
+--
+dns_REINITIALISE_INTERVAL :: DiffTime
+dns_REINITIALISE_INTERVAL = 60
+#endif
+
+getTimeStamp :: FilePath
+             -> IO TimeStamp
+#if !defined(mingw32_HOST_OS)
+getTimeStamp = getModificationTime
+#else
+getTimeStamp _ = addTime dns_REINITIALISE_INTERVAL <$> getMonotonicTime
+#endif
+
+
 -- | Strict version of 'Maybe' adjusted to the needs ot
 -- 'asyncResolverResource'.
 --
 data TimedResolver
-    = TimedResolver !DNS.Resolver !UTCTime
+    = TimedResolver !DNS.Resolver !TimeStamp
     | NoResolver
 
 -- | Dictionary of DNS actions vocabulary
@@ -131,8 +156,6 @@ data DNSActions resolver exception m = DNSActions {
   }
 
 
-
-
 -- |
 --
 -- TODO: it could be useful for `publicRootPeersProvider`.
@@ -167,7 +190,7 @@ resolverResource resolvConf = do
        -> Resource IO (DNSorIOError IOException) DNS.Resolver
     go filePath tr@NoResolver = Resource $
       do
-        modTime <- getModificationTime filePath
+        modTime <- getTimeStamp filePath
         rs <- DNS.makeResolvSeed resolvConf
         DNS.withResolver rs
           (\resolver ->
@@ -176,7 +199,7 @@ resolverResource resolvConf = do
 
     go filePath tr@(TimedResolver resolver modTime) = Resource $
       do
-        modTime' <- getModificationTime filePath
+        modTime' <- getTimeStamp filePath
         if modTime' <= modTime
           then pure (Right resolver, go filePath (TimedResolver resolver modTime))
           else do
@@ -190,10 +213,11 @@ resolverResource resolvConf = do
 -- | `Resource` which passes the 'DNS.Resolver' through a 'StrictTVar'.  Better
 -- than 'resolverResource' when using in multiple threads.
 --
--- On /Windows/ returns newly intiatialised 'DNS.Resolver' at each step;  This
+-- On /Windows/ returns newly initialised 'DNS.Resolver' at each step;  This
 -- is because on /Windows/ we don't have a way to check that the network
 -- configuration has changed.  The 'dns' library is using 'GetNetworkParams@
 -- win32 api call to get the list of default dns servers.
+--
 asyncResolverResource :: DNS.ResolvConf
                       -> IO (Resource IO (DNSorIOError IOException)
                                          DNS.Resolver)
