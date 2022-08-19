@@ -213,11 +213,6 @@ resolverResource resolvConf = do
 -- | `Resource` which passes the 'DNS.Resolver' through a 'StrictTVar'.  Better
 -- than 'resolverResource' when using in multiple threads.
 --
--- On /Windows/ returns newly initialised 'DNS.Resolver' at each step;  This
--- is because on /Windows/ we don't have a way to check that the network
--- configuration has changed.  The 'dns' library is using 'GetNetworkParams@
--- win32 api call to get the list of default dns servers.
---
 asyncResolverResource :: DNS.ResolvConf
                       -> IO (Resource IO (DNSorIOError IOException)
                                          DNS.Resolver)
@@ -270,25 +265,7 @@ asyncResolverResource resolvConf =
                     pure (Right resolver', go filePath resourceVar)
           `catches` handlers filePath resourceVar
 #else
-asyncResolverResource resolvConf = return go
-    where
-      go = Resource $
-        do
-          rs <- DNS.makeResolvSeed resolvConf
-          DNS.withResolver rs $ \resolver -> pure (Right resolver, go)
-        `catches` handlers
-
-      handlers :: [Handler IO
-                    ( Either (DNSorIOError IOException) DNS.Resolver
-                    , Resource IO (DNSorIOError IOException) DNS.Resolver)]
-      handlers =
-        [ Handler $
-            \(err :: IOException) ->
-              pure (Left (IOError err), go)
-        , Handler $
-            \(err :: DNS.DNSError) ->
-              pure (Left (DNSError err), go)
-        ]
+asyncResolverResource resolvConf = resolverResource resolvConf
 #endif
 
 -- | Like 'DNS.lookupA' but also return the TTL for the results.
