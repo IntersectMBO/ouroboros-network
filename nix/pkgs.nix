@@ -8,10 +8,8 @@ with pkgs; {
   network-docs = callPackage ./network-docs.nix { };
   consensus-docs = callPackage ./consensus-docs.nix { };
 
-  cabal = haskell-nix.tool localConfig.ghcVersion "cabal" {
-    version = "latest";
-    inherit (ouroborosNetworkHaskellPackages) index-state;
-  };
+  cabal =
+    haskell-nix.tool localConfig.ghcVersion "cabal" { version = "latest"; };
 
   stylish-haskell = haskell-nix.tool localConfig.ghcVersion "stylish-haskell" {
     version = "0.13.0.0";
