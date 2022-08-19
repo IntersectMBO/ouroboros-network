@@ -5,6 +5,7 @@
 module Ouroboros.Network.Testing.Data.AbsBearerInfo
   ( AbsBearerInfoScript (..)
   , canFail
+  , NonFailingAbsBearerInfo (..)
   , NonFailingAbsBearerInfoScript (..)
   , AbsDelay (..)
   , delay
@@ -259,8 +260,9 @@ instance Arbitrary AbsBearerInfo where
       | a <- shrink (abiSDUSize abi)
       ]
 
-newtype AbsBearerInfoScript =
-  AbsBearerInfoScript { unBIScript :: Script AbsBearerInfo }
+newtype AbsBearerInfoScript = AbsBearerInfoScript {
+    unBIScript :: Script AbsBearerInfo
+  }
   deriving       Show via (Script AbsBearerInfo)
   deriving stock Eq
 
@@ -288,15 +290,16 @@ instance Arbitrary AbsBearerInfoScript where
     , script' /= script
     ]
 
-newtype NonFailingAbsBearerInfoScript =
-  NonFailingAbsBearerInfoScript { unNFBIScript :: Script AbsBearerInfo }
-  deriving       Show via (Script AbsBearerInfo)
+newtype NonFailingAbsBearerInfo = NonFailingAbsBearerInfo {
+    unNFBI :: AbsBearerInfo
+  }
+  deriving       Show via AbsBearerInfo
   deriving stock Eq
 
-toNonFailingAbsBearerInfoScript :: AbsBearerInfoScript
-                                -> NonFailingAbsBearerInfoScript
-toNonFailingAbsBearerInfoScript (AbsBearerInfoScript script) =
-    NonFailingAbsBearerInfoScript $ fmap unfail script
+toNonFailingAbsBearerInfo :: AbsBearerInfo
+                          -> NonFailingAbsBearerInfo
+toNonFailingAbsBearerInfo script =
+    NonFailingAbsBearerInfo $ unfail script
   where
     unfail :: AbsBearerInfo -> AbsBearerInfo
     unfail bi =
@@ -310,6 +313,23 @@ toNonFailingAbsBearerInfoScript (AbsBearerInfoScript script) =
     unfailAtt (ErrorInterval    speed _ _) = NoAttenuation speed
     unfailAtt (SpeedAttenuation speed _ _) = NoAttenuation speed
     unfailAtt a                            = a
+
+instance Arbitrary NonFailingAbsBearerInfo where
+  arbitrary = toNonFailingAbsBearerInfo <$> arbitrary
+  shrink (NonFailingAbsBearerInfo script) =
+    NonFailingAbsBearerInfo <$> shrink script
+
+newtype NonFailingAbsBearerInfoScript = NonFailingAbsBearerInfoScript {
+    unNFBIScript :: Script AbsBearerInfo
+  }
+  deriving       Show via (Script AbsBearerInfo)
+  deriving stock Eq
+
+toNonFailingAbsBearerInfoScript :: AbsBearerInfoScript
+                                -> NonFailingAbsBearerInfoScript
+toNonFailingAbsBearerInfoScript (AbsBearerInfoScript script) =
+    NonFailingAbsBearerInfoScript
+    $ fmap (unNFBI . toNonFailingAbsBearerInfo) script
 
 instance Arbitrary NonFailingAbsBearerInfoScript where
   arbitrary = toNonFailingAbsBearerInfoScript <$> arbitrary

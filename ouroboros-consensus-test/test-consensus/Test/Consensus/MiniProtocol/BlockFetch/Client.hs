@@ -51,7 +51,8 @@ import qualified Ouroboros.Network.Driver.Simple as Driver
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import qualified Ouroboros.Network.Mux as Mux
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion,
+                     isPipeliningEnabled)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetchId)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (SendMsgNoBlocks, SendMsgStartBatch),
@@ -166,7 +167,7 @@ runBlockFetchTest BlockFetchClientTestSetup{..} = withRegistry \registry -> do
         blockFetchCfg
 
     let runBlockFetchClient peerId =
-          bracketFetchClient fetchClientRegistry ntnVersion peerId \clientCtx -> do
+          bracketFetchClient fetchClientRegistry ntnVersion isPipeliningEnabled peerId \clientCtx -> do
             let bfClient = blockFetchClient
                     ntnVersion
                     (readTVar varControlMessage)

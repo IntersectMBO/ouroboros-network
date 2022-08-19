@@ -26,6 +26,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (nullTracer)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>))
+import           Data.Maybe (fromMaybe)
 import           Data.Void (Void)
 import           System.Random (StdGen)
 
@@ -38,6 +39,12 @@ import           Network.TypedProtocol.PingPong.Codec.CBOR
 import           Network.TypedProtocol.PingPong.Examples
 import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Type
+import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.Protocol.BlockFetch.Codec
+import           Ouroboros.Network.Protocol.BlockFetch.Examples
+import           Ouroboros.Network.Protocol.BlockFetch.Server
+import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Examples
@@ -54,12 +61,14 @@ import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 import           Data.Monoid.Synchronisation
 
-import           Ouroboros.Network.Block (HasHeader, Point)
+import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.ConnectionId
 import qualified Ouroboros.Network.Diffusion as Diff (Applications (..))
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.KeepAlive
+import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.MockChain.ProducerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
@@ -68,17 +77,23 @@ import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Testing.ConcreteBlock
 
+import           Network.TypedProtocol
+
+import qualified Pipes
+
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 
 -- | Protocol codecs.
 --
 data Codecs block m = Codecs
-  { chainSyncCodec :: Codec (ChainSync block (Point block) (Tip block))
+  { chainSyncCodec  :: Codec (ChainSync block (Point block) (Tip block))
                          CBOR.DeserialiseFailure m ByteString
-  , keepAliveCodec :: Codec KeepAlive
+  , blockFetchCodec :: Codec (BlockFetch block (Point block))
                          CBOR.DeserialiseFailure m ByteString
-  , pingPongCodec  :: Codec PingPong
+  , keepAliveCodec  :: Codec KeepAlive
+                         CBOR.DeserialiseFailure m ByteString
+  , pingPongCodec   :: Codec PingPong
                          CBOR.DeserialiseFailure m ByteString
   }
 
@@ -88,6 +103,8 @@ cborCodecs = Codecs
                                     Serialise.encode Serialise.decode
                                     (Block.encodeTip Serialise.encode)
                                     (Block.decodeTip Serialise.decode)
+  , blockFetchCodec = codecBlockFetch Serialise.encode Serialise.decode
+                                      Serialise.encode Serialise.decode
   , keepAliveCodec = codecKeepAlive_v2
   , pingPongCodec  = codecPingPong
   }
@@ -99,9 +116,18 @@ data LimitsAndTimeouts block = LimitsAndTimeouts
     chainSyncLimits
       :: MiniProtocolLimits
   , chainSyncSizeLimits
-      :: ProtocolSizeLimits (ChainSync block (Point block) (Tip block)) ByteString
+      :: ProtocolSizeLimits (ChainSync block (Point block) (Tip block))
+                            ByteString
   , chainSyncTimeLimits
       :: ProtocolTimeLimits (ChainSync block (Point block) (Tip block))
+
+    -- block-fetch
+  , blockFetchLimits
+      :: MiniProtocolLimits
+  , blockFetchSizeLimits
+      :: ProtocolSizeLimits (BlockFetch block (Point block)) ByteString
+  , blockFetchTimeLimits
+      :: ProtocolTimeLimits (BlockFetch block (Point block))
 
     -- keep-alive
   , keepAliveLimits
@@ -147,7 +173,7 @@ data AppArgs m = AppArgs
 
 -- | Protocol handlers.
 --
-applications :: forall block m.
+applications :: forall block header m.
                 ( MonadAsync m
                 , MonadFork  m
                 , MonadMask  m
@@ -155,10 +181,12 @@ applications :: forall block m.
                 , MonadTime  m
                 , MonadTimer m
                 , MonadThrow (STM m)
+                , HasHeader header
                 , HasHeader block
+                , HeaderHash header ~ HeaderHash block
                 , ShowProxy block
                 )
-             => NodeKernel block m
+             => NodeKernel header block m
              -> Codecs block m
              -> LimitsAndTimeouts block
              -> AppArgs m
@@ -166,7 +194,8 @@ applications :: forall block m.
                                      NtCAddr NtCVersion NtCVersionData
                                      m ())
 applications nodeKernel
-             Codecs { chainSyncCodec, keepAliveCodec, pingPongCodec }
+             Codecs { chainSyncCodec, blockFetchCodec
+                    , keepAliveCodec, pingPongCodec }
              limits
              AppArgs
                { aaLedgerPeersConsensusInterface
@@ -216,12 +245,20 @@ applications nodeKernel
     initiatorAndResponderApp = TemperatureBundle
       { withHot = WithHot $ \ connId controlMessageSTM ->
           [ MiniProtocol
-              { miniProtocolNum    = MiniProtocolNum 1
+              { miniProtocolNum    = MiniProtocolNum 2
               , miniProtocolLimits = chainSyncLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     (chainSyncInitiator connId controlMessageSTM)
                     chainSyncResponder
+              }
+          , MiniProtocol
+              { miniProtocolNum    = MiniProtocolNum 3
+              , miniProtocolLimits = blockFetchLimits limits
+              , miniProtocolRun    =
+                  InitiatorAndResponderProtocol
+                    (blockFetchInitiator connId controlMessageSTM)
+                    blockFetchResponder
               }
           ]
       , withWarm = WithWarm $ \ _connId controlMessageSTM ->
@@ -256,25 +293,29 @@ applications nodeKernel
       -> MuxPeer ByteString m ()
     chainSyncInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
-      MuxPeerRaw $ \channel ->
-        bracket (registerClientChains nodeKernel remoteAddress)
-                (\_ -> unregisterClientChains nodeKernel remoteAddress)
-                (\chainVar ->
-                  runPeerWithLimits
-                    nullTracer
-                    chainSyncCodec
-                    (chainSyncSizeLimits limits)
-                    (chainSyncTimeLimits limits)
-                    channel
-                    (chainSyncClientPeer $
-                       chainSyncClientExample
-                         chainVar
-                         (controlledClient controlMessageSTM))
-                )
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "ChainSyncClient"
+        bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
+                                   remoteAddress $
+          bracket (registerClientChains nodeKernel remoteAddress)
+                  (\_ -> unregisterClientChains nodeKernel remoteAddress)
+                  (\chainVar ->
+                    runPeerWithLimits
+                      nullTracer
+                      chainSyncCodec
+                      (chainSyncSizeLimits limits)
+                      (chainSyncTimeLimits limits)
+                      channel
+                      (chainSyncClientPeer $
+                         chainSyncClientExample
+                           chainVar
+                           (controlledClient controlMessageSTM))
+                  )
 
     chainSyncResponder
       :: MuxPeer ByteString m ()
-    chainSyncResponder = MuxPeerRaw $ \channel ->
+    chainSyncResponder = MuxPeerRaw $ \channel -> do
+      labelThisThread "ChainSyncServer"
       runPeerWithLimits
         nullTracer
         chainSyncCodec
@@ -285,35 +326,83 @@ applications nodeKernel
           (chainSyncServerExample
             () (nkChainProducerState nodeKernel)))
 
+    blockFetchInitiator
+      :: ConnectionId NtNAddr
+      -> ControlMessageSTM m
+      -> MuxPeer ByteString m ()
+    blockFetchInitiator ConnectionId { remoteAddress }
+                        controlMessageSTM =
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "BlockFetchClient"
+        bracketFetchClient (nkFetchClientRegistry nodeKernel)
+                           UnversionedProtocol
+                           (const NotReceivingTentativeBlocks)
+                           remoteAddress
+                           $ \clientCtx ->
+          runPeerWithLimits
+            nullTracer
+            blockFetchCodec
+            (blockFetchSizeLimits limits)
+            (blockFetchTimeLimits limits)
+            channel
+            (forgetPipelined
+              $ blockFetchClient UnversionedProtocol controlMessageSTM
+                                 nullTracer clientCtx)
+
+    blockFetchResponder
+      :: MuxPeer ByteString m ()
+    blockFetchResponder =
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "BlockFetchServer"
+        runPeerWithLimits
+          nullTracer
+          blockFetchCodec
+          (blockFetchSizeLimits limits)
+          (blockFetchTimeLimits limits)
+          channel
+          (blockFetchServerPeer $
+            blockFetchServer
+            (constantRangeRequests $ \(ChainRange from to) -> do
+              nkChainProducer <- Pipes.lift
+                               $ readTVarIO (nkChainProducerState nodeKernel)
+              Pipes.each $ fromMaybe []
+                         $ Chain.selectBlockRange (chainState nkChainProducer)
+                                                  from
+                                                  to
+            )
+          )
+
     keepAliveInitiator
       :: ConnectionId NtNAddr
       -> ControlMessageSTM m
       -> MuxPeer ByteString m ()
     keepAliveInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
-      MuxPeerRaw $ \channel ->
-        bracket (registerClientKeepAlive nodeKernel remoteAddress)
-                (\_ -> unregisterClientKeepAlive nodeKernel remoteAddress)
-                (\ctxVar ->
-                    runPeerWithLimits
-                      nullTracer
-                      keepAliveCodec
-                      (keepAliveSizeLimits limits)
-                      (keepAliveTimeLimits limits)
-                      channel
-                      (keepAliveClientPeer $
-                         keepAliveClient
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "KeepAliveClient"
+        let kacApp =
+              \ctxVar -> runPeerWithLimits
                            nullTracer
-                           aaKeepAliveStdGen
-                           controlMessageSTM
-                           remoteAddress
-                           ctxVar
-                           (KeepAliveInterval aaKeepAliveInterval))
-                )
+                           keepAliveCodec
+                           (keepAliveSizeLimits limits)
+                           (keepAliveTimeLimits limits)
+                           channel
+                           (keepAliveClientPeer $
+                              keepAliveClient
+                                nullTracer
+                                aaKeepAliveStdGen
+                                controlMessageSTM
+                                remoteAddress
+                                ctxVar
+                                (KeepAliveInterval aaKeepAliveInterval))
+        bracketKeepAliveClient (nkFetchClientRegistry nodeKernel)
+                               remoteAddress
+                               kacApp
 
     keepAliveResponder
       :: MuxPeer ByteString m ()
-    keepAliveResponder = MuxPeerRaw $ \channel ->
+    keepAliveResponder = MuxPeerRaw $ \channel -> do
+      labelThisThread "KeepAliveServer"
       runPeerWithLimits
         nullTracer
         keepAliveCodec

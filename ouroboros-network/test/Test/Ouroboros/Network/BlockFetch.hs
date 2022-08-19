@@ -45,6 +45,7 @@ import           Ouroboros.Network.BlockFetch.Examples
 import           Ouroboros.Network.Driver (TraceSendRecv)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.Mux (ControlMessage (..), continueForever)
+import           Ouroboros.Network.NodeToNode (isPipeliningEnabled)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 import           Ouroboros.Network.Testing.ConcreteBlock
 
@@ -567,7 +568,7 @@ _unit_bracketSyncWithFetchClient step = do
       let peer  = "thepeer"
           fetch :: m a
           fetch = withFetchTestAction $ \body ->
-                    bracketFetchClient registry maxBound peer $ \_ ->
+                    bracketFetchClient registry maxBound isPipeliningEnabled peer $ \_ ->
                       body
 
           sync :: m b

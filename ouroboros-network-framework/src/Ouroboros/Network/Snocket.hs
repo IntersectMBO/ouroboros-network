@@ -189,12 +189,14 @@ instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
 newtype TestAddress addr = TestAddress { getTestAddress :: addr }
-  deriving (Eq, Ord, Typeable)
+  deriving (Eq, Ord, Typeable, Generic)
 
 instance Show addr => Show (TestAddress addr) where
     showsPrec d (TestAddress addr) =
         showString "TestAddress "
       . showParen True (showsPrec d addr)
+
+instance Hashable addr => Hashable (TestAddress addr)
 
 -- | We support either sockets or named pipes.
 --

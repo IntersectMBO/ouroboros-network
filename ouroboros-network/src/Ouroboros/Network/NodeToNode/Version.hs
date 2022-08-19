@@ -17,6 +17,8 @@ import           Data.Typeable (Typeable)
 
 import qualified Codec.CBOR.Term as CBOR
 
+import           Ouroboros.Network.BlockFetch.ClientState
+                     (WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
@@ -145,5 +147,7 @@ data ConnectionMode = UnidirectionalMode | DuplexMode
 
 -- | Check whether a version enabling diffusion pipelining has been
 -- negotiated.
-isPipeliningEnabled :: NodeToNodeVersion -> Bool
-isPipeliningEnabled v = v >= NodeToNodeV_8
+isPipeliningEnabled :: NodeToNodeVersion -> WhetherReceivingTentativeBlocks
+isPipeliningEnabled v
+  | v >= NodeToNodeV_8 = ReceivingTentativeBlocks
+  | otherwise          = NotReceivingTentativeBlocks
