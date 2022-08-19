@@ -21,6 +21,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Util (StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 localStateQueryServer ::
      forall m blk wt.
@@ -29,6 +30,7 @@ localStateQueryServer ::
      , Query.ConfigSupportsNode blk
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
+     , SingI wt
      )
   => ExtLedgerCfg blk
   -> (forall b.

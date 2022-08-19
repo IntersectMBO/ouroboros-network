@@ -72,6 +72,7 @@ openMempool
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
+     , Typeable wt
      )
   => ResourceRegistry m
   -> LedgerInterface m blk wt
@@ -95,6 +96,7 @@ openMempoolWithoutSyncThread
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
+     , Typeable wt
      )
   => LedgerInterface m blk wt
   -> LedgerConfig blk
@@ -111,6 +113,7 @@ mkMempool ::
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
+     , Typeable wt
      )
   => MempoolEnv m blk wt -> Mempool m blk TicketNo wt
 mkMempool mpEnv = Mempool
@@ -234,6 +237,7 @@ forkSyncStateOnTipPointChange :: forall m blk wt. (
                                  , LedgerSupportsProtocol blk
                                  , LedgerMustSupportUTxOHD' blk wt
                                  , HasTxId (GenTx blk)
+                                 , Typeable wt
                                  )
                               => ResourceRegistry m
                               -> MempoolEnv m blk wt
@@ -285,6 +289,7 @@ implTryAddTxs
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
+     , Typeable wt
      )
   => MempoolEnv m blk wt
   -> WhetherToIntervene
@@ -329,6 +334,7 @@ implSyncWithLedger ::
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
+     , Typeable wt
      )
   => MempoolEnv m blk wt
   -> m (MempoolSnapshot blk TicketNo)
@@ -382,6 +388,7 @@ getStatePair :: forall m blk wt b.
      , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      , Typeable b
+     , Typeable wt
      )
   => MempoolEnv m blk wt
   -> StaticEither b () (Point blk)

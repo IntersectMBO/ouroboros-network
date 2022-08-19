@@ -430,7 +430,6 @@ chainSyncClient
     :: forall m blk wt.
        ( IOLike m
        , LedgerSupportsProtocol blk
-       , IsSwitchLedgerTables wt
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)

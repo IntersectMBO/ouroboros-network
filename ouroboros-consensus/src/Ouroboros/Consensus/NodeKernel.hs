@@ -92,6 +92,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import Data.Typeable
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 {-------------------------------------------------------------------------------
   Relay node
@@ -147,6 +149,8 @@ initNodeKernel
        , NoThunks remotePeer
        , Ord remotePeer
        , Hashable remotePeer
+       , SingI wt
+       , Typeable wt
        )
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (NodeKernel m remotePeer localPeer blk wt)
@@ -209,6 +213,7 @@ initInternalState
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk
+       , Typeable wt
        )
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (InternalState m remotePeer localPeer blk wt)
@@ -247,7 +252,6 @@ initBlockFetchConsensusInterface
        , SupportsNode.ConfigSupportsNode blk
        , History.HasHardForkHistory blk
        , GetTip (LedgerState blk wt EmptyMK)
-       , IsSwitchLedgerTables wt
        )
     => TopLevelConfig blk
     -> ChainDB m blk wt

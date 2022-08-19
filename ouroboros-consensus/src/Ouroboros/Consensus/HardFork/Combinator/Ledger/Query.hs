@@ -76,6 +76,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
                      (Mismatch (..), mustMatchNS)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Tele
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 instance Typeable xs => ShowProxy (BlockQuery (HardForkBlock xs)) where
 
@@ -145,7 +146,7 @@ instance
       lcfg = configLedger cfg
       ei   = State.epochInfoLedger lcfg hardForkState
 
-  prepareBlockQuery :: forall wt result. IsSwitchLedgerTables wt => BlockQuery (HardForkBlock xs) LargeL result -> LedgerTables (LedgerState (HardForkBlock xs)) wt KeysMK
+  prepareBlockQuery :: forall wt result. SingI wt => BlockQuery (HardForkBlock xs) LargeL result -> LedgerTables (LedgerState (HardForkBlock xs)) wt KeysMK
   prepareBlockQuery = \case
       QueryIfCurrent queryIfCurrent  -> prepareQueryIfCurrent queryIfCurrent
       QueryAnytime queryAnytime _era -> proveNotLargeQuery    queryAnytime
@@ -256,7 +257,7 @@ instance All SingleEraBlock xs => IsQuery (QueryIfCurrent xs) where
     QS qry -> classifyQuery qry
 
 interpretQueryIfCurrent ::
-     forall mk fp result wt xs. (All SingleEraBlock xs, QuerySat mk fp, IsSwitchLedgerTables wt)
+     forall mk fp result wt xs. (All SingleEraBlock xs, QuerySat mk fp)
   => NP ExtLedgerCfg xs
   -> QueryIfCurrent xs fp result
   -> NS (Flip2 ExtLedgerState wt mk) xs
@@ -279,7 +280,7 @@ interpretQueryIfCurrent = go
 
 prepareQueryIfCurrent ::
   forall xs wt result.
-     (All SingleEraBlock xs, IsSwitchLedgerTables wt, LedgerTablesCanHardFork xs)
+     (All SingleEraBlock xs, LedgerTablesCanHardFork xs, SingI wt)
   => QueryIfCurrent xs LargeL result
   -> LedgerTables (LedgerState (HardForkBlock xs)) wt KeysMK
 prepareQueryIfCurrent = case findOutWT (Proxy @wt) of
@@ -440,7 +441,7 @@ instance SmallQuery (QueryHardFork xs) where
 instance All SingleEraBlock xs => IsQuery (QueryHardFork xs) where
 
 interpretQueryHardFork ::
-     (All SingleEraBlock xs, IsSwitchLedgerTables wt)
+     All SingleEraBlock xs
   => HardForkLedgerConfig xs
   -> QueryHardFork xs fp result
   -> LedgerState (HardForkBlock xs) wt mk

@@ -128,6 +128,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 
 {-------------------------------------------------------------------------------
@@ -276,6 +277,8 @@ run :: forall blk p2p wt.
      (RunNode blk
      , SerialiseDiskConstraints blk wt
      , LedgerMustSupportUTxOHD' blk wt
+     , SingI wt
+     , Typeable wt
      )
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
@@ -294,6 +297,8 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p wt.
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
      , SerialiseDiskConstraints blk wt
      , LedgerMustSupportUTxOHD' blk wt
+     , SingI wt
+     , Typeable wt
      )
   => RunNodeArgs m addrNTN addrNTC blk p2p wt
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
@@ -542,6 +547,8 @@ openChainDB
      , IOLike m
      , SerialiseDiskConstraints blk wt
      , LedgerMustSupportUTxOHD' blk wt
+     , SingI wt
+     , Typeable wt
      )
   => ResourceRegistry m
   -> CheckInFuture m blk
@@ -589,7 +596,7 @@ mkChainDbArgs
     }
 
 mkNodeKernelArgs
-  :: forall m addrNTN addrNTC blk wt. (RunNode blk, IOLike m, IsSwitchLedgerTables wt)
+  :: forall m addrNTN addrNTC blk wt. (RunNode blk, IOLike m, SingI wt)
   => ResourceRegistry m
   -> Int
   -> StdGen
@@ -767,7 +774,7 @@ data StdRunNodeArgs m blk (p2p :: Diffusion.P2P) = StdRunNodeArgs
 -- | Conveniently packaged 'LowLevelRunNodeArgs' arguments from a standard
 -- non-testing invocation.
 stdLowLevelRunNodeArgsIO ::
-     forall blk p2p wt. RunNode blk
+     forall blk p2p wt. (RunNode blk)
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
   -> IO (LowLevelRunNodeArgs

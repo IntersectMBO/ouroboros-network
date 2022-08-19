@@ -109,6 +109,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCac
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.Serialisation
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk wt = LgrDB {
@@ -200,6 +201,7 @@ openDB :: forall m blk wt.
           ( IOLike m
           , LedgerSupportsProtocol blk
           , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
+          , SingI wt
           , LgrDbSerialiseConstraints blk wt
           , InspectLedger blk
           , HasCallStack
@@ -268,6 +270,7 @@ initFromDisk
      ( IOLike m
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
+     , SingI wt
      , LgrDbSerialiseConstraints blk wt
      , InspectLedger blk
      , HasCallStack

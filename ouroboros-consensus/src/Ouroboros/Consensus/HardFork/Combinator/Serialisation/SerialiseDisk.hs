@@ -34,7 +34,6 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 instance ( SerialiseHFC xs
          , SufficientSerializationForAnyBackingStore (ExtLedgerState (HardForkBlock xs)) wt
-         , IsSwitchLedgerTables wt
          )
       => SerialiseDiskConstraints  (HardForkBlock xs) wt
 
@@ -128,25 +127,22 @@ instance SerialiseHFC xs
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
-instance (SerialiseHFC xs, IsSwitchLedgerTables wt)
+instance SerialiseHFC xs
       => EncodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) wt EmptyMK) where
   encodeDisk cfg =
-        encodeTelescope (hcmap pSHFC (fn . (case findOutWT (Proxy @wt) of
-                                              SWithLedgerTables    -> aux
-                                              SWithoutLedgerTables -> aux)) cfgs)
+        encodeTelescope (hcmap pSHFC (fn . (\c st -> K $ -- encodeDisk c
+                                             undefined
+                                             . unFlip2 $ st)) cfgs)
       . hardForkLedgerStatePerEra
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
-      aux :: EncodeDisk blk (LedgerState blk wt EmptyMK) => CodecConfig blk -> Flip2 LedgerState wt EmptyMK blk -> K Encoding blk
-      aux cfg' st = K $ encodeDisk cfg' . unFlip2 $ st
-
-instance (SerialiseHFC xs, IsSwitchLedgerTables wt)
+instance SerialiseHFC xs
       => DecodeDisk (HardForkBlock xs) (LedgerState (HardForkBlock xs) wt EmptyMK) where
   decodeDisk cfg =
         fmap HardForkLedgerState
-      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip2 . (case findOutWT (Proxy @wt) of
-                                                             SWithLedgerTables -> decodeDisk
-                                                             SWithoutLedgerTables -> decodeDisk)) cfgs)
+      $ decodeTelescope (hcmap pSHFC (Comp . fmap Flip2 . -- decodeDisk
+                                     undefined
+                                     ) cfgs)
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)

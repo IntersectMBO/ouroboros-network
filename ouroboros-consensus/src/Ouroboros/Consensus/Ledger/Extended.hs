@@ -14,7 +14,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-
+{-# LANGUAGE QuantifiedConstraints #-}
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
     ExtLedgerCfg (..)
@@ -359,4 +359,3 @@ type LedgerMustSupportUTxOHD' blk wt = ( LedgerMustSupportUTxOHD (ExtLedgerState
 
 instance (LedgerSupportsProtocol blk, LedgerMustSupportUTxOHD (LedgerState blk) blk WithLedgerTables)    => LedgerMustSupportUTxOHD (ExtLedgerState blk) blk WithLedgerTables
 instance (LedgerSupportsProtocol blk, LedgerMustSupportUTxOHD (LedgerState blk) blk WithoutLedgerTables) => LedgerMustSupportUTxOHD (ExtLedgerState blk) blk WithoutLedgerTables
-instance (LedgerSupportsProtocol blk, LedgerSupportsUTxOHD    (LedgerState blk) blk                    ) => LedgerSupportsUTxOHD    (ExtLedgerState blk) blk

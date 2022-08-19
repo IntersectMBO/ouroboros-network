@@ -41,7 +41,6 @@ import           Data.SOP.Strict hiding (shape)
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract as Abstract
-import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Counting (getExactly)
 
@@ -137,7 +136,6 @@ recover =
 
 mostRecentTransitionInfo :: forall xs wt mk.
   ( All SingleEraBlock xs
-  , IsSwitchLedgerTables wt
   )
   => HardForkLedgerConfig xs
   -> HardForkState (Flip2 LedgerState wt mk) xs
@@ -159,16 +157,12 @@ mostRecentTransitionInfo HardForkLedgerConfig{..} st =
                   -> Current (Flip2 LedgerState wt mk) blk
                   -> K TransitionInfo                  blk
     getTransition cfg (K eraParams) Current{..} = K $
-      let state = rf (Proxy @(TableStuff (LedgerState blk)))
-                     (Proxy @wt)
-                  $ forgetLedgerTables $ unFlip2 currentState in
+      let state = forgetLedgerTables $ unFlip2 currentState in
         case singleEraTransition' cfg eraParams currentStart state of
-          Nothing -> TransitionUnknown (rf (Proxy @(FlipGetTip (LedgerState blk) EmptyMK))
-                                           (Proxy @wt)
-                                         $ ledgerTipSlot state)
+          Nothing -> TransitionUnknown (ledgerTipSlot state)
           Just e  -> TransitionKnown e
 
-reconstructSummaryLedger :: (All SingleEraBlock xs, IsSwitchLedgerTables wt)
+reconstructSummaryLedger :: (All SingleEraBlock xs)
                          => HardForkLedgerConfig xs
                          -> HardForkState (Flip2 LedgerState wt mk) xs
                          -> History.Summary xs
@@ -182,7 +176,7 @@ reconstructSummaryLedger cfg@HardForkLedgerConfig{..} st =
 --
 -- NOTE: The resulting 'EpochInfo' is a snapshot only, with a limited range.
 -- It should not be stored.
-epochInfoLedger :: (All SingleEraBlock xs, IsSwitchLedgerTables wt)
+epochInfoLedger :: (All SingleEraBlock xs)
                 => HardForkLedgerConfig xs
                 -> HardForkState (Flip2 LedgerState wt mk) xs
                 -> EpochInfo (Except PastHorizonException)
@@ -210,7 +204,6 @@ epochInfoPrecomputedTransitionInfo shape transition st =
 -- | Extend the telescope until the specified slot is within the era at the tip
 extendToSlot :: forall xs wt.
                 ( CanHardFork xs
-                , IsSwitchLedgerTables wt
                 )
              => HardForkLedgerConfig xs
              -> SlotNo
@@ -220,7 +213,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
     . Telescope.extend
         ( InPairs.hcmap proxySingle (\f -> Require $ \(K t)
                                         -> Extend  $ \cur
-                                        -> I $ howExtend' f t cur)
+                                        -> I $ howExtend f t cur)
         $ translate
         )
         (hczipWith
@@ -243,8 +236,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
                   => Current (Flip2 LedgerState wt EmptyMK) blk
                   -> Current (Flip2 LedgerState wt DiffMK) blk
     convertToDiff c = c { currentState = Flip2
-                                . rf (Proxy @(TableStuff (LedgerState blk))) (Proxy @wt)
-                                  (flip withLedgerTables polyEmptyLedgerTables)
+                                . flip withLedgerTables polyEmptyLedgerTables
                                 . unFlip2
                                 . currentState
                                 $ c }
@@ -267,20 +259,6 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
                          transition
         guard (slot >= History.boundSlot endBound)
         return endBound
-
-    howExtend' :: forall blk blk'.
-                  ( LedgerSupportsUTxOHD (LedgerState blk) blk
-                  , LedgerSupportsUTxOHD (LedgerState blk') blk'
-                  )
-              => TranslateLedgerState blk blk'
-              -> History.Bound
-              -> Current (Flip2 LedgerState wt DiffMK) blk
-              -> (K Past blk, Current (Flip2 LedgerState wt DiffMK) blk')
-    howExtend' = rf (Proxy @(And (And (TableStuff (LedgerState blk'))
-                                      (TableStuff (LedgerState blk)))
-                                  (StowableLedgerTables (LedgerState blk'))))
-                    (Proxy @wt)
-                    howExtend
 
     howExtend :: ( TableStuff (LedgerState blk) wt
                  , StowableLedgerTables (LedgerState blk') wt

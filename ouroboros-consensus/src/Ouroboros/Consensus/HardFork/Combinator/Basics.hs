@@ -88,40 +88,8 @@ newtype instance LedgerState (HardForkBlock xs) wt mk = HardForkLedgerState {
       hardForkLedgerStatePerEra :: HardForkState (Flip2 LedgerState wt mk) xs
     }
 
--- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt EmptyMK)
 deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) WithLedgerTables EmptyMK)
 deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) WithoutLedgerTables EmptyMK)
-
--- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt ValuesMK)
--- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt ValuesMK)
-
--- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt DiffMK)
--- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt DiffMK)
-
--- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt SeqDiffMK)
-
--- instance (SingI mk, Typeable mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) wt (ApplyMapKind' mk)) where
---   showsPrec p = showParen (p >= 11) . showsLedgerState sMapKind
-
--- instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
---   showsLedgerState = \mk (HardForkLedgerState hfstate) ->
---         showParen True
---       $ (showString "HardForkLedgerState " .)
---       $ shows
---       $ hcmap proxySingle (showInner mk) hfstate
---     where
---        showInner ::
---             SingleEraBlock x
---          => SMapKind mk
---          -> Flip2 LedgerState wt (ApplyMapKind' mk) x
---          -> AlreadyShown        x
---        showInner mk (Flip2 st) =
---            AlreadyShown
---          $ showParen True
---          $ showString "Flip " . showsLedgerState mk st
-
--- newtype AlreadyShown x = AlreadyShown {unAlreadyShown :: ShowS}
--- instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown
 
 {-------------------------------------------------------------------------------
   UTxO HD

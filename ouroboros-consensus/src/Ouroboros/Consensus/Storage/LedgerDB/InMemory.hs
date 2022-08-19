@@ -105,6 +105,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 {-------------------------------------------------------------------------------
   Ledger DB types
@@ -152,7 +153,7 @@ newtype LedgerDB (l :: LedgerStateKindWithTables) (wt :: SwitchLedgerTables) = L
 deriving newtype instance Eq       (DbChangelog l wt) => Eq       (LedgerDB l wt)
 deriving newtype instance NoThunks (DbChangelog l wt) => NoThunks (LedgerDB l wt)
 
-deriving instance (ShowLedgerState l, ShowLedgerState (LedgerTables l), IsSwitchLedgerTables wt) => Show (LedgerDB l wt)
+deriving instance (ShowLedgerState l, ShowLedgerState (LedgerTables l), SingI wt) => Show (LedgerDB l wt)
 
 {-------------------------------------------------------------------------------
   LedgerDB proper

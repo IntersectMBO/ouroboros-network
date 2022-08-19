@@ -74,6 +74,8 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
+import Ouroboros.Consensus.Util.Singletons (SingI)
+import Data.Typeable
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -88,6 +90,8 @@ withDB
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk wt
+     , SingI wt
+     , Typeable wt
      )
   => ChainDbArgs Identity m blk
   -> (ChainDB m blk wt -> m a)
@@ -103,6 +107,8 @@ openDB
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk wt
+     , SingI wt
+     , Typeable wt
      )
   => ChainDbArgs Identity m blk
   -> m (ChainDB m blk wt)
@@ -117,6 +123,8 @@ openDBInternal
      , HasHardForkHistory blk
      , ConvertRawHash blk
      , SerialiseDiskConstraints blk wt
+     , SingI wt
+     , Typeable wt
      )
   => ChainDbArgs Identity m blk
   -> Bool -- ^ 'True' = Launch background tasks

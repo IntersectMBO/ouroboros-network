@@ -194,6 +194,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as Backing
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.Trivial as Trivial
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -329,6 +330,7 @@ initLedgerDB ::
        , InspectLedger blk
        , HasCallStack
        , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
+       , SingI wt
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
@@ -495,6 +497,7 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 restoreBackingStore :: forall m l blk wt.
      ( IOLike m
      , LedgerMustSupportUTxOHD (l blk) blk wt
+     , SingI wt
      )
   => SomeHasFS m
   -> DiskSnapshot
@@ -541,6 +544,7 @@ newBackingStore ::
      forall m l blk wt.
      ( IOLike m
      , LedgerMustSupportUTxOHD (l blk) blk wt
+     , SingI wt
      )
   => Tracer m LMDB.TraceDb
   -> BackingStoreSelector m

@@ -57,7 +57,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -108,20 +107,12 @@ instance GetTip (LedgerState blk wt mk) => GetTip (Flip2 LedgerState wt mk blk) 
 
 instance ( CanHardFork xs
          , All SingleEraBlock xs
-         , IsSwitchLedgerTables wt
          ) => GetTip (LedgerState (HardForkBlock xs) wt mk) where
   getTip = hcollapse
-         . hcmap proxySingle f'
+         . hcmap proxySingle f
          . State.tip
          . hardForkLedgerStatePerEra
     where
-      f' :: forall x.
-           ( LedgerSupportsUTxOHD (LedgerState x) x
-           , ConvertRawHash x
-           )
-        => Flip2 LedgerState wt mk x
-        -> K (Point (LedgerState (HardForkBlock xs) wt mk)) x
-      f' = rf (Proxy @(And (TableStuff (LedgerState x)) (FlipGetTip (LedgerState x) EmptyMK))) (Proxy @wt) f
 
       f :: forall x .
            ( GetTip (LedgerState x wt EmptyMK)
@@ -136,19 +127,11 @@ instance ( CanHardFork xs
 
 instance ( CanHardFork xs
          , All SingleEraBlock xs
-         , IsSwitchLedgerTables wt
          ) => GetTip (Ticked1 (LedgerState (HardForkBlock xs) wt) mk) where
   getTip = hcollapse
-         . hcmap proxySingle f'
+         . hcmap proxySingle f
          . tickedHardForkLedgerStatePerEra
     where
-      f' :: forall x.
-           ( LedgerSupportsUTxOHD (LedgerState x) x
-           , ConvertRawHash x
-           )
-        => FlipTickedLedgerState mk wt x
-        -> K (Point (Ticked1 (LedgerState (HardForkBlock xs) wt) mk)) x
-      f' = rf (Proxy @(And (TickedTableStuff (LedgerState x)) (FlipGetTip (LedgerState x) EmptyMK))) (Proxy @wt) f
 
       f :: forall x.
            ( GetTip (Ticked1 (LedgerState x wt) EmptyMK)
@@ -177,21 +160,6 @@ data instance Ticked1 (LedgerState (HardForkBlock xs) wt) mk =
       }
   deriving (Generic)
 
--- deriving anyclass instance
---      ( CanHardFork xs
---      , IsSwitchLedgerTables wt
--- --     , NoThunks (Ticked1 (LedgerState blk wt) EmptyMK)
---      )
---   => NoThunks (Ticked1 (LedgerState (HardForkBlock xs) wt) EmptyMK)
-
--- deriving anyclass instance
---      (CanHardFork xs, IsSwitchLedgerTables wt)
---   => NoThunks (Ticked1 (LedgerState (HardForkBlock xs) wt) ValuesMK)
-
--- deriving anyclass instance
---      (CanHardFork xs, IsSwitchLedgerTables wt)
---   => NoThunks (Ticked1 (LedgerState (HardForkBlock xs) wt) SeqDiffMK)
-
 instance ( CanHardFork xs
          )
   => IsLedger (LedgerState (HardForkBlock xs)) where
@@ -199,7 +167,7 @@ instance ( CanHardFork xs
 
   type AuxLedgerEvent (LedgerState (HardForkBlock xs)) = OneEraLedgerEvent xs
 
-  applyChainTickLedgerResult :: forall wt. IsSwitchLedgerTables wt =>
+  applyChainTickLedgerResult :: forall wt.
                               LedgerCfg (LedgerState (HardForkBlock xs))
                              -> SlotNo
                              -> LedgerState (HardForkBlock xs) wt EmptyMK
@@ -208,7 +176,7 @@ instance ( CanHardFork xs
                                   (Ticked1 (LedgerState (HardForkBlock xs) wt) DiffMK)
   applyChainTickLedgerResult cfg@HardForkLedgerConfig{..} slot (HardForkLedgerState st) =
       sequenceHardForkState
-        (hcizipWith (proxySingle) (tickOne' ei slot) cfgs extended) <&> \l' ->
+        (hcizipWith proxySingle (tickOne ei slot) cfgs extended) <&> \l' ->
       TickedHardForkLedgerState {
           tickedHardForkLedgerStateTransition =
             -- We are bundling a 'TransitionInfo' with a /ticked/ ledger state,
@@ -240,21 +208,8 @@ instance ( CanHardFork xs
 
       extended = State.extendToSlot cfg slot st
 
-      tickOne' :: forall blk.
-           SingleEraBlock blk
-        => EpochInfo (Except PastHorizonException)
-        -> SlotNo
-        -> Index                                          xs   blk
-        -> WrapPartialLedgerConfig                             blk
-        -> (Flip2 LedgerState wt DiffMK)                       blk
-        -> (     LedgerResult (LedgerState (HardForkBlock xs))
-             :.: FlipTickedLedgerState DiffMK wt
-           )                                                   blk
-      tickOne' = rf (Proxy @(TickedTableStuff (LedgerState blk))) (Proxy @wt) tickOne
-
 tickOne :: ( SingleEraBlock blk
            , TickedTableStuff (LedgerState blk) wt
-           , IsSwitchLedgerTables wt
            )
         => EpochInfo (Except PastHorizonException)
         -> SlotNo
@@ -403,7 +358,7 @@ instance ( CanHardFork xs )
                transition
                st
 
-apply :: (SingleEraBlock blk, IsSwitchLedgerTables wt)
+apply :: SingleEraBlock blk
       => Index xs                                           blk
       -> WrapLedgerConfig                                   blk
       -> Product I (FlipTickedLedgerState ValuesMK wt)         blk
@@ -417,7 +372,7 @@ apply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st)) =
     $ fmap (Comp . fmap Flip2 . embedLedgerResult (injectLedgerEvent index))
     $ applyBlockLedgerResult cfg block st
 
-reapply :: (SingleEraBlock blk, IsSwitchLedgerTables wt)
+reapply :: SingleEraBlock blk
         => Index xs                                           blk
         -> WrapLedgerConfig                                   blk
         -> Product I (FlipTickedLedgerState ValuesMK wt)         blk
@@ -528,8 +483,7 @@ instance ( BlockSupportsProtocol  (HardForkBlock xs)
             protocolLedgerView (completeLedgerConfig' ei cfg) st
 
   ledgerViewForecastAt ::
-       forall wt mk. IsSwitchLedgerTables wt
-    => LedgerConfig (HardForkBlock xs)
+       forall wt mk. LedgerConfig (HardForkBlock xs)
     -> LedgerState (HardForkBlock xs) wt mk
     -> Forecast (LedgerView (BlockProtocol (HardForkBlock xs)))
   ledgerViewForecastAt ledgerCfg@HardForkLedgerConfig{..}
@@ -546,21 +500,10 @@ instance ( BlockSupportsProtocol  (HardForkBlock xs)
       annForecast = HardForkState $
           hczipWith3
             proxySingle
-            forecastOne'
+            forecastOne
             pcfgs
             (getExactly (History.getShape hardForkLedgerConfigShape))
             (getHardForkState ledgerSt)
-
-      forecastOne' ::
-             forall blk. SingleEraBlock blk
-          => WrapPartialLedgerConfig blk
-          -> K EraParams blk
-          -> Current (Flip2 LedgerState wt mk) blk
-          -> Current (AnnForecast LedgerState WrapLedgerView wt) blk
-      forecastOne' = rf (Proxy @(And (FlipGetTip (LedgerState blk) EmptyMK)
-                                     (TableStuff (LedgerState blk))))
-                        (Proxy @wt)
-                        forecastOne
 
       forecastOne ::
              forall blk. ( SingleEraBlock blk
@@ -616,7 +559,7 @@ data AnnForecast state view (wt :: SwitchLedgerTables) blk = AnnForecast {
 -- | Change a telescope of a forecast into a forecast of a telescope
 mkHardForkForecast ::
      forall state view xs wt.
-     (SListI xs, IsSwitchLedgerTables wt)
+     SListI xs
   => InPairs (TranslateForecast state view) xs
   -> HardForkState (AnnForecast state view wt) xs
   -> Forecast (HardForkLedgerView_ view xs)
@@ -634,8 +577,7 @@ mkHardForkForecast translations st = Forecast {
 
 oneForecast ::
      forall state view blk blks wt.
-     IsSwitchLedgerTables wt
-  => SlotNo
+     SlotNo
   -> InPairs (TranslateForecast state view) (blk : blks)
      -- ^ this function uses at most the first translation
   -> Current (AnnForecast state view wt) blk
@@ -789,7 +731,7 @@ instance CanHardFork xs => InspectLedger (HardForkBlock xs) where
       ei    = State.epochInfoLedger (configLedger cfg) after
 
 inspectHardForkLedger ::
-     forall wt xs mk1 mk2. (CanHardFork xs, IsSwitchLedgerTables wt)
+     forall wt xs mk1 mk2. CanHardFork xs
   => NP WrapPartialLedgerConfig xs
   -> NP (K EraParams) xs
   -> NP TopLevelConfig xs

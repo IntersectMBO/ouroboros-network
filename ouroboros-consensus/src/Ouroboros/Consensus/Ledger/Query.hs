@@ -85,6 +85,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.DepPair
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 {-------------------------------------------------------------------------------
   Queries
@@ -268,7 +269,7 @@ deriving instance Show (BlockQuery blk fp result) => Show (Query blk fp result)
 
 -- | Answer the given query about the extended ledger state.
 answerQuery ::
-     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, QuerySat mk fp, IsSwitchLedgerTables wt)
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, QuerySat mk fp)
   => ExtLedgerCfg blk
   -> Query          blk fp result
   -> ExtLedgerState blk wt mk
@@ -279,7 +280,7 @@ answerQuery cfg query st = case query of
   GetChainBlockNo -> headerStateBlockNo (headerState st)
   GetChainPoint -> headerStatePoint (headerState st)
 
-prepareQuery :: (QueryLedger blk, IsSwitchLedgerTables wt) => Query blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
+prepareQuery :: (QueryLedger blk, SingI wt) => Query blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
 prepareQuery (BlockQuery query) = prepareBlockQuery query
 
 class QuerySat (mk :: MapKind) (fp :: FootprintL)
@@ -304,9 +305,9 @@ data family BlockQuery blk :: FootprintL -> Type -> Type
 class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  answerBlockQuery :: IsSwitchLedgerTables wt => QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk wt mk -> result
+  answerBlockQuery :: QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk wt mk -> result
 
-  prepareBlockQuery :: IsSwitchLedgerTables wt =>  BlockQuery blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
+  prepareBlockQuery :: SingI wt => BlockQuery blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
 
   answerWholeBlockQuery :: BlockQuery blk WholeL result -> IncrementalQueryHandler blk wt result
 
@@ -337,6 +338,7 @@ handleQuery ::
      , Monad m
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
+     , SingI wt
      )
   => ExtLedgerCfg blk
   -> DiskLedgerView m (ExtLedgerState blk) wt
@@ -356,6 +358,7 @@ handleLargeQuery ::
      , Monad m
      , LedgerSupportsProtocol blk
      , LedgerMustSupportUTxOHD' blk wt
+     , SingI wt
      )
   => ExtLedgerCfg blk
   -> DiskLedgerView m (ExtLedgerState blk) wt

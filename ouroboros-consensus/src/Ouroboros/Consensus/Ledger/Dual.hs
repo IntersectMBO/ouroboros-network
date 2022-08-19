@@ -369,8 +369,7 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
   type AuxLedgerEvent (LedgerState (DualBlock m a)) = AuxLedgerEvent (LedgerState m)
 
   applyChainTickLedgerResult ::
-       forall wt. IsSwitchLedgerTables wt
-    => LedgerCfg (LedgerState (DualBlock m a))
+       forall wt. LedgerCfg (LedgerState (DualBlock m a))
     -> SlotNo
     -> LedgerState (DualBlock m a) wt EmptyMK
     -> LedgerResult (LedgerState (DualBlock m a)) (Ticked1 (LedgerState (DualBlock m a) wt) DiffMK)
@@ -383,7 +382,7 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                                            dualLedgerConfigAux
                                            slot
                                           dualLedgerStateAux
-        , tickedDualLedgerStateAuxOrig = rf (Proxy @(TableStuff (LedgerState a))) (Proxy @wt) $ forgetLedgerTables dualLedgerStateAux
+        , tickedDualLedgerStateAuxOrig = forgetLedgerTables dualLedgerStateAux
         , tickedDualLedgerStateBridge  = dualLedgerStateBridge
         }
     where
@@ -505,8 +504,7 @@ instance ShowLedgerState (LedgerTables (LedgerState (DualBlock m a))) where
 
 instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) where
   applyBlockLedgerResult ::
-       forall wt. IsSwitchLedgerTables wt
-    => LedgerCfg (LedgerState (DualBlock m a))
+       forall wt. LedgerCfg (LedgerState (DualBlock m a))
     -> DualBlock m a
     -> Ticked1 (LedgerState (DualBlock m a) wt) ValuesMK
     -> Except
@@ -522,9 +520,7 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
               (dualLedgerConfigMain cfg)
               dualBlockMain
               tickedDualLedgerStateMain
-          , rf (Proxy @(TableStuff (LedgerState a)))
-               (Proxy @wt)
-            $ applyMaybeBlock
+          , applyMaybeBlock
                (dualLedgerConfigAux cfg)
                dualBlockAux
                tickedDualLedgerStateAux
@@ -539,8 +535,7 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
         }
 
   reapplyBlockLedgerResult ::
-       forall wt. IsSwitchLedgerTables wt
-    => LedgerCfg (LedgerState (DualBlock m a))
+       forall wt. LedgerCfg (LedgerState (DualBlock m a))
     -> DualBlock m a
     -> Ticked1 (LedgerState (DualBlock m a) wt) ValuesMK
     -> LedgerResult (LedgerState (DualBlock m a)) (LedgerState (DualBlock m a) wt DiffMK)
@@ -550,9 +545,7 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
     castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
         dualLedgerStateMain   = main'
       , dualLedgerStateAux    =
-         rf (Proxy @(TableStuff (LedgerState a)))
-            (Proxy @wt)
-         $ reapplyMaybeBlock
+         reapplyMaybeBlock
              (dualLedgerConfigAux cfg)
              dualBlockAux
              tickedDualLedgerStateAux
@@ -993,7 +986,6 @@ type instance ForgeStateUpdateError (DualBlock m a) = ForgeStateUpdateError m
 -- Returns state unchanged on 'Nothing'
 applyMaybeBlock :: ( TableStuff (LedgerState blk) wt
                    , ApplyBlock (LedgerState blk) blk
-                   , IsSwitchLedgerTables wt
                    )
                 => LedgerConfig blk
                 -> Maybe blk
@@ -1011,7 +1003,6 @@ applyMaybeBlock cfg (Just block) tst _  =
 -- See also 'applyMaybeBlock'
 reapplyMaybeBlock :: ( TableStuff (LedgerState blk) wt
                      , ApplyBlock (LedgerState blk) blk
-                     , IsSwitchLedgerTables wt
                      )
                   => LedgerConfig blk
                   -> Maybe blk

@@ -132,7 +132,6 @@ module Ouroboros.Consensus.Ledger.Basics (
   , rawApplyDiffs
   , rawCalculateDifference
     -- * WithLedgerTables
-  , IsSwitchLedgerTables
   , LedgerStateKindWithTables
   , LedgerTables (..)
   , SwitchLedgerTables (..)
@@ -308,15 +307,14 @@ class ( -- Requirements on the ledger state itself
   -- NOTE: The 'IsApplyMapKind' constraint is here for the same reason it's on
   -- 'projectLedgerTables'
   applyChainTickLedgerResult ::
-       IsSwitchLedgerTables wt
-    => LedgerCfg l
+       LedgerCfg l
     -> SlotNo
     -> l wt EmptyMK
     -> LedgerResult l (Ticked1 (l wt) DiffMK)
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick ::
-     (IsLedger l, IsSwitchLedgerTables wt)
+     IsLedger l
   => LedgerCfg l
   -> SlotNo
   -> l wt EmptyMK
@@ -759,19 +757,18 @@ reapplyTrackingTicked after before =
 data SwitchLedgerTables = WithLedgerTables
                         | WithoutLedgerTables
 
-type IsSwitchLedgerTables (wt :: SwitchLedgerTables) = (SingI wt, Typeable wt)
-
+--
 data instance Sing (sw :: SwitchLedgerTables) :: Type where
   SWithLedgerTables    :: Sing WithLedgerTables
   SWithoutLedgerTables :: Sing WithoutLedgerTables
 
-findOutWT :: IsSwitchLedgerTables wt => proxy wt -> Sing wt
+findOutWT :: SingI wt => proxy wt -> Sing wt
 findOutWT _ = sing
 
 instance SingI WithLedgerTables    where sing = SWithLedgerTables
 instance SingI WithoutLedgerTables where sing = SWithoutLedgerTables
 
-rf :: forall c wt ans. (c WithLedgerTables, c WithoutLedgerTables, IsSwitchLedgerTables wt)
+rf :: forall c wt ans. (c WithLedgerTables, c WithoutLedgerTables, SingI wt)
  => Proxy c
   -> Proxy wt
   -> (c wt => ans)
@@ -1190,7 +1187,7 @@ newtype DbChangelogState l = DbChangelogState {unDbChangelogState :: l EmptyMK}
 deriving instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
 deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
 
-instance (ShowLedgerState l, IsSwitchLedgerTables wt) => Show (DbChangelogState (l wt)) where
+instance (ShowLedgerState l, SingI wt) => Show (DbChangelogState (l wt)) where
   showsPrec p (DbChangelogState x) =
         showParen (p >= 11)
       $ showString "DbChangelogState " . showsLedgerState sMapKind x

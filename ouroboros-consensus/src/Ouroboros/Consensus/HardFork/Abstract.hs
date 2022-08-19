@@ -49,8 +49,7 @@ class HasHardForkHistory blk where
   -- ledgers, then the 'LedgerConfig' here must indeed already contain timing
   -- information, and so this function becomes little more than a projection
   -- (indeed, in this case the 'LedgerState' should be irrelevant).
-  hardForkSummary :: IsSwitchLedgerTables wt
-                  => LedgerConfig blk
+  hardForkSummary :: LedgerConfig blk
                   -> LedgerState blk wt mk
                   -> HardFork.Summary (HardForkIndices blk)
 

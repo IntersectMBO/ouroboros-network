@@ -150,7 +150,7 @@ instance LedgerSupportsMempool ByronBlock where
   txForgetValidated = forgetValidatedByronTx
 
 instance GetsBlockKeySets (LedgerState ByronBlock) ByronBlock WithLedgerTables where
-  getBlockKeySets _ = NoByronLedgerTables
+  getBlockKeySets       _ = NoByronLedgerTables
   getTransactionKeySets _ = NoByronLedgerTables
 
 data instance TxId (GenTx ByronBlock)

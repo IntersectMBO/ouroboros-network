@@ -31,8 +31,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
 import           Ouroboros.Consensus.Ledger.Basics (DiffMK, EmptyMK,
-                     IsSwitchLedgerTables, LedgerState, LedgerTables,
-                     StowableLedgerTables, TableStuff)
+                     LedgerState, LedgerTables,
+                     StowableLedgerTables, TableStuff, SwitchLedgerTables)
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
@@ -98,8 +98,8 @@ newtype Translate f x y = Translate {
 -- view in the preceding era might have.
 newtype TranslateForecast f g x y = TranslateForecast {
       translateForecastWith ::
-          forall wt. IsSwitchLedgerTables wt
-        => Bound    -- 'Bound' of the transition (start of the new era)
+          forall (wt :: SwitchLedgerTables).
+           Bound    -- 'Bound' of the transition (start of the new era)
         -> SlotNo   -- 'SlotNo' we're constructing a forecast for
         -> f x wt EmptyMK
         -> Except OutsideForecastRange (Ticked (g y))
@@ -116,7 +116,6 @@ data TranslateLedgerState x y = TranslateLedgerState {
             forall wt.
             ( TableStuff (LedgerState y) wt
             , StowableLedgerTables (LedgerState y) wt
-            , IsSwitchLedgerTables wt
             )
          => EpochNo
          -> LedgerState x wt EmptyMK
@@ -137,9 +136,7 @@ data TranslateLedgerState x y = TranslateLedgerState {
         -- the next era.
       , translateLedgerTablesWith ::
           forall wt.
-            ( TableStuff (LedgerState y) wt
-            , IsSwitchLedgerTables wt
-            )
+            TableStuff (LedgerState y) wt
          => LedgerTables (LedgerState x) wt DiffMK
          -> LedgerTables (LedgerState y) wt DiffMK
     }

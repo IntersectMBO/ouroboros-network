@@ -84,8 +84,7 @@ class ( IsLedger l
   -- This is passed the ledger state ticked with the slot of the given block, so
   -- 'applyChainTickLedgerResult' has already been called.
   applyBlockLedgerResult ::
-       IsSwitchLedgerTables wt
-    => LedgerCfg l
+       LedgerCfg l
     -> blk
     -> Ticked1 (l wt) ValuesMK
     -> Except (LedgerErr l) (LedgerResult l (l wt DiffMK))
@@ -100,8 +99,7 @@ class ( IsLedger l
   -- the provided ledger state, the ledger layer should not perform /any/
   -- validation checks.
   reapplyBlockLedgerResult ::
-       IsSwitchLedgerTables wt
-    => LedgerCfg l
+       LedgerCfg l
     -> blk
     -> Ticked1 (l wt) ValuesMK
     -> LedgerResult l (l wt DiffMK)
@@ -181,7 +179,7 @@ TODO: Elaborate more this comment
 
 -- | 'lrResult' after 'applyBlockLedgerResult'
 applyLedgerBlock ::
-     (ApplyBlock l blk, IsSwitchLedgerTables wt)
+     ApplyBlock l blk
   => LedgerCfg l
   -> blk
   -> Ticked1 (l wt) ValuesMK
@@ -190,7 +188,7 @@ applyLedgerBlock = fmap lrResult ..: applyBlockLedgerResult
 
 -- | 'lrResult' after 'reapplyBlockLedgerResult'
 reapplyLedgerBlock ::
-     (ApplyBlock l blk, IsSwitchLedgerTables wt)
+     ApplyBlock l blk
   => LedgerCfg l
   -> blk
   -> Ticked1 (l wt) ValuesMK
@@ -198,7 +196,7 @@ reapplyLedgerBlock ::
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
-     (ApplyBlock l blk, TickedTableStuff l wt, IsSwitchLedgerTables wt)
+     (ApplyBlock l blk, TickedTableStuff l wt)
   => LedgerCfg l
   -> blk
   -> l wt ValuesMK
@@ -212,7 +210,7 @@ tickThenApplyLedgerResult cfg blk l = do
     }
 
 tickThenReapplyLedgerResult ::
-     (ApplyBlock l blk, TickedTableStuff l wt, IsSwitchLedgerTables wt)
+     (ApplyBlock l blk, TickedTableStuff l wt)
   => LedgerCfg l
   -> blk
   -> l wt ValuesMK
@@ -226,7 +224,7 @@ tickThenReapplyLedgerResult cfg blk l =
     }
 
 tickThenApply ::
-     (ApplyBlock l blk, TickedTableStuff l wt, IsSwitchLedgerTables wt)
+     (ApplyBlock l blk, TickedTableStuff l wt)
   => LedgerCfg l
   -> blk
   -> l wt ValuesMK
@@ -234,7 +232,7 @@ tickThenApply ::
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
-     (ApplyBlock l blk, TickedTableStuff l wt, IsSwitchLedgerTables wt)
+     (ApplyBlock l blk, TickedTableStuff l wt)
   => LedgerCfg l
   -> blk
   -> l wt ValuesMK
@@ -242,12 +240,12 @@ tickThenReapply ::
 tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
 
 foldLedger ::
-     (ApplyBlock l blk, TickedTableStuff l wt, IsSwitchLedgerTables wt)
+     (ApplyBlock l blk, TickedTableStuff l wt)
   => LedgerCfg l -> [blk] -> l wt ValuesMK -> Except (LedgerErr l) (l wt ValuesMK)
 foldLedger cfg = repeatedlyM (\blk state -> fmap (applyLedgerTablesDiffs state) $ tickThenApply cfg blk state)
 
 refoldLedger ::
-     (ApplyBlock l blk, TickedTableStuff l wt, IsSwitchLedgerTables wt)
+     (ApplyBlock l blk, TickedTableStuff l wt)
   => LedgerCfg l -> [blk] -> l wt ValuesMK -> l wt ValuesMK
 refoldLedger cfg = repeatedly (\blk state -> applyLedgerTablesDiffs state $ tickThenReapply cfg blk state)
 

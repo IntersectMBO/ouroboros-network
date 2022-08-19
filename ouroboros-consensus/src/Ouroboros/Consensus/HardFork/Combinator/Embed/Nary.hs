@@ -193,7 +193,6 @@ injectInitialExtLedgerState ::
      ( CanHardFork (x ': xs)
      , TableStuff (LedgerState (HardForkBlock (x : xs))) wt
      , TableStuff (LedgerState x) wt
-     , IsSwitchLedgerTables wt
      )
   => TopLevelConfig (HardForkBlock (x ': xs))
   -> ExtLedgerState x wt ValuesMK

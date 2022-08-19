@@ -61,8 +61,7 @@ class ( BlockSupportsProtocol        blk
   --
   -- See 'lemma_ledgerViewForecastAt_applyChainTick'.
   ledgerViewForecastAt ::
-       IsSwitchLedgerTables wt
-    => LedgerConfig blk
+       LedgerConfig blk
     -> LedgerState blk wt mk
     -> Forecast (LedgerView (BlockProtocol blk))
 
@@ -72,7 +71,6 @@ _lemma_ledgerViewForecastAt_applyChainTick
      , Eq   (Ticked (LedgerView (BlockProtocol blk)))
      , Show (Ticked (LedgerView (BlockProtocol blk)))
      , GetTip (LedgerState blk wt EmptyMK)
-     , IsSwitchLedgerTables wt
      )
   => LedgerConfig blk
   -> LedgerState blk wt EmptyMK

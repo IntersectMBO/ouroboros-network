@@ -1147,7 +1147,6 @@ futureCheckCandidate
      ( IOLike m
      , LedgerSupportsProtocol blk
      , GetTip (LedgerState blk wt EmptyMK)
-     , IsSwitchLedgerTables wt
      )
   => ChainSelEnv m blk wt
   -> ValidatedChainDiff (Header blk) (LedgerDB' blk wt)

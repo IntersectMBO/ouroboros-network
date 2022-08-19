@@ -109,7 +109,7 @@ instance
   -- ledger view. Ultimately, we will want to liberalise the ledger code
   -- slightly.
   ledgerViewForecastAt ::
-       forall wt mk. IsSwitchLedgerTables wt
+       forall wt mk. TableStuff (LedgerState (ShelleyBlock (Praos crypto) era)) wt
     => LedgerConfig (ShelleyBlock (Praos crypto) era)
     -> LedgerState (ShelleyBlock (Praos crypto) era) wt mk
     -> Forecast (LedgerView (BlockProtocol (ShelleyBlock (Praos crypto) era)))
@@ -123,8 +123,6 @@ instance
           { shelleyLedgerTip = coerceTip <$> shelleyLedgerTip st,
             shelleyLedgerState = shelleyLedgerState st,
             shelleyLedgerTransition = shelleyLedgerTransition st,
-            shelleyLedgerTables = case findOutWT (Proxy @wt) of
-              SWithLedgerTables    -> polyEmptyLedgerTables
-              SWithoutLedgerTables -> polyEmptyLedgerTables
+            shelleyLedgerTables = polyEmptyLedgerTables
           }
       coerceTip (ShelleyTip slot block hash) = ShelleyTip slot block (coerce hash)

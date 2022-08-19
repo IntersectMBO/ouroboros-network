@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Util.IOLike
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 -- | Restricted interface to the 'ChainDB' used on node initialization
 data InitChainDB m blk = InitChainDB {
@@ -34,7 +35,7 @@ data InitChainDB m blk = InitChainDB {
     }
 
 fromFull ::
-     forall m blk wt. (IOLike m, GetTip (LedgerState blk wt EmptyMK), IsSwitchLedgerTables wt, ExtractLedgerTables (LedgerState blk))
+     forall m blk wt. (IOLike m, GetTip (LedgerState blk wt EmptyMK), SingI wt, ExtractLedgerTables (LedgerState blk))
   => ChainDB m blk wt -> InitChainDB m blk
 fromFull db = InitChainDB {
       addBlock         =

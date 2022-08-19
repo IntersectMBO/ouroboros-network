@@ -88,6 +88,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import Ouroboros.Consensus.Util.Singletons (SingI)
 
 {-------------------------------------------------------------------------------
   Handlers
@@ -118,6 +119,7 @@ mkHandlers
      , QueryLedger blk
      , ConfigSupportsNode blk
      , LedgerMustSupportUTxOHD' blk wt
+     , SingI wt
      )
   => NodeKernelArgs m remotePeer localPeer blk wt
   -> NodeKernel     m remotePeer localPeer blk wt

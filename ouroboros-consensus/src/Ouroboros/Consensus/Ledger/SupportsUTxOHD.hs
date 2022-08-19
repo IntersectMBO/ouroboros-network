@@ -1,6 +1,12 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 -- |
 
 module Ouroboros.Consensus.Ledger.SupportsUTxOHD (
@@ -12,10 +18,6 @@ import           NoThunks.Class
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ticked
-
-class ( LedgerMustSupportUTxOHD l blk WithLedgerTables
-      , LedgerMustSupportUTxOHD l blk WithoutLedgerTables
-      ) => LedgerSupportsUTxOHD l blk where
 
 class ( TickedTableStuff                          l     wt
       , StowableLedgerTables                      l     wt
@@ -32,6 +34,7 @@ class ( TickedTableStuff                          l     wt
       , NoThunks (LedgerTables l wt ValuesMK)  -- for backing store inmem
       , NoThunks (LedgerTables l wt SeqDiffMK) -- for DBChangelog
       , NoThunks              (l wt EmptyMK)   -- for DbChangelog
-      , IsSwitchLedgerTables wt
       , ExtractLedgerTables l
       ) => LedgerMustSupportUTxOHD l blk wt where
+
+type LedgerSupportsUTxOHD l blk = (forall (wt :: SwitchLedgerTables). LedgerMustSupportUTxOHD l blk wt)
