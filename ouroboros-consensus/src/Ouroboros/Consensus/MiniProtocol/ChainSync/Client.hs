@@ -69,7 +69,7 @@ import           Ouroboros.Consensus.HeaderStateHistory
                      (HeaderStateHistory (..), validateHeader)
 import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
 import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -88,16 +88,21 @@ type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type
    client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
-data ChainDbView m blk = ChainDbView {
+data ChainDbView m blk wt = ChainDbView {
       getCurrentChain       :: STM m (AnchoredFragment (Header blk))
     , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
-    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk EmptyMK))
+    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk wt EmptyMK))
     , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
     }
 
 defaultChainDbView ::
-     (IOLike m, LedgerSupportsProtocol blk)
-  => ChainDB m blk -> ChainDbView m blk
+     forall m blk wt.
+     ( IOLike m
+     , LedgerSupportsProtocol blk
+     , TableStuff (ExtLedgerState blk) wt
+     , GetTip (LedgerState blk wt EmptyMK)
+     )
+  => ChainDB m blk wt -> ChainDbView m blk wt
 defaultChainDbView chainDB = ChainDbView {
       getCurrentChain       = ChainDB.getCurrentChain       chainDB
     , getHeaderStateHistory = ChainDB.getHeaderStateHistory chainDB
@@ -115,13 +120,13 @@ newtype Our   a = Our   { unOur   :: a }
   deriving newtype (Show, NoThunks)
 
 bracketChainSyncClient
-    :: ( IOLike m
+    :: forall m blk peer wt a. ( IOLike m
        , Ord peer
        , BlockSupportsProtocol blk
        , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
-    -> ChainDbView m blk
+    -> ChainDbView m blk wt
     -> StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
@@ -422,14 +427,15 @@ assertKnownIntersectionInvariants cfg kis =
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m blk.
+    :: forall m blk wt.
        ( IOLike m
        , LedgerSupportsProtocol blk
+       , IsSwitchLedgerTables wt
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
     -> TopLevelConfig blk
-    -> ChainDbView m blk
+    -> ChainDbView m blk wt
     -> NodeToNodeVersion
     -> ControlMessageSTM m
     -> HeaderMetricsTracer m

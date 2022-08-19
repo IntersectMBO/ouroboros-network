@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 
 -- | Infrastructure required to run a node
@@ -25,6 +27,7 @@ import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Query
@@ -36,6 +39,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy)
 
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Storage.ChainDB
                      (ImmutableDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
@@ -91,7 +95,8 @@ class ( LedgerSupportsProtocol           blk
       , ConvertRawHash                   blk
       , CommonProtocolParams             blk
       , HasBinaryBlockInfo               blk
-      , SerialiseDiskConstraints         blk
+      , SerialiseDiskConstraints         blk WithLedgerTables
+      , SerialiseDiskConstraints         blk WithoutLedgerTables
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
       , LedgerSupportsPeerSelection      blk
@@ -106,6 +111,7 @@ class ( LedgerSupportsProtocol           blk
       , ShowProxy                (Header blk)
       , ShowProxy            (BlockQuery blk)
       , ShowProxy           (TxId (GenTx blk))
+      , LedgerSupportsUTxOHD (LedgerState blk) blk
       ) => RunNode blk
   -- This class is intentionally empty. It is not necessarily compositional - ie
   -- the instance for 'HardForkBlock' might do more than merely delegate to the

@@ -64,7 +64,7 @@ class ( ConsensusProtocol p
   toPartialConsensusConfig _ = id
 
 -- | Partial ledger config
-class ( UpdateLedger blk
+class ( ApplyBlock (LedgerState blk) blk
       , NoThunks (PartialLedgerConfig blk)
       ) => HasPartialLedgerConfig blk where
   type PartialLedgerConfig blk :: Type

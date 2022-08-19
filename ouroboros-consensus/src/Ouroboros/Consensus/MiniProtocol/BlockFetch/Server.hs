@@ -66,13 +66,13 @@ instance Exception BlockFetchServerException
 -- 'Ouroboros.Network.BlockFetch.Examples.mockBlockFetchServer1', but using
 -- the 'ChainDB'.
 blockFetchServer
-    :: forall m blk.
+    :: forall m blk wt.
        ( IOLike m
        , StandardHash blk
        , Typeable     blk
        )
     => Tracer m (TraceBlockFetchServerEvent blk)
-    -> ChainDB m blk
+    -> ChainDB m blk wt
     -> NodeToNodeVersion
     -> ResourceRegistry m
     -> BlockFetchServer (Serialised blk) (Point blk) m ()

@@ -179,12 +179,12 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 -- instead. Opening such an iterator costs 2 (cached) reads from disk upfront.
 -- This can happen multiple times.
 stream
-  :: forall m blk b.
+  :: forall m blk wt b.
      ( IOLike m
      , HasHeader blk
      , HasCallStack
      )
-  => ChainDbHandle m blk
+  => ChainDbHandle m blk wt
   -> ResourceRegistry m
   -> BlockComponent blk b
   -> StreamFrom blk
@@ -214,7 +214,7 @@ data IteratorEnv m blk = IteratorEnv {
     }
 
 -- | Obtain an 'IteratorEnv' from a 'ChainDbEnv'.
-fromChainDbEnv :: ChainDbEnv m blk -> IteratorEnv m blk
+fromChainDbEnv :: ChainDbEnv m blk wt -> IteratorEnv m blk
 fromChainDbEnv CDB{..} = IteratorEnv {
       itImmutableDB     = cdbImmutableDB
     , itVolatileDB      = cdbVolatileDB
@@ -798,7 +798,7 @@ missingBlockToUnknownRange = MissingBlock . ImmutableDB.missingBlockPoint
 -- | Close all open 'Iterator's.
 --
 -- This /can/ be called when the ChainDB is already closed.
-closeAllIterators :: IOLike m => ChainDbEnv m blk -> m ()
+closeAllIterators :: IOLike m => ChainDbEnv m blk wt -> m ()
 closeAllIterators CDB{..} = do
     iteratorClosers <- atomically $ Map.elems <$> readTVar cdbIterators
     -- Note that each closer removes its entry from the 'cdbIterators' map.

@@ -323,23 +323,23 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
         , shelleyStorageConfigSecurityParam     = tpraosSecurityParam     tpraosParams
         }
 
-    initLedgerState :: LedgerState (ShelleyBlock (TPraos c) era) ValuesMK
+    initLedgerState :: LedgerState (ShelleyBlock (TPraos c) era) WithoutLedgerTables ValuesMK
     initLedgerState =
       let st = registerGenesisStaking (SL.sgStaking genesis) $
                  SL.initialState genesis additionalGenesisConfig
       in
       ShelleyLedgerState {
         shelleyLedgerTip        = Origin
-      , shelleyLedgerState      = st `withUtxoSL` shelleyUTxOTable polyEmptyLedgerTables
+      , shelleyLedgerState      = st
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-      , shelleyLedgerTables     = ShelleyLedgerTables $ projectUtxoSL st
+      , shelleyLedgerTables     = NoLedgerTables
       }
 
     initChainDepState :: TPraosState c
     initChainDepState = TPraosState Origin $
       SL.initialChainDepState initialNonce (SL.sgGenDelegs genesis)
 
-    initExtLedgerState :: ExtLedgerState (ShelleyBlock (TPraos c) era) ValuesMK
+    initExtLedgerState :: ExtLedgerState (ShelleyBlock (TPraos c) era) WithoutLedgerTables ValuesMK
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState

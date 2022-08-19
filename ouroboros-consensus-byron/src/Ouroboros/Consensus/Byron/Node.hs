@@ -1,4 +1,7 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -43,6 +46,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -273,7 +277,7 @@ instance NodeInitStorage ByronBlock where
   -- If the current chain is empty, produce a genesis EBB and add it to the
   -- ChainDB. Only an EBB can have Genesis (= empty chain) as its predecessor.
   nodeInitChainDB cfg InitChainDB { getCurrentLedger, addBlock } = do
-      tip <- ledgerTipPoint (Proxy @ByronBlock) <$> getCurrentLedger
+      tip <- ledgerTipPoint <$> getCurrentLedger
       case tip of
         BlockPoint {} -> return ()
         GenesisPoint  -> addBlock genesisEBB
@@ -286,6 +290,10 @@ instance NodeInitStorage ByronBlock where
 {-------------------------------------------------------------------------------
   RunNode instance
 -------------------------------------------------------------------------------}
+
+instance LedgerMustSupportUTxOHD (LedgerState ByronBlock) ByronBlock WithLedgerTables
+instance LedgerMustSupportUTxOHD (LedgerState ByronBlock) ByronBlock WithoutLedgerTables
+instance LedgerSupportsUTxOHD    (LedgerState ByronBlock) ByronBlock
 
 instance BlockSupportsMetrics ByronBlock where
   isSelfIssued = isSelfIssuedConstUnknown

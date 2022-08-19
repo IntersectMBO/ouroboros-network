@@ -142,11 +142,11 @@ data BlockForging m blk = BlockForging {
       -- even when used as part of the hard fork combinator.
       --
       -- PRECONDITION: 'checkCanForge' returned @Right ()@.
-    , forgeBlock :: forall mk.
+    , forgeBlock :: forall mk wt.
            TopLevelConfig blk
         -> BlockNo                       -- Current block number
         -> SlotNo                        -- Current slot number
-        -> TickedLedgerState blk mk      -- Current ledger state
+        -> TickedLedgerState blk wt mk      -- Current ledger state
         -> [Validated (GenTx blk)]       -- Contents of the mempool
         -> IsLeader (BlockProtocol blk)  -- Proof we are leader
         -> m blk
@@ -163,7 +163,7 @@ data BlockForging m blk = BlockForging {
 takeLargestPrefixThatFits ::
      TxLimits blk
   => TxLimits.Overrides blk
-  -> TickedLedgerState blk mk
+  -> TickedLedgerState blk wt mk
   -> [Validated (GenTx blk)]
   -> [Validated (GenTx blk)]
 takeLargestPrefixThatFits overrides ledger txs =

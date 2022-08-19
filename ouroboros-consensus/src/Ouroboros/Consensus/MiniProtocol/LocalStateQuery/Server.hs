@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
@@ -22,19 +23,20 @@ import           Ouroboros.Consensus.Util (StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
 
 localStateQueryServer ::
-     forall m blk.
+     forall m blk wt.
      ( IOLike m
      , QueryLedger blk
      , Query.ConfigSupportsNode blk
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      )
   => ExtLedgerCfg blk
   -> (forall b.
          StaticEither b () (Point blk)
       -> m (StaticEither
              b
-                                 (DiskLedgerView m (ExtLedgerState blk))
-             (Either (Point blk) (DiskLedgerView m (ExtLedgerState blk)))
+                                 (DiskLedgerView m (ExtLedgerState blk) wt)
+             (Either (Point blk) (DiskLedgerView m (ExtLedgerState blk) wt))
            )
      )
   -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
@@ -66,7 +68,7 @@ localStateQueryServer cfg getDLV =
                 -> return $ SendMsgFailure AcquireFailurePointNotOnChain idle
               Right dlv -> return $ SendMsgAcquired $ acquired dlv
 
-    acquired :: DiskLedgerView m (ExtLedgerState blk)
+    acquired :: DiskLedgerView m (ExtLedgerState blk) wt
              -> ServerStAcquired blk (Point blk) (Query blk) m ()
     acquired dlv = ServerStAcquired {
           recvMsgQuery     = handleQuery dlv
@@ -77,7 +79,7 @@ localStateQueryServer cfg getDLV =
         DiskLedgerView _st _dbRead _dbReadRange close = dlv
 
     handleQuery ::
-         DiskLedgerView m (ExtLedgerState blk)
+         DiskLedgerView m (ExtLedgerState blk) wt
       -> Query blk fp result
       -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
     handleQuery dlv query = do

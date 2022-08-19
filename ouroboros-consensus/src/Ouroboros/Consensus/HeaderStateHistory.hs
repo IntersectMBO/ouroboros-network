@@ -41,7 +41,6 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 
@@ -156,9 +155,9 @@ validateHeader cfg ledgerView hdr history = do
 --
 -- PRECONDITION: the blocks in the chain are valid.
 fromChain ::
-     (ApplyBlock (ExtLedgerState blk) blk, TickedTableStuff (LedgerState blk), LedgerSupportsProtocol blk)
+     (ApplyBlock (ExtLedgerState blk) blk, TickedTableStuff (ExtLedgerState blk) wt, IsSwitchLedgerTables wt)
   => TopLevelConfig blk
-  -> ExtLedgerState blk ValuesMK
+  -> ExtLedgerState blk wt ValuesMK
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk

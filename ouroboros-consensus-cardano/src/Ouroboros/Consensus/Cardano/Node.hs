@@ -62,8 +62,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics (StowableLedgerTables (..),
-                     ValuesMK, forgetLedgerTables)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -109,7 +108,6 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.ShelleyBased
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (praosCanBeLeaderOpCert)
@@ -803,22 +801,20 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- When the initial ledger state is not in the Byron era, register the
     -- initial staking and initial funds (if provided in the genesis config) in
     -- the ledger state.
-    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c) ValuesMK
+    initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c) WithoutLedgerTables ValuesMK
     initExtLedgerStateCardano = ExtLedgerState {
           headerState = initHeaderState
         , ledgerState = overShelleyBasedLedgerState register initLedgerState
         }
       where
         initHeaderState :: HeaderState (CardanoBlock c)
-        initLedgerState :: LedgerState (CardanoBlock c) ValuesMK
-        ExtLedgerState initLedgerState initHeaderState =
-            injectInitialExtLedgerState cfg
-          $ initExtLedgerStateByron
+        initLedgerState :: LedgerState (CardanoBlock c) WithoutLedgerTables ValuesMK
+        ExtLedgerState initLedgerState initHeaderState = injectInitialExtLedgerState cfg initExtLedgerStateByron
 
         register ::
              (EraCrypto era ~ c, ShelleyBasedEra era)
-          => Flip LedgerState ValuesMK (ShelleyBlock proto era)
-          -> Flip LedgerState ValuesMK (ShelleyBlock proto era)
+          => Flip2 LedgerState WithoutLedgerTables ValuesMK (ShelleyBlock proto era)
+          -> Flip2 LedgerState WithoutLedgerTables ValuesMK (ShelleyBlock proto era)
         -- Due to UTxO-HD there is a subtlety here. The functions that register
         -- the initial funds work on the UTxO inside the LedgerState instead of
         -- on the tables. This implies that we have to first stow the tables,
@@ -830,7 +826,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         -- accept any 'mk' as now we get the guarantee that whenever we are
         -- unstowing, we are doing it on an EmptyMK and only in this case (which
         -- must happen only on tests) we do this trickery.
-        register (Flip st) = Flip $ unstowLedgerTables $ forgetLedgerTables $ st {
+        register (Flip2 st) = Flip2 $ st {
               Shelley.shelleyLedgerState =
                 -- We must first register the initial funds, because the stake
                 -- information depends on it.
@@ -839,7 +835,6 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                 . registerInitialFunds
                     (ListMap.toMap (SL.sgInitialFunds genesisShelley))
                 . Shelley.shelleyLedgerState
-                . stowLedgerTables
                 $ st
             }
 

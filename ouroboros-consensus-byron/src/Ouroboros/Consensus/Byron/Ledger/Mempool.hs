@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -148,7 +149,9 @@ instance LedgerSupportsMempool ByronBlock where
 
   txForgetValidated = forgetValidatedByronTx
 
-  getTransactionKeySets _ = polyEmptyLedgerTables
+instance GetsBlockKeySets (LedgerState ByronBlock) ByronBlock WithLedgerTables where
+  getBlockKeySets _ = NoByronLedgerTables
+  getTransactionKeySets _ = NoByronLedgerTables
 
 data instance TxId (GenTx ByronBlock)
   = ByronTxId             !Utxo.TxId
@@ -251,8 +254,8 @@ applyByronGenTx :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
                 -> SlotNo
                 -> GenTx ByronBlock
-                -> TickedLedgerState ByronBlock mk1
-                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock mk2)
+                -> TickedLedgerState ByronBlock wt mk1
+                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock wt mk2)
 applyByronGenTx validationMode cfg slot genTx st =
     (\state -> st {tickedByronLedgerState = state}) <$>
       CC.applyMempoolPayload

@@ -53,7 +53,7 @@ class BoundedMeasure (TxMeasure blk) => TxLimits blk where
   txMeasure        :: Validated (GenTx blk)    -> TxMeasure blk
 
   -- | What is the allowed capacity for txs in an individual block?
-  txsBlockCapacity :: TickedLedgerState blk mk -> TxMeasure blk
+  txsBlockCapacity :: TickedLedgerState blk wt mk -> TxMeasure blk
 
 -- | Is every component of the first value less-than-or-equal-to the
 -- corresponding component of the second value?

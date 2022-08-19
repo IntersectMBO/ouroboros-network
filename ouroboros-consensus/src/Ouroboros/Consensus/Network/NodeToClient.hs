@@ -111,15 +111,16 @@ data Handlers m peer blk = Handlers {
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer.
+  :: forall m blk remotePeer localPeer wt.
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , QueryLedger blk
      , ConfigSupportsNode blk
+     , LedgerMustSupportUTxOHD' blk wt
      )
-  => NodeKernelArgs m remotePeer localPeer blk
-  -> NodeKernel     m remotePeer localPeer blk
+  => NodeKernelArgs m remotePeer localPeer blk wt
+  -> NodeKernel     m remotePeer localPeer blk wt
   -> Handlers       m            localPeer blk
 mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
     Handlers {
@@ -132,15 +133,15 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
             (Node.localTxSubmissionServerTracer tracers)
             getMempool
       , hStateQueryServer = \rreg ->
-          localStateQueryServer
-            (ExtLedgerCfg cfg)
-            (\seP -> do
-                se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
-                case se of
-                  StaticRight (Left p)  -> pure $ StaticRight (Left p)
-                  StaticLeft         x  -> pure $ StaticLeft  $         LedgerDB.mkDiskLedgerView x
-                  StaticRight (Right x) -> pure $ StaticRight $ Right $ LedgerDB.mkDiskLedgerView x
-            )
+          localStateQueryServer @m @blk @wt
+              (ExtLedgerCfg cfg)
+              (\seP -> do
+                  se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
+                  case se of
+                    StaticRight (Left p)  -> pure $ StaticRight (Left p)
+                    StaticLeft         x  -> pure $ StaticLeft  $         LedgerDB.mkDiskLedgerView x
+                    StaticRight (Right x) -> pure $ StaticRight $ Right $ LedgerDB.mkDiskLedgerView x
+              )
       , hTxMonitorServer =
           localTxMonitorServer
             getMempool
@@ -388,7 +389,7 @@ data Apps m peer bCS bTX bSQ bTM a = Apps {
 
 -- | Construct the 'NetworkApplication' for the node-to-client protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bTX bSQ bTM.
+  :: forall m remotePeer localPeer blk e bCS bTX bSQ bTM wt.
      ( IOLike m
      , Exception e
      , ShowProxy blk
@@ -398,7 +399,7 @@ mkApps
      , ShowProxy (GenTxId blk)
      , ShowQuery (BlockQuery blk)
      )
-  => NodeKernel m remotePeer localPeer blk
+  => NodeKernel m remotePeer localPeer blk wt
   -> Tracers m localPeer blk e
   -> Codecs blk e m bCS bTX bSQ bTM
   -> Handlers m localPeer blk

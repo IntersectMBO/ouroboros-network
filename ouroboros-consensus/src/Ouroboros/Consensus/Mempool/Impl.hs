@@ -7,7 +7,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 -- | Monadic side of the Mempool implementation.
 --
@@ -71,15 +70,16 @@ openMempool
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      )
   => ResourceRegistry m
-  -> LedgerInterface m blk
+  -> LedgerInterface m blk wt
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> Tracer m (TraceEventMempool blk)
   -> (GenTx blk -> TxSizeInBytes)
-  -> m (Mempool m blk TicketNo)
+  -> m (Mempool m blk TicketNo wt)
 openMempool registry ledger cfg capacityOverride tracer txSize = do
     env <- initMempoolEnv ledger cfg capacityOverride tracer txSize
     forkSyncStateOnTipPointChange registry env
@@ -93,14 +93,15 @@ openMempoolWithoutSyncThread
   :: ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      )
-  => LedgerInterface m blk
+  => LedgerInterface m blk wt
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> Tracer m (TraceEventMempool blk)
   -> (GenTx blk -> TxSizeInBytes)
-  -> m (Mempool m blk TicketNo)
+  -> m (Mempool m blk TicketNo wt)
 openMempoolWithoutSyncThread ledger cfg capacityOverride tracer txSize =
     mkMempool <$> initMempoolEnv ledger cfg capacityOverride tracer txSize
 
@@ -108,9 +109,10 @@ mkMempool ::
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      )
-  => MempoolEnv m blk -> Mempool m blk TicketNo
+  => MempoolEnv m blk wt -> Mempool m blk TicketNo wt
 mkMempool mpEnv = Mempool
     { tryAddTxs      = implTryAddTxs mpEnv
     , removeTxs      = \txids -> getStatePair mpEnv (StaticLeft ()) (NE.toList txids) [] >>= \case
@@ -119,7 +121,8 @@ mkMempool mpEnv = Mempool
                 <> "It should not return empty since the removals list is nonempty. "
         StaticLeft (is,  Just ls) -> do
           mTrace <- atomically $ runRemoveTxs istate
-                               $ pureRemoveTxs cfg capacityOverride txids is (ledgerState ls)
+
+                    $ pureRemoveTxs cfg capacityOverride txids is (ledgerState ls)
           traceWith trcr mTrace
     , syncWithLedger = implSyncWithLedger mpEnv
     , getSnapshot    = implSnapshotFromIS <$> readTMVar istate
@@ -150,8 +153,8 @@ mkMempool mpEnv = Mempool
       } = mpEnv
 
 -- | Abstract interface needed to run a Mempool.
-data LedgerInterface m blk = LedgerInterface
-    { getCurrentLedgerState :: STM m (ExtLedgerState blk EmptyMK)
+data LedgerInterface m blk wt = LedgerInterface
+    { getCurrentLedgerState :: STM m (ExtLedgerState blk wt EmptyMK)
       -- | See 'getLedgerStateForKeys' in module @Ouroboros.Consensus.Storage.ChainDB.API@.
       --
       -- The only difference between 'getLedgerStateForKeys' and
@@ -159,26 +162,26 @@ data LedgerInterface m blk = LedgerInterface
       -- 'ExtLedgerState' and in the latter we use 'LedgerState'.
     , getLedgerStateForTxs  :: forall b a.
            StaticEither b () (Point blk)
-        -> (ExtLedgerState blk EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) KeysMK))
+        -> (ExtLedgerState blk wt EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) wt KeysMK))
         -> m (StaticEither
                 b
-                       (a, LedgerTables (LedgerState blk) ValuesMK)
-                (Maybe (a, LedgerTables (LedgerState blk) ValuesMK))
+                       (a, LedgerTables (LedgerState blk) wt ValuesMK)
+                (Maybe (a, LedgerTables (LedgerState blk) wt ValuesMK))
               )
     }
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
 chainDBLedgerInterface ::
      ( IOLike m
-     , LedgerSupportsMempool blk
+     , LedgerMustSupportUTxOHD' blk wt
      )
-  => ChainDB m blk -> LedgerInterface m blk
+  => ChainDB m blk wt -> LedgerInterface m blk wt
 chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState = ChainDB.getCurrentLedger chainDB
     , getLedgerStateForTxs  = \seP m ->
         fmap
-          (bimap (      second unExtLedgerStateTables)
-                 (fmap (second unExtLedgerStateTables)))
+          (bimap (      second demote)
+                 (fmap (second demote)))
         $ ChainDB.getLedgerStateForKeys chainDB seP m
     }
 
@@ -189,10 +192,10 @@ chainDBLedgerInterface chainDB = LedgerInterface
 -- | The mempool environment captures all the associated variables wrt the
 -- Mempool and is accessed by the Mempool interface on demand to perform the
 -- different operations.
-data MempoolEnv m blk = MempoolEnv {
-      mpEnvLedger           :: LedgerInterface m blk
+data MempoolEnv m blk wt = MempoolEnv {
+      mpEnvLedger           :: LedgerInterface m blk wt
     , mpEnvLedgerCfg        :: LedgerConfig blk
-    , mpEnvStateVar         :: StrictTMVar m (InternalState blk)
+    , mpEnvStateVar         :: StrictTMVar m (InternalState blk wt)
     , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
     , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
     , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
@@ -201,14 +204,15 @@ data MempoolEnv m blk = MempoolEnv {
 initMempoolEnv :: ( IOLike m
 --                  , NoThunks (GenTxId blk)   -- TODO how to use this with the TMVar?
                   , LedgerSupportsMempool blk
+                  , LedgerMustSupportUTxOHD' blk wt
                   , ValidateEnvelope blk
                   )
-               => LedgerInterface m blk
+               => LedgerInterface m blk wt
                -> LedgerConfig blk
                -> MempoolCapacityBytesOverride
                -> Tracer m (TraceEventMempool blk)
                -> (GenTx blk -> TxSizeInBytes)
-               -> m (MempoolEnv m blk)
+               -> m (MempoolEnv m blk wt)
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ ledgerState <$> getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg $ ForgeInUnknownSlot $ unstowLedgerTables st
@@ -224,14 +228,15 @@ initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
 -- changes.
-forkSyncStateOnTipPointChange :: forall m blk. (
+forkSyncStateOnTipPointChange :: forall m blk wt. (
                                    IOLike m
                                  , LedgerSupportsMempool blk
                                  , LedgerSupportsProtocol blk
+                                 , LedgerMustSupportUTxOHD' blk wt
                                  , HasTxId (GenTx blk)
                                  )
                               => ResourceRegistry m
-                              -> MempoolEnv m blk
+                              -> MempoolEnv m blk wt
                               -> m ()
 forkSyncStateOnTipPointChange registry menv =
     void $ forkLinkedWatcher
@@ -251,7 +256,7 @@ forkSyncStateOnTipPointChange registry menv =
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip :: STM m (Point blk)
     getCurrentTip =
-          ledgerTipPoint (Proxy @blk) . ledgerState
+          ledgerTipPoint . ledgerState
       <$> getCurrentLedgerState (mpEnvLedger menv)
 
 -- | Add a list of transactions (oldest to newest) by interpreting a 'TryAddTxs'
@@ -274,13 +279,14 @@ forkSyncStateOnTipPointChange registry menv =
 -- together or inconsistencies will arise. To ensure that STM transactions are
 -- short, each iteration of the helper function is a separate STM transaction.
 implTryAddTxs
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      )
-  => MempoolEnv m blk
+  => MempoolEnv m blk wt
   -> WhetherToIntervene
   -> [GenTx blk]
   -> m ([MempoolAddTxResult blk], [GenTx blk])
@@ -317,13 +323,14 @@ implTryAddTxs mpEnv wti =
                 go (result:acc) txs
 
 implSyncWithLedger ::
-     forall m blk. (
+     forall m blk wt. (
        IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      )
-  => MempoolEnv m blk
+  => MempoolEnv m blk wt
   -> m (MempoolSnapshot blk TicketNo)
 implSyncWithLedger mpEnv = getStatePair mpEnv (StaticLeft ()) [] [] >>= \case
     StaticLeft (is, Nothing) ->
@@ -369,14 +376,14 @@ implSyncWithLedger mpEnv = getStatePair mpEnv (StaticLeft ()) [] [] >>= \case
 -- NOTE: The ledger state is not necessarily the anchor of the 'InternalState',
 -- that is the ledger state referenced by 'isSlotNo' and 'isTip', which is the
 -- ledger state on top of which the transactions ('isTxs') were applied.
-getStatePair :: forall m blk b.
+getStatePair :: forall m blk wt b.
      ( IOLike m
      , LedgerSupportsMempool blk
-     , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      , HasTxId (GenTx blk)
      , Typeable b
      )
-  => MempoolEnv m blk
+  => MempoolEnv m blk wt
   -> StaticEither b () (Point blk)
      -- ^ desired ledger state, otherwise uses the ledger state at the tip of
      -- the chain
@@ -386,8 +393,8 @@ getStatePair :: forall m blk b.
      -- ^ additons: txs not in internal state to fetch the inputs of
   -> m (StaticEither
           b
-                 (InternalState blk, Maybe (ExtLedgerState blk ValuesMK))
-          (Maybe (InternalState blk,        ExtLedgerState blk ValuesMK))
+                 (InternalState blk wt, Maybe (ExtLedgerState blk wt ValuesMK))
+          (Maybe (InternalState blk wt,        ExtLedgerState blk wt ValuesMK))
        )
 getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
       handle (\(ShortCircuitGetStatePairExn x) -> pure x)
@@ -411,38 +418,38 @@ getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
                 filter ((`notElem` Set.fromList removals) . txId)
               $ map (txForgetValidated . TxSeq.txTicketTx) . TxSeq.toList
               $ isTxs is0
-            keys = ExtLedgerStateTables
+            keys = promote
                  . foldl (zipLedgerTables (<>)) polyEmptyLedgerTables
-                 . map getTransactionKeySets
+                 . map (getTransactionKeySets :: GenTx blk -> LedgerTables (LedgerState blk) wt KeysMK)
                  $ keptTxs <> txs
         pure ((ls, is0), keys)
   where
     finish ::
          StaticEither
            b
-                  ((ExtLedgerState blk EmptyMK, InternalState blk), LedgerTables (LedgerState blk) ValuesMK)
-           (Maybe ((ExtLedgerState blk EmptyMK, InternalState blk), LedgerTables (LedgerState blk) ValuesMK))
+                  ((ExtLedgerState blk wt EmptyMK, InternalState blk wt), LedgerTables (LedgerState blk) wt ValuesMK)
+           (Maybe ((ExtLedgerState blk wt EmptyMK, InternalState blk wt), LedgerTables (LedgerState blk) wt ValuesMK))
       -> StaticEither
             b
-                   (InternalState blk, Maybe (ExtLedgerState blk ValuesMK))
-            (Maybe (InternalState blk,        ExtLedgerState blk ValuesMK))
+                   (InternalState blk wt, Maybe (ExtLedgerState blk wt ValuesMK))
+            (Maybe (InternalState blk wt,        ExtLedgerState blk wt ValuesMK))
     finish = \case
-      StaticLeft ((ls, is), tables)         -> StaticLeft (is, Just $ ls `withLedgerTables` ExtLedgerStateTables tables)
+      StaticLeft ((ls, is), tables)         -> StaticLeft (is, Just $ ls `withLedgerTables` promote tables)
       StaticRight Nothing                   -> StaticRight Nothing
-      StaticRight (Just ((ls, is), tables)) -> StaticRight $ Just (is, ls `withLedgerTables` ExtLedgerStateTables tables)
+      StaticRight (Just ((ls, is), tables)) -> StaticRight $ Just (is, ls `withLedgerTables` promote tables)
 
 -- | A type to perform a short circuit when there is nothing to do and we
 -- requested a ledger state on top of the 'ChainDB' (i.e. we are using
 -- StaticLeft)
-newtype ShortCircuitGetStatePairExn b blk =
+newtype ShortCircuitGetStatePairExn b blk wt =
     ShortCircuitGetStatePairExn
       (StaticEither
          b
-                (InternalState blk, Maybe (ExtLedgerState blk ValuesMK))
-         (Maybe (InternalState blk,        ExtLedgerState blk ValuesMK))
+                (InternalState blk wt, Maybe (ExtLedgerState blk wt ValuesMK))
+         (Maybe (InternalState blk wt,        ExtLedgerState blk wt ValuesMK))
       )
   deriving (Exn.Exception)
 
-instance Show (ShortCircuitGetStatePairExn b blk) where
+instance Show (ShortCircuitGetStatePairExn b blk wt) where
   showsPrec p (ShortCircuitGetStatePairExn _x) =
       showParen (p > 10) $ showString "ShortCircuitGetStatePairExn _x"

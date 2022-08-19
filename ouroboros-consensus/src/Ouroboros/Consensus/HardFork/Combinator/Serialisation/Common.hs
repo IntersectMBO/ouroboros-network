@@ -5,6 +5,7 @@
 {-# LANGUAGE KindSignatures          #-}
 {-# LANGUAGE LambdaCase              #-}
 {-# LANGUAGE OverloadedStrings       #-}
+{-# LANGUAGE QuantifiedConstraints   #-}
 {-# LANGUAGE RankNTypes              #-}
 {-# LANGUAGE RecordWildCards         #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
@@ -87,7 +88,6 @@ import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Basics
-                     (SufficientSerializationForAnyBackingStore)
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
@@ -228,7 +228,8 @@ isHardForkNodeToClientEnabled _                              = False
 -------------------------------------------------------------------------------}
 
 class ( SingleEraBlock                   blk
-      , SerialiseDiskConstraints         blk
+      , SerialiseDiskConstraints         blk WithLedgerTables
+      , SerialiseDiskConstraints         blk WithoutLedgerTables
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
       , HasNetworkProtocolVersion        blk
@@ -277,7 +278,7 @@ class ( CanHardFork xs
         -- Tables on the HardForkCombinator are not compositionally defined,
         -- therefore this constraint is needed and will have to be satisfied by
         -- each instantiation of 'HardForkBlock'.
-      , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs))
+      , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs)) WithLedgerTables
       ) => SerialiseHFC xs where
 
   encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)
@@ -296,7 +297,7 @@ class ( CanHardFork xs
     where
       cfgs = getPerEraCodecConfig (hardForkCodecConfigPerEra cfg)
 
-      aux :: SerialiseDiskConstraints blk
+      aux :: (DecodeDisk blk (Lazy.ByteString -> blk))
           => CodecConfig blk -> AnnDecoder I blk
       aux cfg' = AnnDecoder $ (\f -> I . f) <$> decodeDisk cfg'
 

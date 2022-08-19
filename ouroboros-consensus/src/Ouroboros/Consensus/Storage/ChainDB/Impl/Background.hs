@@ -57,6 +57,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -83,14 +84,15 @@ import           Ouroboros.Consensus.Util.Enclose (Enclosing' (..))
 -------------------------------------------------------------------------------}
 
 launchBgTasks
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , LgrDbSerialiseConstraints blk
+     , LgrDbSerialiseConstraints blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
 launchBgTasks cdb@CDB{..} replayed = do
@@ -131,14 +133,14 @@ launchBgTasks cdb@CDB{..} replayed = do
 -- NOTE: this function /can/ run concurrently with all other functions, just
 -- not with itself.
 copyToImmutableDB ::
-     forall m blk.
+     forall m blk wt.
      ( IOLike m
      , ConsensusProtocol (BlockProtocol blk)
      , HasHeader blk
      , GetHeader blk
      , HasCallStack
      )
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> m (WithOrigin SlotNo)
 copyToImmutableDB CDB{..} = withCopyLock $ do
     toCopy <- atomically $ do
@@ -234,13 +236,14 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
 -- /imply/ any previously scheduled GC, since GC is driven by slot number
 -- ("garbage collect anything older than @x@").
 copyAndSnapshotRunner
-  :: forall m blk.
+  :: forall m blk wt.
      ( IOLike m
      , GetHeader blk
      , LedgerSupportsProtocol blk
-     , LgrDbSerialiseConstraints blk
+     , LgrDbSerialiseConstraints blk wt
+     , LedgerMustSupportUTxOHD' blk wt
      )
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> GcSchedule m
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m Void
@@ -302,10 +305,11 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
 updateLedgerSnapshots ::
      ( IOLike m
-     , LgrDbSerialiseConstraints blk
+     , LgrDbSerialiseConstraints blk wt
      , LedgerSupportsProtocol blk
+     , LedgerMustSupportUTxOHD' blk wt
      )
-  => ChainDbEnv m blk -> m ()
+  => ChainDbEnv m blk wt -> m ()
 updateLedgerSnapshots CDB{..} = do
     void $ LgrDB.takeSnapshot  cdbLgrDB
     void $ LgrDB.trimSnapshots cdbLgrDB
@@ -329,7 +333,7 @@ updateLedgerSnapshots CDB{..} = do
 --
 -- TODO will a long GC be a bottleneck? It will block any other calls to
 -- @putBlock@ and @getBlock@.
-garbageCollect :: forall m blk. IOLike m => ChainDbEnv m blk -> SlotNo -> m ()
+garbageCollect :: forall m blk wt. IOLike m => ChainDbEnv m blk wt -> SlotNo -> m ()
 garbageCollect CDB{..} slotNo = do
     VolatileDB.garbageCollect cdbVolatileDB slotNo
     atomically $ do
@@ -532,8 +536,9 @@ addBlockRunner
      , InspectLedger blk
      , HasHardForkHistory blk
      , HasCallStack
+     , LedgerMustSupportUTxOHD' blk wt
      )
-  => ChainDbEnv m blk
+  => ChainDbEnv m blk wt
   -> m Void
 addBlockRunner cdb@CDB{..} = forever $ do
     let trace = traceWith cdbTracer . TraceAddBlockEvent
