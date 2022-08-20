@@ -64,7 +64,7 @@ newtype Resource m err a = Resource {
     withResource :: m (Either err a, Resource m err a)
   }
 
--- | Like 'withResource' but retries untill success.
+-- | Like 'withResource' but retries until success.
 --
 withResource' :: MonadDelay m
               => Tracer m err
