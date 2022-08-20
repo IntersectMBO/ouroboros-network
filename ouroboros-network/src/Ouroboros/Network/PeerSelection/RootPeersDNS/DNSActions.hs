@@ -156,6 +156,19 @@ data DNSActions resolver exception m = DNSActions {
   }
 
 
+
+-- | Get a resolver from 'DNS.ResolvConf'.
+--
+-- 'DNS.withResolver' is written in continuation passing style, there's no
+-- handler with closes in anyway when it returns, hence 'getResolver' does not
+-- break it.
+--
+getResolver :: DNS.ResolvConf -> IO DNS.Resolver
+getResolver resolvConf = do
+    rs <- DNS.makeResolvSeed resolvConf
+    DNS.withResolver rs return
+
+
 -- |
 --
 -- TODO: it could be useful for `publicRootPeersProvider`.
@@ -191,10 +204,8 @@ resolverResource resolvConf = do
     go filePath tr@NoResolver = Resource $
       do
         modTime <- getTimeStamp filePath
-        rs <- DNS.makeResolvSeed resolvConf
-        DNS.withResolver rs
-          (\resolver ->
-            pure (Right resolver, go filePath (TimedResolver resolver modTime)))
+        resolver <- getResolver resolvConf
+        pure (Right resolver, go filePath (TimedResolver resolver modTime))
       `catches` handlers filePath tr
 
     go filePath tr@(TimedResolver resolver modTime) = Resource $
@@ -203,10 +214,8 @@ resolverResource resolvConf = do
         if modTime' <= modTime
           then pure (Right resolver, go filePath (TimedResolver resolver modTime))
           else do
-            rs <- DNS.makeResolvSeed resolvConf
-            DNS.withResolver rs
-              (\resolver' ->
-                pure (Right resolver', go filePath (TimedResolver resolver' modTime')))
+            resolver' <- getResolver resolvConf
+            pure (Right resolver', go filePath (TimedResolver resolver' modTime'))
       `catches` handlers filePath tr
 
 
@@ -223,8 +232,7 @@ asyncResolverResource resolvConf =
         resourceVar <- newTVarIO NoResolver
         pure $ go filePath resourceVar
       _ -> do
-        rs <- DNS.makeResolvSeed resolvConf
-        DNS.withResolver rs (pure . constantResource)
+        constantResource <$> getResolver resolvConf
   where
     handlers :: FilePath -> StrictTVar IO TimedResolver
              -> [Handler IO
@@ -247,10 +255,9 @@ asyncResolverResource resolvConf =
         NoResolver ->
           do
             modTime <- getModificationTime filePath
-            rs <- DNS.makeResolvSeed resolvConf
-            DNS.withResolver rs $ \resolver -> do
-              atomically (writeTVar resourceVar (TimedResolver resolver modTime))
-              pure (Right resolver, go filePath resourceVar)
+            resolver <- getResolver resolvConf
+            atomically (writeTVar resourceVar (TimedResolver resolver modTime))
+            pure (Right resolver, go filePath resourceVar)
           `catches` handlers filePath resourceVar
 
         TimedResolver resolver modTime ->
@@ -259,10 +266,9 @@ asyncResolverResource resolvConf =
             if modTime' <= modTime
                 then pure (Right resolver, go filePath resourceVar)
                 else do
-                  rs <- DNS.makeResolvSeed resolvConf
-                  DNS.withResolver rs $ \resolver' -> do
-                    atomically (writeTVar resourceVar (TimedResolver resolver' modTime'))
-                    pure (Right resolver', go filePath resourceVar)
+                  resolver' <- getResolver resolvConf
+                  atomically (writeTVar resourceVar (TimedResolver resolver' modTime'))
+                  pure (Right resolver', go filePath resourceVar)
           `catches` handlers filePath resourceVar
 #else
 asyncResolverResource resolvConf = resolverResource resolvConf
