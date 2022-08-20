@@ -24,12 +24,13 @@ import qualified Data.List.NonEmpty as NonEmpty
 
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
-#if !defined(mingw32_HOST_OS)
+
 import           Control.Monad.Class.MonadSTM.Strict
-#endif
+
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), traceWith)
 
 #if !defined(mingw32_HOST_OS)
@@ -184,39 +185,42 @@ resolverResource resolvConf = do
       _ -> DNS.withResolver rs (pure . constantResource)
 
   where
-    handlers :: FilePath
-             -> TimedResolver
-             -> [Handler IO
-                  ( Either (DNSorIOError IOException) DNS.Resolver
-                  , Resource IO (DNSorIOError IOException) DNS.Resolver)]
-    handlers filePath tr =
-      [ Handler $
-          \(err :: IOException) ->
-            pure (Left (IOError err), go filePath tr)
-      , Handler $
-          \(err :: DNS.DNSError) ->
-              pure (Left (DNSError err), go filePath tr)
-      ]
+    handlers :: [ Handler IO (Either (DNSorIOError IOException) a) ]
+    handlers  = [ Handler $ pure . Left . IOError
+                , Handler $ pure . Left . DNSError
+                ]
 
     go :: FilePath
        -> TimedResolver
        -> Resource IO (DNSorIOError IOException) DNS.Resolver
     go filePath tr@NoResolver = Resource $
       do
-        modTime <- getTimeStamp filePath
-        resolver <- getResolver resolvConf
-        pure (Right resolver, go filePath (TimedResolver resolver modTime))
-      `catches` handlers filePath tr
+        result
+          <- (curry Right
+               <$> getTimeStamp filePath
+               <*> getResolver resolvConf)
+             `catches` handlers
+        case result of
+          Left err ->
+            pure (Left err, go filePath tr)
+          Right (modTime, resolver) -> do
+            pure (Right resolver, go filePath (TimedResolver resolver modTime))
 
-    go filePath tr@(TimedResolver resolver modTime) = Resource $
-      do
-        modTime' <- getTimeStamp filePath
+    go filePath tr@(TimedResolver resolver modTime) = Resource $ do
+      result <- runExceptT $ do
+        modTime' <- ExceptT $ (Right <$> getTimeStamp filePath)
+                              `catches` handlers
         if modTime' <= modTime
-          then pure (Right resolver, go filePath (TimedResolver resolver modTime))
+          then return (resolver, modTime)
           else do
-            resolver' <- getResolver resolvConf
-            pure (Right resolver', go filePath (TimedResolver resolver' modTime'))
-      `catches` handlers filePath tr
+            resolver' <- ExceptT $ (Right <$> getResolver resolvConf)
+                                   `catches` handlers
+            return (resolver', modTime')
+      case result of
+        Left err ->
+          return (Left err, go filePath tr)
+        Right (resolver', modTime') ->
+          return (Right resolver', go filePath (TimedResolver resolver' modTime'))
 
 
 -- | `Resource` which passes the 'DNS.Resolver' through a 'StrictTVar'.  Better
@@ -225,7 +229,7 @@ resolverResource resolvConf = do
 asyncResolverResource :: DNS.ResolvConf
                       -> IO (Resource IO (DNSorIOError IOException)
                                          DNS.Resolver)
-#if !defined(mingw32_HOST_OS)
+
 asyncResolverResource resolvConf =
     case DNS.resolvInfo resolvConf of
       DNS.RCFilePath filePath -> do
@@ -234,45 +238,50 @@ asyncResolverResource resolvConf =
       _ -> do
         constantResource <$> getResolver resolvConf
   where
-    handlers :: FilePath -> StrictTVar IO TimedResolver
-             -> [Handler IO
-                  ( Either (DNSorIOError IOException) DNS.Resolver
-                  , Resource IO (DNSorIOError IOException) DNS.Resolver)]
-    handlers filePath resourceVar =
-      [ Handler $
-          \(err :: IOException) ->
-            pure (Left (IOError err), go filePath resourceVar)
-      , Handler $
-          \(err :: DNS.DNSError) ->
-            pure (Left (DNSError err), go filePath resourceVar)
-      ]
+    handlers :: [ Handler IO (Either (DNSorIOError IOException) a) ]
+    handlers  = [ Handler $ pure . Left . IOError
+                , Handler $ pure . Left . DNSError
+                ]
 
     go :: FilePath -> StrictTVar IO TimedResolver
        -> Resource IO (DNSorIOError IOException) DNS.Resolver
     go filePath resourceVar = Resource $ do
-      r <- atomically (readTVar resourceVar)
+      r <- readTVarIO resourceVar
       case r of
         NoResolver ->
           do
-            modTime <- getModificationTime filePath
-            resolver <- getResolver resolvConf
-            atomically (writeTVar resourceVar (TimedResolver resolver modTime))
-            pure (Right resolver, go filePath resourceVar)
-          `catches` handlers filePath resourceVar
+            result
+              <- (curry Right
+                   <$> getTimeStamp filePath
+                   <*> getResolver resolvConf)
+                 `catches` handlers
+            case result of
+              Left err ->
+                pure (Left err, go filePath resourceVar)
+              Right (modTime, resolver) -> do
+                atomically (writeTVar resourceVar (TimedResolver resolver modTime))
+                pure (Right resolver, go filePath resourceVar)
 
-        TimedResolver resolver modTime ->
-          do
-            modTime' <- getModificationTime filePath
+        TimedResolver resolver modTime -> do
+          result <- runExceptT $ do
+            modTime' <- ExceptT $ (Right <$> getTimeStamp filePath)
+                                  `catches` handlers
             if modTime' <= modTime
-                then pure (Right resolver, go filePath resourceVar)
-                else do
-                  resolver' <- getResolver resolvConf
-                  atomically (writeTVar resourceVar (TimedResolver resolver' modTime'))
-                  pure (Right resolver', go filePath resourceVar)
-          `catches` handlers filePath resourceVar
-#else
-asyncResolverResource resolvConf = resolverResource resolvConf
-#endif
+              then return resolver
+              else do
+              resolver' <- ExceptT $ (Right <$> getResolver resolvConf)
+                                     `catches` handlers
+              atomically (writeTVar (castStrictTVar resourceVar)
+                         (TimedResolver resolver' modTime'))
+              return resolver'
+          case result of
+            Left err ->
+              return (Left err, go filePath resourceVar)
+            Right resolver' ->
+              return (Right resolver', go filePath resourceVar)
+
+
+
 
 -- | Like 'DNS.lookupA' but also return the TTL for the results.
 --
