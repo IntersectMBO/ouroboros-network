@@ -1,9 +1,9 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE CPP                 #-}
 
 #if defined(mingw32_HOST_OS)
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
@@ -130,7 +130,9 @@ tests =
                    prop_diffusion_ig_valid_transition_order
     , testProperty "diffusion cm & ig timeouts enforced"
                    prop_diffusion_timeouts_enforced
+#endif
     ]
+#if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
     [ testProperty "diffusion server trace coverage"
                    prop_server_trace_coverage
@@ -154,8 +156,6 @@ tests =
                    prop_hot_diffusion_target_active_local
     , testProperty "hot diffusion target active root"
                    prop_hot_diffusion_target_active_root
-    ]
-#else
     ]
 #endif
   ]
