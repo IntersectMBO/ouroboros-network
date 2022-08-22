@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,6 +10,7 @@ import           Control.Monad (when)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import           Data.Either (isRight)
 import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Word (Word64)
@@ -48,10 +48,11 @@ data ForgeState =
     currentSlot  :: !SlotNo
   , forged       :: !Word64
   , currentEpoch :: !Word64
+  , processed    :: !SlotNo
   }
 
 initialForgeState :: ForgeState
-initialForgeState = ForgeState 0 0 0
+initialForgeState = ForgeState 0 0 0 0
 
 -- DUPLICATE: runForge mirrors forging loop from ouroboros-consensus/src/Ouroboros/Consensus/NodeKernel.hs
 -- For an extensive commentary of the forging loop, see there.
@@ -60,15 +61,16 @@ runForge
   :: forall blk.
     ( LedgerSupportsProtocol blk )
     => EpochSize
+    -> SlotNo
     -> ForgeLimit
     -> ChainDB IO blk
     -> [BlockForging IO blk]
     -> TopLevelConfig blk
     -> IO ForgeResult
-runForge epochSize_ opts chainDB blockForging cfg = do
+runForge epochSize_ nextSlot opts chainDB blockForging cfg = do
     putStrLn $ "--> epoch size: " ++ show epochSize_
     putStrLn $ "--> will process until: " ++ show opts
-    endState <- go initialForgeState
+    endState <- go initialForgeState {currentSlot = nextSlot}
     putStrLn $ "--> forged and adopted " ++ show (forged endState) ++ " blocks; reached " ++ show (currentSlot endState)
     pure $ ForgeResult $ fromIntegral $ forged endState
   where
@@ -76,23 +78,27 @@ runForge epochSize_ opts chainDB blockForging cfg = do
 
     forgingDone :: ForgeState -> Bool
     forgingDone = case opts of
-        ForgeLimitSlot s  -> (s == ) . currentSlot
+        ForgeLimitSlot s  -> (s == ) . processed
         ForgeLimitBlock b -> (b == ) . forged
         ForgeLimitEpoch e -> (e == ) . currentEpoch
 
     go :: ForgeState -> IO ForgeState
-    go forgeState@ForgeState{currentSlot, forged, currentEpoch}
+    go forgeState
       | forgingDone forgeState = pure forgeState
-      | otherwise =
-        let
-            currentSlot' = currentSlot + 1
-            currentEpoch'
-              | unSlotNo currentSlot' `rem` epochSize == 0  = currentEpoch + 1
-              | otherwise                                   = currentEpoch
-            forgeState' = forgeState {currentSlot = currentSlot', currentEpoch = currentEpoch'}
-        in runExceptT (goSlot currentSlot) >>= \case
-            Left{}  -> go forgeState'
-            Right{} -> go forgeState' {forged = forged + 1}
+      | otherwise = go . nextForgeState forgeState . isRight
+          =<< runExceptT (goSlot $ currentSlot forgeState)
+
+    nextForgeState :: ForgeState -> Bool -> ForgeState
+    nextForgeState ForgeState{currentSlot, forged, currentEpoch, processed} didForge = ForgeState {
+          currentSlot = currentSlot + 1
+        , forged = forged + if didForge then 1 else 0
+        , currentEpoch = epoch'
+        , processed = processed'
+        }
+      where
+        processed' = processed + 1
+        epoch' = currentEpoch + if unSlotNo processed' `rem` epochSize == 0 then 1 else 0
+
 
     -- just some shims; in this ported code, we use ExceptT instead of WithEarlyExit
     exitEarly'  = throwE

@@ -42,9 +42,15 @@ data ForgeLimit =
 newtype ForgeResult = ForgeResult {resultForged :: Int}
   deriving (Eq, Show)
 
+data DBSynthesizerOpenMode =
+      OpenCreate
+    | OpenCreateForce
+    | OpenAppend
+    deriving (Eq, Show)
+
 data DBSynthesizerOptions = DBSynthesizerOptions {
-    synthLimit          :: !ForgeLimit
-  , synthForceDBRemoval :: !Bool
+    synthLimit    :: !ForgeLimit
+  , synthOpenMode :: !DBSynthesizerOpenMode
   }
   deriving Show
 
