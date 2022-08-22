@@ -42,7 +42,7 @@ fromFull db = InitChainDB {
     , getCurrentLedger = atomically f
     }
   where f = case singByProxy (Proxy @wt) of
-          SWithLedgerTables -> destroyTables . ledgerState <$> ChainDB.getCurrentLedger db
+          SWithLedgerTables -> destroyLedgerTables . ledgerState <$> ChainDB.getCurrentLedger db
           SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger db
 
 map ::

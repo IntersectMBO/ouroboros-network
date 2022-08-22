@@ -164,8 +164,6 @@ getByronTip state =
 
 instance IgnoresMapKind (LedgerState ByronBlock) where
   convertMapKind = convertTables
-
-instance IgnoresMapKindTicked (LedgerState ByronBlock) where
   convertMapKindTicked TickedByronLedgerState{..} = TickedByronLedgerState{..}
 
 instance IgnoresTables (LedgerState ByronBlock) where
@@ -173,7 +171,7 @@ instance IgnoresTables (LedgerState ByronBlock) where
 
 instance ExtractLedgerTables (LedgerState ByronBlock) where
   extractLedgerTables = convertTables
-  destroyTables = convertTables
+  destroyLedgerTables = convertTables
 
 -- | The ticked Byron ledger state
 data instance Ticked1 (LedgerState ByronBlock wt) mk = TickedByronLedgerState {

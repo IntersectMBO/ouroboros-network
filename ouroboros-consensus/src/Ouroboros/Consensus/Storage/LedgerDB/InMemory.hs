@@ -433,11 +433,7 @@ instance (Monad m, ReadsKeySets m l wt) => ReadsKeySets (ReaderT r m) l wt where
 instance (Monad m, ReadsKeySets m l wt) => ReadsKeySets (ExceptT e m) l wt where
   readDb = lift . readDb
 
-instance
-     ( ReadsKeySets Identity (LedgerState blk) wt
-     , Extended.Promote (LedgerState blk) (Extended.ExtLedgerState blk) wt
-     )
-  => ReadsKeySets Identity (Extended.ExtLedgerState blk) wt where
+instance ReadsKeySets Identity (Extended.ExtLedgerState blk) wt where
   readDb (RewoundTableKeySets seqNo rew) = do
       UnforwardedReadSets seqNo' values keys <- readDb (RewoundTableKeySets seqNo rew)
       pure $ UnforwardedReadSets seqNo' values keys

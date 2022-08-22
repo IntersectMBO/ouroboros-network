@@ -107,9 +107,9 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Special classes of ledger states
   , ExtractLedgerTables (..)
   , IgnoresMapKind (..)
-  , IgnoresMapKindTicked (..)
   , IgnoresTables (..)
   , StowableLedgerTables (..)
+  , PromoteLedgerTables (..)
     -- ** Serialization
   , SufficientSerializationForAnyBackingStore (..)
   , valuesMKDecoder
@@ -777,34 +777,7 @@ rf _  _ f = case singByProxy (Proxy @wt) of
   SWithLedgerTables    -> f
   SWithoutLedgerTables -> f
 
-instance IgnoresMapKind l => TableStuff l WithoutLedgerTables where
 
-  data instance LedgerTables l WithoutLedgerTables mk = NoLedgerTables
-    deriving (Eq, Show, Generic, NoThunks)
-
-  projectLedgerTables  _                                               =      NoLedgerTables
-  withLedgerTables     st _                                            = convertMapKind st
-  pureLedgerTables     _                                               =      NoLedgerTables
-  mapLedgerTables      _  NoLedgerTables                               =      NoLedgerTables
-  traverseLedgerTables _  NoLedgerTables                               = pure NoLedgerTables
-  zipLedgerTables      _  NoLedgerTables NoLedgerTables                =      NoLedgerTables
-  zipLedgerTables2     _  NoLedgerTables NoLedgerTables NoLedgerTables =      NoLedgerTables
-  zipLedgerTablesA     _  NoLedgerTables NoLedgerTables                = pure NoLedgerTables
-  zipLedgerTables2A    _  NoLedgerTables NoLedgerTables NoLedgerTables = pure NoLedgerTables
-  foldLedgerTables     _  NoLedgerTables                               = mempty
-  foldLedgerTables2    _  NoLedgerTables NoLedgerTables                = mempty
-  namesLedgerTables                                                    =      NoLedgerTables
-
-instance (TableStuff l WithoutLedgerTables, IgnoresMapKindTicked l) => TickedTableStuff l WithoutLedgerTables where
-  projectLedgerTablesTicked _ = NoLedgerTables
-  withLedgerTablesTicked st _ = convertMapKindTicked st
-
-instance SufficientSerializationForAnyBackingStore l WithoutLedgerTables where
-  codecLedgerTables = NoLedgerTables
-
-instance IgnoresMapKind l => StowableLedgerTables l WithoutLedgerTables where
-  stowLedgerTables   = convertMapKind
-  unstowLedgerTables = convertMapKind
 
 {-------------------------------------------------------------------------------
   Concrete map kinds
@@ -1082,10 +1055,14 @@ data DiskLedgerView m l wt =
 
 {-------------------------------------------------------------------------------
   Special classes of ledger states
-
-  TODO if having such class(es) make sense but only in the context of testing
-  code we should move this to the appropriate module.
 -------------------------------------------------------------------------------}
+
+-- | This class allows us to move values from the LedgerTables into the ledger
+-- state. As the ledger currently doesn't know about tables, this is the only
+-- way to make things invisible to it.
+class StowableLedgerTables l wt where
+  stowLedgerTables     :: l wt ValuesMK -> l wt EmptyMK
+  unstowLedgerTables   :: l wt EmptyMK  -> l wt ValuesMK
 
 -- | If the ledger state is always in memory, then l mk will be isomorphic to l
 -- mk' for all mk, mk'. As a result, we can convert between ledger states
@@ -1102,14 +1079,10 @@ class IgnoresMapKind l where
   convertMapKind :: l WithoutLedgerTables mk
                  -> l WithoutLedgerTables mk'
 
--- | This ledger state has no tables when applied to 'WithoutLedgerTables'.
---
--- This class should be implemented by every block type.
-class IgnoresMapKindTicked l where
   convertMapKindTicked :: Ticked1 (l WithoutLedgerTables) mk
                        -> Ticked1 (l WithoutLedgerTables) mk'
 
--- | Some specific operations that modify the SwitchLedgerTables type.
+-- | Some special operations that modify the SwitchLedgerTables type.
 class ExtractLedgerTables l where
   -- | The incoming ledger state on the protocol info as a genesis ledger state
   -- will come without ledger tables but with values inside. This function
@@ -1124,15 +1097,47 @@ class ExtractLedgerTables l where
   -- | For code that doesn't use the tables at all, this function can be used to
   -- just nuke away all the tables, avoiding another `wt` parameter on outer
   -- layers.
-  destroyTables :: l WithLedgerTables    mk
+  destroyLedgerTables :: l WithLedgerTables    mk
                 -> l WithoutLedgerTables mk
 
--- | This class allows us to move values from the LedgerTables into the ledger
--- state. As the ledger currently doesn't know about tables, this is the only
--- way to make things invisible to it.
-class StowableLedgerTables l wt where
-  stowLedgerTables     :: l wt ValuesMK -> l wt EmptyMK
-  unstowLedgerTables   :: l wt EmptyMK  -> l wt ValuesMK
+-- | Change between equivalent ledger tables. Similar to @coerce@ but dependent
+-- on the @wt@ parameter.
+class PromoteLedgerTables l l' wt where
+  promoteLedgerTables :: LedgerTables l  wt mk -> LedgerTables l' wt mk
+  demoteLedgerTables  :: LedgerTables l' wt mk -> LedgerTables l  wt mk
+
+instance IgnoresMapKind l => TableStuff l WithoutLedgerTables where
+
+  data instance LedgerTables l WithoutLedgerTables mk = NoLedgerTables
+    deriving (Eq, Show, Generic, NoThunks)
+
+  projectLedgerTables  _                                               =      NoLedgerTables
+  withLedgerTables     st _                                            = convertMapKind st
+  pureLedgerTables     _                                               =      NoLedgerTables
+  mapLedgerTables      _  NoLedgerTables                               =      NoLedgerTables
+  traverseLedgerTables _  NoLedgerTables                               = pure NoLedgerTables
+  zipLedgerTables      _  NoLedgerTables NoLedgerTables                =      NoLedgerTables
+  zipLedgerTables2     _  NoLedgerTables NoLedgerTables NoLedgerTables =      NoLedgerTables
+  zipLedgerTablesA     _  NoLedgerTables NoLedgerTables                = pure NoLedgerTables
+  zipLedgerTables2A    _  NoLedgerTables NoLedgerTables NoLedgerTables = pure NoLedgerTables
+  foldLedgerTables     _  NoLedgerTables                               = mempty
+  foldLedgerTables2    _  NoLedgerTables NoLedgerTables                = mempty
+  namesLedgerTables                                                    =      NoLedgerTables
+
+instance (IgnoresMapKind l, TableStuff l WithoutLedgerTables) => TickedTableStuff l WithoutLedgerTables where
+  projectLedgerTablesTicked _ = NoLedgerTables
+  withLedgerTablesTicked st _ = convertMapKindTicked st
+
+instance SufficientSerializationForAnyBackingStore l WithoutLedgerTables where
+  codecLedgerTables = NoLedgerTables
+
+instance IgnoresMapKind l => StowableLedgerTables l WithoutLedgerTables where
+  stowLedgerTables   = convertMapKind
+  unstowLedgerTables = convertMapKind
+
+instance PromoteLedgerTables l l' WithoutLedgerTables where
+  promoteLedgerTables = const NoLedgerTables
+  demoteLedgerTables = const NoLedgerTables
 
 {-------------------------------------------------------------------------------
   Changelog

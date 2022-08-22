@@ -28,7 +28,6 @@ module Ouroboros.Consensus.Ledger.Extended (
   , castExtLedgerState
     -- * Type family instances
   , LedgerTables (..)
-  , Promote (..)
   , Ticked1 (..)
   ) where
 
@@ -323,28 +322,18 @@ instance ( LedgerSupportsProtocol blk
 
 instance ExtractLedgerTables (LedgerState blk) => ExtractLedgerTables (ExtLedgerState blk) where
   extractLedgerTables ExtLedgerState{..} = ExtLedgerState{ledgerState = extractLedgerTables ledgerState,..}
-  destroyTables ExtLedgerState{..} = ExtLedgerState{ledgerState = destroyTables ledgerState,..}
+  destroyLedgerTables ExtLedgerState{..} = ExtLedgerState{ledgerState = destroyLedgerTables ledgerState,..}
 
 instance IgnoresMapKind (LedgerState blk) => IgnoresMapKind (ExtLedgerState blk) where
   convertMapKind ExtLedgerState{..} = ExtLedgerState{ledgerState = convertMapKind ledgerState, ..}
-
-instance IgnoresMapKindTicked (LedgerState blk) => IgnoresMapKindTicked (ExtLedgerState blk) where
   convertMapKindTicked TickedExtLedgerState{..} = TickedExtLedgerState{tickedLedgerState = convertMapKindTicked tickedLedgerState, ..}
 
 instance IgnoresTables (LedgerState blk) => IgnoresTables (ExtLedgerState blk) where
   convertTables ExtLedgerState{..} = ExtLedgerState{ledgerState = convertTables ledgerState, ..}
 
-class Promote l l' wt where
-  promote :: LedgerTables l wt mk -> LedgerTables l' wt mk
-  demote :: LedgerTables l' wt mk -> LedgerTables l wt mk
-
-instance Promote (LedgerState blk) (ExtLedgerState blk) WithLedgerTables where
-  promote = ExtLedgerStateTables
-  demote = unExtLedgerStateTables
-
-instance Promote (LedgerState blk) (ExtLedgerState blk) WithoutLedgerTables where
-  promote = const NoLedgerTables
-  demote = const NoLedgerTables
+instance PromoteLedgerTables (LedgerState blk) (ExtLedgerState blk) WithLedgerTables where
+  promoteLedgerTables = ExtLedgerStateTables
+  demoteLedgerTables  = unExtLedgerStateTables
 
 instance GetsBlockKeySets (LedgerState blk)    blk WithLedgerTables
       => GetsBlockKeySets (ExtLedgerState blk) blk WithLedgerTables where
@@ -354,7 +343,7 @@ instance GetsBlockKeySets (LedgerState blk)    blk WithLedgerTables
 -- TODO @js: remove this?
 type LedgerMustSupportUTxOHD' blk wt = ( LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
                                        , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
-                                       , Promote (LedgerState blk) (ExtLedgerState blk) wt
+                                       , PromoteLedgerTables (LedgerState blk) (ExtLedgerState blk) wt
                                        )
 
 instance (LedgerSupportsProtocol blk, LedgerMustSupportUTxOHD (LedgerState blk) blk WithLedgerTables)    => LedgerMustSupportUTxOHD (ExtLedgerState blk) blk WithLedgerTables

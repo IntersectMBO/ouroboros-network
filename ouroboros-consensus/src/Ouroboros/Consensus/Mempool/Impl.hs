@@ -180,8 +180,8 @@ chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState = ChainDB.getCurrentLedger chainDB
     , getLedgerStateForTxs  = \seP m ->
         fmap
-          (bimap (      second demote)
-                 (fmap (second demote)))
+          (bimap (      second demoteLedgerTables)
+                 (fmap (second demoteLedgerTables)))
         $ ChainDB.getLedgerStateForKeys chainDB seP m
     }
 
@@ -418,7 +418,7 @@ getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
                 filter ((`notElem` Set.fromList removals) . txId)
               $ map (txForgetValidated . TxSeq.txTicketTx) . TxSeq.toList
               $ isTxs is0
-            keys = promote
+            keys = promoteLedgerTables
                  . foldl (zipLedgerTables (<>)) polyEmptyLedgerTables
                  . map (getTransactionKeySets :: GenTx blk -> LedgerTables (LedgerState blk) wt KeysMK)
                  $ keptTxs <> txs
@@ -434,9 +434,9 @@ getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
                    (InternalState blk wt, Maybe (ExtLedgerState blk wt ValuesMK))
             (Maybe (InternalState blk wt,        ExtLedgerState blk wt ValuesMK))
     finish = \case
-      StaticLeft ((ls, is), tables)         -> StaticLeft (is, Just $ ls `withLedgerTables` promote tables)
+      StaticLeft ((ls, is), tables)         -> StaticLeft (is, Just $ ls `withLedgerTables` promoteLedgerTables tables)
       StaticRight Nothing                   -> StaticRight Nothing
-      StaticRight (Just ((ls, is), tables)) -> StaticRight $ Just (is, ls `withLedgerTables` promote tables)
+      StaticRight (Just ((ls, is), tables)) -> StaticRight $ Just (is, ls `withLedgerTables` promoteLedgerTables tables)
 
 -- | A type to perform a short circuit when there is nothing to do and we
 -- requested a ledger state on top of the 'ChainDB' (i.e. we are using

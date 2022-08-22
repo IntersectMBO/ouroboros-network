@@ -22,7 +22,6 @@ class ( TickedTableStuff                          l     wt
       , SufficientSerializationForAnyBackingStore l     wt
       , GetsBlockKeySets                          l blk wt
       , IgnoresMapKind                            l
-      , IgnoresMapKindTicked                      l
       , GetTip (l wt TrackingMK)
       , GetTip (l wt EmptyMK)
       , GetTip (l wt ValuesMK)

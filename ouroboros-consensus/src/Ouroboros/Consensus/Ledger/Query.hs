@@ -364,7 +364,7 @@ handleLargeQuery ::
 handleLargeQuery cfg dlv query = do
     let DiskLedgerView st dbRead _dbReadRange _dbClose = dlv
         keys                                           = prepareQuery query
-    values <- dbRead (promote keys)
+    values <- dbRead (promoteLedgerTables keys)
     pure $ answerQuery cfg query (stowLedgerTables $ st `withLedgerTables` values)
 
 handleWholeQuery ::
@@ -391,11 +391,11 @@ handleWholeQuery dlv query = do
             loop !prev !acc = do
               extValues <-
                 dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
-              if getAll $ foldLedgerTables (All . f) (demote extValues :: LedgerTables (LedgerState blk) wt ValuesMK) then pure acc else
+              if getAll $ foldLedgerTables (All . f) (demoteLedgerTables extValues :: LedgerTables (LedgerState blk) wt ValuesMK) then pure acc else
                 loop
                   (Just $ mapLedgerTables toKeys extValues)
                   -- TODO: @js this is too convoluted
-                  (comb acc $ partial (stowLedgerTables (ledgerState st `withLedgerTables` demote extValues) `withLedgerTables` polyEmptyLedgerTables))
+                  (comb acc $ partial (stowLedgerTables (ledgerState st `withLedgerTables` demoteLedgerTables extValues) `withLedgerTables` polyEmptyLedgerTables)) -- FIXME @js: this double withLedgerTables is bad!
           in  post <$> loop Nothing empty
   where
 

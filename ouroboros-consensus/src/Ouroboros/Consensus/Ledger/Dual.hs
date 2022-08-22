@@ -580,21 +580,21 @@ instance forall m a. ( GetsBlockKeySets (LedgerState m) m WithLedgerTables
 
   getTransactionKeySets tx =
       combine
-        (promote (getTransactionKeySets dualGenTxMain :: LedgerTables (LedgerState m) WithLedgerTables KeysMK))
-        (promote (getTransactionKeySets dualGenTxAux  :: LedgerTables (LedgerState a) WithLedgerTables KeysMK))
+        (promoteLedgerTables (getTransactionKeySets dualGenTxMain :: LedgerTables (LedgerState m) WithLedgerTables KeysMK))
+        (promoteLedgerTables (getTransactionKeySets dualGenTxAux  :: LedgerTables (LedgerState a) WithLedgerTables KeysMK))
     where
       DualGenTx {
           dualGenTxMain
         , dualGenTxAux
         } = tx
 
-instance Promote (LedgerState m) (LedgerState (DualBlock m a)) WithLedgerTables where
-  promote x = DualBlockLedgerTables x undefined
-  demote (DualBlockLedgerTables x _) = x
+instance PromoteLedgerTables (LedgerState m) (LedgerState (DualBlock m a)) WithLedgerTables where
+  promoteLedgerTables x = DualBlockLedgerTables x undefined
+  demoteLedgerTables (DualBlockLedgerTables x _) = x
 
-instance Promote (LedgerState a) (LedgerState (DualBlock m a)) WithLedgerTables where
-  promote x = DualBlockLedgerTables undefined x
-  demote (DualBlockLedgerTables _ x) = x
+instance PromoteLedgerTables (LedgerState a) (LedgerState (DualBlock m a)) WithLedgerTables where
+  promoteLedgerTables x = DualBlockLedgerTables undefined x
+  demoteLedgerTables (DualBlockLedgerTables _ x) = x
 
 combine :: LedgerTables (LedgerState (DualBlock m a)) WithLedgerTables mk
         -> LedgerTables (LedgerState (DualBlock m a)) WithLedgerTables mk

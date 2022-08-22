@@ -994,10 +994,8 @@ instance CanHardFork xs
       => IgnoresMapKind (LedgerState (HardForkBlock xs)) where
   convertMapKind (HardForkLedgerState st) = HardForkLedgerState $ hcmap proxySingle (Flip2 . convertMapKind . unFlip2) st
 
-instance CanHardFork xs
-      => IgnoresMapKindTicked (LedgerState (HardForkBlock xs)) where
   convertMapKindTicked st = st { tickedHardForkLedgerStatePerEra = hcmap proxySingle (FlipTickedLedgerState . convertMapKindTicked . getFlipTickedLedgerState) $ tickedHardForkLedgerStatePerEra st }
 
 instance CanHardFork xs => ExtractLedgerTables (LedgerState (HardForkBlock xs)) where
   extractLedgerTables (HardForkLedgerState st) = HardForkLedgerState $ hcmap proxySingle (Flip2 . extractLedgerTables . unFlip2) st
-  destroyTables (HardForkLedgerState st) = HardForkLedgerState $ hcmap proxySingle (Flip2 . destroyTables . unFlip2) st
+  destroyLedgerTables (HardForkLedgerState st) = HardForkLedgerState $ hcmap proxySingle (Flip2 . destroyLedgerTables . unFlip2) st

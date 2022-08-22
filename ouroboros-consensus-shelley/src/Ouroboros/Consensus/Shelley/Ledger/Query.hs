@@ -287,7 +287,7 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
     -> LedgerTables (LedgerState (ShelleyBlock proto era)) wt KeysMK
   prepareBlockQuery = \case
       GetCBOR q        -> prepareBlockQuery q
-      GetUTxOByTxIn ks -> case findOutWT (Proxy @wt) of
+      GetUTxOByTxIn ks -> case singByProxy (Proxy @wt) of
         SWithLedgerTables -> ShelleyLedgerTables $ ApplyKeysMK $ HD.UtxoKeys ks
         SWithoutLedgerTables -> NoLedgerTables
 

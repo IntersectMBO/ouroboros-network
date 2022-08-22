@@ -93,7 +93,7 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture,
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..),
-                     LedgerMustSupportUTxOHD', Promote)
+                     LedgerMustSupportUTxOHD')
 import qualified Ouroboros.Consensus.Network.NodeToClient as NTC
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
@@ -339,7 +339,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           HardForkBlockchainTimeArgs
             { hfbtBackoffDelay   = pure $ BackoffDelay 60
             , hfbtGetLedgerState = case singByProxy (Proxy @wt) of
-                SWithLedgerTables -> destroyTables . ledgerState <$> ChainDB.getCurrentLedger chainDB
+                SWithLedgerTables -> destroyLedgerTables . ledgerState <$> ChainDB.getCurrentLedger chainDB
                 SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger chainDB
             , hfbtLedgerConfig   = configLedger cfg
             , hfbtRegistry       = registry
@@ -609,7 +609,7 @@ mkNodeKernelArgs
   chainDB
   = do
     blockForging <- initBlockForging
-    return $ rf (Proxy @(And (Promote (LedgerState blk) (ExtLedgerState blk))
+    return $ rf (Proxy @(And (PromoteLedgerTables (LedgerState blk) (ExtLedgerState blk))
                              (And (LedgerMustSupportUTxOHD (ExtLedgerState blk) blk)
                                   (LedgerMustSupportUTxOHD (LedgerState blk) blk))))
                 (Proxy @wt)

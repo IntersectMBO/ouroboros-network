@@ -221,7 +221,7 @@ instance ShelleyBasedEra era => ExtractLedgerTables (LedgerState (ShelleyBlock p
                               , shelleyLedgerTables = ShelleyLedgerTables $ projectUtxoSL $ shelleyLedgerState st
                               }
 
-  destroyTables st = st { shelleyLedgerTables = NoLedgerTables }
+  destroyLedgerTables st = st { shelleyLedgerTables = NoLedgerTables }
 
 -- instance (ShelleyBasedEra era, SingI mk) => Show (LedgerState (ShelleyBlock proto era) wt (ApplyMapKind' mk)) where
 --   showsPrec _prec = showsLedgerState sMapKind
@@ -342,8 +342,6 @@ instance ShelleyBasedEra era => TickedTableStuff (LedgerState (ShelleyBlock prot
 
 instance IgnoresMapKind (LedgerState (ShelleyBlock proto era)) where
   convertMapKind ShelleyLedgerState{..} = ShelleyLedgerState{shelleyLedgerTables = NoLedgerTables, ..}
-
-instance IgnoresMapKindTicked (LedgerState (ShelleyBlock proto era)) where
   convertMapKindTicked TickedShelleyLedgerState{..} = TickedShelleyLedgerState{tickedShelleyLedgerTables = NoLedgerTables, ..}
 
 -- deriving newtype  instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerTables (LedgerState (ShelleyBlock proto era)) WithLedgerTables mk)
