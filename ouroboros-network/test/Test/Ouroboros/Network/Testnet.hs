@@ -1,8 +1,13 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+
+#if defined(mingw32_HOST_OS)
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+#endif
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
@@ -113,7 +118,9 @@ tests =
                    prop_diffusion_ig_valid_transition_order
     , testProperty "diffusion cm & ig timeouts enforced"
                    prop_diffusion_timeouts_enforced
+#endif
     ]
+#if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
     [ testProperty "diffusion server trace coverage"
                    prop_server_trace_coverage
@@ -130,6 +137,30 @@ tests =
     , testProperty "diffusion inbound governor transitions coverage"
                    prop_inbound_governor_transitions_coverage
     ]
+<<<<<<< HEAD
+||||||| parent of 6c86233aec (Fixed stylish-haskell parsing error)
+  , testGroup "hot diffusion script"
+    [ testProperty "hot diffusion target active public"
+                   prop_hot_diffusion_target_active_public
+    , testProperty "hot diffusion target active local"
+                   prop_hot_diffusion_target_active_local
+    , testProperty "hot diffusion target active root"
+                   prop_hot_diffusion_target_active_root
+    ]
+#else
+    ]
+#endif
+=======
+  , testGroup "hot diffusion script"
+    [ testProperty "hot diffusion target active public"
+                   prop_hot_diffusion_target_active_public
+    , testProperty "hot diffusion target active local"
+                   prop_hot_diffusion_target_active_local
+    , testProperty "hot diffusion target active root"
+                   prop_hot_diffusion_target_active_root
+    ]
+#endif
+>>>>>>> 6c86233aec (Fixed stylish-haskell parsing error)
   ]
 
 -- Warning: be careful with writing properties that rely
