@@ -335,12 +335,10 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
                 , ssSetTotal       = getAllStake _pstakeSet
                 , ssGoTotal        = getAllStake _pstakeGo
                 }
-        GetPoolDistr mPoolIds ->
-          let poolDistr = SL.calculatePoolDistr . SL._pstakeSet . SL.esSnapshots $ getEpochState st in
-          case mPoolIds of
-            Just poolIds -> SL.PoolDistr $ Map.restrictKeys (SL.unPoolDistr poolDistr) poolIds
-            Nothing -> poolDistr
 
+        GetPoolDistr mPoolIds ->
+          let stakeSet = SL._pstakeSet . SL.esSnapshots $ getEpochState st in
+          SL.calculatePoolDistr' (maybe (const True) (flip Set.member) mPoolIds) stakeSet
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
