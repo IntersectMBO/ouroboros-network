@@ -15,9 +15,11 @@ import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
 import qualified Test.Consensus.Util.MonadSTM.RAWLock (tests)
 import qualified Test.Consensus.Util.Versioned (tests)
+import           Test.Util.TestEnv (defaultMainWithTestEnv,
+                     defaultTestEnvConfig)
 
 main :: IO ()
-main = defaultMain tests
+main = defaultMainWithTestEnv defaultTestEnvConfig tests
 
 tests :: TestTree
 tests =

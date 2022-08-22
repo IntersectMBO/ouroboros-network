@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -70,9 +71,9 @@ import           Test.ThreadNet.Util.NodeToNodeVersion (genVersionFiltered)
 import           Test.ThreadNet.Util.Seed (runGen)
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future
-import           Test.Util.Nightly
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
+import           Test.Util.TestEnv
 
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Shelley.Node.Praos
@@ -161,16 +162,18 @@ twoFifthsTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ (2 * n) `div` 5
 
 tests :: TestTree
-tests = testGroup "Cardano ThreadNet" $
-    [ let name = "simple convergence" in
-      askIohkNightlyEnabled $ \enabled ->
-      if enabled
-      then testProperty name $ \setup ->
-             prop_simple_cardano_convergence setup
-      else adjustOption twoFifthsTestCount $
-           testProperty name $ \setup ->
-             prop_simple_cardano_convergence setup
+tests = localOption (QuickCheckTests 100) $
+        testGroup "Cardano ThreadNet" [
+          let name = "simple convergence" in
+          askTestEnv $ adjustTestMode $
+            testProperty name prop_simple_cardano_convergence
     ]
+    where
+      adjustTestMode :: TestTree -> TestEnv ->  TestTree
+      adjustTestMode tree = \case
+        Nightly -> tree
+        _       -> adjustOption twoFifthsTestCount tree
+
 
 prop_simple_cardano_convergence :: TestSetup -> Property
 prop_simple_cardano_convergence TestSetup

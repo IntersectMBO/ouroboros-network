@@ -6,9 +6,11 @@ import qualified Test.ThreadNet.Util.Tests (tests)
 import qualified Test.Util.ChainUpdates.Tests (tests)
 import qualified Test.Util.Schedule.Tests (tests)
 import qualified Test.Util.Split.Tests (tests)
+import           Test.Util.TestEnv (defaultMainWithTestEnv,
+                     defaultTestEnvConfig)
 
 main :: IO ()
-main = defaultMain tests
+main = defaultMainWithTestEnv defaultTestEnvConfig tests
 
 tests :: TestTree
 tests =

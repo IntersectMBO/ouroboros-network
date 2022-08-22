@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -27,15 +28,14 @@ import           Test.ThreadNet.Infra.Shelley
 import           Test.ThreadNet.Network (TestNodeInitialization (..),
                      nodeOutputFinalLedger)
 
-import           Test.Util.HardFork.Future (singleEraFuture)
-import           Test.Util.Nightly
-import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Slots (NumSlots (..))
-
 import qualified Cardano.Ledger.BaseTypes as SL (UnitInterval,
                      mkNonceFromNumber, unboundRational)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as SL
+import           Test.Util.HardFork.Future (singleEraFuture)
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Slots (NumSlots (..))
+import           Test.Util.TestEnv
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
@@ -158,15 +158,12 @@ fifthTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ n `div` 5
 
 tests :: TestTree
-tests = testGroup "Shelley ThreadNet"
+tests = localOption (QuickCheckTests 100) $ testGroup "Shelley ThreadNet"
     [ let name = "simple convergence" in
-      askIohkNightlyEnabled $ \enabled ->
-      if enabled
-      then testProperty name $ \(NightlyTestSetup setup) ->
-             prop_simple_real_tpraos_convergence setup
-      else adjustOption fifthTestCount $
-           testProperty name $ \setup ->
-             prop_simple_real_tpraos_convergence setup
+      askTestEnv $ \case
+          Nightly -> testProperty name $ \(NightlyTestSetup setup) ->
+            prop_simple_real_tpraos_convergence setup
+          _      -> adjustOption fifthTestCount $ testProperty name prop_simple_real_tpraos_convergence
     ]
 
 prop_simple_real_tpraos_convergence :: TestSetup -> Property

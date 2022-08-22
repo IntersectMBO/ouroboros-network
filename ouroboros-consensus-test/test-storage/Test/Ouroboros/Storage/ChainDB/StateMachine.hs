@@ -52,8 +52,8 @@ import           Test.StateMachine
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import           Test.Tasty (TestTree, testGroup, localOption)
+import           Test.Tasty.QuickCheck (testProperty, QuickCheckTests (..))
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -1460,7 +1460,7 @@ smUnused maxClockSkew chunkInfo =
       maxClockSkew
 
 prop_sequential :: MaxClockSkew -> SmallChunkInfo -> Property
-prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) = withMaxSuccess 100000 $
+prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
     forAllCommands (smUnused maxClockSkew chunkInfo) Nothing $ \cmds ->
       QC.monadicIO $ do
         let
@@ -1664,5 +1664,5 @@ mkArgs cfg (MaxClockSkew maxClockSkew) chunkInfo initLedger tracer registry varC
 
 tests :: TestTree
 tests = testGroup "ChainDB q-s-m"
-    [ testProperty "sequential" prop_sequential
+    [ localOption (QuickCheckTests 100000) $ testProperty "sequential" prop_sequential
     ]

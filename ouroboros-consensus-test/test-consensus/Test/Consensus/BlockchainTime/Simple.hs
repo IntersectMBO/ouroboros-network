@@ -42,9 +42,9 @@ import           Test.Util.Time
 
 tests :: TestTree
 tests = testGroup "WallClock" [
-      testProperty "delayNextSlot"     prop_delayNextSlot
+      localOption (QuickCheckTests 10) $ testProperty "delayNextSlot" prop_delayNextSlot
     , testProperty "delayClockShift"   prop_delayClockShift
-    , testProperty "delayNoClockShift" prop_delayNoClockShift
+    , localOption (QuickCheckTests 1)  $ testProperty "delayNoClockShift" prop_delayNoClockShift
     ]
 
 {-------------------------------------------------------------------------------
@@ -82,7 +82,7 @@ instance Arbitrary TestDelayIO where
 -- test gives us a more useful property. Also see issue #3894.
 prop_delayNextSlot :: TestDelayIO -> Property
 prop_delayNextSlot TestDelayIO{..} =
-    withMaxSuccess 10 $ ioProperty test
+    ioProperty test
   where
     test :: IO Property
     test = do
@@ -281,7 +281,7 @@ prop_delayClockShift schedule =
 -- | Just as a sanity check, verify that this works in IO
 prop_delayNoClockShift :: Property
 prop_delayNoClockShift =
-    withMaxSuccess 1 $ ioProperty $ do
+    ioProperty $ do
       now   <- getCurrentTime
       slots <- originalDelay $
                  testOverrideDelay
