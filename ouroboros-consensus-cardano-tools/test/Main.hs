@@ -16,11 +16,18 @@ nodeConfig  = "test/disk/config/config.json"
 chainDB     = "test/disk/chaindb"
 
 
-testSynthOptions :: DBSynthesizerOptions
-testSynthOptions =
+testSynthOptionsCreate :: DBSynthesizerOptions
+testSynthOptionsCreate =
     DBSynthesizerOptions {
         synthLimit          = ForgeLimitEpoch 1
-      , synthForceDBRemoval = True
+      , synthOpenMode       = OpenCreateForce
+    }
+
+testSynthOptionsAppend :: DBSynthesizerOptions
+testSynthOptionsAppend =
+    DBSynthesizerOptions {
+        synthLimit          = ForgeLimitSlot 8192
+      , synthOpenMode       = OpenAppend
     }
 
 testNodeFilePaths :: NodeFilePaths
@@ -53,29 +60,34 @@ testAnalyserConfig =
 
 -- | A multi-step test including synthesis and analaysis 'SomeConsensusProtocol' using the Cardano instance.
 --
--- 1. step: synthesize a ChainDB and counts the amount of blocks forged in the proces.
--- 2. step: analyze the ChainDB from previous step and confirm the block count.
+-- 1. step: synthesize a ChainDB from scratch and count the amount of blocks forged.
+-- 2. step: append to the previous ChainDB and coutn the amount of blocks forged.
+-- 3. step: analyze the ChainDB resulting from previous steps and confirm the total block count.
 
 --
 blockCountTest :: (String -> IO ()) -> Assertion
 blockCountTest logStep = do
-    logStep "intializing synthesis"
-    (protocol, options) <- either assertFailure pure
+    logStep "running synthesis - create"
+    (options, protocol) <- either assertFailure pure
         =<< DBSynthesizer.initialize
           testNodeFilePaths
           testNodeCredentials
-          testSynthOptions
+          testSynthOptionsCreate
+    resultCreate <- DBSynthesizer.synthesize options protocol
+    let blockCountCreate = resultForged resultCreate
+    blockCountCreate > 0 @? "no blocks have been forged during create step"
 
-    logStep "running synthesis"
-    resultSynth <- DBSynthesizer.synthesize protocol options
-    let blockCount = resultForged resultSynth
-    blockCount > 0 @? "no blocks have been forged"
+    logStep "running synthesis - append"
+    resultAppend <- DBSynthesizer.synthesize options {confOptions = testSynthOptionsAppend} protocol
+    let blockCountAppend = resultForged resultAppend
+    blockCountAppend > 0 @? "no blocks have been forged during append step"
 
     logStep "running analysis"
     resultAnalysis <- case blockType testAnalyserConfig of
         CardanoBlock b  -> DBAnalyser.analyse testAnalyserConfig b
         _               -> assertFailure "expexcting test case for Cardano block type"
 
+    let blockCount = blockCountCreate + blockCountAppend
     resultAnalysis == Just (ResultCountBlock blockCount) @?
         "wrong number of blocks encountered during analysis \
         \ (counted: " ++ show resultAnalysis ++ "; expected: " ++ show blockCount ++ ")"
@@ -83,7 +95,7 @@ blockCountTest logStep = do
 tests :: TestTree
 tests =
     testGroup "cardano-tools"
-      [ testCaseSteps "synthesize and analyse: blockCount" blockCountTest
+      [ testCaseSteps "synthesize and analyse: blockCount\n" blockCountTest
       ]
 
 main :: IO ()

@@ -41,7 +41,7 @@ parseDBSynthesizerOptions :: Parser DBSynthesizerOptions
 parseDBSynthesizerOptions =
   DBSynthesizerOptions
     <$> parseForgeOptions
-    <*> parseForce
+    <*> parseOpenMode
 
 parseForgeOptions :: Parser ForgeLimit
 parseForgeOptions =
@@ -136,3 +136,16 @@ parseForce =
     (     short 'f'
       <>  help "Force overwrite an existing Chain DB"
     )
+
+parseAppend :: Parser Bool
+parseAppend =
+  switch
+    (     short 'a'
+      <>  help "Append to an existing Chain DB"
+    )
+
+parseOpenMode :: Parser DBSynthesizerOpenMode
+parseOpenMode =
+      (parseForce *> pure OpenCreateForce)
+  <|> (parseAppend *> pure OpenAppend)
+  <|> pure OpenCreate
