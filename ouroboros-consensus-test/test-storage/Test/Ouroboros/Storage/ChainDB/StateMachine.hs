@@ -52,8 +52,8 @@ import           Test.StateMachine
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
-import           Test.Tasty (TestTree, testGroup, localOption)
-import           Test.Tasty.QuickCheck (testProperty, QuickCheckTests (..))
+import           Test.Tasty (TestTree, localOption, testGroup)
+import           Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
