@@ -62,15 +62,14 @@ import           Test.Util.Slots (NumSlots (..))
 
 tests :: TestTree
 tests = testGroup "DualByron" [
-      testProperty "convergence" $ prop_convergence
+      localOption (QuickCheckTests 10) $ testProperty "convergence" $ prop_convergence
     ]
 
 -- These tests are very expensive, due to the Byron generators
 -- (100 tests take about 20 minutes)
 -- We limit it to 10 tests for now.
 prop_convergence :: SetupDualByron -> Property
-prop_convergence setup = withMaxSuccess 10 $
-    (\prop -> if mightForgeInSlot0 then discard else prop) $
+prop_convergence setup = (\prop -> if mightForgeInSlot0 then discard else prop) $
     tabulate "Ref.PBFT result" [Ref.resultConstrName refResult] $
     prop_general PropGeneralArgs
       { pgaBlockProperty       = const $ property True

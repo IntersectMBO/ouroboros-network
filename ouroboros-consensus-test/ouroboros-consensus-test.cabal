@@ -51,7 +51,6 @@ library
                        Test.Util.InvertedMap
                        Test.Util.LogicalClock
                        Test.Util.MockChain
-                       Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoThunks
@@ -72,6 +71,7 @@ library
                        Test.Util.Split
                        Test.Util.Stream
                        Test.Util.TestBlock
+                       Test.Util.TestEnv
                        Test.Util.Time
                        Test.Util.Tracer
                        Test.Util.WithEq
@@ -95,6 +95,7 @@ library
                      , graphviz
                      , mtl               >=2.2   && <2.3
                      , nothunks
+                     , optparse-applicative
                      , QuickCheck
                      , quickcheck-state-machine
                      , quiet             >=0.2   && <0.3

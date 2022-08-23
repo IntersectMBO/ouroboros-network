@@ -57,9 +57,16 @@ import           Ouroboros.Consensus.Cardano.Node
                      TriggerHardFork (..))
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 
+import           Test.Consensus.Shelley.MockCrypto (MockCrypto)
 import           Test.ThreadNet.General
+import qualified Test.ThreadNet.Infra.Shelley as Shelley
+import           Test.ThreadNet.Infra.ShelleyBasedHardFork
+import           Test.ThreadNet.Infra.TwoEras
 import           Test.ThreadNet.Network (NodeOutput (..),
                      TestNodeInitialization (..))
+import           Test.ThreadNet.TxGen
+import           Test.ThreadNet.TxGen.Allegra ()
+import           Test.ThreadNet.TxGen.Mary ()
 import           Test.ThreadNet.Util.Expectations (NumBlocks (..))
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
@@ -67,18 +74,9 @@ import           Test.ThreadNet.Util.NodeToNodeVersion (genVersionFiltered)
 import           Test.ThreadNet.Util.Seed (runGen)
 import qualified Test.Util.BoolProps as BoolProps
 import           Test.Util.HardFork.Future (EraSize (..), Future (..))
-import           Test.Util.Nightly (askIohkNightlyEnabled)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
-
-import           Test.Consensus.Shelley.MockCrypto (MockCrypto)
-import qualified Test.ThreadNet.Infra.Shelley as Shelley
-import           Test.ThreadNet.Infra.ShelleyBasedHardFork
-import           Test.ThreadNet.TxGen
-import           Test.ThreadNet.TxGen.Allegra ()
-import           Test.ThreadNet.TxGen.Mary ()
-
-import           Test.ThreadNet.Infra.TwoEras
+import           Test.Util.TestEnv
 
 -- | No Byron era, so our crypto can be trivial.
 type Crypto = MockCrypto ShortHash
@@ -162,13 +160,15 @@ oneTenthTestCount (QuickCheckTests n) = QuickCheckTests $
     max 1 $ n `div` 10
 
 tests :: TestTree
-tests = testGroup "AllegraMary ThreadNet" $
-    [ let name = "simple convergence" in
-      askIohkNightlyEnabled $ \enabled ->
-      (if enabled then id else adjustOption oneTenthTestCount) $
-      testProperty name $ \setup ->
-        prop_simple_allegraMary_convergence setup
-    ]
+tests = localOption (QuickCheckTests 100) $
+        testGroup "AllegraMary ThreadNet" [
+          askTestEnv $ adjustTestEnv $ testProperty "simple convergence" prop_simple_allegraMary_convergence
+        ]
+    where
+      adjustTestEnv :: TestTree -> TestEnv -> TestTree
+      adjustTestEnv tree = \case
+        Nightly -> tree
+        _       -> adjustOption oneTenthTestCount tree
 
 prop_simple_allegraMary_convergence :: TestSetup -> Property
 prop_simple_allegraMary_convergence TestSetup
