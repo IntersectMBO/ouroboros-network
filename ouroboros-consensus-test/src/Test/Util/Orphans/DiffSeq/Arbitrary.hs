@@ -6,8 +6,9 @@
 
 module Test.Util.Orphans.DiffSeq.Arbitrary () where
 
-import           Test.QuickCheck hiding (Fixed (..))
+import           Test.QuickCheck
 
+import qualified Data.FingerTree.TopMeasured.Strict as TMSFT
 import qualified Data.Map.Diff.Strict as MapDiff
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
@@ -17,17 +18,21 @@ import           Test.Util.Orphans.Slotting.Arbitrary ()
   Diffs
 ------------------------------------------------------------------------------}
 
-deriving newtype instance (Ord k, Arbitrary k, Arbitrary v)
-                       => Arbitrary (MapDiff.Diff k v)
-deriving newtype instance (Arbitrary v) => Arbitrary (MapDiff.DiffHistory v)
-instance (Arbitrary v) => Arbitrary (MapDiff.DiffEntry v) where
-  arbitrary = do
-    constr <- elements [MapDiff.Insert, MapDiff.Delete]
-    constr <$> arbitrary
+instance (Ord k, Arbitrary k, Arbitrary v) => Arbitrary (MapDiff.Diff k v) where
+  arbitrary = MapDiff.fromList <$> arbitrary
+instance (Arbitrary v) => Arbitrary (MapDiff.DiffHistory v) where
+  arbitrary = oneof [
+      MapDiff.singletonInsert <$> arbitrary
+    , MapDiff.singletonDelete <$> arbitrary
+    ]
 
 {------------------------------------------------------------------------------
   Sequences of diffs
 ------------------------------------------------------------------------------}
+
+instance (TMSFT.SuperMeasured vt vi a, Arbitrary a)
+      => Arbitrary (TMSFT.StrictFingerTree vt vi a) where
+  arbitrary = TMSFT.fromList <$> arbitrary
 
 instance (Ord k, Arbitrary k, Arbitrary v)
       => Arbitrary (DS.TopMeasure k v) where

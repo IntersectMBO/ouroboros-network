@@ -9,18 +9,16 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 
-module Data.Map.Diff.Strict (
+module Data.Map.Diff.Strict.Ver2b (
     Diff (..)
   , DiffEntry (..)
   , DiffHistory (..)
     -- * Construction
   , diff
   , fromList
+  , fromList'
   , singletonDelete
   , singletonInsert
-    -- * Utility
-  , length
-  , splitAt
     -- * Values and keys
   , Keys (..)
   , Values (..)
@@ -34,11 +32,11 @@ module Data.Map.Diff.Strict (
 
 import           Prelude hiding (length, splitAt)
 
-import           Data.Bifunctor
 import           Data.Group
 import qualified Data.Map.Merge.Strict as Merge
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Semigroupoid
 import           Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
@@ -70,9 +68,74 @@ newtype DiffHistory v = DiffHistory (Seq (DiffEntry v))
 --
 -- Note: updates are equivalent to inserts, since we consider them to
 -- overwrite previous values.
-data DiffEntry v = Insert !v | Delete !v
+data DiffEntry v = Insert !v | Delete !v | AntiInsert !v | AntiDelete !v
   deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
+
+data Act v = Del !v | Ins !v | DelIns !v !v | InsDel
+  deriving stock (Generic, Show, Eq, Functor)
+  deriving anyclass (NoThunks)
+
+instance Eq v => Semigroupoid (Act v) where
+    l <>? r = case l of
+        Del x -> case r of
+            Del{}    -> Nothing   -- disallow double delete
+            Ins y    -> Just $ DelIns x y
+
+            DelIns{} -> Nothing   -- disallow double delete
+
+            InsDel   -> Just $ Del x
+
+        Ins x -> case r of
+            Del y ->
+                if x /= y then Nothing   -- disallow inaccurate delete
+                else Just InsDel
+            Ins{} -> Nothing   -- disallow overwrite
+
+            DelIns y z ->
+                if x /= y then Nothing   -- disallow inaccurate delete
+                else Just $ Ins z
+
+            InsDel{} -> Nothing   -- disallow overwrite
+
+        DelIns x y -> case r of
+            Del z ->
+                if y /= z then Nothing   -- disallow inaccurate delete
+                else Just $ Del x
+            Ins{} -> Nothing   -- disallow overwrite
+
+            DelIns z aa ->
+                if y /= z then Nothing   -- disallow inaccurate delete
+                else Just $ DelIns x aa
+
+            InsDel{} -> Nothing   -- disallow overwrite
+
+        InsDel -> case r of
+            Del{}    -> Nothing   -- disallow double delete
+            Ins x    -> Just $ Ins x
+
+            DelIns{} -> Nothing   -- disallow double delete
+
+            InsDel   -> Just InsDel
+
+instance Eq v => Groupoid (Act v) where
+  pinv = \case
+      Del v      -> Ins v
+      Ins v      -> Del v
+
+      DelIns x y -> DelIns y x
+
+      InsDel     -> InsDel
+
+foldToAct :: Eq v => DiffHistory v -> Maybe (Act v)
+foldToAct (DiffHistory Seq.Empty) = error "Impossible: Invariant"
+foldToAct (DiffHistory (z Seq.:<| zs)) = foldl (\x y -> pappendM x (Just $ fromDiffEntry y)) (Just $ fromDiffEntry z) zs
+  where
+    fromDiffEntry = \case
+      Insert x     -> Ins x
+      Delete x     -> Del x
+      AntiInsert x -> Del x -- or Nothing?
+      AntiDelete x -> Ins x -- or Nothing?
 
 {------------------------------------------------------------------------------
   Construction
@@ -89,6 +152,9 @@ diff m1 m2 = Diff $
 
 fromList :: Ord k => (v -> DiffHistory v) -> [(k, v)] -> Diff k v
 fromList f = Diff . Map.fromList . fmap (fmap f)
+
+fromList' :: Ord k => [(k, DiffHistory v)] -> Diff k v
+fromList' = Diff . Map.fromList
 
 singleton :: DiffEntry v -> DiffHistory v
 singleton = DiffHistory . Seq.singleton
@@ -185,8 +251,10 @@ isNonEmptyHistory h@(DiffHistory s)
 -- identity element, so it is not a @Monoid@ or @Semigroup@.
 invertDiffEntry :: DiffEntry v -> DiffEntry v
 invertDiffEntry = \case
-  Insert x -> Delete x
-  Delete x -> Insert x
+  Insert x     -> AntiInsert x
+  Delete x     -> AntiDelete x
+  AntiInsert x -> Insert x
+  AntiDelete x -> Delete x
 
 -- | @'areInverses e1 e2@ checks whether @e1@ and @e2@ are each other's
 -- inverse.
@@ -195,12 +263,6 @@ invertDiffEntry = \case
 -- the second argument. That is, inversion should be invertible.
 areInverses :: Eq v => DiffEntry v -> DiffEntry v -> Bool
 areInverses e1 e2 = invertDiffEntry e1 == e2
-
-length :: DiffHistory v -> Int
-length (DiffHistory s) = Seq.length s
-
-splitAt :: Int -> DiffHistory v -> (DiffHistory v, DiffHistory v)
-splitAt n (DiffHistory s) = bimap DiffHistory DiffHistory $ Seq.splitAt n s
 
 {------------------------------------------------------------------------------
   Values and keys
@@ -228,7 +290,7 @@ restrictValues (Values m) (Keys s) = Values (Map.restrictKeys m s)
   Forwarding values and keys
 ------------------------------------------------------------------------------}
 
-forwardValues :: (Ord k, HasCallStack) => Values k v -> Diff k v -> Values k v
+forwardValues :: (Ord k, Eq v, HasCallStack) => Values k v -> Diff k v -> Values k v
 forwardValues (Values values) (Diff diffs) = Values $
     Merge.merge
       Merge.preserveMissing
@@ -237,20 +299,30 @@ forwardValues (Values values) (Diff diffs) = Values $
       values
       diffs
   where
-    newKeys :: k -> DiffHistory v -> Maybe v
+    newKeys :: Eq v => k -> DiffHistory v -> Maybe v
     newKeys _k (DiffHistory Empty)       = error "impossible"
-    newKeys _k (DiffHistory (_es :|> e)) = case e of
-      Insert x  -> Just x
-      Delete _x -> Nothing
+    newKeys _k h = case foldToAct h of
+      Nothing             -> error "impossible"
+      Just (Ins x)        -> Just x
+      Just (Del _x)       -> error "impossible"
+      Just (DelIns _x _y) -> error "impossible"
+      Just InsDel         -> Nothing
 
-    oldKeys :: k -> v -> DiffHistory v -> Maybe v
+
+    oldKeys :: Eq v => k -> v -> DiffHistory v -> Maybe v
     oldKeys _k _v1 (DiffHistory Empty)       = error "impossible"
-    oldKeys _k _v1 (DiffHistory (_es :|> e)) = case e of
-      Insert x  -> Just x
-      Delete _x -> Nothing
+    oldKeys _k v1 h = case foldToAct h of
+      Nothing -> error "impossible"
+      Just (Ins _x) -> error "impossible"
+      Just (Del x) | x == v1 -> Nothing
+                   | otherwise -> error "impossible"
+      Just (DelIns x y)
+                   | x == v1 -> Just y
+                   | otherwise -> error "impossible"
+      Just InsDel -> error "impossible"
 
 forwardValuesAndKeys ::
-     (Ord k, HasCallStack)
+     (Ord k, Eq v, HasCallStack)
   => Values k v
   -> Keys k v
   -> Diff k v

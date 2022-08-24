@@ -502,8 +502,8 @@ genPush conf = do
     let
       _vs'@(MapDiff.Values m) = MapDiff.forwardValues vs (DS.cumulativeDiff ds)
 
-    d1 <- MapDiff.fromList MapDiff.singletonDelete <$> valuesToDelete m
-    d2 <- MapDiff.fromList MapDiff.singletonInsert <$> valuesToInsert kc
+    d1 <- MapDiff.fromListDeletes <$> valuesToDelete m
+    d2 <- MapDiff.fromListInserts <$> valuesToInsert kc
     let
       d = d1 <> d2
 

@@ -20,6 +20,7 @@ packages: ./ouroboros-network-testing
           ./ouroboros-consensus-test
           ./ntp-client
           ./cardano-client
+          ./anti-diff
 
 constraints:
     ip < 1.5
@@ -140,6 +141,9 @@ package plutus-core
 
 package prettyprinter-configurable
   tests: False
+
+package anti-diff
+  tests: True
 
 allow-newer:
   size-based:template-haskell

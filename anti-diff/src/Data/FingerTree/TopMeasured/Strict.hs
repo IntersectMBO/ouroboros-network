@@ -20,6 +20,7 @@ module Data.FingerTree.TopMeasured.Strict (
   , (|>)
     -- * Splitting
   , split
+  , split'
     -- * Maps
   , fmap'
   , fmap''
@@ -77,7 +78,7 @@ instance Measured vi a => Measured vi (StrictFingerTree vt vi a) where
 -- > @instance Measured T' a where -- ...@
 -- Furthermore, we want the top-level measure to be a @'Group'@ instead of a
 -- @'Monoid'@.
-class Group v => TopMeasured v a | a -> v where
+class Monoid v => TopMeasured v a | a -> v where
   measureTop :: a -> v
 
 -- | All @StrictFingerTree@s are top-measured.
@@ -119,16 +120,15 @@ fromList !xs = SFT (foldMap measureTop xs) (FT.fromList xs)
 --
 -- TODO(jdral): Complexity analysis.
 split ::
-     SuperMeasured vt vi a
+     ( SuperMeasured vt vi a
+     , Group vt
+     )
   => (vi -> Bool)
   -> StrictFingerTree vt vi a
   -> ( StrictFingerTree vt vi a
      , StrictFingerTree vt vi a
      )
-split p (SFT vt sft) =
-    ( SFT vtDelta left
-    , SFT (invert vtDelta <> vt) right
-    )
+split p = split' p f
   where
     -- TODO(jdral): There are two options for constructing the results from
     -- @left@ and @right@ parts that are obtained here. Either we invert the
@@ -137,11 +137,23 @@ split p (SFT vt sft) =
     -- our construction. The choice depends on the sizes of @left@ and
     -- @right@. Should the @split@ function take this into account, or should
     -- we introduce variants of the @split@ function?
-    (left, right) = FT.split p sft
-    -- TODO(jdral): Should we invert inside the definition of @vtDelta@
-    -- instead? Example:
-    -- > @vtDelta = foldMap (invert . measureTop) left
-    vtDelta = foldMap measureTop left
+    f vt (vtLeft, _vtRight) = (vtLeft, invert vtLeft <> vt)
+
+-- | Like 'split', but does not require a 'Group' instance. Instead, the
+-- function should be provided a function that computes the top-measures of
+-- the left and right parts of the split.
+split' ::
+     SuperMeasured vt vi a
+  => (vi -> Bool)
+  -> (vt -> (vt, vt) -> (vt, vt))
+  -> StrictFingerTree vt vi a
+  -> ( StrictFingerTree vt vi a
+     , StrictFingerTree vt vi a
+     )
+split' p f (SFT vt sft) = (SFT vtLeft left, SFT vtRight right)
+  where
+    (left, right)     = FT.split p sft
+    (vtLeft, vtRight) = f vt (foldMap measureTop left, foldMap measureTop right)
 
 {-------------------------------------------------------------------------------
   Maps

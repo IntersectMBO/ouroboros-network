@@ -48,7 +48,6 @@ library
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
-                       Test.Util.Laws
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Nightly
@@ -124,6 +123,8 @@ library
                      , ouroboros-network
                      , ouroboros-network-framework
                      , ouroboros-consensus
+
+                     , anti-diff
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -243,8 +244,6 @@ test-suite test-storage
                        Test.Ouroboros.Storage.VolatileDB.Model
                        Test.Ouroboros.Storage.VolatileDB.StateMachine
 
-                       Test.Data.Map.Diff.Strict
-
   build-depends:       base
                      , async
                      , bifunctors
@@ -283,6 +282,8 @@ test-suite test-storage
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-test
+
+                     , anti-diff
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -344,6 +345,8 @@ benchmark bench-storage
 
                      , ouroboros-consensus
                      , ouroboros-consensus-test
+
+                     , anti-diff
 
   default-language:    Haskell2010
   ghc-options:         -Wall

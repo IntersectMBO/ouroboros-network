@@ -18,6 +18,7 @@ import qualified Data.FingerTree.Strict as FT
 
 import qualified Data.FingerTree.TopMeasured.Strict as TMFT
 import qualified Data.Map.Diff.Strict as MapDiff
+import qualified Data.Map.Diff.Strict.Internal as Internal
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
@@ -71,12 +72,12 @@ instance (Ord k, Eq v)
     where
       to' (HD.SudElement slot d) = DS.Element (to slot) (to d)
 
-instance Isomorphism (MapDiff.Diff k v) (HD.UtxoDiff k v) where
-  to (MapDiff.Diff m) = HD.UtxoDiff (fmap to' m)
+instance Eq v => Isomorphism (MapDiff.Diff k v) (HD.UtxoDiff k v) where
+  to (Internal.Diff m) = HD.UtxoDiff (fmap to' m)
     where
       to' :: MapDiff.DiffHistory v -> HD.UtxoEntryDiff v
       to' = \case
-        MapDiff.DiffHistory (_xs Seq.:|> x) ->
+        Internal.DiffHistory (_xs Seq.:|> x) ->
           to'' x
         _ ->
           error "A DiffHistory is isomorphic to a UtxoEntryDiff under the \
@@ -86,18 +87,15 @@ instance Isomorphism (MapDiff.Diff k v) (HD.UtxoDiff k v) where
         MapDiff.Insert v -> HD.UtxoEntryDiff v HD.UedsIns
         MapDiff.Delete v -> HD.UtxoEntryDiff v HD.UedsDel
 
-instance Isomorphism (HD.UtxoDiff k v) (MapDiff.Diff k v) where
+instance Eq v => Isomorphism (HD.UtxoDiff k v) (MapDiff.Diff k v) where
   to :: HD.UtxoDiff k v -> MapDiff.Diff k v
-  to (HD.UtxoDiff m) = MapDiff.Diff $ fmap to' m
+  to (HD.UtxoDiff m) = Internal.Diff $ fmap to' m
     where
-      to' :: HD.UtxoEntryDiff v -> MapDiff.DiffHistory v
-      to' (HD.UtxoEntryDiff v st) = case st of
-        HD.UedsIns ->
-          MapDiff.DiffHistory $ Seq.singleton $ MapDiff.Insert v
-        HD.UedsDel ->
-          MapDiff.DiffHistory $ Seq.singleton $ MapDiff.Delete v
-        HD.UedsInsAndDel ->
-          MapDiff.DiffHistory $ Seq.fromList [MapDiff.Insert v, MapDiff.Delete v]
+      to' :: Eq v => HD.UtxoEntryDiff v -> MapDiff.DiffHistory v
+      to' (HD.UtxoEntryDiff x st) = case st of
+        HD.UedsIns       -> MapDiff.singletonInsert x
+        HD.UedsDel       -> MapDiff.singletonDelete x
+        HD.UedsInsAndDel -> MapDiff.singletonInsert x <> MapDiff.singletonDelete x
 
 instance Isomorphism (MapDiff.Values k v) (HD.UtxoValues k v) where
   to :: MapDiff.Values k v-> HD.UtxoValues k v

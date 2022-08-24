@@ -6,25 +6,34 @@ import           Data.Proxy
 
 import           Test.Tasty
 
-import           Test.Util.Laws
+import           AntiDiff.Util.Auto
+import           AntiDiff.Util.Laws (testGroupLaws, testGroupoidLaws,
+                     testMonoidLaws, testSemigroupLaws, testSemigroupoidLaws)
+import           AntiDiff.Util.Tasty
+import           AntiDiff.Util.X
+
 import           Test.Util.Orphans.DiffSeq.Arbitrary ()
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
 
--- | Testing @'Semigroup'@, @'Monoid'@ and @'Group'@ laws for the measures used
--- in the diff sequence datatype.
+
+
 tests :: TestTree
 tests = testGroup "DiffSeq" [
-    testGroup "TopMeasure ts Int Int" [
-        testSemigroupLaws p1
-      , testMonoidLaws p1
-      , testGroupLaws p1
+    testGroupWithProxy (Proxy @(TopMeasure X X)) [
+        testSemigroupLaws
+      , testMonoidLaws
+      , testGroupLaws
       ]
-  , testGroup "InternalMeasure ts Int Int" [
-        testSemigroupLaws p2
-      , testMonoidLaws p2
+  , testGroupWithProxy (Proxy @(Auto (TopMeasure X X))) [
+        testSemigroupoidLaws
+      , testGroupoidLaws
+      ]
+  , testGroupWithProxy (Proxy @(InternalMeasure X X)) [
+        testSemigroupLaws
+      , testMonoidLaws
+      ]
+  , testGroupWithProxy (Proxy @(Auto (InternalMeasure X X))) [
+        testSemigroupoidLaws
       ]
   ]
-    where
-      p1 = Proxy @(TopMeasure Int Int)
-      p2 = Proxy @(InternalMeasure Int Int)

@@ -22,9 +22,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
   , SlotNo (..)
   , TopMeasure (..)
     -- * Short-hands for type-class constraints
-  , IM
   , SM
-  , TM
     -- * API: derived functions
   , cumulativeDiff
   , extend
@@ -50,7 +48,7 @@ import           NoThunks.Class (NoThunks)
 
 import           Data.FingerTree.TopMeasured.Strict hiding (split)
 import qualified Data.FingerTree.TopMeasured.Strict as TMFT (split)
-import           Data.Map.Diff.Strict (Diff (..))
+import           Data.Map.Diff.Strict (Diff)
 
 import qualified Cardano.Slotting.Slot as Slot
 
@@ -151,30 +149,21 @@ instance Monoid (InternalMeasure k v) where
   Short-hands for type-class constraints
 -------------------------------------------------------------------------------}
 
--- | Short-hand for @'Topmeasured'@.
-type TM k v =
-  TopMeasured (TopMeasure k v) (Element k v)
-
--- | Short-hand for @'InternalMeasured'@.
-type IM k v =
-  Measured (InternalMeasure k v) (Element k v)
-
 -- | Short-hand for @'SuperMeasured'@.
-type SM k v =
-  (TM k v, IM k v)
+type SM k v = SuperMeasured (TopMeasure k v) (InternalMeasure k v) (Element k v)
 
 {-------------------------------------------------------------------------------
   API: derived functions
 -------------------------------------------------------------------------------}
 
 cumulativeDiff ::
-     TM k v
+     SM k v
   => DiffSeq k v
   -> Diff k v
 cumulativeDiff (DiffSeq ft) = tmDiff $ measureTop ft
 
 length ::
-     TM k v
+     SM k v
   => DiffSeq k v -> Int
 length (DiffSeq ft) = unLength . tmLength $ measureTop ft
 
@@ -198,7 +187,7 @@ extend' (DiffSeq ft) el =
       Just sl0 -> sl0 <= elSlotNo el
 
 maxSlot ::
-     IM k v
+     SM k v
   => DiffSeq k v
   -> Maybe Slot.SlotNo
 maxSlot (DiffSeq ft) =
@@ -211,21 +200,21 @@ maxSlot (DiffSeq ft) =
     unwrapInner (Just (SlotNo sl)) = Just sl
 
 split ::
-     SM k v
+     (SM k v, Ord k, Eq v)
   => (InternalMeasure k v -> Bool)
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
 split p (DiffSeq ft) = bimap DiffSeq DiffSeq $ TMFT.split p ft
 
 splitAt ::
-     SM k v
+     (SM k v, Ord k, Eq v)
   => Int
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
 splitAt n = split ((Length n<) . imLength)
 
 splitAtFromEnd ::
-     SM k v
+     (SM k v, Ord k, Eq v)
   => Int
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
@@ -235,7 +224,7 @@ splitAtFromEnd n dseq =
     len = length dseq
 
 splitAtSlot ::
-     SM k v
+     (SM k v, Ord k, Eq v)
   => Slot.SlotNo
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)

@@ -253,8 +253,7 @@ library
 
                        -- Strict wrapper around SOP
                        Data.SOP.Strict
-                       Data.FingerTree.TopMeasured.Strict
-                       Data.Map.Diff.Strict
+
   if os(windows)
      exposed-modules:
                        -- TODO Delete this module once all our projects have upgraded to at least
@@ -323,6 +322,7 @@ library
                      , psqueues          >=0.2.3 && <0.3
                      , random
                      , quiet             >=0.2   && <0.3
+                     , QuickCheck
                      , semialign         >=1.1
                      , serialise         >=0.2   && <0.3
                      , sop-core          >=0.5   && <0.6
@@ -343,6 +343,7 @@ library
                      , strict-stm        >=0.1   && <0.2
                      , lmdb-simple       >=0.4.0.0 && <0.5
                      , lmdb              >= 0.2.5
+                     , anti-diff
 
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0

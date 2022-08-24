@@ -12,7 +12,7 @@ import           Data.Foldable
 
 import qualified Data.FingerTree.Strict as FT
 import           Data.FingerTree.TopMeasured.Strict as TMFT
-import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
+import           Data.Map.Diff.Strict.Internal (Diff (..), DiffEntry (..),
                      DiffHistory (..), Keys (..), Values (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      SudElement (..), SudMeasure (..), UtxoDiff (..),
