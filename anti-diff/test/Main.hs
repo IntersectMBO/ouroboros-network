@@ -22,14 +22,10 @@ import           Test.Data.FingerTree.TopMeasured.Strict (appendProp,
                      split'Prop, splitProp)
 import qualified Test.Data.FingerTree.TopMeasured.Strict
 import qualified Test.Data.Map.Diff.Strict as Test.Diff
--- import qualified Test.Data.Map.Diff.Strict.Ver2 as Test.DiffV2
--- import qualified Test.Data.Map.Diff.Strict.Ver2a as Test.DiffV2a
--- import qualified Test.Data.Map.Diff.Strict.Ver2b as Test.DiffV2b
--- import qualified Test.Data.Map.Diff.Strict.Ver3 as Test.DiffV3
--- import qualified Test.Data.Map.Diff.Strict.Ver4 as Test.DiffV4
 
 import           AntiDiff.Util.Tasty
 import           AntiDiff.Util.X
+
 
 
 main :: IO ()
@@ -37,11 +33,6 @@ main = defaultMain tests
 
 tests :: TestTree
 tests = testGroup "anti-diffs" [
-  --   Test.DiffV2.tests
-  -- , Test.DiffV2a.tests
-  -- , Test.DiffV2b.tests
-  -- , Test.DiffV3.tests
-  -- , Test.DiffV4.tests
     Test.Diff.tests
   , Test.Data.FingerTree.TopMeasured.Strict.tests
   , diffSeqTests

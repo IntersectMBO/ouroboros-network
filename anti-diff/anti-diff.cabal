@@ -17,11 +17,6 @@ library
                        Data.FingerTree.TopMeasured.Strict
                        Data.Map.Diff.Strict
                        Data.Map.Diff.Strict.Internal
-                       Data.Map.Diff.Strict.Ver2
-                       Data.Map.Diff.Strict.Ver2a
-                       Data.Map.Diff.Strict.Ver2b
-                       Data.Map.Diff.Strict.Ver3
-                       Data.Map.Diff.Strict.Ver4
                        Data.Semigroupoid
 
                        AntiDiff.Util.Auto
@@ -92,11 +87,6 @@ test-suite test
   other-modules:
                        Test.Data.FingerTree.TopMeasured.Strict
                      , Test.Data.Map.Diff.Strict
-                     , Test.Data.Map.Diff.Strict.Ver2
-                     , Test.Data.Map.Diff.Strict.Ver2a
-                     , Test.Data.Map.Diff.Strict.Ver2b
-                     , Test.Data.Map.Diff.Strict.Ver3
-                     , Test.Data.Map.Diff.Strict.Ver4
 
   build-depends:       base              >=4.9 && <4.15
                      , bimap             >=0.3   && <0.5
