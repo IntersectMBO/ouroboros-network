@@ -39,6 +39,8 @@ import           Ouroboros.Consensus.ByronSpec.Ledger.Conversions
 import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis (ByronSpecGenesis)
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
+import Ouroboros.Consensus.Ledger.SupportsMempool
 
 {-------------------------------------------------------------------------------
   State
@@ -147,18 +149,30 @@ instance TickedTableStuff (LedgerState ByronSpecBlock) WithLedgerTables where
 instance IgnoresMapKind (LedgerState ByronSpecBlock) where
   convertMapKind ByronSpecLedgerState{..} = ByronSpecLedgerState{..}
 
-instance IgnoresMapKindTicked (LedgerState ByronSpecBlock) where
   convertMapKindTicked TickedByronSpecLedgerState{..} = TickedByronSpecLedgerState{..}
 
 instance IgnoresTables (LedgerState ByronSpecBlock) where
   convertTables ByronSpecLedgerState{..} = ByronSpecLedgerState{..}
 
-instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
-  showsLedgerState _sing = shows
+-- instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
+--   showsLedgerState _sing = shows
+
+instance ExtractLedgerTables (LedgerState ByronSpecBlock) where
+  extractLedgerTables = convertTables
+  destroyLedgerTables = convertTables
 
 instance StowableLedgerTables (LedgerState ByronSpecBlock) WithLedgerTables where
   stowLedgerTables     = convertTables
   unstowLedgerTables   = convertTables
+
+instance GetsBlockKeySets (LedgerState ByronSpecBlock) ByronSpecBlock WithLedgerTables where
+  getBlockKeySets       _ = polyEmptyLedgerTables
+  getTransactionKeySets _ = polyEmptyLedgerTables
+
+
+instance LedgerMustSupportUTxOHD (LedgerState ByronSpecBlock) ByronSpecBlock WithoutLedgerTables
+instance LedgerMustSupportUTxOHD (LedgerState ByronSpecBlock) ByronSpecBlock WithLedgerTables
+instance LedgerSupportsUTxOHD (LedgerState ByronSpecBlock) ByronSpecBlock
 
 {-------------------------------------------------------------------------------
   Applying blocks

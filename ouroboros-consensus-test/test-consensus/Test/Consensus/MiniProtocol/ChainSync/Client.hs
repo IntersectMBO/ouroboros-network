@@ -256,7 +256,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     let chainSyncTracer = contramap Left  tracer
         protocolTracer  = contramap Right tracer
 
-    let chainDbView :: ChainDbView m TestBlock
+    let chainDbView :: ChainDbView m TestBlock WithoutLedgerTables
         chainDbView = ChainDbView
           { getCurrentChain =
               AF.mapAnchoredFragment TestHeader . AF.anchorNewest k .
@@ -454,7 +454,7 @@ computePastLedger ::
      TopLevelConfig TestBlock
   -> Point TestBlock
   -> Chain TestBlock
-  -> Maybe (ExtLedgerState TestBlock EmptyMK)
+  -> Maybe (ExtLedgerState TestBlock WithoutLedgerTables EmptyMK)
 computePastLedger cfg pt chain
     | pt `elem` validPoints
     = Just $ go (convertMapKind testInitExtLedger) (Chain.toOldestFirst chain)
@@ -477,7 +477,7 @@ computePastLedger cfg pt chain
     -- matching @pt@, after which we return the resulting ledger.
     --
     -- PRECONDITION: @pt@ is in the list of blocks or genesis.
-    go :: ExtLedgerState TestBlock EmptyMK -> [TestBlock] -> ExtLedgerState TestBlock EmptyMK
+    go :: ExtLedgerState TestBlock WithoutLedgerTables EmptyMK -> [TestBlock] -> ExtLedgerState TestBlock WithoutLedgerTables EmptyMK
     go !st blks
         | castPoint (getTip st) == pt
         = st

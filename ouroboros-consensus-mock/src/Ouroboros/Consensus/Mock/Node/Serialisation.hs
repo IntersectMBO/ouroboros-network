@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -31,6 +32,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 
 import           Ouroboros.Consensus.Storage.Serialisation
+import Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol)
 
 -- | Local shorthand to make the instances more readable
 type MockBlock ext = SimpleBlock SimpleMockCrypto ext
@@ -44,8 +46,11 @@ type MockBlock ext = SimpleBlock SimpleMockCrypto ext
 instance (Serialise ext, Typeable ext) => HasBinaryBlockInfo (MockBlock ext) where
   getBinaryBlockInfo = simpleBlockBinaryBlockInfo
 
-instance (Serialise ext, RunMockBlock SimpleMockCrypto ext)
-      => SerialiseDiskConstraints (MockBlock ext)
+instance (Serialise ext, RunMockBlock SimpleMockCrypto ext, LedgerSupportsProtocol (MockBlock ext))
+      => SerialiseDiskConstraints (MockBlock ext) WithLedgerTables
+instance (Serialise ext, RunMockBlock SimpleMockCrypto ext, LedgerSupportsProtocol (MockBlock ext))
+      => SerialiseDiskConstraints (MockBlock ext) WithoutLedgerTables
+
 
 instance Serialise ext => EncodeDisk (MockBlock ext) (MockBlock ext)
 instance Serialise ext => DecodeDisk (MockBlock ext) (Lazy.ByteString -> MockBlock ext) where
@@ -55,8 +60,10 @@ instance Serialise ext => EncodeDisk (MockBlock ext) (Header (MockBlock ext))
 instance Serialise ext => DecodeDisk (MockBlock ext) (Lazy.ByteString -> Header (MockBlock ext)) where
   decodeDisk _ = const <$> decode
 
-instance EncodeDisk (MockBlock ext) (LedgerState (MockBlock ext) mk)
-instance DecodeDisk (MockBlock ext) (LedgerState (MockBlock ext) mk)
+instance EncodeDisk (MockBlock ext) (LedgerState (MockBlock ext) WithLedgerTables mk)
+instance DecodeDisk (MockBlock ext) (LedgerState (MockBlock ext) WithLedgerTables mk)
+instance EncodeDisk (MockBlock ext) (LedgerState (MockBlock ext) WithoutLedgerTables mk)
+instance DecodeDisk (MockBlock ext) (LedgerState (MockBlock ext) WithoutLedgerTables mk)
 
 instance EncodeDisk (MockBlock ext) (AnnTip (MockBlock ext)) where
   encodeDisk _ = defaultEncodeAnnTip encode

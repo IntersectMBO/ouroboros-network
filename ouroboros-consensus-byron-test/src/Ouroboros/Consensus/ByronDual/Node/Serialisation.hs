@@ -55,10 +55,8 @@ instance SupportedNetworkProtocolVersion DualByronBlock where
   EncodeDisk & DecodeDisk
 -------------------------------------------------------------------------------}
 
-instance SerialiseDiskConstraints DualByronBlock
-
-instance SufficientSerializationForAnyBackingStore (LedgerState DualByronBlock) where
-    codecLedgerTables = DualBlockLedgerTables codecLedgerTables codecLedgerTables
+instance SerialiseDiskConstraints DualByronBlock WithLedgerTables
+instance SerialiseDiskConstraints DualByronBlock WithoutLedgerTables
 
 instance EncodeDisk DualByronBlock DualByronBlock where
   encodeDisk _ = encodeDualBlock encodeByronBlock
@@ -72,9 +70,9 @@ instance DecodeDiskDep (NestedCtxt Header) DualByronBlock where
                 (NestedCtxt (CtxtDual ctxt)) =
       decodeDiskDep ccfg (NestedCtxt ctxt)
 
-instance EncodeDisk DualByronBlock (LedgerState DualByronBlock EmptyMK) where
+instance EncodeDisk DualByronBlock (LedgerState DualByronBlock wt EmptyMK) where
   encodeDisk _ = encodeDualLedgerState encodeByronLedgerState
-instance DecodeDisk DualByronBlock (LedgerState DualByronBlock EmptyMK) where
+instance DecodeDisk DualByronBlock (LedgerState DualByronBlock wt EmptyMK) where
   decodeDisk _ = decodeDualLedgerState decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@

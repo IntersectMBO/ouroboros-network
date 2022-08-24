@@ -57,9 +57,7 @@ import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SlotNo)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, LedgerTables,
-                     TableStuff, ValuesMK, valuesMKEncoder)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
@@ -226,11 +224,11 @@ data Examples blk = Examples {
     , exampleQuery            :: Labelled (SomeQuery (BlockQuery blk))
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
-    , exampleLedgerState      :: Labelled (LedgerState blk EmptyMK)
+    , exampleLedgerState      :: Labelled (LedgerState blk WithoutLedgerTables EmptyMK)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
-    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk EmptyMK)
+    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk WithoutLedgerTables EmptyMK)
     , exampleSlotNo           :: Labelled SlotNo
-    , exampleLedgerTables    :: Labelled (LedgerTables (LedgerState blk) ValuesMK)
+    , exampleLedgerTables     :: Labelled (LedgerTables (LedgerState blk) WithLedgerTables ValuesMK)
     }
 
 emptyExamples :: Examples blk
@@ -339,11 +337,13 @@ class ToGoldenDirectory a where
 -- 'CardanoNodeToNodeVersion1', we 'show' the exception and use that as the
 -- output.
 goldenTest_all ::
-     ( SerialiseDiskConstraints         blk
+     ( SerialiseDiskConstraints         blk WithLedgerTables
+     , SerialiseDiskConstraints         blk WithoutLedgerTables
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
-     , TableStuff          (LedgerState blk)
+     , TableStuff          (LedgerState blk) WithLedgerTables
      , SupportedNetworkProtocolVersion  blk
+     , SufficientSerializationForAnyBackingStore (LedgerState blk) WithLedgerTables
 
      , ToGoldenDirectory (BlockNodeToNodeVersion   blk)
      , ToGoldenDirectory (QueryVersion, BlockNodeToClientVersion blk)
@@ -367,8 +367,10 @@ goldenTest_all codecConfig goldenDir examples =
 -- 'SerialiseDiskConstraints'?
 goldenTest_SerialiseDisk ::
      forall blk.
-     ( TableStuff (LedgerState blk)
-     , SerialiseDiskConstraints blk
+     ( TableStuff (LedgerState blk) WithLedgerTables
+     , SerialiseDiskConstraints blk WithLedgerTables
+     , SerialiseDiskConstraints blk WithoutLedgerTables
+     , SufficientSerializationForAnyBackingStore (LedgerState blk) WithLedgerTables
      , HasCallStack
      )
   => CodecConfig blk

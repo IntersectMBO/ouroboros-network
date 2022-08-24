@@ -34,8 +34,7 @@ import           Ouroboros.Network.Block (Serialised (..))
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, IsApplyMapKind,
-                     ValuesMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (SomeQuery (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
@@ -48,7 +47,6 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -137,9 +135,9 @@ instance Inject Examples where
       , exampleQuery            = inj (Proxy @SomeCardanoQuery)              exampleQuery
       , exampleResult           = inj (Proxy @SomeResult)                    exampleResult
       , exampleAnnTip           = inj (Proxy @AnnTip)                        exampleAnnTip
-      , exampleLedgerState      = inj (Proxy @(Flip LedgerState EmptyMK))    exampleLedgerState
+      , exampleLedgerState      = inj (Proxy @(Flip2 LedgerState WithoutLedgerTables EmptyMK))    exampleLedgerState
       , exampleChainDepState    = inj (Proxy @WrapChainDepState)             exampleChainDepState
-      , exampleExtLedgerState   = inj (Proxy @(Flip ExtLedgerState EmptyMK)) exampleExtLedgerState
+      , exampleExtLedgerState   = inj (Proxy @(Flip2 ExtLedgerState WithoutLedgerTables EmptyMK)) exampleExtLedgerState
       , exampleSlotNo           =                                            exampleSlotNo
       , exampleLedgerTables     = inj (Proxy @WrapLedgerTables)              exampleLedgerTables
       }
@@ -155,7 +153,7 @@ instance Inject Examples where
 
 -- | This wrapper is used only in the 'Example' instance of 'Inject' so that we
 -- can use a type that matches the kind expected by 'inj'.
-newtype WrapLedgerTables blk = WrapLedgerTables ( LedgerTables (ExtLedgerState blk) ValuesMK )
+newtype WrapLedgerTables blk = WrapLedgerTables ( LedgerTables (ExtLedgerState blk) WithLedgerTables ValuesMK )
 
 instance Inject WrapLedgerTables where
   inject = injectWrapLedgerTables
@@ -179,8 +177,8 @@ injectWrapLedgerTables _startBounds idx (WrapLedgerTables (ExtLedgerStateTables 
   where
     injectLedgerTables ::
          (IsApplyMapKind mk)
-      => LedgerTables (LedgerState                  x) mk
-      -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+      => LedgerTables (LedgerState                  x) WithLedgerTables mk
+      -> LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables mk
     injectLedgerTables = applyInjectLedgerTables
                        $ projectNP idx hardForkInjectLedgerTablesKeysMK
 
@@ -296,14 +294,14 @@ codecConfig =
       Shelley.ShelleyCodecConfig
 
 ledgerStateByron ::
-     LedgerState ByronBlock mk
-  -> LedgerState (CardanoBlock Crypto) mk
+     LedgerState ByronBlock wt mk
+  -> LedgerState (CardanoBlock Crypto) wt mk
 ledgerStateByron stByron =
     HardForkLedgerState $ HardForkState $ TZ cur
   where
     cur = State.Current {
           currentStart = History.initBound
-        , currentState = Flip stByron
+        , currentState = Flip2 stByron
         }
 
 {-------------------------------------------------------------------------------

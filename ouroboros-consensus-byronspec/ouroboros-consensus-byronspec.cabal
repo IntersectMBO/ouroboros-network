@@ -60,3 +60,4 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors

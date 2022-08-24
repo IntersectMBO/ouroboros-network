@@ -269,7 +269,7 @@ instance Arbitrary CC.Del.Map where
 instance Arbitrary ByronTransition where
   arbitrary = ByronTransitionInfo . Map.fromList <$> arbitrary
 
-instance Arbitrary (LedgerState ByronBlock EmptyMK) where
+instance Arbitrary (LedgerState ByronBlock wt EmptyMK) where
   arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
 
 instance Arbitrary (TipInfoIsEBB ByronBlock) where

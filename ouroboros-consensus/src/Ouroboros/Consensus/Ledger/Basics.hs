@@ -777,8 +777,6 @@ rf _  _ f = case singByProxy (Proxy @wt) of
   SWithLedgerTables    -> f
   SWithoutLedgerTables -> f
 
-
-
 {-------------------------------------------------------------------------------
   Concrete map kinds
 -------------------------------------------------------------------------------}
@@ -1102,6 +1100,8 @@ class ExtractLedgerTables l where
 
 -- | Change between equivalent ledger tables. Similar to @coerce@ but dependent
 -- on the @wt@ parameter.
+--
+-- TODO @js move this to a function only for ExtLedgerState <-> LedgerState
 class PromoteLedgerTables l l' wt where
   promoteLedgerTables :: LedgerTables l  wt mk -> LedgerTables l' wt mk
   demoteLedgerTables  :: LedgerTables l' wt mk -> LedgerTables l  wt mk

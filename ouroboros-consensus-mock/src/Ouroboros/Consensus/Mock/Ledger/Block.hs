@@ -102,6 +102,7 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD (LedgerSupportsUTxOHD, LedgerMustSupportUTxOHD)
 
 {-------------------------------------------------------------------------------
   Definition of a block
@@ -374,7 +375,6 @@ newtype instance LedgerState (SimpleBlock c ext) wt mk = SimpleLedgerState {
 instance IgnoresMapKind (LedgerState (SimpleBlock c ext)) where
   convertMapKind SimpleLedgerState {..} = SimpleLedgerState {..}
 
-instance IgnoresMapKindTicked (LedgerState (SimpleBlock c ext)) where
   convertMapKindTicked  = TickedSimpleLedgerState . convertMapKind . getTickedSimpleLedgerState
 
 instance IgnoresTables (LedgerState (SimpleBlock c ext)) where
@@ -390,7 +390,7 @@ newtype instance Ticked1 (LedgerState (SimpleBlock c ext) wt) mk = TickedSimpleL
   deriving stock   (Generic, Show, Eq)
   deriving newtype (NoThunks)
 
-instance (SimpleCrypto c, Typeable ext) => TableStuff (LedgerState (SimpleBlock c ext)) WithLedgerTables where
+instance TableStuff (LedgerState (SimpleBlock c ext)) WithLedgerTables where
   data LedgerTables (LedgerState (SimpleBlock c ext)) WithLedgerTables mk = NoMockTables
     deriving (Eq, Generic, NoThunks, Show)
 
@@ -408,7 +408,7 @@ instance (SimpleCrypto c, Typeable ext) => TableStuff (LedgerState (SimpleBlock 
   foldLedgerTables2    _f              NoMockTables NoMockTables = mempty
   namesLedgerTables                                              = NoMockTables
 
-instance (SimpleCrypto c, Typeable ext) => TickedTableStuff (LedgerState (SimpleBlock c ext)) WithLedgerTables where
+instance TickedTableStuff (LedgerState (SimpleBlock c ext)) WithLedgerTables where
   projectLedgerTablesTicked _st                                 = NoMockTables
   withLedgerTablesTicked    (TickedSimpleLedgerState st) tables =
       TickedSimpleLedgerState $ withLedgerTables st tables
@@ -416,12 +416,22 @@ instance (SimpleCrypto c, Typeable ext) => TickedTableStuff (LedgerState (Simple
 instance SufficientSerializationForAnyBackingStore (LedgerState (SimpleBlock c ext)) WithLedgerTables where
     codecLedgerTables = NoMockTables
 
-instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
-  showsLedgerState _sing = shows
+-- instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
+--   showsLedgerState _sing = shows
+
+instance ExtractLedgerTables (LedgerState (SimpleBlock c ext)) where
+  extractLedgerTables = convertTables
+  destroyLedgerTables = convertTables
 
 instance StowableLedgerTables (LedgerState (SimpleBlock c ext)) WithLedgerTables where
   stowLedgerTables     = convertTables
   unstowLedgerTables   = convertTables
+
+
+
+instance (SimpleCrypto c, Typeable ext) => LedgerMustSupportUTxOHD (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) WithLedgerTables
+instance (SimpleCrypto c, Typeable ext) => LedgerMustSupportUTxOHD (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) WithoutLedgerTables
+instance (SimpleCrypto c, Typeable ext) => LedgerSupportsUTxOHD (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
@@ -487,8 +497,7 @@ instance MockProtocolSpecific c ext
 
   txForgetValidated = forgetValidatedSimpleGenTx
 
-instance MockProtocolSpecific c ext
-      => GetsBlockKeySets (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) WithLedgerTables where
+instance GetsBlockKeySets (LedgerState (SimpleBlock c ext)) (SimpleBlock c ext) WithLedgerTables where
 
   getBlockKeySets _ = polyEmptyLedgerTables
 

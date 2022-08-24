@@ -62,7 +62,6 @@ import           Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types as HFC
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
@@ -197,14 +196,23 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
           HFC.TranslateLedgerState {
             translateLedgerStateWith =  \_epochNo ->
                 noNewTickingDiffs
-              . unFlip
+              . unFlip2
               . unComp
               . SL.translateEra'
                   (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
               . Comp
-              . Flip
-          , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } -> ShelleyLedgerTables {
+              . Flip2
+          , translateLedgerTablesWith = translateLedgerTablesWith cfg2
+        }
+
+      translateLedgerTablesWith ::
+         forall wt. IsSwitchLedgerTables wt
+         => WrapLedgerConfig (ShelleyBlock proto2 era2)
+         -> LedgerTables (LedgerState (ShelleyBlock proto1 era1)) wt DiffMK
+         -> LedgerTables (LedgerState (ShelleyBlock proto2 era2)) wt DiffMK
+      translateLedgerTablesWith cfg2 = case singByProxy (Proxy @wt) of
+        SWithoutLedgerTables -> const NoLedgerTables
+        SWithLedgerTables -> \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } -> ShelleyLedgerTables {
                 shelleyUTxOTable = ApplyDiffMK
                                  . HD.UtxoDiff
                                  . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff ( unTxOutWrapper
@@ -213,7 +221,6 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
                                                                                      $ x) y)
                                  $ vals
               }
-        }
 
       translateLedgerView ::
            InPairs.RequiringBoth
@@ -273,11 +280,11 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
 projectLedgerTablesHelper :: forall proto1 era1 proto2 era2 fmk mk.
      (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsApplyMapKind mk)
   => (forall x.
-         TickedTableStuff (LedgerState x)
-      => fmk x -> LedgerTables (LedgerState x) mk
+         TickedTableStuff (LedgerState x) WithLedgerTables
+      => fmk x -> LedgerTables (LedgerState x) WithLedgerTables mk
      )
   -> HardForkState fmk (ShelleyBasedHardForkEras proto1 era1 proto2 era2)
-  -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) mk
+  -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables mk
 projectLedgerTablesHelper prj (HardForkState tele) =
       SOP.hcollapse
     $ SOP.hcimap
@@ -291,7 +298,7 @@ projectLedgerTablesHelper prj (HardForkState tele) =
          -- ^ the current era of the ledger state we're projecting from
       -> UncurryComp (HFC.Current fmk) ShelleyBlock a
          -- ^ the ledger state we're projecting from
-      -> SOP.K (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) mk) a
+      -> SOP.K (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables mk) a
     projectOne idx (UncurryComp current) =
         SOP.K $ ShelleyBasedHardForkLedgerTables $ inj appliedMK
       where
@@ -312,11 +319,11 @@ withLedgerTablesHelper ::
   forall proto1 era1 proto2 era2 mk fany fmk.
      (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsApplyMapKind mk)
   => (forall x.
-         TickedTableStuff (LedgerState x)
-      => fany x -> LedgerTables (LedgerState x) mk -> fmk x
+         TickedTableStuff (LedgerState x) WithLedgerTables
+      => fany x -> LedgerTables (LedgerState x) WithLedgerTables mk -> fmk x
      )
   -> HardForkState fany (ShelleyBasedHardForkEras proto1 era1 proto2 era2)
-  -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) mk
+  -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables mk
   -> HardForkState fmk (ShelleyBasedHardForkEras proto1 era1 proto2 era2)
 withLedgerTablesHelper with (HardForkState tele) (ShelleyBasedHardForkLedgerTables appliedMK) = undefined
       HardForkState
@@ -369,8 +376,8 @@ withLedgerTablesHelper with (HardForkState tele) (ShelleyBasedHardForkLedgerTabl
 -- is because the LedgerTables relies on knowledge specific to Shelley and we
 -- have so far not found a pleasant way to express that compositionally.
 instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
-      => TableStuff (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) where
-  newtype LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) mk = ShelleyBasedHardForkLedgerTables {
+      => TableStuff (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables where
+  newtype LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables mk = ShelleyBasedHardForkLedgerTables {
         shelleyBasedHardForkUTxOTable ::
             ApplyMapKind
               mk
@@ -381,13 +388,13 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
 
   projectLedgerTables (HardForkLedgerState hfstate) =
       projectLedgerTablesHelper
-        (projectLedgerTables . unFlip)
+        (projectLedgerTables . unFlip2)
         hfstate
 
   withLedgerTables (HardForkLedgerState hfstate) tables =
         HardForkLedgerState
       $ withLedgerTablesHelper
-          (\(Flip st) tables' -> Flip $ withLedgerTables st tables')
+          (\(Flip2 st) tables' -> Flip2 $ withLedgerTables st tables')
           hfstate
           tables
 
@@ -403,25 +410,25 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
   namesLedgerTables = ShelleyBasedHardForkLedgerTables { shelleyBasedHardForkUTxOTable = NameMK "shelleyBasedHardForkUTxOTable" }
 
 instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
-      => SufficientSerializationForAnyBackingStore (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) where
+      => SufficientSerializationForAnyBackingStore (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables where
     codecLedgerTables = ShelleyBasedHardForkLedgerTables $ CodecMK toCBOR toCBOR fromCBOR fromCBOR
 
-deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) EmptyMK)
-deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) ValuesMK)
-deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) DiffMK)
+deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables EmptyMK)
+deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables ValuesMK)
+deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => Eq       (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables DiffMK)
 
-deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) EmptyMK)
-deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) ValuesMK)
-deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) SeqDiffMK)
+deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables EmptyMK)
+deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables ValuesMK)
+deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => NoThunks (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables SeqDiffMK)
+
+-- instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
+--       => ShowLedgerState (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2))) where
+--   showsLedgerState _mk (ShelleyBasedHardForkLedgerTables utxo) =
+--         showParen True
+--       $ showString "ShelleyBasedHardForkLedgerTables " . showsApplyMapKind utxo
 
 instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
-      => ShowLedgerState (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2))) where
-  showsLedgerState _mk (ShelleyBasedHardForkLedgerTables utxo) =
-        showParen True
-      $ showString "ShelleyBasedHardForkLedgerTables " . showsApplyMapKind utxo
-
-instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
-      => TickedTableStuff (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) where
+      => TickedTableStuff (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) WithLedgerTables where
 
   projectLedgerTablesTicked st =
       projectLedgerTablesHelper

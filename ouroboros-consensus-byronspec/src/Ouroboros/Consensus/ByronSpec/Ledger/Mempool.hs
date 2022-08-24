@@ -1,7 +1,10 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -16,7 +19,6 @@ import           Codec.Serialise
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
 
-import           Ouroboros.Consensus.Ledger.Basics (polyEmptyLedgerTables)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
@@ -60,9 +62,3 @@ instance LedgerSupportsMempool ByronSpecBlock where
   txInBlockSize = const 0
 
   txForgetValidated = forgetValidatedByronSpecGenTx
-
-instance GetsBlockKeySets (LedgerState ByronSpecBlock) ByronSpecBlock WithLedgerTables where
-
-  getBlockKeySets _ = polyEmptyLedgerTables
-
-  getTransactionKeySets _ = polyEmptyLedgerTables

@@ -178,7 +178,7 @@ exampleChainDepState = S.fromList signers
   where
     signers = map (`S.PBftSigner` CC.exampleKeyHash) [1..4]
 
-emptyLedgerState :: LedgerState ByronBlock ValuesMK
+emptyLedgerState :: LedgerState ByronBlock WithoutLedgerTables ValuesMK
 emptyLedgerState = ByronLedgerState {
       byronLedgerTipBlockNo = Origin
     , byronLedgerState      = initState
@@ -189,7 +189,7 @@ emptyLedgerState = ByronLedgerState {
     Right initState = runExcept $
       CC.Block.initialChainValidationState ledgerConfig
 
-ledgerStateAfterEBB :: LedgerState ByronBlock ValuesMK
+ledgerStateAfterEBB :: LedgerState ByronBlock WithoutLedgerTables ValuesMK
 ledgerStateAfterEBB =
       applyLedgerTablesDiffs emptyLedgerState
     . reapplyLedgerBlock ledgerConfig exampleEBB
@@ -198,7 +198,7 @@ ledgerStateAfterEBB =
     . forgetLedgerTables
     $ emptyLedgerState
 
-exampleLedgerState :: LedgerState ByronBlock ValuesMK
+exampleLedgerState :: LedgerState ByronBlock WithoutLedgerTables ValuesMK
 exampleLedgerState =
       applyLedgerTablesDiffs emptyLedgerState
     . reapplyLedgerBlock ledgerConfig exampleBlock
@@ -210,7 +210,7 @@ exampleLedgerState =
 exampleHeaderState :: HeaderState ByronBlock
 exampleHeaderState = HeaderState (NotOrigin exampleAnnTip) exampleChainDepState
 
-exampleExtLedgerState :: ExtLedgerState ByronBlock ValuesMK
+exampleExtLedgerState :: ExtLedgerState ByronBlock WithoutLedgerTables ValuesMK
 exampleExtLedgerState = ExtLedgerState {
       ledgerState = exampleLedgerState
     , headerState = exampleHeaderState

@@ -137,6 +137,8 @@ import qualified Test.Util.HardFork.OracularClock as OracularClock
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time
 import           Test.Util.Tracer
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD (LedgerSupportsUTxOHD)
+import Data.SOP.Strict (And)
 
 -- | How to forge an EBB
 --
@@ -243,14 +245,14 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
 -- context.
 --
 data VertexStatus m blk
-  = VDown (Chain blk) (LedgerState blk EmptyMK)
+  = VDown (Chain blk) (LedgerState blk WithLedgerTables EmptyMK)
     -- ^ The vertex does not currently have a node instance; its previous
     -- instance stopped with this chain and ledger state (empty/initial before
     -- first instance)
   | VFalling
     -- ^ The vertex has a node instance, but it is about to transition to
     -- 'VDown' as soon as its edges transition to 'EDown'.
-  | VUp !(NodeKernel m NodeId Void blk) !(LimitedApp m NodeId blk)
+  | VUp !(NodeKernel m NodeId Void blk WithLedgerTables) !(LimitedApp m NodeId blk)
     -- ^ The vertex currently has a node instance, with these handles.
 
 -- | A directed /edge/ denotes the \"operator of a node-to-node connection\";
@@ -293,6 +295,8 @@ runThreadNetwork :: forall m blk.
                     , TxGen blk
                     , TracingConstraints blk
                     , HasCallStack
+                    , LedgerSupportsUTxOHD (LedgerState blk) blk
+                    , LedgerSupportsUTxOHD (ExtLedgerState blk) blk
                     )
                  => SystemTime m -> ThreadNetworkArgs m blk -> m (TestOutput blk)
 runThreadNetwork systemTime ThreadNetworkArgs
@@ -310,7 +314,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
   , tnaTxGenExtra     = txGenExtra
   , tnaVersion        = version
   , tnaBlockVersion   = blockVersion
-  } = withRegistry $ \sharedRegistry -> do
+  } = undefined
+  {- withRegistry $ \sharedRegistry -> do
     mbRekeyM <- sequence mbMkRekeyM
 
     -- This shared registry is used for 'newTestBlockchainTime' and the
@@ -599,14 +604,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> ResourceRegistry m
       -> (SlotNo -> STM m ())
       -> LedgerConfig blk
-      -> STM m (LedgerState blk EmptyMK)
-      -> Mempool m blk TicketNo
+      -> STM m (LedgerState blk WithLedgerTables EmptyMK)
+      -> Mempool m blk TicketNo WithLedgerTables
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
     forkCrucialTxs nid clock s0 registry unblockForge _lcfg getLdgr mempool txs0 =
       void $ forkLinkedThread registry "crucialTxs" $ do
-        let loop :: (SlotNo, LedgerState blk EmptyMK, [TicketNo]) -> m a
+        let loop :: (SlotNo, LedgerState blk WithLedgerTables EmptyMK, [TicketNo]) -> m a
             loop (slot, ledger, mempFp) = do
               traceWith debugTracer $ "ZZZ1 " <> show slot <> " " <> show nid
               results <- addTxs mempool txs0
@@ -635,8 +640,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
                 -- a new ledger state might render a crucial transaction valid
                 ldgrChanged = do
-                  let prj = ledgerTipPoint (Proxy @blk)
-                  (ledger', _) <- atomically $ blockUntilChanged prj (prj ledger) getLdgr
+                  (ledger', _) <- atomically $ blockUntilChanged ledgerTipPoint (ledgerTipPoint ledger) getLdgr
                   pure (slot, ledger', mempFp)
 
               -- wake up when any of those change
@@ -662,9 +666,9 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> DiskLedgerView m (ExtLedgerState blk)
+                   -> DiskLedgerView m (ExtLedgerState blk) WithLedgerTables
                       -- ^ How to get the current ledger state
-                   -> Mempool m blk TicketNo
+                   -> Mempool m blk TicketNo WithLedgerTables
                    -> m ()
     forkTxProducer coreNodeId registry clock cfg nodeSeed dlv mempool =
         void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
@@ -686,7 +690,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
     mkArgs :: OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
-           -> ExtLedgerState blk ValuesMK
+           -> ExtLedgerState blk WithLedgerTables ValuesMK
            -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)
@@ -723,7 +727,6 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
         -- Misc
         , cdbTracer                 = instrumentationTracer <> nullDebugTracer
-        , cdbTraceLedger            = nullDebugTracer
         , cdbRegistry               = registry
           -- TODO vary these
         , cdbGcDelay                = 0
@@ -778,7 +781,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         show cid <> " | " <> s
 
     forkNode
-      :: HasCallStack
+      :: (HasCallStack, IsSwitchLedgerTables wt)
       => CoreNodeId
       -> OracularClock m
       -> SlotNo
@@ -787,7 +790,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> NodeInfo blk (StrictTVar m MockFS) (Tracer m)
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
-      -> m ( NodeKernel m NodeId Void blk
+      -> m ( NodeKernel m NodeId Void blk wt
            , LimitedApp m NodeId      blk
            )
     forkNode coreNodeId clock joinSlot registry pInfo nodeInfo txs0 = do
@@ -822,11 +825,12 @@ runThreadNetwork systemTime ThreadNetworkArgs
         allocate registry (const (ChainDB.openDB chainDbArgs)) ChainDB.closeDB
 
       let customForgeBlock ::
-               BlockForging m blk
+               forall wt mk. IsSwitchLedgerTables wt
+            => BlockForging m blk
             -> TopLevelConfig blk
             -> BlockNo
             -> SlotNo
-            -> TickedLedgerState blk mk
+            -> TickedLedgerState blk wt mk
             -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk
@@ -843,7 +847,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
                     EpochSize y = epochSize0
 
             let p :: Point blk
-                p = castPoint $ getTip tickedLdgSt
+                p = rf (Proxy @(And (TickedTableStuff (LedgerState blk))
+                                    (FlipGetTip (LedgerState blk) EmptyMK)))
+                       (Proxy @wt)
+                     $ castPoint $ getTip $ forgetLedgerTablesTicked tickedLdgSt
 
             let needEBB = inFirstEra && NotOrigin ebbSlot > pointSlot p
             case mbForgeEbbEnv <* guard needEBB of
@@ -876,8 +883,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
                   -- fail if the EBB is invalid
                   -- if it is valid, we retick to the /same/ slot
                   let apply  = applyLedgerBlock (configLedger pInfoConfig)
-                      tables = polyEmptyLedgerTables   -- EBBs need no input tables
-                  tickedLdgSt' <- case Exc.runExcept $ apply ebb (tickedLdgSt `withLedgerTablesTicked` tables) of
+                      tables = rf (Proxy @(TableStuff (LedgerState blk))) (Proxy @wt) polyEmptyLedgerTables   -- EBBs need no input tables
+                  tickedLdgSt' <- rf (Proxy @(TickedTableStuff (LedgerState blk))) (Proxy @wt) $ case Exc.runExcept $ apply ebb (tickedLdgSt `withLedgerTablesTicked` tables) of
                     Left e   -> Exn.throw $ JitEbbError @blk e
                     Right st -> pure $ applyChainTick
                                         (configLedger pInfoConfig)
@@ -1063,18 +1070,18 @@ runThreadNetwork systemTime ThreadNetworkArgs
         extractBsValueHandle ::
              StaticEither
                'False
-               ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-               , LedgerDB' blk
+               ( LedgerBackingStoreValueHandle m (ExtLedgerState blk) WithLedgerTables
+               , LedgerDB' blk WithLedgerTables
                , m ()
                )
                (Either
                  (Point blk)
-                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-                 , LedgerDB' blk
+                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk) WithLedgerTables
+                 , LedgerDB' blk WithLedgerTables
                  , m ())
                )
-          -> ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-             , LedgerDB (ExtLedgerState blk)
+          -> ( LedgerBackingStoreValueHandle m (ExtLedgerState blk) WithLedgerTables
+             , LedgerDB' blk WithLedgerTables
              , m ()
              )
         extractBsValueHandle = \case
@@ -1129,6 +1136,8 @@ runThreadNetwork systemTime ThreadNetworkArgs
         }
       where
         binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion ntnVersion
+
+-}
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
@@ -1497,7 +1506,7 @@ data NodeOutput blk = NodeOutput
   { nodeOutputAdds         :: Map SlotNo (Set (RealPoint blk, BlockNo))
   , nodeOutputCannotForges :: Map SlotNo [CannotForge blk]
   , nodeOutputFinalChain   :: Chain blk
-  , nodeOutputFinalLedger  :: LedgerState blk EmptyMK
+  , nodeOutputFinalLedger  :: LedgerState blk WithLedgerTables EmptyMK
   , nodeOutputForges       :: Map SlotNo blk
   , nodeOutputHeaderAdds   :: Map SlotNo [(RealPoint blk, BlockNo)]
   , nodeOutputInvalids     :: Map (RealPoint blk) [ExtValidationError blk]
@@ -1518,7 +1527,7 @@ mkTestOutput ::
     => [( CoreNodeId
         , m (NodeInfo blk MockFS [])
         , Chain blk
-        , LedgerState blk EmptyMK
+        , LedgerState blk WithLedgerTables EmptyMK
         )]
     -> m (TestOutput blk)
 mkTestOutput vertexInfos = do

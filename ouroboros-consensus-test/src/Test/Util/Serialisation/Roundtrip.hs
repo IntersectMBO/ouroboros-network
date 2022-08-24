@@ -49,8 +49,7 @@ import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, Query (..),
                      QueryVersion)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
@@ -119,7 +118,7 @@ type Arbitrary' a = (Arbitrary a, Eq a, Show a)
 -- | All roundtrip tests
 roundtrip_all
   :: forall blk.
-     ( SerialiseDiskConstraints         blk
+     ( SerialiseDiskConstraints         blk WithLedgerTables
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
 
@@ -132,7 +131,7 @@ roundtrip_all
      , Arbitrary' blk
      , Arbitrary' (Header blk)
      , Arbitrary' (HeaderHash blk)
-     , Arbitrary' (LedgerState blk EmptyMK)
+     , Arbitrary' (LedgerState blk WithLedgerTables EmptyMK)
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ChainDepState (BlockProtocol blk))
 
@@ -168,10 +167,10 @@ roundtrip_all ccfg dictNestedHdr =
 -- 'SerialiseDiskConstraints'?
 roundtrip_SerialiseDisk
   :: forall blk.
-     ( SerialiseDiskConstraints blk
+     ( SerialiseDiskConstraints blk WithLedgerTables
      , Arbitrary' blk
      , Arbitrary' (Header blk)
-     , Arbitrary' (LedgerState blk EmptyMK)
+     , Arbitrary' (LedgerState blk WithLedgerTables EmptyMK)
      , Arbitrary' (AnnTip blk)
      , Arbitrary' (ChainDepState (BlockProtocol blk))
      )
@@ -192,7 +191,7 @@ roundtrip_SerialiseDisk ccfg dictNestedHdr =
       -- Since the 'LedgerState' is a large data structure, we lower the
       -- number of tests to avoid slowing down the testsuite too much
     , adjustOption (\(QuickCheckTests n) -> QuickCheckTests (1 `max` (div n 10))) $
-      rt (Proxy @(LedgerState blk EmptyMK)) "LedgerState"
+      rt (Proxy @(LedgerState blk WithLedgerTables EmptyMK)) "LedgerState"
     , rt (Proxy @(AnnTip blk)) "AnnTip"
     , rt (Proxy @(ChainDepState (BlockProtocol blk))) "ChainDepState"
     ]

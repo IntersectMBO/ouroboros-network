@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -51,9 +52,11 @@ import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node ()
 import           Ouroboros.Consensus.Byron.Protocol
 
 import           Ouroboros.Consensus.ByronSpec.Ledger
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
   Shorthand
@@ -210,7 +213,7 @@ forgeDualByronBlock
   => TopLevelConfig DualByronBlock
   -> BlockNo                              -- ^ Current block number
   -> SlotNo                               -- ^ Current slot number
-  -> TickedLedgerState DualByronBlock mk  -- ^ Ledger
+  -> TickedLedgerState DualByronBlock wt mk  -- ^ Ledger
   -> [Validated (GenTx DualByronBlock)]   -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
@@ -246,3 +249,25 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
             (bridgeToSpecKey
                (tickedDualLedgerStateBridge tickedLedger)
                (hashVerKey . deriveVerKeyDSIGN . pbftIsLeaderSignKey $ isLeader))
+
+
+instance IgnoresTables (LedgerState DualByronBlock) where
+  convertTables (DualLedgerState m a b) = DualLedgerState (convertTables m) (convertTables a) b
+
+instance IgnoresMapKind (LedgerState DualByronBlock) where
+  convertMapKind = convertTables
+  convertMapKindTicked t@TickedDualLedgerState{..} =
+    t { tickedDualLedgerStateMain = convertMapKindTicked tickedDualLedgerStateMain
+      , tickedDualLedgerStateAux = convertMapKindTicked tickedDualLedgerStateAux
+      }
+
+instance ExtractLedgerTables (LedgerState DualByronBlock) where
+  extractLedgerTables = convertTables
+  destroyLedgerTables = convertTables
+
+instance SufficientSerializationForAnyBackingStore (LedgerState DualByronBlock) WithLedgerTables where
+  codecLedgerTables = DualBlockLedgerTables codecLedgerTables codecLedgerTables
+
+instance LedgerMustSupportUTxOHD (LedgerState DualByronBlock) DualByronBlock WithoutLedgerTables
+instance LedgerMustSupportUTxOHD (LedgerState DualByronBlock) DualByronBlock WithLedgerTables
+instance LedgerSupportsUTxOHD (LedgerState DualByronBlock) DualByronBlock

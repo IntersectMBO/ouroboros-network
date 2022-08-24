@@ -328,7 +328,7 @@ prop_Mempool_TraceRemovedTxs setup =
     isRemoveTxsEvent (TraceMempoolRemoveTxs txs _) = Just (map txForgetValidated txs)
     isRemoveTxsEvent _                             = Nothing
 
-    expectedToBeRemoved :: LedgerState TestBlock EmptyMK -> [TestTx] -> [TestTx]
+    expectedToBeRemoved :: LedgerState TestBlock WithoutLedgerTables EmptyMK -> [TestTx] -> [TestTx]
     expectedToBeRemoved ledgerState txsInMempool =
       [ tx
       | (tx, valid) <- fst $ validateTxs ledgerState txsInMempool
@@ -348,7 +348,7 @@ type TestTxId = TxId TestTx
 type TestTxError = ApplyTxErr TestBlock
 
 -- There are 5 (core)nodes and each gets 1000.
-testInitLedger :: LedgerState TestBlock mk
+testInitLedger :: LedgerState TestBlock WithoutLedgerTables mk
 testInitLedger = genesisSimpleLedgerState $ mkAddrDist (NumCoreNodes 5)
 
 -- | Test config
@@ -364,7 +364,7 @@ testLedgerConfig = SimpleLedgerConfig {
     }
 
 data TestSetup = TestSetup
-  { testLedgerState        :: LedgerState TestBlock EmptyMK
+  { testLedgerState        :: LedgerState TestBlock WithoutLedgerTables EmptyMK
   , testInitialTxs         :: [TestTx]
     -- ^ These are all valid and will be the initial contents of the Mempool.
   , testMempoolCapOverride :: MempoolCapacityBytesOverride
@@ -392,7 +392,7 @@ txSizesInBytes = foldl' (\acc tx -> acc + txSize tx) 0
 --
 -- The generated 'testMempoolCap' will be:
 -- > 'txSizesInBytes' 'testInitialTxs' + extraCapacity
-genTestSetupWithExtraCapacity :: Int -> Word32 -> Gen (TestSetup, LedgerState TestBlock EmptyMK)
+genTestSetupWithExtraCapacity :: Int -> Word32 -> Gen (TestSetup, LedgerState TestBlock WithoutLedgerTables EmptyMK)
 genTestSetupWithExtraCapacity maxInitialTxs extraCapacity = do
     ledgerSize   <- choose (0, maxInitialTxs)
     nbInitialTxs <- choose (0, maxInitialTxs)
@@ -410,7 +410,7 @@ genTestSetupWithExtraCapacity maxInitialTxs extraCapacity = do
 -- | Generate a 'TestSetup' and return the ledger obtained by applying all of
 -- the initial transactions. Generates setups with a fixed
 -- 'MempoolCapacityBytesOverride', no 'NoMempoolCapacityBytesOverride'.
-genTestSetup :: Int -> Gen (TestSetup, LedgerState TestBlock EmptyMK)
+genTestSetup :: Int -> Gen (TestSetup, LedgerState TestBlock WithoutLedgerTables EmptyMK)
 genTestSetup maxInitialTxs = genTestSetupWithExtraCapacity maxInitialTxs 0
 
 -- | Random 'MempoolCapacityBytesOverride'
@@ -460,8 +460,8 @@ instance Arbitrary TestSetup where
 -- 'Bool' indicating whether its valid ('True') or invalid ('False') and the
 -- resulting 'LedgerState' are returned.
 genTxs :: Int  -- ^ The number of transactions to generate
-       -> LedgerState TestBlock EmptyMK
-       -> Gen ([(TestTx, Bool)], LedgerState TestBlock EmptyMK)
+       -> LedgerState TestBlock WithoutLedgerTables EmptyMK
+       -> Gen ([(TestTx, Bool)], LedgerState TestBlock WithoutLedgerTables EmptyMK)
 genTxs = go []
   where
     go txs n ledger
@@ -477,27 +477,27 @@ genTxs = go []
               go ((invalidTx, False):txs) (n - 1) ledger
 
 mustBeValid :: HasCallStack
-            => Except TestTxError (LedgerState TestBlock EmptyMK)
-            -> LedgerState TestBlock EmptyMK
+            => Except TestTxError (LedgerState TestBlock WithoutLedgerTables EmptyMK)
+            -> LedgerState TestBlock WithoutLedgerTables EmptyMK
 mustBeValid ex = case runExcept ex of
   Left _       -> error "impossible"
   Right ledger -> ledger
 
-txIsValid :: LedgerState TestBlock EmptyMK -> TestTx -> Bool
+txIsValid :: LedgerState TestBlock WithoutLedgerTables EmptyMK -> TestTx -> Bool
 txIsValid ledgerState tx =
     isRight $ runExcept $ applyTxToLedger ledgerState tx
 
 txsAreValid
-  :: LedgerState TestBlock EmptyMK
+  :: LedgerState TestBlock WithoutLedgerTables EmptyMK
   -> [TestTx]
-  -> Either TestTxError (LedgerState TestBlock EmptyMK)
+  -> Either TestTxError (LedgerState TestBlock WithoutLedgerTables EmptyMK)
 txsAreValid ledgerState txs =
     runExcept $ repeatedlyM (flip applyTxToLedger) txs ledgerState
 
 validateTxs
-  :: LedgerState TestBlock EmptyMK
+  :: LedgerState TestBlock WithoutLedgerTables EmptyMK
   -> [TestTx]
-  -> ([(TestTx, Bool)], LedgerState TestBlock EmptyMK)
+  -> ([(TestTx, Bool)], LedgerState TestBlock WithoutLedgerTables EmptyMK)
 validateTxs = go []
   where
     go revalidated ledgerState = \case
@@ -510,8 +510,8 @@ validateTxs = go []
 -- 'LedgerState'. The transactions and the resulting 'LedgerState' are
 -- returned.
 genValidTxs :: Int  -- ^ The number of valid transactions to generate
-            -> LedgerState TestBlock EmptyMK
-            -> Gen ([TestTx], LedgerState TestBlock EmptyMK)
+            -> LedgerState TestBlock WithoutLedgerTables EmptyMK
+            -> Gen ([TestTx], LedgerState TestBlock WithoutLedgerTables EmptyMK)
 genValidTxs = go []
   where
     go txs n ledger
@@ -520,7 +520,7 @@ genValidTxs = go []
           (tx, ledger') <- genValidTx ledger
           go (tx:txs) (n - 1) ledger'
 
-genValidTx :: LedgerState TestBlock EmptyMK -> Gen (TestTx, LedgerState TestBlock EmptyMK)
+genValidTx :: LedgerState TestBlock WithoutLedgerTables EmptyMK -> Gen (TestTx, LedgerState TestBlock WithoutLedgerTables EmptyMK)
 genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
     -- Never let someone go broke, otherwise we risk concentrating all the
     -- wealth in one person. That would be problematic (for the society) but
@@ -556,7 +556,7 @@ genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
       | (txIn, (addr, amount)) <- Map.toList utxo
       ]
 
-genInvalidTx :: LedgerState TestBlock EmptyMK -> Gen TestTx
+genInvalidTx :: LedgerState TestBlock WithoutLedgerTables EmptyMK -> Gen TestTx
 genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
     let peopleWithFunds = nub $ map fst $ Map.elems utxo
     sender    <- elements peopleWithFunds
@@ -576,9 +576,9 @@ genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
 -- we pretend the transaction /is/ a block, apply it to the UTxO, and then
 -- update the tip of the ledger state, incrementing the slot number and faking
 -- a hash.
-applyTxToLedger :: LedgerState TestBlock EmptyMK
+applyTxToLedger :: LedgerState TestBlock WithoutLedgerTables EmptyMK
                 -> TestTx
-                -> Except TestTxError (LedgerState TestBlock EmptyMK)
+                -> Except TestTxError (LedgerState TestBlock WithoutLedgerTables EmptyMK)
 applyTxToLedger (SimpleLedgerState mockState) tx =
     mkNewLedgerState <$> updateMockUTxO dummy tx mockState
   where
@@ -655,7 +655,7 @@ instance Arbitrary TestSetupWithTxs where
                 shrinkList (const []) .
                 map fst $ txs ]
 
-revalidate :: TestSetup -> [TestTx] -> ([(TestTx, Bool)], LedgerState TestBlock EmptyMK)
+revalidate :: TestSetup -> [TestTx] -> ([(TestTx, Bool)], LedgerState TestBlock WithoutLedgerTables EmptyMK)
 revalidate TestSetup { testLedgerState, testInitialTxs } =
     validateTxs initLedgerState
   where
@@ -733,7 +733,7 @@ data TestMempool m = TestMempool
   { -- | A mempool with random contents.
     --
     -- Starts out synced with the ledger.
-    mempool          :: Mempool m TestBlock TicketNo
+    mempool          :: Mempool m TestBlock TicketNo WithoutLedgerTables
 
     -- | When called, obtains all events traced after opening the mempool at
     -- the given state from oldest-to-newest.
@@ -752,7 +752,7 @@ data TestMempool m = TestMempool
   , addTxsToLedger   :: [TestTx] -> STM m [Either TestTxError ()]
 
     -- | Return the current ledger.
-  , getCurrentLedger :: STM m (LedgerState TestBlock EmptyMK)
+  , getCurrentLedger :: STM m (LedgerState TestBlock WithoutLedgerTables EmptyMK)
   }
 
 -- NOTE: at the end of the test, this function also checks whether the Mempool
@@ -838,7 +838,7 @@ withTestMempool setup@TestSetup {..} prop =
       return $ res .&&. validContents
 
     addTxToLedger :: forall m. IOLike m
-                  => StrictTVar m (LedgerState TestBlock EmptyMK)
+                  => StrictTVar m (LedgerState TestBlock WithoutLedgerTables EmptyMK)
                   -> TestTx
                   -> STM m (Either TestTxError ())
     addTxToLedger varCurrentLedgerState tx = do
@@ -850,7 +850,7 @@ withTestMempool setup@TestSetup {..} prop =
           return $ Right ()
 
     addTxsToLedger :: forall m. IOLike m
-                   => StrictTVar m (LedgerState TestBlock EmptyMK)
+                   => StrictTVar m (LedgerState TestBlock WithoutLedgerTables EmptyMK)
                    -> [TestTx]
                    -> STM m [(Either TestTxError ())]
     addTxsToLedger varCurrentLedgerState txs =
@@ -858,7 +858,7 @@ withTestMempool setup@TestSetup {..} prop =
 
     -- | Check whether the transactions in the 'MempoolSnapshot' are valid
     -- w.r.t. the current ledger state.
-    checkMempoolValidity :: LedgerState TestBlock EmptyMK
+    checkMempoolValidity :: LedgerState TestBlock WithoutLedgerTables EmptyMK
                          -> MempoolSnapshot TestBlock TicketNo
                          -> Property
     checkMempoolValidity ledgerState
@@ -1180,7 +1180,7 @@ executeAction testMempool action = case action of
       return $ mapMaybe extractor evs
 
 currentTicketAssignment :: IOLike m
-                        => Mempool m TestBlock TicketNo -> m TicketAssignment
+                        => Mempool m TestBlock TicketNo WithoutLedgerTables -> m TicketAssignment
 currentTicketAssignment Mempool { syncWithLedger } = do
     MempoolSnapshot { snapshotTxs } <- syncWithLedger
     return $ Map.fromList
@@ -1197,7 +1197,7 @@ genActions
   -> Gen Actions
 genActions genNbToAdd = go testInitLedger mempty mempty
   where
-    go :: LedgerState TestBlock EmptyMK
+    go :: LedgerState TestBlock WithoutLedgerTables EmptyMK
           -- ^ Current ledger state with the contents of the Mempool applied
        -> [TestTx]  -- ^ Transactions currently in the Mempool
        -> [Action]  -- ^ Already generated actions

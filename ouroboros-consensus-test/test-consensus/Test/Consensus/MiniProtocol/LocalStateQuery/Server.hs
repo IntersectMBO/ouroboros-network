@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,8 +28,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView (..),
-                     convertMapKind, getTip)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (Query (..),
                      QueryWithSomeFootprintL (..))
@@ -189,9 +189,9 @@ mkServer k chain = do
 
     mkDLV ldb =
       DiskLedgerView
-        (LgrDB.ledgerDbCurrent ldb)
-        (\(ExtLedgerStateTables NoTestLedgerTables) -> pure $ ExtLedgerStateTables NoTestLedgerTables)
-        (\_rq -> pure $ ExtLedgerStateTables NoTestLedgerTables)
+        (convertTables $ LgrDB.ledgerDbCurrent ldb)
+        (\_ -> pure polyEmptyLedgerTables)
+        (\_rq -> pure polyEmptyLedgerTables)
         (pure ())
 
 -- | Initialise a 'LgrDB' with the given chain.
@@ -199,7 +199,7 @@ initLgrDB
   :: forall m. IOLike m
   => SecurityParam
   -> Chain TestBlock
-  -> m (LgrDB m TestBlock)
+  -> m (LgrDB m TestBlock WithoutLedgerTables)
 initLgrDB k chain = do
     varDB          <- newTVarIO genesisLedgerDB
     varPrevApplied <- newTVarIO mempty
@@ -209,7 +209,7 @@ initLgrDB k chain = do
         mempty
         TECHDEBT.InMemoryBackingStore
         (SomeHasFS (simHasFS v))
-        (ExtLedgerStateTables NoTestLedgerTables)
+        NoLedgerTables
     rawLock <- TECHDEBT.new ()
     let lgrDB = mkLgrDB varDB varPrevApplied backingStore rawLock resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0 noopTrace
@@ -242,7 +242,6 @@ initLgrDB k chain = do
       , lgrDiskPolicy           = defaultDiskPolicy k DefaultSnapshotInterval
       , lgrGenesis              = return testInitExtLedger
       , lgrTracer               = nullTracer
-      , lgrTraceLedger          = nullTracer
       , lgrBackingStoreSelector = TECHDEBT.InMemoryBackingStore
       }
 

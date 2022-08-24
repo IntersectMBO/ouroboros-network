@@ -38,7 +38,6 @@ import           Data.Coerce (coerce)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Basics
-                     (ApplyMapKind' (ApplyEmptyMK))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -105,9 +104,9 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleQuery            = queries
     , exampleResult           = results
     , exampleAnnTip           = unlabelled annTip
-    , exampleLedgerState      = unlabelled ledgerState
+    , exampleLedgerState      = unlabelled $ destroyLedgerTables ledgerState
     , exampleChainDepState    = unlabelled chainDepState
-    , exampleExtLedgerState   = unlabelled extLedgerState
+    , exampleExtLedgerState   = unlabelled $ destroyLedgerTables extLedgerState
     , exampleSlotNo           = unlabelled slotNo
     , exampleLedgerTables     = unlabelled ledgerTables
     }
@@ -202,10 +201,10 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
     , exampleQuery            = queries
     , exampleResult           = results
     , exampleAnnTip           = unlabelled annTip
-    , exampleLedgerState      = unlabelled ledgerState
+    , exampleLedgerState      = unlabelled $ destroyLedgerTables ledgerState
     , exampleLedgerTables     = unlabelled ledgerTables
     , exampleChainDepState    = unlabelled chainDepState
-    , exampleExtLedgerState   = unlabelled extLedgerState
+    , exampleExtLedgerState   = unlabelled $ destroyLedgerTables extLedgerState
     , exampleSlotNo           = unlabelled slotNo
     }
   where

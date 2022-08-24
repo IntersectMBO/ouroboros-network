@@ -96,7 +96,7 @@ mkUpdateLabels
   -> NodeJoinPlan
   -> NodeTopology
   -> Ref.Result
-  -> Byron.LedgerState ByronBlock EmptyMK
+  -> Byron.LedgerState ByronBlock wt EmptyMK
      -- ^ from 'nodeOutputFinalLedger'
   -> (ProtocolVersionUpdateLabel, SoftwareVersionUpdateLabel)
 mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result

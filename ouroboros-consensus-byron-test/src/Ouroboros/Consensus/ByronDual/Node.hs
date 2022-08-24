@@ -149,8 +149,8 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
         configGenesisData  = Impl.configGenesisData translated
         protocolParameters = Impl.gdProtocolParameters configGenesisData
 
-    initAbstractState :: LedgerState ByronSpecBlock ValuesMK
-    initConcreteState :: LedgerState ByronBlock     ValuesMK
+    initAbstractState :: LedgerState ByronSpecBlock wt ValuesMK
+    initConcreteState :: LedgerState ByronBlock     wt ValuesMK
 
     initAbstractState = initByronSpecLedgerState abstractGenesis
     initConcreteState = initByronLedgerState     concreteGenesis (Just initUtxo)
@@ -223,7 +223,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
 instance NodeInitStorage DualByronBlock where
   -- Just like Byron, we need to start with an EBB
   nodeInitChainDB cfg InitChainDB { getCurrentLedger, addBlock } = do
-      tip <- ledgerTipPoint (Proxy @DualByronBlock) <$> getCurrentLedger
+      tip <- ledgerTipPoint <$> getCurrentLedger
       case tip of
         BlockPoint {} -> return ()
         GenesisPoint  -> addBlock genesisEBB

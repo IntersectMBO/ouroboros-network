@@ -8,12 +8,15 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -77,6 +80,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+import Ouroboros.Consensus.Ledger.SupportsUTxOHD
 
 {-------------------------------------------------------------------------------
   BlockB
@@ -163,18 +167,18 @@ instance BasicEnvelopeValidation BlockB where
 
 instance ValidateEnvelope BlockB where
 
-data instance LedgerState BlockB mk = LgrB {
+data instance LedgerState BlockB wt mk = LgrB {
       lgrB_tip :: Point BlockB
     }
   deriving (Show, Eq, Generic, Serialise)
-  deriving NoThunks via OnlyCheckWhnfNamed "LgrB" (LedgerState BlockB mk)
+  deriving NoThunks via OnlyCheckWhnfNamed "LgrB" (LedgerState BlockB wt mk)
 
-instance TableStuff (LedgerState BlockB) where
-  data LedgerTables (LedgerState BlockB) mk = NoBTables
+instance TableStuff (LedgerState BlockB) WithLedgerTables where
+  data LedgerTables (LedgerState BlockB) WithLedgerTables mk = NoBTables
     deriving (Eq, Generic, NoThunks, Show)
 
   projectLedgerTables _st           = NoBTables
-  withLedgerTables    st  NoBTables = convertMapKind st
+  withLedgerTables    st  NoBTables = convertTables st
 
   pureLedgerTables     _f                               = NoBTables
   mapLedgerTables      _f                     NoBTables = NoBTables
@@ -187,41 +191,51 @@ instance TableStuff (LedgerState BlockB) where
   foldLedgerTables2    _f           NoBTables NoBTables = mempty
   namesLedgerTables                                     = NoBTables
 
-instance SufficientSerializationForAnyBackingStore (LedgerState BlockB) where
+instance SufficientSerializationForAnyBackingStore (LedgerState BlockB) WithLedgerTables where
     codecLedgerTables = NoBTables
 
-instance TickedTableStuff (LedgerState BlockB) where
+instance TickedTableStuff (LedgerState BlockB) WithLedgerTables where
   projectLedgerTablesTicked _ = NoBTables
-  withLedgerTablesTicked    st NoBTables = convertMapKind st
+  withLedgerTablesTicked    st NoBTables = TickedLedgerStateB .  convertTables . getTickedLedgerStateB $ st
 
-instance ShowLedgerState (LedgerState BlockB) where
-  showsLedgerState _sing = shows
+-- instance ShowLedgerState (LedgerState BlockB) where
+--   showsLedgerState _sing = shows
 
-instance (ShowLedgerState (LedgerTables (LedgerState BlockB))) where
-  showsLedgerState _sing = shows
+-- instance (ShowLedgerState (LedgerTables (LedgerState BlockB))) where
+--   showsLedgerState _sing = shows
 
 type instance LedgerCfg (LedgerState BlockB) = ()
 
-instance InMemory (LedgerState BlockB) where
-  convertMapKind LgrB {..} = LgrB {..}
+instance IgnoresMapKind (LedgerState BlockB) where
+  convertMapKind = convertTables
 
-instance InMemory (Ticked1 (LedgerState BlockB)) where
-  convertMapKind = TickedLedgerStateB . convertMapKind . getTickedLedgerStateB
+  convertMapKindTicked = TickedLedgerStateB . convertTables . getTickedLedgerStateB
 
-instance StowableLedgerTables (LedgerState BlockB) where
-  stowLedgerTables     = convertMapKind
-  unstowLedgerTables   = convertMapKind
+instance IgnoresTables (LedgerState BlockB) where
+  convertTables LgrB {..} = LgrB {..}
+
+instance StowableLedgerTables (LedgerState BlockB) WithLedgerTables where
+  stowLedgerTables     = convertTables
+  unstowLedgerTables   = convertTables
+
+instance ExtractLedgerTables (LedgerState BlockB) where
+  extractLedgerTables = convertTables
+  destroyLedgerTables = convertTables
+
+instance LedgerMustSupportUTxOHD (LedgerState BlockB) BlockB WithoutLedgerTables
+instance LedgerMustSupportUTxOHD (LedgerState BlockB) BlockB WithLedgerTables
+instance LedgerSupportsUTxOHD (LedgerState BlockB) BlockB
 
 -- | Ticking has no state on the B ledger state
-newtype instance Ticked1 (LedgerState BlockB) mk = TickedLedgerStateB {
-      getTickedLedgerStateB :: LedgerState BlockB mk
+newtype instance Ticked1 (LedgerState BlockB wt) mk = TickedLedgerStateB {
+      getTickedLedgerStateB :: LedgerState BlockB wt mk
     }
-  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrB" (Ticked1 (LedgerState BlockB) mk)
+  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrB" (Ticked1 (LedgerState BlockB wt) mk)
 
-instance GetTip (LedgerState BlockB mk) where
+instance GetTip (LedgerState BlockB wt mk) where
   getTip = castPoint . lgrB_tip
 
-instance GetTip (Ticked1 (LedgerState BlockB) mk) where
+instance GetTip (Ticked1 (LedgerState BlockB wt) mk) where
   getTip = castPoint . getTip . getTickedLedgerStateB
 
 instance IsLedger (LedgerState BlockB) where
@@ -230,17 +244,18 @@ instance IsLedger (LedgerState BlockB) where
   type AuxLedgerEvent (LedgerState BlockB) =
     VoidLedgerEvent (LedgerState BlockB)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult
+  applyChainTickLedgerResult :: forall wt. IsSwitchLedgerTables wt
+    => LedgerCfg (LedgerState BlockB)
+    -> SlotNo
+    -> LedgerState BlockB wt EmptyMK
+    -> LedgerResult (LedgerState BlockB) (Ticked1 (LedgerState BlockB wt) DiffMK)
+  applyChainTickLedgerResult _ _ = rf (Proxy @(TableStuff (LedgerState BlockB))) (Proxy @wt) $ pureLedgerResult
                                  . TickedLedgerStateB
                                  . noNewTickingDiffs
 
 instance ApplyBlock (LedgerState BlockB) BlockB where
   applyBlockLedgerResult   = \_ b _ -> return $ pureLedgerResult $ LgrB (blockPoint b)
   reapplyBlockLedgerResult = \_ b _ ->          pureLedgerResult $ LgrB (blockPoint b)
-
-  getBlockKeySets _blk = NoBTables
-
-instance UpdateLedger BlockB
 
 instance CommonProtocolParams BlockB where
   maxHeaderSize _ = maxBound
@@ -265,7 +280,7 @@ forgeBlockB ::
      TopLevelConfig BlockB
   -> BlockNo
   -> SlotNo
-  -> TickedLedgerState BlockB mk
+  -> TickedLedgerState BlockB wt mk
   -> [GenTx BlockB]
   -> IsLeader (BlockProtocol BlockB)
   -> BlockB
@@ -314,6 +329,9 @@ instance LedgerSupportsMempool BlockB where
   txInBlockSize _ = 0
 
   txForgetValidated = \case {}
+
+instance GetsBlockKeySets (LedgerState BlockB) BlockB WithLedgerTables where
+  getBlockKeySets _blk = NoBTables
 
   getTransactionKeySets _tx = NoBTables
 
@@ -424,7 +442,8 @@ instance HasBinaryBlockInfo BlockB where
       }
 
 instance SerialiseConstraintsHFC          BlockB
-instance SerialiseDiskConstraints         BlockB
+instance SerialiseDiskConstraints         BlockB WithLedgerTables
+instance SerialiseDiskConstraints         BlockB WithoutLedgerTables
 instance SerialiseNodeToClientConstraints BlockB
 instance SerialiseNodeToNodeConstraints   BlockB where
     estimateBlockSize = const 0
@@ -435,8 +454,10 @@ instance SerialiseNodeToNodeConstraints   BlockB where
 
 deriving instance Serialise (AnnTip BlockB)
 
-instance EncodeDisk BlockB (LedgerState BlockB EmptyMK)
-instance DecodeDisk BlockB (LedgerState BlockB EmptyMK)
+instance EncodeDisk BlockB (LedgerState BlockB WithLedgerTables EmptyMK)
+instance DecodeDisk BlockB (LedgerState BlockB WithLedgerTables EmptyMK)
+instance EncodeDisk BlockB (LedgerState BlockB WithoutLedgerTables EmptyMK)
+instance DecodeDisk BlockB (LedgerState BlockB WithoutLedgerTables EmptyMK)
 
 instance EncodeDisk BlockB BlockB
 instance DecodeDisk BlockB (Lazy.ByteString -> BlockB) where

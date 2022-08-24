@@ -391,11 +391,11 @@ handleWholeQuery dlv query = do
             loop !prev !acc = do
               extValues <-
                 dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
-              if getAll $ foldLedgerTables (All . f) (demoteLedgerTables extValues :: LedgerTables (LedgerState blk) wt ValuesMK) then pure acc else
+              if getAll $ foldLedgerTables (All . f) (extValues :: LedgerTables (ExtLedgerState blk) wt ValuesMK) then pure acc else
                 loop
                   (Just $ mapLedgerTables toKeys extValues)
                   -- TODO: @js this is too convoluted
-                  (comb acc $ partial (stowLedgerTables (ledgerState st `withLedgerTables` demoteLedgerTables extValues) `withLedgerTables` polyEmptyLedgerTables)) -- FIXME @js: this double withLedgerTables is bad!
+                  (comb acc $ partial (stowLedgerTables (ledgerState $ st `withLedgerTables` extValues) `withLedgerTables` polyEmptyLedgerTables)) -- FIXME @js: this double withLedgerTables is bad!
           in  post <$> loop Nothing empty
   where
 

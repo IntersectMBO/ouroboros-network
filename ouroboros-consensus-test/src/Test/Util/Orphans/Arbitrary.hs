@@ -50,7 +50,6 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock,
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Flip (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
@@ -296,25 +295,25 @@ instance ( IsNonEmpty xs
           ]
   shrink = hctraverse' (Proxy @(Arbitrary `Compose` f)) shrink
 
-instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` Flip LedgerState mk) xs)
-      => Arbitrary (LedgerState (HardForkBlock xs) mk) where
+instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` Flip2 LedgerState wt mk) xs)
+      => Arbitrary (LedgerState (HardForkBlock xs) wt mk) where
   arbitrary = case (dictKPast, dictCurrentLedgerState) of
       (Dict, Dict) -> inj <$> arbitrary
     where
       inj ::
-           Telescope (K Past) (Current (Flip LedgerState mk)) xs
-        -> LedgerState (HardForkBlock xs) mk
+           Telescope (K Past) (Current (Flip2 LedgerState wt mk)) xs
+        -> LedgerState (HardForkBlock xs) wt mk
       inj = coerce
 
-      dictKPast :: Dict (All (Arbitrary `Compose` (K Past))) xs
+      dictKPast :: Dict (All (Arbitrary `Compose` K Past)) xs
       dictKPast = all_NP $ hpure Dict
 
       dictCurrentLedgerState ::
-           Dict (All (Arbitrary `Compose` (Current (Flip LedgerState mk)))) xs
+          Dict (All (Arbitrary `Compose` Current (Flip2 LedgerState wt mk))) xs
       dictCurrentLedgerState =
           mapAll
-            @(Arbitrary `Compose` Flip LedgerState mk)
-            @(Arbitrary `Compose` Current (Flip LedgerState mk))
+            @(Arbitrary `Compose` Flip2 LedgerState wt mk)
+            @(Arbitrary `Compose` Current (Flip2 LedgerState wt mk))
             (\Dict -> Dict)
             Dict
 
