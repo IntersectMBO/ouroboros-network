@@ -112,16 +112,77 @@ type FetchDecision result = Either FetchDecline result
 -- | All the various reasons we can decide not to fetch blocks from a peer.
 --
 data FetchDecline =
+     -- | The chain is not longer than our chain.  For more details see
+     -- "Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface.mkBlockFetchConsensusInterface"
+     -- which implements 'plausibleCandidateChain'.
+     --
      FetchDeclineChainNotPlausible
+
+     -- | The chain does not intersects with our current chain.
+     --
    | FetchDeclineChainNoIntersection
+
+     -- | The chain has already been fetched.
+     --
    | FetchDeclineAlreadyFetched
+
+     -- | The chain is already being downloaded from that peer.
+     --
    | FetchDeclineInFlightThisPeer
+
+     -- | The chain is already being downloaded from some peer.
+     --
    | FetchDeclineInFlightOtherPeer
+
+     -- | block-fetch client is shutting down, see 'PeerFetchStatusShutdown'.
+     --
    | FetchDeclinePeerShutdown
+
+     -- | The peer is in a potentially-temporary state in which it has not
+     -- responded to us within a certain expected time limit, see
+     -- 'PeerFetchStatusAberrant'.
+     --
    | FetchDeclinePeerSlow
+
+     -- | Downloading for the peer was declined because we are over the
+     -- 'maxInFlightReqsPerPeer' request limit.
+     --
+     -- The value reports 'maxInFlightReqsPerPeer' constant.
+     --
    | FetchDeclineReqsInFlightLimit  !Word
+
+     -- | Downloading for the peer was declined because we are over the
+     -- 'inFlightBytesHighWatermark' bytes limit.
+     --
+     -- The values are:
+     --
+     -- * number of bytes currently in flight for that peer
+     -- * the configured constant: 'inFlightBytesLowWatermark'
+     -- * the configured constant: 'inFlightBytesHighWatermark'
+     --
    | FetchDeclineBytesInFlightLimit !SizeInBytes !SizeInBytes !SizeInBytes
+
+     -- | The block-fetch client is over the 'inFlightBytesLowWatermark'.
+     --
+     -- The values are:
+     --
+     -- * number of bytes currently in flight for that peer
+     -- * the configured constant: 'inFlightBytesLowWatermark'
+     -- * the configured constant: 'inFlightBytesHighWatermark'
+     --
    | FetchDeclinePeerBusy           !SizeInBytes !SizeInBytes !SizeInBytes
+
+     -- | Fetching the chain was declined because we were above the
+     -- 'maxConcurrentFetchPeers'.
+     --
+     -- The values are:
+     --
+     -- * current fetch mode
+     -- * the current limit which depends on the 'FetchMode', either:
+     --
+     --     * 'maxConcurrencyBulkSync', or
+     --     * 'maxConcurrencyDeadline'
+     --
    | FetchDeclineConcurrencyLimit   !FetchMode !Word
   deriving (Eq, Show)
 
