@@ -88,3 +88,10 @@ tests =
 
 main :: IO ()
 main = defaultMain tests
+
+-- Counter to address the zfs copy bug on Hydra
+-- ```
+-- cannot execute binary file: Exec format error
+-- ```
+--
+-- 0
