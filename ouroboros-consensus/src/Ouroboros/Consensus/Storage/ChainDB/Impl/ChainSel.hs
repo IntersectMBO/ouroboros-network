@@ -87,6 +87,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (encloseWith)
+import Ouroboros.Consensus.Ledger.SupportsMempool
 
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.
@@ -97,9 +98,7 @@ import           Ouroboros.Consensus.Util.Enclose (encloseWith)
 initialChainSelection
   :: forall m blk wt.
      ( IOLike m
-     , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , LedgerSupportsProtocol blk, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ImmutableDB m blk
   -> VolatileDB m blk
   -> LgrDB m blk wt
@@ -265,9 +264,7 @@ addBlockSync
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , HasCallStack
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt
   -> BlockToAdd m blk
   -> m ()
@@ -393,9 +390,7 @@ chainSelectionForFutureBlocks
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , HasCallStack
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt -> BlockCache blk -> m (Point blk)
 chainSelectionForFutureBlocks cdb@CDB{..} blockCache = do
     -- Get 'cdbFutureBlocks' and empty the map in the TVar. It will be
@@ -452,9 +447,7 @@ chainSelectionForBlock
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , HasCallStack
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt
   -> BlockCache blk
   -> Header blk
@@ -698,7 +691,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish =
         cfg :: TopLevelConfig blk
         cfg = cdbTopLevelConfig
 
-        ledger :: LedgerState blk wt EmptyMK
+        ledger :: LedgerState blk
         ledger = ledgerState (LgrDB.ledgerDbCurrent newLedgerDB)
 
         summary :: History.Summary (HardForkIndices blk)
@@ -878,9 +871,7 @@ chainSelection
   :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , HasCallStack
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainSelEnv m blk wt
   -> NonEmpty (ChainDiff (Header blk))
   -> m (Maybe (ValidatedChainDiff (Header blk) (LedgerDB' blk wt)))
@@ -1057,9 +1048,7 @@ ledgerValidateCandidate
   :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , HasCallStack
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainSelEnv m blk wt
   -> ChainDiff (Header blk)
   -> m (ValidatedChainDiff (Header blk) (LedgerDB' blk wt))
@@ -1146,8 +1135,7 @@ futureCheckCandidate
   :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , GetTip (LedgerState blk wt EmptyMK)
-     , IsSwitchLedgerTables wt
+     , GetTip (LedgerState blk)
      )
   => ChainSelEnv m blk wt
   -> ValidatedChainDiff (Header blk) (LedgerDB' blk wt)
@@ -1214,7 +1202,7 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
 
     ValidatedChainDiff chainDiff@(ChainDiff _ suffix) _ = validatedChainDiff
 
-    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk wt EmptyMK)
+    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk)
     validatedSuffix =
       ledgerState . LgrDB.ledgerDbCurrent <$>
       ValidatedDiff.toValidatedFragment validatedChainDiff
@@ -1223,9 +1211,7 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
 validateCandidate
   :: ( IOLike m
      , LedgerSupportsProtocol blk
-     , HasCallStack
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainSelEnv m blk wt
   -> ChainDiff (Header blk)
   -> m (ValidationResult blk wt)

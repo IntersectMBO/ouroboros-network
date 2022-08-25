@@ -27,9 +27,7 @@ localStateQueryServer ::
      ( IOLike m
      , QueryLedger blk
      , Query.ConfigSupportsNode blk
-     , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , LedgerSupportsProtocol blk, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt))
   => ExtLedgerCfg blk
   -> (forall b.
          StaticEither b () (Point blk)

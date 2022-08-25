@@ -78,6 +78,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (TimeSinceLast (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (Enclosing' (..))
+import Ouroboros.Consensus.Ledger.Basics
+import Ouroboros.Consensus.Ledger.SupportsMempool
 
 {-------------------------------------------------------------------------------
   Launch background tasks
@@ -89,9 +91,7 @@ launchBgTasks
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , LgrDbSerialiseConstraints blk wt
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , LgrDbSerialiseConstraints blk, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m ()
@@ -240,9 +240,7 @@ copyAndSnapshotRunner
      ( IOLike m
      , GetHeader blk
      , LedgerSupportsProtocol blk
-     , LgrDbSerialiseConstraints blk wt
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , LgrDbSerialiseConstraints blk, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt
   -> GcSchedule m
   -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
@@ -305,10 +303,8 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed =
 -- (typically one) so that only 'onDiskNumSnapshots' snapshots are on disk.
 updateLedgerSnapshots ::
      ( IOLike m
-     , LgrDbSerialiseConstraints blk wt
-     , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , LgrDbSerialiseConstraints blk
+     , LedgerSupportsProtocol blk, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt -> m ()
 updateLedgerSnapshots CDB{..} = do
     void $ LgrDB.takeSnapshot  cdbLgrDB
@@ -535,9 +531,7 @@ addBlockRunner
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
-     , HasCallStack
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , HasCallStack, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt
   -> m Void
 addBlockRunner cdb@CDB{..} = forever $ do

@@ -49,9 +49,8 @@ class HasHardForkHistory blk where
   -- ledgers, then the 'LedgerConfig' here must indeed already contain timing
   -- information, and so this function becomes little more than a projection
   -- (indeed, in this case the 'LedgerState' should be irrelevant).
-  hardForkSummary :: IsSwitchLedgerTables wt
-                  => LedgerConfig blk
-                  -> LedgerState blk wt mk
+  hardForkSummary :: LedgerConfig blk
+                  -> LedgerState blk
                   -> HardFork.Summary (HardForkIndices blk)
 
 -- | Helper function that can be used to define 'hardForkSummary'
@@ -64,7 +63,7 @@ class HasHardForkHistory blk where
 -- hard fork combinator).
 neverForksHardForkSummary :: (LedgerConfig blk -> HardFork.EraParams)
                           -> LedgerConfig blk
-                          -> LedgerState blk wt mk
+                          -> LedgerState blk
                           -> HardFork.Summary '[blk]
 neverForksHardForkSummary getParams cfg _st =
     HardFork.neverForksSummary eraEpochSize eraSlotLength

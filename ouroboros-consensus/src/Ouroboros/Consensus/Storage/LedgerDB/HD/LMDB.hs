@@ -178,7 +178,7 @@ prettyPrintDbErr = \case
 -------------------------------------------------------------------------------}
 
 -- | The LMDB database that underlies the backing store.
-data Db m (l :: LedgerStateKindWithTables) = Db {
+data Db m l = Db {
     -- | The LMDB environment is a pointer to the directory that contains the
     -- @`Db`@.
     dbEnv           :: !(LMDB.Environment LMDB.ReadWrite)
@@ -562,7 +562,9 @@ data LMDBInit l =
 
 -- | Initialise an LMDB database from these provided values.
 initFromVals ::
-     (TableStuff l WithLedgerTables, SufficientSerializationForAnyBackingStore l WithLedgerTables, MonadIO m)
+     ( TableStuff (LedgerTablesGADT (LedgerTables' l) WithLedgerTables)
+     , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' l) WithLedgerTables)
+     , MonadIO m)
   => WithOrigin SlotNo
      -- ^ The slot number up to which the ledger tables contain values.
   -> LedgerTables l WithLedgerTables ValuesMK
@@ -624,7 +626,10 @@ lmdbCopy tracer dbEnv to = do
 
 -- | Initialise a backing store.
 newLMDBBackingStore ::
-     forall m l. (TableStuff l WithLedgerTables, SufficientSerializationForAnyBackingStore l WithLedgerTables, MonadIO m, IOLike m)
+     forall m l. ( TableStuff (LedgerTablesGADT (LedgerTables' l) WithLedgerTables)
+                 , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' l) WithLedgerTables)
+                 , MonadIO m
+                 , IOLike m)
   => Trace.Tracer m TraceDb
   -> LMDBLimits
      -- ^ Configuration parameters for the LMDB database that we
@@ -769,7 +774,10 @@ mkValueHandle dbTracer0 dbEnv dbOpenHandles = do
 -- @`LMDBValueHandle`@ exposes an interface for performing reads and range
 -- queries /using/ a value handle perform them.
 mkLMDBBackingStoreValueHandle ::
-     forall l m. (TableStuff l WithLedgerTables, SufficientSerializationForAnyBackingStore l WithLedgerTables, MonadIO m, IOLike m)
+     forall l m. ( TableStuff (LedgerTablesGADT (LedgerTables' l) WithLedgerTables)
+                 , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' l) WithLedgerTables)
+                 , MonadIO m
+                 , IOLike m)
   => Db m l
      -- ^ The LMDB database for which the backing store value handle is
      -- created.

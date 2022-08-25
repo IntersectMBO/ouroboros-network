@@ -334,7 +334,7 @@ data ChainDB m blk wt = ChainDB {
     , getLedgerStateForKeys ::
         forall b a.
              StaticEither b () (Point blk)
-          -> (   ExtLedgerState blk wt EmptyMK
+          -> (   ExtLedgerState blk
               -> m (a, LedgerTables (ExtLedgerState blk) wt KeysMK)
              )
           -> m (StaticEither
@@ -396,14 +396,14 @@ getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 
 -- | Get current ledger
 getCurrentLedger ::
-     (Monad (STM m), GetTip (LedgerState blk wt EmptyMK))
-  => ChainDB m blk wt -> STM m (ExtLedgerState blk wt EmptyMK)
+     (Monad (STM m), GetTip (LedgerState blk))
+  => ChainDB m blk wt -> STM m (ExtLedgerState blk)
 getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
 
 -- | Get the immutable ledger, i.e., typically @k@ blocks back.
 getImmutableLedger ::
      Monad (STM m)
-  => ChainDB m blk wt -> STM m (ExtLedgerState blk wt EmptyMK)
+  => ChainDB m blk wt -> STM m (ExtLedgerState blk)
 getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 
 -- | Get the ledger for the given point.
@@ -412,8 +412,8 @@ getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 -- chain (i.e., older than @k@ or not on the current chain), 'Nothing' is
 -- returned.
 getPastLedger ::
-     (Monad (STM m), LedgerSupportsProtocol blk, TableStuff (ExtLedgerState blk) wt, GetTip (LedgerState blk wt EmptyMK))
-  => ChainDB m blk wt  -> Point blk -> STM m (Maybe (ExtLedgerState blk wt EmptyMK))
+     (Monad (STM m), LedgerSupportsProtocol blk, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
+  => ChainDB m blk wt  -> Point blk -> STM m (Maybe (ExtLedgerState blk))
 getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
 
 -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the

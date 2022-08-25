@@ -84,13 +84,12 @@ instance Typeable xs => ShowProxy (HardForkBlock xs) where
 type instance BlockProtocol (HardForkBlock xs) = HardForkProtocol xs
 type instance HeaderHash    (HardForkBlock xs) = OneEraHash       xs
 
-newtype instance LedgerState (HardForkBlock xs) wt mk = HardForkLedgerState {
-      hardForkLedgerStatePerEra :: HardForkState (Flip2 LedgerState wt mk) xs
+newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
+      hardForkLedgerStatePerEra :: HardForkState LedgerState xs
     }
 
 -- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt EmptyMK)
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) WithLedgerTables EmptyMK)
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) WithoutLedgerTables EmptyMK)
+deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs))
 
 -- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt ValuesMK)
 -- deriving newtype instance (IsSwitchLedgerTables wt, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) wt ValuesMK)
@@ -133,8 +132,8 @@ class LedgerTablesCanHardFork xs where
 
 newtype InjectLedgerTables xs x = InjectLedgerTables {
       applyInjectLedgerTables :: forall mk. IsApplyMapKind mk =>
-           LedgerTables (LedgerState                  x) WithLedgerTables mk
-        -> LedgerTables (LedgerState (HardForkBlock xs)) WithLedgerTables mk
+           LedgerTables' (LedgerState                  x) mk
+        -> LedgerTables' (LedgerState (HardForkBlock xs)) mk
     }
 
 {-------------------------------------------------------------------------------

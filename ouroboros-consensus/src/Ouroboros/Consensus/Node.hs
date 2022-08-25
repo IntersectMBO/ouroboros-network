@@ -128,6 +128,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
+import Ouroboros.Consensus.Util.Singletons
+import Ouroboros.Consensus.Ledger.SupportsMempool
 
 
 {-------------------------------------------------------------------------------
@@ -273,9 +275,7 @@ deriving instance Show (NetworkP2PMode p2p)
 -- | Combination of 'runWith' and 'stdLowLevelRunArgsIO'
 run :: forall blk p2p wt.
      (RunNode blk
-     , SerialiseDiskConstraints blk wt
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , SerialiseDiskConstraints blk, SingI wt, Typeable wt, GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK), NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK), NoThunks (LedgerState blk))
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p wt
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
@@ -291,9 +291,7 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p wt.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
      , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
-     , SerialiseDiskConstraints blk wt
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , SerialiseDiskConstraints blk, SingI wt, Typeable wt, GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK), NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK), NoThunks (LedgerState blk))
   => RunNodeArgs m addrNTN addrNTC blk p2p wt
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
   -> m ()
@@ -338,9 +336,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           llrnCustomiseHardForkBlockchainTimeArgs $
           HardForkBlockchainTimeArgs
             { hfbtBackoffDelay   = pure $ BackoffDelay 60
-            , hfbtGetLedgerState = case singByProxy (Proxy @wt) of
-                SWithLedgerTables -> destroyLedgerTables . ledgerState <$> ChainDB.getCurrentLedger chainDB
-                SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger chainDB
+            , hfbtGetLedgerState = ledgerState <$> ChainDB.getCurrentLedger chainDB
             , hfbtLedgerConfig   = configLedger cfg
             , hfbtRegistry       = registry
             , hfbtSystemTime     = systemTime
@@ -539,13 +535,11 @@ openChainDB
   :: forall m blk wt.
      ( RunNode blk
      , IOLike m
-     , SerialiseDiskConstraints blk wt
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , SerialiseDiskConstraints blk, Typeable wt, GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), SingI wt, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK), NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK), NoThunks (LedgerState blk))
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk WithoutLedgerTables ValuesMK
+  -> ExtLedgerState blk
      -- ^ Initial ledger
   -> ChainDbArgs Defaults m blk
   -> (ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk)
@@ -565,7 +559,7 @@ mkChainDbArgs
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk WithoutLedgerTables ValuesMK
+  -> ExtLedgerState blk
      -- ^ Initial ledger
   -> ChunkInfo
   -> ChainDbArgs Defaults m blk
@@ -609,11 +603,7 @@ mkNodeKernelArgs
   chainDB
   = do
     blockForging <- initBlockForging
-    return $ rf (Proxy @(And (PromoteLedgerTables (LedgerState blk) (ExtLedgerState blk))
-                             (And (LedgerMustSupportUTxOHD (ExtLedgerState blk) blk)
-                                  (LedgerMustSupportUTxOHD (LedgerState blk) blk))))
-                (Proxy @wt)
-           $ NodeKernelArgs
+    return NodeKernelArgs
       { tracers
       , registry
       , cfg

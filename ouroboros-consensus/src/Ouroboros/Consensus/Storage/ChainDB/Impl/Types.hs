@@ -110,11 +110,11 @@ import           Ouroboros.Consensus.Util.TentativeState (TentativeState (..))
 
 -- | All the serialisation related constraints needed by the ChainDB.
 class ( ImmutableDbSerialiseConstraints blk
-      , LgrDbSerialiseConstraints blk wt
+      , LgrDbSerialiseConstraints blk
       , VolatileDbSerialiseConstraints blk
         -- Needed for Follower
       , EncodeDiskDep (NestedCtxt Header) blk
-      ) => SerialiseDiskConstraints blk wt
+      ) => SerialiseDiskConstraints blk
 
 -- | A handle to the internal ChainDB state
 newtype ChainDbHandle m blk wt = CDBHandle (StrictTVar m (ChainDbState m blk wt))
@@ -171,7 +171,7 @@ data ChainDbState m blk wt
 deriving instance ( IOLike m
                   , LedgerSupportsProtocol blk
                   , Typeable wt
-                  , NoThunks (LedgerState blk wt EmptyMK)
+                  , NoThunks (LedgerState blk)
                   , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
                   ) => NoThunks (ChainDbState m blk wt)
 
@@ -289,7 +289,7 @@ data ChainDbEnv m blk wt = CDB
 instance ( IOLike m
          , LedgerSupportsProtocol blk
          , Typeable wt
-         , NoThunks (LedgerState blk wt EmptyMK)
+         , NoThunks (LedgerState blk)
          , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
          )
       => NoThunks (ChainDbEnv m blk wt) where

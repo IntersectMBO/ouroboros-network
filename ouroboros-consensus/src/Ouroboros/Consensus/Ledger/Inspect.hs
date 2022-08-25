@@ -65,10 +65,9 @@ class ( Show     (LedgerWarning blk)
   -- instead. That doesn't fit quite so neatly with the HFC at present, so
   -- leaving it at this for now.
   inspectLedger ::
-       IsSwitchLedgerTables wt
-    => TopLevelConfig blk
-    -> LedgerState    blk wt mk1 -- ^ Before
-    -> LedgerState    blk wt mk2 -- ^ After
+       TopLevelConfig blk
+    -> LedgerState    blk -- ^ Before
+    -> LedgerState    blk -- ^ After
     -> [LedgerEvent   blk]
 
   -- Defaults
@@ -82,8 +81,8 @@ class ( Show     (LedgerWarning blk)
        , LedgerUpdate  blk ~ Void
        )
     => TopLevelConfig blk
-    -> LedgerState    blk wt mk1 -- ^ Before
-    -> LedgerState    blk wt mk2 -- ^ After
+    -> LedgerState    blk -- ^ Before
+    -> LedgerState    blk -- ^ After
     -> [LedgerEvent   blk]
   inspectLedger _ _ _ = []
     where

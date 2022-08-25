@@ -155,19 +155,19 @@ validateHeader cfg ledgerView hdr history = do
 --
 -- PRECONDITION: the blocks in the chain are valid.
 fromChain ::
-     (ApplyBlock (ExtLedgerState blk) blk, TickedTableStuff (ExtLedgerState blk) wt, IsSwitchLedgerTables wt)
+     (ApplyBlock (ExtLedgerState blk) blk, IsSwitchLedgerTables wt)
   => TopLevelConfig blk
-  -> ExtLedgerState blk wt ValuesMK
+  -> ConsensusLedgerState (ExtLedgerState blk) wt ValuesMK
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk
-fromChain cfg initState chain =
-    HeaderStateHistory (AS.fromOldestFirst anchorSnapshot snapshots)
-  where
-    anchorSnapshot NE.:| snapshots =
-          fmap headerState
-        . NE.scanl
-            (\st blk -> applyLedgerTablesDiffs st $ tickThenReapply (ExtLedgerCfg cfg) blk st)
-            initState
-        . Chain.toOldestFirst
-        $ chain
+fromChain cfg initState chain = undefined
+  --   HeaderStateHistory (AS.fromOldestFirst anchorSnapshot snapshots)
+  -- where
+  --   anchorSnapshot NE.:| snapshots =
+  --         fmap headerState
+  --       . NE.scanl
+  --           (\st blk -> applyLedgerTablesDiffs st $ tickThenReapply (ExtLedgerCfg cfg) blk st)
+  --           initState
+  --       . Chain.toOldestFirst
+  --       $ chain

@@ -268,10 +268,10 @@ deriving instance Show (BlockQuery blk fp result) => Show (Query blk fp result)
 
 -- | Answer the given query about the extended ledger state.
 answerQuery ::
-     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, QuerySat mk fp, IsSwitchLedgerTables wt)
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
   -> Query          blk fp result
-  -> ExtLedgerState blk wt mk
+  -> ExtLedgerState blk
   -> result
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
@@ -279,7 +279,7 @@ answerQuery cfg query st = case query of
   GetChainBlockNo -> headerStateBlockNo (headerState st)
   GetChainPoint -> headerStatePoint (headerState st)
 
-prepareQuery :: (QueryLedger blk, IsSwitchLedgerTables wt) => Query blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
+prepareQuery :: (QueryLedger blk) => Query blk LargeL result -> LedgerTables (ExtLedgerState blk) wt KeysMK
 prepareQuery (BlockQuery query) = prepareBlockQuery query
 
 class QuerySat (mk :: MapKind) (fp :: FootprintL)
@@ -304,15 +304,15 @@ data family BlockQuery blk :: FootprintL -> Type -> Type
 class IsQuery (BlockQuery blk) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  answerBlockQuery :: IsSwitchLedgerTables wt => QuerySat mk fp => ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk wt mk -> result
+  answerBlockQuery :: ExtLedgerCfg blk -> BlockQuery blk fp result -> ExtLedgerState blk -> result
 
-  prepareBlockQuery :: IsSwitchLedgerTables wt =>  BlockQuery blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
+  prepareBlockQuery :: BlockQuery blk LargeL result -> LedgerTables (ExtLedgerState blk) wt KeysMK
 
   answerWholeBlockQuery :: BlockQuery blk WholeL result -> IncrementalQueryHandler blk wt result
 
   -- This method need not be defined for a @'BlockQuery' blk@ that only contains
   -- 'SmallL' queries.
-  default prepareBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk LargeL result -> LedgerTables (LedgerState blk) wt KeysMK
+  default prepareBlockQuery :: SmallQuery (BlockQuery blk) => BlockQuery blk LargeL result -> LedgerTables (ExtLedgerState blk) wt KeysMK
   prepareBlockQuery query = proveNotLargeQuery query
 
   -- This method need not be defined for a @'BlockQuery' blk@ that only contains
@@ -322,7 +322,7 @@ class IsQuery (BlockQuery blk) => QueryLedger blk where
 
 data IncrementalQueryHandler :: Type -> SwitchLedgerTables -> Type -> Type where
   IncrementalQueryHandler ::
-       (LedgerState blk wt EmptyMK -> st)
+       (LedgerState blk -> st)
     -> st
     -> (st -> st -> st)
     -> (st -> result)
@@ -335,9 +335,7 @@ handleQuery ::
      , HasAnnTip blk
      , QueryLedger blk
      , Monad m
-     , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , LedgerSupportsProtocol blk, StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt))
   => ExtLedgerCfg blk
   -> DiskLedgerView m (ExtLedgerState blk) wt
   -> Query blk fp result
@@ -345,18 +343,21 @@ handleQuery ::
 handleQuery cfg dlv query = case classifyQuery query of
     SmallQ -> pure $ answerQuery cfg query st
     LargeQ -> handleLargeQuery cfg dlv query
-    WholeQ -> handleWholeQuery dlv query
+    WholeQ -> handleWholeQuery dlv' query
   where
-    DiskLedgerView st _dbRead _dbRangeRead _dbClose = dlv
+    DiskLedgerView st dbRead dbRangeRead dbClose = dlv
+    dlv' = DiskLedgerView
+             (ledgerState st)
+             ( fmap (fmapTables unExtLedgerStateTables) . dbRead . fmapTables ExtLedgerStateTables )
+             ( \(RangeQuery p c) -> fmap (fmapTables unExtLedgerStateTables) . dbRangeRead $ RangeQuery (fmap (fmapTables ExtLedgerStateTables) p) c)
+             dbClose
 
 handleLargeQuery ::
      forall blk m result wt.
      ( ConfigSupportsNode blk
      , QueryLedger blk
      , Monad m
-     , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , LedgerSupportsProtocol blk, StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) wt))
   => ExtLedgerCfg blk
   -> DiskLedgerView m (ExtLedgerState blk) wt
   -> Query blk LargeL result
@@ -364,16 +365,14 @@ handleLargeQuery ::
 handleLargeQuery cfg dlv query = do
     let DiskLedgerView st dbRead _dbReadRange _dbClose = dlv
         keys                                           = prepareQuery query
-    values <- dbRead (promoteLedgerTables keys)
-    pure $ answerQuery cfg query (stowLedgerTables $ st `withLedgerTables` values)
+    values <- dbRead keys
+    pure $ answerQuery cfg query (consensusLedger $ stowLedgerTables $ ConsensusLedgerState st values)
 
 handleWholeQuery ::
      forall blk m result wt.
      ( QueryLedger blk
-     , Monad m
-     , LedgerMustSupportUTxOHD' blk wt
-     )
-  => DiskLedgerView m (ExtLedgerState blk) wt
+     , Monad m, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt))
+  => DiskLedgerView m (LedgerState blk) wt
   -> Query blk WholeL result
   -> m result
 handleWholeQuery dlv query = do
@@ -385,17 +384,16 @@ handleWholeQuery dlv query = do
         post ->
           let
             loop ::
-                 Maybe (LedgerTables (ExtLedgerState blk) wt KeysMK)
+                 Maybe (LedgerTables (LedgerState blk) wt KeysMK)
               -> st
               -> m st
             loop !prev !acc = do
               extValues <-
                 dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
-              if getAll $ foldLedgerTables (All . f) (extValues :: LedgerTables (ExtLedgerState blk) wt ValuesMK) then pure acc else
+              if getAll $ foldLedgerTables (All . f) extValues then pure acc else
                 loop
                   (Just $ mapLedgerTables toKeys extValues)
-                  -- TODO: @js this is too convoluted
-                  (comb acc $ partial (stowLedgerTables (ledgerState $ st `withLedgerTables` extValues) `withLedgerTables` polyEmptyLedgerTables)) -- FIXME @js: this double withLedgerTables is bad!
+                  (comb acc $ partial (consensusLedger $ stowLedgerTables $ ConsensusLedgerState st extValues))
           in  post <$> loop Nothing empty
   where
 

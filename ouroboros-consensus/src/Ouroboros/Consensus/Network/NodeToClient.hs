@@ -88,6 +88,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import Ouroboros.Consensus.Ledger.Basics
 
 {-------------------------------------------------------------------------------
   Handlers
@@ -116,9 +117,9 @@ mkHandlers
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , QueryLedger blk
-     , ConfigSupportsNode blk
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , ConfigSupportsNode blk, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), StowableLedgerTables
+                          (ConsensusLedgerState (ExtLedgerState blk) wt), StowableLedgerTables
+                          (ConsensusLedgerState (LedgerState blk) wt))
   => NodeKernelArgs m remotePeer localPeer blk wt
   -> NodeKernel     m remotePeer localPeer blk wt
   -> Handlers       m            localPeer blk

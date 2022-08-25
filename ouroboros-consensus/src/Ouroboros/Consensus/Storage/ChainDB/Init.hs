@@ -30,25 +30,25 @@ data InitChainDB m blk = InitChainDB {
       addBlock         :: blk -> m ()
 
       -- | Return the current ledger state
-    , getCurrentLedger :: m (LedgerState blk WithoutLedgerTables EmptyMK)
+    , getCurrentLedger :: m (LedgerState blk)
     }
 
 fromFull ::
-     forall m blk wt. (IOLike m, GetTip (LedgerState blk wt EmptyMK), IsSwitchLedgerTables wt, ExtractLedgerTables (LedgerState blk))
+     forall m blk wt. (IOLike m, GetTip (LedgerState blk), IsSwitchLedgerTables wt)
   => ChainDB m blk wt -> InitChainDB m blk
 fromFull db = InitChainDB {
       addBlock         =
         ChainDB.addBlock_ db InvalidBlockPunishment.noPunishment
     , getCurrentLedger = atomically f
     }
-  where f = case singByProxy (Proxy @wt) of
-          SWithLedgerTables -> destroyLedgerTables . ledgerState <$> ChainDB.getCurrentLedger db
-          SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger db
+  where f = undefined -- case singByProxy (Proxy @wt) of
+          -- SWithLedgerTables -> destroyLedgerTables . ledgerState <$> ChainDB.getCurrentLedger db
+          -- SWithoutLedgerTables -> ledgerState <$> ChainDB.getCurrentLedger db
 
 map ::
      Functor m
   => (blk' -> blk)
-  -> (LedgerState blk WithoutLedgerTables EmptyMK -> LedgerState blk' WithoutLedgerTables EmptyMK)
+  -> (LedgerState blk -> LedgerState blk')
   -> InitChainDB m blk -> InitChainDB m blk'
 map f g db = InitChainDB {
       addBlock         = addBlock db . f

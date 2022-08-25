@@ -95,8 +95,7 @@ class ( LedgerSupportsProtocol           blk
       , ConvertRawHash                   blk
       , CommonProtocolParams             blk
       , HasBinaryBlockInfo               blk
-      , SerialiseDiskConstraints         blk WithLedgerTables
-      , SerialiseDiskConstraints         blk WithoutLedgerTables
+      , SerialiseDiskConstraints         blk
       , SerialiseNodeToNodeConstraints   blk
       , SerialiseNodeToClientConstraints blk
       , LedgerSupportsPeerSelection      blk

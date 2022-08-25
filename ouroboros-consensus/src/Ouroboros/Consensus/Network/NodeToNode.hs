@@ -109,6 +109,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
+import Ouroboros.Consensus.Ledger.Basics
 
 {-------------------------------------------------------------------------------
   Handlers
@@ -178,9 +179,7 @@ mkHandlers
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
-     , Ord remotePeer
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , Ord remotePeer, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => NodeKernelArgs m remotePeer localPeer blk wt
   -> NodeKernel     m remotePeer localPeer blk wt
   -> Handlers       m remotePeer           blk
@@ -483,9 +482,7 @@ mkApps
      , ShowProxy blk
      , ShowProxy (Header blk)
      , ShowProxy (TxId (GenTx blk))
-     , ShowProxy (GenTx blk)
-     , LedgerMustSupportUTxOHD' blk wt
-     )
+     , ShowProxy (GenTx blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => NodeKernel m remotePeer localPeer blk wt -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
   -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bKA)
@@ -512,7 +509,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       -- can be used to fetch blocks for that chain.
       bracketSyncWithFetchClient
         (getFetchClientRegistry kernel) them $
-        bracketChainSyncClient @m @blk @remotePeer @wt
+        bracketChainSyncClient @m @blk @remotePeer
             (contramap (TraceLabelPeer them) (Node.chainSyncClientTracer (getTracers kernel)))
             (defaultChainDbView $ getChainDB kernel)
             (getNodeCandidates kernel)

@@ -194,6 +194,8 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as Backing
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.Trivial as Trivial
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import Ouroboros.Consensus.Ledger.SupportsMempool
+import Ouroboros.Consensus.Util.Singletons
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -328,15 +330,17 @@ initLedgerDB ::
        , LedgerSupportsProtocol blk
        , InspectLedger blk
        , HasCallStack
-       , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
-       )
+       , TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt)
+       , GetTip (LedgerState blk)
+       , GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt)
+       , SingI wt, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK))
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk wt EmptyMK))
+  -> (forall s. Decoder s (ExtLedgerState blk))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
-  -> m (ExtLedgerState blk WithoutLedgerTables ValuesMK) -- ^ Genesis ledger state
+  -> m (ExtLedgerState blk) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
   -> BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk wt, Word64, LedgerBackingStore' m blk wt)
@@ -352,10 +356,10 @@ initLedgerDB replayTracer
     listSnapshots hasFS >>= tryNewestFirst id
   where
 
-    f :: m (ExtLedgerState blk wt ValuesMK)
-    f = case singByProxy (Proxy @wt) of
-      SWithLedgerTables    -> extractLedgerTables <$> getGenesisLedger
-      SWithoutLedgerTables -> getGenesisLedger
+    f :: m (ConsensusLedgerState (ExtLedgerState blk) wt ValuesMK)
+    f = undefined -- case singByProxy (Proxy @wt) of
+      -- SWithLedgerTables    -> extractLedgerTables <$> getGenesisLedger
+      -- SWithoutLedgerTables -> getGenesisLedger
 
 
     tryNewestFirst :: (InitLog blk -> InitLog blk)
@@ -370,7 +374,7 @@ initLedgerDB replayTracer
       traceWith replayTracer ReplayFromGenesis
       genesisLedger <- f
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-          initDb        = ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
+          initDb        = ledgerDbWithAnchor (consensusLedger genesisLedger)
       backingStore <- newBackingStore nullTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
@@ -439,9 +443,7 @@ replayStartingWith ::
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
-       , HasCallStack
-       , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
-       )
+       , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
   -> LedgerBackingStore' m blk wt
@@ -494,7 +496,10 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore :: forall m l blk wt.
      ( IOLike m
-     , LedgerMustSupportUTxOHD (l blk) blk wt
+     , SingI wt
+     , TableStuff (LedgerTablesGADT (LedgerTables' (l blk)) 'WithLedgerTables)
+     , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (l blk)) 'WithLedgerTables)
+     , NoThunks (LedgerTablesGADT (LedgerTables' (l blk)) 'WithLedgerTables ValuesMK)
      )
   => SomeHasFS m
   -> DiskSnapshot
@@ -540,7 +545,9 @@ restoreBackingStore someHasFs snapshot bss ms = do
 newBackingStore ::
      forall m l blk wt.
      ( IOLike m
-     , LedgerMustSupportUTxOHD (l blk) blk wt
+     , SingI wt, TableStuff (LedgerTablesGADT (LedgerTables' (l blk)) 'WithLedgerTables)
+     , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (l blk)) 'WithLedgerTables)
+     , NoThunks (LedgerTablesGADT (LedgerTables' (l blk)) 'WithLedgerTables ValuesMK)
      )
   => Tracer m LMDB.TraceDb
   -> BackingStoreSelector m
@@ -634,7 +641,7 @@ data LedgerBackingStoreValueHandle m l wt = LedgerBackingStoreValueHandle
 type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)
 
 mkDiskLedgerView ::
-     (GetTip (l wt EmptyMK), IOLike m, TableStuff l wt)
+     (GetTip l, IOLike m, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
   => (LedgerBackingStoreValueHandle m l wt, LedgerDB l wt, m ())
   -> DiskLedgerView m l wt
 mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
@@ -836,7 +843,7 @@ readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
 -- Which solution to use depends on the desired behaviour, which in turn
 -- depends on which diffs are /supposed/ to be flushed.
 flush ::
-     (Applicative m, TableStuff l wt, GetTip (l wt EmptyMK))
+     (Applicative m, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetTip l)
   => LedgerBackingStore m l wt -> DbChangelog l wt -> m ()
 flush (LedgerBackingStore backingStore) dblog =
     case youngestImmutableSlotDbChangelog dblog of
@@ -955,12 +962,12 @@ snapshotFromPath fileName = do
 takeSnapshot ::
      forall m blk wt.
      ( MonadThrow m
-     , GetTip (LedgerState blk wt EmptyMK)
+     , GetTip (LedgerState blk)
      )
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
   -> LedgerBackingStore' m blk wt
-  -> (ExtLedgerState blk wt EmptyMK -> Encoding)
+  -> (ExtLedgerState blk -> Encoding)
   -> LedgerDB' blk wt
   -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot tracer hasFS backingStore encLedger db =
@@ -978,7 +985,7 @@ takeSnapshot tracer hasFS backingStore encLedger db =
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where
-    lastFlushed :: ExtLedgerState blk wt EmptyMK
+    lastFlushed :: ExtLedgerState blk
     lastFlushed = ledgerDbLastFlushedState db
 
 -- | Write snapshot to disk
@@ -986,9 +993,9 @@ writeSnapshot ::
      forall m blk wt. MonadThrow m
   => SomeHasFS m
   -> LedgerBackingStore' m blk wt
-  -> (ExtLedgerState blk wt EmptyMK -> Encoding)
+  -> (ExtLedgerState blk -> Encoding)
   -> DiskSnapshot
-  -> ExtLedgerState blk wt EmptyMK
+  -> ExtLedgerState blk
   -> m ()
 writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
     createDirectory hasFS (snapshotToDirPath snapshot)
@@ -999,7 +1006,7 @@ writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
       (SomeHasFS hasFS)
       (BackingStore.BackingStorePath (snapshotToTablesPath snapshot))
   where
-    encode :: ExtLedgerState blk wt EmptyMK -> Encoding
+    encode :: ExtLedgerState blk -> Encoding
     encode = encodeSnapshot encLedger
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
@@ -1035,16 +1042,16 @@ deleteSnapshot (SomeHasFS HasFS{..}) =
 readSnapshot ::
      forall m blk wt. IOLike m
   => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk wt EmptyMK))
+  -> (forall s. Decoder s (ExtLedgerState blk))
   -> (forall s. Decoder s (HeaderHash blk))
   -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk wt EmptyMK)
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk)
 readSnapshot hasFS decLedger decHash = do
       ExceptT
     . readIncremental hasFS decoder
     . snapshotToStatePath
   where
-    decoder :: Decoder s (ExtLedgerState blk wt EmptyMK)
+    decoder :: Decoder s (ExtLedgerState blk)
     decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
 
 -- | List on-disk snapshots, highest number first.

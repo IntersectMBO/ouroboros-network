@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -47,6 +48,7 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -74,6 +76,9 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
+import Ouroboros.Consensus.Ledger.SupportsMempool
+import Ouroboros.Consensus.Util.Singletons
+import Type.Reflection
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -83,12 +88,11 @@ withDB
   :: forall m blk wt a.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , SerialiseDiskConstraints blk wt
-     )
+     , Typeable wt
+     , SerialiseDiskConstraints blk, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), SingI wt, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK), NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK), NoThunks (LedgerState blk))
   => ChainDbArgs Identity m blk
   -> (ChainDB m blk wt -> m a)
   -> m a
@@ -98,12 +102,11 @@ openDB
   :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , SerialiseDiskConstraints blk wt
-     )
+     , Typeable wt
+     , SerialiseDiskConstraints blk, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), SingI wt, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK), NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK), NoThunks (LedgerState blk))
   => ChainDbArgs Identity m blk
   -> m (ChainDB m blk wt)
 openDB args = fst <$> openDBInternal args True
@@ -112,11 +115,19 @@ openDBInternal
   :: forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD' blk wt
      , InspectLedger blk
      , HasHardForkHistory blk
      , ConvertRawHash blk
-     , SerialiseDiskConstraints blk wt
+     , SerialiseDiskConstraints blk
+     , TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt)
+     , GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt)
+     , SingI wt
+     , TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) WithLedgerTables)
+     , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables)
+     , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
+     , NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK)
+     , NoThunks (LedgerState blk)
+     , Typeable wt
      )
   => ChainDbArgs Identity m blk
   -> Bool -- ^ 'True' = Launch background tasks

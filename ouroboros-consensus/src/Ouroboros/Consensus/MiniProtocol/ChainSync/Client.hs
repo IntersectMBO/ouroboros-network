@@ -88,10 +88,10 @@ type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type
    client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult
 
 -- | Abstract over the ChainDB
-data ChainDbView m blk wt = ChainDbView {
+data ChainDbView m blk = ChainDbView {
       getCurrentChain       :: STM m (AnchoredFragment (Header blk))
     , getHeaderStateHistory :: STM m (HeaderStateHistory blk)
-    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk wt EmptyMK))
+    , getPastLedger         :: Point blk -> STM m (Maybe (ExtLedgerState blk))
     , getIsInvalidBlock     :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
     }
 
@@ -99,10 +99,8 @@ defaultChainDbView ::
      forall m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , TableStuff (ExtLedgerState blk) wt
-     , GetTip (LedgerState blk wt EmptyMK)
-     )
-  => ChainDB m blk wt -> ChainDbView m blk wt
+     , GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
+  => ChainDB m blk wt -> ChainDbView m blk
 defaultChainDbView chainDB = ChainDbView {
       getCurrentChain       = ChainDB.getCurrentChain       chainDB
     , getHeaderStateHistory = ChainDB.getHeaderStateHistory chainDB
@@ -120,13 +118,13 @@ newtype Our   a = Our   { unOur   :: a }
   deriving newtype (Show, NoThunks)
 
 bracketChainSyncClient
-    :: forall m blk peer wt a. ( IOLike m
+    :: forall m blk peer a. ( IOLike m
        , Ord peer
        , BlockSupportsProtocol blk
        , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
-    -> ChainDbView m blk wt
+    -> ChainDbView m blk
     -> StrictTVar m (Map peer (StrictTVar m (AnchoredFragment (Header blk))))
        -- ^ The candidate chains, we need the whole map because we
        -- (de)register nodes (@peer@).
@@ -427,15 +425,14 @@ assertKnownIntersectionInvariants cfg kis =
 -- is thrown. The network layer classifies exception such that the
 -- corresponding peer will never be chosen again.
 chainSyncClient
-    :: forall m blk wt.
+    :: forall m blk.
        ( IOLike m
        , LedgerSupportsProtocol blk
-       , IsSwitchLedgerTables wt
        )
     => MkPipelineDecision
     -> Tracer m (TraceChainSyncClientEvent blk)
     -> TopLevelConfig blk
-    -> ChainDbView m blk wt
+    -> ChainDbView m blk
     -> NodeToNodeVersion
     -> ControlMessageSTM m
     -> HeaderMetricsTracer m

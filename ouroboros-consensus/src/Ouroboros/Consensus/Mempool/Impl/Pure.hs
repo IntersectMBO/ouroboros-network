@@ -32,7 +32,6 @@ import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxTicket (..),
@@ -64,9 +63,7 @@ data TryAddTxs blk wt =
 -- documentation of 'implTryAddTxs' for some more context.
 pureTryAddTxs
   :: ( LedgerSupportsMempool blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
-     , HasTxId (GenTx blk)
-     )
+     , HasTxId (GenTx blk), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt))
   => LedgerCfg (LedgerState blk)
      -- ^ The ledger configuration.
   -> (GenTx blk -> TxSizeInBytes)
@@ -132,15 +129,13 @@ runRemoveTxs stateVar (WriteRemoveTxs is t) = do
 -- mempool, returning inside it an updated InternalState.
 pureRemoveTxs
   :: ( LedgerSupportsMempool blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
      , HasTxId (GenTx blk)
-     , ValidateEnvelope blk
-     )
+     , ValidateEnvelope blk, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), GetTip (Ticked (LedgerState blk)))
   => LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> NE.NonEmpty (GenTxId blk)
   -> InternalState blk wt
-  -> LedgerState blk wt ValuesMK
+  -> ConsensusLedgerState (LedgerState blk) wt ValuesMK
   -> RemoveTxs blk wt
 pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
     -- Filtering is O(n), but this function will rarely be used, as it is an
@@ -206,12 +201,10 @@ runSyncWithLedger stateVar (NewSyncedState is msp mTrace) = do
 -- See the documentation of 'runSyncWithLedger' for more context.
 pureSyncWithLedger
   :: ( LedgerSupportsMempool blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
      , HasTxId (GenTx blk)
-     , ValidateEnvelope blk
-     )
+     , ValidateEnvelope blk, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), GetTip (Ticked (LedgerState blk)), GetTip (LedgerState blk))
   => InternalState blk wt
-  -> LedgerState blk wt ValuesMK
+  -> ConsensusLedgerState (LedgerState blk) wt ValuesMK
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> SyncWithLedger blk wt
@@ -233,15 +226,13 @@ pureSyncWithLedger istate lstate lcfg capacityOverride =
 pureGetSnapshotAndTickedFor
   :: forall blk wt.
      ( LedgerSupportsMempool blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
      , HasTxId (GenTx blk)
-     , ValidateEnvelope blk
-     )
+     , ValidateEnvelope blk, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), GetTip (Ticked (LedgerState blk)), GetTip (LedgerState blk))
   => InternalState blk wt
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> ForgeLedgerState blk wt
-  -> (TickedLedgerState blk wt TrackingMK, MempoolSnapshot blk TicketNo)
+  -> (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK), MempoolSnapshot blk TicketNo)
 pureGetSnapshotAndTickedFor is cfg capacityOverride blockLedgerState =
       second ( implSnapshotFromIS
              . internalStateFromVR

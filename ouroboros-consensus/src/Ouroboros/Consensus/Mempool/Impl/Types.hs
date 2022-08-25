@@ -43,7 +43,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
                      TxTicket (..))
@@ -86,7 +85,7 @@ data InternalState blk wt = IS {
       -- after ticking it to 'isSlotNo'.
       --
       -- TODO: check this property.
-    , isLedgerState  :: !(TickedLedgerState blk wt TrackingMK)
+    , isLedgerState  :: !(Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
 
       -- | The tip of the chain that 'isTxs' was validated against
     , isTip          :: !(ChainHash blk)
@@ -118,7 +117,7 @@ data InternalState blk wt = IS {
 
 deriving instance ( NoThunks (Validated (GenTx blk))
                   , NoThunks (GenTxId blk)
-                  , NoThunks (TickedLedgerState blk wt TrackingMK)
+                  , NoThunks (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
                   , StandardHash blk
                   , Typeable blk
                   ) => NoThunks (InternalState blk wt)
@@ -129,13 +128,12 @@ isMempoolSize :: InternalState blk wt -> MempoolSize
 isMempoolSize = TxSeq.toMempoolSize . isTxs
 
 initInternalState
-  :: ( LedgerSupportsMempool blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
+  :: ( LedgerSupportsMempool blk, GetTip (Ticked (LedgerState blk))
      )
   => MempoolCapacityBytesOverride
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
   -> SlotNo
-  -> TickedLedgerState blk wt TrackingMK
+  -> Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)
   -> InternalState blk wt
 initInternalState capacityOverride lastTicketNo slot st = IS {
       isTxs          = TxSeq.Empty
@@ -182,7 +180,7 @@ data ValidationResult invalidTx blk wt = ValidationResult {
 
       -- | The state of the ledger after applying 'vrValid' against the ledger
       -- state identified by 'vrBeforeTip'.
-    , vrAfter          :: TickedLedgerState blk wt TrackingMK
+    , vrAfter          :: Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)
 
       -- | The transactions that were invalid, along with their errors
       --
@@ -208,9 +206,7 @@ data ValidationResult invalidTx blk wt = ValidationResult {
 -- signatures.
 extendVRPrevApplied :: forall blk wt. (
                          LedgerSupportsMempool blk
-                       , HasTxId (GenTx blk)
-                       , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
-                       )
+                       , HasTxId (GenTx blk), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt))
                     => LedgerConfig blk
                     -> TxTicket (Validated (GenTx blk))
                     -> ValidationResult (Validated (GenTx blk)) blk wt
@@ -235,9 +231,7 @@ extendVRPrevApplied cfg txTicket vr =
 -- again.
 extendVRNew :: forall blk wt. (
                  LedgerSupportsMempool blk
-               , HasTxId (GenTx blk)
-               , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
-               )
+               , HasTxId (GenTx blk), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt))
             => LedgerConfig blk
             -> (GenTx blk -> TxSizeInBytes)
             -> WhetherToIntervene
@@ -303,15 +297,14 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 validateStateFor
   :: forall blk wt. (
        LedgerSupportsMempool blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
-     )
+     , GetTip (Ticked (LedgerState blk)), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), GetTip (LedgerState blk))
   => InternalState    blk wt
   -> LedgerConfig     blk
   -> MempoolCapacityBytesOverride
   -> ForgeLedgerState blk wt
-  -> (TickedLedgerState blk wt TrackingMK, ValidationResult (Validated (GenTx blk)) blk wt)
+  -> (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK), ValidationResult (Validated (GenTx blk)) blk wt)
 validateStateFor is cfg capacityOverride blockLedgerState
     | isTip    == castHash (getTipHash st')
     , isSlotNo == slot
@@ -344,13 +337,11 @@ validateStateFor is cfg capacityOverride blockLedgerState
 revalidateTxsFor
   :: forall blk wt.
      ( LedgerSupportsMempool blk
-     , HasTxId (GenTx blk)
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
-     )
+     , HasTxId (GenTx blk), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), GetTip (Ticked (LedgerState blk)))
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
   -> SlotNo
-  -> TickedLedgerState blk wt TrackingMK
+  -> Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)
   -> TicketNo -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
   -> [TxTicket (Validated (GenTx blk))]
   -> ValidationResult (Validated (GenTx blk)) blk wt
@@ -372,12 +363,10 @@ revalidateTxsFor capacityOverride cfg slot st lastTicketNo txTickets =
 tickLedgerState
   :: forall blk wt.
      ( ApplyBlock (LedgerState blk) blk
-     , ValidateEnvelope blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
-     )
+     , ValidateEnvelope blk, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt))
   => LedgerConfig     blk
   -> ForgeLedgerState blk wt
-  -> (SlotNo, TickedLedgerState blk wt TrackingMK)
+  -> (SlotNo, Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
 tickLedgerState cfg fiks =
   let st   = forgeLedgerState fiks
       slot = case fiks of
@@ -389,7 +378,7 @@ tickLedgerState cfg fiks =
           -- TODO: We should use time here instead
           -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
           -- Once we do, the ValidateEnvelope constraint can go.
-          case ledgerTipSlot st of
+          case ledgerTipSlot $ consensusLedger st of
              Origin      -> minimumPossibleSlotNo (Proxy @blk)
              NotOrigin s -> succ s
   in

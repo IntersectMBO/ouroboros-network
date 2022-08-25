@@ -92,6 +92,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import Ouroboros.Consensus.Util.Singletons
+import Type.Reflection
 
 {-------------------------------------------------------------------------------
   Relay node
@@ -123,9 +125,7 @@ data NodeKernel m remotePeer localPeer blk wt = NodeKernel {
     }
 
 -- | Arguments required when initializing a node
-data NodeKernelArgs m remotePeer localPeer blk wt where
-  NodeKernelArgs :: LedgerMustSupportUTxOHD' blk wt
-    => {
+data NodeKernelArgs m remotePeer localPeer blk wt = NodeKernelArgs {
       tracers                 :: Tracers m remotePeer localPeer blk
     , registry                :: ResourceRegistry m
     , cfg                     :: TopLevelConfig blk
@@ -138,7 +138,7 @@ data NodeKernelArgs m remotePeer localPeer blk wt where
     , miniProtocolParameters  :: MiniProtocolParameters
     , blockFetchConfiguration :: BlockFetchConfiguration
     , keepAliveRng            :: StdGen
-    } -> NodeKernelArgs m remotePeer localPeer blk wt
+    }
 
 initNodeKernel
     :: forall m remotePeer localPeer blk wt.
@@ -146,8 +146,7 @@ initNodeKernel
        , RunNode blk
        , NoThunks remotePeer
        , Ord remotePeer
-       , Hashable remotePeer
-       )
+       , Hashable remotePeer, SingI wt, Typeable wt, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt))
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (NodeKernel m remotePeer localPeer blk wt)
 initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
@@ -188,9 +187,7 @@ initNodeKernel args@NodeKernelArgs { registry, cfg, tracers
   Internal node components
 -------------------------------------------------------------------------------}
 
-data InternalState m remotePeer localPeer blk wt where
-  IS :: LedgerMustSupportUTxOHD' blk wt
-    => {
+data InternalState m remotePeer localPeer blk wt = IS {
       tracers             :: Tracers m remotePeer localPeer blk
     , cfg                 :: TopLevelConfig blk
     , registry            :: ResourceRegistry m
@@ -200,7 +197,7 @@ data InternalState m remotePeer localPeer blk wt where
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
     , mempool             :: Mempool m blk TicketNo wt
-    } -> InternalState m remotePeer localPeer blk wt
+    }
 
 initInternalState
     :: forall m remotePeer localPeer blk wt.
@@ -208,8 +205,7 @@ initInternalState
        , LedgerSupportsProtocol blk
        , Ord remotePeer
        , NoThunks remotePeer
-       , RunNode blk
-       )
+       , RunNode blk, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt), Typeable wt, GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), SingI wt)
     => NodeKernelArgs m remotePeer localPeer blk wt
     -> m (InternalState m remotePeer localPeer blk wt)
 initInternalState NodeKernelArgs { tracers, chainDB = (chainDB :: ChainDB m blk wt), registry, cfg
@@ -246,7 +242,7 @@ initBlockFetchConsensusInterface
        , BlockSupportsProtocol blk
        , SupportsNode.ConfigSupportsNode blk
        , History.HasHardForkHistory blk
-       , GetTip (LedgerState blk wt EmptyMK)
+       , GetTip (LedgerState blk)
        , IsSwitchLedgerTables wt
        )
     => TopLevelConfig blk
@@ -302,7 +298,7 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
     pure BlockFetchConsensusInterface {..}
   where
     toSummary ::
-         ExtLedgerState blk wt EmptyMK
+         ExtLedgerState blk
       -> History.Summary (History.HardForkIndices blk)
     toSummary = History.hardForkSummary (configLedger cfg) . ledgerState
 
@@ -806,7 +802,7 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk wt
-  -> (LedgerState blk wt EmptyMK -> Bool)
+  -> (LedgerState blk -> Bool)
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedger kernel p = do
     immutableLedger <-
@@ -822,9 +818,7 @@ getPeersFromCurrentLedger kernel p = do
 -- condition.
 getPeersFromCurrentLedgerAfterSlot ::
      ( IOLike m
-     , LedgerSupportsPeerSelection blk
-     , LedgerMustSupportUTxOHD (LedgerState blk) blk wt
-     )
+     , LedgerSupportsPeerSelection blk, GetTip (LedgerState blk))
   => NodeKernel m remotePeer localPeer blk wt
   -> SlotNo
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])

@@ -72,13 +72,12 @@ class ( ApplyBlock (LedgerState blk) blk
   txInvariant = const True
 
   -- | Apply an unvalidated transaction
-  applyTx :: IsSwitchLedgerTables wt
-          => LedgerConfig blk
+  applyTx :: LedgerConfig blk
           -> WhetherToIntervene
           -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
-          -> TickedLedgerState blk wt ValuesMK
-          -> Except (ApplyTxErr blk) (TickedLedgerState blk wt TrackingMK, Validated (GenTx blk))
+          -> Ticked (ConsensusLedgerState (LedgerState blk) wt ValuesMK)
+          -> Except (ApplyTxErr blk) (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK), Validated (GenTx blk))
 
   -- | Apply a previously validated transaction to a potentially different
   -- ledger state
@@ -86,14 +85,12 @@ class ( ApplyBlock (LedgerState blk) blk
   -- When we re-apply a transaction to a potentially different ledger state
   -- expensive checks such as cryptographic hashes can be skipped, but other
   -- checks (such as checking for double spending) must still be done.
-  reapplyTx :: ( IsSwitchLedgerTables wt
-               , HasCallStack
-               )
+  reapplyTx :: HasCallStack
             => LedgerConfig blk
             -> SlotNo -- ^ Slot number of the block containing the tx
             -> Validated (GenTx blk)
-            -> TickedLedgerState blk wt ValuesMK
-            -> Except (ApplyTxErr blk) (TickedLedgerState blk wt TrackingMK)
+            -> Ticked (ConsensusLedgerState (LedgerState blk) wt ValuesMK)
+            -> Except (ApplyTxErr blk) (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
 
   -- | The maximum number of bytes worth of transactions that can be put into
   -- a block according to the currently adopted protocol parameters of the
@@ -101,7 +98,7 @@ class ( ApplyBlock (LedgerState blk) blk
   --
   -- This is (conservatively) computed by subtracting the header size and any
   -- other fixed overheads from the maximum block size.
-  txsMaxBytes :: TickedLedgerState blk wt mk -> Word32
+  txsMaxBytes :: Ticked (ConsensusLedgerState (LedgerState blk) wt mk) -> Word32
 
   -- | Return the post-serialisation size in bytes of a 'GenTx' /when it is
   -- embedded in a block/. This size might differ from the size of the
@@ -126,26 +123,18 @@ class ( ApplyBlock (LedgerState blk) blk
   -- | Discard the evidence that transaction has been previously validated
   txForgetValidated :: Validated (GenTx blk) -> GenTx blk
 
-class GetsBlockKeySets l blk wt where
+class GetsBlockKeySets blk tbs where
   -- | Given a block, get the key-sets that we need to apply it to a ledger
   -- state.
-  --
-  -- TODO: this might not be the best place to define this function. Maybe we
-  -- want to make the on-disk ledger state storage concern orthogonal to the
-  -- ledger state transformation concern.
-  getBlockKeySets :: blk -> LedgerTables l wt KeysMK
+  getBlockKeySets :: blk -> tbs KeysMK
 
   -- | Given a transaction, get the key-sets that we need to apply it to a
   -- ledger state.
-  --
-  -- TODO: this might not be the best place to define this function. Maybe we
-  -- want to make the on-disk ledger state storage concern orthogonal to the
-  -- ledger state transformation concern.
-  getTransactionKeySets :: GenTx blk -> LedgerTables l wt KeysMK
+  getTransactionKeySets :: GenTx blk -> tbs KeysMK
 
-instance GetsBlockKeySets l blk WithoutLedgerTables where
-  getBlockKeySets = const NoLedgerTables
-  getTransactionKeySets = const NoLedgerTables
+instance GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) WithoutLedgerTables) where
+  getBlockKeySets       = const NothingTables
+  getTransactionKeySets = const NothingTables
 
 -- | A generalized transaction, 'GenTx', identifier.
 data family TxId tx :: Type

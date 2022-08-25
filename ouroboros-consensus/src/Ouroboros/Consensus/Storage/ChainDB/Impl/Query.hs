@@ -199,12 +199,10 @@ getMaxSlotNo CDB{..} = do
 getLedgerStateForKeys :: forall m blk b a wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , GetTip (LedgerState blk wt EmptyMK)
-     , TableStuff (ExtLedgerState blk) wt
-     )
+     , GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt
   -> StaticEither b () (Point blk)
-  -> (ExtLedgerState blk wt EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) wt KeysMK))
+  -> (ExtLedgerState blk -> m (a, LedgerTables (ExtLedgerState blk) wt KeysMK))
   -> m (StaticEither
          b
          (a, LedgerTables (ExtLedgerState blk) wt ValuesMK)
@@ -243,9 +241,7 @@ getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
 getLedgerBackingStoreValueHandle :: forall b m blk wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , GetTip (LedgerState blk wt EmptyMK)
-     , TableStuff (ExtLedgerState blk) wt
-     )
+     , GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => ChainDbEnv m blk wt
   -> RR.ResourceRegistry m
   -> StaticEither b () (Point blk)

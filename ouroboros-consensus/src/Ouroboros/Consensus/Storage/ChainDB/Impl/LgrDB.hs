@@ -109,6 +109,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCac
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.Serialisation
+import Ouroboros.Consensus.Ledger.SupportsMempool
+import Ouroboros.Consensus.Util.Singletons
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk wt = LgrDB {
@@ -146,21 +148,21 @@ deriving instance ( IOLike m
                   , LedgerSupportsProtocol blk
                   , Typeable wt
                   , NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK)
-                  , NoThunks (LedgerState blk wt EmptyMK)
+                  , NoThunks (LedgerState blk)
                   )
                => NoThunks (LgrDB m blk wt)
   -- use generic instance
 
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the LgrDB.
-type LgrDbSerialiseConstraints blk wt =
+type LgrDbSerialiseConstraints blk =
   ( Serialise      (HeaderHash  blk)
-  , EncodeDisk blk (LedgerState blk wt EmptyMK)
-  , DecodeDisk blk (LedgerState blk wt EmptyMK)
+  , EncodeDisk blk (LedgerState blk)
+  , DecodeDisk blk (LedgerState blk)
   , EncodeDisk blk (AnnTip      blk)
   , DecodeDisk blk (AnnTip      blk)
   , EncodeDisk blk (ChainDepState (BlockProtocol blk))
   , DecodeDisk blk (ChainDepState (BlockProtocol blk))
-  , SufficientSerializationForAnyBackingStore (ExtLedgerState blk) wt
+--  , SufficientSerializationForAnyBackingStore (ExtLedgerState blk) wt
   )
 
 {-------------------------------------------------------------------------------
@@ -169,7 +171,7 @@ type LgrDbSerialiseConstraints blk wt =
 
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy           :: DiskPolicy
-    , lgrGenesis              :: HKD f (m (ExtLedgerState blk WithoutLedgerTables ValuesMK))
+    , lgrGenesis              :: HKD f (m (ExtLedgerState blk))
     , lgrHasFS                :: SomeHasFS m
     , lgrTopLevelConfig       :: HKD f (TopLevelConfig blk)
     , lgrTracer               :: Tracer m (TraceEvent blk)
@@ -199,11 +201,9 @@ defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
 openDB :: forall m blk wt.
           ( IOLike m
           , LedgerSupportsProtocol blk
-          , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
-          , LgrDbSerialiseConstraints blk wt
           , InspectLedger blk
-          , HasCallStack
-          )
+          , HasCallStack, GetTip (LedgerState blk), NoThunks (LedgerTables (ExtLedgerState blk) wt SeqDiffMK), NoThunks (LedgerState blk)
+          , LgrDbSerialiseConstraints blk, GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), SingI wt, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables), NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK))
        => LgrDbArgs Identity m blk
        -- ^ Stateless initializaton arguments
        -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
@@ -267,10 +267,14 @@ initFromDisk
   :: forall blk m wt.
      ( IOLike m
      , LedgerSupportsProtocol blk
-     , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
-     , LgrDbSerialiseConstraints blk wt
      , InspectLedger blk
-     , HasCallStack
+     , HasCallStack, GetTip (LedgerState blk)
+     , LgrDbSerialiseConstraints blk, GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt)
+     , SingI wt
+     , TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt)
+     , TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables)
+     , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) 'WithLedgerTables)
+     , NoThunks (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) 'WithLedgerTables ValuesMK)
      )
   => LgrDbArgs Identity m blk
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
@@ -294,7 +298,7 @@ initFromDisk args replayTracer immutableDB = wrapFailure (Proxy @blk) $ do
 
     ccfg = configCodec lgrTopLevelConfig
 
-    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk wt EmptyMK)
+    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk)
     decodeExtLedgerState' = decodeExtLedgerState
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
@@ -330,18 +334,16 @@ getCurrent LgrDB{..} = readTVar varDB
 setCurrent :: IOLike m => LgrDB m blk wt -> LedgerDB' blk wt -> STM m ()
 setCurrent LgrDB{..} = writeTVar $! varDB
 
-currentPoint :: GetTip (LedgerState blk wt EmptyMK) => LedgerDB' blk wt -> Point blk
+currentPoint :: GetTip (LedgerState blk) => LedgerDB' blk wt -> Point blk
 currentPoint = castPoint
              . LedgerDB.ledgerDbTip
 
 takeSnapshot ::
      forall m blk wt.
      ( IOLike m
-     , LgrDbSerialiseConstraints blk wt
      , LedgerSupportsProtocol blk
-     , GetTip (LedgerState blk wt EmptyMK)
-     , TableStuff (ExtLedgerState blk) wt
-     )
+     , GetTip (LedgerState blk)
+     , LgrDbSerialiseConstraints blk, TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
   => LgrDB m blk wt -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
     -- TODO if @not 'runDual'@, then we don't need to flush and thus only need
@@ -361,7 +363,7 @@ takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
 
     LgrDB{ cfg, tracer, hasFS, lgrBackingStore } = lgrDB
 
-    encodeExtLedgerState' :: ExtLedgerState blk wt EmptyMK -> Encoding
+    encodeExtLedgerState' :: ExtLedgerState blk -> Encoding
     encodeExtLedgerState' = encodeExtLedgerState
                               (encodeDisk ccfg)
                               (encodeDisk ccfg)
@@ -379,9 +381,7 @@ getDiskPolicy = diskPolicy
 
 -- | The 'flushLock' write lock must be held before calling this function
 flush :: ( IOLike m
-         , GetTip (LedgerState blk wt EmptyMK)
-         , TableStuff (ExtLedgerState blk) wt
-         ) => LgrDB m blk wt -> m ()
+         , GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt)) => LgrDB m blk wt -> m ()
 flush LgrDB { varDB, lgrBackingStore } = do
     toFlush <- atomically $ do
       db <- readTVar varDB
@@ -402,9 +402,7 @@ data ValidateResult blk wt =
 validate :: forall m blk wt.
             ( IOLike m
             , LedgerSupportsProtocol blk
-            , LedgerMustSupportUTxOHD (ExtLedgerState blk) blk wt
-            , HasCallStack
-            )
+            , HasCallStack, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' (ExtLedgerState blk)) wt))
          => LgrDB m blk wt
          -> LedgerDB' blk wt
             -- ^ This is used as the starting point for validation, not the one

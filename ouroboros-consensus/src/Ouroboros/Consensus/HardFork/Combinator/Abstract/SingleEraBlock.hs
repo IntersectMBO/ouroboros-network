@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Util.SOP
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
+import NoThunks.Class
 
 {-------------------------------------------------------------------------------
   SingleEraBlock
@@ -78,6 +79,7 @@ class ( LedgerSupportsProtocol blk
       , Show (ForgeStateUpdateError blk)
       -- WithLedgerTables
       , LedgerSupportsUTxOHD (LedgerState blk) blk
+      , NoThunks (LedgerState blk)
       ) => SingleEraBlock blk where
 
   -- | Era transition
@@ -91,7 +93,7 @@ class ( LedgerSupportsProtocol blk
   singleEraTransition :: PartialLedgerConfig blk
                       -> EraParams -- ^ Current era parameters
                       -> Bound     -- ^ Start of this era
-                      -> LedgerState blk wt mk
+                      -> LedgerState blk
                       -> Maybe EpochNo
 
   -- | Era information (for use in error messages)
@@ -104,7 +106,7 @@ singleEraTransition' :: SingleEraBlock blk
                      => WrapPartialLedgerConfig blk
                      -> EraParams
                      -> Bound
-                     -> LedgerState blk wt mk -> Maybe EpochNo
+                     -> LedgerState blk -> Maybe EpochNo
 singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig
 
 {-------------------------------------------------------------------------------
