@@ -1,20 +1,25 @@
-{-# LANGUAGE DataKinds              #-}
-{-# LANGUAGE DeriveAnyClass         #-}
-{-# LANGUAGE DeriveGeneric          #-}
-{-# LANGUAGE DerivingStrategies     #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE InstanceSigs           #-}
-{-# LANGUAGE LambdaCase             #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE NamedFieldPuns         #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE StandaloneDeriving     #-}
-{-# LANGUAGE TupleSections          #-}
-{-# LANGUAGE TypeApplications       #-}
-{-# LANGUAGE TypeFamilyDependencies #-}
-{-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilyDependencies     #-}
+{-# LANGUAGE UndecidableInstances       #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 {- | Comparative benchmarks for legacy/anti-diff approaches to diff sequences.
 
@@ -64,17 +69,20 @@
 module Bench.Ouroboros.Consensus.Storage.LedgerDB.HD (benchmarks) where
 
 import           Control.DeepSeq
-import qualified Control.Exception as Exn
-import           Control.Monad (replicateM)
-import           Control.Monad.Trans.Class (lift)
-import           Control.Monad.Trans.State (StateT (..), gets, modify)
+-- import           Control.Monad.Trans.Class (lift)
+import           Control.Monad.RWS
+import           Data.ByteString.Short (ShortByteString)
+import qualified Data.ByteString.Short as B
 import           Data.Foldable (toList)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
-import           Test.QuickCheck hiding (Result)
+
+import           QuickCheck.GenT
+import           Test.QuickCheck hiding (Result, choose, frequency, getSize,
+                     resize, shuffle, sized, variant)
 import           Test.Tasty.Bench
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -86,7 +94,6 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 import           Test.Util.Orphans.Isomorphism (Isomorphism (..), from, inside)
 import           Test.Util.Orphans.NFData ()
-import           Test.Util.QuickCheck (frequency')
 
 -- TODO(jdral): Instead of nf on diff sequence, alternative like
 -- * read and forward all values
@@ -94,34 +101,16 @@ import           Test.Util.QuickCheck (frequency')
 -- TODO(jdral): Add monitoring to property tests and benchmarks.
 benchmarks :: Benchmark
 benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
-      env (setup @Int) $ \ ~(newCmds, legacyCmds, model) ->
-        bgroup "Comparative performance analysis" [
-          bgroup "AntiDiff" [
-              bcompareWithin 0.3 0.6 target $
-                bench "Benchmark interpret" $
-                  nf interpretNew newCmds
-            , testProperty "Sanity check" $
-                sanityCheck model newCmds (interpretNew newCmds)
-            ]
-        , bgroup "LegacyDiff" [
-                bench "Benchmark interpret" $
-                  nf interpretLegacy legacyCmds
-            , testProperty "Sanity check" $
-                sanityCheck model legacyCmds (interpretLegacy legacyCmds)
-            ]
-        , testProperty "interpret AntiDiff == interpret LegacyDiff" $
-              interpret newCmds
-            ===
-              to (interpret legacyCmds)
-        ]
-    , testProperty "deterministic: interpret AntiDiff == interpret LegacyDiff" $
-        forAll (fst <$> makeSized generator' defaultGenConfig) $
-          \cmds ->
-              interpretNew cmds
-            ===
-              inside interpretLegacy cmds
-    , testProperty "non-deterministic: interpret AntiDiff == interpret LegacyDiff" $
-        forAll (fst <$> makeSized generator defaultGenConfig) $
+      benchComparative
+        "Configuration: No rollbacks"
+        Nothing --(Just (0.3, 0.6))
+        (setup @Key @Value gcNoRollback)
+    , benchComparative
+        "Configuration: With rollbacks"
+        Nothing
+        (setup @Key @Value gcDefault)
+    , testProperty "interpret AntiDiff == interpret LegacyDiff" $
+        forAll (fst <$> generatorTest gcDefault) $
           \cmds ->
               interpretNew cmds
             ===
@@ -129,17 +118,57 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
     ]]
   where
     setup ::
-         forall v. (Eq v, Arbitrary v)
-      => IO ([Cmd New Int v], [Cmd Legacy Int v], Model Int v)
-    setup = do
-      (cmds, m) <- generate $ generator' defaultGenConfig
+         forall k v. (Ord k, Arbitrary k, Eq v, Arbitrary v)
+      => GenConfig
+      -> IO ( [Cmd New k v]
+            , [Cmd Legacy k v]
+            , Model k v
+            )
+    setup conf = do
+      (cmds, m) <- generate $ generator' conf
       pure (cmds, from cmds, m)
 
-    interpretNew    = interpret @New @Int @Int
-    interpretLegacy = interpret @Legacy @Int @Int
+    interpretNew    = interpret @New @Key @Value
+    interpretLegacy = interpret @Legacy @Key @Value
 
+benchComparative ::
+     (Show k, Ord k, Show v, Eq v, NFData k, NFData v)
+  => String
+  -> Maybe (Double, Double)
+  -> IO ( [Cmd New k v]
+        , [Cmd Legacy k v]
+        , Model k v
+        )
+  -> Benchmark
+benchComparative name boundsMay setup =
+  bgroup name [
+    env setup $ \ ~(newCmds, legacyCmds, model) ->
+      bgroup "Comparative performance analysis" [
+        bgroup "AntiDiff" [
+          maybe bcompare (uncurry bcompareWithin) boundsMay target $
+            bench "Benchmark interpret" $
+                  nf interpret newCmds
+          , testProperty "Sanity check" $
+              sanityCheck model newCmds (interpret newCmds)
+          ]
+      , bgroup "LegacyDiff" [
+              bench "Benchmark interpret" $
+                nf interpret legacyCmds
+          , testProperty "Sanity check" $
+              sanityCheck model legacyCmds (interpret legacyCmds)
+          ]
+      , testProperty "Interpretations match" $
+            interpret newCmds
+          ===
+            to (interpret legacyCmds)
+      ]
+  ]
+  where
     target :: String
-    target = "$(NF-1) == \"LegacyDiff\" && $NF == \"Benchmark interpret\""
+    target =
+      "    $(NF-3) == \"" <> name <> "\"      \
+      \ && $(NF-1) == \"LegacyDiff\"          \
+      \ && $NF     == \"Benchmark interpret\" "
 
 {-------------------------------------------------------------------------------
   Commands
@@ -261,7 +290,7 @@ instance Comparable New where
   forward vs ks ds = MapDiff.forwardValuesAndKeys vs ks (DS.cumulativeDiff ds)
 
 {-------------------------------------------------------------------------------
-  Command generator: Configuration
+  Command generator: Configuration types
 -------------------------------------------------------------------------------}
 
 -- | Configuration parameters for generators.
@@ -275,6 +304,8 @@ data GenConfig = GenConfig {
   , pushConfig        :: PushConfig
   , forwardConfig     :: ForwardConfig
   , rollbackConfig    :: RollbackConfig
+    -- | A series of directives that determines which commands to generate.
+  , directives        :: Maybe [Directive]
   }
 
 -- | Configuration parameters for @'Push'@ command generation
@@ -304,11 +335,19 @@ newtype RollbackConfig = RollbackConfig {
     distribution :: [(Int, Float)]
   }
 
-defaultGenConfig :: GenConfig
-defaultGenConfig = GenConfig {
-    nrCommands = 3000
+-- | A directive to generate a specific command.
+data Directive = GenForward | GenPush | GenFlush | GenRollback
+  deriving (Show, Eq, Ord)
+
+{-------------------------------------------------------------------------------
+  Command generator: Specific configurations
+-------------------------------------------------------------------------------}
+
+gcDefault :: GenConfig
+gcDefault = GenConfig {
+    nrCommands = 20000
   , nrInitialValues = 100
-  , securityParameter = 200
+  , securityParameter = 2160
   , pushConfig = PushConfig {
         nrToDelete = 50
       , nrToInsert = 50
@@ -319,6 +358,23 @@ defaultGenConfig = GenConfig {
   , rollbackConfig = RollbackConfig {
         distribution = [(95, 5), (5, 95)]
       }
+  , directives =
+      let
+        xs = concat $ zipWith ((. return ) . (:)) (replicate 10 GenForward) (replicate 10 GenPush)
+        ys = concat $ replicate 10 (xs ++ [GenFlush])
+        zs = ys ++ [GenRollback]
+      in
+        Just $ concat $ repeat zs
+  }
+
+gcNoRollback :: GenConfig
+gcNoRollback = gcDefault {
+    directives =
+      let
+        xs = concat $ zipWith ((. return ) . (:)) (replicate 10 GenForward) (replicate 10 GenPush)
+        ys = concat $ replicate 10 (xs ++ [GenFlush])
+      in
+        Just $ concat $ repeat ys
   }
 
 {-------------------------------------------------------------------------------
@@ -332,8 +388,6 @@ data Model k v = Model {
                                         --   sequence
   , backingValues :: MapDiff.Values k v -- ^ Values that have been
                                         --   flushed to a backing store
-  , keyCounter    :: Int                -- ^ A counter used to generate
-                                        --   unique keys
   , nrGenerated   :: Int                -- ^ A counter for the number
                                         --   of commands generated
                                         --   up until now
@@ -341,130 +395,149 @@ data Model k v = Model {
   deriving stock Generic
   deriving anyclass NFData
 
-genInitialModel :: (Eq v, Arbitrary v) => GenConfig -> Gen (Model Int v)
+genInitialModel ::
+     (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => GenConfig
+  -> Gen (Model k v)
 genInitialModel GenConfig{nrInitialValues} = do
-    kvs <- mapM genKeyValue [0 .. nrInitialValues - 1]
-    pure $ Model mempty 0 (MapDiff.valuesFromList kvs) nrInitialValues 0
+    kvs <- replicateM nrInitialValues arbitrary
+    pure $ Model mempty 0 (MapDiff.valuesFromList kvs) 0
 
-genKeyValue :: Arbitrary v => k -> Gen (k, v)
-genKeyValue x = (x,) <$> arbitrary
+newtype Key = Key ShortByteString
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving newtype NFData
+
+newtype Value = Value ShortByteString
+  deriving stock (Show, Eq, Ord, Generic)
+  deriving newtype NFData
+
+instance Arbitrary Key where
+  arbitrary = Key . B.pack <$> replicateM 32 arbitrary
+
+instance Arbitrary Value where
+  arbitrary = Value . B.pack <$> replicateM 64 arbitrary
 
 {-------------------------------------------------------------------------------
-  Command generator: Main generators
+  Command generator: Monad transformer stack
+-------------------------------------------------------------------------------}
+
+newtype CmdGen k v a = CmdGen (RWST GenConfig () (Model k v) Gen a)
+  deriving stock Functor
+  deriving newtype ( Applicative, Monad
+                   , MonadState (Model k v), MonadReader GenConfig, MonadGen
+                   )
+
+instance (MonadGen m, Monoid w) => MonadGen (RWST r w s m) where
+  liftGen     = lift . liftGen
+  variant n g = RWST $ \r s -> variant n (runRWST g r s)
+  sized fg    = RWST $ \r s -> sized (\n -> runRWST (fg n) r s)
+  resize n g  = RWST $ \r s -> resize n (runRWST g r s)
+  choose      = lift . choose
+
+runCmdGen :: CmdGen k v a -> GenConfig -> Model k v -> Gen (a, Model k v)
+runCmdGen (CmdGen mt) conf m = (\(x, s, _) -> (x, s)) <$> runRWST mt conf m
+
+{-------------------------------------------------------------------------------
+  Command generator: Main generators (non-deterministic order of commands)
 -------------------------------------------------------------------------------}
 
 -- | A stateful generator for sequences of commands.
 --
 -- Note: We return the @'Model'@ because we might want to check invariants on
 -- it.
-generator :: (Eq v, Arbitrary v) => GenConfig -> Gen ([Cmd 'New Int v], Model Int v)
+generator ::
+     (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => GenConfig -> Gen ([Cmd 'New k v], Model k v)
 generator conf = do
   m <- genInitialModel conf
-  runStateT (genCmds conf) m
-
--- | Like @'generator'@, but the order of operations is deterministic.
-generator' :: (Eq v, Arbitrary v) => GenConfig -> Gen ([Cmd 'New Int v], Model Int v)
-generator' conf = do
-  m <- genInitialModel conf
-  runStateT (genCmds' conf) m
-
--- | Adapt a @GenConfig@ured generator to multiply the configured @nrCommands@
--- parameter with a factor that depends on the QuickCheck size parameter.
-makeSized ::
-     (GenConfig -> Gen a)
-  -> GenConfig
-  -> Gen a
-makeSized fgen conf = do
-  n <- getSize
-  k <- choose (0, n)
-  let
-    p :: Float
-    p =
-      if n == 0 then
-        0
-      else
-        fromIntegral k / fromIntegral n
-    nr :: Float
-    nr = fromIntegral (nrCommands conf)
-
-  fgen (conf {nrCommands = round $ p * nr})
-
-type CmdGen v a = StateT (Model Int v) Gen a
+  runCmdGen genCmds conf m
 
 -- | Generate a list of commands in non-deterministic order.
-genCmds :: (Eq v, Arbitrary v) => GenConfig -> CmdGen v [Cmd 'New Int v]
-genCmds conf = mapM (const $ genCmd conf) [1 .. nrCommands conf]
+genCmds ::
+     (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => CmdGen k v [Cmd 'New k v]
+genCmds = do
+  conf <- ask
+  mapM (const genCmd) [1 .. nrCommands conf]
+
+-- | Generate a command based on a probability distribution.
+genCmd ::
+     (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => CmdGen k v (Cmd 'New k v)
+genCmd = do
+    frequency [
+        (100, genPush)
+      , (10, genFlush)
+      , (1, genRollback)
+      , (100, genForward)
+      ]
+
+{-------------------------------------------------------------------------------
+  Command generator: Main generators (deterministic order of commands)
+-------------------------------------------------------------------------------}
+
+-- | Like @'generator'@, but the order of operations is deterministic.
+generator' ::
+     (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => GenConfig -> Gen ([Cmd 'New k v], Model k v)
+generator' conf = do
+  m <- genInitialModel conf
+  runCmdGen genCmds' conf m
 
 -- | Generate a list of commands in deterministic order.
---
--- The @'guard'@ function ensures early stopping if the number of generated
--- commands has reached the configured size @'nrCommands'@ parameter.
 --
 -- Note: The order of commands is deterministic, the inputs for these commands
 -- are often semi-randomly generated.
 genCmds' ::
-     forall v. (Eq v, Arbitrary v)
-  => GenConfig
-  -> CmdGen v [Cmd 'New Int v]
-genCmds' conf = do
-    cmds <- go (nrCommands conf)
-    pure $ Exn.assert (length cmds == nrCommands conf) cmds
-  where
-    go n = do
-      xs <- genN 10 (genForwardPushFlush (genN 10 genForwardPush))
-      x  <- guard (singleton <$> genRollback conf)
+     forall k v. (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => CmdGen k v [Cmd 'New k v]
+genCmds' = do
+  nrc <- reader nrCommands
+  nrg <- gets nrGenerated
 
-      let
-        xs0 = xs ++ x
-        len = length xs0
+  if nrg >= nrc then
+    pure []
+  else do
+    dirsMay <- reader directives
 
-      if length xs0 >= n then
-        pure $ take n xs0
-      else do
-        xs0' <- go (n - len)
-        pure $ xs0 ++ xs0'
+    case dirsMay of
+      Nothing       -> error "No order given."
+      Just []       -> error "Order should be infinitish length"
+      Just (dir : dirs) -> do
+        c <- genCmd' dir
+        cs <- local (\r -> r { directives = Just dirs }) genCmds'
+        pure (c : cs)
 
-    genForwardPushFlush ::
-         CmdGen v [Cmd 'New Int v]
-      -> CmdGen v [Cmd 'New Int v]
-    genForwardPushFlush gen = do
-      fps <- gen
-      f   <- guard (singleton <$> genFlush conf)
+-- | Generate a specific command.
+genCmd' ::
+     (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => Directive
+  -> CmdGen k v (Cmd 'New k v)
+genCmd' = \case
+  GenForward  -> genForward
+  GenPush     -> genPush
+  GenFlush    -> genFlush
+  GenRollback -> genRollback
 
-      pure $ fps ++ f
+{-------------------------------------------------------------------------------
+  Command generator: Main generators (for property tests)
+-------------------------------------------------------------------------------}
 
-    genForwardPush :: CmdGen v [Cmd 'New Int v]
-    genForwardPush = do
-      f <- guard (singleton <$> genForward conf)
-      p <- guard (singleton <$> genPush conf)
-      pure $ f ++ p
+generatorTest ::
+     (Ord k, Arbitrary k, Eq v, Arbitrary v)
+  => GenConfig -> Gen ([Cmd 'New k v], Model k v)
+generatorTest conf = do
+  n <- getPositive <$> arbitrary
+  k :: Int <- getSmall . getPositive <$> arbitrary
 
-    guard :: CmdGen v [Cmd 'New Int v] -> CmdGen v [Cmd 'New Int v]
-    guard gen = do
-      nrg <- gets nrGenerated
-      let nrc = nrCommands conf
+  let
+    conf' = conf {
+        nrCommands = n
+      , securityParameter = k
+      , directives = Nothing
+      }
 
-      if nrg < nrc then
-        gen
-      else
-        pure []
-
-    -- FIXME(jdral): Replace by @'Data.List.singleton'@ when we update
-    -- the @base@ dependency to @base 4.15<=@
-    singleton :: a -> [a]
-    singleton x = [x]
-
-    genN :: Int -> CmdGen v [Cmd 'New Int v] -> CmdGen v [Cmd 'New Int v]
-    genN n gen = concat <$> replicateM n gen
-
-genCmd :: (Eq v, Arbitrary v) => GenConfig -> CmdGen v (Cmd 'New Int v)
-genCmd conf = do
-    frequency' [
-        (100, genPush conf)
-      , (10, genFlush conf)
-      , (1, genRollback conf)
-      , (100, genForward conf)
-      ]
+  generator conf'
 
 {-------------------------------------------------------------------------------
   Command generator: Individual command generation
@@ -490,39 +563,38 @@ genCmd conf = do
 -- TODO: Generate unique, /random/ keys, instead of just incremental keys.
 -- TODO: Skip some slots, instead of strictly incrementing @t@.
 genPush ::
-     forall v. (Eq v, Arbitrary v)
-  => GenConfig
-  -> CmdGen v (Cmd 'New Int v)
-genPush conf = do
+     forall k v. (Ord k, Eq v, Arbitrary k, Arbitrary v)
+  => CmdGen k v (Cmd 'New k v)
+genPush = do
     ds <- gets diffs
     t  <- gets tip
     vs <- gets backingValues
-    kc <- gets keyCounter
 
     let
       _vs'@(MapDiff.Values m) = MapDiff.forwardValues vs (DS.cumulativeDiff ds)
 
     d1 <- MapDiff.fromListDeletes <$> valuesToDelete m
-    d2 <- MapDiff.fromListInserts <$> valuesToInsert kc
+    d2 <- MapDiff.fromListInserts <$> valuesToInsert
     let
       d = d1 <> d2
 
     modify (\st -> st {
         diffs = DS.extend' ds $ DS.Element (fromIntegral t) d
       , tip = t + 1
-      , keyCounter = kc + nrToInsert
       , nrGenerated = nrGenerated st + 1
       })
 
     pure $ Push (fromIntegral t) d
   where
-    PushConfig{nrToInsert, nrToDelete} = pushConfig conf
+    valuesToDelete :: Map k v -> CmdGen k v [(k, v)]
+    valuesToDelete m = do
+      PushConfig{nrToDelete} <- reader pushConfig
+      take nrToDelete <$> shuffle (Map.toList m)
 
-    valuesToDelete :: Map Int v -> CmdGen v [(Int, v)]
-    valuesToDelete m = take nrToDelete <$> lift (shuffle (Map.toList m))
-
-    valuesToInsert :: Int -> CmdGen v [(Int, v)]
-    valuesToInsert k = lift $ mapM genKeyValue [k .. k + nrToInsert - 1]
+    valuesToInsert :: CmdGen k v [(k, v)]
+    valuesToInsert = do
+      PushConfig{nrToInsert} <- reader pushConfig
+      replicateM nrToInsert arbitrary'
 
 -- | Generate a @'Flush'@ command.
 --
@@ -537,8 +609,10 @@ genPush conf = do
 -- * Return @n@.
 -- BOOKKEEPING: Remove the first @n@ diffs from the models' diff sequence and
 -- use them to forward the model's backing values.
-genFlush :: Eq v => GenConfig -> CmdGen v (Cmd 'New Int v)
-genFlush conf = do
+genFlush :: (Ord k, Eq v) => CmdGen k v (Cmd 'New k v)
+genFlush = do
+    k <- reader securityParameter
+
     ds <- gets diffs
     t  <- gets tip
     vs <- gets backingValues
@@ -554,8 +628,6 @@ genFlush conf = do
       })
 
     pure $ Flush n
-  where
-    GenConfig{securityParameter = k} = conf
 
 -- | Generate a @'Rollback'@ command.
 --
@@ -571,12 +643,15 @@ genFlush conf = do
 -- BOOKKEEPING: Remove the last @n@ diffs from the models' diff sequence.
 --
 -- Note: We assume that pushes do not skip any slots.
-genRollback :: Eq v => GenConfig -> CmdGen v (Cmd 'New Int v)
-genRollback conf = do
+genRollback :: (Ord k, Eq v) => CmdGen k v (Cmd 'New k v)
+genRollback = do
+    k <- reader securityParameter
+    dist <- reader (distribution . rollbackConfig)
+
     ds <- gets diffs
     t  <- gets tip
 
-    m <- frequency' [(x, pure $ fractionOfK y) | (x, y) <- dist]
+    m <- frequency [(x, pure $ fractionOf y k) | (x, y) <- dist]
 
     let
       n      = min m $ DS.length ds
@@ -590,12 +665,9 @@ genRollback conf = do
 
     pure $ Rollback n
   where
-    GenConfig{securityParameter = k, rollbackConfig} = conf
-    RollbackConfig{distribution = dist} =  rollbackConfig
-
     -- | Take a fraction @p@ of the security parameter @k@.
-    fractionOfK :: Float -> Int
-    fractionOfK p = round (p * fromIntegral k)
+    fractionOf :: Float -> Int -> Int
+    fractionOf p k = round (p * fromIntegral k)
 
 -- | Generate a @'Forward'@ command.
 --
@@ -612,8 +684,9 @@ genRollback conf = do
 --
 -- Note: The keys to forward should be a superset of the keys of the backing
 -- values that we retrieve from the model.
-genForward :: Eq v => GenConfig -> CmdGen v (Cmd 'New Int v)
-genForward conf = do
+genForward :: (Ord k, Eq v) => CmdGen k v (Cmd 'New k v)
+genForward = do
+
     ds  <- gets diffs
     bvs <- gets backingValues
 
@@ -629,10 +702,10 @@ genForward conf = do
 
     pure $ Forward vs ks
   where
-    ForwardConfig{nrToForward} = forwardConfig conf
-
-    keysToForward :: Set k -> CmdGen v [k]
-    keysToForward ks = take nrToForward <$> lift (shuffle (toList ks))
+    keysToForward :: Set k -> CmdGen k v [k]
+    keysToForward ks = do
+      ForwardConfig{nrToForward} <- reader forwardConfig
+      take nrToForward <$> shuffle (toList ks)
 
 {-------------------------------------------------------------------------------
   Sanity checks

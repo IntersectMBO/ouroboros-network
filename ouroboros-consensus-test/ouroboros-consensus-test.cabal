@@ -334,10 +334,14 @@ benchmark bench-storage
   main-is:             Main.hs
   other-modules:
                        Bench.Ouroboros.Consensus.Storage.LedgerDB.HD
+
   build-depends:       base
+                     , bytestring
                      , containers
                      , deepseq
+                     , mtl
                      , QuickCheck
+                     , QuickCheck-GenT
                      , strict-containers
                      , tasty-bench
                      , tasty-quickcheck
