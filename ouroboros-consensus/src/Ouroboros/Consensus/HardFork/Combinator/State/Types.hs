@@ -31,6 +31,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
 import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope)
@@ -118,28 +119,27 @@ data TranslateLedgerState x y = TranslateLedgerState {
          -> ConsensusLedgerState (LedgerState x) wt EmptyMK
          -> ConsensusLedgerState (LedgerState y) wt DiffMK
 
-    --     -- | How to translate tables on an era transition.
-    --     --
-    --     -- This is a rather technical subtlety. When performing a ledger state
-    --     -- translation, the provided input ledger state will be initially
-    --     -- populated with a @polyEmptyLedgerTables@. This step is required so
-    --     -- that the operation provided to 'Telescope.extend' is an automorphism.
-    --     --
-    --     -- If we only extend by one era, this function is a no-op, as the input
-    --     -- will be empty ledger states. However, if we extend across multiple
-    --     -- eras, previous eras might populate tables thus creating Values that
-    --     -- now need to be translated to newer eras. This function fills that
-    --     -- hole and allows us to promote tables from one era into tables from
-    --     -- the next era.
-    --   , translateLedgerTablesWith ::
-    --       forall wt.
-    --         ( TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState y)) wt)
-    --         , IsSwitchLedgerTables wt
-    --         )
-    --      => LedgerTables (LedgerState x) wt DiffMK
-    --      -> LedgerTables (LedgerState y) wt DiffMK
-    -- }
-        }
+        -- | How to translate tables on an era transition.
+        --
+        -- This is a rather technical subtlety. When performing a ledger state
+        -- translation, the provided input ledger state will be initially
+        -- populated with a @polyEmptyLedgerTables@. This step is required so
+        -- that the operation provided to 'Telescope.extend' is an automorphism.
+        --
+        -- If we only extend by one era, this function is a no-op, as the input
+        -- will be empty ledger states. However, if we extend across multiple
+        -- eras, previous eras might populate tables thus creating Values that
+        -- now need to be translated to newer eras. This function fills that
+        -- hole and allows us to promote tables from one era into tables from
+        -- the next era.
+      , translateLedgerTablesWith ::
+          forall wt.
+            ( TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState y)) wt)
+            , IsSwitchLedgerTables wt
+            )
+         => LedgerTables (LedgerState x) wt DiffMK
+         -> LedgerTables (LedgerState y) wt DiffMK
+    }
 
 -- | Knowledge in a particular era of the transition to the next era
 data TransitionInfo =

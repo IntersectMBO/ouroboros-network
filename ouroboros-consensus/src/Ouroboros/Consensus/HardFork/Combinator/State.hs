@@ -29,7 +29,6 @@ module Ouroboros.Consensus.HardFork.Combinator.State (
   , reconstructSummaryLedger
     -- * Ledger specific functionality
   , extendToSlot
-  , ConsensusHardForkLedgerState (..)
   ) where
 
 import           Prelude hiding (sequence)
@@ -204,27 +203,26 @@ epochInfoPrecomputedTransitionInfo shape transition st =
   Extending
 -------------------------------------------------------------------------------}
 
-newtype HardForkConsensusLedgerState wt mk x = HardForkConsensusLedgerState {
-    unHardForkConsensusLedgerState :: ConsensusLedgerState (LedgerState x) wt mk
-  }
-
 -- | Extend the telescope until the specified slot is within the era at the tip
 extendToSlot :: forall xs wt.
                 ( CanHardFork xs
                 , TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState (HardForkBlock xs))) wt)
                 , LedgerTablesCanHardFork xs
+                , SingI wt
+                , Typeable wt
+                , StowableLedgerTables (LedgerTablesGADT (LedgerTables' (LedgerState (HardForkBlock xs))) wt)
                 )
              => HardForkLedgerConfig xs
              -> SlotNo
-             -> ConsensusLedgerState (LedgerState (HardForkBlock xs)) wt EmptyMK
-             -> ConsensusLedgerState (LedgerState (HardForkBlock xs)) wt DiffMK
-extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(ConsensusLedgerState (HardForkLedgerState hst@(HardForkState st)) _) =
+             -> HardForkConsensusLedgerState wt EmptyMK xs
+             -> HardForkConsensusLedgerState wt DiffMK xs
+extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt =
       undefined . unI
     . Telescope.extend
-        ( undefined -- $ InPairs.hcimap proxySingle (\idx f -> Require $ \(K t)
-          --                        -> Extend  $ \cur
-          --                        -> I $ howExtend f idx t cur)
-          -- translate
+        ( InPairs.hcmap proxySingle (\f -> Require $ \(K t)
+                                 -> Extend  $ \cur
+                                 -> I $ howExtend f t cur)
+          translate
         )
         (hczipWith
            proxySingle
@@ -232,34 +230,33 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(ConsensusLedgerSt
            )
            pcfgs
            (getExactly (History.getShape hardForkLedgerConfigShape)))
-    $ (hcmap proxySingle (\(Current x y) -> Current x $ y `ConsensusHardForkLedgerState` polyEmptyLedgerTables)
-    $ st :: Telescope (K Past) (Current (ConsensusHardForkLedgerState xs wt DiffMK)) xs)
+    $ hcmap proxySingle (\(Current x (OneEraConsensusLedgerState (ConsensusLedgerState s _))) -> Current x $ OneEraConsensusLedgerState $ ConsensusLedgerState s polyEmptyLedgerTables)
+    $ getHardForkState
+    $ hardForkConsensusLedgerStatePerEra ledgerSt
   where
+    hst = HardForkState
+      $ hcmap
+          proxySingle
+          (\(Current x (OneEraConsensusLedgerState (ConsensusLedgerState s _))) -> Current x s)
+      $ getHardForkState
+      $ hardForkConsensusLedgerStatePerEra ledgerSt
+
     pcfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
     cfgs  = hcmap proxySingle (completeLedgerConfig'' ei) pcfgs
     ei    = epochInfoLedger ledgerCfg hst
-
-    -- convertToDiff :: forall blk. SingleEraBlock blk
-    --               => Current LedgerState blk
-    --               -> Current LedgerState blk
-    -- convertToDiff c = c { currentState = Flip2
-    --                             . flip withLedgerTables polyEmptyLedgerTables
-    --                             . unFlip2
-    --                             . currentState
-    --                             $ c }
 
     -- Return the end of this era if we should transition to the next
     whenExtend :: SingleEraBlock              blk
                => WrapPartialLedgerConfig     blk
                -> K History.EraParams         blk
-               -> Current (ConsensusHardForkLedgerState xs wt DiffMK) blk
+               -> Current (OneEraConsensusLedgerState wt DiffMK) blk
                -> (Maybe :.: K History.Bound) blk
     whenExtend pcfg (K eraParams) cur = Comp $ K <$> do
         transition <- singleEraTransition'
                         pcfg
                         eraParams
                         (currentStart cur)
-                        (chfls $ currentState cur)
+                        (consensusLedger $ unHardForkConsensusLedgerState $ currentState cur)
         let endBound = History.mkUpperBound
                          eraParams
                          (currentStart cur)
@@ -274,11 +271,10 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(ConsensusLedgerSt
                  , TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt)
                  )
               => TranslateLedgerState blk blk'
-              -> Index xs blk'
               -> History.Bound
-              -> Current (ConsensusHardForkLedgerState xs wt DiffMK) blk
-              -> (K Past blk, Current (ConsensusHardForkLedgerState xs wt DiffMK) blk')
-    howExtend f idx currentEnd cur@(Current start (ConsensusHardForkLedgerState state tables)) = (
+              -> Current (OneEraConsensusLedgerState wt DiffMK) blk
+              -> (K Past blk, Current (OneEraConsensusLedgerState wt DiffMK) blk')
+    howExtend f currentEnd cur@(Current start (OneEraConsensusLedgerState (ConsensusLedgerState state tables))) = (
           K Past {
               pastStart    = start
             , pastEnd      = currentEnd
@@ -287,7 +283,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(ConsensusLedgerSt
               currentStart = currentEnd
             , currentState =
               let ConsensusLedgerState state' tables' = translateLedgerStateWith f (History.boundEpoch currentEnd) $ ConsensusLedgerState state polyEmptyLedgerTables in
-              ConsensusHardForkLedgerState state' $ zipLedgerTables rawPrependDiffs tables $ fmapTables (applyInjectLedgerTables (projectNP idx hardForkInjectLedgerTablesKeysMK)) tables'
+              OneEraConsensusLedgerState $ ConsensusLedgerState state' $ zipLedgerTables rawPrependDiffs (translateLedgerTablesWith f tables) tables'
             }
         )
 

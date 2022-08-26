@@ -33,7 +33,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
   , requiringBoth
   ) where
 
-import Data.Word
 import           Data.Kind (Type)
 import           Data.SOP.Strict hiding (hcmap, hcpure, hmap, hpure)
 

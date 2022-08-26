@@ -84,8 +84,6 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
-import Data.Functor.Identity
-import Ouroboros.Consensus.HardFork.Combinator.State (ConsensusHardForkLedgerState(ConsensusHardForkLedgerState))
 
 {-------------------------------------------------------------------------------
   Errors
@@ -206,7 +204,7 @@ instance ( CanHardFork xs
             --   to change that, or we're forecasting, which is simply not
             --   applicable here.
             State.mostRecentTransitionInfo cfg extended
-        , tickedHardForkLedgerStatePerEra = HardForkState . hcmap proxySingle (\(Current x (FlipTickedConsensusLedgerState y)) -> Current x (Comp $ tchfls y)) $ st'
+        , tickedHardForkLedgerStatePerEra = HardForkState . hcmap proxySingle (\(Current x (Just y)) -> Current x (Comp $ tchfls y)) $ st'
         } undefined
     where
       cfgs = getPerEraLedgerConfig hardForkLedgerConfigPerEra
@@ -216,13 +214,6 @@ instance ( CanHardFork xs
       extended = hardForkLedgerStatePerEra xtended
 
 
-newtype FlipTickedConsensusLedgerState xs mk wt blk =
-  FlipTickedConsensusLedgerState { unFlipConsensusLedgerState :: Ticked (State.ConsensusHardForkLedgerState xs wt mk blk) }
-
-data instance Ticked (State.ConsensusHardForkLedgerState xs wt mk x) = TickedConsensusHardForkLedgerState {
-    tchfls :: Ticked (LedgerState x)
-  , tchflt :: LedgerTables (LedgerState (HardForkBlock xs)) wt mk
-  }
 
 tickOne :: ( SingleEraBlock blk
            , IsSwitchLedgerTables wt
@@ -233,11 +224,11 @@ tickOne :: ( SingleEraBlock blk
         -> WrapPartialLedgerConfig                             blk
         -> LedgerState                           blk
         -> (     LedgerResult (LedgerState (HardForkBlock xs))
-             :.: FlipTickedConsensusLedgerState xs DiffMK wt
+             :.: Maybe xs DiffMK wt
            )                                                   blk
 tickOne ei slot sopIdx partialCfg st =
       Comp
-    . fmap ( \(TickedConsensusLedgerState s tbs) -> FlipTickedConsensusLedgerState $ TickedConsensusHardForkLedgerState s $ fmapTables (applyInjectLedgerTables (projectNP undefined hardForkInjectLedgerTablesKeysMK)) tbs)
+    . fmap ( \(TickedConsensusLedgerState s tbs) -> Maybe $ TickedConsensusHardForkLedgerState s $ fmapTables (applyInjectLedgerTables (projectNP undefined hardForkInjectLedgerTablesKeysMK)) tbs)
     . embedLedgerResult (injectLedgerEvent sopIdx)
     . applyChainTickLedgerResult (completeLedgerConfig' ei partialCfg) slot
     $ ConsensusLedgerState st polyEmptyLedgerTables
@@ -309,10 +300,10 @@ instance ( CanHardFork xs )
           $ (hsequence'
           $ hcizipWith
               proxySingle
-              (\idx cfg (Pair i (Comp s)) -> apply idx cfg $ Pair i $ FlipTickedConsensusLedgerState (TickedConsensusHardForkLedgerState s tbs))
+              (\idx cfg (Pair i (Comp s)) -> apply idx cfg $ Pair i $ Maybe (TickedConsensusHardForkLedgerState s tbs))
               cfgs
               matched :: Except (HardForkLedgerError xs) (HardForkState (    LedgerResult (LedgerState (HardForkBlock xs))
-                                                                         :.: ConsensusHardForkLedgerState xs wt DiffMK) xs))
+                                                                         :.: Maybe xs wt DiffMK) xs))
     where
       cfgs = distribLedgerConfig ei cfg
       ei   = State.epochInfoPrecomputedTransitionInfo
@@ -333,7 +324,7 @@ instance ( CanHardFork xs )
           $ sequenceHardForkState
           $ hcizipWith
               proxySingle
-              (\idx cfg (Pair i (Comp s)) -> reapply idx cfg $ Pair i $ FlipTickedConsensusLedgerState (TickedConsensusHardForkLedgerState s tbs))
+              (\idx cfg (Pair i (Comp s)) -> reapply idx cfg $ Pair i $ Maybe (TickedConsensusHardForkLedgerState s tbs))
               cfgs
               matched
     where
@@ -346,12 +337,12 @@ instance ( CanHardFork xs )
 apply :: (SingleEraBlock blk, IsSwitchLedgerTables wt)
       => Index xs                                           blk
       -> WrapLedgerConfig                                   blk
-      -> Product I (FlipTickedConsensusLedgerState xs ValuesMK wt)         blk
+      -> Product I (Maybe xs ValuesMK wt)         blk
       -> (    Except (HardForkLedgerError xs)
           :.: LedgerResult (LedgerState (HardForkBlock xs))
-          :.: ConsensusHardForkLedgerState xs wt DiffMK
+          :.: Maybe xs wt DiffMK
          )                                                  blk
-apply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedConsensusLedgerState st)) =
+apply index (WrapLedgerConfig cfg) (Pair (I block) (Just st)) =
       Comp
     $ withExcept (injectLedgerError index)
     $ fmap (Comp . fmap Flip2 . embedLedgerResult (injectLedgerEvent index))
@@ -360,11 +351,11 @@ apply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedConsensusLedgerSta
 reapply :: (SingleEraBlock blk, IsSwitchLedgerTables wt)
         => Index xs                                           blk
         -> WrapLedgerConfig                                   blk
-        -> Product I (FlipTickedConsensusLedgerState xs ValuesMK wt)         blk
+        -> Product I (Maybe xs ValuesMK wt)         blk
         -> (    LedgerResult (LedgerState (HardForkBlock xs))
             :.: LedgerState
            )                                                  blk
-reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedConsensusLedgerState st)) =
+reapply index (WrapLedgerConfig cfg) (Pair (I block) (Just st)) =
       Comp
     $ fmap Flip2
     $ embedLedgerResult (injectLedgerEvent index)
@@ -461,9 +452,9 @@ instance ( BlockSupportsProtocol  (HardForkBlock xs)
 
       tickedViewOne :: SingleEraBlock              blk
                     => WrapPartialLedgerConfig     blk
-                    -> FlipTickedConsensusLedgerState mk wt blk
+                    -> Maybe mk wt blk
                     -> (Ticked :.: WrapLedgerView) blk
-      tickedViewOne cfg (FlipTickedConsensusLedgerState st) = Comp $
+      tickedViewOne cfg (Just st) = Comp $
           WrapTickedLedgerView $
             protocolLedgerView (completeLedgerConfig' ei cfg) st
 

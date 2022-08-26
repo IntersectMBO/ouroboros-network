@@ -80,6 +80,8 @@ class ( LedgerSupportsProtocol blk
       -- WithLedgerTables
       , LedgerSupportsUTxOHD (LedgerState blk) blk
       , NoThunks (LedgerState blk)
+      , forall wt. StowableLedgerTables (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt)
+      , forall wt. TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt)
       ) => SingleEraBlock blk where
 
   -- | Era transition

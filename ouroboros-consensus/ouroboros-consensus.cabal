@@ -114,7 +114,7 @@ library
                        Ouroboros.Consensus.Ledger.Abstract
                        Ouroboros.Consensus.Ledger.Basics
                        Ouroboros.Consensus.Ledger.CommonProtocolParams
-                       Ouroboros.Consensus.Ledger.Dual
+--                       Ouroboros.Consensus.Ledger.Dual
                        Ouroboros.Consensus.Ledger.Extended
                        Ouroboros.Consensus.Ledger.Inspect
                        Ouroboros.Consensus.Ledger.Query

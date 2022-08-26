@@ -13,6 +13,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -41,6 +42,10 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- ** Convenience re-exports
   , EpochInfo
   , Except
+  , OneEraConsensusLedgerState(..)
+  , HardForkConsensusLedgerState (..)
+  , Ticked(TickedOneEraConsensusLedgerState, TickedHardForkConsensusLedgerState)
+  , unTickedOneEraConsensusLedgerState, unTickedHardForkConsensusLedgerState
   ) where
 
 import           Data.Kind (Type)
@@ -87,6 +92,22 @@ type instance HeaderHash    (HardForkBlock xs) = OneEraHash       xs
 newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
       hardForkLedgerStatePerEra :: HardForkState LedgerState xs
     }
+
+newtype OneEraConsensusLedgerState wt mk x = OneEraConsensusLedgerState {
+    unHardForkConsensusLedgerState :: ConsensusLedgerState (LedgerState x) wt mk
+  }
+
+newtype HardForkConsensusLedgerState wt mk xs = HardForkConsensusLedgerState {
+  hardForkConsensusLedgerStatePerEra :: HardForkState (OneEraConsensusLedgerState wt mk) xs
+  }
+
+newtype instance Ticked (OneEraConsensusLedgerState wt mk x) = TickedOneEraConsensusLedgerState {
+  unTickedOneEraConsensusLedgerState :: Ticked (ConsensusLedgerState (LedgerState x) wt mk)
+  }
+
+newtype instance Ticked (HardForkConsensusLedgerState wt mk xs) = TickedHardForkConsensusLedgerState {
+  unTickedHardForkConsensusLedgerState :: HardForkState (Ticked :.: OneEraConsensusLedgerState wt mk) xs
+  }
 
 -- deriving stock   instance (IsSwitchLedgerTables wt, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) wt EmptyMK)
 deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs))
