@@ -38,6 +38,7 @@ import           Data.Kind (Type)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM, (..:))
 
 -- | " Validated " transaction or block
@@ -85,8 +86,8 @@ class ( IsLedger l
   applyBlockLedgerResult ::
        LedgerCfg l
     -> blk
-    -> Ticked (ConsensusLedgerState l wt ValuesMK)
-    -> Except (LedgerErr l) (LedgerResult l (ConsensusLedgerState l wt DiffMK))
+    -> Ticked (ConsensusLedgerState' l wt ValuesMK)
+    -> Except (LedgerErr l) (LedgerResult l (ConsensusLedgerState' l wt DiffMK))
 
   -- | Re-apply a block to the very same ledger state it was applied in before.
   --
@@ -100,8 +101,8 @@ class ( IsLedger l
   reapplyBlockLedgerResult ::
        LedgerCfg l
     -> blk
-    -> Ticked (ConsensusLedgerState l wt ValuesMK)
-    -> LedgerResult l (ConsensusLedgerState l wt DiffMK)
+    -> Ticked (ConsensusLedgerState' l wt ValuesMK)
+    -> LedgerResult l (ConsensusLedgerState' l wt DiffMK)
 
 {-------------------------------------------------------------------------------
   Derived functionality
@@ -181,8 +182,8 @@ applyLedgerBlock ::
      ApplyBlock l blk
   => LedgerCfg l
   -> blk
-  -> Ticked (ConsensusLedgerState l wt ValuesMK)
-  -> Except (LedgerErr l) (ConsensusLedgerState l wt DiffMK)
+  -> Ticked (ConsensusLedgerState' l wt ValuesMK)
+  -> Except (LedgerErr l) (ConsensusLedgerState' l wt DiffMK)
 applyLedgerBlock = fmap lrResult ..: applyBlockLedgerResult
 
 -- | 'lrResult' after 'reapplyBlockLedgerResult'
@@ -190,16 +191,16 @@ reapplyLedgerBlock ::
      ApplyBlock l blk
   => LedgerCfg l
   -> blk
-  -> Ticked (ConsensusLedgerState l wt ValuesMK)
-  -> ConsensusLedgerState l wt DiffMK
+  -> Ticked (ConsensusLedgerState' l wt ValuesMK)
+  -> ConsensusLedgerState' l wt DiffMK
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
-     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
+     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => LedgerCfg l
   -> blk
-  -> ConsensusLedgerState l wt ValuesMK
-  -> Except (LedgerErr l) (LedgerResult l (ConsensusLedgerState l wt DiffMK))
+  -> ConsensusLedgerState' l wt ValuesMK
+  -> Except (LedgerErr l) (LedgerResult l (ConsensusLedgerState' l wt DiffMK))
 tickThenApplyLedgerResult cfg blk l = do
   let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerTables l)
   lrBlock <-    applyBlockLedgerResult     cfg            blk  (applyLedgerTablesDiffsTicked l (lrResult lrTick))
@@ -209,11 +210,11 @@ tickThenApplyLedgerResult cfg blk l = do
     }
 
 tickThenReapplyLedgerResult ::
-     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
+     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => LedgerCfg l
   -> blk
-  -> ConsensusLedgerState l wt ValuesMK
-  -> LedgerResult l (ConsensusLedgerState l wt DiffMK)
+  -> ConsensusLedgerState' l wt ValuesMK
+  -> LedgerResult l (ConsensusLedgerState' l wt DiffMK)
 tickThenReapplyLedgerResult cfg blk l =
   let lrTick    = applyChainTickLedgerResult cfg (blockSlot blk) (forgetLedgerTables l)
       lrBlock   = reapplyBlockLedgerResult   cfg            blk  (applyLedgerTablesDiffsTicked l (lrResult lrTick))
@@ -223,29 +224,29 @@ tickThenReapplyLedgerResult cfg blk l =
     }
 
 tickThenApply ::
-     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
+     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => LedgerCfg l
   -> blk
-  -> ConsensusLedgerState l wt ValuesMK
-  -> Except (LedgerErr l) (ConsensusLedgerState l wt DiffMK)
+  -> ConsensusLedgerState' l wt ValuesMK
+  -> Except (LedgerErr l) (ConsensusLedgerState' l wt DiffMK)
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
-     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
+     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => LedgerCfg l
   -> blk
-  -> ConsensusLedgerState l wt ValuesMK
-  -> ConsensusLedgerState l wt DiffMK
+  -> ConsensusLedgerState' l wt ValuesMK
+  -> ConsensusLedgerState' l wt DiffMK
 tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
 
 foldLedger ::
-     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
-  => LedgerCfg l -> [blk] -> ConsensusLedgerState l wt ValuesMK -> Except (LedgerErr l) (ConsensusLedgerState l wt ValuesMK)
+     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => LedgerCfg l -> [blk] -> ConsensusLedgerState' l wt ValuesMK -> Except (LedgerErr l) (ConsensusLedgerState' l wt ValuesMK)
 foldLedger cfg = repeatedlyM (\blk state -> fmap (applyLedgerTablesDiffs state) $ tickThenApply cfg blk state)
 
 refoldLedger ::
-     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
-  => LedgerCfg l -> [blk] -> ConsensusLedgerState l wt ValuesMK -> ConsensusLedgerState l wt ValuesMK
+     (ApplyBlock l blk, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => LedgerCfg l -> [blk] -> ConsensusLedgerState' l wt ValuesMK -> ConsensusLedgerState'  l wt ValuesMK
 refoldLedger cfg = repeatedly (\blk state -> applyLedgerTablesDiffs state $ tickThenReapply cfg blk state)
 
 {-------------------------------------------------------------------------------

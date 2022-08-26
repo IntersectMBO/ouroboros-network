@@ -24,6 +24,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Generalized transaction
@@ -76,8 +77,8 @@ class ( ApplyBlock (LedgerState blk) blk
           -> WhetherToIntervene
           -> SlotNo -- ^ Slot number of the block containing the tx
           -> GenTx blk
-          -> Ticked (ConsensusLedgerState (LedgerState blk) wt ValuesMK)
-          -> Except (ApplyTxErr blk) (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK), Validated (GenTx blk))
+          -> Ticked (ConsensusLedgerState' (LedgerState blk) wt ValuesMK)
+          -> Except (ApplyTxErr blk) (Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK), Validated (GenTx blk))
 
   -- | Apply a previously validated transaction to a potentially different
   -- ledger state
@@ -89,8 +90,8 @@ class ( ApplyBlock (LedgerState blk) blk
             => LedgerConfig blk
             -> SlotNo -- ^ Slot number of the block containing the tx
             -> Validated (GenTx blk)
-            -> Ticked (ConsensusLedgerState (LedgerState blk) wt ValuesMK)
-            -> Except (ApplyTxErr blk) (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
+            -> Ticked (ConsensusLedgerState' (LedgerState blk) wt ValuesMK)
+            -> Except (ApplyTxErr blk) (Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK))
 
   -- | The maximum number of bytes worth of transactions that can be put into
   -- a block according to the currently adopted protocol parameters of the
@@ -98,7 +99,7 @@ class ( ApplyBlock (LedgerState blk) blk
   --
   -- This is (conservatively) computed by subtracting the header size and any
   -- other fixed overheads from the maximum block size.
-  txsMaxBytes :: Ticked (ConsensusLedgerState (LedgerState blk) wt mk) -> Word32
+  txsMaxBytes :: Ticked (ConsensusLedgerState' (LedgerState blk) wt mk) -> Word32
 
   -- | Return the post-serialisation size in bytes of a 'GenTx' /when it is
   -- embedded in a block/. This size might differ from the size of the

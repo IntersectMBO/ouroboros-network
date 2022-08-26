@@ -194,7 +194,7 @@ data Mempool m blk idx wt = Mempool {
            Point blk
         -> SlotNo
         -> m (Maybe ( ExtLedgerState blk
-                    , Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)
+                    , Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK)
                     , MempoolSnapshot blk idx
                     )
              ) -- One could argue that both ledger states belong inside the
@@ -322,7 +322,7 @@ data ForgeLedgerState blk wt =
     --
     -- This will only be the case when we realized that we are the slot leader
     -- and we are actually producing a block.
-    ForgeInKnownSlot SlotNo (ConsensusLedgerState (LedgerState blk) wt ValuesMK)
+    ForgeInKnownSlot SlotNo (ConsensusLedgerState' (LedgerState blk) wt ValuesMK)
 
     -- | The slot number of the block is not yet known
     --
@@ -330,9 +330,9 @@ data ForgeLedgerState blk wt =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | ForgeInUnknownSlot (ConsensusLedgerState (LedgerState blk) wt ValuesMK)
+  | ForgeInUnknownSlot (ConsensusLedgerState' (LedgerState blk) wt ValuesMK)
 
-forgeLedgerState :: ForgeLedgerState blk wt -> ConsensusLedgerState (LedgerState blk) wt ValuesMK
+forgeLedgerState :: ForgeLedgerState blk wt -> ConsensusLedgerState' (LedgerState blk) wt ValuesMK
 forgeLedgerState (ForgeInKnownSlot _ ls) = ls
 forgeLedgerState (ForgeInUnknownSlot ls) = ls
 
@@ -361,7 +361,7 @@ data MempoolCapacityBytesOverride
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => Ticked (ConsensusLedgerState (LedgerState blk) wt mk)
+  => Ticked (ConsensusLedgerState' (LedgerState blk) wt mk)
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity st = \case

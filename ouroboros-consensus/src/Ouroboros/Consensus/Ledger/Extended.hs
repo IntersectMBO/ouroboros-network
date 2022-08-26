@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
@@ -49,7 +50,8 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ledger.SupportsUTxOHD
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
+import Ouroboros.Network.Diffusion.NonP2P (TracersExtra(dtDnsSubscriptionTracer))
+import Data.SOP.Strict
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -113,6 +115,24 @@ data instance Ticked (ExtLedgerState blk) = TickedExtLedgerState {
     , tickedHeaderState :: Ticked (HeaderState blk)
     }
 
+data instance Ticked (ConsensusLedgerState' (ExtLedgerState blk) wt mk) = TickedExtConsensusLedgerState {
+      tickedConsensusLedgerState :: Ticked (ConsensusLedgerState' (LedgerState blk) wt mk)
+    , tickedConsensusLedgerView  :: Ticked (LedgerView (BlockProtocol blk))
+    , tickedConsensusHeaderState :: Ticked (HeaderState blk)
+    }
+
+instance ConsTableStuff (LedgerState blk) wt => ConsTableStuff (ExtLedgerState blk) wt where
+  data instance ConsensusLedgerState' (ExtLedgerState blk) wt mk = ExtConsensusLedgerState (LedgerAndTables (ExtLedgerState blk) wt mk)
+
+  constructLedgerState ls tbs = ExtConsensusLedgerState (LedgerAndTables ls tbs)
+  constructLedgerStateTicked TickedExtLedgerState{..} tbs =  TickedExtConsensusLedgerState (TickedConsensusLedgerState tickedLedgerState $ fmapTables unExtLedgerStateTables tbs) tickedLedgerView tickedHeaderState
+  projectLedgerState (ExtConsensusLedgerState (LedgerAndTables ls _)) = ls
+  projectLedgerTables (ExtConsensusLedgerState (LedgerAndTables _ tbs)) = tbs
+  projectLedgerStateTicked (TickedExtConsensusLedgerState (TickedConsensusLedgerState st _) lv hs) = TickedExtLedgerState st lv hs
+  projectLedgerTablesTicked (TickedExtConsensusLedgerState (TickedConsensusLedgerState _ tbs) _ _) = fmapTables ExtLedgerStateTables tbs
+  withLedgerTables st tbs = constructLedgerState (projectLedgerState st) tbs
+  withLedgerTablesTicked st tbs = constructLedgerStateTicked (projectLedgerStateTicked st) tbs
+
 -- | " Ledger " configuration for the extended ledger
 --
 -- Since the extended ledger also does the consensus protocol validation, we
@@ -149,10 +169,14 @@ instance ( IsLedger (LedgerState  blk)
 
   type AuxLedgerEvent (ExtLedgerState blk) = AuxLedgerEvent (LedgerState blk)
 
-  applyChainTickLedgerResult cfg slot (ConsensusLedgerState (ExtLedgerState ledger header) tbs) =
-      castLedgerResult ledgerResult <&> \(TickedConsensusLedgerState tickedLedgerState tbs') ->
-      let tickedLedgerView :: Ticked (LedgerView (BlockProtocol blk))
-          tickedLedgerView = protocolLedgerView lcfg tickedLedgerState
+  applyChainTickLedgerResult :: ConsTableStuff (ExtLedgerState blk) wt
+    => LedgerCfg (ExtLedgerState blk)
+    -> SlotNo
+    -> ConsensusLedgerState' (ExtLedgerState blk) wt EmptyMK
+    -> LedgerResult (ExtLedgerState blk) (Ticked (ConsensusLedgerState' (ExtLedgerState blk) wt DiffMK))
+  applyChainTickLedgerResult cfg slot (ExtConsensusLedgerState (LedgerAndTables (ExtLedgerState ledger header) tbs)) =
+      castLedgerResult ledgerResult <&> \tcls ->
+      let tickedLedgerView = protocolLedgerView lcfg tcls
 
           tickedHeaderState :: Ticked (HeaderState blk)
           tickedHeaderState =
@@ -161,44 +185,47 @@ instance ( IsLedger (LedgerState  blk)
                 tickedLedgerView
                 slot
                 header
-      in TickedConsensusLedgerState (TickedExtLedgerState {..}) (fmapTables ExtLedgerStateTables tbs')
+      in constructLedgerStateTicked (TickedExtLedgerState { tickedLedgerState = projectLedgerStateTicked tcls, ..}) (fmapTables ExtLedgerStateTables $ projectLedgerTablesTicked tcls)
     where
-      lcfg :: LedgerConfig blk
       lcfg = configLedger $ getExtLedgerCfg cfg
 
-      ledgerResult = applyChainTickLedgerResult lcfg slot (ConsensusLedgerState ledger $ fmapTables unExtLedgerStateTables tbs)
+      ledgerResult = applyChainTickLedgerResult lcfg slot (constructLedgerState ledger $ fmapTables unExtLedgerStateTables tbs)
 
 instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
-  applyBlockLedgerResult cfg blk (TickedConsensusLedgerState TickedExtLedgerState{..} tbs) = do
+  applyBlockLedgerResult cfg blk ls@TickedExtConsensusLedgerState{..} = do
     ledgerResult <-
         withExcept ExtValidationErrorLedger
       $ applyBlockLedgerResult
           (configLedger $ getExtLedgerCfg cfg)
           blk
-          (TickedConsensusLedgerState tickedLedgerState $ fmapTables unExtLedgerStateTables tbs)
+          (constructLedgerStateTicked
+              (tickedConsensusLedger tickedConsensusLedgerState)
+              (fmapTables unExtLedgerStateTables $ projectLedgerTablesTicked ls))
     hdr <-
         withExcept ExtValidationErrorHeader
       $ validateHeader @blk
           (getExtLedgerCfg cfg)
-          tickedLedgerView
+          tickedConsensusLedgerView
           (getHeader blk)
-          tickedHeaderState
-    pure $ (\cls -> ConsensusLedgerState (ExtLedgerState (consensusLedger cls) hdr) (fmapTables ExtLedgerStateTables $ consensusTables cls)) <$> castLedgerResult ledgerResult
+          tickedConsensusHeaderState
+    pure $ (\cls -> constructLedgerState (ExtLedgerState (projectLedgerState cls) hdr) (fmapTables ExtLedgerStateTables $ projectLedgerTables cls)) <$> castLedgerResult ledgerResult
 
-  reapplyBlockLedgerResult cfg blk (TickedConsensusLedgerState TickedExtLedgerState{..} tbs) =
-      (\cls -> ConsensusLedgerState (ExtLedgerState (consensusLedger cls) hdr) (fmapTables ExtLedgerStateTables $ consensusTables cls)) <$> castLedgerResult ledgerResult
+  reapplyBlockLedgerResult cfg blk ls@TickedExtConsensusLedgerState{..} =
+      (\cls -> constructLedgerState (ExtLedgerState (projectLedgerState cls) hdr) (fmapTables ExtLedgerStateTables $ projectLedgerTables cls)) <$> castLedgerResult ledgerResult
     where
       ledgerResult =
         reapplyBlockLedgerResult
           (configLedger $ getExtLedgerCfg cfg)
           blk
-          (TickedConsensusLedgerState tickedLedgerState $ fmapTables unExtLedgerStateTables tbs)
+          (constructLedgerStateTicked
+              (tickedConsensusLedger tickedConsensusLedgerState)
+              (fmapTables unExtLedgerStateTables $ projectLedgerTablesTicked ls))
       hdr      =
         revalidateHeader
           (getExtLedgerCfg cfg)
-          tickedLedgerView
+          tickedConsensusLedgerView
           (getHeader blk)
-          tickedHeaderState
+          tickedConsensusHeaderState
 
 {-------------------------------------------------------------------------------
   Serialisation
@@ -280,23 +307,23 @@ instance          (NoThunks (LedgerTables' (LedgerState blk) mk), Typeable mk) =
 
 
 instance ( LedgerSupportsProtocol blk
-         , StowableLedgerTables (ConsensusLedgerState (LedgerState blk) WithLedgerTables)
+         , StowableLedgerTables (ConsensusLedgerState' (LedgerState blk) WithLedgerTables)
          )
-      => StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) WithLedgerTables) where
+      => StowableLedgerTables (ConsensusLedgerState' (ExtLedgerState blk) WithLedgerTables) where
 
-  stowLedgerTables (ConsensusLedgerState ExtLedgerState{headerState, ledgerState} tbs) =
-    let ConsensusLedgerState ledgerState' tbs' = stowLedgerTables $ ConsensusLedgerState ledgerState $ fmapTables unExtLedgerStateTables tbs in
-      ConsensusLedgerState ExtLedgerState {
+  stowLedgerTables (ExtConsensusLedgerState (LedgerAndTables ExtLedgerState{headerState, ledgerState} tbs)) =
+    let st = stowLedgerTables $ constructLedgerState ledgerState $ fmapTables unExtLedgerStateTables tbs in
+      ExtConsensusLedgerState $ LedgerAndTables ExtLedgerState {
           headerState
-        , ledgerState = ledgerState'
-        } $ fmapTables ExtLedgerStateTables tbs'
+        , ledgerState = projectLedgerState st
+        } $ fmapTables ExtLedgerStateTables $ projectLedgerTables st
 
-  unstowLedgerTables (ConsensusLedgerState ExtLedgerState{headerState, ledgerState} tbs) =
-    let ConsensusLedgerState ledgerState' tbs' = unstowLedgerTables $ ConsensusLedgerState ledgerState $ fmapTables unExtLedgerStateTables tbs in
-      ConsensusLedgerState ExtLedgerState {
+  unstowLedgerTables (ExtConsensusLedgerState (LedgerAndTables ExtLedgerState{headerState, ledgerState} tbs)) =
+    let st = unstowLedgerTables $ constructLedgerState ledgerState $ fmapTables unExtLedgerStateTables tbs in
+      ExtConsensusLedgerState $ LedgerAndTables ExtLedgerState {
           headerState
-        , ledgerState = ledgerState'
-        } $ fmapTables ExtLedgerStateTables tbs'
+        , ledgerState = projectLedgerState st
+        } $ fmapTables ExtLedgerStateTables $ projectLedgerTables st
 
 instance ( LedgerSupportsProtocol blk
          , SufficientSerializationForAnyBackingStore (LedgerTablesGADT (LedgerTables' (LedgerState blk)) WithLedgerTables)

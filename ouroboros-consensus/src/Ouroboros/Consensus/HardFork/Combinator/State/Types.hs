@@ -116,8 +116,8 @@ data TranslateLedgerState x y = TranslateLedgerState {
             , IsSwitchLedgerTables wt
             )
          => EpochNo
-         -> ConsensusLedgerState (LedgerState x) wt EmptyMK
-         -> ConsensusLedgerState (LedgerState y) wt DiffMK
+         -> ConsensusLedgerState' (LedgerState x) wt EmptyMK
+         -> ConsensusLedgerState' (LedgerState y) wt DiffMK
 
         -- | How to translate tables on an era transition.
         --

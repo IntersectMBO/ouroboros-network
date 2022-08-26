@@ -39,7 +39,6 @@ module Ouroboros.Consensus.Ledger.Dual (
   , GenTx (..)
   , Header (..)
   , LedgerState (..)
-  , LedgerTables (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
   , TxId (..)
@@ -65,11 +64,9 @@ import           Codec.Serialise
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
-import           Data.Functor ((<&>))
 import           Data.Kind (Type)
 import           Data.Typeable
 import           GHC.Generics (Generic)
-import           GHC.Show (showCommaSpace, showSpace)
 import           GHC.Stack
 import           NoThunks.Class (AllowThunk (..), NoThunks (..))
 

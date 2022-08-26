@@ -22,7 +22,7 @@ class ( BlockSupportsProtocol        blk
   -- See 'ledgerViewForecastAt' for a discussion and precise definition of the
   -- relation between this and forecasting.
   protocolLedgerView :: LedgerConfig blk
-                     -> Ticked (LedgerState blk)
+                     -> Ticked (ConsensusLedgerState' (LedgerState blk) wt mk)
                      -> Ticked (LedgerView (BlockProtocol blk))
 
   -- | Get a forecast at the given ledger state.
@@ -70,18 +70,16 @@ _lemma_ledgerViewForecastAt_applyChainTick
   :: ( LedgerSupportsProtocol blk
      , Eq   (Ticked (LedgerView (BlockProtocol blk)))
      , Show (Ticked (LedgerView (BlockProtocol blk)))
-     , GetTip (LedgerState blk)
-     )
+     , GetTip (LedgerState blk), ConsTableStuff (LedgerState blk) wt)
   => LedgerConfig blk
-  -> ConsensusLedgerState (LedgerState blk) wt EmptyMK
+  -> ConsensusLedgerState' (LedgerState blk) wt EmptyMK
   -> Forecast (LedgerView (BlockProtocol blk))
   -> SlotNo
   -> Either String ()
 _lemma_ledgerViewForecastAt_applyChainTick cfg st forecast for
-    | NotOrigin for >= ledgerTipSlot (consensusLedger st)
+    | NotOrigin for >= ledgerTipSlot (projectLedgerState st)
     , let lhs = forecastFor forecast for
           rhs = protocolLedgerView cfg
-              . tickedConsensusLedger
               . applyChainTick cfg for
               $ st
     , Right lhs' <- runExcept lhs

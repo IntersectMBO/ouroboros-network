@@ -8,10 +8,10 @@ module Ouroboros.Consensus.Ledger.SupportsUTxOHD (
   , LedgerSupportsUTxOHD
   ) where
 
-import           NoThunks.Class
-import           Ouroboros.Consensus.Ledger.Basics
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked
+-- import           NoThunks.Class
+-- import           Ouroboros.Consensus.Ledger.Basics
+-- import           Ouroboros.Consensus.Ledger.SupportsMempool
+-- import           Ouroboros.Consensus.Ticked
 
 class ( -- LedgerMustSupportUTxOHD l blk WithLedgerTables
       -- , LedgerMustSupportUTxOHD l blk WithoutLedgerTables

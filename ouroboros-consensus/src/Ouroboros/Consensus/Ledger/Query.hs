@@ -335,7 +335,7 @@ handleQuery ::
      , HasAnnTip blk
      , QueryLedger blk
      , Monad m
-     , LedgerSupportsProtocol blk, StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt))
+     , LedgerSupportsProtocol blk, StowableLedgerTables (ConsensusLedgerState' (ExtLedgerState blk) wt), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState' (LedgerState blk) wt))
   => ExtLedgerCfg blk
   -> DiskLedgerView m (ExtLedgerState blk) wt
   -> Query blk fp result
@@ -357,7 +357,7 @@ handleLargeQuery ::
      ( ConfigSupportsNode blk
      , QueryLedger blk
      , Monad m
-     , LedgerSupportsProtocol blk, StowableLedgerTables (ConsensusLedgerState (ExtLedgerState blk) wt))
+     , LedgerSupportsProtocol blk, StowableLedgerTables (ConsensusLedgerState' (ExtLedgerState blk) wt))
   => ExtLedgerCfg blk
   -> DiskLedgerView m (ExtLedgerState blk) wt
   -> Query blk LargeL result
@@ -366,12 +366,12 @@ handleLargeQuery cfg dlv query = do
     let DiskLedgerView st dbRead _dbReadRange _dbClose = dlv
         keys                                           = prepareQuery query
     values <- dbRead keys
-    pure $ answerQuery cfg query (consensusLedger $ stowLedgerTables $ ConsensusLedgerState st values)
+    pure $ answerQuery cfg query (projectLedgerState $ stowLedgerTables $ constructLedgerState st values)
 
 handleWholeQuery ::
      forall blk m result wt.
      ( QueryLedger blk
-     , Monad m, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState (LedgerState blk) wt))
+     , Monad m, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), StowableLedgerTables (ConsensusLedgerState' (LedgerState blk) wt))
   => DiskLedgerView m (LedgerState blk) wt
   -> Query blk WholeL result
   -> m result
@@ -393,7 +393,7 @@ handleWholeQuery dlv query = do
               if getAll $ foldLedgerTables (All . f) extValues then pure acc else
                 loop
                   (Just $ mapLedgerTables toKeys extValues)
-                  (comb acc $ partial (consensusLedger $ stowLedgerTables $ ConsensusLedgerState st extValues))
+                  (comb acc $ partial (projectLedgerState $ stowLedgerTables $ constructLedgerState st extValues))
           in  post <$> loop Nothing empty
   where
 

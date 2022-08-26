@@ -157,7 +157,7 @@ validateHeader cfg ledgerView hdr history = do
 fromChain ::
      (ApplyBlock (ExtLedgerState blk) blk, IsSwitchLedgerTables wt)
   => TopLevelConfig blk
-  -> ConsensusLedgerState (ExtLedgerState blk) wt ValuesMK
+  -> ConsensusLedgerState' (ExtLedgerState blk) wt ValuesMK
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk

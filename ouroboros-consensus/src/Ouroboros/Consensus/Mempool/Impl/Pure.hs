@@ -135,7 +135,7 @@ pureRemoveTxs
   -> MempoolCapacityBytesOverride
   -> NE.NonEmpty (GenTxId blk)
   -> InternalState blk wt
-  -> ConsensusLedgerState (LedgerState blk) wt ValuesMK
+  -> ConsensusLedgerState' (LedgerState blk) wt ValuesMK
   -> RemoveTxs blk wt
 pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
     -- Filtering is O(n), but this function will rarely be used, as it is an
@@ -204,7 +204,7 @@ pureSyncWithLedger
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk, TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt), GetTip (Ticked (LedgerState blk)), GetTip (LedgerState blk))
   => InternalState blk wt
-  -> ConsensusLedgerState (LedgerState blk) wt ValuesMK
+  -> ConsensusLedgerState' (LedgerState blk) wt ValuesMK
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> SyncWithLedger blk wt
@@ -232,7 +232,7 @@ pureGetSnapshotAndTickedFor
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> ForgeLedgerState blk wt
-  -> (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK), MempoolSnapshot blk TicketNo)
+  -> (Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK), MempoolSnapshot blk TicketNo)
 pureGetSnapshotAndTickedFor is cfg capacityOverride blockLedgerState =
       second ( implSnapshotFromIS
              . internalStateFromVR

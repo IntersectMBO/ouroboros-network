@@ -94,12 +94,13 @@ newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
     }
 
 newtype OneEraConsensusLedgerState wt mk x = OneEraConsensusLedgerState {
-    unHardForkConsensusLedgerState :: ConsensusLedgerState (LedgerState x) wt mk
+    unHardForkConsensusLedgerState :: ConsensusLedgerState' (LedgerState x) wt mk
   }
 
-newtype HardForkConsensusLedgerState wt mk xs = HardForkConsensusLedgerState {
-  hardForkConsensusLedgerStatePerEra :: HardForkState (OneEraConsensusLedgerState wt mk) xs
-  }
+instance ConsTableStuff (LedgerState (HardForkBlock xs)) wt where
+  newtype ConsensusLedgerState' (LedgerState (HardForkBlock xs)) wt mk  =  HardForkConsensusLedgerState {
+    hardForkConsensusLedgerStatePerEra :: HardForkState (OneEraConsensusLedgerState wt mk) xs
+    }
 
 newtype instance Ticked (OneEraConsensusLedgerState wt mk x) = TickedOneEraConsensusLedgerState {
   unTickedOneEraConsensusLedgerState :: Ticked (ConsensusLedgerState (LedgerState x) wt mk)

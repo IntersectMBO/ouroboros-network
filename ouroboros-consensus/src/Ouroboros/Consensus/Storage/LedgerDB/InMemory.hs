@@ -283,11 +283,11 @@ applyBlock :: forall m c l blk (wt :: SwitchLedgerTables)
               , Monad m
               , c
               , HasCallStack
-              , TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), GetTip l)
+              , TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), GetTip l, ConsTableStuff l wt)
            => LedgerCfg l
            -> Ap m l wt blk c
            -> LedgerDB l wt
-           -> m (ConsensusLedgerState l wt DiffMK)
+           -> m (ConsensusLedgerState' l wt DiffMK)
 applyBlock cfg ap db = case ap of
   ReapplyVal b -> withBlockReadSets b $ \lh ->
     return $ tickThenReapply cfg b lh
@@ -316,8 +316,8 @@ applyBlock cfg ap db = case ap of
     withBlockReadSets
       :: ReadsKeySets m l wt
       => blk
-      -> (ConsensusLedgerState l wt ValuesMK -> m (ConsensusLedgerState l wt DiffMK))
-      -> m (ConsensusLedgerState l wt DiffMK)
+      -> (ConsensusLedgerState' l wt ValuesMK -> m (ConsensusLedgerState' l wt DiffMK))
+      -> m (ConsensusLedgerState' l wt DiffMK)
     withBlockReadSets b f = do
       let ks = getBlockKeySets b :: LedgerTables l wt KeysMK
       let aks = rewindTableKeySets (ledgerDbChangelog db) ks :: RewoundTableKeySets l wt
@@ -339,11 +339,11 @@ applyBlock cfg ap db = case ap of
 
     withHydratedLedgerState
       :: UnforwardedReadSets l wt
-      -> (ConsensusLedgerState l wt ValuesMK -> a)
+      -> (ConsensusLedgerState' l wt ValuesMK -> a)
       -> Either (WithOrigin SlotNo, WithOrigin SlotNo) a
     withHydratedLedgerState urs f = do
           f
-      .   ConsensusLedgerState (ledgerDbCurrent db)
+      .   constructLedgerState (ledgerDbCurrent db)
       <$> forwardTableKeySets (ledgerDbChangelog db) urs
 
 {-------------------------------------------------------------------------------
@@ -583,9 +583,9 @@ ledgerDbPrune k db = db {
 
 -- | Push an updated ledger state
 pushLedgerState ::
-     (GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt))
+     (GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => SecurityParam
-  -> ConsensusLedgerState l wt DiffMK -- ^ Updated ledger state
+  -> ConsensusLedgerState' l wt DiffMK -- ^ Updated ledger state
   -> LedgerDB l wt -> LedgerDB l wt
 pushLedgerState secParam currentNew' db@LedgerDB{..}  =
     ledgerDbPrune secParam $ db {
@@ -636,7 +636,7 @@ ledgerDbPush :: forall m c l blk wt
               . ( ApplyBlock       l blk
                 , Monad m
                 , c
-                , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt))
+                , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
              => LedgerDbCfg l
              -> Ap m l wt blk c -> LedgerDB l wt -> m (LedgerDB l wt)
 ledgerDbPush cfg ap db =
@@ -649,7 +649,7 @@ ledgerDbPushMany ::
      ( ApplyBlock       l blk
      , Monad m
      , c
-     , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt))
+     , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => (Pushing blk -> m ())
   -> LedgerDbCfg l
   -> [Ap m l wt blk c] -> LedgerDB l wt -> m (LedgerDB l wt)
@@ -664,7 +664,7 @@ ledgerDbPushMany trace cfg = repeatedlyM pushAndTrace
 ledgerDbSwitch :: ( ApplyBlock       l blk
                   , Monad m
                   , c
-                  , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt))
+                  , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
                => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> (UpdateLedgerDbTraceEvent blk -> m ())
@@ -718,20 +718,20 @@ pureBlock = ReapplyVal
 
 ledgerDbPush' :: ( ApplyBlock            l blk
                  , ReadsKeySets Identity l wt
-                 , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt))
+                 , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
               => LedgerDbCfg l -> blk -> LedgerDB l wt -> LedgerDB l wt
 ledgerDbPush' cfg b = runIdentity . ledgerDbPush cfg (pureBlock b)
 
 ledgerDbPushMany' :: ( ApplyBlock            l blk
                      , ReadsKeySets Identity l wt
-                     , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt))
+                     , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
                   => LedgerDbCfg l -> [blk] -> LedgerDB l wt -> LedgerDB l wt
 ledgerDbPushMany' cfg bs =
   runIdentity . ledgerDbPushMany (const $ pure ()) cfg (map pureBlock bs)
 
 ledgerDbSwitch' :: ( ApplyBlock            l blk
                    , ReadsKeySets Identity l wt
-                   , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt))
+                   , HasCallStack, GetTip l, TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetsBlockKeySets blk (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
                 => LedgerDbCfg l
                 -> Word64 -> [blk] -> LedgerDB l wt -> Maybe (LedgerDB l wt)
 ledgerDbSwitch' cfg n bs db =

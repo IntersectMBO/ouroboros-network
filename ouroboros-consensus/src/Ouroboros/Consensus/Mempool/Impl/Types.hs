@@ -85,7 +85,7 @@ data InternalState blk wt = IS {
       -- after ticking it to 'isSlotNo'.
       --
       -- TODO: check this property.
-    , isLedgerState  :: !(Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
+    , isLedgerState  :: !(Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK))
 
       -- | The tip of the chain that 'isTxs' was validated against
     , isTip          :: !(ChainHash blk)
@@ -117,7 +117,7 @@ data InternalState blk wt = IS {
 
 deriving instance ( NoThunks (Validated (GenTx blk))
                   , NoThunks (GenTxId blk)
-                  , NoThunks (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
+                  , NoThunks (Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK))
                   , StandardHash blk
                   , Typeable blk
                   ) => NoThunks (InternalState blk wt)
@@ -133,7 +133,7 @@ initInternalState
   => MempoolCapacityBytesOverride
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
   -> SlotNo
-  -> Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)
+  -> Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK)
   -> InternalState blk wt
 initInternalState capacityOverride lastTicketNo slot st = IS {
       isTxs          = TxSeq.Empty
@@ -180,7 +180,7 @@ data ValidationResult invalidTx blk wt = ValidationResult {
 
       -- | The state of the ledger after applying 'vrValid' against the ledger
       -- state identified by 'vrBeforeTip'.
-    , vrAfter          :: Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)
+    , vrAfter          :: Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK)
 
       -- | The transactions that were invalid, along with their errors
       --
@@ -304,7 +304,7 @@ validateStateFor
   -> LedgerConfig     blk
   -> MempoolCapacityBytesOverride
   -> ForgeLedgerState blk wt
-  -> (Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK), ValidationResult (Validated (GenTx blk)) blk wt)
+  -> (Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK), ValidationResult (Validated (GenTx blk)) blk wt)
 validateStateFor is cfg capacityOverride blockLedgerState
     | isTip    == castHash (getTipHash st')
     , isSlotNo == slot
@@ -341,7 +341,7 @@ revalidateTxsFor
   => MempoolCapacityBytesOverride
   -> LedgerConfig blk
   -> SlotNo
-  -> Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)
+  -> Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK)
   -> TicketNo -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
   -> [TxTicket (Validated (GenTx blk))]
   -> ValidationResult (Validated (GenTx blk)) blk wt
@@ -366,7 +366,7 @@ tickLedgerState
      , ValidateEnvelope blk, GetTip (LedgerState blk), TableStuff (LedgerTablesGADT (LedgerTables' (LedgerState blk)) wt))
   => LedgerConfig     blk
   -> ForgeLedgerState blk wt
-  -> (SlotNo, Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK))
+  -> (SlotNo, Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK))
 tickLedgerState cfg fiks =
   let st   = forgeLedgerState fiks
       slot = case fiks of
@@ -378,7 +378,7 @@ tickLedgerState cfg fiks =
           -- TODO: We should use time here instead
           -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
           -- Once we do, the ValidateEnvelope constraint can go.
-          case ledgerTipSlot $ consensusLedger st of
+          case ledgerTipSlot $ projectLedgerState st of
              Origin      -> minimumPossibleSlotNo (Proxy @blk)
              NotOrigin s -> succ s
   in

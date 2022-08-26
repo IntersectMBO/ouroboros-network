@@ -146,7 +146,7 @@ data BlockForging m blk = BlockForging {
            TopLevelConfig blk
         -> BlockNo                       -- Current block number
         -> SlotNo                        -- Current slot number
-        -> Ticked (ConsensusLedgerState (LedgerState blk) wt TrackingMK)      -- Current ledger state
+        -> Ticked (ConsensusLedgerState' (LedgerState blk) wt TrackingMK)      -- Current ledger state
         -> [Validated (GenTx blk)]       -- Contents of the mempool
         -> IsLeader (BlockProtocol blk)  -- Proof we are leader
         -> m blk

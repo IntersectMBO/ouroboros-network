@@ -50,10 +50,6 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- * UTxO HD
     -- ** Isolating the tables
   , TableStuff (..)
-  , withLedgerTables
-  , projectLedgerTables
-  , withLedgerTablesTicked
-  , projectLedgerTablesTicked
   , fmapTables
   , mapOverLedgerTables
   , mapOverLedgerTablesTicked
@@ -141,11 +137,13 @@ module Ouroboros.Consensus.Ledger.Basics (
   , SwitchLedgerTables (..)
   , singByProxy
   , rf
-  , ConsensusLedgerState (..)
   , LedgerTablesGADT (..)
-  , Ticked (..)
   , LedgerTables
   , LedgerTables'
+  , Ticked(..)
+  , ConsensusLedgerState'(..)
+  , ConsTableStuff(..)
+  , LedgerAndTables (..)
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -319,18 +317,19 @@ class ( -- Requirements on the ledger state itself
   -- NOTE: The 'IsApplyMapKind' constraint is here for the same reason it's on
   -- 'projectLedgerTables'
   applyChainTickLedgerResult ::
-       LedgerCfg l
+       ConsTableStuff l wt
+    => LedgerCfg l
     -> SlotNo
-    -> ConsensusLedgerState l wt EmptyMK
-    -> LedgerResult l (Ticked (ConsensusLedgerState l wt DiffMK))
+    -> ConsensusLedgerState' l wt EmptyMK
+    -> LedgerResult l (Ticked (ConsensusLedgerState' l wt DiffMK))
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
 applyChainTick ::
-     IsLedger l
+     (IsLedger l, ConsTableStuff l wt)
   => LedgerCfg l
   -> SlotNo
-  -> ConsensusLedgerState l wt EmptyMK
-  -> Ticked (ConsensusLedgerState l wt DiffMK)
+  -> ConsensusLedgerState' l wt EmptyMK
+  -> Ticked (ConsensusLedgerState' l wt DiffMK)
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
@@ -341,16 +340,12 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 -- generate new values, so this function can be used to wrap the call to the
 -- ledger rules that perform the tick.
 noNewTickingDiffs ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-  => ConsensusLedgerState l wt any
-  -> ConsensusLedgerState l wt DiffMK
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => ConsensusLedgerState' l wt any
+  -> ConsensusLedgerState' l wt DiffMK
 noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables
 
 data family LedgerTables' l :: LedgerStateKind
-
--- instance TableStuff (LedgerTables l WithoutLedgerTables)
-
--- instance TableStuff (LedgerTables l WithLedgerTables)
 
 -- for LedgerState HardrfForkBlock but we will not (at least ast first) have a
 -- compositional LedgerTables instance for HardForkBlock.
@@ -480,67 +475,69 @@ class TableStuff (tbs :: LedgerStateKind) where
   namesLedgerTables :: tbs NameMK
 
 overLedgerTables ::
+     ConsTableStuff l wt =>
      (LedgerTables l wt mk1 -> LedgerTables l wt mk2)
-  -> ConsensusLedgerState l wt mk1
-  -> ConsensusLedgerState l wt mk2
+  -> ConsensusLedgerState' l wt mk1
+  -> ConsensusLedgerState' l wt mk2
 overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
 
 mapOverLedgerTables ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => (forall k v.
           Ord k
        => mk1 k v
        -> mk2 k v
      )
-  -> ConsensusLedgerState l wt mk1
-  -> ConsensusLedgerState l wt mk2
+  -> ConsensusLedgerState' l wt mk1
+  -> ConsensusLedgerState' l wt mk2
 mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
 
 zipOverLedgerTables ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => (forall k v.
           Ord k
        => mk1 k v
        -> mk2 k v
        -> mk3 k v
      )
-  ->              ConsensusLedgerState l wt mk1
+  ->              ConsensusLedgerState' l wt mk1
   -> LedgerTables l wt mk2
-  ->              ConsensusLedgerState l wt mk3
+  ->              ConsensusLedgerState' l wt mk3
 zipOverLedgerTables f l tables2 =
     overLedgerTables
       (\tables1 -> zipLedgerTables f tables1 tables2)
       l
 
 overLedgerTablesTicked ::
+     ConsTableStuff l wt =>
      (LedgerTables l wt mk1 -> LedgerTables l wt mk2)
-  -> Ticked (ConsensusLedgerState l wt mk1)
-  -> Ticked (ConsensusLedgerState l wt mk2)
+  -> Ticked (ConsensusLedgerState' l wt mk1)
+  -> Ticked (ConsensusLedgerState' l wt mk2)
 overLedgerTablesTicked f l =
     withLedgerTablesTicked l $ f $ projectLedgerTablesTicked l
 
 mapOverLedgerTablesTicked ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => (forall k v.
          Ord k
       => mk1 k v
       -> mk2 k v
      )
-  -> Ticked (ConsensusLedgerState l wt mk1)
-  -> Ticked (ConsensusLedgerState l wt mk2)
+  -> Ticked (ConsensusLedgerState' l wt mk1)
+  -> Ticked (ConsensusLedgerState' l wt mk2)
 mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
 
 zipOverLedgerTablesTicked ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
   => (forall k v.
          Ord k
       => mk1 k v
       -> mk2 k v
       -> mk3 k v
      )
-  -> Ticked      (ConsensusLedgerState l wt mk1)
+  -> Ticked      (ConsensusLedgerState' l wt mk1)
   -> LedgerTables l wt mk2
-  -> Ticked      (ConsensusLedgerState l wt mk3)
+  -> Ticked      (ConsensusLedgerState' l wt mk3)
 zipOverLedgerTablesTicked f l tables2 =
     overLedgerTablesTicked
       (\tables1 -> zipLedgerTables f tables1 tables2)
@@ -618,15 +615,15 @@ polyEmptyLedgerTables = pureLedgerTables $ emptyAppliedMK sMapKind
 -- Forget all
 
 forgetLedgerTables ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-  => ConsensusLedgerState l wt mk
-  -> ConsensusLedgerState l wt EmptyMK
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => ConsensusLedgerState' l wt mk
+  -> ConsensusLedgerState' l wt EmptyMK
 forgetLedgerTables l = withLedgerTables l emptyLedgerTables
 
 forgetLedgerTablesTicked ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-  => Ticked (ConsensusLedgerState l wt mk)
-  -> Ticked (ConsensusLedgerState l wt EmptyMK)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => Ticked (ConsensusLedgerState' l wt mk)
+  -> Ticked (ConsensusLedgerState' l wt EmptyMK)
 forgetLedgerTablesTicked l = withLedgerTablesTicked l emptyLedgerTables
 
 -- Forget values
@@ -635,9 +632,9 @@ rawForgetValues :: TrackingMK k v -> DiffMK k v
 rawForgetValues (ApplyTrackingMK _values diff) = ApplyDiffMK diff
 
 forgetLedgerTablesValues ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-  => ConsensusLedgerState l wt TrackingMK
-  -> ConsensusLedgerState l wt DiffMK
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => ConsensusLedgerState' l wt TrackingMK
+  -> ConsensusLedgerState' l wt DiffMK
 forgetLedgerTablesValues = mapOverLedgerTables rawForgetValues
 
 -- Forget diffs
@@ -645,14 +642,14 @@ forgetLedgerTablesValues = mapOverLedgerTables rawForgetValues
 rawForgetDiffs :: TrackingMK k v -> ValuesMK k v
 rawForgetDiffs (ApplyTrackingMK values _diff) = ApplyValuesMK values
 
-forgetLedgerTablesDiffs :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                        => ConsensusLedgerState l wt TrackingMK
-                        -> ConsensusLedgerState l wt ValuesMK
+forgetLedgerTablesDiffs :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                        => ConsensusLedgerState' l wt TrackingMK
+                        -> ConsensusLedgerState' l wt ValuesMK
 forgetLedgerTablesDiffs = mapOverLedgerTables rawForgetDiffs
 
-forgetLedgerTablesDiffsTicked :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                              => Ticked (ConsensusLedgerState l wt TrackingMK)
-                              -> Ticked (ConsensusLedgerState l wt ValuesMK)
+forgetLedgerTablesDiffsTicked :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                              => Ticked (ConsensusLedgerState' l wt TrackingMK)
+                              -> Ticked (ConsensusLedgerState' l wt ValuesMK)
 forgetLedgerTablesDiffsTicked = mapOverLedgerTablesTicked rawForgetDiffs
 
 -- Prepend diffs
@@ -664,28 +661,28 @@ rawPrependDiffs ::
   -> DiffMK k v
 rawPrependDiffs (ApplyDiffMK (UtxoDiff d1)) (ApplyDiffMK (UtxoDiff d2)) = ApplyDiffMK (UtxoDiff (d1 `Map.union` d2))
 
-prependLedgerTablesDiffsRaw :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
+prependLedgerTablesDiffsRaw :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
                             => LedgerTables l wt DiffMK
-                            -> ConsensusLedgerState l wt DiffMK
-                            -> ConsensusLedgerState l wt DiffMK
+                            -> ConsensusLedgerState' l wt DiffMK
+                            -> ConsensusLedgerState' l wt DiffMK
 prependLedgerTablesDiffsRaw = flip (zipOverLedgerTables rawPrependDiffs)
 
-prependLedgerTablesDiffs :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                         => ConsensusLedgerState l wt DiffMK
-                         -> ConsensusLedgerState l wt DiffMK
-                         -> ConsensusLedgerState l wt DiffMK
+prependLedgerTablesDiffs :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                         => ConsensusLedgerState' l wt DiffMK
+                         -> ConsensusLedgerState' l wt DiffMK
+                         -> ConsensusLedgerState' l wt DiffMK
 prependLedgerTablesDiffs = prependLedgerTablesDiffsRaw . projectLedgerTables
 
-prependLedgerTablesDiffsFromTicked :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                                   => Ticked (ConsensusLedgerState l wt DiffMK)
-                                   ->         ConsensusLedgerState l wt DiffMK
-                                   ->         ConsensusLedgerState l wt DiffMK
+prependLedgerTablesDiffsFromTicked :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                                   => Ticked (ConsensusLedgerState' l wt DiffMK)
+                                   ->         ConsensusLedgerState' l wt DiffMK
+                                   ->         ConsensusLedgerState' l wt DiffMK
 prependLedgerTablesDiffsFromTicked = prependLedgerTablesDiffsRaw . projectLedgerTablesTicked
 
-prependLedgerTablesDiffsTicked :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                               =>         ConsensusLedgerState l wt DiffMK
-                               -> Ticked (ConsensusLedgerState l wt DiffMK)
-                               -> Ticked (ConsensusLedgerState l wt DiffMK)
+prependLedgerTablesDiffsTicked :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                               =>         ConsensusLedgerState' l wt DiffMK
+                               -> Ticked (ConsensusLedgerState' l wt DiffMK)
+                               -> Ticked (ConsensusLedgerState' l wt DiffMK)
 prependLedgerTablesDiffsTicked = flip (zipOverLedgerTablesTicked rawPrependDiffs) . projectLedgerTables
 
 -- Apply diffs
@@ -697,16 +694,16 @@ rawApplyDiffs ::
   -> ValuesMK k v
 rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (forwardValues vals diffs)
 
-applyLedgerTablesDiffs :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                       => ConsensusLedgerState l wt ValuesMK
-                       -> ConsensusLedgerState l wt DiffMK
-                       -> ConsensusLedgerState l wt ValuesMK
+applyLedgerTablesDiffs :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                       => ConsensusLedgerState' l wt ValuesMK
+                       -> ConsensusLedgerState' l wt DiffMK
+                       -> ConsensusLedgerState' l wt ValuesMK
 applyLedgerTablesDiffs = flip (zipOverLedgerTables $ flip rawApplyDiffs) . projectLedgerTables
 
-applyLedgerTablesDiffsTicked :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                             =>         ConsensusLedgerState l wt ValuesMK
-                             -> Ticked (ConsensusLedgerState l wt DiffMK)
-                             -> Ticked (ConsensusLedgerState l wt ValuesMK)
+applyLedgerTablesDiffsTicked :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                             =>         ConsensusLedgerState' l wt ValuesMK
+                             -> Ticked (ConsensusLedgerState' l wt DiffMK)
+                             -> Ticked (ConsensusLedgerState' l wt ValuesMK)
 applyLedgerTablesDiffsTicked = flip (zipOverLedgerTablesTicked $ flip rawApplyDiffs) . projectLedgerTables
 
 -- Calculate differences
@@ -718,21 +715,21 @@ rawCalculateDifference ::
   -> TrackingMK k v
 rawCalculateDifference (ApplyValuesMK before) (ApplyValuesMK after) = ApplyTrackingMK after (differenceUtxoValues before after)
 
-calculateAdditions :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                   => ConsensusLedgerState l wt ValuesMK
-                   -> ConsensusLedgerState l wt TrackingMK
+calculateAdditions :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                   => ConsensusLedgerState' l wt ValuesMK
+                   -> ConsensusLedgerState' l wt TrackingMK
 calculateAdditions after = zipOverLedgerTables (flip rawCalculateDifference) after polyEmptyLedgerTables
 
-calculateDifference :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                    => Ticked (ConsensusLedgerState l wt ValuesMK)
-                    ->         ConsensusLedgerState l wt ValuesMK
-                    ->         ConsensusLedgerState l wt TrackingMK
+calculateDifference :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                    => Ticked (ConsensusLedgerState' l wt ValuesMK)
+                    ->         ConsensusLedgerState' l wt ValuesMK
+                    ->         ConsensusLedgerState' l wt TrackingMK
 calculateDifference before after = zipOverLedgerTables (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
 
-calculateDifferenceTicked :: TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-                          => Ticked (ConsensusLedgerState l wt ValuesMK)
-                          -> Ticked (ConsensusLedgerState l wt ValuesMK)
-                          -> Ticked (ConsensusLedgerState l wt TrackingMK)
+calculateDifferenceTicked :: (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+                          => Ticked (ConsensusLedgerState' l wt ValuesMK)
+                          -> Ticked (ConsensusLedgerState' l wt ValuesMK)
+                          -> Ticked (ConsensusLedgerState' l wt TrackingMK)
 calculateDifferenceTicked before after = zipOverLedgerTablesTicked (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
 
 rawAttachAndApplyDiffs ::
@@ -746,10 +743,10 @@ rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) =
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them
 attachAndApplyDiffsTicked ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-  => Ticked (ConsensusLedgerState l wt DiffMK)
-  ->         ConsensusLedgerState l wt ValuesMK
-  -> Ticked (ConsensusLedgerState l wt TrackingMK)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => Ticked (ConsensusLedgerState' l wt DiffMK)
+  ->         ConsensusLedgerState' l wt ValuesMK
+  -> Ticked (ConsensusLedgerState' l wt TrackingMK)
 attachAndApplyDiffsTicked after before =
     zipOverLedgerTablesTicked rawAttachAndApplyDiffs after
   $ projectLedgerTables before
@@ -765,10 +762,10 @@ rawPrependTrackingDiffs (ApplyTrackingMK v d2) (ApplyTrackingMK _v d1) =
 -- | Mappend the differences in the ledger tables. Keep the ledger state of the
 -- first one.
 prependLedgerTablesTrackingDiffs ::
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-  => Ticked (ConsensusLedgerState l wt TrackingMK)
-  -> Ticked (ConsensusLedgerState l wt TrackingMK)
-  -> Ticked (ConsensusLedgerState l wt TrackingMK)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => Ticked (ConsensusLedgerState' l wt TrackingMK)
+  -> Ticked (ConsensusLedgerState' l wt TrackingMK)
+  -> Ticked (ConsensusLedgerState' l wt TrackingMK)
 prependLedgerTablesTrackingDiffs after before =
     zipOverLedgerTablesTicked rawPrependTrackingDiffs after
   $ projectLedgerTablesTicked before
@@ -784,10 +781,10 @@ rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) =
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them
 reapplyTrackingTicked :: forall l wt .
-     TableStuff (LedgerTablesGADT (LedgerTables' l) wt)
-  => Ticked (ConsensusLedgerState l wt TrackingMK)
-  ->         ConsensusLedgerState l wt ValuesMK
-  -> Ticked (ConsensusLedgerState l wt TrackingMK)
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), ConsTableStuff l wt)
+  => Ticked (ConsensusLedgerState' l wt TrackingMK)
+  ->         ConsensusLedgerState' l wt ValuesMK
+  -> Ticked (ConsensusLedgerState' l wt TrackingMK)
 reapplyTrackingTicked after before =
     zipOverLedgerTablesTicked rawReapplyTracking after
   $ projectLedgerTables before
@@ -828,38 +825,63 @@ fmapTables f = \case
 
 type LedgerTables l (wt :: SwitchLedgerTables) mk = LedgerTablesGADT (LedgerTables' l) wt mk
 
-data ConsensusLedgerState l (wt :: SwitchLedgerTables) mk = ConsensusLedgerState
-  { consensusLedger :: l
-  , consensusTables :: LedgerTables l wt mk
+type instance HeaderHash (ConsensusLedgerState' l wt mk) = HeaderHash l
+type instance LedgerCfg (ConsensusLedgerState' l wt mk) = LedgerCfg l
+
+instance (ConsTableStuff l wt, GetTip l) => GetTip (ConsensusLedgerState' l wt mk) where
+  getTip = castPoint . getTip . projectLedgerState
+
+data instance Ticked (ConsensusLedgerState' (LedgerState blk) wt mk) = TickedConsensusLedgerState
+  { tickedConsensusLedger :: Ticked (LedgerState blk)
+  , tickedConsensusTables :: LedgerTables (LedgerState blk) wt mk
   }
 
-type instance HeaderHash (ConsensusLedgerState l wt mk) = HeaderHash l
-type instance LedgerCfg (ConsensusLedgerState l wt mk) = LedgerCfg l
+instance (GetTip (Ticked l), ConsTableStuff l wt) => GetTip (Ticked (ConsensusLedgerState' l wt mk)) where
+  getTip = castPoint . getTip . projectLedgerStateTicked
 
-instance GetTip l => GetTip (ConsensusLedgerState l wt mk) where
-  getTip = castPoint . getTip . consensusLedger
+class ConsTableStuff l (wt :: SwitchLedgerTables) where
 
-data instance Ticked (ConsensusLedgerState l wt mk) = TickedConsensusLedgerState
-  { tickedConsensusLedger :: Ticked l
-  , tickedConsensusTables :: LedgerTables l wt mk
-  }
+  data family ConsensusLedgerState' (l :: Type) (wt :: SwitchLedgerTables) (mk :: MapKind) :: Type
 
-instance GetTip (Ticked l) => GetTip (Ticked (ConsensusLedgerState l wt mk)) where
-  getTip = castPoint . getTip . tickedConsensusLedger
+  constructLedgerState :: l -> LedgerTablesGADT (LedgerTables' l) wt mk -> ConsensusLedgerState' l wt mk
 
-projectLedgerTables :: ConsensusLedgerState l wt mk -> LedgerTables l wt mk
-projectLedgerTables = consensusTables
+  projectLedgerState :: ConsensusLedgerState' l wt mk -> l
 
-withLedgerTables :: ConsensusLedgerState l wt mk
-                 -> LedgerTables         l wt mk'
-                 -> ConsensusLedgerState l wt mk'
-withLedgerTables cls tbs = cls { consensusTables = tbs }
+  projectLedgerTables :: ConsensusLedgerState' l wt mk -> LedgerTables l wt mk
+-- projectLedgerTables = consensusTables
 
-projectLedgerTablesTicked :: Ticked (ConsensusLedgerState l wt mk) -> LedgerTables l wt mk
-projectLedgerTablesTicked = tickedConsensusTables
+  withLedgerTables :: ConsensusLedgerState' l wt mk
+                   -> LedgerTables         l wt mk'
+                   -> ConsensusLedgerState' l wt mk'
+  withLedgerTables s tbs = constructLedgerState (projectLedgerState s) tbs
 
-withLedgerTablesTicked    :: Ticked (ConsensusLedgerState l wt any) -> LedgerTables l wt mk -> Ticked (ConsensusLedgerState l wt mk)
-withLedgerTablesTicked tcls tbs = tcls { tickedConsensusTables = tbs }
+
+  constructLedgerStateTicked :: Ticked l -> LedgerTablesGADT (LedgerTables' l) wt mk -> Ticked (ConsensusLedgerState' l wt mk)
+
+  projectLedgerStateTicked :: Ticked (ConsensusLedgerState' l wt mk) -> Ticked l
+
+  projectLedgerTablesTicked :: Ticked (ConsensusLedgerState' l wt mk) -> LedgerTables l wt mk
+-- projectLedgerTablesTicked = tickedConsensusTables
+
+  withLedgerTablesTicked    :: Ticked (ConsensusLedgerState' l wt any) -> LedgerTables l wt mk -> Ticked (ConsensusLedgerState' l wt mk)
+  withLedgerTablesTicked s tbs = constructLedgerStateTicked (projectLedgerStateTicked s) tbs
+
+data LedgerAndTables l wt mk = LedgerAndTables
+                               { consensusLedger :: l
+                               , consensusTables :: LedgerTables l wt mk
+                               }
+
+instance ConsTableStuff (LedgerState blk) wt where
+
+  newtype ConsensusLedgerState' (LedgerState blk) wt mk = ConsensusLedgerState { unConsensusLedgerState :: LedgerAndTables (LedgerState blk) wt mk }
+
+
+  constructLedgerState x y = ConsensusLedgerState $ LedgerAndTables x y
+  projectLedgerState = consensusLedger . unConsensusLedgerState
+  projectLedgerTables = consensusTables . unConsensusLedgerState
+  constructLedgerStateTicked = TickedConsensusLedgerState
+  projectLedgerStateTicked = tickedConsensusLedger
+  projectLedgerTablesTicked = tickedConsensusTables
 
 {-------------------------------------------------------------------------------
   Concrete map kinds
@@ -1116,7 +1138,7 @@ instance StandardHash blk => StandardHash (LedgerState blk)
 
 type LedgerConfig      blk       = LedgerCfg (LedgerState blk)
 type LedgerError       blk       = LedgerErr (LedgerState blk)
-type TickedLedgerState blk wt mk = Ticked    (ConsensusLedgerState blk wt mk)
+type TickedLedgerState blk wt mk = Ticked    (ConsensusLedgerState' blk wt mk)
 
 {-------------------------------------------------------------------------------
   UTxO HD stubs
@@ -1275,8 +1297,8 @@ emptyDbChangeLog anchor =
       }
 
 extendDbChangelog ::
-     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetTip l)
-  => DbChangelog l wt -> ConsensusLedgerState l wt DiffMK -> DbChangelog l wt
+     (TableStuff (LedgerTablesGADT (LedgerTables' l) wt), GetTip l, ConsTableStuff l wt)
+  => DbChangelog l wt -> ConsensusLedgerState' l wt DiffMK -> DbChangelog l wt
 extendDbChangelog dblog newState =
     DbChangelog {
         changelogDiffAnchor
@@ -1294,7 +1316,7 @@ extendDbChangelog dblog newState =
       , changelogVolatileStates
       } = dblog
 
-    l'         = consensusLedger newState
+    l'         = projectLedgerState newState
     tablesDiff = projectLedgerTables newState
 
     slot = case getTipSlot l' of

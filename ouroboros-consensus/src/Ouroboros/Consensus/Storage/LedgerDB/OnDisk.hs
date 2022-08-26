@@ -356,7 +356,7 @@ initLedgerDB replayTracer
     listSnapshots hasFS >>= tryNewestFirst id
   where
 
-    f :: m (ConsensusLedgerState (ExtLedgerState blk) wt ValuesMK)
+    f :: m (ConsensusLedgerState' (ExtLedgerState blk) wt ValuesMK)
     f = undefined -- case singByProxy (Proxy @wt) of
       -- SWithLedgerTables    -> extractLedgerTables <$> getGenesisLedger
       -- SWithoutLedgerTables -> getGenesisLedger
@@ -374,7 +374,7 @@ initLedgerDB replayTracer
       traceWith replayTracer ReplayFromGenesis
       genesisLedger <- f
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-          initDb        = ledgerDbWithAnchor (consensusLedger genesisLedger)
+          initDb        = ledgerDbWithAnchor (projectLedgerState genesisLedger)
       backingStore <- newBackingStore nullTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
