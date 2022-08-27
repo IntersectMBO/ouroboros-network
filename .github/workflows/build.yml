@@ -14,11 +14,14 @@ jobs:
       fail-fast: false
       matrix:
         ghc: ["8.10.7"]
-        os: [ubuntu-20.04, windows-latest]
+        os: [ubuntu-20.04, macos-latest, windows-latest]
 
     env:
       # current ref from: 27.02.2022
       SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
+      # OpenSSL is installed in a non-standard location in MacOS. See
+      # https://github.com/actions/virtual-environments/blob/main/images/macos/macos-11-Readme.md
+      PKG_CONFIG_PATH: ${{ matrix.os == 'macos-latest' && '/usr/local/opt/openssl@1.1/lib/pkgconfig' || '' }}
 
     steps:
     - name: "WIN: Setup MSYS2 and libraries"
@@ -39,7 +42,7 @@ jobs:
           mingw-w64-x86_64-cmake
           mingw-w64-x86_64-jq
 
-    - name: "LINUX: Setup haskell"
+    - name: "LINUX | MAC: Setup haskell"
       if: runner.os != 'Windows'
       uses: haskell/actions/setup@v1
       id: setup-haskell
@@ -99,11 +102,20 @@ jobs:
         echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
         echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
 
+    - name: "MAC: Install build environment (brew)"
+      if: runner.os == 'macOS'
+      run: |
+        brew install libsodium
+
+    - name: "MAC: Install build environment (for secp256k1)"
+      if: runner.os == 'macOS'
+      run: brew install autoconf automake libtool
+
     - name: "Install secp256k1"
       run: |
-        git clone https://github.com/bitcoin-core/secp256k1
+        git clone https://github.com/bitcoin-core/secp256k1.git
         ( cd secp256k1
-          git switch $SECP256K1_REF --detach
+          git reset --hard $SECP256K1_REF
           ./autogen.sh
           ./configure $CI_SECP_FLAGS --enable-module-schnorrsig --enable-experimental
           make
