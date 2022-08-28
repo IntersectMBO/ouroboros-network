@@ -28,7 +28,7 @@ import           Data.Maybe (fromMaybe, isNothing)
 import           Data.TDigest
 import           Data.Text (unpack)
 import           Data.Word
-import           Network.Socket (AddrInfo)
+import           Network.Socket (AddrInfo, StructLinger (..))
 import qualified Network.Socket as Socket
 import           System.Console.GetOpt
 import           System.Environment (getArgs, getProgName)
@@ -39,8 +39,6 @@ import           Text.Printf
 import           Network.Mux.Bearer.Socket
 import           Network.Mux.Timeout
 import           Network.Mux.Types
-
-import           Linger
 
 mainnetMagic :: Word32
 mainnetMagic = 764824073
