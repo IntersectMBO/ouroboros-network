@@ -54,6 +54,7 @@ import qualified System.Win32.NamedPipes as Win32
 
 import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
+import           Network.Socket (StructLinger (..))
 import qualified Network.Socket as Socket
 
 import qualified Network.Mux.Bearer.Socket as Mx
@@ -61,7 +62,6 @@ import           Network.Mux.Trace (MuxTrace)
 import           Network.Mux.Types (MuxBearer)
 
 import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Linger (StructLinger (..))
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting
