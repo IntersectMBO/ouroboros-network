@@ -35,7 +35,6 @@ module Ouroboros.Network.Snocket
   ) where
 
 import           Control.Exception
-import           Control.Monad (when)
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
 import           Data.Bifoldable (Bifoldable (..))
@@ -309,33 +308,9 @@ socketSnocket ioManager = Snocket {
 #else
                        Win32.Async.connect
 #endif
-    , bind = \sd addr -> do
-        let SocketFamily fml = socketAddrFamily addr
-        when (fml == Socket.AF_INET ||
-              fml == Socket.AF_INET6) $ do
-          Socket.setSocketOption sd Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-          -- not supported on Windows 10
-          Socket.setSocketOption sd Socket.ReusePort 1
-#endif
-          Socket.setSocketOption sd Socket.NoDelay 1
-          -- it is safe to set 'SO_LINGER' option (which implicates that every
-          -- close will reset the connection), since our protocols are robust.
-          -- In particular if invalid data will arrive (which includes the rare
-          -- case of a late packet from a previous connection), we will abandon
-          -- (and close) the connection.
-          Socket.setSockOpt sd Socket.Linger
-                              (StructLinger { sl_onoff  = 1,
-                                              sl_linger = 0 })
-        when (fml == Socket.AF_INET6)
-          -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
-          -- it is enabled by default on some systems. Disabled here since we run a separate
-          -- IPv4 server instance if configured to use IPv4.
-          $ Socket.setSocketOption sd Socket.IPv6Only 1
-
-        Socket.bind sd addr
-    , listen   = \s -> Socket.listen s 8
-    , accept   = berkeleyAccept ioManager
+    , bind           = Socket.bind
+    , listen         = \s -> Socket.listen s 8
+    , accept         = berkeleyAccept ioManager
       -- TODO: 'Socket.close' is interruptible by asynchronous exceptions; it
       -- should be fixed upstream, once that's done we can remove
       -- `uninterruptibleMask_'
@@ -357,7 +332,6 @@ socketSnocket ioManager = Snocket {
           Socket.close sd
           throwIO e
       return sd
-
 
 
 --
