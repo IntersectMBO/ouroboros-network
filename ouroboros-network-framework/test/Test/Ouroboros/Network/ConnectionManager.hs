@@ -754,6 +754,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
               cmIPv6Address = Nothing,
               cmAddressType = \_ -> Just IPv4Address,
               cmSnocket = snocket,
+              cmConfigureSocket = \_ _ -> return (),
               connectionDataFlow = \(Version df) -> df,
               cmPrunePolicy = simplePrunePolicy,
               cmConnectionsLimits = AcceptedConnectionsLimit {
