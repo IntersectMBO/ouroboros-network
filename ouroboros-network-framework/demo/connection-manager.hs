@@ -227,6 +227,7 @@ withBidirectionalConnectionManager snocket socket
           cmIPv6Address  = Nothing,
           cmAddressType  = \_ -> Just IPv4Address,
           cmSnocket      = snocket,
+          cmConfigureSocket = \_ _ -> return (),
           cmTimeWaitTimeout = timeWaitTimeout,
           cmOutboundIdleTimeout = protocolIdleTimeout,
           connectionDataFlow = const Duplex,
