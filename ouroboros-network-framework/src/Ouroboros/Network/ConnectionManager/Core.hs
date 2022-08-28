@@ -36,7 +36,7 @@ import           Control.Monad.Fix
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldMap', traverse_)
 import           Data.Function (on)
-import           Data.Functor (void, ($>))
+import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
@@ -101,6 +101,10 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         -- | Snocket for the 'socket' type.
         --
         cmSnocket             :: Snocket m socket peerAddr,
+
+        -- | Socket configuration.
+        --
+        cmConfigureSocket     :: socket -> Maybe peerAddr -> m (),
 
         -- | @TCP@ will held connections in @TIME_WAIT@ state for up to two MSL
         -- (maximum segment time).  On Linux this is set to '60' seconds on
@@ -558,6 +562,7 @@ withConnectionManager ConnectionManagerArguments {
                           cmIPv6Address,
                           cmAddressType,
                           cmSnocket,
+                          cmConfigureSocket,
                           cmTimeWaitTimeout,
                           cmOutboundIdleTimeout,
                           connectionDataFlow,
@@ -1628,17 +1633,19 @@ withConnectionManager ConnectionManagerArguments {
                     )
                     $ \socket -> do
                       traceWith tracer (TrConnectionNotFound provenance peerAddr)
-                      addr <-
-                        case cmAddressType peerAddr of
-                          Nothing -> pure Nothing
-                          Just IPv4Address ->
-                               traverse_ (bind cmSnocket socket)
-                                         cmIPv4Address
-                            $> cmIPv4Address
-                          Just IPv6Address ->
-                               traverse_ (bind cmSnocket socket)
-                                         cmIPv6Address
-                            $> cmIPv6Address
+                      let addr = case cmAddressType peerAddr of
+                                   Nothing          -> Nothing
+                                   Just IPv4Address -> cmIPv4Address
+                                   Just IPv6Address -> cmIPv6Address
+                      cmConfigureSocket socket addr
+                      case cmAddressType peerAddr of
+                        Nothing -> pure ()
+                        Just IPv4Address ->
+                             traverse_ (bind cmSnocket socket)
+                                       cmIPv4Address
+                        Just IPv6Address ->
+                             traverse_ (bind cmSnocket socket)
+                                       cmIPv6Address
 
                       traceWith tracer (TrConnect addr peerAddr)
                       connect cmSnocket socket peerAddr
