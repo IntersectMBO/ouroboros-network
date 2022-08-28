@@ -7,6 +7,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 
+#if !defined(mingw32_HOST_OS)
+#define POSIX
+#endif
+
 module Ouroboros.Network.Snocket
   ( -- * Snocket Interface
     Accept (..)
@@ -17,7 +21,7 @@ module Ouroboros.Network.Snocket
   , SocketSnocket
   , socketSnocket
     -- ** Local Snockets
-    -- Using unix sockets (posix) or named pipes (windows)
+    -- Using unix sockets (POSIX) or named pipes (Windows)
     --
   , LocalSnocket
   , localSnocket
@@ -41,10 +45,6 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           Quiet (Quiet (..))
-#if !defined(mingw32_HOST_OS)
-import           Network.Socket (Family (AF_UNIX))
-#endif
-import           Network.Socket (SockAddr (..), Socket)
 #if defined(mingw32_HOST_OS)
 import           Data.Bits
 import           Foreign.Ptr (IntPtr (..), ptrToIntPtr)
@@ -54,7 +54,8 @@ import qualified System.Win32.NamedPipes as Win32
 
 import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
-import           Network.Socket (StructLinger (..))
+
+import           Network.Socket (SockAddr (..), Socket, StructLinger (..))
 import qualified Network.Socket as Socket
 
 import qualified Network.Mux.Bearer.Socket as Mx
@@ -141,7 +142,7 @@ berkeleyAccept ioManager sock =
               )
       acceptOne addr cnt =
         bracketOnError
-#if !defined(mingw32_HOST_OS)
+#if defined(POSIX)
           (Socket.accept sock)
 #else
           (Win32.Async.accept sock)
@@ -200,7 +201,7 @@ instance Hashable addr => Hashable (TestAddress addr)
 
 -- | We support either sockets or named pipes.
 --
--- There are three families of addresses: 'SocketFamily' usef for Berkeley
+-- There are three families of addresses: 'SocketFamily' used for Berkeley
 -- sockets, 'LocalFamily' used for 'LocalAddress'es (either Unix sockets or
 -- Windows named pipe addresses), and 'TestFamily' for testing purposes.
 --
@@ -261,7 +262,7 @@ data Snocket m fd addr = Snocket {
 
   , close         :: fd -> m ()
 
-  , toBearer      ::  DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
+  , toBearer      :: DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
   }
 
 
@@ -275,12 +276,10 @@ pureBearer f = \timeout tr fd -> return (f timeout tr fd)
 --
 
 
-socketAddrFamily
-    :: Socket.SockAddr
-    -> AddressFamily Socket.SockAddr
-socketAddrFamily (Socket.SockAddrInet  _ _    ) = SocketFamily Socket.AF_INET
-socketAddrFamily (Socket.SockAddrInet6 _ _ _ _) = SocketFamily Socket.AF_INET6
-socketAddrFamily (Socket.SockAddrUnix _       ) = SocketFamily Socket.AF_UNIX
+socketAddrFamily :: Socket.SockAddr -> AddressFamily Socket.SockAddr
+socketAddrFamily Socket.SockAddrInet  {} = SocketFamily Socket.AF_INET
+socketAddrFamily Socket.SockAddrInet6 {} = SocketFamily Socket.AF_INET6
+socketAddrFamily Socket.SockAddrUnix  {} = SocketFamily Socket.AF_UNIX
 
 
 type SocketSnocket = Snocket IO Socket SockAddr
@@ -303,12 +302,12 @@ socketSnocket ioManager = Snocket {
     , getRemoteAddr  = Socket.getPeerName
     , addrFamily     = socketAddrFamily
     , open           = openSocket
-    , openToConnect  = \addr -> openSocket (socketAddrFamily addr)
-    , connect        = \s a -> do
-#if !defined(mingw32_HOST_OS)
-        Socket.connect s a
+    , openToConnect  = openSocket . socketAddrFamily
+    , connect        =
+#if defined(POSIX)
+                       Socket.connect
 #else
-        Win32.Async.connect s a
+                       Win32.Async.connect
 #endif
     , bind = \sd addr -> do
         let SocketFamily fml = socketAddrFamily addr
@@ -392,7 +391,8 @@ newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
 #endif
 
 -- | System dependent LocalSnocket
-type    LocalSnocket = Snocket IO LocalSocket LocalAddress
+--
+type LocalSnocket = Snocket IO LocalSocket LocalAddress
 
 
 -- | Create a 'LocalSnocket'.
@@ -516,7 +516,7 @@ localSnocket ioManager =
                       . berkeleyAccept ioManager
                       . getLocalHandle
       , open          = openSocket
-      , openToConnect = \addr -> openSocket (LocalFamily addr)
+      , openToConnect = openSocket . LocalFamily
       , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
       , toBearer      = \df tr (LocalSocket sd) -> pure (Mx.socketAsMuxBearer df tr sd)
       }
@@ -530,7 +530,7 @@ localSnocket ioManager =
 
     openSocket :: AddressFamily LocalAddress -> IO LocalSocket
     openSocket (LocalFamily _addr) = do
-      sd <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
+      sd <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
         -- async exceptions masked.  The 'associateWithIOManager' is a blocking
