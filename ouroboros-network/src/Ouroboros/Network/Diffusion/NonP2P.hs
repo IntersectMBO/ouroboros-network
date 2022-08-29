@@ -19,7 +19,7 @@ module Ouroboros.Network.Diffusion.NonP2P
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception
-import           Control.Tracer (Tracer, nullTracer, traceWith)
+import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.Foldable (asum)
 import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
@@ -31,6 +31,8 @@ import qualified Network.Socket as Socket
 import           Ouroboros.Network.Snocket (LocalAddress, LocalSnocket,
                      LocalSocket (..), SocketSnocket, localSocketFileDescriptor)
 import qualified Ouroboros.Network.Snocket as Snocket
+import           Ouroboros.Network.Socket (configureSocket,
+                     configureSystemdSocket)
 
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import           Ouroboros.Network.ErrorPolicy
@@ -411,10 +413,16 @@ run Tracers
 
           addr <- case address of
                -- If a socket was provided it should be ready to accept
-               Left _ -> Snocket.getLocalAddr sn sd
+               Left sock -> do
+                 addr <- Snocket.getLocalAddr sn sock
+                 configureSystemdSocket
+                   (SystemdSocketConfiguration `contramap` dtDiffusionInitializationTracer)
+                   sd addr
+                 Snocket.getLocalAddr sn sd
                Right addr -> do
                  traceWith dtDiffusionInitializationTracer
                   $ ConfiguringServerSocket addr
+                 configureSocket sd (Just addr)
                  Snocket.bind sn sd addr
                  traceWith dtDiffusionInitializationTracer
                   $ ListeningServerSocket addr

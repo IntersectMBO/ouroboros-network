@@ -35,6 +35,11 @@ module Ouroboros.Network.Socket
   , connectToNode
   , connectToNodeSocket
   , connectToNode'
+    -- * Socket configuration
+  , configureSocket
+  , configureSystemdSocket
+  , SystemdSocketTracer (..)
+  , configureOutboundSocket
     -- * Traces
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
@@ -67,6 +72,7 @@ import           Control.Exception (SomeException (..))
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
+import           Control.Monad (unless, when)
 import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -82,6 +88,7 @@ import           GHC.IO.Exception
 import           Foreign.C.Error
 #endif
 
+import           Network.Socket (SockAddr, Socket, StructLinger (..))
 import qualified Network.Socket as Socket
 
 import           Control.Tracer
@@ -143,6 +150,79 @@ sockAddrFamily (Socket.SockAddrInet  _ _    ) = Socket.AF_INET
 sockAddrFamily (Socket.SockAddrInet6 _ _ _ _) = Socket.AF_INET6
 sockAddrFamily (Socket.SockAddrUnix _       ) = Socket.AF_UNIX
 
+
+-- | Configure a socket.  Either 'Socket.AF_INET' or 'Socket.AF_INET6' socket
+-- is expected.
+--
+configureSocket :: Socket -> Maybe SockAddr -> IO ()
+configureSocket sock addr = do
+    let fml = sockAddrFamily <$> addr
+    Socket.setSocketOption sock Socket.ReuseAddr 1
+#if !defined(mingw32_HOST_OS)
+    -- not supported on Windows 10
+    Socket.setSocketOption sock Socket.ReusePort 1
+#endif
+    Socket.setSocketOption sock Socket.NoDelay 1
+    -- it is safe to set 'SO_LINGER' option (which implicates that every
+    -- close will reset the connection), since our protocols are robust.
+    -- In particular if invalid data will arrive (which includes the rare
+    -- case of a late packet from a previous connection), we will abandon
+    -- (and close) the connection.
+    Socket.setSockOpt sock Socket.Linger
+                          (StructLinger { sl_onoff  = 1,
+                                          sl_linger = 0 })
+    when (fml == Just Socket.AF_INET6)
+      -- An AF_INET6 socket can be used to talk to both IPv4 and IPv6 end points, and
+      -- it is enabled by default on some systems. Disabled here since we run a separate
+      -- IPv4 server instance if configured to use IPv4.
+      $ Socket.setSocketOption sock Socket.IPv6Only 1
+
+
+-- | Configure sockets passed through systemd socket activation.
+-- Currently 'ReuseAddr' and 'Linger' options are not configurable with
+-- 'systemd.socket', these options are set by this function.  For other socket
+-- options we only trace if they are not set.
+--
+configureSystemdSocket :: Tracer IO SystemdSocketTracer -> Socket -> SockAddr -> IO ()
+configureSystemdSocket tracer sock addr = do
+   let fml = sockAddrFamily addr
+   case fml of
+     Socket.AF_INET ->
+          Socket.setSocketOption sock Socket.ReuseAddr 1
+     Socket.AF_INET6 ->
+          Socket.setSocketOption sock Socket.ReuseAddr 1
+     _ -> return ()
+#if !defined(mingw32_HOST_OS)
+   -- not supported on Windows 10
+   reusePortOpt <- Socket.getSocketOption sock Socket.ReusePort
+   unless (reusePortOpt /= 0) $
+     traceWith tracer (SocketOptionNotSet Socket.ReusePort)
+#endif
+   noDelayOpt <- Socket.getSocketOption sock Socket.NoDelay
+   unless (noDelayOpt /= 0) $
+     traceWith tracer (SocketOptionNotSet Socket.NoDelay)
+
+   Socket.setSockOpt sock Socket.Linger
+                         (StructLinger { sl_onoff  = 1,
+                                         sl_linger = 0 })
+   when (fml == Socket.AF_INET6) $ do
+     ipv6OnlyOpt <- Socket.getSocketOption sock Socket.IPv6Only
+     unless (ipv6OnlyOpt /= 0) $
+       traceWith tracer (SocketOptionNotSet Socket.IPv6Only)
+
+data SystemdSocketTracer = SocketOptionNotSet Socket.SocketOption
+  deriving Show
+
+
+-- | Configure an connection socket.
+--
+configureOutboundSocket :: Socket -> IO ()
+configureOutboundSocket sock = do
+    Socket.setSockOpt sock Socket.Linger
+                          (StructLinger { sl_onoff  = 1,
+                                          sl_linger = 0 })
+
+
 instance Hashable Socket.SockAddr where
   hashWithSalt s (Socket.SockAddrInet   p   a   ) = hashWithSalt s (fromIntegral p :: Word16, a)
   hashWithSalt s (Socket.SockAddrInet6  p _ a _ ) = hashWithSalt s (fromIntegral p :: Word16, a)
@@ -189,6 +269,7 @@ connectToNode
      , Mx.HasInitiator appType ~ True
      )
   => Snocket IO fd addr
+  -> (fd -> IO ()) -- ^ configure a socket
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
   -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
   -> VersionDataCodec CBOR.Term vNumber vData
@@ -201,11 +282,12 @@ connectToNode
   -> addr
   -- ^ remote address
   -> IO ()
-connectToNode sn handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions localAddr remoteAddr =
+connectToNode sn configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions localAddr remoteAddr =
     bracket
       (Snocket.openToConnect sn remoteAddr)
       (Snocket.close sn)
       (\sd -> do
+          configureSock sd
           case localAddr of
             Just addr -> Snocket.bind sn sd addr
             Nothing   -> return ()
@@ -237,6 +319,7 @@ connectToNode'
   -> Versions vNumber vData (OuroborosApplication appType addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> fd
+  -- ^ a configured socket to use to connect to a remote service provider
   -> IO ()
 connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } acceptVersion versions sd = do
     connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
@@ -406,17 +489,15 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
 mkListeningSocket
     :: Snocket IO fd addr
-    -> Maybe addr
+    -> (fd -> addr -> IO ())
+    -> addr
     -> Snocket.AddressFamily addr
     -> IO fd
-mkListeningSocket sn addr family_ = do
+mkListeningSocket sn configureSock addr family_ = do
     sd <- Snocket.open sn family_
-
-    case addr of
-      Nothing -> pure ()
-      Just addr_ -> do
-        Snocket.bind sn sd addr_
-        Snocket.listen sn sd
+    configureSock sd addr
+    Snocket.bind sn sd addr
+    Snocket.listen sn sd
     pure sd
 
 -- |
@@ -635,6 +716,7 @@ withServerNode
        , Ord addr
        )
     => Snocket IO fd addr
+    -> (fd -> addr -> IO ()) -- ^ callback to configure a socket
     -> NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
     -> AcceptedConnectionsLimit
@@ -653,7 +735,7 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode sn
+withServerNode sn configureSock
                tracers
                networkState
                acceptedConnectionsLimit
@@ -665,7 +747,7 @@ withServerNode sn
                versions
                errorPolicies
                k =
-    bracket (mkListeningSocket sn (Just addr) (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd ->
+    bracket (mkListeningSocket sn configureSock addr (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd -> do
       withServerNode'
         sn
         tracers
@@ -708,6 +790,9 @@ withServerNode'
     -> NetworkMutableState addr
     -> AcceptedConnectionsLimit
     -> fd
+    -- ^ a configured socket to be used be the server.  The server will call
+    -- `bind` and `listen` methods but it will not set any socket or tcp options
+    -- on it.
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
     -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
