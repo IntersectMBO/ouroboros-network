@@ -22,3 +22,10 @@ tests =
   , Test.ThreadNet.PBFT.tests
   , Test.ThreadNet.Praos.tests
   ]
+
+-- Counter to address the zfs copy bug on Hydra
+-- ```
+-- cannot execute binary file: Exec format error
+-- ```
+--
+-- 3

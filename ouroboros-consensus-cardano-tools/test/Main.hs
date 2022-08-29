@@ -94,4 +94,4 @@ main = defaultMain tests
 -- cannot execute binary file: Exec format error
 -- ```
 --
--- 0
+-- 3
