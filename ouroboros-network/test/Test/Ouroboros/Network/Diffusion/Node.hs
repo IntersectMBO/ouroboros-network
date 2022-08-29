@@ -184,6 +184,9 @@ run blockGeneratorArgs limits ni na tracersExtra =
                                               m
             interfaces = Diff.P2P.Interfaces
               { Diff.P2P.diNtnSnocket            = iNtnSnocket ni
+              , Diff.P2P.diNtnConfigureSocket    = \_ _ -> return ()
+              , Diff.P2P.diNtnConfigureSystemdSocket
+                                                 = \_ _ -> return ()
               , Diff.P2P.diNtnHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer      = nullTracer

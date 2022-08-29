@@ -29,6 +29,7 @@ import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface, TraceLedgerPeers)
 import           Ouroboros.Network.Snocket (FileDescriptor)
+import           Ouroboros.Network.Socket (SystemdSocketTracer)
 
 -- TODO: use LocalAddress where appropriate rather than 'path'.
 --
@@ -52,6 +53,7 @@ data InitializationTracer ntnAddr ntcAddr
   -- Remove (this is impossible case), there's no systemd on Windows
   | UnsupportedReadySocketCase
   | DiffusionErrored SomeException
+  | SystemdSocketConfiguration SystemdSocketTracer
     deriving Show
 
 -- TODO: add a tracer for these misconfiguration

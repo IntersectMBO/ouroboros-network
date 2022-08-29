@@ -34,10 +34,15 @@ withSockets :: forall m ntnFd ntnAddr ntcAddr a.
                )
             => Tracer m (InitializationTracer ntnAddr ntcAddr)
             -> Snocket m ntnFd ntnAddr
+            -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a socket
+            -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a systemd socket
             -> [Either ntnFd ntnAddr]
             -> (NonEmpty ntnFd -> NonEmpty ntnAddr -> m a)
             -> m a
-withSockets tracer sn addresses k = go [] addresses
+withSockets tracer sn
+            configureSocket
+            configureSystemdSocket
+            addresses k = go [] addresses
   where
     go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
     go []   []       = throwIO (NoSocket :: Failure ntnAddr)
@@ -54,6 +59,7 @@ withSockets tracer sn addresses k = go [] addresses
         (Snocket.close sn)
         $ \_sock -> do
           !addr <- Snocket.getLocalAddr sn sock
+          configureSystemdSocket sock addr
           f (sock, addr)
     withSocket (Right addr) f =
       bracket
@@ -62,6 +68,7 @@ withSockets tracer sn addresses k = go [] addresses
         (Snocket.close sn)
         $ \sock -> do
           traceWith tracer $ ConfiguringServerSocket addr
+          configureSocket sock addr
           Snocket.bind sn sock addr
           traceWith tracer $ ListeningServerSocket addr
           Snocket.listen sn sock

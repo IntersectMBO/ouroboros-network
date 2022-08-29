@@ -54,7 +54,7 @@ import qualified System.Win32.NamedPipes as Win32
 import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
 
-import           Network.Socket (SockAddr (..), Socket, StructLinger (..))
+import           Network.Socket (SockAddr (..), Socket)
 import qualified Network.Socket as Socket
 
 import qualified Network.Mux.Bearer.Socket as Mx

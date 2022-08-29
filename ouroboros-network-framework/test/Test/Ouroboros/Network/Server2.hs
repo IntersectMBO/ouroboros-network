@@ -106,6 +106,7 @@ import qualified Ouroboros.Network.Server2 as Server
 import           Ouroboros.Network.Snocket (Snocket, TestAddress (..),
                      socketSnocket)
 import qualified Ouroboros.Network.Snocket as Snocket
+import           Ouroboros.Network.Socket (configureSocket)
 
 import           Simulation.Network.Snocket
 
@@ -483,6 +484,7 @@ withBidirectionalConnectionManager
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> Tracer m (WithName name (InboundGovernorTrace peerAddr))
     -> Snocket m socket peerAddr
+    -> (socket -> m ()) -- ^ configure socket
     -> socket
     -- ^ listening socket
     -> Maybe peerAddr
@@ -505,7 +507,8 @@ withBidirectionalConnectionManager
 withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
                                    cmTracer inboundTracer
-                                   snocket socket localAddress
+                                   snocket confSock
+                                   socket localAddress
                                    accumulatorInit nextRequests
                                    handshakeTimeLimits
                                    acceptedConnLimit k = do
@@ -528,7 +531,7 @@ withBidirectionalConnectionManager name timeouts
           cmIPv6Address  = Nothing,
           cmAddressType  = \_ -> Just IPv4Address,
           cmSnocket      = snocket,
-          cmConfigureSocket = \_ _ -> return (),
+          cmConfigureSocket = \sock _ -> confSock sock,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
           cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
           connectionDataFlow = getProtocolDataFlow . snd,
@@ -733,18 +736,20 @@ unidirectionalExperiment
        )
     => Timeouts
     -> Snocket m socket peerAddr
+    -> (socket -> m ())
     -> socket
     -> ClientAndServerData req
     -> m Property
-unidirectionalExperiment timeouts snocket socket clientAndServerData = do
+unidirectionalExperiment timeouts snocket confSock socket clientAndServerData = do
     nextReqs <- oneshotNextRequests clientAndServerData
     withInitiatorOnlyConnectionManager
       "client" timeouts nullTracer nullTracer snocket Nothing nextReqs
       timeLimitsHandshake maxAcceptedConnectionsLimit
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
-                                           nullTracer nullTracer nullTracer
-                                           nullTracer snocket socket Nothing
+                                           nullTracer nullTracer nullTracer nullTracer
+                                           snocket confSock
+                                           socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
                                            timeLimitsHandshake
@@ -791,7 +796,7 @@ prop_unidirectional_Sim clientAndServerData =
                 (Snocket.close snock) $ \fd -> do
           Snocket.bind   snock fd serverAddr
           Snocket.listen snock fd
-          unidirectionalExperiment simTimeouts snock fd clientAndServerData
+          unidirectionalExperiment simTimeouts snock mempty fd clientAndServerData
   where
     serverAddr = Snocket.TestAddress (0 :: Int)
 
@@ -812,6 +817,7 @@ prop_unidirectional_IO clientAndServerData =
               unidirectionalExperiment
                 ioTimeouts
                 (socketSnocket iomgr)
+                (flip configureSocket Nothing)
                 socket
                 clientAndServerData
 
@@ -838,6 +844,7 @@ bidirectionalExperiment
     => Bool
     -> Timeouts
     -> Snocket m socket peerAddr
+    -> (socket -> m ()) -- ^ configure socket
     -> socket
     -> socket
     -> peerAddr
@@ -846,15 +853,15 @@ bidirectionalExperiment
     -> ClientAndServerData req
     -> m Property
 bidirectionalExperiment
-    useLock timeouts snocket socket0 socket1 localAddr0 localAddr1
+    useLock timeouts snocket confSock socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
       lock <- newTMVarIO ()
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
                                          nullTracer nullTracer nullTracer
-                                         nullTracer snocket socket0
-                                         (Just localAddr0)
+                                         nullTracer snocket confSock
+                                         socket0 (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
                                          noTimeLimitsHandshake
@@ -863,8 +870,8 @@ bidirectionalExperiment
           link serverAsync0
           withBidirectionalConnectionManager "node-1" timeouts
                                              nullTracer nullTracer nullTracer
-                                             nullTracer snocket socket1
-                                             (Just localAddr1)
+                                             nullTracer snocket confSock
+                                             socket1 (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
                                              nextRequests1
                                              noTimeLimitsHandshake
@@ -964,6 +971,7 @@ prop_bidirectional_Sim data0 data1 =
           Snocket.listen snock socket0
           Snocket.listen snock socket1
           bidirectionalExperiment False simTimeouts snock
+                                        (\_ -> pure ())
                                         socket0 socket1
                                         addr0 addr1
                                         data0 data1
@@ -984,27 +992,26 @@ prop_bidirectional_IO data0 data1 =
           $ \(socket0, socket1) -> do
             associateWithIOManager iomgr (Right socket0)
             associateWithIOManager iomgr (Right socket1)
-            Socket.setSocketOption socket0 Socket.ReuseAddr 1
-            Socket.setSocketOption socket1 Socket.ReuseAddr 1
-#if !defined(mingw32_HOST_OS)
-            Socket.setSocketOption socket0 Socket.ReusePort 1
-            Socket.setSocketOption socket1 Socket.ReusePort 1
-#endif
             -- TODO: use ephemeral ports
             let hints = Socket.defaultHints { Socket.addrFlags = [Socket.AI_ADDRCONFIG, Socket.AI_PASSIVE] }
+
             addr0 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
-            addr1 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
+            configureSocket socket0 (Just $ Socket.addrAddress addr0)
             Socket.bind socket0 (Socket.addrAddress addr0)
-            Socket.bind socket1 (Socket.addrAddress addr1)
             addr0' <- Socket.getSocketName socket0
-            addr1' <- Socket.getSocketName socket1
             Socket.listen socket0 10
+
+            addr1 : _ <- Socket.getAddrInfo (Just hints) (Just "127.0.0.1") (Just "0")
+            configureSocket socket1 (Just $ Socket.addrAddress addr1)
+            Socket.bind socket1 (Socket.addrAddress addr1)
+            addr1' <- Socket.getSocketName socket1
             Socket.listen socket1 10
 
             bidirectionalExperiment
               True
               ioTimeouts
               (socketSnocket iomgr)
+              (flip configureSocket Nothing)
               socket0
               socket1
               addr0'
@@ -1580,7 +1587,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
                           inboundTrTracer trTracer cmTracer inboundTracer
-                          snocket fd (Just localAddr) serverAcc
+                          snocket (\_ -> pure ()) fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
@@ -2858,8 +2865,8 @@ unit_server_accept_error ioErrType =
                withBidirectionalConnectionManager "node-0" simTimeouts
                                                   nullTracer nullTracer
                                                   nullTracer nullTracer
-                                                  snock socket0
-                                                  (Just addr)
+                                                  snock (\_ -> pure ())
+                                                  socket0 (Just addr)
                                                   [accumulatorInit pdata]
                                                   nextRequests
                                                   noTimeLimitsHandshake
@@ -3156,4 +3163,3 @@ prettyPrintTrace tr = concat
     , intercalate "\n" $ selectTraceEventsSay' tr
     , "\n"
     ]
-

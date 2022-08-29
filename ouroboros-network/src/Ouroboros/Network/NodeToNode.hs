@@ -408,7 +408,7 @@ connectTo
   -> Socket.SockAddr
   -> IO ()
 connectTo sn tr =
-    connectToNode sn nodeToNodeHandshakeCodec timeLimitsHandshake
+    connectToNode sn configureOutboundSocket nodeToNodeHandshakeCodec timeLimitsHandshake
                   (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
                   tr acceptableVersion
 
@@ -427,6 +427,9 @@ withServer
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
   -> Socket.Socket
+  -- ^ a configured socket to be used be the server.  The server will call
+  -- `bind` and `listen` methods but it will not set any socket or tcp options
+  -- on it.
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
               (OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO a b)
