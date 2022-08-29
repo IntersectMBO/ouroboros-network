@@ -248,6 +248,7 @@ connectTo
   -> IO ()
 connectTo snocket tracers versions path =
     connectToNode snocket
+                  mempty
                   nodeToClientHandshakeCodec
                   noTimeLimitsHandshake
                   (cborTermVersionDataCodec nodeToClientCodecCBORTerm)

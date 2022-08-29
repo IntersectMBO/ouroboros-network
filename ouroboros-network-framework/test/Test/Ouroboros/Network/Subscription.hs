@@ -590,6 +590,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     withDummyServer faultyAddress $
       withServerNode
         sn
+        ((. Just) <$> configureSocket)
         nullNetworkServerTracers
         (NetworkMutableState tbl peerStatesVar)
         (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -736,6 +737,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
     startPassiveServer iocp tbl stVar responderAddr localAddrVar rrcfg = withServerNode
         (socketSnocket iocp)
+        ((. Just) <$> configureSocket)
         nullNetworkServerTracers
         (NetworkMutableState tbl stVar)
         (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -757,6 +759,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
       let sn = socketSnocket iocp
       in withServerNode
           sn
+          ((. Just) <$> configureSocket)
           nullNetworkServerTracers
           (NetworkMutableState tbl stVar)
           (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -879,6 +882,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
     spawnServer iocp tbl stVar addr delay =
         void $ async $ withServerNode
             (socketSnocket iocp)
+            ((. Just) <$> configureSocket)
             nullNetworkServerTracers
             (NetworkMutableState tbl stVar)
             (AcceptedConnectionsLimit maxBound maxBound 0)
