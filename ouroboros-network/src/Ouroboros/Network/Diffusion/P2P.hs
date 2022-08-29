@@ -76,6 +76,8 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Socket (configureSocket,
+                     configureSystemdSocket)
 
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
@@ -456,6 +458,16 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnSnocket
           :: Snocket m ntnFd ntnAddr,
 
+        -- | node-to-node socket configuration
+        --
+        diNtnConfigureSocket
+          :: ntnFd -> Maybe ntnAddr -> m (),
+
+        -- | node-to-node systemd socket configuration
+        --
+        diNtnConfigureSystemdSocket
+          :: ntnFd -> ntnAddr -> m (),
+
         -- | node-to-node handshake configuration
         --
         diNtnHandshakeArguments
@@ -571,6 +583,8 @@ runM
     -> m Void
 runM Interfaces
        { diNtnSnocket
+       , diNtnConfigureSocket
+       , diNtnConfigureSystemdSocket
        , diNtnHandshakeArguments
        , diNtnAddressType
        , diNtnDataFlow
@@ -734,6 +748,7 @@ runM Interfaces
                           cmIPv6Address         = Nothing,
                           cmAddressType         = const Nothing,
                           cmSnocket             = diNtcSnocket,
+                          cmConfigureSocket     = \_ _ -> return (),
                           cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                           cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
                           connectionDataFlow    = uncurry localDataFlow,
@@ -809,6 +824,7 @@ runM Interfaces
                           cmIPv6Address,
                           cmAddressType         = diNtnAddressType,
                           cmSnocket             = diNtnSnocket,
+                          cmConfigureSocket     = diNtnConfigureSocket,
                           connectionDataFlow    = uncurry diNtnDataFlow,
                           cmPrunePolicy         =
                             case cmdInMode of
@@ -935,6 +951,7 @@ runM Interfaces
                           cmIPv6Address,
                           cmAddressType         = diNtnAddressType,
                           cmSnocket             = diNtnSnocket,
+                          cmConfigureSocket     = diNtnConfigureSocket,
                           connectionDataFlow    = uncurry diNtnDataFlow,
                           cmPrunePolicy         =
                             case cmdInMode of
@@ -1016,13 +1033,15 @@ runM Interfaces
                           (Diffusion.Policies.simplePeerSelectionPolicy
                             policyRngVar (readTVar churnModeVar) daPeerMetrics))
                         $ \governorThread ->
-                        withSockets tracer diNtnSnocket
-                                    ( catMaybes
-                                        [ daIPv4Address
-                                        , daIPv6Address
-                                        ]
-                                    )
-                                    $ \sockets addresses -> do
+                          withSockets tracer diNtnSnocket
+                                      (\sock addr -> diNtnConfigureSocket sock (Just addr))
+                                      (\sock addr -> diNtnConfigureSystemdSocket sock addr)
+                                      ( catMaybes
+                                          [ daIPv4Address
+                                          , daIPv6Address
+                                          ]
+                                      )
+                                      $ \sockets addresses -> do
                           --
                           -- Run server
                           --
@@ -1112,11 +1131,12 @@ run
     -> ApplicationsExtra RemoteAddress IO
     -> IO Void
 run tracers tracersExtra args argsExtra apps appsExtra = do
+    let tracer = dtDiffusionInitializationTracer tracers
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
     -- socket / windows named pipe.
-    handle (\e -> traceWith (dtDiffusionInitializationTracer tracers) (DiffusionErrored e)
+    handle (\e -> traceWith tracer (DiffusionErrored e)
                >> throwIO e)
          $ withIOManager $ \iocp -> do
              let diNtnSnocket :: SocketSnocket
@@ -1178,6 +1198,10 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
              runM
                Interfaces {
                  diNtnSnocket,
+                 diNtnConfigureSocket = configureSocket,
+                 diNtnConfigureSystemdSocket =
+                   configureSystemdSocket
+                     (SystemdSocketConfiguration `contramap` tracer),
                  diNtnHandshakeArguments,
                  diNtnAddressType = socketAddressType,
                  diNtnDataFlow = nodeDataFlow,
@@ -1232,10 +1256,15 @@ withSockets :: forall m ntnFd ntnAddr ntcAddr a.
                )
             => Tracer m (InitializationTracer ntnAddr ntcAddr)
             -> Snocket m ntnFd ntnAddr
+            -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a socket
+            -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a systemd socket
             -> [Either ntnFd ntnAddr]
             -> (NonEmpty ntnFd -> NonEmpty ntnAddr -> m a)
             -> m a
-withSockets tracer sn addresses k = go [] addresses
+withSockets tracer sn
+            configureSock
+            configureSystemdSock
+            addresses k = go [] addresses
   where
     go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
     go []   []       = throwIO (NoSocket :: Failure ntnAddr)
@@ -1252,6 +1281,7 @@ withSockets tracer sn addresses k = go [] addresses
         (Snocket.close sn)
         $ \_sock -> do
           !addr <- Snocket.getLocalAddr sn sock
+          configureSystemdSock sock addr
           f (sock, addr)
     withSocket (Right addr) f =
       bracket
@@ -1260,6 +1290,7 @@ withSockets tracer sn addresses k = go [] addresses
         (Snocket.close sn)
         $ \sock -> do
           traceWith tracer $ ConfiguringServerSocket addr
+          configureSock sock addr
           Snocket.bind sn sock addr
           traceWith tracer $ ListeningServerSocket addr
           Snocket.listen sn sock
