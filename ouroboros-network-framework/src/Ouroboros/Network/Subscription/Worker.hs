@@ -175,13 +175,13 @@ safeConnect sn remoteAddr localAddr malloc mclean k =
       )
       (\sock -> Snocket.close sn sock >> mclean)
       (\sock -> mask $ \unmask -> do
-          let doBind = case Snocket.addrFamily sn localAddr of
-                            Snocket.SocketFamily fam -> fam /= AF_UNIX
-                            _                        -> False -- Bind is a nop for Named Pipes anyway
-          when doBind $
-            Snocket.bind sn sock localAddr
-          res :: Either SomeException ()
-              <- try (unmask $ Snocket.connect sn sock remoteAddr)
+          res <- try $ do
+            let doBind = case Snocket.addrFamily sn localAddr of
+                              Snocket.SocketFamily fam -> fam /= AF_UNIX
+                              _                        -> False -- Bind is a nop for Named Pipes anyway
+            when doBind $
+              Snocket.bind sn sock localAddr
+            unmask $ Snocket.connect sn sock remoteAddr
           k unmask sock res)
 
 
