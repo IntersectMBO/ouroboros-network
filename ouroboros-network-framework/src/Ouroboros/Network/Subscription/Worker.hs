@@ -152,6 +152,7 @@ safeConnect :: ( MonadThrow m
                , MonadMask m
                )
             => Snocket m sock addr
+            -> (sock -> addr -> m ()) -- ^ configure the socket
             -> addr
             -- ^ remote addr
             -> addr
@@ -167,7 +168,7 @@ safeConnect :: ( MonadThrow m
             -- masked; it receives: unmask function, allocated socket and
             -- connection error.
             -> m t
-safeConnect sn remoteAddr localAddr malloc mclean k =
+safeConnect sn configureSock remoteAddr localAddr malloc mclean k =
     bracket
       (do sock <- Snocket.open sn (Snocket.addrFamily sn remoteAddr)
           malloc
@@ -176,6 +177,7 @@ safeConnect sn remoteAddr localAddr malloc mclean k =
       (\sock -> Snocket.close sn sock >> mclean)
       (\sock -> mask $ \unmask -> do
           res <- try $ do
+            configureSock sock localAddr
             let doBind = case Snocket.addrFamily sn localAddr of
                               Snocket.SocketFamily fam -> fam /= AF_UNIX
                               _                        -> False -- Bind is a nop for Named Pipes anyway
@@ -224,6 +226,7 @@ subscriptionLoop
     -> ThreadsVar          m
 
     -> Snocket             m sock addr
+    -> (sock -> addr -> m ())
 
     -> WorkerCallbacks m s addr a x
     -> WorkerParams m localAddrs addr
@@ -232,7 +235,7 @@ subscriptionLoop
     -- ^ application
     -> m Void
 subscriptionLoop
-      tr tbl resQ sVar threadsVar snocket
+      tr tbl resQ sVar threadsVar snocket configureSock
       WorkerCallbacks { wcSocketStateChangeTx   = socketStateChangeTx
                       , wcCompleteApplicationTx = completeApplicationTx
                       }
@@ -344,6 +347,7 @@ subscriptionLoop
                     -- this bracket.
                     safeConnect
                       snocket
+                      configureSock
                       remoteAddr
                       localAddr
                       (do
@@ -558,6 +562,7 @@ worker
     -> StateVar            IO s
 
     -> Snocket             IO sock addr
+    -> (sock -> addr -> IO ())
 
     -> WorkerCallbacks     IO s addr a x
     -> WorkerParams        IO   localAddrs addr
@@ -565,11 +570,11 @@ worker
     -> (sock -> IO a)
     -- ^ application
     -> IO x
-worker tr errTrace tbl sVar snocket workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx } workerParams k = do
+worker tr errTrace tbl sVar snocket configureSock workerCallbacks@WorkerCallbacks {wcCompleteApplicationTx, wcMainTx } workerParams k = do
     resQ <- newResultQ
     threadsVar <- newTVarIO Set.empty
     withAsync
-      (subscriptionLoop tr tbl resQ sVar threadsVar snocket
+      (subscriptionLoop tr tbl resQ sVar threadsVar snocket configureSock
          workerCallbacks workerParams k) $ \_ ->
            mainLoop errTrace resQ threadsVar sVar wcCompleteApplicationTx wcMainTx
            `finally` killThreads threadsVar
