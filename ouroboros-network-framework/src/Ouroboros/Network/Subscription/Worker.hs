@@ -175,13 +175,13 @@ safeConnect sn remoteAddr localAddr malloc mclean k =
       )
       (\sock -> Snocket.close sn sock >> mclean)
       (\sock -> mask $ \unmask -> do
-          let doBind = case Snocket.addrFamily sn localAddr of
-                            Snocket.SocketFamily fam -> fam /= AF_UNIX
-                            _                        -> False -- Bind is a nop for Named Pipes anyway
-          when doBind $
-            Snocket.bind sn sock localAddr
-          res :: Either SomeException ()
-              <- try (unmask $ Snocket.connect sn sock remoteAddr)
+          res <- try $ do
+            let doBind = case Snocket.addrFamily sn localAddr of
+                              Snocket.SocketFamily fam -> fam /= AF_UNIX
+                              _                        -> False -- Bind is a nop for Named Pipes anyway
+            when doBind $
+              Snocket.bind sn sock localAddr
+            unmask $ Snocket.connect sn sock remoteAddr
           k unmask sock res)
 
 
@@ -392,7 +392,6 @@ subscriptionLoop
                -> Either SomeException ()
                -> m ()
     connAction thread conThreads valencyVar remoteAddr unmask sock connectionRes = do
-      localAddr <- Snocket.getLocalAddr snocket sock
       t <- getMonotonicTime
       case connectionRes of
         -- connection error
@@ -412,6 +411,7 @@ subscriptionLoop
 
         -- connection succeeded
         Right _ -> do
+          localAddr <- Snocket.getLocalAddr snocket sock
           connRes <- atomically $ do
             -- we successfully connected, remove the thread from
             -- outstanding connection threads.
