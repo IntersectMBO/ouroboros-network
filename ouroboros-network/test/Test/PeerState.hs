@@ -359,6 +359,7 @@ prop_subscriptionWorker
              tbl
              peerStatesVar
              (mkSnocket sockType localAddr remoteAddr)
+             mempty
              WorkerCallbacks {
                  wcSocketStateChangeTx = \ss s -> do
                    s' <- socketStateChangeTx ss s

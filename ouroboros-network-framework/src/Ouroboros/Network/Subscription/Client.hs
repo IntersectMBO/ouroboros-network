@@ -58,6 +58,7 @@ clientSubscriptionWorker snocket
            nmsConnectionTable
            nmsPeerStates
            snocket
+           mempty
            WorkerCallbacks
             { wcSocketStateChangeTx   = socketStateChangeTx
             , wcCompleteApplicationTx = completeApplicationTx cspErrorPolicies
