@@ -203,6 +203,7 @@ subscriptionWorker snocket
            nmsConnectionTable
            nmsPeerStates
            snocket
+           ((. Just) <$> configureSocket)
            WorkerCallbacks
              { wcSocketStateChangeTx   = socketStateChangeTx
              , wcCompleteApplicationTx = completeApplicationTx errorPolicies

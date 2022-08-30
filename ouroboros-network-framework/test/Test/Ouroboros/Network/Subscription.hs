@@ -22,6 +22,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
 import qualified Data.IP as IP
@@ -120,8 +121,8 @@ tests =
         -- the above tests takes about 10 minutes to run due to delays in
         -- realtime.
         , testProperty "Resolve Subscribe (IO)" prop_sub_io
-        , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
-        , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"
+        , testProperty "Send Receive with Dns worker (IO)" prop_send_recv
+        , testProperty "Send Receive with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
         -- , testProperty "subscription demo" _demo
         ]
@@ -917,7 +918,7 @@ instance (Show a) => Show (WithThreadAndTime a) where
         printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 _verboseTracer :: Show a => Tracer IO a
-_verboseTracer = threadAndTimeTracer $ showTracing stdoutTracer
+_verboseTracer = threadAndTimeTracer $ Tracer (BSC.putStrLn . BSC.pack . show)
 
 threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
 threadAndTimeTracer tr = Tracer $ \s -> do
