@@ -292,8 +292,8 @@ instance Arbitrary LookupResultIO where
             return $ take k lx
 
 -- | Return true if  `a` is a permutation of `b`.
-permCheck :: Ord o => [o] -> [o] -> Bool
-permCheck a b = L.sort a == L.sort b
+permCheck :: (Ord o, Show o) => [o] -> [o] -> Property
+permCheck a b = L.sort a === L.sort b
 
 --
 -- Properties
@@ -332,11 +332,11 @@ prop_resolv lr =  do
 
             (Right ea, Left _) ->
                 -- Expect a permutation of the result of the A lookup.
-                property $ permCheck addrs ea
+                permCheck addrs ea
 
             (Left _, Right ea) ->
                 -- Expect a permutation of the result of the AAAA lookup.
-                property $ permCheck addrs ea
+                permCheck addrs ea
 
             (Right sa4s, Right sa6s) ->
                 let (cntA, cntB, headFamily) =
@@ -344,8 +344,8 @@ prop_resolv lr =  do
                                         || null sa6s)
                             then (length sa4s, length sa6s, Socket.AF_INET)
                             else (length sa6s, length sa4s, Socket.AF_INET6) in
-                property $ permCheck addrs (sa4s ++ sa6s) &&
-                        sockAddrFamily (head addrs) == headFamily &&
+                permCheck addrs (sa4s ++ sa6s) .&&.
+                        sockAddrFamily (head addrs) === headFamily .&&.
                         alternateFamily addrs (sockAddrFamily (head addrs)) True
                             cntA cntB
 
@@ -474,18 +474,18 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
 
     verifyOrder
         :: [(Socket.Family, Word16)]
-        -> Bool
+        -> Property
     verifyOrder observerdConnectionOrder =
         case (lrioIpv4Result lr, lrioIpv6Result lr) of
-             (Left _, Left _)     -> null observerdConnectionOrder
-             (Right [], Right []) -> null observerdConnectionOrder
-             (Left _, Right a)    -> a == map snd observerdConnectionOrder
-             (Right a, Left _)    -> a == map snd observerdConnectionOrder
-             (Right a, Right [])  -> a == map snd observerdConnectionOrder
-             (Right [], Right a)  -> a == map snd observerdConnectionOrder
+             (Left _, Left _)     -> counterexample "null" $ null observerdConnectionOrder
+             (Right [], Right []) -> counterexample "null" $ null observerdConnectionOrder
+             (Left _, Right a)    -> a === map snd observerdConnectionOrder
+             (Right a, Left _)    -> a === map snd observerdConnectionOrder
+             (Right a, Right [])  -> a === map snd observerdConnectionOrder
+             (Right [], Right a)  -> a === map snd observerdConnectionOrder
              (Right r4, Right r6) ->
-                 not (null observerdConnectionOrder) &&
-                 (lrioFirst lr == fst (head observerdConnectionOrder)) &&
+                 not (null observerdConnectionOrder) .&&.
+                 (lrioFirst lr === fst (head observerdConnectionOrder)) .&&.
                  permCheck (r4 ++ r6) (map snd observerdConnectionOrder)
 
     initiatorCallback
