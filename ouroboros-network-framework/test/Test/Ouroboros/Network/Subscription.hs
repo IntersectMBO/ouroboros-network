@@ -120,7 +120,8 @@ tests =
         --, testProperty "Resolve (IO)"      _prop_resolv_io
         -- the above tests takes about 10 minutes to run due to delays in
         -- realtime.
-        , testProperty "Resolve Subscribe (IO)" prop_sub_io
+        , testProperty "Resolve Subscribe Property (IO)" prop_sub_io
+        , testProperty "Resolve Subscribe Unittest (IO)" unit_sub_io
         , testProperty "Send Receive with Dns worker (IO)" prop_send_recv
         , testProperty "Send Receive with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
@@ -527,6 +528,13 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
                     )
              )
 
+
+unit_sub_io :: Property
+unit_sub_io = prop_sub_io LookupResultIO { lrioIpv4Result = Right [1,3],
+                                           lrioIpv6Result = Left DNS.SequenceNumberMismatch,
+                                           lrioFirst      = Socket.AF_INET,
+                                           lrioValency    = 4
+                                         }
 
 prop_send_recv
     :: (Int -> Int -> (Int, Int))
