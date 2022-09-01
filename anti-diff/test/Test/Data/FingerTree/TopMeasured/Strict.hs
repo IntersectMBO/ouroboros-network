@@ -9,7 +9,6 @@ module Test.Data.FingerTree.TopMeasured.Strict (
     tests
     -- * Properties
   , appendProp
-  , split'Prop
   , splitProp
   ) where
 
@@ -32,14 +31,9 @@ tests :: TestTree
 tests = testGroup "Data.FingerTree.TopMeasured.Strict" [
     testGroupWithProxy (Proxy @(StrictFingerTree (Sum Int) (Sum Int) X)) [
       \pr -> testProperty "splitProp (simple Group)" $
-        \n sft -> splitProp pr (getPositive n <) sft
+        \lr n sft -> splitProp pr lr (getPositive n <) sft
     , testProperty "appendProp (simple Group)" .
         appendProp
-    , \pr -> testProperty "split'Prop (simple Group)" $
-        let
-          f vt (vtLeft, _vtRight) = (vtLeft, invert vtLeft <> vt)
-        in
-          \n sft -> split'Prop pr (getPositive n <) f sft
     ]
   ]
 
@@ -54,6 +48,9 @@ instance Measured (Sum Int) X where
 instance TopMeasured (Sum Int) X where
   measureTop _ = Sum 1
 
+instance Arbitrary LR where
+  arbitrary = elements [L, R]
+
 {------------------------------------------------------------------------------
   Properties
 ------------------------------------------------------------------------------}
@@ -61,40 +58,15 @@ instance TopMeasured (Sum Int) X where
 splitProp ::
      (SuperMeasured vt vi a, Group vt, Eq vt, Show vt)
   => Proxy (StrictFingerTree vt vi a)
+  -> LR
   -> (vi -> Bool)
   -> StrictFingerTree vt vi a
   -> Property
-splitProp _ p sft = conjoin [prop0, prop1, prop2, prop3, prop4]
+splitProp _ lr p sft = conjoin [prop0, prop1, prop2, prop3, prop4]
   where
-    (l, r) = split p sft
-
-    prop0
-      | null l = label "dead1" ()
-      | null r = label "dead2" ()
-      | otherwise = label "alive" ()
-
-    prop1 = counterexample "a)" $
-      foldMap measureTop l === measureTop l
-
-    prop2 = counterexample "b)" $
-      foldMap measureTop r === measureTop r
-
-    prop3 = counterexample "c)" $
-      foldMap measureTop sft === measureTop sft
-
-    prop4 = counterexample "d)" $
-      measureTop sft === measureTop l <> measureTop r
-
-split'Prop ::
-     (SuperMeasured vt vi a, Eq vt, Show vt)
-  => Proxy (StrictFingerTree vt vi a)
-  -> (vi -> Bool)
-  -> (vt -> (vt, vt) -> (vt, vt))
-  -> StrictFingerTree vt vi a
-  -> Property
-split'Prop _ p f sft = conjoin [prop0, prop1, prop2, prop3, prop4]
-  where
-    (l, r) = split' p f sft
+    (l, r) = case lr of
+      L -> splitl p sft
+      R -> splitr p sft
 
     prop0
       | null l = label "dead1" ()

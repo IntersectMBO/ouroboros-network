@@ -30,10 +30,12 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
   , length
   , mapDiffSeq
   , maxSlot
-  , split
-  , splitAt
-  , splitAtFromEnd
-  , splitAtSlot
+  , splitl
+  , splitlAt
+  , splitlAtFromEnd
+  , splitr
+  , splitrAt
+  , splitrAtFromEnd
   ) where
 
 import           Prelude hiding (length, splitAt)
@@ -46,8 +48,9 @@ import           Data.Semigroup (Max (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Data.FingerTree.TopMeasured.Strict hiding (split)
-import qualified Data.FingerTree.TopMeasured.Strict as TMFT (split)
+import           Data.FingerTree.TopMeasured.Strict hiding (split, splitl,
+                     splitlr, splitr)
+import qualified Data.FingerTree.TopMeasured.Strict as TMFT (splitlr)
 import           Data.Map.Diff.Strict (Diff)
 
 import qualified Cardano.Slotting.Slot as Slot
@@ -199,38 +202,74 @@ maxSlot (DiffSeq ft) =
     unwrapInner Nothing            = Nothing
     unwrapInner (Just (SlotNo sl)) = Just sl
 
-split ::
+splitlr ::
+     (SM k v, Ord k, Eq v)
+  => LR
+  -> (InternalMeasure k v -> Bool)
+  -> DiffSeq k v
+  -> (DiffSeq k v, DiffSeq k v)
+splitlr lr p (DiffSeq ft) = bimap DiffSeq DiffSeq $ TMFT.splitlr lr p ft
+
+splitl ::
      (SM k v, Ord k, Eq v)
   => (InternalMeasure k v -> Bool)
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-split p (DiffSeq ft) = bimap DiffSeq DiffSeq $ TMFT.split p ft
+splitl = splitlr L
 
-splitAt ::
+splitr ::
+     (SM k v, Ord k, Eq v)
+  => (InternalMeasure k v -> Bool)
+  -> DiffSeq k v
+  -> (DiffSeq k v, DiffSeq k v)
+splitr = splitlr R
+
+splitlrAt ::
+     (SM k v, Ord k, Eq v)
+  => LR
+  -> Int
+  -> DiffSeq k v
+  -> (DiffSeq k v, DiffSeq k v)
+splitlrAt lr n = splitlr lr ((Length n<) . imLength)
+
+splitlAt ::
      (SM k v, Ord k, Eq v)
   => Int
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitAt n = split ((Length n<) . imLength)
+splitlAt = splitlrAt L
 
-splitAtFromEnd ::
+splitrAt ::
      (SM k v, Ord k, Eq v)
   => Int
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitAtFromEnd n dseq =
-    Exn.assert (n <= len) $ splitAt (len - n) dseq
+splitrAt = splitlrAt R
+
+splitlrAtFromEnd ::
+     (SM k v, Ord k, Eq v)
+  => LR
+  -> Int
+  -> DiffSeq k v
+  -> (DiffSeq k v, DiffSeq k v)
+splitlrAtFromEnd lr n dseq =
+    Exn.assert (n <= len) $ splitlrAt lr (len - n) dseq
   where
     len = length dseq
 
-splitAtSlot ::
+splitlAtFromEnd ::
      (SM k v, Ord k, Eq v)
-  => Slot.SlotNo
+  => Int
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitAtSlot sl = split p
-  where
-    p = maybe True (SlotNo sl <) . imSlotNo
+splitlAtFromEnd = splitlrAtFromEnd L
+
+splitrAtFromEnd ::
+     (SM k v, Ord k, Eq v)
+  => Int
+  -> DiffSeq k v
+  -> (DiffSeq k v, DiffSeq k v)
+splitrAtFromEnd = splitlrAtFromEnd R
 
 mapDiffSeq ::
        ( SM k v

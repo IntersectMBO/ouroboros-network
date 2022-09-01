@@ -8,7 +8,6 @@
 module Test.Util.Orphans.Isomorphism (
     Isomorphism (..)
   , from
-  , inside
   ) where
 
 import           Data.Foldable (toList)
@@ -39,9 +38,6 @@ class Isomorphism b a => Isomorphism a b where
 from :: Isomorphism b a => a -> b
 from = to
 
-inside :: (Isomorphism a b, Isomorphism c d) => (b -> c) -> a -> d
-inside f = from . f . to
-
 {------------------------------------------------------------------------------
   Orphan instances
 ------------------------------------------------------------------------------}
@@ -49,6 +45,9 @@ inside f = from . f . to
 instance Isomorphism a a where
   to :: a -> a
   to = id
+
+instance (Isomorphism a a', Isomorphism b b') => Isomorphism (a -> b) (a' -> b') where
+  to f = from . f . to
 
 instance Isomorphism a b => Isomorphism [a] [b] where
   to :: [a] -> [b]

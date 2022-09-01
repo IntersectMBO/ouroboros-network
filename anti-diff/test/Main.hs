@@ -13,13 +13,12 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Data.FingerTree.TopMeasured.Strict
-import           Data.Group
 import           Data.Map.Diff.Strict
+
 import           Data.Monoid
 import           Data.Proxy
 
-import           Test.Data.FingerTree.TopMeasured.Strict (appendProp,
-                     split'Prop, splitProp)
+import           Test.Data.FingerTree.TopMeasured.Strict (appendProp, splitProp)
 import qualified Test.Data.FingerTree.TopMeasured.Strict
 import qualified Test.Data.Map.Diff.Strict as Test.Diff
 
@@ -46,14 +45,9 @@ diffSeqTests :: TestTree
 diffSeqTests = testGroup "DiffSeq" [
     testGroupWithProxy (Proxy @DiffSeq) [
       \pr -> testProperty "splitProp (diff sequences)" $
-        \n sft -> splitProp pr (getPositive n <) sft
+        \lr n sft -> splitProp pr lr (getPositive n <) sft
     , testProperty "appendProp (diff sequences)" .
         appendProp
-    , \pr -> testProperty "split'Prop (diff sequences)" $
-        let
-          f vt (vtLeft, _vtRight) = (vtLeft, invert vtLeft <> vt)
-        in
-          \n sft -> split'Prop pr (getPositive n <) f sft
     ]
   ]
 

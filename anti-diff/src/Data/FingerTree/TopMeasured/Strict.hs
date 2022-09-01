@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase             #-}
 
 -- Note: Parts of the documentation are based on/are directly copied from
 -- documentation in the @Data.FingerTree.Strict@ module.
@@ -19,8 +20,11 @@ module Data.FingerTree.TopMeasured.Strict (
   , fromList
   , (|>)
     -- * Splitting
+  , LR (..)
   , split
-  , split'
+  , splitl
+  , splitlr
+  , splitr
     -- * Maps
   , fmap'
   , fmap''
@@ -118,8 +122,58 @@ fromList !xs = SFT (foldMap measureTop xs) (FT.fromList xs)
 -- For predictable results, one should ensure that there is only one such
 -- point, i.e. that the predicate is /monotonic/.
 --
+-- A function @f@ should be provided that computes the top-measures of the left
+-- and right parts of the split. If the @vt@ type has a @'Group'@ instance,
+-- then @f@ is defined for /free/: see the @'splitl'@ and @'splitr'@ variants
+-- of the @'split'@ function.
+--
 -- TODO(jdral): Complexity analysis.
 split ::
+     SuperMeasured vt vi a
+  => (vi -> Bool)
+  -> (vt -> (vt, vt) -> (vt, vt))
+  -> StrictFingerTree vt vi a
+  -> ( StrictFingerTree vt vi a
+     , StrictFingerTree vt vi a
+     )
+split p f (SFT vt sft) = (SFT vtLeft left, SFT vtRight right)
+  where
+    (left, right)     = FT.split p sft
+    (vtLeft, vtRight) = f vt (foldMap measureTop left, foldMap measureTop right)
+
+-- | Data type representing either /left/ or /right/.
+data LR = L | R
+  deriving (Show, Eq)
+
+-- | Like @'split'@, but we compute to-measures for /free/ trough subtraction
+-- of top-measures.
+--
+-- Redirects to the @'splitl'@ and @'splitr'@ functions based on the @'LR'@
+-- argument. Depending on which part of the split is shorter, redirecting
+-- to @'splitl'@ or @'splitr'@ can be more performant. See @'splitl'@ and
+-- @'splitr'@.
+splitlr ::
+     ( SuperMeasured vt vi a
+     , Group vt
+     )
+  => LR
+  -> (vi -> Bool)
+  -> StrictFingerTree vt vi a
+  -> ( StrictFingerTree vt vi a
+     , StrictFingerTree vt vi a
+     )
+splitlr = \case
+  L -> splitl
+  R -> splitr
+
+-- | Like @'split'@, but we compute top-measures for /free/ through subtraction
+-- of the left part's top-measure.
+--
+-- This function is more performant than @'splitr'@ if the left part of the
+-- split is shorter than the right part.
+--
+-- TODO(jdral): Complexity analysis.
+splitl ::
      ( SuperMeasured vt vi a
      , Group vt
      )
@@ -128,32 +182,30 @@ split ::
   -> ( StrictFingerTree vt vi a
      , StrictFingerTree vt vi a
      )
-split p = split' p f
+splitl p = split p f
   where
-    -- TODO(jdral): There are two options for constructing the results from
-    -- @left@ and @right@ parts that are obtained here. Either we invert the
-    -- top-level measure of the @left@ part and use that in our construction,
-    -- or we invert the top-level measure of the @right@ part and use that in
-    -- our construction. The choice depends on the sizes of @left@ and
-    -- @right@. Should the @split@ function take this into account, or should
-    -- we introduce variants of the @split@ function?
     f vt (vtLeft, _vtRight) = (vtLeft, invert vtLeft <> vt)
 
--- | Like 'split', but does not require a 'Group' instance. Instead, the
--- function should be provided a function that computes the top-measures of
--- the left and right parts of the split.
-split' ::
-     SuperMeasured vt vi a
+-- | Like @'split'@, but we compute top-measures for /free/ through subtraction
+-- of the right part's top-measure.
+--
+-- This function is more performant than @'splitl'@ if the right part of the
+-- split is shorter than the left part.
+--
+-- TODO(jdral): Complexity analysis.
+splitr ::
+     ( SuperMeasured vt vi a
+     , Group vt
+     )
   => (vi -> Bool)
-  -> (vt -> (vt, vt) -> (vt, vt))
   -> StrictFingerTree vt vi a
   -> ( StrictFingerTree vt vi a
      , StrictFingerTree vt vi a
      )
-split' p f (SFT vt sft) = (SFT vtLeft left, SFT vtRight right)
+splitr p = split p f
   where
-    (left, right)     = FT.split p sft
-    (vtLeft, vtRight) = f vt (foldMap measureTop left, foldMap measureTop right)
+    f vt (_vtLeft, vtRight) = (vt <> invert vtRight, vtRight)
+
 
 {-------------------------------------------------------------------------------
   Maps

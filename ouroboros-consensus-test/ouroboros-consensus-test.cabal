@@ -363,5 +363,7 @@ benchmark bench-storage
                        -Wmissing-export-lists
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+                       -rtsopts
+                       "-with-rtsopts=-A32m"
 
---mixins:              tasty-bench (Test.Tasty.Bench as Criterion, Test.Tasty.Bench as Criterion.Main, Test.Tasty.Bench as Gauge, Test.Tasty.Bench as Gauge.Main)
+  --mixins:              tasty-bench (Test.Tasty.Bench as Criterion, Test.Tasty.Bench as Criterion.Main, Test.Tasty.Bench as Gauge, Test.Tasty.Bench as Gauge.Main)
