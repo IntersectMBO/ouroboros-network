@@ -152,6 +152,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
 
     withServerNode
       (socketSnocket iocp)
+      ((. Just) <$> configureSocket)
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -171,6 +172,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       withAsync
         (connectToNode
           (socketSnocket iocp)
+          (flip configureSocket Nothing)
           nodeToNodeHandshakeCodec
           noTimeLimitsHandshake
           (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
