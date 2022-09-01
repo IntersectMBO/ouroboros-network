@@ -1,5 +1,18 @@
 % Example: Implementing a Simple Protocol Using `ouroborus-consensus`
 
+Generating Documentation From This File
+=======================================
+
+This file is written in a `markdown+lhs` style understood by `pandoc`.
+To generate a document from this file - it is as simple as:
+
+```
+ pandoc -s -f markdown+lhs Tutorial.lhs -o <output file>
+```
+
+Which will work for many of the the output types supported by `pandoc`.
+
+
 Introduction and Motivation
 ===========================
 
@@ -32,21 +45,19 @@ First, some imports we'll need:
 > import Ouroboros.Consensus.Block.Abstract
 >   (blockNo, blockPoint, castHeaderFields, castPoint, BlockNo, SlotNo,
 >    BlockConfig, BlockProtocol, CodecConfig, GetHeader(..), GetPrevHash(..),
->    Header, StorageConfig, ChainHash, HasHeader(..),
->    HeaderFields(HeaderFields, headerFieldSlot, headerFieldBlockNo,
->                  headerFieldHash),
->     HeaderHash,
->     Point,
->     StandardHash )
+>    Header, StorageConfig, ChainHash, HasHeader(..), HeaderFields(..),
+>    HeaderHash,Point, StandardHash)
 > import Ouroboros.Consensus.Protocol.Abstract
-> import Ouroboros.Consensus.Ticked
+>   (SecurityParam(..), ConsensusConfig, ConsensusProtocol(..) )
+> import Ouroboros.Consensus.Ticked ( Ticked(TickedTrivial) )
 > import Ouroboros.Consensus.Block
 >   (BlockSupportsProtocol (selectView, validateView))
 > import Ouroboros.Consensus.Ledger.Abstract
 >   (GetTip(..), IsLedger(..), LedgerCfg,
 >    LedgerResult(LedgerResult, lrEvents, lrResult),
 >    LedgerState, ApplyBlock(..), UpdateLedger)
-> import Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol(..))
+> import Ouroboros.Consensus.Ledger.SupportsProtocol
+>   (LedgerSupportsProtocol(..))
 > import Ouroboros.Consensus.Forecast (trivialForecast)
 > import Ouroboros.Consensus.HeaderValidation
 >   (ValidateEnvelope, BasicEnvelopeValidation, HasAnnTip)
