@@ -325,26 +325,19 @@ test-suite test-infra
                        -Wmissing-export-lists
                        -fno-ignore-asserts
 
+-- test-examples is just used to type-check tutorial code:
+                          
 test-suite test-examples
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test-examples
   main-is:             Main.hs
-  other-modules:
-                       Test.Example
-                     , Test.Tutorial
+  other-modules:       Test.Tutorial
                      , Test.Tutorial2
-                     , Test.Utilities
-                     , Test.ToyLedger1
-                     , Test.ToyLedgerC
-                     , Test.ToyLedgerD
                      
   build-depends:       base
-                     , QuickCheck
                      , containers
                      , mtl
                      
-                     , tasty
-                     , tasty-quickcheck
                      , nothunks
                      , serialise
                      , hashable
