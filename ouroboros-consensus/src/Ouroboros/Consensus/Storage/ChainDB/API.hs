@@ -18,7 +18,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Storage.ChainDB.API (
     -- * Main ChainDB API
-    ChainDB (..)
+    BlockValidity (..)
+  , ChainDB (..)
   , getCurrentLedger
   , getCurrentTip
   , getHeaderStateHistory
@@ -222,7 +223,12 @@ data ChainDB m blk = ChainDB {
       --   for blocks in the volatile DB that haven't been validated (yet),
       --   e.g., because they are disconnected from the current chain or they
       --   are part of a shorter fork.
+
+    -- TODO: Redundant, subsumed by getAskBlockValidity
     , getIsValid         :: STM m (RealPoint blk -> Maybe Bool)
+
+
+    , getAskBlockValidity :: STM m (WithFingerprint (RealPoint blk -> Maybe (BlockValidity blk)))
 
       -- | Get the highest slot number stored in the ChainDB.
       --
@@ -320,6 +326,8 @@ data ChainDB m blk = ChainDB {
       -- Note that when invalid blocks are garbage collected and thus no
       -- longer detected by this function, the 'Fingerprint' doesn't have to
       -- change, since the function will not detect new invalid blocks.
+
+    -- TODO: Redundant, subsumed by getAskBlockValidity
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
       -- | Close the ChainDB
@@ -601,6 +609,8 @@ streamFrom from db registry blockComponent = do
 {-------------------------------------------------------------------------------
   Invalid block reason
 -------------------------------------------------------------------------------}
+
+data BlockValidity blk = Valid | Invalid (InvalidBlockReason blk)
 
 -- | The reason why a block is invalid.
 data InvalidBlockReason blk
