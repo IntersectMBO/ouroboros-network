@@ -342,6 +342,7 @@ data ChainDB m blk = ChainDB {
       -- 'False' when the database is closed.
     , isOpen             :: STM m Bool
     }
+{-# DEPRECATED getIsValid, getIsInvalidBlock "Use getAskBlockValidity instead" #-}
 
 getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
               => ChainDB m blk -> STM m (Network.Tip blk)
