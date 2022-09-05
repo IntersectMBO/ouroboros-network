@@ -227,7 +227,27 @@ data ChainDB m blk = ChainDB {
     -- TODO: Redundant, subsumed by getAskBlockValidity
     , getIsValid         :: STM m (RealPoint blk -> Maybe Bool)
 
-
+    -- | Return a fingerprinted function that tells whether a block is known to
+    -- be valid or invalid. If invalid, it also returns the reason.  The
+    -- function will return:
+    --
+    -- * @Just Valid@: for blocks in the volatile DB that have been validated
+    --   and were found to be valid. All blocks in the current chain
+    --   fragment (i.e., 'getCurrentChain') are valid.
+    --
+    -- * @Just (Invalid reason)@: for blocks in the volatile DB that have been
+    --   validated and were found to be invalid.
+    --
+    -- * @Nothing@: for blocks not or no longer in the volatile DB, whether
+    --   they are valid or not, including blocks in the immutable DB. Also
+    --   for blocks in the volatile DB that haven't been validated (yet),
+    --   e.g., because they are disconnected from the current chain or they
+    --   are part of a shorter fork.
+    --
+    -- Note that the fingerprint changes iff the function returned detects new
+    -- invalid blocks. In particular, the function's fingerprint does not change
+    -- when it detects more valid blocks or less invalid blocks (e.g., when
+    -- invalid blocks are garbage collected).
     , getAskBlockValidity :: STM m (WithFingerprint (RealPoint blk -> Maybe (BlockValidity blk)))
 
       -- | Get the highest slot number stored in the ChainDB.
