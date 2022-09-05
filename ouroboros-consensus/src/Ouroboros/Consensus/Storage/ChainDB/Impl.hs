@@ -218,6 +218,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             , stream                = Iterator.stream  h
             , newFollower           = Follower.newFollower h
             , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
+            , getAskBlockValidity   = getEnvSTM h Query.getAskBlockValidity
             , closeDB               = closeDB h
             , isOpen                = isOpen  h
             }

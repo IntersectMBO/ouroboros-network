@@ -9,7 +9,8 @@
 -- | Queries
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
     -- * Queries
-    getBlockComponent
+    getAskBlockValidity
+  , getBlockComponent
   , getCurrentChain
   , getIsFetched
   , getIsInvalidBlock
@@ -40,7 +41,8 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
-                     ChainDbFailure (..), InvalidBlockReason)
+                     BlockValidity (..), ChainDbFailure (..),
+                     InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
@@ -150,8 +152,25 @@ getIsInvalidBlock ::
      forall m blk. (IOLike m, HasHeader blk)
   => ChainDbEnv m blk
   -> STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
-getIsInvalidBlock CDB{..} =
+getIsInvalidBlock CDB{..} = do
   fmap (fmap (fmap invalidBlockReason) . flip Map.lookup) <$> readTVar cdbInvalid
+
+
+getAskBlockValidity ::
+  forall m blk. (IOLike m, HasHeader blk)
+  => ChainDbEnv m blk
+  -> STM m (WithFingerprint (RealPoint blk -> Maybe (BlockValidity blk)))
+getAskBlockValidity CDB{..} = do
+  prevApplied <- LgrDB.getPrevApplied cdbLgrDB
+  invalid     <- readTVar cdbInvalid
+  let fn = \pt@(RealPoint _ hash) ->
+        case Map.lookup hash $ forgetFingerprint invalid of
+          Just invalidBlockInfo -> Just $ Invalid (invalidBlockReason invalidBlockInfo)
+          Nothing -> if Set.member pt prevApplied
+            then Just Valid
+            else Nothing
+  pure $ fmap (const fn) invalid
+
 
 getIsValid ::
      forall m blk. (IOLike m, HasHeader blk)
