@@ -21,10 +21,21 @@ module Test.Util.MockDiffSeq (
   , MockValues (..)
     -- * Diff sequence operations
   , mFlush
+  , mForwardValues
   , mForwardValuesAndKeys
   , mPush
   , mRollback
   , mTotalDiff
+    -- * Utility functions
+  , mDiffKeys
+  , mFromListDeletes
+  , mFromListInserts
+  , mFromListKeys
+  , mFromListValues
+  , mLength
+  , mRestrictValues
+  , mSingletonDelete
+  , mSingletonInsert
   ) where
 
 import           Prelude hiding (splitAt)
@@ -85,6 +96,7 @@ newtype MockKeys k v = MockKeys (Set k)
 
 newtype MockSlotNo = MockSlotNo Int
   deriving stock (Show, Eq, Ord, Generic)
+  deriving newtype Num
   deriving anyclass NFData
 
 {------------------------------------------------------------------------------
@@ -101,6 +113,12 @@ deriving via Sum Int instance Monoid MockLength
 {------------------------------------------------------------------------------
   Monoid instances
 ------------------------------------------------------------------------------}
+
+instance Ord k => Semigroup (MockDiffSeq k v) where
+  MockDiffSeq ft1 <> MockDiffSeq ft2 = MockDiffSeq $ ft1 >< ft2
+
+instance Ord k => Monoid (MockDiffSeq k v) where
+  mempty = MockDiffSeq empty
 
 deriving via Max Int instance Semigroup MockSlotNo
 deriving via Max Int instance Monoid MockSlotNo
@@ -163,7 +181,7 @@ mRollback n (MockDiffSeq ft)
     m = length ft - n
 
 mForwardValuesAndKeys ::
-     forall k v. Ord k
+     Ord k
   => MockValues k v
   -> MockKeys k v
   -> MockDiff k v
@@ -194,3 +212,34 @@ mForwardValues (MockValues m1) (MockDiff m2) = MockValues $
 
 mTotalDiff :: Ord k => MockDiffSeq k v -> MockDiff k v
 mTotalDiff (MockDiffSeq ft) = snd $ measure ft
+
+{------------------------------------------------------------------------------
+  Utility functions
+------------------------------------------------------------------------------}
+
+mLength :: Ord k => MockDiffSeq k v -> Int
+mLength (MockDiffSeq ft) = unMockLength . fst $ measure ft
+
+mDiffKeys :: MockDiff k v -> MockKeys k v
+mDiffKeys (MockDiff m) = MockKeys $ Map.keysSet m
+
+mRestrictValues :: Ord k => MockValues k v -> MockKeys k v -> MockValues k v
+mRestrictValues (MockValues m) (MockKeys s) = MockValues $ m `Map.restrictKeys` s
+
+mSingletonDelete :: v -> Seq (MockDiffEntry v)
+mSingletonDelete = Seq.singleton . MockDelete
+
+mSingletonInsert :: v -> Seq (MockDiffEntry v)
+mSingletonInsert = Seq.singleton . MockInsert
+
+mFromListDeletes :: Ord k => [(k, v)] -> MockDiff k v
+mFromListDeletes = MockDiff . Map.fromList . fmap (second mSingletonDelete)
+
+mFromListInserts :: Ord k => [(k, v)] -> MockDiff k v
+mFromListInserts = MockDiff . Map.fromList . fmap (second mSingletonInsert)
+
+mFromListKeys :: Ord k => [k] -> MockKeys k v
+mFromListKeys = MockKeys . Set.fromList
+
+mFromListValues :: Ord k => [(k, v)] -> MockValues k v
+mFromListValues = MockValues . Map.fromList
