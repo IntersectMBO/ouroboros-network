@@ -18,6 +18,7 @@ let
     (selectProjectPackages ouroborosNetworkHaskellPackages);
 
   coveredProject = ouroborosNetworkHaskellPackages.appendModule { coverage = true; };
+  tvarInvariantProject = ouroborosNetworkHaskellPackages.appendModule { checkTVarInvariant = true; };
 
   validate-mainnet = import ./nix/validate-mainnet.nix {
     inherit pkgs;
@@ -29,7 +30,7 @@ let
   };
 
   self = {
-    inherit haskellPackages network-docs consensus-docs coveredProject;
+    inherit haskellPackages network-docs consensus-docs coveredProject tvarInvariantProject;
 
     inherit (haskellPackages.ouroboros-network.identifier) version;
 
@@ -63,6 +64,13 @@ let
         haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
       Shelley =
         haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
+    };
+
+    # No thunks tests
+    tvar-invariant-checks = recurseIntoAttrs {
+      inherit tvarInvariantProject;
+      haskellPackages = recRecurseIntoAttrs (selectProjectPackages tvarInvariantProject.hsPkgs);
+      tests = collectComponents' "tests" haskellPackages;
     };
 
     shell = import ./shell.nix {

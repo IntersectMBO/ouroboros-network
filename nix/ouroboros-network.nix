@@ -25,6 +25,11 @@ let
           description = "Enable Haskell Program Coverage for ouroboros-network libraries and test suites.";
           default = false;
         };
+        checkTVarInvariant = lib.mkOption {
+          type = lib.types.bool;
+          description = "Enable strict TVar Invariant to check 'NoThunks'. Caution, the tests will run slowly";
+          default = false;
+        };
       };
     })
     ({ config, ...}: {
@@ -42,6 +47,11 @@ let
           # and test suites.
           doCoverage = config.coverage;
         });
+      }
+      {   
+        packages.strict-stm.components.library.configureFlags =
+          builtins.trace "Configuration flags ${builtins.toString(config.checkTVarInvariant)}"
+          lib.mkForce (if config.checkTVarInvariant then ["-f checktvarinvariant"] else []);
       }
       {
         # Apply profiling arg to all library components in the build:
