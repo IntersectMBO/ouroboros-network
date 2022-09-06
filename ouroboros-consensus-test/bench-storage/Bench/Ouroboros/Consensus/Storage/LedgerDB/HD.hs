@@ -90,20 +90,20 @@
 module Bench.Ouroboros.Consensus.Storage.LedgerDB.HD (benchmarks) where
 
 import           Control.DeepSeq
+import qualified Control.Exception as Exn
 import           Control.Monad
 import           Control.Monad.RWS
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as B
 import           Data.Foldable
 import           Data.Kind (Type)
+import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 
 import           QuickCheck.GenT
-import           Test.QuickCheck hiding (Result, choose, frequency, getSize,
-                     resize, shuffle, sized, variant)
 import           Test.Tasty.Bench
-import           Test.Tasty.QuickCheck hiding (choose, frequency, resize, sized,
-                     variant)
+import           Test.Tasty.QuickCheck hiding (choose, frequency, resize,
+                     shuffle, sized, variant)
 
 import           Test.Util.MockDiffSeq
 
@@ -121,9 +121,12 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
               ]
     ]]
   where
-    mkBenchEnv :: GenConfig -> IO (BenchEnv k v)
+    mkBenchEnv ::
+         (Ord k, Arbitrary k, Arbitrary v)
+      => GenConfig
+      -> IO (BenchEnv k v)
     mkBenchEnv conf = do
-      CmdGenResult{cmds, ds0, finalModel} <- generate $ generator conf
+      CmdGenResult{cmds, ds0, finalModel} <- generate $ generator conf BenchMode
       pure $ BenchEnv {
           cmdsMock = cmds
         , ds0Mock  = ds0
@@ -291,7 +294,48 @@ data GenConfig = GenConfig {
     nrCommands        :: Int
     -- | Security parameter @k@
   , securityParameter :: Int
+    -- | The number of initial backing values
+  , nrInitialValues   :: Int
+  , pushConfig        :: PushConfig
+  , forwardConfig     :: ForwardConfig
+  , rollbackConfig    :: RollbackConfig
+    -- | A series of directives that determines which commands to generate.
+  , directives        :: Maybe [Directive]
   }
+
+-- | Configuration parameters for @'Push'@ command generation
+data PushConfig = PushConfig {
+    -- | How many key-value pairs to delete
+    nrToDelete :: Int
+    -- | How many key-value pairs to insert
+  , nrToInsert :: Int
+  }
+
+-- | Configuration parameters for @'Forward'@ command generation.
+newtype ForwardConfig = ForwardConfig {
+    -- | How many keys to forward
+    nrToForward :: Int
+  }
+
+-- | Configuration parameters for @'Rollback'@ command generation.
+newtype RollbackConfig = RollbackConfig {
+    -- | Distribution of rollback sizes with respect to the security parameter
+    -- @k@.
+    --
+    -- Each entry @(x, (lb, ub))@ defines a QuickCheck frequency integer @x@,
+    -- and inclusive lower and upper bounds @lb@ and @ub@. @(lb, ub)@ is used
+    -- to define the range of values from which we can pick values using
+    -- @'choose'@. As such, @(lb, ub)@ determines the possible sizes of a
+    -- rollback, while @x@ determines the probability of picking from the range
+    -- @(lb, ub)@.
+    --
+    -- PRECONDITION: @0 <= lb <= ub <= k@ should hold.
+    distribution :: Maybe [(Int, (Int, Int))]
+  }
+
+-- | A directive to generate a specific command.
+data Directive = GenForward | GenPush | GenFlush | GenRollback
+  deriving (Show, Eq, Ord)
 
 {-------------------------------------------------------------------------------
   Specific configurations
@@ -301,6 +345,28 @@ gcDefault :: GenConfig
 gcDefault = GenConfig {
     nrCommands = 10000
   , securityParameter = 2160
+  , nrInitialValues = 100
+  , pushConfig = PushConfig {
+        nrToDelete = 50
+      , nrToInsert = 50
+      }
+  , forwardConfig = ForwardConfig {
+        nrToForward = 50
+      }
+  , rollbackConfig = RollbackConfig {
+        distribution = Just [(95, (1, 10)), (5, (1000, 2000))]
+      }
+  , directives =
+      let
+        xs = concat $
+          zipWith
+            ((. return ) . (:))
+            (replicate 10 GenForward)
+            (replicate 10 GenPush)
+        ys = concat $ replicate 10 (xs ++ [GenFlush])
+        zs = ys ++ [GenRollback]
+      in
+        Just $ concat $ repeat zs
   }
 
 {-------------------------------------------------------------------------------
@@ -321,8 +387,13 @@ data Model k v = Model {
   deriving stock (Show, Generic)
   deriving anyclass NFData
 
-genInitialModel :: GenConfig -> Gen (Model k v)
-genInitialModel = error "genInitialModel: not implemented"
+genInitialModel ::
+     (Ord k, Arbitrary k, Arbitrary v)
+  => GenConfig
+  -> Gen (Model k v)
+genInitialModel GenConfig{nrInitialValues} = do
+    kvs <- replicateM nrInitialValues arbitrary
+    pure $ Model mempty 0 (mFromListValues kvs) 0
 
 newtype Key = Key ShortByteString
   deriving stock (Show, Eq, Ord, Generic)
@@ -379,29 +450,331 @@ data CmdGenResult k v = CmdGenResult {
   Command generator: Main generators
 -------------------------------------------------------------------------------}
 
+-- | Mode for the top-level generator.
+--
+-- * Bench: Generate commands in deterministic order according to the
+--   @'directives'@ configuration parameter, and do not modify the passed in
+--   configuration parameters.
+-- * Test: Generate commands in non-deterministic order, modify the passed in
+--   configuration to use sized parameters.
+data GenMode = BenchMode | TestMode
+
 -- | A stateful generator for sequences of commands.
 --
 -- Note: We return the @'Model'@ because we want to perform invariant and/or
 -- sanity checks on it.
-generator :: GenConfig -> Gen (CmdGenResult k v)
-generator conf = do
+generator ::
+     (Ord k, Arbitrary k, Arbitrary v)
+  => GenConfig
+  -> GenMode
+  -> Gen (CmdGenResult k v)
+generator preConf gmode = do
+  conf <- mkConf
   m <- genInitialModel conf
   ((), m') <- runCmdGen warmup conf m
-  (cmds, m'') <- runCmdGen genCmds conf m'
+  (cmds, m'') <- runCmdGen gen conf m'
   pure $ CmdGenResult {
       cmds
     , ds0 = diffs m'
     , finalModel = m''
     }
+  where
+    gen = case gmode of
+      BenchMode -> genCmdsDet
+      TestMode  -> genCmdsNonDet
 
--- | Generate a list of commands.
-genCmds :: CmdGen k v [Cmd MockDiffSeq k v]
-genCmds = error "genCmds: not implemented"
+    -- Replace configuration parameters by QuickCheck sized ones if the
+    -- generatore mode is set to @Test@.
+    mkConf = case gmode of
+      BenchMode -> pure preConf
+      TestMode  -> do
+        n <- getPositive <$> arbitrary
+        k :: Int <- getSmall . getPositive <$> arbitrary
+        pure $ preConf {
+            nrCommands        = n
+          , securityParameter = k
+          , directives        = Nothing
+          , rollbackConfig    = (rollbackConfig preConf) {
+                distribution = Nothing
+              }
+          }
+
+-- | Generate a list of commands in deterministic order.
+--
+-- Note: The order of commands is deterministic, the inputs for these commands
+-- are often semi-randomly generated.
+genCmdsDet ::
+     forall k v. (Ord k, Arbitrary k, Arbitrary v)
+  => CmdGen k v [Cmd MockDiffSeq k v]
+genCmdsDet = do
+  nrc <- reader nrCommands
+  nrg <- gets nrGenerated
+
+  if nrg >= nrc then
+    pure []
+  else do
+    dirsMay <- reader directives
+
+    case dirsMay of
+      Nothing       -> error "No directives given."
+      Just []       -> error "Directives should be infinitish length"
+      Just (dir : dirs) -> do
+        c <- genCmdDet dir
+        cs <- local (\r -> r { directives = Just dirs }) genCmdsDet
+        pure (c : cs)
+
+-- | Generate a specific command according to a directive.
+genCmdDet ::
+     (Ord k, Arbitrary k, Arbitrary v)
+  => Directive
+  -> CmdGen k v (Cmd MockDiffSeq k v)
+genCmdDet = \case
+  GenForward  -> genForward
+  GenPush     -> genPush
+  GenFlush    -> genFlush
+  GenRollback -> genRollback
+
+-- | Generate a list of commands in non-deterministic order.
+genCmdsNonDet ::
+     (Ord k, Arbitrary k, Arbitrary v)
+  => CmdGen k v [Cmd MockDiffSeq k v]
+genCmdsNonDet = do
+  conf <- ask
+  replicateM (nrCommands conf) genCmdNonDet
+
+-- | Generate a command based on a probability distribution.
+genCmdNonDet ::
+     (Ord k, Arbitrary k, Arbitrary v)
+  => CmdGen k v (Cmd MockDiffSeq k v)
+genCmdNonDet = do
+    frequency [
+        (100, genPush)
+      , (10, genFlush)
+      , (1, genRollback)
+      , (100, genForward)
+      ]
 
 -- | Simulate the warmup phase where there have not yet been at least @k@
 -- pushes.
-warmup :: CmdGen k v ()
-warmup = error "warmup: not implemented"
+warmup ::
+     forall k v. (Ord k, Arbitrary k, Arbitrary v)
+  => CmdGen k v ()
+warmup = do
+  nr <- gets nrGenerated
+
+  k <- reader securityParameter
+  replicateM_ k genPush
+
+  nr' <- gets nrGenerated
+
+  modify (\st -> st {
+      nrGenerated = 0
+    })
+
+  ds   <- gets diffs
+  t    <- gets tip
+  nr'' <- gets nrGenerated
+
+  let
+    invariant = and [
+        nr == 0
+      , nr' == k
+      , nr'' == 0
+      , mLength ds == k
+      , t == k
+      ]
+
+  Exn.assert invariant $ pure ()
+
+{-------------------------------------------------------------------------------
+  Command generator: Individual command generation
+-------------------------------------------------------------------------------}
+
+-- | Generate a @'Push'@ command.
+--
+-- > data Cmd (i :: Imp) k v =
+-- >    Push (SlotNo i) (Diff i k v)
+-- >    -- ...
+--
+-- Steps to generate a @'Push'@ command:
+-- * Forward backing values.
+-- * "Simulate a transaction" by generating a diff that:
+--   1. Deletes one or more values that exist in the forwarded backing values.
+--   2. Inserts one or more values with globally unique keys.
+-- * Return a strictly increasing slot number, and the new diff.
+-- BOOKKEEPING: Push the new diff onto the model's diff sequence.
+genPush ::
+     forall k v. (Ord k, Arbitrary k, Arbitrary v)
+  => CmdGen k v (Cmd MockDiffSeq k v)
+genPush = do
+    ds <- gets diffs
+    t  <- gets tip
+    vs <- gets backingValues
+
+    let
+      vs' = mForwardValues vs (mTotalDiff ds)
+
+    d1 <- valuesToDelete vs'
+    d2 <- valuesToInsert
+    let
+      d = d1 <> d2
+
+    modify (\st -> st {
+        diffs       = mPush ds (fromIntegral t) d
+      , tip         = t + 1
+      , nrGenerated = nrGenerated st + 1
+      })
+
+    pure $ Push (fromIntegral t) d
+  where
+    valuesToDelete :: MockValues k v -> CmdGen k v (MockDiff k v)
+    valuesToDelete (MockValues m) = do
+      PushConfig{nrToDelete} <- reader pushConfig
+      mFromListDeletes . take nrToDelete <$> shuffle (Map.toList m)
+
+    valuesToInsert :: CmdGen k v (MockDiff k v)
+    valuesToInsert = do
+      PushConfig{nrToInsert} <- reader pushConfig
+      mFromListInserts <$> replicateM nrToInsert arbitrary'
+
+-- | Generate a @'Flush'@ command.
+--
+-- >  data Cmd (i :: Imp) k v =
+-- >    -- ...
+-- >    | Flush Int
+-- >    -- ...
+--
+-- Steps to generate a @'Flush'@ command:
+-- * Compute how many diffs @n@ in the diff sequence have a slot number that
+--   exceeds the security parameter @k@.
+-- * Return @n@.
+-- BOOKKEEPING: Remove the first @n@ diffs from the models' diff sequence and
+-- use them to forward the model's backing values.
+genFlush :: Ord k => CmdGen k v (Cmd MockDiffSeq k v)
+genFlush = do
+    k <- reader securityParameter
+
+    ds <- gets diffs
+    t  <- gets tip
+    vs <- gets backingValues
+
+    let
+      -- Since we never skip slots, we can compute which diffs are immutable
+      -- just from the length of the current diff sequence.
+      (l, r)    = mFlush (mLength ds - k) ds
+      -- Before we have pushed at least @k@ diffs, flushing has no effect.
+      -- After pushing at least @k@ diffs, flushing should never leave the
+      -- resulting diff sequence with less than @k@ elements.
+      invariant = if t < k then
+                    mLength l == 0 && mLength r == mLength ds
+                  else
+                    mLength r == k
+      n         = mLength l
+
+    modify (\st -> st {
+        diffs         = r
+      , backingValues = mForwardValues vs (mTotalDiff l)
+      , nrGenerated   = nrGenerated st + 1
+      })
+
+    Exn.assert invariant $ pure $ Flush n
+
+-- | Generate a @'Rollback'@ command.
+--
+-- >  data Cmd (i :: Imp) k v =
+-- >    -- ...
+-- >    | Rollback Int [Block i k v]
+-- >    -- ...
+--
+-- Steps to generate a @'Rollback'@ command:
+-- * Pick how much to rollback, i.e. an integer @n@ (depends on the
+--   configuration parameter).
+-- * Generate @n@ new diffs (blocks) @bs@ to push, which mimicks a switch to
+--   a new fork of length equal to the current fork.
+-- * Return @n@ and @bs@.
+-- BOOKKEEPING: Replace the last @n@ diffs in the models' diff sequence by
+--   @bs@.
+--
+-- Note: We assume that pushes do not skip any slots.
+genRollback ::
+     (Ord k, Arbitrary k, Arbitrary v)
+  => CmdGen k v (Cmd MockDiffSeq k v)
+genRollback = do
+    k <- reader securityParameter
+    distMay <- reader (distribution . rollbackConfig)
+
+    ds <- gets diffs
+    t  <- gets tip
+
+    m <- case distMay of
+      Just dist -> frequency [(x, choose (lb, ub)) | (x, (lb, ub)) <- dist]
+      Nothing   -> choose (1, k)
+
+    let
+      n       = min m (mLength ds)
+      (l, _r) = mRollback n ds
+
+    modify (\st -> st {
+        diffs       = l
+      , tip         = t - n
+      , nrGenerated = nrGenerated st + 1
+      })
+
+    -- To generate @bs@, we re-use the @'genPush'@ function. However, this
+    -- function updates @'nrGenerated'@ each time, even though we are only
+    -- returning one @'Rollback'@ command eventually. So, we subtract the
+    -- length of @n@ from @'nrGenerated'@.
+    bs <- fmap fromPushCmd <$> replicateM n genPush
+    modify (\st -> st {
+        nrGenerated = nrGenerated st - n
+      })
+
+    let
+      invariant = m <= k && n <= mLength ds
+
+    Exn.assert invariant $ pure $ Rollback n bs
+  where
+    fromPushCmd :: Cmd i k v -> (SlotNo i, Diff i k v)
+    fromPushCmd = \case
+      Push sl d -> (sl, d)
+      _         -> error "fromPushCmd"
+
+-- | Generate a @'Forward'@ command.
+--
+-- >  data Cmd (i :: Imp) k v =
+-- >    -- ...
+-- >    | Forward (Values i k v) (Keys i k v)
+--
+-- Steps to generate a @'Forward'@ command:
+-- * Determine which keys to forward.
+-- * Retrieve (a subset of) the backing values from the model, i.e.,
+--   /read/ the keys (obtained in previous step) from the backing values.
+-- * Return the previous two combined.
+-- BOOKKEEPING: None, since forwarding doesn't alter any model state.
+--
+-- Note: The keys to forward should be a superset of the keys of the backing
+-- values that we retrieve from the model.
+genForward :: forall k v. Ord k => CmdGen k v (Cmd MockDiffSeq k v)
+genForward = do
+
+    ds  <- gets diffs
+    bvs <- gets backingValues
+
+    ks <- keysToForward (mDiffKeys $ totalDiff ds)
+
+    let
+      vs = mRestrictValues bvs ks
+
+    modify (\st -> st{
+        nrGenerated = nrGenerated st + 1
+      })
+
+    pure $ Forward vs ks
+  where
+    keysToForward :: MockKeys k v -> CmdGen k v (MockKeys k v)
+    keysToForward (MockKeys s) = do
+      ForwardConfig{nrToForward} <- reader forwardConfig
+      mFromListKeys . take nrToForward <$> shuffle (toList s)
 
 {-------------------------------------------------------------------------------
   Sanity checks
