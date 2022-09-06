@@ -226,13 +226,15 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 49613f11e034485c8377945c86c0465726c0860c
-  --sha256: 0gxb9xghsacr0qaljhq3qzvmb2f1wwmly89prwqy4fdm9mvqiq95
+  tag: 26849193788a38479367799cbb249699ac952bab
+  --sha256: 1z9an4qq7x45vrwcvpya4wmgbjacg0dbq6c4z59z2054k7fzdgqp
   subdir:
     eras/alonzo/impl
     eras/alonzo/test-suite
     eras/babbage/impl
     eras/babbage/test-suite
+    eras/conway/impl
+    eras/conway/test-suite
     eras/byron/chain/executable-spec
     eras/byron/crypto
     eras/byron/crypto/test

@@ -10,9 +10,11 @@
 
 module Ouroboros.Consensus.Shelley.Node.Praos (
     ProtocolParamsBabbage (..)
+  , ProtocolParamsConway (..)
   , praosBlockForging
   , praosSharedBlockForging
   , protocolInfoPraosBabbage
+  , protocolInfoPraosConway
   , protocolInfoPraosShelleyBased
   ) where
 
@@ -43,8 +45,8 @@ import           Ouroboros.Consensus.Protocol.Praos (ConsensusConfig (..),
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (MaxMajorProtVer (MaxMajorProtVer),
                      PraosCanBeLeader (praosCanBeLeaderOpCert))
-import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, EraCrypto,
-                     ShelleyBasedEra (shelleyBasedEraName))
+import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, ConwayEra,
+                     EraCrypto, ShelleyBasedEra (shelleyBasedEraName))
 import           Ouroboros.Consensus.Shelley.Ledger
                      (CodecConfig (ShelleyCodecConfig), LedgerState (..),
                      ShelleyBlock, ShelleyCompatible, ShelleyTransition (..),
@@ -160,7 +162,34 @@ protocolInfoPraosBabbage
     } =
     protocolInfoPraosShelleyBased
       protocolParamsShelleyBased
-      (error "Babbage currently pretending to be Alonzo")
+      (error "Babbage currently pretending to be Alonzo", error "Babbage currently pretending to be Alonzo")
+      protVer
+      maxTxCapacityOverrides
+
+-- | Parameters needed to run Conway
+data ProtocolParamsConway c = ProtocolParamsConway
+  { conwayProtVer :: SL.ProtVer,
+    conwayMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (ConwayEra c))
+  }
+
+protocolInfoPraosConway ::
+  forall m c.
+  ( IOLike m,
+    ShelleyCompatible (Praos c) (ConwayEra c),
+    TxLimits (ShelleyBlock (Praos c) (ConwayEra c))
+  ) =>
+  ProtocolParamsShelleyBased (ConwayEra c) ->
+  ProtocolParamsConway c ->
+  ProtocolInfo m (ShelleyBlock (Praos c) (ConwayEra c))
+protocolInfoPraosConway
+  protocolParamsShelleyBased
+  ProtocolParamsConway
+    { conwayProtVer = protVer,
+      conwayMaxTxCapacityOverrides = maxTxCapacityOverrides
+    } =
+    protocolInfoPraosShelleyBased
+      protocolParamsShelleyBased
+      (error "Conway currently pretending to be Alonzo", error "Conway currently pretending to be Alonzo")
       protVer
       maxTxCapacityOverrides
 
@@ -172,7 +201,7 @@ protocolInfoPraosShelleyBased ::
     c ~ EraCrypto era
   ) =>
   ProtocolParamsShelleyBased era ->
-  Core.TranslationContext era ->
+  (SL.AdditionalGenesisConfig era, Core.TranslationContext era) ->
   SL.ProtVer ->
   TxLimits.Overrides (ShelleyBlock (Praos c) era) ->
   ProtocolInfo m (ShelleyBlock (Praos c) era)
@@ -182,7 +211,7 @@ protocolInfoPraosShelleyBased
       shelleyBasedInitialNonce = initialNonce,
       shelleyBasedLeaderCredentials = credentialss
     }
-  transCtxt
+  (additionalGenesisConfig, transCtxt)
   protVer
   maxTxCapacityOverrides =
     assertWithMsg (validateGenesis genesis) $
@@ -195,9 +224,6 @@ protocolInfoPraosShelleyBased
               credentialss
         }
     where
-      additionalGenesisConfig :: SL.AdditionalGenesisConfig era
-      additionalGenesisConfig = transCtxt
-
       maxMajorProtVer :: MaxMajorProtVer
       maxMajorProtVer = MaxMajorProtVer $ SL.pvMajor protVer
 

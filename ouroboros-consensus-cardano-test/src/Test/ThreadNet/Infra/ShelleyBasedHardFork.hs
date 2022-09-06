@@ -136,7 +136,9 @@ type ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 =
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
   , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
 
-  , SL.TranslationContext era1 ~ ()
+  , SL.AdditionalGenesisConfig era1 ~ ()
+  , SL.TranslationContext      era1 ~ ()
+  , SL.AdditionalGenesisConfig era2 ~ SL.TranslationContext era2
     -- At the moment, fix the protocols together
   , EraCrypto era1 ~ EraCrypto era2
   , PraosCrypto (EraCrypto era1)
@@ -265,7 +267,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     protocolInfo1 =
         protocolInfoTPraosShelleyBased
           protocolParamsShelleyBased
-          ()  -- trivial translation context
+          ((), ())  -- trivial additional Genesis config and translation context
           protVer1
           (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
 
@@ -298,7 +300,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
             , shelleyBasedInitialNonce
             , shelleyBasedLeaderCredentials
             }
-          transCtxt2
+          (transCtxt2, transCtxt2)
           protVer2
           (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
 

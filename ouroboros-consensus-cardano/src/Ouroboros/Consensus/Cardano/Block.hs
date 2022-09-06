@@ -16,28 +16,28 @@ module Ouroboros.Consensus.Cardano.Block (
     -- checks from GHC. But GHC expects a data type, not a type family, that's
     -- why we sometimes mention the data type of the instance in these exports
     -- instead of the abstract type family.
-  , HardForkBlock (BlockAllegra, BlockAlonzo, BlockByron, BlockMary, BlockShelley, BlockBabbage)
+  , HardForkBlock (BlockAllegra, BlockAlonzo, BlockByron, BlockMary, BlockShelley, BlockBabbage, BlockConway)
     -- * Headers
   , CardanoHeader
-  , Header (HeaderAllegra, HeaderAlonzo, HeaderByron, HeaderMary, HeaderShelley, HeaderBabbage)
+  , Header (HeaderAllegra, HeaderAlonzo, HeaderByron, HeaderMary, HeaderShelley, HeaderBabbage, HeaderConway)
     -- * Generalised transactions
   , CardanoApplyTxErr
   , CardanoGenTx
   , CardanoGenTxId
-  , GenTx (GenTxAllegra, GenTxAlonzo, GenTxByron, GenTxMary, GenTxShelley, GenTxBabbage)
-  , HardForkApplyTxErr (ApplyTxErrAllegra, ApplyTxErrAlonzo, ApplyTxErrByron, ApplyTxErrMary, ApplyTxErrShelley, ApplyTxErrWrongEra, ApplyTxErrBabbage)
-  , TxId (GenTxIdAllegra, GenTxIdAlonzo, GenTxIdByron, GenTxIdMary, GenTxIdShelley, GenTxIdBabbage)
+  , GenTx (GenTxAllegra, GenTxAlonzo, GenTxByron, GenTxMary, GenTxShelley, GenTxBabbage, GenTxConway)
+  , HardForkApplyTxErr (ApplyTxErrAllegra, ApplyTxErrAlonzo, ApplyTxErrByron, ApplyTxErrMary, ApplyTxErrShelley, ApplyTxErrWrongEra, ApplyTxErrBabbage, ApplyTxErrConway)
+  , TxId (GenTxIdAllegra, GenTxIdAlonzo, GenTxIdByron, GenTxIdMary, GenTxIdShelley, GenTxIdBabbage, GenTxIdConway)
     -- * LedgerError
   , CardanoLedgerError
-  , HardForkLedgerError (LedgerErrorAllegra, LedgerErrorAlonzo, LedgerErrorByron, LedgerErrorMary, LedgerErrorShelley, LedgerErrorWrongEra, LedgerErrorBabbage)
+  , HardForkLedgerError (LedgerErrorAllegra, LedgerErrorAlonzo, LedgerErrorByron, LedgerErrorMary, LedgerErrorShelley, LedgerErrorWrongEra, LedgerErrorBabbage, LedgerErrorConway)
     -- * OtherEnvelopeError
   , CardanoOtherHeaderEnvelopeError
-  , HardForkEnvelopeErr (OtherHeaderEnvelopeErrorAllegra, OtherHeaderEnvelopeErrorBabbage, OtherHeaderEnvelopeErrorAlonzo, OtherHeaderEnvelopeErrorByron, OtherHeaderEnvelopeErrorMary, OtherHeaderEnvelopeErrorShelley, OtherHeaderEnvelopeErrorWrongEra)
+  , HardForkEnvelopeErr (OtherHeaderEnvelopeErrorAllegra, OtherHeaderEnvelopeErrorBabbage, OtherHeaderEnvelopeErrorConway, OtherHeaderEnvelopeErrorAlonzo, OtherHeaderEnvelopeErrorByron, OtherHeaderEnvelopeErrorMary, OtherHeaderEnvelopeErrorShelley, OtherHeaderEnvelopeErrorWrongEra)
     -- * TipInfo
   , CardanoTipInfo
-  , OneEraTipInfo (TipInfoAllegra, TipInfoAlonzo, TipInfoByron, TipInfoBabbage, TipInfoMary, TipInfoShelley)
+  , OneEraTipInfo (TipInfoAllegra, TipInfoAlonzo, TipInfoByron, TipInfoBabbage, TipInfoConway, TipInfoMary, TipInfoShelley)
     -- * Query
-  , BlockQuery (QueryAnytimeAllegra, QueryAnytimeAlonzo, QueryAnytimeBabbage, QueryAnytimeByron, QueryAnytimeMary, QueryAnytimeShelley, QueryHardFork, QueryIfCurrentAllegra, QueryIfCurrentAlonzo, QueryIfCurrentBabbage, QueryIfCurrentByron, QueryIfCurrentMary, QueryIfCurrentShelley)
+  , BlockQuery (QueryAnytimeAllegra, QueryAnytimeAlonzo, QueryAnytimeBabbage, QueryAnytimeConway, QueryAnytimeByron, QueryAnytimeMary, QueryAnytimeShelley, QueryHardFork, QueryIfCurrentAllegra, QueryIfCurrentAlonzo, QueryIfCurrentBabbage, QueryIfCurrentConway, QueryIfCurrentByron, QueryIfCurrentMary, QueryIfCurrentShelley)
   , CardanoQuery
   , CardanoQueryResult
   , Either (QueryResultSuccess, QueryResultEraMismatch)
@@ -58,10 +58,10 @@ module Ouroboros.Consensus.Cardano.Block (
   , HardForkLedgerConfig (CardanoLedgerConfig)
     -- * LedgerState
   , CardanoLedgerState
-  , LedgerState (LedgerStateAllegra, LedgerStateAlonzo, LedgerStateBabbage, LedgerStateByron, LedgerStateMary, LedgerStateShelley)
+  , LedgerState (LedgerStateAllegra, LedgerStateAlonzo, LedgerStateBabbage, LedgerStateConway, LedgerStateByron, LedgerStateMary, LedgerStateShelley)
     -- * ChainDepState
   , CardanoChainDepState
-  , HardForkState (ChainDepStateAllegra, ChainDepStateAlonzo, ChainDepStateBabbage, ChainDepStateByron, ChainDepStateMary, ChainDepStateShelley)
+  , HardForkState (ChainDepStateAllegra, ChainDepStateAlonzo, ChainDepStateBabbage, ChainDepStateConway, ChainDepStateByron, ChainDepStateMary, ChainDepStateShelley)
     -- * EraMismatch
   , EraMismatch (..)
   ) where
@@ -105,6 +105,7 @@ type CardanoShelleyEras c =
    , ShelleyBlock (TPraos c) (MaryEra c)
    , ShelleyBlock (TPraos c) (AlonzoEra c)
    , ShelleyBlock (Praos c)  (BabbageEra c)
+   , ShelleyBlock (Praos c)  (ConwayEra c)
    ]
 
 {-------------------------------------------------------------------------------
@@ -114,19 +115,21 @@ type CardanoShelleyEras c =
 -- Here we use layout and adjacency to make it obvious that we haven't
 -- miscounted.
 
-pattern TagByron   :: f ByronBlock                                -> NS f (CardanoEras c)
-pattern TagShelley :: f (ShelleyBlock (TPraos c) (ShelleyEra c))  -> NS f (CardanoEras c)
-pattern TagAllegra :: f (ShelleyBlock (TPraos c) (AllegraEra c))  -> NS f (CardanoEras c)
-pattern TagMary    :: f (ShelleyBlock (TPraos c) (MaryEra    c))  -> NS f (CardanoEras c)
-pattern TagAlonzo  :: f (ShelleyBlock (TPraos c) (AlonzoEra  c))  -> NS f (CardanoEras c)
-pattern TagBabbage :: f (ShelleyBlock (Praos c)  (BabbageEra  c)) -> NS f (CardanoEras c)
+pattern TagByron   :: f ByronBlock                               -> NS f (CardanoEras c)
+pattern TagShelley :: f (ShelleyBlock (TPraos c) (ShelleyEra c)) -> NS f (CardanoEras c)
+pattern TagAllegra :: f (ShelleyBlock (TPraos c) (AllegraEra c)) -> NS f (CardanoEras c)
+pattern TagMary    :: f (ShelleyBlock (TPraos c) (MaryEra    c)) -> NS f (CardanoEras c)
+pattern TagAlonzo  :: f (ShelleyBlock (TPraos c) (AlonzoEra  c)) -> NS f (CardanoEras c)
+pattern TagBabbage :: f (ShelleyBlock (Praos c)  (BabbageEra c)) -> NS f (CardanoEras c)
+pattern TagConway  :: f (ShelleyBlock (Praos c)  (ConwayEra  c)) -> NS f (CardanoEras c)
 
-pattern TagByron   x =                Z x
-pattern TagShelley x =             S (Z x)
-pattern TagAllegra x =          S (S (Z x))
-pattern TagMary    x =       S (S (S (Z x)))
-pattern TagAlonzo  x =    S (S (S (S (Z x))))
-pattern TagBabbage x = S (S (S (S (S (Z x)))))
+pattern TagByron   x =                   Z x
+pattern TagShelley x =                S (Z x)
+pattern TagAllegra x =             S (S (Z x))
+pattern TagMary    x =          S (S (S (Z x)))
+pattern TagAlonzo  x =       S (S (S (S (Z x))))
+pattern TagBabbage x =    S (S (S (S (S (Z x)))))
+pattern TagConway  x = S (S (S (S (S (S (Z x))))))
 
 {-------------------------------------------------------------------------------
   INTERNAL A telescope function for each era
@@ -171,15 +174,27 @@ pattern TeleBabbage  ::
   -> g (ShelleyBlock (TPraos c) (AlonzoEra  c))
   -> f (ShelleyBlock (Praos c)  (BabbageEra c))
   -> Telescope g f (CardanoEras c)
+
+pattern TeleConway  ::
+     g ByronBlock
+  -> g (ShelleyBlock (TPraos c) (ShelleyEra c))
+  -> g (ShelleyBlock (TPraos c) (AllegraEra c))
+  -> g (ShelleyBlock (TPraos c) (MaryEra    c))
+  -> g (ShelleyBlock (TPraos c) (AlonzoEra  c))
+  -> g (ShelleyBlock (Praos c)  (BabbageEra c))
+  -> f (ShelleyBlock (Praos c)  (ConwayEra  c))
+  -> Telescope g f (CardanoEras c)
+
 -- Here we use layout and adjacency to make it obvious that we haven't
 -- miscounted.
 
-pattern TeleByron                                     x =                                                       TZ x
-pattern TeleShelley byron                             x = TS byron                                             (TZ x)
-pattern TeleAllegra byron shelley                     x = TS byron (TS shelley                                 (TZ x))
-pattern TeleMary    byron shelley allegra             x = TS byron (TS shelley (TS allegra                     (TZ x)))
-pattern TeleAlonzo  byron shelley allegra mary        x = TS byron (TS shelley (TS allegra (TS mary            (TZ x))))
-pattern TeleBabbage byron shelley allegra mary alonzo x = TS byron (TS shelley (TS allegra (TS mary (TS alonzo (TZ x)))))
+pattern TeleByron                                             x =                                                                   TZ x
+pattern TeleShelley byron                                     x = TS byron                                                         (TZ x)
+pattern TeleAllegra byron shelley                             x = TS byron (TS shelley                                             (TZ x))
+pattern TeleMary    byron shelley allegra                     x = TS byron (TS shelley (TS allegra                                 (TZ x)))
+pattern TeleAlonzo  byron shelley allegra mary                x = TS byron (TS shelley (TS allegra (TS mary                        (TZ x))))
+pattern TeleBabbage byron shelley allegra mary alonzo         x = TS byron (TS shelley (TS allegra (TS mary (TS alonzo             (TZ x)))))
+pattern TeleConway  byron shelley allegra mary alonzo babbage x = TS byron (TS shelley (TS allegra (TS mary (TS alonzo (TS babbage (TZ x))))))
 
 {-------------------------------------------------------------------------------
   The block type of the Cardano block chain
@@ -217,6 +232,9 @@ pattern BlockAlonzo b = HardForkBlock (OneEraBlock (TagAlonzo (I b)))
 pattern BlockBabbage :: ShelleyBlock (Praos c) (BabbageEra c) -> CardanoBlock c
 pattern BlockBabbage b = HardForkBlock (OneEraBlock (TagBabbage (I b)))
 
+pattern BlockConway :: ShelleyBlock (Praos c) (ConwayEra c) -> CardanoBlock c
+pattern BlockConway b = HardForkBlock (OneEraBlock (TagConway (I b)))
+
 {-# COMPLETE
     BlockByron
   , BlockShelley
@@ -224,6 +242,7 @@ pattern BlockBabbage b = HardForkBlock (OneEraBlock (TagBabbage (I b)))
   , BlockMary
   , BlockAlonzo
   , BlockBabbage
+  , BlockConway
   #-}
 
 
@@ -262,12 +281,19 @@ pattern HeaderBabbage ::
   -> CardanoHeader c
 pattern HeaderBabbage h = HardForkHeader (OneEraHeader (TagBabbage h))
 
+pattern HeaderConway ::
+     Header (ShelleyBlock (Praos c) (ConwayEra c))
+  -> CardanoHeader c
+pattern HeaderConway h = HardForkHeader (OneEraHeader (TagConway h))
+
 {-# COMPLETE HeaderByron
            , HeaderShelley
            , HeaderAllegra
            , HeaderMary
            , HeaderAlonzo
-           , HeaderBabbage #-}
+           , HeaderBabbage
+           , HeaderConway
+  #-}
 
 {-------------------------------------------------------------------------------
   Generalised transactions
@@ -294,6 +320,9 @@ pattern GenTxAlonzo tx = HardForkGenTx (OneEraGenTx (TagAlonzo tx))
 pattern GenTxBabbage :: GenTx (ShelleyBlock (Praos c) (BabbageEra c)) -> CardanoGenTx c
 pattern GenTxBabbage tx = HardForkGenTx (OneEraGenTx (TagBabbage tx))
 
+pattern GenTxConway :: GenTx (ShelleyBlock (Praos c) (ConwayEra c)) -> CardanoGenTx c
+pattern GenTxConway tx = HardForkGenTx (OneEraGenTx (TagConway tx))
+
 {-# COMPLETE
     GenTxByron
   , GenTxShelley
@@ -301,9 +330,8 @@ pattern GenTxBabbage tx = HardForkGenTx (OneEraGenTx (TagBabbage tx))
   , GenTxMary
   , GenTxAlonzo
   , GenTxBabbage
+  , GenTxConway
   #-}
-
-
 
 -- | The ID of a Cardano transaction.
 type CardanoGenTxId c = GenTxId (CardanoBlock c)
@@ -342,12 +370,20 @@ pattern GenTxIdBabbage ::
 pattern GenTxIdBabbage txid =
     HardForkGenTxId (OneEraGenTxId (TagBabbage (WrapGenTxId txid)))
 
+pattern GenTxIdConway ::
+     GenTxId (ShelleyBlock (Praos c) (ConwayEra c))
+  -> CardanoGenTxId c
+pattern GenTxIdConway txid =
+    HardForkGenTxId (OneEraGenTxId (TagConway (WrapGenTxId txid)))
+
 {-# COMPLETE GenTxIdByron
            , GenTxIdShelley
            , GenTxIdAllegra
            , GenTxIdMary
            , GenTxIdAlonzo
-           , GenTxIdBabbage #-}
+           , GenTxIdBabbage
+           , GenTxIdConway
+  #-}
 
 -- | An error resulting from applying a 'CardanoGenTx' to the ledger.
 --
@@ -401,6 +437,12 @@ pattern ApplyTxErrBabbage ::
 pattern ApplyTxErrBabbage err =
     HardForkApplyTxErrFromEra (OneEraApplyTxErr (TagBabbage (WrapApplyTxErr err)))
 
+pattern ApplyTxErrConway ::
+     ApplyTxErr (ShelleyBlock (Praos c) (ConwayEra c))
+  -> CardanoApplyTxErr c
+pattern ApplyTxErrConway err =
+    HardForkApplyTxErrFromEra (OneEraApplyTxErr (TagConway (WrapApplyTxErr err)))
+
 pattern ApplyTxErrWrongEra :: EraMismatch -> CardanoApplyTxErr c
 pattern ApplyTxErrWrongEra eraMismatch <-
     HardForkApplyTxErrWrongEra (mkEraMismatch -> eraMismatch)
@@ -411,7 +453,9 @@ pattern ApplyTxErrWrongEra eraMismatch <-
            , ApplyTxErrMary
            , ApplyTxErrAlonzo
            , ApplyTxErrBabbage
-           , ApplyTxErrWrongEra #-}
+           , ApplyTxErrConway
+           , ApplyTxErrWrongEra
+  #-}
 
 {-------------------------------------------------------------------------------
   LedgerError
@@ -474,6 +518,13 @@ pattern LedgerErrorBabbage err =
     HardForkLedgerErrorFromEra
       (OneEraLedgerError (TagBabbage (WrapLedgerErr err)))
 
+pattern LedgerErrorConway ::
+     LedgerError (ShelleyBlock (Praos c) (ConwayEra c))
+  -> CardanoLedgerError c
+pattern LedgerErrorConway err =
+    HardForkLedgerErrorFromEra
+      (OneEraLedgerError (TagConway (WrapLedgerErr err)))
+
 pattern LedgerErrorWrongEra :: EraMismatch -> CardanoLedgerError c
 pattern LedgerErrorWrongEra eraMismatch <-
     HardForkLedgerErrorWrongEra (mkEraMismatch -> eraMismatch)
@@ -484,7 +535,9 @@ pattern LedgerErrorWrongEra eraMismatch <-
            , LedgerErrorMary
            , LedgerErrorAlonzo
            , LedgerErrorBabbage
-           , LedgerErrorWrongEra #-}
+           , LedgerErrorConway
+           , LedgerErrorWrongEra
+  #-}
 
 {-------------------------------------------------------------------------------
   OtherEnvelopeError
@@ -530,6 +583,12 @@ pattern OtherHeaderEnvelopeErrorBabbage
 pattern OtherHeaderEnvelopeErrorBabbage err =
     HardForkEnvelopeErrFromEra (OneEraEnvelopeErr (TagBabbage (WrapEnvelopeErr err)))
 
+pattern OtherHeaderEnvelopeErrorConway
+  :: OtherHeaderEnvelopeError (ShelleyBlock (Praos c) (ConwayEra c))
+  -> CardanoOtherHeaderEnvelopeError c
+pattern OtherHeaderEnvelopeErrorConway err =
+    HardForkEnvelopeErrFromEra (OneEraEnvelopeErr (TagConway (WrapEnvelopeErr err)))
+
 pattern OtherHeaderEnvelopeErrorWrongEra
   :: EraMismatch
   -> CardanoOtherHeaderEnvelopeError c
@@ -542,7 +601,9 @@ pattern OtherHeaderEnvelopeErrorWrongEra eraMismatch <-
            , OtherHeaderEnvelopeErrorMary
            , OtherHeaderEnvelopeErrorAlonzo
            , OtherHeaderEnvelopeErrorBabbage
-           , OtherHeaderEnvelopeErrorWrongEra #-}
+           , OtherHeaderEnvelopeErrorConway
+           , OtherHeaderEnvelopeErrorWrongEra
+  #-}
 
 {-------------------------------------------------------------------------------
   TipInfo
@@ -579,12 +640,19 @@ pattern TipInfoBabbage ::
   -> CardanoTipInfo c
 pattern TipInfoBabbage ti = OneEraTipInfo (TagBabbage (WrapTipInfo ti))
 
+pattern TipInfoConway ::
+     TipInfo (ShelleyBlock (Praos c) (ConwayEra c))
+  -> CardanoTipInfo c
+pattern TipInfoConway ti = OneEraTipInfo (TagConway (WrapTipInfo ti))
+
 {-# COMPLETE TipInfoByron
            , TipInfoShelley
            , TipInfoAllegra
            , TipInfoMary
            , TipInfoAlonzo
-           , TipInfoBabbage #-}
+           , TipInfoBabbage
+           , TipInfoConway
+  #-}
 
 {-------------------------------------------------------------------------------
   Query
@@ -641,15 +709,24 @@ pattern QueryIfCurrentBabbage
   => BlockQuery (ShelleyBlock (Praos c) (BabbageEra c)) result
   -> CardanoQuery c a
 
+-- | Conway-specific query that can only be answered when the ledger is in the
+-- Conway era.
+pattern QueryIfCurrentConway
+  :: ()
+  => CardanoQueryResult c result ~ a
+  => BlockQuery (ShelleyBlock (Praos c) (ConwayEra c)) result
+  -> CardanoQuery c a
+
 -- Here we use layout and adjacency to make it obvious that we haven't
 -- miscounted.
 
-pattern QueryIfCurrentByron   q = QueryIfCurrent                     (QZ q)
-pattern QueryIfCurrentShelley q = QueryIfCurrent                 (QS (QZ q))
-pattern QueryIfCurrentAllegra q = QueryIfCurrent             (QS (QS (QZ q)))
-pattern QueryIfCurrentMary    q = QueryIfCurrent         (QS (QS (QS (QZ q))))
-pattern QueryIfCurrentAlonzo  q = QueryIfCurrent     (QS (QS (QS (QS (QZ q)))))
-pattern QueryIfCurrentBabbage q = QueryIfCurrent (QS (QS (QS (QS (QS (QZ q))))))
+pattern QueryIfCurrentByron   q = QueryIfCurrent                         (QZ q)
+pattern QueryIfCurrentShelley q = QueryIfCurrent                     (QS (QZ q))
+pattern QueryIfCurrentAllegra q = QueryIfCurrent                 (QS (QS (QZ q)))
+pattern QueryIfCurrentMary    q = QueryIfCurrent             (QS (QS (QS (QZ q))))
+pattern QueryIfCurrentAlonzo  q = QueryIfCurrent         (QS (QS (QS (QS (QZ q)))))
+pattern QueryIfCurrentBabbage q = QueryIfCurrent     (QS (QS (QS (QS (QS (QZ q))))))
+pattern QueryIfCurrentConway  q = QueryIfCurrent (QS (QS (QS (QS (QS (QS (QZ q)))))))
 
 -- | Query about the Byron era that can be answered anytime, i.e.,
 -- independent from where the tip of the ledger is.
@@ -729,6 +806,19 @@ pattern QueryAnytimeBabbage
   -> CardanoQuery c result
 pattern QueryAnytimeBabbage q = QueryAnytime q (EraIndex (TagBabbage (K ())))
 
+-- | Query about the Conway era that can be answered anytime, i.e., independent
+-- from where the tip of the ledger is.
+--
+-- For example, to ask for the start of the Conway era (whether the tip of the
+-- ledger is in the Byron, Shelley, ... era), use:
+--
+-- > QueryAnytimeConway EraStart
+--
+pattern QueryAnytimeConway
+  :: QueryAnytime result
+  -> CardanoQuery c result
+pattern QueryAnytimeConway q = QueryAnytime q (EraIndex (TagConway (K ())))
+
 {-# COMPLETE QueryIfCurrentByron
            , QueryIfCurrentShelley
            , QueryIfCurrentAllegra
@@ -741,7 +831,9 @@ pattern QueryAnytimeBabbage q = QueryAnytime q (EraIndex (TagBabbage (K ())))
            , QueryAnytimeMary
            , QueryAnytimeAlonzo
            , QueryAnytimeBabbage
-           , QueryHardFork #-}
+           , QueryAnytimeConway
+           , QueryHardFork
+  #-}
 
 -- | The result of a 'CardanoQuery'
 --
@@ -775,8 +867,9 @@ pattern CardanoCodecConfig
   -> CodecConfig (ShelleyBlock (TPraos c) (MaryEra c))
   -> CodecConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
   -> CodecConfig (ShelleyBlock (Praos c)  (BabbageEra c))
+  -> CodecConfig (ShelleyBlock (Praos c)  (ConwayEra c))
   -> CardanoCodecConfig c
-pattern CardanoCodecConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage =
+pattern CardanoCodecConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage cfgConway =
     HardForkCodecConfig {
         hardForkCodecConfigPerEra = PerEraCodecConfig
           (  cfgByron
@@ -785,6 +878,7 @@ pattern CardanoCodecConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgB
           :* cfgMary
           :* cfgAlonzo
           :* cfgBabbage
+          :* cfgConway
           :* Nil
           )
       }
@@ -808,8 +902,9 @@ pattern CardanoBlockConfig
   -> BlockConfig (ShelleyBlock (TPraos c) (MaryEra c))
   -> BlockConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
   -> BlockConfig (ShelleyBlock (Praos c)  (BabbageEra c))
+  -> BlockConfig (ShelleyBlock (Praos c)  (ConwayEra c))
   -> CardanoBlockConfig c
-pattern CardanoBlockConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage =
+pattern CardanoBlockConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage cfgConway =
     HardForkBlockConfig {
         hardForkBlockConfigPerEra = PerEraBlockConfig
           (  cfgByron
@@ -818,6 +913,7 @@ pattern CardanoBlockConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgB
           :* cfgMary
           :* cfgAlonzo
           :* cfgBabbage
+          :* cfgConway
           :* Nil
           )
       }
@@ -841,8 +937,9 @@ pattern CardanoStorageConfig
   -> StorageConfig (ShelleyBlock (TPraos c) (MaryEra c))
   -> StorageConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
   -> StorageConfig (ShelleyBlock (Praos c)  (BabbageEra c))
+  -> StorageConfig (ShelleyBlock (Praos c)  (ConwayEra c))
   -> CardanoStorageConfig c
-pattern CardanoStorageConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage =
+pattern CardanoStorageConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage cfgConway =
     HardForkStorageConfig {
         hardForkStorageConfigPerEra = PerEraStorageConfig
           (  cfgByron
@@ -851,6 +948,7 @@ pattern CardanoStorageConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cf
           :* cfgMary
           :* cfgAlonzo
           :* cfgBabbage
+          :* cfgConway
           :* Nil
           )
       }
@@ -877,8 +975,9 @@ pattern CardanoConsensusConfig
   -> PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (MaryEra c)))
   -> PartialConsensusConfig (BlockProtocol (ShelleyBlock (TPraos c) (AlonzoEra c)))
   -> PartialConsensusConfig (BlockProtocol (ShelleyBlock (Praos c)  (BabbageEra c)))
+  -> PartialConsensusConfig (BlockProtocol (ShelleyBlock (Praos c)  (ConwayEra c)))
   -> CardanoConsensusConfig c
-pattern CardanoConsensusConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage <-
+pattern CardanoConsensusConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage cfgConway <-
     HardForkConsensusConfig {
         hardForkConsensusConfigPerEra = PerEraConsensusConfig
           (  WrapPartialConsensusConfig cfgByron
@@ -887,6 +986,7 @@ pattern CardanoConsensusConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo 
           :* WrapPartialConsensusConfig cfgMary
           :* WrapPartialConsensusConfig cfgAlonzo
           :* WrapPartialConsensusConfig cfgBabbage
+          :* WrapPartialConsensusConfig cfgConway
           :* Nil
           )
       }
@@ -912,8 +1012,9 @@ pattern CardanoLedgerConfig
   -> PartialLedgerConfig (ShelleyBlock (TPraos c) (MaryEra c))
   -> PartialLedgerConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
   -> PartialLedgerConfig (ShelleyBlock (Praos c)  (BabbageEra c))
+  -> PartialLedgerConfig (ShelleyBlock (Praos c)  (ConwayEra c))
   -> CardanoLedgerConfig c
-pattern CardanoLedgerConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage <-
+pattern CardanoLedgerConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfgBabbage cfgConway <-
     HardForkLedgerConfig {
         hardForkLedgerConfigPerEra = PerEraLedgerConfig
           (  WrapPartialLedgerConfig cfgByron
@@ -922,6 +1023,7 @@ pattern CardanoLedgerConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfg
           :* WrapPartialLedgerConfig cfgMary
           :* WrapPartialLedgerConfig cfgAlonzo
           :* WrapPartialLedgerConfig cfgBabbage
+          :* WrapPartialLedgerConfig cfgConway
           :* Nil
           )
       }
@@ -988,12 +1090,22 @@ pattern LedgerStateBabbage st <-
       (State.HardForkState
         (TeleBabbage _ _ _ _ _ (State.Current { currentState = st })))
 
+pattern LedgerStateConway
+  :: LedgerState (ShelleyBlock (Praos c) (ConwayEra c))
+  -> CardanoLedgerState c
+pattern LedgerStateConway st <-
+    HardForkLedgerState
+      (State.HardForkState
+        (TeleConway _ _ _ _ _ _ (State.Current { currentState = st })))
+
 {-# COMPLETE LedgerStateByron
            , LedgerStateShelley
            , LedgerStateAllegra
            , LedgerStateMary
            , LedgerStateAlonzo
-           , LedgerStateBabbage #-}
+           , LedgerStateBabbage
+           , LedgerStateConway
+  #-}
 
 {-------------------------------------------------------------------------------
   ChainDepState
@@ -1049,9 +1161,18 @@ pattern ChainDepStateBabbage st <-
     State.HardForkState
       (TeleBabbage _ _ _ _ _ (State.Current { currentState = WrapChainDepState st }))
 
+pattern ChainDepStateConway
+  :: ChainDepState (BlockProtocol (ShelleyBlock (Praos c) (ConwayEra c)))
+  -> CardanoChainDepState c
+pattern ChainDepStateConway st <-
+    State.HardForkState
+      (TeleConway _ _ _ _ _ _ (State.Current { currentState = WrapChainDepState st }))
+
 {-# COMPLETE ChainDepStateByron
            , ChainDepStateShelley
            , ChainDepStateAllegra
            , ChainDepStateMary
            , ChainDepStateAlonzo
-           , ChainDepStateBabbage #-}
+           , ChainDepStateBabbage
+           , ChainDepStateConway
+  #-}

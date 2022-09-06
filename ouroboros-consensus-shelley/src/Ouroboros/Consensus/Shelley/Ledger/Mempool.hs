@@ -348,6 +348,25 @@ instance ( ShelleyCompatible p (BabbageEra c)
     where
       pparams = getPParams $ tickedShelleyLedgerState ledgerState
 
+instance ( ShelleyCompatible p (ConwayEra c)
+         ) => TxLimits (ShelleyBlock p (ConwayEra c)) where
+
+  type TxMeasure (ShelleyBlock p (ConwayEra c)) = AlonzoMeasure
+
+  txMeasure (ShelleyValidatedTx _txid vtx) =
+    AlonzoMeasure {
+        byteSize = ByteSize $ txInBlockSize (mkShelleyTx @(ConwayEra c) @p (SL.extractTx vtx))
+      , exUnits  = fromExUnits $ totExUnits (SL.extractTx vtx)
+      }
+
+  txsBlockCapacity ledgerState =
+      AlonzoMeasure {
+          byteSize = ByteSize $ txsMaxBytes ledgerState
+        , exUnits  = fromExUnits $ getField @"_maxBlockExUnits" pparams
+        }
+    where
+      pparams = getPParams $ tickedShelleyLedgerState ledgerState
+
 {-------------------------------------------------------------------------------
   WithTop
 -------------------------------------------------------------------------------}

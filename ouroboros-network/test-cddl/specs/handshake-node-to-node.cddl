@@ -13,7 +13,7 @@ msgRefuse          = [2, refuseReason]
 
 versionTable = { * versionNumber => nodeToNodeVersionData }
 
-versionNumber = 7 / 8 / 9 / 10
+versionNumber = 7 / 8 / 9 / 10 / 11
 
 nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode ]
 

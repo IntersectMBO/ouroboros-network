@@ -56,6 +56,15 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-10-07
+
+### Changed
+
+- The `protocolInfoTPraosShelleyBased` and `protocolInfoPraosShelleyBased`
+  functions now expect a tuple of the `AdditionalGenesisConfig` and the
+  `TranslationContext` instead of just the `TranslationContext`. For all
+  Shelley-based eras before Conway, those had been equal types.
+
 ## Circa 2022-09-30
 
 ### Fixed
@@ -76,6 +85,7 @@ https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 - `GetPoolDistr`: Get the pool distribution for the given stake pool ids
 
 ## Circa 2022-08-03
+
 ### Added
 
 - new project `ouroboros-consensus-cardano-tools` containing two tools:
