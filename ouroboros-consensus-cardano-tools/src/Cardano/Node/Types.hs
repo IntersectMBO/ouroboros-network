@@ -272,7 +272,7 @@ data NodeHardForkProtocolConfiguration =
        --
      , npcTestBabbageHardForkAtVersion      :: Maybe Word
 
-     , npcTestConwayHardForkAtEpoch        :: Maybe EpochNo
+     , npcTestConwayHardForkAtEpoch         :: Maybe EpochNo
 
        -- | For testing purposes we support specifying that the hard fork
        -- happens at a given major protocol version.
@@ -280,7 +280,7 @@ data NodeHardForkProtocolConfiguration =
        -- Obviously if this is used, all the nodes in the test cluster must be
        -- configured the same, or they will disagree.
        --
-     , npcTestConwayHardForkAtVersion      :: Maybe Word
+     , npcTestConwayHardForkAtVersion       :: Maybe Word
      }
   deriving (Eq, Show)
 

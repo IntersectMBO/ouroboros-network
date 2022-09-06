@@ -89,6 +89,7 @@ library
                      , Cardano.Node.Protocol.Alonzo
                      , Cardano.Node.Protocol.Byron
                      , Cardano.Node.Protocol.Cardano
+                     , Cardano.Node.Protocol.Conway
                      , Cardano.Node.Protocol.Shelley
 
   default-language:    Haskell2010

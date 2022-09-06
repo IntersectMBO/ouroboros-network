@@ -18,7 +18,9 @@ module Ouroboros.Consensus.Shelley.Node.Praos (
   , protocolInfoPraosShelleyBased
   ) where
 
+import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis)
 import qualified Cardano.Ledger.BaseTypes as SL (mkActiveSlotCoeff)
+import           Cardano.Ledger.Conway.Genesis (ConwayGenesis)
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute
@@ -152,17 +154,19 @@ protocolInfoPraosBabbage ::
     TxLimits (ShelleyBlock (Praos c) (BabbageEra c))
   ) =>
   ProtocolParamsShelleyBased (BabbageEra c) ->
+  AlonzoGenesis ->
   ProtocolParamsBabbage c ->
   ProtocolInfo m (ShelleyBlock (Praos c) (BabbageEra c))
 protocolInfoPraosBabbage
   protocolParamsShelleyBased
+  genesisAlonzo
   ProtocolParamsBabbage
     { babbageProtVer = protVer,
       babbageMaxTxCapacityOverrides = maxTxCapacityOverrides
     } =
     protocolInfoPraosShelleyBased
       protocolParamsShelleyBased
-      (error "Babbage currently pretending to be Alonzo", error "Babbage currently pretending to be Alonzo")
+      (genesisAlonzo, genesisAlonzo)
       protVer
       maxTxCapacityOverrides
 
@@ -179,17 +183,19 @@ protocolInfoPraosConway ::
     TxLimits (ShelleyBlock (Praos c) (ConwayEra c))
   ) =>
   ProtocolParamsShelleyBased (ConwayEra c) ->
+  (AlonzoGenesis, ConwayGenesis c) ->
   ProtocolParamsConway c ->
   ProtocolInfo m (ShelleyBlock (Praos c) (ConwayEra c))
 protocolInfoPraosConway
   protocolParamsShelleyBased
+  (genesisAlonzo, genesisConway)
   ProtocolParamsConway
     { conwayProtVer = protVer,
       conwayMaxTxCapacityOverrides = maxTxCapacityOverrides
     } =
     protocolInfoPraosShelleyBased
       protocolParamsShelleyBased
-      (error "Conway currently pretending to be Alonzo", error "Conway currently pretending to be Alonzo")
+      (genesisAlonzo, genesisConway)
       protVer
       maxTxCapacityOverrides
 

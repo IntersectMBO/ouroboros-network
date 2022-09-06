@@ -32,6 +32,7 @@ import           Cardano.Api.Protocol.Types
 
 import qualified Cardano.Node.Protocol.Alonzo as Alonzo
 import qualified Cardano.Node.Protocol.Byron as Byron
+import qualified Cardano.Node.Protocol.Conway as Conway
 import qualified Cardano.Node.Protocol.Shelley as Shelley
 import           Cardano.Node.Protocol.Types
 import           Cardano.Node.Types
@@ -127,8 +128,8 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
 
     (conwayGenesis, _conwayGenesis) <-
       firstExceptT CardanoProtocolInstantiationConwayGenesisReadError $
-        error "Conway.readGenesis" npcConwayGenesisFile
-                                   npcConwayGenesisFileHash
+        Conway.readGenesis npcConwayGenesisFile
+                           npcConwayGenesisFileHash
 
     shelleyLeaderCredentials <-
       firstExceptT CardanoProtocolInstantiationPraosLeaderCredentialsError $

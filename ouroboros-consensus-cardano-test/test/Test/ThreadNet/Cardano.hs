@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff)
+import qualified Cardano.Ledger.Conway.Genesis as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
@@ -554,7 +555,10 @@ mkProtocolCardanoAndHardForkTxs
               TriggerHardForkAtVersion babbageMajorVersion
           }
         ProtocolTransitionParamsShelleyBased {
-            transitionTranslationContext = error "Conway.degenerateConwayGenesis"
+            transitionTranslationContext =
+              -- Note that this is effectively a no-op, which is fine for
+              -- testing, at least for now.
+              SL.ConwayGenesis $ SL.GenDelegs $ sgGenDelegs genesisShelley
           , transitionTrigger            =
               TriggerHardForkAtVersion conwayMajorVersion
           }
