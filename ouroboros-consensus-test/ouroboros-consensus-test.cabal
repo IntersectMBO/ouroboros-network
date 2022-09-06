@@ -51,8 +51,11 @@ library
                        Test.Util.InvertedMap
                        Test.Util.LogicalClock
                        Test.Util.MockChain
+                       Test.Util.MockDiffSeq
+                       Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
+                       Test.Util.Orphans.NFData
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
                        Test.Util.Orphans.Slotting.Arbitrary
@@ -326,3 +329,38 @@ test-suite test-infra
                        -Wmissing-export-lists
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+
+benchmark bench-storage
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      bench-storage
+  main-is:             Main.hs
+  other-modules:
+                       Bench.Ouroboros.Consensus.Storage.LedgerDB.HD
+
+  build-depends:       base
+                     , bytestring
+                     , containers
+                     , deepseq
+                     , mtl
+                     , QuickCheck
+                     , QuickCheck-GenT
+                     , strict-containers
+                     , tasty-bench
+                     , tasty-quickcheck
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-test
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts
+                       -rtsopts
+                       "-with-rtsopts=-A32m"
