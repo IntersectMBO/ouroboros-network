@@ -38,7 +38,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
   Misc
 -------------------------------------------------------------------------------}
 
--- | Wait until the TVar changed
+-- | Wait until a function of the TVar changed
 blockUntilChanged :: forall m a b. (MonadSTM m, Eq b)
                   => (a -> b) -> b -> STM m a -> STM m (a, b)
 blockUntilChanged f b getA = do
