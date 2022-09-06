@@ -48,6 +48,7 @@ library
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-babbage
                      , cardano-ledger-babbage-test
+                     , cardano-ledger-conway-test
                      , cardano-ledger-byron
                      , cardano-ledger-core
                      , cardano-ledger-shelley
@@ -105,6 +106,7 @@ test-suite test
 
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
+                     , cardano-ledger-conway
                      , cardano-ledger-core
                      , cardano-ledger-shelley
                      , cardano-protocol-tpraos

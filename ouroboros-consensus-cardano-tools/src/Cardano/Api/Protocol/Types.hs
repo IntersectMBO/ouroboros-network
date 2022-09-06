@@ -69,11 +69,13 @@ instance (CardanoHardForkConstraints StandardCrypto, IOLike m) => Protocol m (Ca
           (ProtocolParamsMary StandardCrypto)
           (ProtocolParamsAlonzo StandardCrypto)
           (ProtocolParamsBabbage StandardCrypto)
+          (ProtocolParamsConway StandardCrypto)
           (ProtocolTransitionParamsShelleyBased StandardShelley)
           (ProtocolTransitionParamsShelleyBased StandardAllegra)
           (ProtocolTransitionParamsShelleyBased StandardMary)
           (ProtocolTransitionParamsShelleyBased StandardAlonzo)
           (ProtocolTransitionParamsShelleyBased StandardBabbage)
+          (ProtocolTransitionParamsShelleyBased StandardConway)
 
   protocolInfo (ProtocolInfoArgsCardano
                paramsByron
@@ -83,11 +85,13 @@ instance (CardanoHardForkConstraints StandardCrypto, IOLike m) => Protocol m (Ca
                paramsMary
                paramsAlonzo
                paramsBabbage
+               paramsConway
                paramsByronShelley
                paramsShelleyAllegra
                paramsAllegraMary
                paramsMaryAlonzo
-               paramsAlonzoBabbage) =
+               paramsAlonzoBabbage
+               paramsAlonzoConway) =
     protocolInfoCardano
       paramsByron
       paramsShelleyBased
@@ -96,11 +100,13 @@ instance (CardanoHardForkConstraints StandardCrypto, IOLike m) => Protocol m (Ca
       paramsMary
       paramsAlonzo
       paramsBabbage
+      paramsConway
       paramsByronShelley
       paramsShelleyAllegra
       paramsAllegraMary
       paramsMaryAlonzo
       paramsAlonzoBabbage
+      paramsAlonzoConway
 
 instance ProtocolClient ByronBlockHFC where
   data ProtocolClientInfoArgs ByronBlockHFC =

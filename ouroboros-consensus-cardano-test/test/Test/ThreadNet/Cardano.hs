@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff)
+import qualified Cardano.Ledger.Conway.Genesis as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
@@ -77,7 +78,7 @@ import           Test.Util.TestEnv
 
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Shelley.Node.Praos
-                     (ProtocolParamsBabbage (..))
+                     (ProtocolParamsBabbage (..), ProtocolParamsConway (..))
 import           Test.ThreadNet.Infra.TwoEras
 
 -- | Use 'MockCryptoCompatByron' so that bootstrap addresses and
@@ -525,8 +526,12 @@ mkProtocolCardanoAndHardForkTxs
           , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         ProtocolParamsBabbage {
-            babbageProtVer                = SL.ProtVer babbageMajorVersion  0
-          , babbageMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            babbageProtVer                = SL.ProtVer babbageMajorVersion 0
+          , babbageMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          }
+        ProtocolParamsConway {
+            conwayProtVer                 = SL.ProtVer conwayMajorVersion  0
+          , conwayMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
           }
         protocolParamsByronShelley
         ProtocolTransitionParamsShelleyBased {
@@ -548,6 +553,14 @@ mkProtocolCardanoAndHardForkTxs
             transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
           , transitionTrigger            =
               TriggerHardForkAtVersion babbageMajorVersion
+          }
+        ProtocolTransitionParamsShelleyBased {
+            transitionTranslationContext =
+              -- Note that this is effectively a no-op, which is fine for
+              -- testing, at least for now.
+              SL.ConwayGenesis $ SL.GenDelegs $ sgGenDelegs genesisShelley
+          , transitionTrigger            =
+              TriggerHardForkAtVersion conwayMajorVersion
           }
 
     -- Byron
@@ -604,10 +617,15 @@ maryMajorVersion = allegraMajorVersion + 1
 alonzoMajorVersion :: Num a => a
 alonzoMajorVersion = maryMajorVersion + 1
 
--- | The major protocol version of babbage in this test
+-- | The major protocol version of Babbage in this test
 --
 babbageMajorVersion :: Num a => a
 babbageMajorVersion = alonzoMajorVersion + 1
+
+-- | The major protocol version of Conway in this test
+--
+conwayMajorVersion :: Num a => a
+conwayMajorVersion = babbageMajorVersion + 1
 
 -- | The initial minor protocol version of Byron in this test
 --

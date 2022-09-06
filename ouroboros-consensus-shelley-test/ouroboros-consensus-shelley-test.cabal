@@ -49,6 +49,7 @@ library
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-babbage
                      , cardano-ledger-babbage-test
+                     , cardano-ledger-conway-test
                      , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma
                      , cardano-ledger-shelley-ma-test

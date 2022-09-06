@@ -16,6 +16,7 @@ module Test.Consensus.Shelley.Examples (
   , examplesAllegra
   , examplesAlonzo
   , examplesBabbage
+  , examplesConway
   , examplesMary
   , examplesShelley
   ) where
@@ -52,6 +53,8 @@ import           Test.Cardano.Ledger.Alonzo.Examples.Consensus
                      (ledgerExamplesAlonzo)
 import           Test.Cardano.Ledger.Babbage.Examples.Consensus
                      (ledgerExamplesBabbage)
+import           Test.Cardano.Ledger.Conway.Examples.Consensus
+                     (ledgerExamplesConway)
 import           Test.Cardano.Ledger.Mary.Examples.Consensus
                      (ledgerExamplesMary)
 import           Test.Cardano.Ledger.Shelley.Examples.Consensus
@@ -251,3 +254,6 @@ examplesAlonzo = fromShelleyLedgerExamples ledgerExamplesAlonzo
 
 examplesBabbage :: Golden.Examples StandardBabbageBlock
 examplesBabbage = fromShelleyLedgerExamplesPraos ledgerExamplesBabbage
+
+examplesConway :: Golden.Examples StandardConwayBlock
+examplesConway = fromShelleyLedgerExamplesPraos ledgerExamplesConway

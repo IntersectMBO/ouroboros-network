@@ -231,7 +231,7 @@ protocolInfoShelley protocolParamsShelleyBased
                       } =
     protocolInfoTPraosShelleyBased
       protocolParamsShelleyBased
-      ()  -- trivial translation context
+      ((), ())  -- trivial additional genesis config and translation context
       protVer
       maxTxCapacityOverrides
 
@@ -244,7 +244,7 @@ protocolInfoTPraosShelleyBased ::
       , c ~ EraCrypto era
       )
   => ProtocolParamsShelleyBased era
-  -> Core.TranslationContext era
+  -> (SL.AdditionalGenesisConfig era, Core.TranslationContext era)
   -> SL.ProtVer
   -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
   -> ProtocolInfo m     (ShelleyBlock (TPraos c) era)
@@ -253,7 +253,7 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
                            , shelleyBasedInitialNonce      = initialNonce
                            , shelleyBasedLeaderCredentials = credentialss
                            }
-                         transCtxt
+                         (additionalGenesisConfig, translationContext)
                          protVer
                          maxTxCapacityOverrides =
     assertWithMsg (validateGenesis genesis) $
@@ -266,19 +266,6 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
             credentialss
       }
   where
-
-    -- | Currently for all existing eras in ledger-specs (Shelley, Allegra, Mary
-    -- and Alonzo) it happens to be the case that AdditionalGenesisConfig and
-    -- TranslationContext are instantiated to the same type.
-    -- We take advantage of this fact below to simplify our code, but we are
-    -- aware that this might change in future (for new eras), breaking this
-    -- code.
-    --
-    -- see type equality constraint in
-    -- Ouroboros.Consensus.Shelley.Eras.ShelleyBasedEra
-    additionalGenesisConfig :: SL.AdditionalGenesisConfig era
-    additionalGenesisConfig = transCtxt
-
     maxMajorProtVer :: MaxMajorProtVer
     maxMajorProtVer = MaxMajorProtVer $ SL.pvMajor protVer
 
@@ -298,7 +285,7 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
       }
 
     ledgerConfig :: LedgerConfig (ShelleyBlock (TPraos c) era)
-    ledgerConfig = mkShelleyLedgerConfig genesis transCtxt epochInfo maxMajorProtVer
+    ledgerConfig = mkShelleyLedgerConfig genesis translationContext epochInfo maxMajorProtVer
 
     epochInfo :: EpochInfo (Except History.PastHorizonException)
     epochInfo =

@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Shelley.HFEras (
     StandardAllegraBlock
   , StandardAlonzoBlock
   , StandardBabbageBlock
+  , StandardConwayBlock
   , StandardMaryBlock
   , StandardShelleyBlock
   ) where
@@ -25,9 +26,9 @@ import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import           Ouroboros.Consensus.Protocol.TPraos (StandardCrypto, TPraos)
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Shelley.Eras (AllegraEra, AlonzoEra,
-                     BabbageEra, MaryEra, ShelleyEra, StandardAllegra,
-                     StandardAlonzo, StandardBabbage, StandardMary,
-                     StandardShelley)
+                     BabbageEra, ConwayEra, MaryEra, ShelleyEra,
+                     StandardAllegra, StandardAlonzo, StandardBabbage,
+                     StandardConway, StandardMary, StandardShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock,
                      ShelleyCompatible)
 import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
@@ -48,6 +49,8 @@ type StandardMaryBlock = ShelleyBlock (TPraos StandardCrypto) StandardMary
 type StandardAlonzoBlock = ShelleyBlock (TPraos StandardCrypto) StandardAlonzo
 
 type StandardBabbageBlock = ShelleyBlock (Praos StandardCrypto) StandardBabbage
+
+type StandardConwayBlock = ShelleyBlock (Praos StandardCrypto) StandardConway
 
 {-------------------------------------------------------------------------------
   ShelleyCompatible
@@ -78,3 +81,13 @@ instance
 
 instance
   (Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (BabbageEra c)
+
+-- This instance is required since the ledger view forecast function for
+-- Praos/Conway still goes through the forecast for TPraos. Once this is
+-- addressed, we could remove this instance.
+instance
+  (Praos.PraosCrypto c, TPraos.PraosCrypto c) =>
+  ShelleyCompatible (TPraos c) (ConwayEra c)
+
+instance
+  (Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (ConwayEra c)

@@ -29,6 +29,7 @@ instance FromJSON NodeConfigStub where
             <$> v .: "AlonzoGenesisFile"
             <*> v .: "ShelleyGenesisFile"
             <*> v .: "ByronGenesisFile"
+            <*> v .: "ConwayGenesisFile"
 
 instance AdjustFilePaths NodeConfigStub where
     adjustFilePaths f nc =
@@ -36,6 +37,7 @@ instance AdjustFilePaths NodeConfigStub where
             ncsAlonzoGenesisFile    = f $ ncsAlonzoGenesisFile nc
           , ncsShelleyGenesisFile   = f $ ncsShelleyGenesisFile nc
           , ncsByronGenesisFile     = f $ ncsByronGenesisFile nc
+          , ncsConwayGenesisFile    = f $ ncsConwayGenesisFile nc
           }
 
 instance AdjustFilePaths NodeCredentials where
@@ -62,9 +64,10 @@ instance FromJSON NodeHardForkProtocolConfiguration where
           <*> v .:? "TestMaryHardForkAtVersion"
           <*> v .:? "TestAlonzoHardForkAtEpoch"
           <*> v .:? "TestAlonzoHardForkAtVersion"
-
           <*> v .:? "TestBabbageHardForkAtEpoch"
           <*> v .:? "TestBabbageHardForkAtVersion"
+          <*> v .:? "TestConwayHardForkAtEpoch"
+          <*> v .:? "TestConwayHardForkAtVersion"
 
 instance FromJSON NodeByronProtocolConfiguration where
     parseJSON = withObject "NodeByronProtocolConfiguration" $ \v ->

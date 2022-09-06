@@ -91,7 +91,7 @@ initialize NodeFilePaths{nfpConfig, nfpChainDB} creds synthOptions = do
             adjustFilePaths relativeToConfig <$> hoistEither byConfig_
 
         let
-            cardanoConfig = NodeProtocolConfigurationCardano byronConfig shelleyConfig alonzoConfig hfConfig
+            cardanoConfig = NodeProtocolConfigurationCardano byronConfig shelleyConfig alonzoConfig conwayConfig hfConfig
         firstExceptT displayError $
             mkConsensusProtocol
                 cardanoConfig
@@ -99,6 +99,7 @@ initialize NodeFilePaths{nfpConfig, nfpChainDB} creds synthOptions = do
       where
         shelleyConfig   = NodeShelleyProtocolConfiguration (GenesisFile $ ncsShelleyGenesisFile confConfigStub) Nothing
         alonzoConfig    = NodeAlonzoProtocolConfiguration (GenesisFile $ ncsAlonzoGenesisFile confConfigStub) Nothing
+        conwayConfig    = NodeConwayProtocolConfiguration (GenesisFile $ ncsConwayGenesisFile confConfigStub) Nothing
         hfConfig_       = eitherParseJson $ ncsNodeConfig confConfigStub
         byConfig_       = eitherParseJson $ ncsNodeConfig confConfigStub
 

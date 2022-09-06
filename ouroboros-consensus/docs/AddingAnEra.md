@@ -6,6 +6,7 @@ consensus and to add it as an extra era to the Cardano blockchain.
 Prior art upon which this is based:
 * [#2666](https://github.com/input-output-hk/ouroboros-network/pull/2666)
 * [#2679](https://github.com/input-output-hk/ouroboros-network/pull/2679)
+* [#3971](https://github.com/input-output-hk/ouroboros-network/pull/3971/)
 
 The steps are fairly straightforward. We have put things in place (in consensus
 and in the ledger) when adding the Allegra and Mary eras that should now make it
@@ -20,7 +21,7 @@ previous Shelley-based case. Be sure to run both the Shelley
 (`ouroboros-consensus-cardano-test`) tests.
 
 For exhaustiveness, we give an overview of the changes needed. The new era we'll
-be adding is the Alonzo era, which comes after the Mary era.
+be using as a running example is the Alonzo era, which comes after the Mary era.
 
 ## Preparation
 
@@ -68,11 +69,11 @@ be adding is the Alonzo era, which comes after the Mary era.
 
 ## `ouroboros-consensus-cardano`
 
-* In `Ouroboros.Consensus.Cardano.Block`, include `AlonzoEra` in `CardanoEras`
-  and `ShelleyBasedEras`. Update all the pattern synonyms in the module with the
-  new era. Don't forget to update the comments, the `COMPLETE` pragmas, and the
-  export lists. It's easy to forget a case and the compiler will likely not warn
-  you, you'll notice it when trying to use the pattern synonyms.
+* In `Ouroboros.Consensus.Cardano.Block`, include `AlonzoEra` in `CardanoEras`.
+  Update all the pattern synonyms in the module with the new era. Don't forget
+  to update the comments, the `COMPLETE` pragmas, and the export lists. It's
+  easy to forget a case and the compiler will likely not warn you, you'll notice
+  it when trying to use the pattern synonyms.
 
 * In `Ouroboros.Consensus.Cardano.CanHardFork`, update
   `CardanoHardForkConstraints`, add additional translations to the `CanHardFork`
@@ -84,9 +85,8 @@ be adding is the Alonzo era, which comes after the Mary era.
   ones so that they disable the new era. Be sure to include the new versions in
   the two methods of the `SupportedNetworkProtocolVersion` instance. Extend
   `protocolInfoCardano` with the new era by following the type errors and adding
-  the missing parameters (including `ProtocolParamsTransition`). Don't forget to
-  derive `maxMajorProtVer` from the new final era. Update
-  `protocolClientInfoCardano` too.
+  the missing parameters. Don't forget to derive `maxMajorProtVer` from the new
+  final era. Update `protocolClientInfoCardano` too.
 
 * In `Ouroboros.Consensus.Cardano`, update the `ProtocolCardano` type synonym,
   add the extra arguments needed for `protocolInfoCardano` to the

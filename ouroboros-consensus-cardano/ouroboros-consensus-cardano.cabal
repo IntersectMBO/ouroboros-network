@@ -48,6 +48,7 @@ library
                      , cardano-ledger-alonzo
                      , cardano-ledger-babbage
                      , cardano-ledger-byron
+                     , cardano-ledger-conway
                      , cardano-ledger-core
                      , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma

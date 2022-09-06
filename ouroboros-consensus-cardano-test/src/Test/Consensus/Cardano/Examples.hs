@@ -71,6 +71,7 @@ eraExamples =
     :* Shelley.examplesMary
     :* Shelley.examplesAlonzo
     :* Shelley.examplesBabbage
+    :* Shelley.examplesConway
     :* Nil
 
 -- | By using this function, we can't forget to update this test when adding a
@@ -89,6 +90,7 @@ combineEras = mconcat . hcollapse . hap eraInjections
         :* fn (K . injExamples "Mary"    (IS (IS (IS IZ))))
         :* fn (K . injExamples "Alonzo"  (IS (IS (IS (IS IZ)))))
         :* fn (K . injExamples "Babbage" (IS (IS (IS (IS (IS IZ))))))
+        :* fn (K . injExamples "Conway"  (IS (IS (IS (IS (IS (IS IZ)))))))
         :* Nil
 
     injExamples ::
@@ -163,6 +165,9 @@ alonzoEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 babbageEraParams :: History.EraParams
 babbageEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
 
+conwayEraParams :: History.EraParams
+conwayEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+
 -- | We use 10, 20, 30, 40, ... as the transition epochs
 shelleyTransitionEpoch :: EpochNo
 shelleyTransitionEpoch = 10
@@ -205,6 +210,13 @@ babbageStartBound =
       alonzoStartBound
       50
 
+conwayStartBound :: History.Bound
+conwayStartBound =
+    History.mkUpperBound
+      alonzoEraParams
+      alonzoStartBound
+      60
+
 exampleStartBounds :: Exactly (CardanoEras Crypto) History.Bound
 exampleStartBounds = Exactly $
     (  K byronStartBound
@@ -213,6 +225,7 @@ exampleStartBounds = Exactly $
     :* K maryStartBound
     :* K alonzoStartBound
     :* K babbageStartBound
+    :* K conwayStartBound
     :* Nil
     )
 
@@ -224,6 +237,7 @@ cardanoShape = History.Shape $ Exactly $
     :* K maryEraParams
     :* K alonzoEraParams
     :* K babbageEraParams
+    :* K conwayEraParams
     :* Nil
     )
 
@@ -246,6 +260,7 @@ codecConfig :: CardanoCodecConfig Crypto
 codecConfig =
     CardanoCodecConfig
       Byron.codecConfig
+      Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig
       Shelley.ShelleyCodecConfig

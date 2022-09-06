@@ -82,6 +82,7 @@ library
                        -- cardano-ledger-specs
                      , cardano-ledger-alonzo
                      , cardano-ledger-babbage
+                     , cardano-ledger-conway
                      , cardano-ledger-shelley
                      , cardano-ledger-shelley-ma
                      , small-steps
