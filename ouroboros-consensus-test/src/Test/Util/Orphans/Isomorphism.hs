@@ -3,6 +3,8 @@
 {-# LANGUAGE InstanceSigs            #-}
 {-# LANGUAGE LambdaCase              #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
+{-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 module Test.Util.Orphans.Isomorphism (
@@ -11,6 +13,7 @@ module Test.Util.Orphans.Isomorphism (
   ) where
 
 import           Data.Foldable (toList)
+import           Data.Proxy
 import qualified Data.Sequence as Seq
 
 import qualified Data.FingerTree.Strict as FT
@@ -37,6 +40,9 @@ class Isomorphism b a => Isomorphism a b where
 
 from :: Isomorphism b a => a -> b
 from = to
+
+law :: forall a b. (Isomorphism a b, Eq a) => Proxy b -> a -> Bool
+law _ x = to @b @a (to @a @b x) == x -- && to (to (to x)) == to x
 
 {------------------------------------------------------------------------------
   Orphan instances

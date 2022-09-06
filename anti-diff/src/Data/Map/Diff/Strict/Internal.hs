@@ -57,9 +57,9 @@ import           NoThunks.Class (NoThunks)
 
 -- | A diff for key-value stores.
 --
--- INVARIANT: If a key @k@ is present in the @Map@, then the @DiffHistory@ is
--- non-empty. This prevents the @Map@ from getting bloated with empty diff
--- histories.
+-- INVARIANT: A key @k@ is present in the @Map@, iff the corresponding
+-- @DiffHistory@ is non-empty. This prevents the @Map@ from getting bloated
+-- with empty diff histories.
 newtype Diff k v = Diff (Map k (DiffHistory v))
   deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
@@ -171,9 +171,8 @@ instance Eq v => Semigroup (DiffHistory v) where
       -- At the ``touching'' ends of the sequences, take off diff entries that
       -- are each other's inverse until we find two non-inverse entries. In this
       -- case, we can not continue so we return the concatenated remainders.
-      mappend' xs0@(xs :|> x) ys0@(y :<| ys)
+      mappend' (xs :|> x) (y :<| ys)
         | areInverses x y                    = mappend' xs ys
-        | otherwise                          = xs0 Seq.>< ys0
       mappend' xs ys                         = xs Seq.>< ys
 
 instance Eq v => Monoid (DiffHistory v) where

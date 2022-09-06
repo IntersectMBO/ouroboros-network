@@ -668,11 +668,6 @@ warmup = do
 --   2. Inserts one or more values with globally unique keys.
 -- * Return a strictly increasing slot number, and the new diff.
 -- BOOKKEEPING: Push the new diff onto the model's diff sequence.
---
--- Note: https://iohk.io/en/blog/posts/2018/07/03/self-organisation-in-coin-selection/
---
--- TODO: Use coin selection other than random choice.
--- TODO: Skip some slots, instead of strictly incrementing @t@.
 genPush ::
      forall k v. (Ord k, Eq v, Arbitrary k, Arbitrary v)
   => CmdGen k v (Cmd 'New k v)
@@ -739,7 +734,7 @@ genFlush = do
                     DS.length l == 0 && DS.length r == DS.length ds
                   else
                     DS.length r == k
-      n         = Exn.assert invariant $ DS.length l
+      n         = DS.length l
 
     modify (\st -> st {
         diffs         = r
@@ -747,7 +742,7 @@ genFlush = do
       , nrGenerated   = nrGenerated st + 1
       })
 
-    pure $ Flush n
+    Exn.assert invariant $ pure $ Flush n
 
 -- | Generate a @'Rollback'@ command.
 --
