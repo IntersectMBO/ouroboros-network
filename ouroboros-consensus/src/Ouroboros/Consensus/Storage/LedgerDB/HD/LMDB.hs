@@ -127,9 +127,11 @@ data DbErr =
     -- | Failed to read a range of values from a database table.
   | DbErrBadRangeRead
     -- | A database directory should not exist already.
-  | DbErrDirExists !FS.FsPath
+  | DbErrDirExists !FilePath
     -- | A database directory should exist already.
-  | DbErrDirDoesntExist !FS.FsPath
+  | DbErrDirDoesntExist !FilePath
+    -- | The directory exists but is not an LMDB directory!
+  | DbErrDirIsNotLMDB !FilePath
 
 instance Exception DbErr
 
@@ -169,6 +171,10 @@ prettyPrintDbErr = \case
     "Database directory should not exist already: " <> show path
   DbErrDirDoesntExist path ->
     "Database directory should already exist: " <> show path
+  DbErrDirIsNotLMDB path ->
+    "Database directory doesn't contain an LMDB database: "
+    <> show path
+    <> "\nPre-UTxO-HD and In-Memory implementations are incompatible with the LMDB implementation, please delete your ledger database if you want to run with LMDB"
 
 {-------------------------------------------------------------------------------
   Database definition
@@ -513,12 +519,15 @@ guardDbDir gdd (FS.SomeHasFS fs) path = do
   when fileEx $
     throwIO $ DbErrStr $ "guardDbDir: must be a directory: " <> show path
   dirEx <- FS.doesDirectoryExist fs path
+  lmdbFileExists <- FS.doesFileExist fs path { FS.fsPathToList = FS.fsPathToList path ++ [Strict.pack "data.mdb"] }
+  filepath <- FS.unsafeToFilePath fs path
   case dirEx of
-    True  | GDDMustNotExist <- gdd -> throwIO $ DbErrDirExists path
-    False | GDDMustExist    <- gdd -> throwIO $ DbErrDirDoesntExist path
+    True  | GDDMustNotExist <- gdd -> throwIO $ DbErrDirExists filepath
+          | not lmdbFileExists     -> throwIO $ DbErrDirIsNotLMDB filepath
+    False | GDDMustExist    <- gdd -> throwIO $ DbErrDirDoesntExist filepath
     _                              -> pure ()
   FS.createDirectoryIfMissing fs True path
-  FS.unsafeToFilePath fs path
+  pure filepath
 
 -- | Same as @`guardDbDir`@, but retries the guard if we can make meaningful
 -- changes to the filesystem before we perform the retry.
