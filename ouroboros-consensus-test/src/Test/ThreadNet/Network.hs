@@ -109,11 +109,7 @@ import           Ouroboros.Consensus.Util.Time
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
-import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 
 import           Test.ThreadNet.TxGen
@@ -122,9 +118,9 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
 
+import           Test.Util.ChainDB
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.FS.Sim.STM (simHasFS)
 import           Test.Util.HardFork.Future (Future)
 import qualified Test.Util.HardFork.Future as HFF
 import           Test.Util.HardFork.OracularClock (OracularClock (..))
@@ -704,33 +700,23 @@ runThreadNetwork systemTime ThreadNetworkArgs
       clock registry
       cfg initLedger
       invalidTracer addTracer selTracer updatesTracer pipeliningTracer
-      nodeDBs _coreNodeId = ChainDbArgs {
-          -- HasFS instances
-          cdbHasFSImmutableDB       = SomeHasFS $ simHasFS (nodeDBsImm nodeDBs)
-        , cdbHasFSVolatileDB        = SomeHasFS $ simHasFS (nodeDBsVol nodeDBs)
-        , cdbHasFSLgrDB             = SomeHasFS $ simHasFS (nodeDBsLgr nodeDBs)
-          -- Policy
-        , cdbImmutableDbValidation  = ImmutableDB.ValidateAllChunks
-        , cdbVolatileDbValidation   = VolatileDB.ValidateAll
-        , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
-        , cdbDiskPolicy             = LgrDB.defaultDiskPolicy (configSecurityParam cfg) LgrDB.DefaultSnapshotInterval
-          -- Integration
-        , cdbTopLevelConfig         = cfg
-        , cdbChunkInfo              = ImmutableDB.simpleChunkInfo epochSize0
-        , cdbCheckIntegrity         = nodeCheckIntegrity (configStorage cfg)
-        , cdbGenesis                = return initLedger
-        , cdbCheckInFuture          = InFuture.reference (configLedger cfg) InFuture.defaultClockSkew
-                                      (OracularClock.finiteSystemTime clock)
-        , cdbImmutableDbCacheConfig = Index.CacheConfig 2 60
-        -- Misc
-        , cdbTracer                 = instrumentationTracer <> nullDebugTracer
-        , cdbTraceLedger            = nullDebugTracer
-        , cdbRegistry               = registry
-          -- TODO vary these
-        , cdbGcDelay                = 0
-        , cdbGcInterval             = 1
-        , cdbBlocksToAddSize        = 2
-        }
+      nodeDBs _coreNodeId =
+        let args = fromMinimalChainDbArgs MinimalChainDbArgs {
+                mcdbTopLevelConfig = cfg
+              , mcdbChunkInfo      = ImmutableDB.simpleChunkInfo epochSize0
+              , mcdbInitLedger     = initLedger
+              , mcdbRegistry       = registry
+              , mcdbNodeDBs        = nodeDBs
+              }
+        in args { cdbCheckIntegrity = nodeCheckIntegrity (configStorage cfg)
+                , cdbCheckInFuture  = InFuture.reference (configLedger cfg)
+                                        InFuture.defaultClockSkew
+                                        (OracularClock.finiteSystemTime clock)
+                , cdbTracer         = instrumentationTracer <> nullDebugTracer
+                , cdbTraceLedger    = nullDebugTracer
+                -- TODO: Vary cdbGcDelay, cdbGcInterval, cdbBlockToAddSize
+                , cdbGcDelay        = 0
+                }
       where
         prj af = case AF.headBlockNo af of
             At bno -> bno
@@ -1414,16 +1400,6 @@ data NodeEvents blk ev = NodeEvents
     -- ^ Ledger updates every time we adopt a block/switch to a fork
   , nodeEventsPipelining  :: ev (ChainDB.TracePipeliningEvent blk)
     -- ^ Pipelining events tracking the tentative header
-  }
-
--- | A vector with an element for each database of a node
---
--- The @db@ type parameter is instantiated by this module at types for mock
--- filesystems; either the 'MockFS' type or reference cells thereof.
-data NodeDBs db = NodeDBs
-  { nodeDBsImm :: db
-  , nodeDBsVol :: db
-  , nodeDBsLgr :: db
   }
 
 newNodeInfo ::
