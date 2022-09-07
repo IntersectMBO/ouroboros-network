@@ -159,7 +159,10 @@ data LedgerInterface m blk = LedgerInterface
       -- 'ExtLedgerState' and in the latter we use 'LedgerState'.
     , getLedgerStateForTxs  :: forall b a.
            StaticEither b () (Point blk)
-        -> (ExtLedgerState blk EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) KeysMK))
+        -> (ExtLedgerState blk EmptyMK -> m ( a
+                                            , Maybe (LedgerTables (ExtLedgerState blk) DiffMK)
+                                            , LedgerTables (ExtLedgerState blk) KeysMK)
+           )
         -> m (StaticEither
                 b
                        (a, LedgerTables (LedgerState blk) ValuesMK)
@@ -415,7 +418,7 @@ getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
                  . foldl (zipLedgerTables (<>)) polyEmptyLedgerTables
                  . map getTransactionKeySets
                  $ keptTxs <> txs
-        pure ((ls, is0), keys)
+        pure ((ls, is0), Just (ExtLedgerStateTables $ projectLedgerTablesTicked (forgetLedgerTablesValuesTicked $ isLedgerState is0)), keys)
   where
     finish ::
          StaticEither

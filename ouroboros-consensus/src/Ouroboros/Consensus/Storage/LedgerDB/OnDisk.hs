@@ -621,7 +621,7 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
           unfwd <- readKeySetsVH
                      (fmap (seqNo,) . BackingStore.bsvhRead vh)
                      rew
-          case forwardTableKeySets chlog unfwd of
+          case forwardTableKeySets chlog Nothing unfwd of
               Left _err -> error "impossible!"
               Right vs  -> pure vs
       )

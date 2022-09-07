@@ -340,7 +340,7 @@ applyBlock cfg ap db = case ap of
     withHydratedLedgerState urs f =
           f
       .   withLedgerTables (ledgerDbCurrent db)
-      <$> forwardTableKeySets (ledgerDbChangelog db) urs
+      <$> forwardTableKeySets (ledgerDbChangelog db) Nothing urs
 
 {-------------------------------------------------------------------------------
   HD Interface that I need (Could be moved to  Ouroboros.Consensus.Ledger.Basics )
@@ -370,25 +370,39 @@ data UnforwardedReadSets l = UnforwardedReadSets {
 forwardTableKeySets ::
      (TableStuff l, HasCallStack)
   => DbChangelog l
+  -> Maybe (LedgerTables l DiffMK)
   -> UnforwardedReadSets l
   -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
             (LedgerTables l ValuesMK)
-forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
+forwardTableKeySets dblog mempoolDiffs = \(UnforwardedReadSets seqNo' values keys) ->
     if seqNo /= seqNo' then Left (seqNo, seqNo') else
     Right
       $ zipLedgerTables2 forward values keys
-      $ changelogDiffs dblog
+      $ maybe (mapLedgerTables cumulative (changelogDiffs dblog))
+              (zipLedgerTables prepend (changelogDiffs dblog))
+              mempoolDiffs
   where
     seqNo = changelogDiffAnchor dblog
 
+    cumulative :: Ord k
+               => SeqDiffMK k v
+               -> DiffMK    k v
+    cumulative (ApplySeqDiffMK diffs) = ApplyDiffMK $ cumulativeDiffSeqUtxoDiff diffs
+
+    prepend :: Ord k
+            => SeqDiffMK k v
+            -> DiffMK    k v
+            -> DiffMK    k v
+    prepend diffs1 diffs2 = rawPrependDiffs (cumulative diffs1) diffs2
+
     forward ::
          Ord k
-      => ApplyMapKind ValuesMK  k v
-      -> ApplyMapKind KeysMK    k v
-      -> ApplyMapKind SeqDiffMK k v
-      -> ApplyMapKind ValuesMK  k v
-    forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
-      ApplyValuesMK $ forwardValuesAndKeys values keys (cumulativeDiffSeqUtxoDiff diffs)
+      => ValuesMK  k v
+      -> KeysMK    k v
+      -> DiffMK    k v
+      -> ValuesMK  k v
+    forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplyDiffMK diffs) =
+      ApplyValuesMK $ forwardValuesAndKeys values keys diffs
 
 -- | Isolates the prefix of the changelog that should be flushed
 --

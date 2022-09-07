@@ -335,7 +335,7 @@ data ChainDB m blk = ChainDB {
         forall b a.
              StaticEither b () (Point blk)
           -> (   ExtLedgerState blk EmptyMK
-              -> m (a, LedgerTables (ExtLedgerState blk) KeysMK)
+              -> m (a, Maybe (LedgerTables (ExtLedgerState blk) DiffMK), LedgerTables (ExtLedgerState blk) KeysMK)
              )
           -> m (StaticEither
                  b

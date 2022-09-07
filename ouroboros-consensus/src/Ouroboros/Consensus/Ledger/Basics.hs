@@ -96,12 +96,14 @@ module Ouroboros.Consensus.Ledger.Basics (
   , forgetLedgerTablesDiffs
   , forgetLedgerTablesDiffsTicked
   , forgetLedgerTablesValues
+  , forgetLedgerTablesValuesTicked
   , polyEmptyLedgerTables
   , prependLedgerTablesDiffs
   , prependLedgerTablesDiffsFromTicked
   , prependLedgerTablesDiffsRaw
   , prependLedgerTablesDiffsTicked
   , prependLedgerTablesTrackingDiffs
+  , rawPrependDiffs
   , reapplyTrackingTicked
     -- ** Special classes of ledger states
   , InMemory (..)
@@ -628,6 +630,9 @@ rawForgetValues (ApplyTrackingMK _values diff) = ApplyDiffMK diff
 
 forgetLedgerTablesValues :: TableStuff l => l TrackingMK -> l DiffMK
 forgetLedgerTablesValues = mapOverLedgerTables rawForgetValues
+
+forgetLedgerTablesValuesTicked :: TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l DiffMK
+forgetLedgerTablesValuesTicked = mapOverLedgerTablesTicked rawForgetValues
 
 -- Forget diffs
 
