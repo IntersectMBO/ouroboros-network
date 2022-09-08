@@ -72,6 +72,7 @@ haddocks/
 /docs/**/*.fdb_latexmk
 /docs/**/*.fls
 /docs/**/*.log
+/docs/**/*.lot
 /docs/**/*.out
 /docs/**/*.pdf
 /docs/**/*.synctex.gz
