@@ -22,7 +22,7 @@ fully determines---directly or indirectly---all the other types.
 
 
                                   b ──(CodecConfig   :: B→*)──────▶ codecc -- for serialisation and deserialisation
-                                  b ──(StorageConfig :: B→*)──────▶ sc     -- other config [?]
+                                  b ──(StorageConfig :: B→*)──────▶ sc     -- for (re)initializing the Storage Layer
                                   b ──(Header        :: B→*)──────▶ hdr    -- link block to its header
                                   
                                               b,l ──(HeaderHash :: *→*)──────▶ hash   -- link block/ledger to a hash
@@ -116,82 +116,48 @@ Classes connected to ledgers:
     txInvariant :: GenTx b → Bool                                                -- check if internal invariants of the transaction hold
     applyTx   :: lc → WhetherToIntervene → SlotNo → tx → tls → Except txerr (tls, Validated tx)      -- apply an unvalidated transaction
     reapplyTx :: lc →            SlotNo → Validated tx → tls → Except txerr tls          -- apply a previously validated transaction ...
-    txsMaxBytes :: tls → Word32                                   -- max number of bytes of transactions that can be put into a block    
+    txsMaxBytes :: tls → Word32                                   -- max number of bytes of transactions that can be put into a block
     txInBlockSize :: tx → Word32                                  -- post-serialisation size in bytes of a 'GenTx b'
-    txForgetValidated :: Validated tx → tx                        -- discard the evidence that transaction has been previously validated     
+    txForgetValidated :: Validated tx → tx                        -- discard the evidence that transaction has been previously validated
 ```
 
-## Quick Reference for Useful Base Types
-### ouroboros-consensus:
-
-**ouroboros-consensus/src/Ouroboros/Consensus/Forecast.hs`**
+## Some Commonly Used Base Types (from pkgs ouroboros-consensus, cardano-base, and ouroboros-network)
 
 ``` haskell
--- | Forecast the effect of time ticking
-data Forecast a = Forecast {
-      forecastAt  :: WithOrigin SlotNo
+data Forecast a = Forecast { forecastAt  :: WithOrigin SlotNo                                    -- Forecast a - Forecast the effect
+                           , forecastFor :: SlotNo -> Except OutsideForecastRange (Ticked a)     --              of time ticking
+                           }
 
-      -- Precondition: @At s >= forecastAt@
-    , forecastFor :: SlotNo -> Except OutsideForecastRange (Ticked a)
-    }
-```
+data LedgerResult l a = LedgerResult { lrEvents :: [AuxLedgerEvent l]                   -- LedgerResult l a - The result of invoking 
+                                     , lrResult :: !a                                   -- a ledger function that does validation
+                                     }
 
-**ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Basics.hs**
-
-``` haskell
--- | The result of invoke a ledger function that does validation
-data LedgerResult l a = LedgerResult
-  { lrEvents :: [AuxLedgerEvent l]
-  , lrResult :: !a
-  }
-  deriving (Foldable, Functor, Traversable)
-```
-
-### cardano-base:
-
-**slotting/src/Cardano/Slotting/Slot.hs**
-
-```haskell
 data WithOrigin t = Origin | At !t
 
--- | The 0-based index for the Ourboros time slot.
-newtype SlotNo = SlotNo {unSlotNo :: Word64}
-```
+newtype SlotNo = SlotNo {unSlotNo :: Word64}                                -- SlotNo - The 0-based index for the Ourboros time slot.
 
-### ouroboros-network:
+data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
 
-**ouroboros-network/src/Ouroboros/Network/Block.hs**
-
-``` haskell
-data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)  -- Our*.Network.Block
-
--- | Header fields we expect to be present in a block
---
--- These fields are lazy because they are extracted from a block or block
--- header; this type is not intended for storage.
-data HeaderFields b = HeaderFields {
-      headerFieldSlot    :: SlotNo
-    , headerFieldBlockNo :: BlockNo
-    , headerFieldHash    :: HeaderHash b
-      -- ^ NOTE: this field is last so that the derived 'Eq' and 'Ord'
-      -- instances first compare the slot and block numbers, which is cheaper
-      -- than comparing hashes.
-    }
-  deriving (Generic)
+data HeaderFields b = HeaderFields { headerFieldSlot    :: SlotNo                                -- HeaderFields - fields we expect
+                                   , headerFieldBlockNo :: BlockNo                               --                to be present in
+                                   , headerFieldHash    :: HeaderHash b                          --                a block.
+                                   }
 
 -- | A point on the chain is identified by its 'Slot' and 'HeaderHash'.
---
--- The 'Slot' tells us where to look and the 'HeaderHash' either simply serves
--- as a check, or in some contexts it disambiguates blocks from different forks
--- that were in the same slot.
---
--- It's a newtype rather than a type synonym, because using a type synonym
--- would lead to ambiguity, since HeaderHash is a non-injective type family.
-newtype Point block = Point
-    { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
-    }
-  deriving (Generic)
+newtype Point block = Point { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block)) }
+
+-- Point is commonly "viewed" as the following:
+pattern GenesisPoint :: Point block
+pattern GenesisPoint = Point Origin
+pattern BlockPoint :: SlotNo -> HeaderHash block -> Point block
+pattern BlockPoint { atSlot, withHash } = Point (At (Point.Block atSlot withHash))
+{-# COMPLETE GenesisPoint, BlockPoint #-}
+
+```
   
+## And Some Commonly Used Projections
+
+``` haskell
 blockHash :: HasHeader b => b -> HeaderHash b
 blockHash = headerFieldHash . getHeaderFields
 

@@ -336,11 +336,10 @@ test-suite test-examples
                      
   build-depends:       base
                      , containers
+                     , hashable
                      , mtl
-                     
                      , nothunks
                      , serialise
-                     , hashable
 
                      , ouroboros-consensus
                      , ouroboros-consensus-test
