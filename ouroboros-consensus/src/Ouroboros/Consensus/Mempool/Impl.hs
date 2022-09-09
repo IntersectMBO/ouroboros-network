@@ -6,13 +6,9 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-{-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE BangPatterns #-}
 -- | Monadic side of the Mempool implementation.
 --
 -- Using the functions defined in Ouroboros.Consensus.Mempool.Impl.Pure,
@@ -33,12 +29,12 @@ module Ouroboros.Consensus.Mempool.Impl (
   , openMempoolWithoutSyncThread
   ) where
 
-import Control.Monad.Class.MonadTimer
-import Data.Foldable (foldl')
 import qualified Control.Exception as Exn
 import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Except
 import           Data.Bifunctor (Bifunctor (second), bimap)
+import           Data.Foldable (foldl')
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -283,10 +279,7 @@ loopAddTxs :: forall m blk.
 loopAddTxs registry menv = do
   let theTimer = do
         t <- newTimeout 0.5
-        atomically (do
-                       _ <- awaitTimeout t
-                       readTMVar (mpEnvTxBuffer menv)
-                   )
+        atomically (awaitTimeout t)
 
       theWatcher = atomically $ do
         txs <- readTMVar (mpEnvTxBuffer menv)
@@ -306,25 +299,35 @@ loopAddTxs registry menv = do
                   _ -> False
               )
 
-        pure txs
+  void $ race theTimer theWatcher
 
-
-  txs <- either id id <$> race theTimer theWatcher
-
-  let go :: [TxsToAdd m blk] -> m ()
-      go = \case
-        [] -> return ()
-        tx@TxsToAdd{..}:more -> do
-          (added, toAdd) <- implTryAddTxs menv ttaWhetherToIntervene ttaTxs
-          atomically $ do putTMVar ttaWriteResultTo (Just added)
+  let go :: InternalState blk
+         -> ExtLedgerState blk ValuesMK
+         -> [TxsToAdd m blk]
+         -> m [TxsToAdd m blk]
+      go is ls = \case
+        [] -> return []
+        tx:more -> do
+          (is', added, toAdd) <- implTryAddTxs menv (ttaWhetherTo Intervene tx) is ls (ttaTxs tx)
+          atomically $ do putTMVar (ttaWriteResultTo tx) (Just added)
           if null toAdd
             then do
-              atomically $ putTMVar ttaWriteResultTo Nothing
-              go more
+              atomically $ putTMVar (ttaWriteResultTo tx) Nothing
+              go is' ls more
             else
-              atomically . putTMVar (mpEnvTxBuffer menv) $ tx { ttaTxs = NE.fromList toAdd }:more
+              (tx { ttaTxs = NE.fromList toAdd } :) <$> go is' ls more
 
-  go txs
+  txs <- atomically $ takeTMVar (mpEnvTxBuffer menv)
+  -- get the values for all the transactions
+  mpair <- getStatePair menv (StaticLeft ()) [] (concatMap (NE.toList . ttaTxs) txs)
+
+  let is :: InternalState blk
+      ls :: ExtLedgerState blk ValuesMK
+      (is, ls) = case mpair of
+        StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
+        StaticLeft (is0,  Just l)  -> (is0, l)
+
+  atomically . putTMVar (mpEnvTxBuffer menv) =<< go is ls txs
 
   loopAddTxs registry menv
 
@@ -356,12 +359,11 @@ implTryAddTxs
      )
   => MempoolEnv m blk
   -> WhetherToIntervene
+  -> InternalState blk
+  -> ExtLedgerState blk ValuesMK
   -> NE.NonEmpty (GenTx blk)
-  -> m ([MempoolAddTxResult blk], [GenTx blk])
-implTryAddTxs mpEnv wti = \txs -> do
-  getStatePair mpEnv (StaticLeft ()) [] (NE.toList txs) >>= \case
-    StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
-    StaticLeft (is0,  Just ls) -> go ls is0 [] (NE.toList txs)
+  -> m (InternalState blk, [MempoolAddTxResult blk], [GenTx blk])
+implTryAddTxs mpEnv wti is ls = go is [] . NE.toList
   where
     MempoolEnv {
         mpEnvCapacityOverride = capacityOverride
@@ -371,8 +373,12 @@ implTryAddTxs mpEnv wti = \txs -> do
       , mpEnvTxSize           = txSize
       } = mpEnv
 
-    go ls is0 acc = \case
-      []     -> pure (reverse acc, [])
+    go :: (InternalState blk
+                  -> [MempoolAddTxResult blk]
+                  -> [GenTx blk]
+                  -> m (InternalState blk, [MempoolAddTxResult blk], [GenTx blk]))
+    go is0 acc = \case
+      []     -> pure (is0, reverse acc, [])
       tx:txs -> do
         let p@(NewSyncedState is1 _snapshot mTrace) =
               -- this is approximately a noop if the state is already in
@@ -382,11 +388,11 @@ implTryAddTxs mpEnv wti = \txs -> do
         case pureTryAddTxs cfg txSize wti tx is1 of
           NoSpaceLeft               -> do
             void $ atomically $ runSyncWithLedger istate p
-            pure (reverse acc, tx:txs)
+            pure (is0, reverse acc, tx:txs)
           TryAddTxs mbIs2 result ev -> do
             atomically $ putTMVar istate $ fromMaybe is1 mbIs2
             traceWith trcr ev
-            go ls is1 (result:acc) txs
+            go is1 (result:acc) txs
 
 implSyncWithLedger ::
      forall m blk. (

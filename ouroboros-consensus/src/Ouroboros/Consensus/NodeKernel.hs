@@ -25,9 +25,9 @@ module Ouroboros.Consensus.NodeKernel (
   ) where
 
 
-import Control.Monad.Class.MonadTimer
 import           Control.DeepSeq (force)
 import           Control.Monad
+import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Except
 import           Data.Bifunctor (second)
 import           Data.Hashable (Hashable)
