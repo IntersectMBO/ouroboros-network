@@ -67,21 +67,30 @@ import           Ouroboros.Consensus.Util.IOLike
 --   transaction depends on outputs from earlier ones).
 --
 -- When only one thread is operating on the mempool, operations that mutate the
--- state based on the input arguments (tryAddTxs and removeTxs) will produce the
+-- state based on the input arguments (pushTxs and removeTxs) will produce the
 -- same result whether they process transactions one by one or all in one go, so
--- this equality holds:
+-- these equalities hold:
 --
--- > void (tryAddTxs wti txs) === forM_ txs (tryAddTxs wti . (:[]))
--- > void (trAddTxs wti [x,y]) === tryAddTxs wti x >> void (tryAddTxs wti y)
+-- > void (pushTxs (TryAddTxs wti txs    _)) === forM_ txs (\x -> pushTxs (TryAddTxs wti [x] _))
+-- > void (pushTxs (TryAddTxs wti [x, y] _)) === pushTxs (TryAddTxs wti [x] _) >> void (pushTxs (TryAddTxs wti [y] _))
 --
--- This shows that @'tryAddTxs' wti@ is an homomorphism from '++' and '>>',
+-- This shows that @'pushTxs' wti@ is an homomorphism from '++' and '>>',
 -- which informally makes these operations "distributive".
+--
+-- Note this is not necessarily the case, as several clients could try to add
+-- transactions concurrently. In that case, for adding transactions, the loop
+-- which monitors the pending transactions to add, will try to add transactions
+-- from all the pending batches.
 data Mempool m blk idx = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
       -- As long as we keep the mempool entirely in-memory this could live in
       -- @STM m@; we keep it in @m@ instead to leave open the possibility of
       -- persistence.
+      --
+      -- This function pushes the new transactions to a buffer which will be
+      -- flushed every 0.5 seconds or when the mempool would reach maximum
+      -- capacity with the current pending transactions.
       --
       -- The new transactions provided will be validated, /in order/, against
       -- the ledger state obtained by applying all the transactions already in
@@ -97,9 +106,9 @@ data Mempool m blk idx = Mempool {
       -- the mempool via a call to 'syncWithLedger' or by the background
       -- thread that watches the ledger for changes.
       --
-      -- This function will return two lists
-      --
-      -- 1. A list containing the following transactions:
+      -- This flushing function will write into the TMVar in the provided
+      -- 'TxsToAdd' the list containing the result of the following
+      -- transactions:
       --
       --    * Those transactions provided which were found to be valid, as a
       --      'MempoolTxAdded' value. These transactions are now in the Mempool.
@@ -108,22 +117,13 @@ data Mempool m blk idx = Mempool {
       --      'MempoolTxRejected' value. These transactions are not in the
       --      Mempool.
       --
-      -- 2. A list containing the transactions that have not yet been added, as
-      --    the capacity of the Mempool has been reached. I.e., there is no
-      --    space in the Mempool to add the first transaction in this list. Note
-      --    that we won't try to add smaller transactions after that first
-      --    transaction because they might depend on the first transaction.
+      -- When all transactions have been processed, a 'Nothing' is written to
+      -- the TMVar. See 'loopAddTxs' for the implementation.
       --
-      -- POSTCONDITION:
-      -- > let prj = \case
-      -- >       MempoolTxAdded vtx        -> txForgetValidated vtx
-      -- >       MempoolTxRejected tx _err -> tx
-      -- > (processed, toProcess) <- tryAddTxs wti txs
-      -- > map prj processed ++ toProcess == txs
-      --
-      -- Note that previously valid transaction that are now invalid with
-      -- respect to the current ledger state are dropped from the mempool, but
-      -- are not part of the first returned list (nor the second).
+      -- Note that if the mempool is revalidated because the current "best" ledger
+      -- changed, previously valid transaction that are now invalid with respect
+      -- to the current ledger state are dropped from the mempool, but are not
+      -- part of the first returned list (nor the second).
       --
       -- In principle it is possible that validation errors are transient; for
       -- example, it is possible that a transaction is rejected because one of
@@ -143,7 +143,6 @@ data Mempool m blk idx = Mempool {
       -- two cases can be done in theory, but it is expensive unless we have
       -- an index of transaction hashes that have been included on the
       -- blockchain.
-      --
       pushTxs      :: TxsToAdd m blk
                    -> m ()
 

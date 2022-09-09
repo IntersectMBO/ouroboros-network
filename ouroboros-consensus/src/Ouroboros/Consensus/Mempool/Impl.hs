@@ -98,15 +98,19 @@ openMempoolWithoutSyncThread
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , HasTxId (GenTx blk)
+     , MonadTimer m
      )
-  => LedgerInterface m blk
+  => ResourceRegistry m
+  -> LedgerInterface m blk
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> Tracer m (TraceEventMempool blk)
   -> (GenTx blk -> TxSizeInBytes)
-  -> m (Mempool m blk TicketNo)
-openMempoolWithoutSyncThread ledger cfg capacityOverride tracer txSize =
-    mkMempool <$> initMempoolEnv ledger cfg capacityOverride tracer txSize
+  -> m (Thread m (), Mempool m blk TicketNo)
+openMempoolWithoutSyncThread registry ledger cfg capacityOverride tracer txSize = do
+    env <- initMempoolEnv ledger cfg capacityOverride tracer txSize
+    th <- forkLinkedThread registry "Mempool.loopAddTxs" $ loopAddTxs registry env
+    return $ (th, mkMempool env)
 
 mkMempool ::
      ( IOLike m
@@ -117,8 +121,10 @@ mkMempool ::
   => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool mpEnv = Mempool
     { pushTxs      = \txs -> atomically $ do
-        t' <- takeTMVar (mpEnvTxBuffer mpEnv)
-        putTMVar (mpEnvTxBuffer mpEnv) $ t' ++ [txs]
+        mt' <- tryTakeTMVar (mpEnvTxBuffer mpEnv)
+        case mt' of
+          Nothing -> pure ()
+          Just v -> putTMVar (mpEnvTxBuffer mpEnv) $ v ++ [txs]
     , removeTxs      = \txids -> getStatePair mpEnv (StaticLeft ()) (NE.toList txids) [] >>= \case
         StaticLeft (_is, Nothing) ->
           error $  "Function 'getStatePair' violated its postcondition."
@@ -277,6 +283,9 @@ loopAddTxs :: forall m blk.
            -> MempoolEnv m blk
            -> m ()
 loopAddTxs registry menv = do
+
+  atomically $ check . (not . null)  =<< readTMVar (mpEnvTxBuffer menv)
+
   let theTimer = do
         t <- newTimeout 0.5
         atomically (awaitTimeout t)
@@ -308,8 +317,9 @@ loopAddTxs registry menv = do
       go is ls = \case
         [] -> return []
         tx:more -> do
-          (is', added, toAdd) <- implTryAddTxs menv (ttaWhetherTo Intervene tx) is ls (ttaTxs tx)
-          atomically $ do putTMVar (ttaWriteResultTo tx) (Just added)
+          (is', added, toAdd) <- implTryAddTxs menv (ttaWhetherToIntervene tx) is ls (ttaTxs tx)
+          when (null toAdd) $ atomically $ putTMVar (mpEnvStateVar menv) is'
+          atomically $ putTMVar (ttaWriteResultTo tx) (Just added)
           if null toAdd
             then do
               atomically $ putTMVar (ttaWriteResultTo tx) Nothing
@@ -318,16 +328,21 @@ loopAddTxs registry menv = do
               (tx { ttaTxs = NE.fromList toAdd } :) <$> go is' ls more
 
   txs <- atomically $ takeTMVar (mpEnvTxBuffer menv)
-  -- get the values for all the transactions
-  mpair <- getStatePair menv (StaticLeft ()) [] (concatMap (NE.toList . ttaTxs) txs)
 
-  let is :: InternalState blk
-      ls :: ExtLedgerState blk ValuesMK
-      (is, ls) = case mpair of
-        StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
-        StaticLeft (is0,  Just l)  -> (is0, l)
+  if null txs
+    then atomically $ putTMVar (mpEnvTxBuffer menv) txs
+    else do
 
-  atomically . putTMVar (mpEnvTxBuffer menv) =<< go is ls txs
+    -- get the values for all the transactions
+    mpair <- getStatePair menv (StaticLeft ()) [] (concatMap (NE.toList . ttaTxs) txs)
+
+    let is :: InternalState blk
+        ls :: ExtLedgerState blk ValuesMK
+        (is, ls) = case mpair of
+          StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
+          StaticLeft (is0,  Just l)  -> (is0, l)
+
+    atomically . putTMVar (mpEnvTxBuffer menv) =<< go is ls txs
 
   loopAddTxs registry menv
 
@@ -390,9 +405,9 @@ implTryAddTxs mpEnv wti is ls = go is [] . NE.toList
             void $ atomically $ runSyncWithLedger istate p
             pure (is0, reverse acc, tx:txs)
           TryAddTxs mbIs2 result ev -> do
-            atomically $ putTMVar istate $ fromMaybe is1 mbIs2
+            let newState = fromMaybe is1 mbIs2
             traceWith trcr ev
-            go is1 (result:acc) txs
+            go newState (result:acc) txs
 
 implSyncWithLedger ::
      forall m blk. (

@@ -15,8 +15,8 @@ tests :: TestTree
 tests =
   testGroup "ouroboros-consensus"
   [ Test.Consensus.Ledger.Mock.tests
-  , Test.ThreadNet.BFT.tests
-  , Test.ThreadNet.LeaderSchedule.tests
-  , Test.ThreadNet.PBFT.tests
-  , Test.ThreadNet.Praos.tests
+  -- , Test.ThreadNet.BFT.tests
+  -- , Test.ThreadNet.LeaderSchedule.tests
+  -- , Test.ThreadNet.PBFT.tests
+  -- , Test.ThreadNet.Praos.tests
   ]

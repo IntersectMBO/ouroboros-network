@@ -13,7 +13,7 @@
 module Test.Consensus.Mempool (tests) where
 
 import           Control.Exception (assert)
-import           Control.Monad (foldM, forM, forM_, void)
+import           Control.Monad (foldM, forM, forM_, void, unless)
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (State, evalState, get, modify)
 import           Data.Bifunctor (first)
@@ -58,6 +58,9 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck (elements)
+
+import Ouroboros.Consensus.Util.ResourceRegistry (withRegistry, cancelThread)
+import Control.Monad.Class.MonadTimer
 
 tests :: TestTree
 tests = testGroup "Mempool"
@@ -109,11 +112,11 @@ prop_Mempool_addTxs_getTxs setup =
 prop_Mempool_semigroup_addTxs :: TestSetupWithTxs -> Property
 prop_Mempool_semigroup_addTxs setup =
   withTestMempool (testSetup setup) $ \TestMempool {mempool = mempool1} -> do
-  _ <- addTxs mempool1 (allTxs setup)
+  unless (null $ allTxs setup) $ void $ addTxs mempool1 (allTxs setup)
   snapshot1 <- atomically $ getSnapshot mempool1
 
   return $ withTestMempool (testSetup setup) $ \TestMempool {mempool = mempool2} -> do
-    forM_ (allTxs setup) $ \tx -> addTxs mempool2 [tx]
+    unless (null $ allTxs setup) $ forM_ (allTxs setup) $ \tx -> addTxs mempool2 [tx]
     snapshot2 <- atomically $ getSnapshot mempool2
 
     return $ counterexample
@@ -204,7 +207,7 @@ prop_Mempool_getCapacity mcts =
     MempoolCapacityBytesOverride testCapacity = testMempoolCapOverride testSetup
     MempoolCapTestSetup (TestSetupWithTxs testSetup _txsToAdd) = mcts
 
--- | Test the correctness of 'tryAddTxs' when the Mempool is (or will be) at
+-- | Test the correctness of 'pushTxs' when the Mempool is (or will be) at
 -- capacity.
 --
 -- Ignore the "100% empty Mempool" label in the test output, that is there
@@ -214,9 +217,15 @@ prop_Mempool_Capacity :: MempoolCapTestSetup -> Property
 prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
   withTestMempool testSetup $ \TestMempool { mempool } -> do
     capacity <- atomically (getCapacity mempool)
+    t <- atomically newEmptyTMVar
     curSize <- msNumBytes . snapshotMempoolSize <$>
       atomically (getSnapshot mempool)
-    res@(processed, unprocessed) <- tryAddTxs mempool DoNotIntervene (map fst txsToAdd)
+
+    res@(processed, unprocessed) <- case txsToAdd of
+      [] -> pure ([], [])
+      _ -> do
+        pushTxs mempool (TxsToAdd DoNotIntervene (NE.fromList $ map fst txsToAdd) t)
+        findUnconsumed <$> consume False t
     return $
       counterexample ("Initial size: " <> show curSize)    $
       classify (null processed)   "no transactions added"  $
@@ -224,6 +233,24 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
       blindErrors res === expectedResult capacity curSize
   where
     TestSetupWithTxs testSetup txsToAdd = testSetupWithTxs
+
+    findUnconsumed res =
+      let processed = map (\case
+                              MempoolTxAdded t -> txForgetValidated t
+                              MempoolTxRejected t _ -> t) res
+      in
+        (res, filter (not . (`elem` processed)) (map fst txsToAdd))
+
+    consume :: MonadSTM m
+            => Bool
+            -> StrictTMVar m (Maybe [MempoolAddTxResult TestBlock])
+            -> m ([MempoolAddTxResult TestBlock])
+    consume haveISeenEmptyResults t = do
+      msg <- atomically $ takeTMVar t
+      case msg of
+        Nothing -> pure []
+        Just [] -> if haveISeenEmptyResults then pure [] else consume True t
+        Just m -> (m ++) <$> consume False t
 
     -- | Convert 'MempoolAddTxResult' into a 'Bool':
     -- isMempoolTxAdded -> True, isMempoolTxRejected -> False.
@@ -760,7 +787,7 @@ data TestMempool m = TestMempool
 withTestMempool
   :: forall prop. Testable prop
   => TestSetup
-  -> (forall m. IOLike m => TestMempool m -> m prop)
+  -> (forall m. (IOLike m, MonadTimer m) => TestMempool m -> m prop)
   -> Property
 withTestMempool setup@TestSetup {..} prop =
       counterexample (ppTestSetup setup)
@@ -777,7 +804,7 @@ withTestMempool setup@TestSetup {..} prop =
     isOverride (MempoolCapacityBytesOverride _) = True
     isOverride NoMempoolCapacityBytesOverride   = False
 
-    setUpAndRun :: forall m. IOLike m => m Property
+    setUpAndRun :: forall m. (IOLike m, MonadTimer m) => m Property
     setUpAndRun = do
 
       -- Set up the LedgerInterface
@@ -804,38 +831,44 @@ withTestMempool setup@TestSetup {..} prop =
       -- TODO use IOSim's dynamicTracer
       let tracer = Tracer $ \ev -> atomically $ modifyTVar varEvents (ev:)
 
-      -- Open the mempool and add the initial transactions
-      mempool <-
-        openMempoolWithoutSyncThread
+      withRegistry $ \reg -> do
+        -- Open the mempool and add the initial transactions
+        (th, mempool) <-
+          openMempoolWithoutSyncThread
+          reg
           ledgerInterface
           testLedgerConfig
           testMempoolCapOverride
           tracer
           txSize
-      result  <- addTxs mempool testInitialTxs
-      -- the invalid transactions are reported in the same order they were
-      -- added, so the first error is not the result of a cascade
-      sequence_
-        [ error $ "Invalid initial transaction: " <> condense invalidTx
-        | MempoolTxRejected invalidTx _err <- result
-        ]
+        result  <- addTxs mempool testInitialTxs
+        -- the invalid transactions are reported in the same order they were
+        -- added, so the first error is not the result of a cascade
+        sequence_
+          [ error $ "Invalid initial transaction: " <> condense invalidTx
+          | MempoolTxRejected invalidTx _err <- result
+          ]
 
-      -- Clear the trace
-      atomically $ writeTVar varEvents []
+        -- Clear the trace
+        atomically $ writeTVar varEvents []
+        -- Apply the property to the 'TestMempool' record
+        res <- property <$> (do
+                                p <- prop TestMempool
+                                  { mempool
+                                  , getTraceEvents   = atomically $ reverse <$> readTVar varEvents
+                                  , eraseTraceEvents = atomically $ writeTVar varEvents []
+                                  , addTxsToLedger   = addTxsToLedger varCurrentLedgerState
+                                  , getCurrentLedger = readTVar varCurrentLedgerState
+                                  }
+                                cancelThread th
+                                pure p
+                            )
 
-      -- Apply the property to the 'TestMempool' record
-      res <- property <$> prop TestMempool
-        { mempool
-        , getTraceEvents   = atomically $ reverse <$> readTVar varEvents
-        , eraseTraceEvents = atomically $ writeTVar varEvents []
-        , addTxsToLedger   = addTxsToLedger varCurrentLedgerState
-        , getCurrentLedger = readTVar varCurrentLedgerState
-        }
-      validContents <- atomically $
-            checkMempoolValidity
-        <$> readTVar varCurrentLedgerState
-        <*> getSnapshot mempool
-      return $ res .&&. validContents
+        validContents <- atomically $
+                         checkMempoolValidity
+          <$> readTVar varCurrentLedgerState
+          <*> getSnapshot mempool
+        return $ res .&&. validContents
 
     addTxToLedger :: forall m. IOLike m
                   => StrictTVar m (LedgerState TestBlock EmptyMK)
