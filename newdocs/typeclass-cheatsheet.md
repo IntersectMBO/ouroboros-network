@@ -124,23 +124,24 @@ Classes connected to ledgers:
 ## Some Commonly Used Base Types (from pkgs ouroboros-consensus, cardano-base, and ouroboros-network)
 
 ``` haskell
-data Forecast a = Forecast { forecastAt  :: WithOrigin SlotNo                                    -- Forecast a - Forecast the effect
-                           , forecastFor :: SlotNo -> Except OutsideForecastRange (Ticked a)     --              of time ticking
-                           }
+data Forecast a = 
+  Forecast { forecastAt  :: WithOrigin SlotNo                                        -- Forecast a - Forecast the effect
+           , forecastFor :: SlotNo -> Except OutsideForecastRange (Ticked a)         --              of time ticking
+           }
 
-data LedgerResult l a = LedgerResult { lrEvents :: [AuxLedgerEvent l]                   -- LedgerResult l a - The result of invoking 
-                                     , lrResult :: !a                                   -- a ledger function that does validation
+data LedgerResult l a = LedgerResult { lrEvents :: [AuxLedgerEvent l]        -- LedgerResult l a - The result of invoking 
+                                     , lrResult :: !a                        -- a ledger function that does validation
                                      }
 
 data WithOrigin t = Origin | At !t
 
-newtype SlotNo = SlotNo {unSlotNo :: Word64}                                -- SlotNo - The 0-based index for the Ourboros time slot.
+newtype SlotNo = SlotNo {unSlotNo :: Word64}                    -- SlotNo - The 0-based index for the Ourboros time slot.
 
 data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
 
-data HeaderFields b = HeaderFields { headerFieldSlot    :: SlotNo                                -- HeaderFields - fields we expect
-                                   , headerFieldBlockNo :: BlockNo                               --                to be present in
-                                   , headerFieldHash    :: HeaderHash b                          --                a block.
+data HeaderFields b = HeaderFields { headerFieldSlot    :: SlotNo                       -- HeaderFields - fields we expect
+                                   , headerFieldBlockNo :: BlockNo                      --                to be present in
+                                   , headerFieldHash    :: HeaderHash b                 --                a block.
                                    }
 
 -- | A point on the chain is identified by its 'Slot' and 'HeaderHash'.
