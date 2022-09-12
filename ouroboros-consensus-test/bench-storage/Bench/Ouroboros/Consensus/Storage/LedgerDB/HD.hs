@@ -105,48 +105,87 @@ import           Test.Tasty.Bench
 import           Test.Tasty.QuickCheck hiding (choose, frequency, resize,
                      shuffle, sized, variant)
 
+import qualified Ouroboros.Consensus.Block as Block
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+
 import           Test.Util.MockDiffSeq
+import           Test.Util.Orphans.Isomorphism (Isomorphism (..))
+import           Test.Util.Orphans.NFData ()
 
 
 
 benchmarks :: Benchmark
 benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
-        env (mkBenchEnv gcDefault) $
-          \ ~bEnv@BenchEnv {cmdsMock, ds0Mock } ->
-            bgroup "Mocked diffs" [
-                bench "Benchmark interpret" $
-                  nf (interpretMock ds0Mock) cmdsMock
-              , testProperty "Sanity checks" $
-                  once (sanityCheck bEnv)
-              ]
+      benchComparative
+        "Configuration: default"
+        Nothing
+        (mkBenchEnv @Key @Value gcDefault)
+    , testProperty "interpret MockDiffSeq == interpret SeqUtxoDiff" $
+        forAll (generator gcDefault TestMode) $
+          \CmdGenResult {cmds, ds0} ->
+              interpretMock ds0 cmds
+            ===
+              to interpretSubcached ds0 cmds
     ]]
   where
     mkBenchEnv ::
-         (Ord k, Arbitrary k, Arbitrary v)
+         (Ord k, Eq v, Arbitrary k, Arbitrary v)
       => GenConfig
       -> IO (BenchEnv k v)
     mkBenchEnv conf = do
       CmdGenResult{cmds, ds0, finalModel} <- generate $ generator conf BenchMode
       pure $ BenchEnv {
           cmdsMock = cmds
+        , cmdsSubcached = to cmds
         , ds0Mock  = ds0
+        , ds0Subcached = to ds0
         , model    = finalModel
         }
 
-    interpretMock = interpret @MockDiffSeq @Key @Value
+    interpretMock      = interpret @MockDiffSeq @Key @Value
+    interpretSubcached = interpret @HD.SeqUtxoDiff @Key @Value
 
 -- | Inputs to a benchmark.
+--
+-- As a convention, we use @ds0@ to indicate the state of the diff sequence
+-- after the warmup phase during command generation.
 data BenchEnv k v = BenchEnv {
-    cmdsMock :: ![Cmd MockDiffSeq k v]
-    -- | State of the diff sequence after the warmup phase during command
-    -- generation.
-  , ds0Mock  :: !(MockDiffSeq k v)
+    cmdsMock      :: ![Cmd MockDiffSeq k v]
+  , cmdsSubcached :: ![Cmd HD.SeqUtxoDiff k v]
+  , ds0Mock       :: !(MockDiffSeq k v)
+  , ds0Subcached  :: !(HD.SeqUtxoDiff k v)
     -- | Final state of the model after the warmup phase /and/
     -- the command generation phase.
-  , model    :: !(Model k v)
+  , model         :: !(Model k v)
   }
   deriving stock Generic
   deriving anyclass NFData
+
+benchComparative ::
+     (Show k, Ord k, Show v, Eq v, NFData k, NFData v)
+  => String
+  -> Maybe (Double, Double)
+  -> IO (BenchEnv k v)
+  -> Benchmark
+benchComparative name boundsMay benchEnv =
+  bgroup name [
+    env benchEnv $
+      \ ~bEnv@BenchEnv {cmdsMock, cmdsSubcached, ds0Mock, ds0Subcached} ->
+        bgroup "Comparative performance analysis" [
+          maybe bcompare (uncurry bcompareWithin) boundsMay target $
+            bench "MockDiffSeq" $
+              nf (interpret ds0Mock) cmdsMock
+        ,   bench "SeqUtxoDiff" $
+              nf (interpret ds0Subcached) cmdsSubcached
+        , testProperty "Sanity checks" $
+            once (sanityCheck bEnv)
+        ]
+  ]
+  where
+    target :: String
+    target =
+      "    $(NF-2) == \"" <> name <> "\" \
+      \ && $NF     == \"SeqUtxoDiff\"     "
 
 {-------------------------------------------------------------------------------
   Commands
@@ -181,6 +220,18 @@ deriving stock instance ( Eq (ds k v)
                         , Eq (Keys ds k v)
                         , Eq (SlotNo ds)
                         ) => Eq (Cmd ds k v)
+
+instance (Ord k, Eq v) => Isomorphism (Cmd MockDiffSeq k v) (Cmd HD.SeqUtxoDiff k v) where
+  to (Push sl d)     = Push (to sl) (to d)
+  to (Flush n)       = Flush n
+  to (Rollback n bs) = Rollback n (to bs)
+  to (Forward vs ks) = Forward (to vs) (to ks)
+
+instance (Ord k, Eq v) => Isomorphism (Cmd HD.SeqUtxoDiff k v) (Cmd MockDiffSeq k v) where
+  to (Push sl d)     = Push (to sl) (to d)
+  to (Flush n)       = Flush n
+  to (Rollback n bs) = Rollback n (to bs)
+  to (Forward vs ks) = Forward (to vs) (to ks)
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -283,6 +334,18 @@ instance Ord k => IsDiffSeq MockDiffSeq k v where
   rollback             = mRollback
   forwardValuesAndKeys = mForwardValuesAndKeys
   totalDiff            = mTotalDiff
+
+instance Ord k => IsDiffSeq HD.SeqUtxoDiff k v where
+  type Diff HD.SeqUtxoDiff k v    = HD.UtxoDiff k v
+  type Values HD.SeqUtxoDiff k v  = HD.UtxoValues k v
+  type Keys HD.SeqUtxoDiff k v    = HD.UtxoKeys k v
+  type SlotNo HD.SeqUtxoDiff      = Block.SlotNo
+
+  push                 = HD.extendSeqUtxoDiff
+  flush                = HD.splitAtSeqUtxoDiff
+  rollback             = HD.splitAtFromEndSeqUtxoDiff
+  forwardValuesAndKeys = HD.forwardValuesAndKeys
+  totalDiff            = HD.cumulativeDiffSeqUtxoDiff
 
 {-------------------------------------------------------------------------------
   Configuration types
@@ -781,5 +844,49 @@ genForward = do
 -------------------------------------------------------------------------------}
 
 -- | Sanity check benchmark inputs.
-sanityCheck :: BenchEnv k v -> Property
-sanityCheck _ = property True
+sanityCheck ::
+     forall k v.
+     ( Ord k, Eq v, Show k, Show v, NFData k, NFData v
+     )
+  => BenchEnv k v
+  -> Property
+sanityCheck bEnv = conjoin [
+      interpretationsMatch
+    , modelMatchesInterpretation1
+    , modelMatchesInterpretation2
+    , lengthsMatch1
+    , lengthsMatch2
+    , isomorphismCheck1
+    , isomorphismCheck2
+    , isomorphismProperties1
+    , isomorphismProperties2
+    ]
+  where
+    BenchEnv {cmdsMock, cmdsSubcached, ds0Mock, ds0Subcached, model} = bEnv
+
+    interpretationsMatch = counterexample "interpret matches" $
+      interpret ds0Mock cmdsMock === to (interpret ds0Subcached cmdsSubcached)
+
+    modelMatchesInterpretation1 = counterexample "model matches interpretations 1" $
+      diffs model === interpret ds0Mock cmdsMock
+
+    modelMatchesInterpretation2 = counterexample "model matches interpretations 2" $
+       diffs model === to (interpret ds0Subcached cmdsSubcached)
+
+    lengthsMatch1 = counterexample "Lengths of command/diff sequences match 1" $
+      length cmdsMock === length cmdsSubcached
+
+    lengthsMatch2 = counterexample "Lengths of command/diff sequences match 2" $
+      mLength ds0Mock === HD.lengthSeqUtxoDiff ds0Subcached
+
+    isomorphismCheck1 = counterexample "Isomorphism check 1" $
+      cmdsMock === to cmdsSubcached
+
+    isomorphismCheck2 = counterexample "Isomorphism check 2" $
+      to cmdsMock === cmdsSubcached
+
+    isomorphismProperties1 = counterexample "Isomorphism properties 1" $
+      to @[Cmd HD.SeqUtxoDiff k v] (to cmdsMock) === cmdsMock
+
+    isomorphismProperties2 = counterexample "Isomorphism properties 2" $
+      to @[Cmd MockDiffSeq k v] (to cmdsSubcached) === cmdsSubcached
