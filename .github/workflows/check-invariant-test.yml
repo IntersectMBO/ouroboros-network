@@ -1,0 +1,25 @@
+name: Strict nothunk test
+on:
+  schedule:
+    # Run the test every Wednesday at midnight
+    - cron: "0 0 * * 3"
+
+jobs:
+  build-test:
+    name: "Build and Test with Strict Check TVar Invariant Check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: input-output-hk/ouroboros-network
+          fetch-depth: 0
+
+      - name: Prepare nix
+        uses: cachix/install-nix-action@v17
+        with:
+          extra_nix_config: |
+            trusted-public-keys =  cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+            substituters = https://cache.nixos.org https://cache.iog.io
+      - name: "Build and Test"
+        run: |
+          nix-build -A tvar-invariant-checks.tests --keep-going

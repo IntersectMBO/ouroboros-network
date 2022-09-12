@@ -47,7 +47,7 @@ let
       }
       {   
         packages.strict-stm.components.library.configureFlags =
-          lib.mkForce (if checkTVarInvariant then ["-f checktvarinvariant"] else []);
+          lib.mkIf checkTVarInvariant (lib.mkForce ["-f checktvarinvariant"]);
       }
       {
         # Apply profiling arg to all library components in the build:
