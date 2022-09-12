@@ -4,7 +4,9 @@
 { lib, stdenv, pkgs, haskell-nix, buildPackages, config ? { }
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
-, libsodium-vrf ? pkgs.libsodium-vrf }:
+, libsodium-vrf ? pkgs.libsodium-vrf 
+  # Enable strict TVar invariant check flag in strict-stm
+, checkTVarInvariant ? false }:
 let
   compiler-nix-name = pkgs.localConfig.ghcVersion;
   src = haskell-nix.haskellLib.cleanGit {
@@ -42,6 +44,10 @@ let
           # and test suites.
           doCoverage = config.coverage;
         });
+      }
+      {   
+        packages.strict-stm.components.library.configureFlags =
+          lib.mkForce (if checkTVarInvariant then ["-f checktvarinvariant"] else []);
       }
       {
         # Apply profiling arg to all library components in the build:
