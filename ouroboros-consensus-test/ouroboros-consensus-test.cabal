@@ -57,6 +57,7 @@ library
                        Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.IOLike
+                       Test.Util.Orphans.Isomorphism
                        Test.Util.Orphans.NFData
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
