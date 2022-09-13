@@ -43,6 +43,7 @@ packages: ./cardano-ping
           ./ouroboros-consensus-diffusion
           ./ntp-client
           ./cardano-client
+          ./anti-diff
           ./semigroupoid
 
 tests: True
