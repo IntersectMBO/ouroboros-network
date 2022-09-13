@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes     #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE InstanceSigs            #-}
@@ -15,15 +16,18 @@ module Test.Util.Orphans.Isomorphism (
 
 import           Data.Foldable (toList)
 import           Data.Proxy
-import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
-import qualified Test.Util.MockDiffSeq as MDS
-
+import qualified Data.FingerTree.RootMeasured.Strict as RMFT
 import qualified Data.FingerTree.Strict as FT
+import qualified Data.Map.Diff.Strict as MapDiff
+import qualified Data.Map.Diff.Strict.Internal as Internal
 
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
+
+import           Test.Tasty.QuickCheck (Property, (===))
 
 {------------------------------------------------------------------------------
   @'Isomorphism'@ class
@@ -41,15 +45,16 @@ class Isomorphism b a => Isomorphism a b where
 from :: Isomorphism b a => a -> b
 from = to
 
-isomorphismLaw :: forall a b. (Isomorphism a b, Eq a) => Proxy b -> a -> Bool
-isomorphismLaw _ x = to @b @a (to @a @b x) == x
+isomorphismLaw ::
+     forall a b. (Isomorphism a b, Show a, Eq a)
+  => Proxy b
+  -> a
+  -> Property
+isomorphismLaw _ x = to @b @a (to @a @b x) === x
 
 {------------------------------------------------------------------------------
   Orphan instances
 ------------------------------------------------------------------------------}
-
-instance Isomorphism a a where
-  to = id
 
 instance (Isomorphism a a', Isomorphism b b')
       => Isomorphism (a -> b) (a' -> b') where
@@ -63,62 +68,56 @@ instance (Isomorphism a c, Isomorphism b d) => Isomorphism (a, b) (c, d) where
   to (x, y) = (to x, to y)
 
 {------------------------------------------------------------------------------
-  Orphan instances
+  DiffSeq is isomorphic to SeqUtxoDiff
 ------------------------------------------------------------------------------}
 
 instance (Ord k, Eq v)
-      => Isomorphism (MDS.MockDiffSeq k v) (HD.SeqUtxoDiff k v) where
-  to (MDS.MockDiffSeq sq) = HD.SeqUtxoDiff . FT.fromList . map to' . toList $ sq
+      => Isomorphism (DS.DiffSeq k v) (HD.SeqUtxoDiff k v) where
+  to (DS.DiffSeq ft) = HD.SeqUtxoDiff . FT.fromList . map to' . toList $ ft
     where
-      to' (slot, d)= HD.SudElement (to slot) (to d)
+      to' (DS.Element slot d)= HD.SudElement (to slot) (to d)
 
 instance (Ord k, Eq v)
-      => Isomorphism (HD.SeqUtxoDiff k v) (MDS.MockDiffSeq k v) where
-  to (HD.SeqUtxoDiff ft) = MDS.MockDiffSeq . FT.fromList . map to' . toList $ ft
+      => Isomorphism (HD.SeqUtxoDiff k v) (DS.DiffSeq k v) where
+  to (HD.SeqUtxoDiff ft) = DS.DiffSeq . RMFT.fromList . map to' . toList $ ft
     where
-      to' (HD.SudElement slot d) = (to slot, to d)
+      to' (HD.SudElement slot d) = DS.Element (to slot) (to d)
 
-instance Eq v => Isomorphism (MDS.MockDiff k v) (HD.UtxoDiff k v) where
-  to (MDS.MockDiff m) = HD.UtxoDiff (fmap to' m)
+instance Eq v => Isomorphism (MapDiff.Diff k v) (HD.UtxoDiff k v) where
+  to (Internal.Diff m) = HD.UtxoDiff (fmap to' m)
     where
-      to' :: Seq (MDS.MockDiffEntry v) -> HD.UtxoEntryDiff v
       to' = \case
-        (Seq.Empty Seq.:|> x) ->
+        Internal.DiffHistory (_xs Seq.:|> x) ->
           to'' x
-        (Seq.Empty Seq.:|> MDS.MockInsert v1 Seq.:|> MDS.MockDelete v2)
-          | v1 == v2  -> HD.UtxoEntryDiff v1 HD.UedsInsAndDel
         _ ->
-          error "A sequence of inserts/deletes is isomorphic to a           \
-                \ UtxoEntryDiff under the assumption that a key can only be \
-                \ inserted and deleted once"
-      to'' :: MDS.MockDiffEntry v -> HD.UtxoEntryDiff v
+          error "A DiffHistory is isomorphic to a UtxoEntryDiff under the \
+                \ assumption that diff histories contain exactly one element."
       to'' = \case
-        MDS.MockInsert v -> HD.UtxoEntryDiff v HD.UedsIns
-        MDS.MockDelete v -> HD.UtxoEntryDiff v HD.UedsDel
+        MapDiff.Insert v -> HD.UtxoEntryDiff v HD.UedsIns
+        MapDiff.Delete v -> HD.UtxoEntryDiff v HD.UedsDel
 
-instance Eq v => Isomorphism (HD.UtxoDiff k v) (MDS.MockDiff k v) where
-  to (HD.UtxoDiff m) = MDS.MockDiff $ fmap to' m
+instance Eq v => Isomorphism (HD.UtxoDiff k v) (MapDiff.Diff k v) where
+  to (HD.UtxoDiff m) = Internal.Diff $ fmap to' m
     where
-      to' :: HD.UtxoEntryDiff v -> Seq (MDS.MockDiffEntry v)
       to' (HD.UtxoEntryDiff x st) = case st of
-        HD.UedsIns       -> MDS.mSingletonInsert x
-        HD.UedsDel       -> MDS.mSingletonDelete x
-        HD.UedsInsAndDel -> MDS.mSingletonInsert x <> MDS.mSingletonDelete x
+        HD.UedsIns       -> MapDiff.singletonInsert x
+        HD.UedsDel       -> MapDiff.singletonDelete x
+        HD.UedsInsAndDel -> MapDiff.singletonInsert x <> MapDiff.singletonDelete x
 
-instance Isomorphism (MDS.MockValues k v) (HD.UtxoValues k v) where
-  to (MDS.MockValues m) = HD.UtxoValues m
+instance Isomorphism (MapDiff.Values k v) (HD.UtxoValues k v) where
+  to (MapDiff.Values m) = HD.UtxoValues m
 
-instance Isomorphism (HD.UtxoValues k v) (MDS.MockValues k v) where
-  to (HD.UtxoValues m) = MDS.MockValues m
+instance Isomorphism (HD.UtxoValues k v) (MapDiff.Values k v) where
+  to (HD.UtxoValues m) = MapDiff.Values m
 
-instance Isomorphism (MDS.MockKeys k v) (HD.UtxoKeys k v) where
-  to (MDS.MockKeys m) = HD.UtxoKeys m
+instance Isomorphism (MapDiff.Keys k v) (HD.UtxoKeys k v) where
+  to (MapDiff.Keys m) = HD.UtxoKeys m
 
-instance Isomorphism (HD.UtxoKeys k v) (MDS.MockKeys k v) where
-  to (HD.UtxoKeys m) = MDS.MockKeys m
+instance Isomorphism (HD.UtxoKeys k v) (MapDiff.Keys k v) where
+  to (HD.UtxoKeys m) = MapDiff.Keys m
 
-instance Isomorphism MDS.MockSlotNo Block.SlotNo where
-  to (MDS.MockSlotNo x) = fromIntegral x
+instance Isomorphism DS.SlotNo Block.SlotNo where
+  to (DS.SlotNo slot) = slot
 
-instance Isomorphism Block.SlotNo MDS.MockSlotNo where
-  to (Block.SlotNo x) = fromIntegral x
+instance Isomorphism Block.SlotNo DS.SlotNo where
+  to = DS.SlotNo

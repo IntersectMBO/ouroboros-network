@@ -98,6 +98,7 @@ import qualified Data.ByteString.Short as B
 import           Data.Foldable
 import           Data.Kind (Type)
 import qualified Data.Map.Strict as Map
+import           Data.Proxy
 import           GHC.Generics (Generic)
 
 import           QuickCheck.GenT
@@ -107,9 +108,10 @@ import           Test.Tasty.QuickCheck hiding (choose, frequency, resize,
 
 import qualified Ouroboros.Consensus.Block as Block
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
-import           Test.Util.MockDiffSeq
-import           Test.Util.Orphans.Isomorphism (Isomorphism (..))
+import           Test.Util.Orphans.Isomorphism (Isomorphism (..),
+                     isomorphismLaw)
 import           Test.Util.Orphans.NFData ()
 
 
@@ -120,29 +122,41 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
         "Configuration: default"
         Nothing
         (mkBenchEnv @Key @Value gcDefault)
-    , testProperty "interpret MockDiffSeq == interpret SeqUtxoDiff" $
+    , benchComparative
+        "Configuration: no rollbacks"
+        Nothing
+        (mkBenchEnv @Key @Value gcNoRollbacks)
+    , benchComparative
+        "Configuration: only small rollbacks"
+        Nothing
+        (mkBenchEnv @Key @Value gcSmallRollbacks)
+    , benchComparative
+        "Configuration: no rollbacks, larger flushes (every 100 pushes)"
+        Nothing
+        (mkBenchEnv @Key @Value gcNoRollbacksLargerFlush)
+    , testProperty "interpret DiffSeq == interpret SeqUtxoDiff" $
         forAll (generator gcDefault TestMode) $
           \CmdGenResult {cmds, ds0} ->
-              interpretMock ds0 cmds
+              interpretAntidiff ds0 cmds
             ===
               to interpretSubcached ds0 cmds
     ]]
   where
     mkBenchEnv ::
-         (Ord k, Eq v, Arbitrary k, Arbitrary v)
+         forall k v. (Ord k, Eq v, Arbitrary k, Arbitrary v)
       => GenConfig
       -> IO (BenchEnv k v)
     mkBenchEnv conf = do
       CmdGenResult{cmds, ds0, finalModel} <- generate $ generator conf BenchMode
       pure $ BenchEnv {
-          cmdsMock = cmds
+          cmdsAntidiff = cmds
         , cmdsSubcached = to cmds
-        , ds0Mock  = ds0
+        , ds0Antidiff = ds0
         , ds0Subcached = to ds0
         , model    = finalModel
         }
 
-    interpretMock      = interpret @MockDiffSeq @Key @Value
+    interpretAntidiff  = interpret @DS.DiffSeq     @Key @Value
     interpretSubcached = interpret @HD.SeqUtxoDiff @Key @Value
 
 -- | Inputs to a benchmark.
@@ -150,9 +164,9 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
 -- As a convention, we use @ds0@ to indicate the state of the diff sequence
 -- after the warmup phase during command generation.
 data BenchEnv k v = BenchEnv {
-    cmdsMock      :: ![Cmd MockDiffSeq k v]
+    cmdsAntidiff  :: ![Cmd DS.DiffSeq k v]
   , cmdsSubcached :: ![Cmd HD.SeqUtxoDiff k v]
-  , ds0Mock       :: !(MockDiffSeq k v)
+  , ds0Antidiff   :: !(DS.DiffSeq k v)
   , ds0Subcached  :: !(HD.SeqUtxoDiff k v)
     -- | Final state of the model after the warmup phase /and/
     -- the command generation phase.
@@ -170,11 +184,11 @@ benchComparative ::
 benchComparative name boundsMay benchEnv =
   bgroup name [
     env benchEnv $
-      \ ~bEnv@BenchEnv {cmdsMock, cmdsSubcached, ds0Mock, ds0Subcached} ->
+      \ ~bEnv@BenchEnv {cmdsAntidiff, cmdsSubcached, ds0Antidiff, ds0Subcached} ->
         bgroup "Comparative performance analysis" [
           maybe bcompare (uncurry bcompareWithin) boundsMay target $
-            bench "MockDiffSeq" $
-              nf (interpret ds0Mock) cmdsMock
+            bench "DiffSeq" $
+              nf (interpret ds0Antidiff) cmdsAntidiff
         ,   bench "SeqUtxoDiff" $
               nf (interpret ds0Subcached) cmdsSubcached
         , testProperty "Sanity checks" $
@@ -221,13 +235,14 @@ deriving stock instance ( Eq (ds k v)
                         , Eq (SlotNo ds)
                         ) => Eq (Cmd ds k v)
 
-instance (Ord k, Eq v) => Isomorphism (Cmd MockDiffSeq k v) (Cmd HD.SeqUtxoDiff k v) where
-  to (Push sl d)     = Push (to sl) (to d)
-  to (Flush n)       = Flush n
-  to (Rollback n bs) = Rollback n (to bs)
-  to (Forward vs ks) = Forward (to vs) (to ks)
-
-instance (Ord k, Eq v) => Isomorphism (Cmd HD.SeqUtxoDiff k v) (Cmd MockDiffSeq k v) where
+instance ( Ord k, Eq v
+         , Isomorphism (ds k v) (ds' k v)
+         , Isomorphism (Diff ds k v) (Diff ds' k v)
+         , Isomorphism (Values ds k v) (Values ds' k v)
+         , Isomorphism (Keys ds k v) (Keys ds' k v)
+         , Isomorphism (SlotNo ds) (SlotNo ds')
+         , Isomorphism (Block ds k v) (Block ds' k v)
+         ) => Isomorphism (Cmd ds k v) (Cmd ds' k v) where
   to (Push sl d)     = Push (to sl) (to d)
   to (Flush n)       = Flush n
   to (Rollback n bs) = Rollback n (to bs)
@@ -323,17 +338,17 @@ pushMany = foldl (uncurry . push)
   Type class for diff sequences: concrete implementations
 -------------------------------------------------------------------------------}
 
-instance Ord k => IsDiffSeq MockDiffSeq k v where
-  type Diff   MockDiffSeq k v = MockDiff k v
-  type Values MockDiffSeq k v = MockValues k v
-  type Keys   MockDiffSeq k v = MockKeys k v
-  type SlotNo MockDiffSeq     = MockSlotNo
+instance (Ord k, Eq v) => IsDiffSeq DS.DiffSeq k v where
+  type Diff DS.DiffSeq k v   = DS.Diff k v
+  type Values DS.DiffSeq k v = DS.Values k v
+  type Keys DS.DiffSeq k v   = DS.Keys k v
+  type SlotNo DS.DiffSeq     = DS.SlotNo
 
-  push                 = mPush
-  flush                = mFlush
-  rollback             = mRollback
-  forwardValuesAndKeys = mForwardValuesAndKeys
-  totalDiff            = mTotalDiff
+  push ds sl d         = DS.extend' ds $ DS.Element sl d
+  flush                = DS.splitlAt
+  rollback             = DS.splitrAtFromEnd
+  forwardValuesAndKeys = DS.forwardValuesAndKeys
+  totalDiff            = DS.cumulativeDiff
 
 instance Ord k => IsDiffSeq HD.SeqUtxoDiff k v where
   type Diff HD.SeqUtxoDiff k v    = HD.UtxoDiff k v
@@ -432,6 +447,44 @@ gcDefault = GenConfig {
         Just $ concat $ repeat zs
   }
 
+-- | No rollbacks.
+gcNoRollbacks :: GenConfig
+gcNoRollbacks = gcDefault {
+    directives =
+      let
+        xs = concat $
+          zipWith
+            ((. return ) . (:))
+            (replicate 10 GenForward)
+            (replicate 10 GenPush)
+        ys = xs ++ [GenFlush]
+      in
+        Just $ concat $ repeat ys
+  }
+
+-- | Only small rollbacks.
+gcSmallRollbacks :: GenConfig
+gcSmallRollbacks = gcDefault {
+    rollbackConfig = (rollbackConfig gcDefault) {
+        distribution = Just [(1, (1, 10))]
+      }
+  }
+
+-- | Larger flushes, no rollbacks.
+gcNoRollbacksLargerFlush :: GenConfig
+gcNoRollbacksLargerFlush = gcDefault {
+    directives =
+      let
+        xs = concat $
+          zipWith
+            ((. return ) . (:))
+            (replicate 100 GenForward)
+            (replicate 100 GenPush)
+        ys = xs ++ [GenFlush]
+      in
+        Just $ concat $ repeat ys
+  }
+
 {-------------------------------------------------------------------------------
   Command generator: Model
 -------------------------------------------------------------------------------}
@@ -439,11 +492,11 @@ gcDefault = GenConfig {
 -- | Model for keeping track of state during generation of the command sequence.
 data Model k v = Model {
     -- | The current diff sequence.
-    diffs         :: MockDiffSeq k v
+    diffs         :: DS.DiffSeq k v
     -- | The tip of the diff sequence.
   , tip           :: Int
     -- | Values that have been flushed to a backing store.
-  , backingValues :: MockValues k v
+  , backingValues :: Values DS.DiffSeq k v
     -- | A counter for the number of commands generated up until now.
   , nrGenerated   :: Int
   }
@@ -451,12 +504,12 @@ data Model k v = Model {
   deriving anyclass NFData
 
 genInitialModel ::
-     (Ord k, Arbitrary k, Arbitrary v)
+     (Ord k, Eq v, Arbitrary k, Arbitrary v)
   => GenConfig
   -> Gen (Model k v)
 genInitialModel GenConfig{nrInitialValues} = do
     kvs <- replicateM nrInitialValues arbitrary
-    pure $ Model mempty 0 (mFromListValues kvs) 0
+    pure $ Model mempty 0 (DS.valuesFromList kvs) 0
 
 newtype Key = Key ShortByteString
   deriving stock (Show, Eq, Ord, Generic)
@@ -500,9 +553,9 @@ runCmdGen (CmdGen mt) conf m = (\(x, s, _) -> (x, s)) <$> runRWST mt conf m
 -- | The required result of a top-level generator.
 data CmdGenResult k v = CmdGenResult {
     -- | The generated command sequence.
-    cmds       :: [Cmd MockDiffSeq k v]
+    cmds       :: [Cmd DS.DiffSeq k v]
     -- | State of the diff sequence after the warmup phase.
-  , ds0        :: MockDiffSeq k v
+  , ds0        :: DS.DiffSeq k v
     -- | Final state of the model after the warmup phase /and/
     -- the command generation phase, like @'model'@.
   , finalModel :: Model k v
@@ -527,7 +580,7 @@ data GenMode = BenchMode | TestMode
 -- Note: We return the @'Model'@ because we want to perform invariant and/or
 -- sanity checks on it.
 generator ::
-     (Ord k, Arbitrary k, Arbitrary v)
+     (Ord k, Eq v, Arbitrary k, Arbitrary v)
   => GenConfig
   -> GenMode
   -> Gen (CmdGenResult k v)
@@ -567,8 +620,8 @@ generator preConf gmode = do
 -- Note: The order of commands is deterministic, the inputs for these commands
 -- are often semi-randomly generated.
 genCmdsDet ::
-     forall k v. (Ord k, Arbitrary k, Arbitrary v)
-  => CmdGen k v [Cmd MockDiffSeq k v]
+     forall k v. (Ord k, Eq v, Arbitrary k, Arbitrary v)
+  => CmdGen k v [Cmd DS.DiffSeq k v]
 genCmdsDet = do
   nrc <- reader nrCommands
   nrg <- gets nrGenerated
@@ -588,9 +641,9 @@ genCmdsDet = do
 
 -- | Generate a specific command according to a directive.
 genCmdDet ::
-     (Ord k, Arbitrary k, Arbitrary v)
+     (Ord k, Eq v, Arbitrary k, Arbitrary v)
   => Directive
-  -> CmdGen k v (Cmd MockDiffSeq k v)
+  -> CmdGen k v (Cmd DS.DiffSeq k v)
 genCmdDet = \case
   GenForward  -> genForward
   GenPush     -> genPush
@@ -599,16 +652,16 @@ genCmdDet = \case
 
 -- | Generate a list of commands in non-deterministic order.
 genCmdsNonDet ::
-     (Ord k, Arbitrary k, Arbitrary v)
-  => CmdGen k v [Cmd MockDiffSeq k v]
+     (Ord k, Eq v, Arbitrary k, Arbitrary v)
+  => CmdGen k v [Cmd DS.DiffSeq k v]
 genCmdsNonDet = do
   conf <- ask
   replicateM (nrCommands conf) genCmdNonDet
 
 -- | Generate a command based on a probability distribution.
 genCmdNonDet ::
-     (Ord k, Arbitrary k, Arbitrary v)
-  => CmdGen k v (Cmd MockDiffSeq k v)
+     (Ord k, Eq v, Arbitrary k, Arbitrary v)
+  => CmdGen k v (Cmd DS.DiffSeq k v)
 genCmdNonDet = do
     frequency [
         (100, genPush)
@@ -620,7 +673,7 @@ genCmdNonDet = do
 -- | Simulate the warmup phase where there have not yet been at least @k@
 -- pushes.
 warmup ::
-     forall k v. (Ord k, Arbitrary k, Arbitrary v)
+     forall k v. (Ord k, Eq v, Arbitrary k, Arbitrary v)
   => CmdGen k v ()
 warmup = do
   nr <- gets nrGenerated
@@ -643,7 +696,7 @@ warmup = do
         nr == 0
       , nr' == k
       , nr'' == 0
-      , mLength ds == k
+      , DS.length ds == k
       , t == k
       ]
 
@@ -667,15 +720,15 @@ warmup = do
 -- * Return a strictly increasing slot number, and the new diff.
 -- BOOKKEEPING: Push the new diff onto the model's diff sequence.
 genPush ::
-     forall k v. (Ord k, Arbitrary k, Arbitrary v)
-  => CmdGen k v (Cmd MockDiffSeq k v)
+     forall k v. (Ord k, Eq v, Arbitrary k, Arbitrary v)
+  => CmdGen k v (Cmd DS.DiffSeq k v)
 genPush = do
     ds <- gets diffs
     t  <- gets tip
     vs <- gets backingValues
 
     let
-      vs' = mForwardValues vs (mTotalDiff ds)
+      vs' = DS.forwardValues vs (totalDiff ds)
 
     d1 <- valuesToDelete vs'
     d2 <- valuesToInsert
@@ -683,22 +736,22 @@ genPush = do
       d = d1 <> d2
 
     modify (\st -> st {
-        diffs       = mPush ds (fromIntegral t) d
+        diffs       = push ds (fromIntegral t) d
       , tip         = t + 1
       , nrGenerated = nrGenerated st + 1
       })
 
     pure $ Push (fromIntegral t) d
   where
-    valuesToDelete :: MockValues k v -> CmdGen k v (MockDiff k v)
-    valuesToDelete (MockValues m) = do
+    valuesToDelete :: Values DS.DiffSeq k v -> CmdGen k v (Diff DS.DiffSeq k v)
+    valuesToDelete (DS.Values m) = do
       PushConfig{nrToDelete} <- reader pushConfig
-      mFromListDeletes . take nrToDelete <$> shuffle (Map.toList m)
+      DS.fromListDeletes . take nrToDelete <$> shuffle (Map.toList m)
 
-    valuesToInsert :: CmdGen k v (MockDiff k v)
+    valuesToInsert :: CmdGen k v (Diff DS.DiffSeq k v)
     valuesToInsert = do
       PushConfig{nrToInsert} <- reader pushConfig
-      mFromListInserts <$> replicateM nrToInsert arbitrary'
+      DS.fromListInserts <$> replicateM nrToInsert arbitrary'
 
 -- | Generate a @'Flush'@ command.
 --
@@ -713,7 +766,7 @@ genPush = do
 -- * Return @n@.
 -- BOOKKEEPING: Remove the first @n@ diffs from the models' diff sequence and
 -- use them to forward the model's backing values.
-genFlush :: Ord k => CmdGen k v (Cmd MockDiffSeq k v)
+genFlush :: (Ord k, Eq v) => CmdGen k v (Cmd DS.DiffSeq k v)
 genFlush = do
     k <- reader securityParameter
 
@@ -724,19 +777,19 @@ genFlush = do
     let
       -- Since we never skip slots, we can compute which diffs are immutable
       -- just from the length of the current diff sequence.
-      (l, r)    = mFlush (mLength ds - k) ds
+      (l, r)    = flush (DS.length ds - k) ds
       -- Before we have pushed at least @k@ diffs, flushing has no effect.
       -- After pushing at least @k@ diffs, flushing should never leave the
       -- resulting diff sequence with less than @k@ elements.
       invariant = if t < k then
-                    mLength l == 0 && mLength r == mLength ds
+                    DS.length l == 0 && DS.length r == DS.length ds
                   else
-                    mLength r == k
-      n         = mLength l
+                    DS.length r == k
+      n         = DS.length l
 
     modify (\st -> st {
         diffs         = r
-      , backingValues = mForwardValues vs (mTotalDiff l)
+      , backingValues = DS.forwardValues vs (totalDiff l)
       , nrGenerated   = nrGenerated st + 1
       })
 
@@ -760,8 +813,8 @@ genFlush = do
 --
 -- Note: We assume that pushes do not skip any slots.
 genRollback ::
-     (Ord k, Arbitrary k, Arbitrary v)
-  => CmdGen k v (Cmd MockDiffSeq k v)
+     (Ord k, Eq v, Arbitrary k, Arbitrary v)
+  => CmdGen k v (Cmd DS.DiffSeq k v)
 genRollback = do
     k <- reader securityParameter
     distMay <- reader (distribution . rollbackConfig)
@@ -774,8 +827,8 @@ genRollback = do
       Nothing   -> choose (1, k)
 
     let
-      n       = min m (mLength ds)
-      (l, _r) = mRollback n ds
+      n       = min m (DS.length ds)
+      (l, _r) = rollback n ds
 
     modify (\st -> st {
         diffs       = l
@@ -793,7 +846,7 @@ genRollback = do
       })
 
     let
-      invariant = m <= k && n <= mLength ds
+      invariant = m <= k && n <= DS.length ds
 
     Exn.assert invariant $ pure $ Rollback n bs
   where
@@ -817,16 +870,16 @@ genRollback = do
 --
 -- Note: The keys to forward should be a superset of the keys of the backing
 -- values that we retrieve from the model.
-genForward :: forall k v. Ord k => CmdGen k v (Cmd MockDiffSeq k v)
+genForward :: forall k v. (Ord k, Eq v) => CmdGen k v (Cmd DS.DiffSeq k v)
 genForward = do
 
     ds  <- gets diffs
     bvs <- gets backingValues
 
-    ks <- keysToForward (mDiffKeys $ totalDiff ds)
+    ks <- keysToForward (DS.diffKeys $ totalDiff ds)
 
     let
-      vs = mRestrictValues bvs ks
+      vs = DS.restrictValues bvs ks
 
     modify (\st -> st{
         nrGenerated = nrGenerated st + 1
@@ -834,10 +887,10 @@ genForward = do
 
     pure $ Forward vs ks
   where
-    keysToForward :: MockKeys k v -> CmdGen k v (MockKeys k v)
-    keysToForward (MockKeys s) = do
+    keysToForward :: Keys DS.DiffSeq k v -> CmdGen k v (Keys DS.DiffSeq k v)
+    keysToForward (DS.Keys s) = do
       ForwardConfig{nrToForward} <- reader forwardConfig
-      mFromListKeys . take nrToForward <$> shuffle (toList s)
+      DS.keysFromList . take nrToForward <$> shuffle (toList s)
 
 {-------------------------------------------------------------------------------
   Sanity checks
@@ -862,31 +915,35 @@ sanityCheck bEnv = conjoin [
     , isomorphismProperties2
     ]
   where
-    BenchEnv {cmdsMock, cmdsSubcached, ds0Mock, ds0Subcached, model} = bEnv
+    BenchEnv {cmdsAntidiff, cmdsSubcached, ds0Antidiff, ds0Subcached, model} = bEnv
 
     interpretationsMatch = counterexample "interpret matches" $
-      interpret ds0Mock cmdsMock === to (interpret ds0Subcached cmdsSubcached)
+      interpret ds0Antidiff cmdsAntidiff === to (interpret ds0Subcached cmdsSubcached)
 
     modelMatchesInterpretation1 = counterexample "model matches interpretations 1" $
-      diffs model === interpret ds0Mock cmdsMock
+      diffs model === interpret ds0Antidiff cmdsAntidiff
 
     modelMatchesInterpretation2 = counterexample "model matches interpretations 2" $
        diffs model === to (interpret ds0Subcached cmdsSubcached)
 
     lengthsMatch1 = counterexample "Lengths of command/diff sequences match 1" $
-      length cmdsMock === length cmdsSubcached
+      length cmdsAntidiff === length cmdsSubcached
 
     lengthsMatch2 = counterexample "Lengths of command/diff sequences match 2" $
-      mLength ds0Mock === HD.lengthSeqUtxoDiff ds0Subcached
+      DS.length ds0Antidiff === HD.lengthSeqUtxoDiff ds0Subcached
 
-    isomorphismCheck1 = counterexample "Isomorphism check 1" $
-      cmdsMock === to cmdsSubcached
+    isomorphismCheck1 = counterexample "Isomorphism checks 1" $
+      cmdsAntidiff === to cmdsSubcached .&&.
+      ds0Antidiff === to ds0Subcached
 
-    isomorphismCheck2 = counterexample "Isomorphism check 2" $
-      to cmdsMock === cmdsSubcached
+    isomorphismCheck2 = counterexample "Isomorphism checks 2" $
+      to cmdsAntidiff === cmdsSubcached .&&.
+      to ds0Antidiff === ds0Subcached
 
     isomorphismProperties1 = counterexample "Isomorphism properties 1" $
-      to @[Cmd HD.SeqUtxoDiff k v] (to cmdsMock) === cmdsMock
+      isomorphismLaw (Proxy @[Cmd HD.SeqUtxoDiff k v]) cmdsAntidiff .&&.
+      isomorphismLaw (Proxy @(HD.SeqUtxoDiff k v)) ds0Antidiff
 
     isomorphismProperties2 = counterexample "Isomorphism properties 2" $
-      to @[Cmd MockDiffSeq k v] (to cmdsSubcached) === cmdsSubcached
+      isomorphismLaw (Proxy @[Cmd DS.DiffSeq k v]) cmdsSubcached .&&.
+      isomorphismLaw (Proxy @(DS.DiffSeq k v)) ds0Subcached

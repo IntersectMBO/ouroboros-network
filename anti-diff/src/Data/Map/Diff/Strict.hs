@@ -13,8 +13,8 @@ import           Data.Map.Diff.Strict.Internal as X (Diff, DiffEntry,
                      DiffHistory, Keys (..), Values (..), diff, diffKeys,
                      forwardValues, forwardValuesAndKeys, fromList,
                      fromListDeletes, fromListInserts, fromSeq,
-                     isNonEmptyHistory, restrictValues, singletonDelete,
-                     singletonInsert, valuesFromList)
+                     isNonEmptyHistory, keysFromList, restrictValues,
+                     singletonDelete, singletonInsert, valuesFromList)
 
 import qualified Data.Map.Diff.Strict.Internal as Internal
 
