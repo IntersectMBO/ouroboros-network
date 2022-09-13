@@ -20,6 +20,7 @@ packages: ./ouroboros-network-testing
           ./ouroboros-consensus-test
           ./ntp-client
           ./cardano-client
+          ./semigroupoid
 
 constraints:
     ip < 1.5
