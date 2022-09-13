@@ -333,7 +333,8 @@ data ChainDB m blk = ChainDB {
       -- TODO: we need to explain that 'a' parameter. What if we didn't have it?
     , getLedgerStateForKeys ::
         forall b a.
-             StaticEither b () (Point blk)
+             (String -> m ())
+          -> StaticEither b () (Point blk)
           -> (   ExtLedgerState blk EmptyMK
               -> m (a, LedgerTables (ExtLedgerState blk) KeysMK)
              )

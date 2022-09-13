@@ -218,8 +218,8 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             , stream                = Iterator.stream  h
             , newFollower           = Follower.newFollower h
             , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
-            , getLedgerStateForKeys = \p m -> getEnv h $ \env' -> do
-                Query.getLedgerStateForKeys env' p m
+            , getLedgerStateForKeys = \t p m -> getEnv h $ \env' -> do
+                Query.getLedgerStateForKeys t env' p m
             , closeDB               = closeDB h
             , isOpen                = isOpen  h
 

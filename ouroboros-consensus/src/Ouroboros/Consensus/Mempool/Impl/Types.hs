@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
+import Debug.Trace
 
 {-------------------------------------------------------------------------------
   Internal State
@@ -297,7 +298,12 @@ validateStateFor
 validateStateFor is cfg capacityOverride blockLedgerState
     | isTip    == castHash (getTipHash st')
     , isSlotNo == slot
-    = ( -- 'isLedgerState is' is equivalent to st' except in the UTxO set.
+    = -- trace (unwords ["Reapplying"
+      --                , showsLedgerState sMapKind (projectLedgerTablesTicked (isLedgerState is)) ""
+      --                , "onto"
+      --                , showsLedgerState sMapKind (projectLedgerTables (forgeLedgerState blockLedgerState)) ""
+      --                ])
+      ( -- 'isLedgerState is' is equivalent to st' except in the UTxO set.
         -- Therefore it is safe to return this one, as we don't use the 'mk'.
         isLedgerState is
       , validationResultFromIS

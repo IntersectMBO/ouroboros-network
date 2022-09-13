@@ -192,6 +192,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import Ouroboros.Consensus.Storage.LedgerDB.HD
 
 {-------------------------------------------------------------------------------
   Instantiate the in-memory DB to @blk@
@@ -741,7 +742,7 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
               (HD.UtxoDiff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
 
 readKeySets :: forall m l.
-     IOLike m
+     (IOLike m, TableStuff l)
   => LedgerBackingStore m l
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
@@ -749,7 +750,7 @@ readKeySets (LedgerBackingStore backingStore) rew = do
     readKeySetsVH (BackingStore.bsRead backingStore) rew
 
 readKeySetsVH :: forall m l.
-     IOLike m
+     (IOLike m, TableStuff l)
   => (LedgerTables l KeysMK -> m (WithOrigin SlotNo, LedgerTables l ValuesMK))
   -> RewoundTableKeySets l
   -> m (UnforwardedReadSets l)
@@ -758,7 +759,7 @@ readKeySetsVH readKeys (RewoundTableKeySets _seqNo rew) = do
     pure UnforwardedReadSets {
         ursSeqNo  = slot
       , ursValues = values
-      , ursKeys   = rew
+      , ursKeys   = zipLedgerTables (\(ApplyKeysMK (UtxoKeys ks)) (ApplyValuesMK (UtxoValues vals)) -> ApplyKeysMK $ UtxoKeys $ ks Set.\\ Map.keysSet vals) rew values
     }
 
 -- | Flush the immutable changes to the backing store

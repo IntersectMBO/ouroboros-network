@@ -61,6 +61,7 @@ import           Ouroboros.Consensus.Util (StaticEither (..), whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
+import Debug.Trace
 
 {-------------------------------------------------------------------------------
   Top-level API
@@ -125,7 +126,7 @@ mkMempool mpEnv = Mempool
         case mt' of
           Nothing -> pure ()
           Just v -> putTMVar (mpEnvTxBuffer mpEnv) $ v ++ [txs]
-    , removeTxs      = \txids -> getStatePair mpEnv (StaticLeft ()) (NE.toList txids) [] >>= \case
+    , removeTxs      = \txids -> getStatePair (const (pure ())) mpEnv (StaticLeft ()) (NE.toList txids) [] >>= \case
         StaticLeft (_is, Nothing) ->
           error $  "Function 'getStatePair' violated its postcondition."
                 <> "It should not return empty since the removals list is nonempty. "
@@ -136,7 +137,7 @@ mkMempool mpEnv = Mempool
     , syncWithLedger = implSyncWithLedger mpEnv
     , getSnapshot    = implSnapshotFromIS <$> readTMVar istate
     , getLedgerAndSnapshotFor = \p slot -> do
-        o <- getStatePair mpEnv (StaticRight p) [] []
+        o <- getStatePair (const (pure ())) mpEnv (StaticRight p) [] []
         let StaticRight mbPair = o
         case mbPair of
           Nothing        -> pure Nothing
@@ -170,7 +171,8 @@ data LedgerInterface m blk = LedgerInterface
       -- 'getLedgerStateForTxs' is that in the former we operate with
       -- 'ExtLedgerState' and in the latter we use 'LedgerState'.
     , getLedgerStateForTxs  :: forall b a.
-           StaticEither b () (Point blk)
+           (String -> m ())
+        -> StaticEither b () (Point blk)
         -> (ExtLedgerState blk EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) KeysMK))
         -> m (StaticEither
                 b
@@ -187,11 +189,11 @@ chainDBLedgerInterface ::
   => ChainDB m blk -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState = ChainDB.getCurrentLedger chainDB
-    , getLedgerStateForTxs  = \seP m ->
+    , getLedgerStateForTxs  = \t seP m ->
         fmap
           (bimap (      second unExtLedgerStateTables)
                  (fmap (second unExtLedgerStateTables)))
-        $ ChainDB.getLedgerStateForKeys chainDB seP m
+        $ ChainDB.getLedgerStateForKeys chainDB t seP m
     }
 
 {-------------------------------------------------------------------------------
@@ -312,20 +314,21 @@ loopAddTxs registry menv = do
 
   let go :: InternalState blk
          -> ExtLedgerState blk ValuesMK
+         -> [TxId (GenTx blk)]
          -> [TxsToAdd m blk]
          -> m [TxsToAdd m blk]
-      go is ls = \case
+      go is ls reqTxs = \case
         [] -> return []
         tx:more -> do
-          (is', added, toAdd) <- implTryAddTxs menv (ttaWhetherToIntervene tx) is ls (ttaTxs tx)
+          (is', added, toAdd) <- implTryAddTxs menv (ttaWhetherToIntervene tx) is ls reqTxs (ttaTxs tx)
           when (null toAdd) $ atomically $ putTMVar (mpEnvStateVar menv) is'
           atomically $ putTMVar (ttaWriteResultTo tx) (Just added)
           if null toAdd
             then do
               atomically $ putTMVar (ttaWriteResultTo tx) Nothing
-              go is' ls more
+              go is' ls reqTxs more
             else
-              (tx { ttaTxs = NE.fromList toAdd } :) <$> go is' ls more
+              (tx { ttaTxs = NE.fromList toAdd } :) <$> go is' ls reqTxs more
 
   txs <- atomically $ takeTMVar (mpEnvTxBuffer menv)
 
@@ -334,7 +337,7 @@ loopAddTxs registry menv = do
     else do
 
     -- get the values for all the transactions
-    mpair <- getStatePair menv (StaticLeft ()) [] (concatMap (NE.toList . ttaTxs) txs)
+    mpair <- getStatePair (const (pure ())) menv (StaticLeft ()) [] (concatMap (NE.toList . ttaTxs) txs)
 
     let is :: InternalState blk
         ls :: ExtLedgerState blk ValuesMK
@@ -342,7 +345,7 @@ loopAddTxs registry menv = do
           StaticLeft (_is0, Nothing) -> error "impossible! implTryAddTxs"
           StaticLeft (is0,  Just l)  -> (is0, l)
 
-    atomically . putTMVar (mpEnvTxBuffer menv) =<< go is ls txs
+    atomically . putTMVar (mpEnvTxBuffer menv) =<< go is ls (concatMap (map txId . NE.toList . ttaTxs) txs) txs
 
   loopAddTxs registry menv
 
@@ -376,9 +379,10 @@ implTryAddTxs
   -> WhetherToIntervene
   -> InternalState blk
   -> ExtLedgerState blk ValuesMK
+  -> [TxId (GenTx blk)]
   -> NE.NonEmpty (GenTx blk)
   -> m (InternalState blk, [MempoolAddTxResult blk], [GenTx blk])
-implTryAddTxs mpEnv wti is ls = go is [] . NE.toList
+implTryAddTxs mpEnv wti is ls reqTxs = go is [] . NE.toList
   where
     MempoolEnv {
         mpEnvCapacityOverride = capacityOverride
@@ -405,6 +409,24 @@ implTryAddTxs mpEnv wti is ls = go is [] . NE.toList
             void $ atomically $ runSyncWithLedger istate p
             pure (is0, reverse acc, tx:txs)
           TryAddTxs mbIs2 result ev -> do
+            case result of
+              MempoolTxRejected _ _ -> do
+                let txKeys = getTransactionKeySets tx
+                let initialTxValues = projectLedgerTables ls
+                let curTxValues = projectLedgerTablesTicked (isLedgerState is)
+                const (pure ()) $ unwords ["Transaction"
+                                 , show (txId tx)
+                                 , "failed. It was requesting these keys"
+                                 , showsLedgerState sMapKind txKeys ""
+                                 , "initially we started pushing with these values"
+                                 , showsLedgerState sMapKind initialTxValues ""
+                                 , "which come from requesting the inputs for these txs"
+                                 , show reqTxs
+                                 , "and currently we have these values and diffs"
+                                 , showsLedgerState sMapKind curTxValues ""
+                                 ]
+                pure ()
+              _ -> pure ()
             let newState = fromMaybe is1 mbIs2
             traceWith trcr ev
             go newState (result:acc) txs
@@ -418,7 +440,7 @@ implSyncWithLedger ::
      )
   => MempoolEnv m blk
   -> m (MempoolSnapshot blk TicketNo)
-implSyncWithLedger mpEnv = getStatePair mpEnv (StaticLeft ()) [] [] >>= \case
+implSyncWithLedger mpEnv = getStatePair (const (pure ())) mpEnv (StaticLeft ()) [] [] >>= \case
     StaticLeft (is, Nothing) ->
       -- In this case, the point of the ledger state at the tip of the chain,
       -- and the point of the internal ledger state are the same. Therefore
@@ -469,7 +491,8 @@ getStatePair :: forall m blk b.
      , HasTxId (GenTx blk)
      , Typeable b
      )
-  => MempoolEnv m blk
+  => (String -> STM m ())
+  -> MempoolEnv m blk
   -> StaticEither b () (Point blk)
      -- ^ desired ledger state, otherwise uses the ledger state at the tip of
      -- the chain
@@ -482,10 +505,10 @@ getStatePair :: forall m blk b.
                  (InternalState blk, Maybe (ExtLedgerState blk ValuesMK))
           (Maybe (InternalState blk,        ExtLedgerState blk ValuesMK))
        )
-getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
+getStatePair tracer MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
       handle (\(ShortCircuitGetStatePairExn x) -> pure x)
     $ fmap finish
-    $ getLedgerStateForTxs mpEnvLedger seP
+    $ getLedgerStateForTxs mpEnvLedger (atomically . tracer) seP
     $ \ls -> atomically $ do
         let tip = getTip ls
         is0 <- takeTMVar mpEnvStateVar
@@ -508,6 +531,16 @@ getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
                  . foldl (zipLedgerTables (<>)) polyEmptyLedgerTables
                  . map getTransactionKeySets
                  $ keptTxs <> txs
+        tracer $ unlines $ map unwords [ ["The transactions to add are these:"
+                                         , show txs
+                                         ]
+                                       , ["The transactions to keep are these:"
+                                         , show keptTxs
+                                         ]
+                                       , ["The keys needed by all of them are these:"
+                                         , showsLedgerState sMapKind keys ""
+                                         ]
+                                       ]
         pure ((ls, is0), keys)
   where
     finish ::

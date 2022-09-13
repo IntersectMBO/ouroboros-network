@@ -57,6 +57,7 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import Ouroboros.Consensus.Storage.LedgerDB.InMemory (UnforwardedReadSets(..))
 
 -- | Return the last @k@ headers.
 --
@@ -198,7 +199,8 @@ getMaxSlotNo CDB{..} = do
 
 getLedgerStateForKeys :: forall m blk b a.
      (IOLike m, LedgerSupportsProtocol blk)
-  => ChainDbEnv m blk
+  => (String -> m ())
+  -> ChainDbEnv m blk
   -> StaticEither b () (Point blk)
   -> (ExtLedgerState blk EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) KeysMK))
   -> m (StaticEither
@@ -206,7 +208,7 @@ getLedgerStateForKeys :: forall m blk b a.
          (a, LedgerTables (ExtLedgerState blk) ValuesMK)
          (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
        )
-getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
+getLedgerStateForKeys tracer CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
     ldb0 <- atomically $ LgrDB.getCurrent cdbLgrDB
     case seP of
       StaticLeft () -> StaticLeft <$> do
@@ -234,7 +236,14 @@ getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
       let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk)
       case LedgerDB.forwardTableKeySets chlog ufs of
         Left err     -> error $ "getLedgerStateForKeys: rewind;read;forward failed " <> show err
-        Right values -> pure values
+        Right values -> do
+          tracer $ unlines $ map unwords [ ["BEGIN GETLEDGERSTATEFORKEYS"]
+                                         , ["Requested keys:", showsLedgerState sMapKind ks "" ]
+                                         , ["Found in the backing store", showsLedgerState sMapKind (ursValues ufs) ""]
+                                         , ["Not found in the backing store", showsLedgerState sMapKind (ursKeys ufs) "" ]
+                                         , ["Forwarded", showsLedgerState sMapKind values ""]
+                                         , ["END GETLEDGERSTATEFORKEYS"]]
+          pure values
 
 getLedgerBackingStoreValueHandle :: forall b m blk.
      (IOLike m, LedgerSupportsProtocol blk)
