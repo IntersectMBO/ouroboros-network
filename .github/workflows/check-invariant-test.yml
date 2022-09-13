@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - yogeshs/3001-check-tvar-invariant
 
 
 jobs:
