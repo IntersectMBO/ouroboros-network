@@ -68,9 +68,9 @@ let
         haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
     };
 
-    tvar-invariant-checks = {
+    tvar-invariant-checks = recurseIntoAttrs {
       inherit haskellPackagesWithTVarCheck;
-      tests = collectComponents' "tests" haskellPackagesWithTVarCheck;
+      tests = collectChecks' haskellPackagesWithTVarCheck;
     };
 
     shell = import ./shell.nix {
