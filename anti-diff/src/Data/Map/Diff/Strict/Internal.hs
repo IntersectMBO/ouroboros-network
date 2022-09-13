@@ -25,6 +25,7 @@ module Data.Map.Diff.Strict.Internal (
   , Keys (..)
   , Values (..)
   , diffKeys
+  , keysFromList
   , restrictValues
   , valuesFromList
     -- * Forwarding keys and values
@@ -229,8 +230,11 @@ newtype Keys k v = Keys (Set k)
 valuesFromList :: Ord k => [(k, v)] -> Values k v
 valuesFromList = Values . Map.fromList
 
-diffKeys :: Diff k v -> Set k
-diffKeys (Diff m) = Map.keysSet m
+keysFromList :: Ord k => [k] -> Keys k v
+keysFromList = Keys . Set.fromList
+
+diffKeys :: Diff k v -> Keys k v
+diffKeys (Diff m) = Keys $ Map.keysSet m
 
 restrictValues :: Ord k => Values k v -> Keys k v -> Values k v
 restrictValues (Values m) (Keys s) = Values (Map.restrictKeys m s)
