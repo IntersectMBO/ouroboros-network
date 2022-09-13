@@ -1,0 +1,109 @@
+name:                anti-diff
+version:             0.1.0.0
+synopsis:            Anti-Diff prototype
+-- description:
+license:             Apache-2.0
+copyright:           2019 Input Output (Hong Kong) Ltd.
+author:              IOHK Engineering Team
+maintainer:          operations@iohk.io
+category:            Network
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+
+  exposed-modules:
+                       Data.FingerTree.RootMeasured.Strict
+                       Data.Map.Diff.Strict
+                       Data.Map.Diff.Strict.Internal
+
+  default-language:    Haskell2010
+  other-extensions:
+                       BangPatterns
+                       ConstraintKinds
+                       DataKinds
+                       DeriveAnyClass
+                       DeriveFunctor
+                       DeriveGeneric
+                       EmptyDataDecls
+                       FlexibleContexts
+                       FlexibleInstances
+                       FunctionalDependencies
+                       GADTs
+                       GeneralizedNewtypeDeriving
+                       KindSignatures
+                       LambdaCase
+                       MultiParamTypeClasses
+                       NamedFieldPuns
+                       OverloadedStrings
+                       PackageImports
+                       PolyKinds
+                       RankNTypes
+                       RecordWildCards
+                       ScopedTypeVariables
+                       StandaloneDeriving
+                       TemplateHaskell
+                       TupleSections
+                       TypeApplications
+                       TypeFamilies
+                       TypeFamilyDependencies
+                       TypeInType
+                       TypeOperators
+                       UndecidableInstances
+                       UndecidableSuperClasses
+                       ViewPatterns
+
+  build-depends:       base              >=4.9 && <4.15
+                     , bimap             >=0.3   && <0.5
+                     , containers        >=0.5   && <0.7
+                     , groups
+                     , nothunks          >=0.1.2 && <0.2
+                     , QuickCheck
+                     , semigroupoid
+                     , strict-containers
+                     , tasty
+                     , tasty-quickcheck
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+
+test-suite test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:
+                       Test.Data.FingerTree.RootMeasured.Strict
+                     , Test.Data.Map.Diff.Strict
+
+  build-depends:       base              >=4.9 && <4.15
+                     , bimap             >=0.3   && <0.5
+                     , containers        >=0.5   && <0.7
+                     , groups
+                     , QuickCheck
+                     , strict-containers
+                     , tasty
+                     , tasty-quickcheck
+
+                     , anti-diff
+                     , semigroupoid
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts
+                       -threaded
