@@ -21,6 +21,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
   , Length (..)
   , RootMeasure (..)
   , SlotNo (..)
+    -- * Diff re-export
+  , module MapDiff
     -- * Short-hands for type-class constraints
   , SM
     -- * API: derived functions
@@ -51,7 +53,7 @@ import           NoThunks.Class (NoThunks)
 import           Data.FingerTree.RootMeasured.Strict hiding (split, splitl,
                      splitlr, splitr)
 import qualified Data.FingerTree.RootMeasured.Strict as RMFT (splitlr)
-import           Data.Map.Diff.Strict (Diff)
+import           Data.Map.Diff.Strict as MapDiff
 
 import qualified Cardano.Slotting.Slot as Slot
 
