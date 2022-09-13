@@ -1,4 +1,4 @@
-name: Stricct NoThunk test
+name: Strict NoThunk test
 on:
   push:
     branches:
