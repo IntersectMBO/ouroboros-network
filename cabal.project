@@ -38,6 +38,7 @@ packages: ./ouroboros-network-testing
           ./ouroboros-consensus-cardano-tools
           ./ntp-client
           ./cardano-client
+          ./semigroupoid
 
 tests: True
 
