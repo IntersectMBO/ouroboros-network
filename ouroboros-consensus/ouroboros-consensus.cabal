@@ -237,6 +237,7 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                        Ouroboros.Consensus.Storage.LedgerDB.HD
                        Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
                        Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
@@ -314,6 +315,7 @@ library
                      , directory         >=1.3   && <1.4
                      , filelock
                      , filepath          >=1.4   && <1.5
+                     , groups
                      , hashable
                      , measures
                      , mtl               >=2.2   && <2.3
@@ -342,6 +344,7 @@ library
 
                      , lmdb-simple       >=0.4.0.0 && <0.5
                      , lmdb              >= 0.2.5
+                     , anti-diff
 
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0

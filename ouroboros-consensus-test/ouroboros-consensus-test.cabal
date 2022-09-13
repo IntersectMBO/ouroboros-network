@@ -55,6 +55,7 @@ library
                        Test.Util.MockDiffSeq
                        Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.DiffSeq.Arbitrary
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.Isomorphism
                        Test.Util.Orphans.NFData
@@ -122,6 +123,7 @@ library
                      , utf8-string
                      , tagged
 
+                     , anti-diff
                      , io-classes
                      , io-sim
 
@@ -239,6 +241,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.DiffSeq
                        Test.Ouroboros.Storage.LedgerDB.HD.LMDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk
@@ -282,6 +285,7 @@ test-suite test-storage
                      , tree-diff
                      , vector
 
+                     , semigroupoid
                      , io-classes
                      , io-sim
                      , ouroboros-network
