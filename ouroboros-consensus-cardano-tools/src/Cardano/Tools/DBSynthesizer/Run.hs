@@ -6,7 +6,6 @@ module Cardano.Tools.DBSynthesizer.Run (
   , synthesize
   ) where
 
-import           Control.Monad (unless)
 import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT,
                      handleIOExceptT, hoistEither, runExceptT)
@@ -28,12 +27,16 @@ import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis (..),
                      validateGenesis)
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB (defaultArgs)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB (defaultArgs,
+                     getTipPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB (cdbTracer,
                      withDB)
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
+import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Network.Block
+import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Cardano.Api.Any (displayError)
 import           Cardano.Api.Protocol.Types (protocolInfo)
@@ -127,17 +130,24 @@ synthesize DBSynthesizerConfig{confOptions, confShelleyGenesis, confDbDir} (Some
         putStrLn $ "--> forger count: " ++ show fCount
         if fCount > 0
             then do
-                putStrLn "--> clearing ChainDB on file system"
-                clearChainDB synthForceDBRemoval confDbDir
+                putStrLn $ "--> opening ChainDB on file system with mode: " ++ show synthOpenMode
+                preOpenChainDB synthOpenMode confDbDir
                 let dbTracer = nullTracer
-                ChainDB.withDB dbArgs {ChainDB.cdbTracer = dbTracer} $ \chainDB ->
-                    runForge epochSize synthLimit chainDB forgers pInfoConfig
+                ChainDB.withDB dbArgs {ChainDB.cdbTracer = dbTracer} $ \chainDB -> do
+                    slotNo <- do
+                        tip <- atomically (ChainDB.getTipPoint chainDB)
+                        pure $ case pointSlot tip of
+                            Origin -> 0
+                            At s   -> succ s
+
+                    putStrLn $ "--> starting at: " ++ show slotNo
+                    runForge epochSize slotNo synthLimit chainDB forgers pInfoConfig
             else do
                 putStrLn "--> no forgers found; leaving possibly existing ChainDB untouched"
                 pure $ ForgeResult 0
   where
     DBSynthesizerOptions
-        { synthForceDBRemoval
+        { synthOpenMode
         , synthLimit
         } = confOptions
     ProtocolInfo
@@ -146,15 +156,21 @@ synthesize DBSynthesizerConfig{confOptions, confShelleyGenesis, confDbDir} (Some
         , pInfoInitLedger
         } = protocolInfo runP
 
-clearChainDB :: Bool -> FilePath -> IO ()
-clearChainDB force db =
-    doesDirectoryExist db >>= bool create clear
+preOpenChainDB :: DBSynthesizerOpenMode -> FilePath -> IO ()
+preOpenChainDB mode db =
+    doesDirectoryExist db >>= bool create checkMode
   where
-    loc     = "clearChainDB: '" ++ db ++ "'"
-    create  = createDirectoryIfMissing True db
-    clear   = do
-        unless force $ fail $ loc ++ " already exists. Use -f to overwrite."
-        ls <- listDirectory db
-        if length ls <= 3 && all (`elem` ["immutable", "ledger", "volatile"]) ls
-            then removePathForcibly db >> create
-            else fail $ loc ++ " is non-empty and does not look like a ChainDB. Aborting."
+    checkIsDB ls    = length ls <= 3 && all (`elem` ["immutable", "ledger", "volatile"]) ls
+    loc             = "preOpenChainDB: '" ++ db ++ "'"
+    create          = createDirectoryIfMissing True db
+    checkMode = do
+        isChainDB <- checkIsDB <$> listDirectory db
+        case mode of
+            OpenCreate ->
+                fail $ loc ++ " already exists. Use -f to overwrite or -a to append."
+            OpenAppend | isChainDB ->
+                pure ()
+            OpenCreateForce | isChainDB ->
+                removePathForcibly db >> create
+            _ ->
+                fail $ loc ++ " is non-empty and does not look like a ChainDB. Aborting."

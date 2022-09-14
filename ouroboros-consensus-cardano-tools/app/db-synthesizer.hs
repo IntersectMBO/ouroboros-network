@@ -5,7 +5,7 @@
 --                       [--shelley-vrf-key FILE] [--shelley-kes-key FILE]
 --                       [--bulk-credentials-file FILE]
 --                       ((-s|--slots NUMBER) | (-b|--blocks NUMBER) |
---                         (-e|--epochs NUMBER)) [-f]
+--                         (-e|--epochs NUMBER)) [-f | -a]
 --
 -- Available options:
 --   --config FILE            Path to the node's config.json
@@ -20,6 +20,7 @@
 --   -b,--blocks NUMBER       Amount of blocks to forge
 --   -e,--epochs NUMBER       Amount of epochs to process
 --   -f                       Force overwrite an existing Chain DB
+--   -a                       Append to an existing Chain DB
 module Main (main) where
 
 import           System.Exit
