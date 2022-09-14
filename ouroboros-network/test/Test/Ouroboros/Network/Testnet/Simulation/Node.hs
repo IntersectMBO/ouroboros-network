@@ -38,7 +38,7 @@ import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Data.List (delete, nub, (\\), intercalate)
+import           Data.List (delete, intercalate, nub, (\\))
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -103,9 +103,9 @@ import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
 --
 data SimArgs =
   SimArgs
-    { saSlot                  :: DiffTime
+    { saSlot  :: DiffTime
       -- ^ 'randomBlockGenerationArgs' slot duration argument
-    , saQuota                 :: Int
+    , saQuota :: Int
       -- ^ 'randomBlockGenerationArgs' quota value
     }
 
