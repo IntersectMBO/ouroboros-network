@@ -3,10 +3,6 @@ on:
   schedule:
     # Run the test every Wednesday at midnight
     - cron: "0 0 * * 3"
-  push:
-    branches:
-      # TODO: Yogesh: For testing only, remove this before the merge
-      - yogeshs/3001-check-tvar-invariant
 
 jobs:
   build-test:
@@ -16,9 +12,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           repository: input-output-hk/ouroboros-network
-          # Run on the pull request or the current branch
-          # TODO: Yogesh: Remove this once PR is approved as this action would run on the default branch
-          ref: ${{ github.event.pull_request.head.sha || github.ref }}
           fetch-depth: 0
 
       - name: Prepare nix
