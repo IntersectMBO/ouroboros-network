@@ -1,11 +1,12 @@
 name: Strict nothunk test
 on:
+  schedule:
+    # Run the test every Wednesday at midnight
+    - cron: "0 0 * * 3"
   push:
     branches:
-      - master
-      # Comment out this and also add schedules
+      # TODO: Yogesh: For testing only, remove this before the merge
       - yogeshs/3001-check-tvar-invariant
-
 
 jobs:
   build-test:
