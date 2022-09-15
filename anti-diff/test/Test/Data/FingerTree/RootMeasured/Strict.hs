@@ -12,7 +12,6 @@ module Test.Data.FingerTree.RootMeasured.Strict (
   , splitProp
   ) where
 
-import           Data.Group (Group (..))
 import           Data.Monoid (Sum (..))
 import           Data.Proxy
 
@@ -39,8 +38,8 @@ type T = StrictFingerTree (Sum Int) (Sum Int) (Small Int)
   Types
 ------------------------------------------------------------------------------}
 
-instance (SuperMeasured vt vi a, Arbitrary a)
-      => Arbitrary (StrictFingerTree vt vi a) where
+instance (SuperMeasured vr vi a, Arbitrary a)
+      => Arbitrary (StrictFingerTree vr vi a) where
   arbitrary = fromList <$> arbitrary
 
 instance Measured (Sum Int) (Small Int) where
@@ -49,25 +48,20 @@ instance Measured (Sum Int) (Small Int) where
 instance RootMeasured (Sum Int) (Small Int) where
   measureRoot _ = Sum 1
 
-instance Arbitrary LR where
-  arbitrary = elements [L, R]
-
 {------------------------------------------------------------------------------
   Properties
 ------------------------------------------------------------------------------}
 
 splitProp ::
-     (SuperMeasured vt vi a, Group vt, Eq vt, Show vt)
-  => Proxy (StrictFingerTree vt vi a)
-  -> LR
+     (SuperMeasured vr vi a, Eq vr, Show vr)
+  => Proxy (StrictFingerTree vr vi a)
+  -> Bool
   -> (vi -> Bool)
-  -> StrictFingerTree vt vi a
+  -> StrictFingerTree vr vi a
   -> Property
 splitProp _ lr p sft = conjoin [prop0, prop1, prop2, prop3, prop4]
   where
-    (l, r) = case lr of
-      L -> splitl p sft
-      R -> splitr p sft
+    (l, r) = (if lr then splitl else splitr) p sft
 
     prop0
       | null l = label "dead1" ()
@@ -87,10 +81,10 @@ splitProp _ lr p sft = conjoin [prop0, prop1, prop2, prop3, prop4]
       measureRoot sft === measureRoot l <> measureRoot r
 
 appendProp ::
-     (SuperMeasured vt vi a, Eq vt, Show vt)
-  => Proxy (StrictFingerTree vt vi a)
-  -> StrictFingerTree vt vi a
-  -> StrictFingerTree vt vi a
+     (SuperMeasured vr vi a, Eq vr, Show vr)
+  => Proxy (StrictFingerTree vr vi a)
+  -> StrictFingerTree vr vi a
+  -> StrictFingerTree vr vi a
   -> Property
 appendProp _ l r = conjoin [prop0, prop1, prop2, prop3, prop4]
   where

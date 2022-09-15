@@ -340,7 +340,7 @@ benchmark bench-storage
   hs-source-dirs:      bench-storage
   main-is:             Main.hs
   other-modules:
-                       Bench.Ouroboros.Consensus.Storage.LedgerDB.HD
+                       Bench.Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
 
   build-depends:       base
                      , bytestring
@@ -350,7 +350,7 @@ benchmark bench-storage
                      , QuickCheck
                      , QuickCheck-GenT
                      , strict-containers
-                     , tasty-bench
+                     , tasty-bench <= 0.3.1
                      , tasty-quickcheck
 
                      , ouroboros-consensus
@@ -368,4 +368,6 @@ benchmark bench-storage
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
                        -rtsopts
+                       -- https://hackage.haskell.org/package/tasty-bench-0.3.1
+                       -- advises setting this RTS option.
                        "-with-rtsopts=-A32m"
