@@ -27,45 +27,56 @@
   The commands can be of four types:
   * Push (append a single diff on the right)
   * Flush (split the sequence at a given point and the take right part)
-  * Rollback (split the sequence at a given point and take the left part, roll
+  * Switch (split the sequence at a given point and take the left part, roll
     forward a number of blocks)
   * Forward (apply the total diff to a number of values)
 
-  We run these benchmarks for two approaches to diff sequences: the /sub-cached/
-  and /anti-diff/ implementations. We compare performance across these two
-  approaches. The anti-diff implementation should be more performant.
+  We run these benchmarks for two approaches to diff sequences: the
+  /intermediate-sums/ and /anti-diff/ implementations. We compare performance
+  across these two approaches. The anti-diff implementation should be more
+  performant.
 
   === Diff sequence implementations
 
-  In the /sub-cached/ implementation, the sequence of diffs, which is internally
-  represented as a @StrictFingerTree@, "caches" at each node of the finger tree
-  the cumulative diff of the subtree rooted at that node. A cache at a node can
-  be constructed from caches of that node's children, which allows for faster
-  than linear time reconstruction of the total cumulative diff but it does incur
-  a non-negligible cost when we manipulate diff sequences through splits and
-  appends. In particular, we could force recomputing a logarithmic number of
-  caches when we perform a split or append. In Consensus (post UTxO-HD), we
-  often split and append sequences of diffs: we split when we flush diffs or
-  roll back blocks, and we append when we push blocks or roll forward blocks.
-  The new /anti-diff/ implementation should reduce the overhead of this caching
-  since it only caches the total diff, and not the cumulative diffs of subtrees.
+  A possible way to represent a sequence of monoidal sums of differences (i.e.,
+  a /diff sequence/), is by means of a fingertree, where the leaves contain the
+  differences in the sequence, and the intermediate nodes contain the cumulative
+  sums of the leaves. In this way, the root of the tree contains the cumulative
+  sum of all the differences in the sequence. We call this representation
+  /intermediate cumulative sum of diffs/, or /intermediate-sums/ for short.
+  Because this representation stores intermediate sums in its nodes, we are
+  essentially "caching" intermediate sums, which allows for relatively fast
+  reconstruction of intermediate sums from cached intermediate sums if the
+  fingertree is manipulated.
+
+  However, this representation does incur a non-neglible cost in the context of
+  Consensus, where we split and append sequences of diffs just as often as we
+  use the total cumulative diff: we split when we flush diffs or roll back
+  blocks, and we append when we push blocks or roll forward blocks. What is
+  costly is that each split or append requires a logarithmic number of
+  intermediate sums to be reconstructed.
+
+  The new /anti-diff/ implementation, where we require the existence of an
+  inverse operation on diffs (hence the name anti-diff), should reduce the costs
+  of reconstructing the total cumulative diff. In particular, instead of storing
+  intermediate sums of diffs, this implementation stores only the total sum.
   This total diff can be updated when appending by /summing/ diffs, whereas the
-  total diff can be updated when splitting by /subtracting/ diffs. As such, the
-  anti-diff implementation uses /Group/ properties of its definition of diffs.
-  The sub-cached implementation uses /Monoid/ properties of its definition of
-  diffs: it only uses summing to reconstruct a cumulative diff from other diffs.
+  total diff can be updated when splitting by /subtracting/ diffs. As such,
+  diffs in the anti-diff implementation form a @Group@, whereas diffs in the
+  intermediate-sums implementations form a @Monoid@.
 
   === What we measure
 
-  Diff sequences are manipulated by client code in Consensus. To mimick how
-  Consensus manipulates diff sequences, we must simulate the client code.
-  However, the performance of this simulation is not something we should include
-  in our measurements: in these benchmarks, we only care about the performance
-  of operations on diff sequences. As such, we off-load the simulation to a
-  generator, which generates a sequence of commands in a stateful manner. The
-  function that we actually measure the performance of is the @'interpret'@
-  function, which interprets the sequence of commands by folding it over an
-  initial diff sequence.
+  We want to benchmark only the operations on sequence of differences. However,
+  these operations need to be consistent with respect to the diff sequence to
+  which they are applied. For instance, we should only delete values that were
+  previously inserted in the diff sequence, and we should only insert keys once.
+  In other words, there is a dependency between the generated commands: each
+  generated command has to account for commands that have been generated before.
+  For this reason, commands are generated in a stateful manner, but we do not
+  bechmkark the generation process. The function that we actually measure the
+  performance of is the @'interpret'@ function, which interprets the sequence of
+  commands by folding it over an initial diff sequence.
 
   === Stateful generators
 
@@ -84,29 +95,32 @@
 
   We use the commands that we generate after the warmup phase as inputs to the
   benchmarks, as well as the state of the diff sequence right after the warmup
-  phase. Convince yourself that interpretation of these commands only make sense
-  with respect to the "warmed up" diff sequence.
+  phase.
 -}
-module Bench.Ouroboros.Consensus.Storage.LedgerDB.HD (benchmarks) where
+module Bench.Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (benchmarks) where
 
-import           Control.DeepSeq
+import           Control.DeepSeq (NFData, deepseq)
 import qualified Control.Exception as Exn
-import           Control.Monad
-import           Control.Monad.RWS
+import           Control.Monad (replicateM, replicateM_)
+import           Control.Monad.RWS (MonadReader (..), MonadState,
+                     MonadTrans (lift), RWST (..), gets, modify)
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as B
-import           Data.Foldable
+import           Data.Foldable (Foldable (foldl', toList))
 import           Data.Kind (Type)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy
+import           Data.Proxy (Proxy (Proxy))
 import           GHC.Generics (Generic)
 
-import           QuickCheck.GenT
-import           Test.Tasty.Bench
-import           Test.Tasty.QuickCheck hiding (choose, frequency, resize,
-                     shuffle, sized, variant)
+import           QuickCheck.GenT (Arbitrary (arbitrary), Gen, MonadGen (..),
+                     arbitrary', frequency, shuffle)
+import           Test.Tasty.Bench (Benchmark, bcompare, bcompareWithin, bench,
+                     bgroup, env, nf)
+import           Test.Tasty.QuickCheck (Positive (getPositive), Property,
+                     Small (getSmall), conjoin, counterexample, forAll,
+                     generate, once, testProperty, (.&&.), (===))
 
-import qualified Ouroboros.Consensus.Block as Block
+import qualified Ouroboros.Consensus.Block.Abstract as Block (SlotNo)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
@@ -114,33 +128,35 @@ import           Test.Util.Orphans.Isomorphism (Isomorphism (..),
                      isomorphismLaw)
 import           Test.Util.Orphans.NFData ()
 
-
+{-------------------------------------------------------------------------------
+  Benchmarks
+-------------------------------------------------------------------------------}
 
 benchmarks :: Benchmark
-benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
+benchmarks = bgroup "DiffSeq" [
       benchComparative
         "Configuration: default"
         Nothing
         (mkBenchEnv @Key @Value gcDefault)
     , benchComparative
-        "Configuration: no rollbacks"
+        "Configuration: no switches"
         Nothing
-        (mkBenchEnv @Key @Value gcNoRollbacks)
+        (mkBenchEnv @Key @Value gcNoSwitches)
     , benchComparative
-        "Configuration: only small rollbacks"
+        "Configuration: only small switches"
         Nothing
-        (mkBenchEnv @Key @Value gcSmallRollbacks)
+        (mkBenchEnv @Key @Value gcSmallSwitches)
     , benchComparative
-        "Configuration: no rollbacks, larger flushes (every 100 pushes)"
+        "Configuration: no switches, larger flushes (every 100 pushes)"
         Nothing
-        (mkBenchEnv @Key @Value gcNoRollbacksLargerFlush)
+        (mkBenchEnv @Key @Value gcNoSwitchesLargerFlush)
     , testProperty "interpret DiffSeq == interpret SeqUtxoDiff" $
         forAll (generator gcDefault TestMode) $
           \CmdGenResult {cmds, ds0} ->
               interpretAntidiff ds0 cmds
             ===
-              to interpretSubcached ds0 cmds
-    ]]
+              to interpretIntermediateSum ds0 cmds
+    ]
   where
     mkBenchEnv ::
          forall k v. (Ord k, Eq v, Arbitrary k, Arbitrary v)
@@ -149,28 +165,28 @@ benchmarks = bgroup "HD" [ bgroup "DiffSeq/Diff operations" [
     mkBenchEnv conf = do
       CmdGenResult{cmds, ds0, finalModel} <- generate $ generator conf BenchMode
       pure $ BenchEnv {
-          cmdsAntidiff = cmds
-        , cmdsSubcached = to cmds
-        , ds0Antidiff = ds0
-        , ds0Subcached = to ds0
-        , model    = finalModel
+          cmdsAntidiff        = cmds
+        , cmdsIntermediateSum = to cmds
+        , ds0Antidiff         = ds0
+        , ds0IntermediateSum  = to ds0
+        , model               = finalModel
         }
 
-    interpretAntidiff  = interpret @DS.DiffSeq     @Key @Value
-    interpretSubcached = interpret @HD.SeqUtxoDiff @Key @Value
+    interpretAntidiff        = interpret @DS.DiffSeq     @Key @Value
+    interpretIntermediateSum = interpret @HD.SeqUtxoDiff @Key @Value
 
 -- | Inputs to a benchmark.
 --
 -- As a convention, we use @ds0@ to indicate the state of the diff sequence
 -- after the warmup phase during command generation.
 data BenchEnv k v = BenchEnv {
-    cmdsAntidiff  :: ![Cmd DS.DiffSeq k v]
-  , cmdsSubcached :: ![Cmd HD.SeqUtxoDiff k v]
-  , ds0Antidiff   :: !(DS.DiffSeq k v)
-  , ds0Subcached  :: !(HD.SeqUtxoDiff k v)
+    cmdsAntidiff        :: ![Cmd DS.DiffSeq k v]
+  , cmdsIntermediateSum :: ![Cmd HD.SeqUtxoDiff k v]
+  , ds0Antidiff         :: !(DS.DiffSeq k v)
+  , ds0IntermediateSum  :: !(HD.SeqUtxoDiff k v)
     -- | Final state of the model after the warmup phase /and/
     -- the command generation phase.
-  , model         :: !(Model k v)
+  , model               :: !(Model k v)
   }
   deriving stock Generic
   deriving anyclass NFData
@@ -184,13 +200,13 @@ benchComparative ::
 benchComparative name boundsMay benchEnv =
   bgroup name [
     env benchEnv $
-      \ ~bEnv@BenchEnv {cmdsAntidiff, cmdsSubcached, ds0Antidiff, ds0Subcached} ->
+      \ ~bEnv@BenchEnv {cmdsAntidiff, cmdsIntermediateSum, ds0Antidiff, ds0IntermediateSum} ->
         bgroup "Comparative performance analysis" [
           maybe bcompare (uncurry bcompareWithin) boundsMay target $
             bench "DiffSeq" $
               nf (interpret ds0Antidiff) cmdsAntidiff
         ,   bench "SeqUtxoDiff" $
-              nf (interpret ds0Subcached) cmdsSubcached
+              nf (interpret ds0IntermediateSum) cmdsIntermediateSum
         , testProperty "Sanity checks" $
             once (sanityCheck bEnv)
         ]
@@ -205,12 +221,12 @@ benchComparative name boundsMay benchEnv =
   Commands
 -------------------------------------------------------------------------------}
 
-type Block (ds :: DiffSeqKind) k v = (SlotNo ds, Diff ds k v)
+type Pushes (ds :: DiffSeqKind) k v = [(SlotNo ds, Diff ds k v)]
 
 data Cmd (ds :: DiffSeqKind) k v =
     Push     (SlotNo ds)     (Diff ds k v)
   | Flush    Int
-  | Rollback Int             [Block ds k v]
+  | Switch Int               (Pushes ds k v)
   | Forward  (Values ds k v) (Keys ds k v)
   deriving stock Generic
 
@@ -241,11 +257,11 @@ instance ( Ord k, Eq v
          , Isomorphism (Values ds k v) (Values ds' k v)
          , Isomorphism (Keys ds k v) (Keys ds' k v)
          , Isomorphism (SlotNo ds) (SlotNo ds')
-         , Isomorphism (Block ds k v) (Block ds' k v)
+         , Isomorphism (Pushes ds k v) (Pushes ds' k v)
          ) => Isomorphism (Cmd ds k v) (Cmd ds' k v) where
   to (Push sl d)     = Push (to sl) (to d)
   to (Flush n)       = Flush n
-  to (Rollback n bs) = Rollback n (to bs)
+  to (Switch n ps)   = Switch n (to ps)
   to (Forward vs ks) = Forward (to vs) (to ks)
 
 {-------------------------------------------------------------------------------
@@ -253,6 +269,9 @@ instance ( Ord k, Eq v
 -------------------------------------------------------------------------------}
 
 -- | Interpretation of @Cmd@s as a fold over an initial diff sequence.
+--
+-- We take care to account for all costs related to diff sequences by forcing
+-- evaluation of some expressions using @'deepseq'@.
 interpret ::
      forall ds k v.
      ( IsDiffSeq ds k v
@@ -274,13 +293,12 @@ interpret = foldl' go
       Flush n       -> let (l, r) = flush n ds
                        in  totalDiff l `deepseq` r
       -- We do not @'deepseq'@ the right part of the rollback result, because we
-      -- are throwing it away in the case of a rollback.
-      Rollback n bs -> let (l, _r) = rollback n ds
-                       in  pushMany l bs
-      -- We @'deepseq'@ the result of forwarding values through a total diff,
-      -- since forwarding can be implementation-specific in (at least) two ways:
-      -- 1. How the total diff is computed.
-      -- 2. How the change to a specific key-value pair is computed.
+      -- are throwing it away.
+      Switch n ps   -> let (l, _r) = rollback n ds
+                       in  pushMany l ps
+      -- We @'deepseq'@ the result of forwarding values, because all the
+      -- forwarded key-value pairs would be used in block application, meaning
+      -- that they would be fully evaluated at some point.
       Forward vs ks -> let vs' = forward vs ks ds
                        in  vs' `deepseq` ds
 
@@ -331,7 +349,7 @@ forward ::
 forward vs ks ds = forwardValuesAndKeys vs ks (totalDiff ds)
 
 -- | Mimicks @'Ouroboros.Consensus.Storage.LedgerDB.InMemory.ledgerDbPushMany'@.
-pushMany :: IsDiffSeq ds k v => ds k v -> [Block ds k v] -> ds k v
+pushMany :: IsDiffSeq ds k v => ds k v -> Pushes ds k v -> ds k v
 pushMany = foldl (uncurry . push)
 
 {-------------------------------------------------------------------------------
@@ -376,8 +394,21 @@ data GenConfig = GenConfig {
   , nrInitialValues   :: Int
   , pushConfig        :: PushConfig
   , forwardConfig     :: ForwardConfig
-  , rollbackConfig    :: RollbackConfig
-    -- | A series of directives that determines which commands to generate.
+  , switchConfig      :: SwitchConfig
+    -- | An infinite list of directives that determines which commands to
+    -- generate.
+    --
+    -- If we run out of directives without generating @nrCommands@ commands, we
+    -- would not know how to proceed generating more commands. Therefore, since
+    -- @nrCommands@ can be an arbitrary number, we would want the number of
+    -- directives to be /at least/ `nrCommands`.  To ensure that we never run
+    -- out of directives, the safest bet is to make the list of directives
+    -- infinite, for example by defining it to be an infinitely repeating
+    -- series.
+    --
+    -- @Nothing@ signals that we do not want to use any directives. @Just []@
+    -- should result in an error, for the reason we mentioned in the paragraph
+    -- above.
   , directives        :: Maybe [Directive]
   }
 
@@ -395,8 +426,8 @@ newtype ForwardConfig = ForwardConfig {
     nrToForward :: Int
   }
 
--- | Configuration parameters for @'Rollback'@ command generation.
-newtype RollbackConfig = RollbackConfig {
+-- | Configuration parameters for @'Switch'@ command generation.
+newtype SwitchConfig = SwitchConfig {
     -- | Distribution of rollback sizes with respect to the security parameter
     -- @k@.
     --
@@ -408,11 +439,11 @@ newtype RollbackConfig = RollbackConfig {
     -- @(lb, ub)@.
     --
     -- PRECONDITION: @0 <= lb <= ub <= k@ should hold.
-    distribution :: Maybe [(Int, (Int, Int))]
+    rollbackDistribution :: Maybe [(Int, (Int, Int))]
   }
 
 -- | A directive to generate a specific command.
-data Directive = GenForward | GenPush | GenFlush | GenRollback
+data Directive = GenForward | GenPush | GenFlush | GenSwitch
   deriving (Show, Eq, Ord)
 
 {-------------------------------------------------------------------------------
@@ -421,20 +452,29 @@ data Directive = GenForward | GenPush | GenFlush | GenRollback
 
 gcDefault :: GenConfig
 gcDefault = GenConfig {
-    nrCommands = 10000
-  , securityParameter = 2160
-  , nrInitialValues = 100
-  , pushConfig = PushConfig {
+      nrCommands        = 10000
+    , securityParameter = 2160
+    , nrInitialValues   = 100
+    , pushConfig
+    , forwardConfig
+    , switchConfig
+    , directives
+    }
+  where
+    pushConfig = PushConfig {
         nrToDelete = 50
       , nrToInsert = 50
       }
-  , forwardConfig = ForwardConfig {
+
+    forwardConfig = ForwardConfig {
         nrToForward = 50
       }
-  , rollbackConfig = RollbackConfig {
-        distribution = Just [(95, (1, 10)), (5, (1000, 2000))]
+
+    switchConfig = SwitchConfig {
+        rollbackDistribution = Just [(95, (1, 10)), (5, (1000, 2000))]
       }
-  , directives =
+
+    directives =
       let
         xs = concat $
           zipWith
@@ -442,14 +482,13 @@ gcDefault = GenConfig {
             (replicate 10 GenForward)
             (replicate 10 GenPush)
         ys = concat $ replicate 10 (xs ++ [GenFlush])
-        zs = ys ++ [GenRollback]
+        zs = ys ++ [GenSwitch]
       in
         Just $ concat $ repeat zs
-  }
 
--- | No rollbacks.
-gcNoRollbacks :: GenConfig
-gcNoRollbacks = gcDefault {
+-- | No switches.
+gcNoSwitches :: GenConfig
+gcNoSwitches = gcDefault {
     directives =
       let
         xs = concat $
@@ -462,17 +501,17 @@ gcNoRollbacks = gcDefault {
         Just $ concat $ repeat ys
   }
 
--- | Only small rollbacks.
-gcSmallRollbacks :: GenConfig
-gcSmallRollbacks = gcDefault {
-    rollbackConfig = (rollbackConfig gcDefault) {
-        distribution = Just [(1, (1, 10))]
+-- | Only small switches.
+gcSmallSwitches :: GenConfig
+gcSmallSwitches = gcDefault {
+    switchConfig = (switchConfig gcDefault) {
+        rollbackDistribution = Just [(1, (1, 10))]
       }
   }
 
--- | Larger flushes, no rollbacks.
-gcNoRollbacksLargerFlush :: GenConfig
-gcNoRollbacksLargerFlush = gcDefault {
+-- | Larger flushes, no switches.
+gcNoSwitchesLargerFlush :: GenConfig
+gcNoSwitchesLargerFlush = gcDefault {
     directives =
       let
         xs = concat $
@@ -496,7 +535,7 @@ data Model k v = Model {
     -- | The tip of the diff sequence.
   , tip           :: Int
     -- | Values that have been flushed to a backing store.
-  , backingValues :: Values DS.DiffSeq k v
+  , flushedValues :: Values DS.DiffSeq k v
     -- | A counter for the number of commands generated up until now.
   , nrGenerated   :: Int
   }
@@ -600,7 +639,7 @@ generator preConf gmode = do
       TestMode  -> genCmdsNonDet
 
     -- Replace configuration parameters by QuickCheck sized ones if the
-    -- generatore mode is set to @Test@.
+    -- generator mode is set to @Test@.
     mkConf = case gmode of
       BenchMode -> pure preConf
       TestMode  -> do
@@ -610,8 +649,8 @@ generator preConf gmode = do
             nrCommands        = n
           , securityParameter = k
           , directives        = Nothing
-          , rollbackConfig    = (rollbackConfig preConf) {
-                distribution = Nothing
+          , switchConfig      = (switchConfig preConf) {
+                rollbackDistribution = Nothing
               }
           }
 
@@ -633,7 +672,7 @@ genCmdsDet = do
 
     case dirsMay of
       Nothing       -> error "No directives given."
-      Just []       -> error "Directives should be infinitish length"
+      Just []       -> error "Unexpectedly ran out of directives."
       Just (dir : dirs) -> do
         c <- genCmdDet dir
         cs <- local (\r -> r { directives = Just dirs }) genCmdsDet
@@ -645,10 +684,10 @@ genCmdDet ::
   => Directive
   -> CmdGen k v (Cmd DS.DiffSeq k v)
 genCmdDet = \case
-  GenForward  -> genForward
-  GenPush     -> genPush
-  GenFlush    -> genFlush
-  GenRollback -> genRollback
+  GenForward -> genForward
+  GenPush    -> genPush
+  GenFlush   -> genFlush
+  GenSwitch  -> genSwitch
 
 -- | Generate a list of commands in non-deterministic order.
 genCmdsNonDet ::
@@ -666,7 +705,7 @@ genCmdNonDet = do
     frequency [
         (100, genPush)
       , (10, genFlush)
-      , (1, genRollback)
+      , (1, genSwitch)
       , (100, genForward)
       ]
 
@@ -708,14 +747,14 @@ warmup = do
 
 -- | Generate a @'Push'@ command.
 --
--- > data Cmd (i :: Imp) k v =
+-- > data Cmd (ds :: DiffSeqKind) k v =
 -- >    Push (SlotNo i) (Diff i k v)
 -- >    -- ...
 --
 -- Steps to generate a @'Push'@ command:
--- * Forward backing values.
+-- * Forward flushed values.
 -- * "Simulate a transaction" by generating a diff that:
---   1. Deletes one or more values that exist in the forwarded backing values.
+--   1. Deletes one or more values that exist in the forwarded flushed values.
 --   2. Inserts one or more values with globally unique keys.
 -- * Return a strictly increasing slot number, and the new diff.
 -- BOOKKEEPING: Push the new diff onto the model's diff sequence.
@@ -725,7 +764,7 @@ genPush ::
 genPush = do
     ds <- gets diffs
     t  <- gets tip
-    vs <- gets backingValues
+    vs <- gets flushedValues
 
     let
       vs' = DS.forwardValues vs (totalDiff ds)
@@ -755,7 +794,7 @@ genPush = do
 
 -- | Generate a @'Flush'@ command.
 --
--- >  data Cmd (i :: Imp) k v =
+-- >  data Cmd (ds :: DiffSeqKind) k v =
 -- >    -- ...
 -- >    | Flush Int
 -- >    -- ...
@@ -765,14 +804,14 @@ genPush = do
 --   exceeds the security parameter @k@.
 -- * Return @n@.
 -- BOOKKEEPING: Remove the first @n@ diffs from the models' diff sequence and
--- use them to forward the model's backing values.
+-- use them to forward the model's flushed values.
 genFlush :: (Ord k, Eq v) => CmdGen k v (Cmd DS.DiffSeq k v)
 genFlush = do
     k <- reader securityParameter
 
     ds <- gets diffs
     t  <- gets tip
-    vs <- gets backingValues
+    vs <- gets flushedValues
 
     let
       -- Since we never skip slots, we can compute which diffs are immutable
@@ -789,35 +828,35 @@ genFlush = do
 
     modify (\st -> st {
         diffs         = r
-      , backingValues = DS.forwardValues vs (totalDiff l)
+      , flushedValues = DS.forwardValues vs (totalDiff l)
       , nrGenerated   = nrGenerated st + 1
       })
 
     Exn.assert invariant $ pure $ Flush n
 
--- | Generate a @'Rollback'@ command.
+-- | Generate a @'Switch'@ command.
 --
--- >  data Cmd (i :: Imp) k v =
+-- >  data Cmd (ds :: DiffSeqKind) k v =
 -- >    -- ...
--- >    | Rollback Int [Block i k v]
+-- >    | Switch Int (Pushes ds k v)
 -- >    -- ...
 --
--- Steps to generate a @'Rollback'@ command:
+-- Steps to generate a @'Switch'@ command:
 -- * Pick how much to rollback, i.e. an integer @n@ (depends on the
 --   configuration parameter).
--- * Generate @n@ new diffs (blocks) @bs@ to push, which mimicks a switch to
+-- * Generate @n@ new diffs @ps@ to push, which mimicks a switch to
 --   a new fork of length equal to the current fork.
--- * Return @n@ and @bs@.
+-- * Return @n@ and @ps@.
 -- BOOKKEEPING: Replace the last @n@ diffs in the models' diff sequence by
---   @bs@.
+--   @ps@.
 --
 -- Note: We assume that pushes do not skip any slots.
-genRollback ::
+genSwitch ::
      (Ord k, Eq v, Arbitrary k, Arbitrary v)
   => CmdGen k v (Cmd DS.DiffSeq k v)
-genRollback = do
+genSwitch = do
     k <- reader securityParameter
-    distMay <- reader (distribution . rollbackConfig)
+    distMay <- reader (rollbackDistribution . switchConfig)
 
     ds <- gets diffs
     t  <- gets tip
@@ -836,11 +875,11 @@ genRollback = do
       , nrGenerated = nrGenerated st + 1
       })
 
-    -- To generate @bs@, we re-use the @'genPush'@ function. However, this
+    -- To generate @ps@, we re-use the @'genPush'@ function. However, this
     -- function updates @'nrGenerated'@ each time, even though we are only
-    -- returning one @'Rollback'@ command eventually. So, we subtract the
+    -- returning one @'Switch'@ command eventually. So, we subtract the
     -- length of @n@ from @'nrGenerated'@.
-    bs <- fmap fromPushCmd <$> replicateM n genPush
+    ps <- fmap fromPushCmd <$> replicateM n genPush
     modify (\st -> st {
         nrGenerated = nrGenerated st - n
       })
@@ -848,7 +887,7 @@ genRollback = do
     let
       invariant = m <= k && n <= DS.length ds
 
-    Exn.assert invariant $ pure $ Rollback n bs
+    Exn.assert invariant $ pure $ Switch n ps
   where
     fromPushCmd :: Cmd i k v -> (SlotNo i, Diff i k v)
     fromPushCmd = \case
@@ -857,7 +896,7 @@ genRollback = do
 
 -- | Generate a @'Forward'@ command.
 --
--- >  data Cmd (i :: Imp) k v =
+-- >  data Cmd (ds :: DiffSeqKind) k v =
 -- >    -- ...
 -- >    | Forward (Values i k v) (Keys i k v)
 --
@@ -874,7 +913,7 @@ genForward :: forall k v. (Ord k, Eq v) => CmdGen k v (Cmd DS.DiffSeq k v)
 genForward = do
 
     ds  <- gets diffs
-    bvs <- gets backingValues
+    bvs <- gets flushedValues
 
     ks <- keysToForward (DS.diffKeys $ totalDiff ds)
 
@@ -897,6 +936,11 @@ genForward = do
 -------------------------------------------------------------------------------}
 
 -- | Sanity check benchmark inputs.
+--
+-- These sanity checks ensure that changes to the benchmarking setup do not
+-- accidentally invalidate the benchmarks. For example, both the
+-- intermediate-sum and anti-diff implementations should have the same (read
+-- "isomorphic") commands as inputs.
 sanityCheck ::
      forall k v.
      ( Ord k, Eq v, Show k, Show v, NFData k, NFData v
@@ -915,35 +959,35 @@ sanityCheck bEnv = conjoin [
     , isomorphismProperties2
     ]
   where
-    BenchEnv {cmdsAntidiff, cmdsSubcached, ds0Antidiff, ds0Subcached, model} = bEnv
+    BenchEnv {cmdsAntidiff, cmdsIntermediateSum, ds0Antidiff, ds0IntermediateSum, model} = bEnv
 
     interpretationsMatch = counterexample "interpret matches" $
-      interpret ds0Antidiff cmdsAntidiff === to (interpret ds0Subcached cmdsSubcached)
+      interpret ds0Antidiff cmdsAntidiff === to (interpret ds0IntermediateSum cmdsIntermediateSum)
 
     modelMatchesInterpretation1 = counterexample "model matches interpretations 1" $
       diffs model === interpret ds0Antidiff cmdsAntidiff
 
     modelMatchesInterpretation2 = counterexample "model matches interpretations 2" $
-       diffs model === to (interpret ds0Subcached cmdsSubcached)
+       diffs model === to (interpret ds0IntermediateSum cmdsIntermediateSum)
 
     lengthsMatch1 = counterexample "Lengths of command/diff sequences match 1" $
-      length cmdsAntidiff === length cmdsSubcached
+      length cmdsAntidiff === length cmdsIntermediateSum
 
     lengthsMatch2 = counterexample "Lengths of command/diff sequences match 2" $
-      DS.length ds0Antidiff === HD.lengthSeqUtxoDiff ds0Subcached
+      DS.length ds0Antidiff === HD.lengthSeqUtxoDiff ds0IntermediateSum
 
     isomorphismCheck1 = counterexample "Isomorphism checks 1" $
-      cmdsAntidiff === to cmdsSubcached .&&.
-      ds0Antidiff === to ds0Subcached
+      cmdsAntidiff === to cmdsIntermediateSum .&&.
+      ds0Antidiff === to ds0IntermediateSum
 
     isomorphismCheck2 = counterexample "Isomorphism checks 2" $
-      to cmdsAntidiff === cmdsSubcached .&&.
-      to ds0Antidiff === ds0Subcached
+      to cmdsAntidiff === cmdsIntermediateSum .&&.
+      to ds0Antidiff === ds0IntermediateSum
 
     isomorphismProperties1 = counterexample "Isomorphism properties 1" $
       isomorphismLaw (Proxy @[Cmd HD.SeqUtxoDiff k v]) cmdsAntidiff .&&.
       isomorphismLaw (Proxy @(HD.SeqUtxoDiff k v)) ds0Antidiff
 
     isomorphismProperties2 = counterexample "Isomorphism properties 2" $
-      isomorphismLaw (Proxy @[Cmd DS.DiffSeq k v]) cmdsSubcached .&&.
-      isomorphismLaw (Proxy @(DS.DiffSeq k v)) ds0Subcached
+      isomorphismLaw (Proxy @[Cmd DS.DiffSeq k v]) cmdsIntermediateSum .&&.
+      isomorphismLaw (Proxy @(DS.DiffSeq k v)) ds0IntermediateSum

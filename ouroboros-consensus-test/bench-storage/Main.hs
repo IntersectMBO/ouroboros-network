@@ -2,7 +2,7 @@ module Main (main) where
 
 import           Test.Tasty.Bench
 
-import qualified Bench.Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Bench.Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 main :: IO ()
 main = defaultMain [
@@ -10,7 +10,9 @@ main = defaultMain [
         bgroup "Consensus" [
             bgroup "Storage" [
                 bgroup "LedgerDB" [
-                    HD.benchmarks
+                    bgroup "HD" [
+                        DS.benchmarks
+                      ]
                   ]
               ]
           ]
