@@ -19,22 +19,23 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
 
 tests :: TestTree
 tests = testGroup "DiffSeq" [
-    testGroupWithProxy (Proxy @(RootMeasure X X)) [
+    testGroupWithProxy (Proxy @(RootMeasure Key Val)) [
         testSemigroupLaws
       , testMonoidLaws
       , testGroupLaws
       ]
-  , testGroupWithProxy (Proxy @(Auto (RootMeasure X X))) [
+  , testGroupWithProxy (Proxy @(Auto (RootMeasure Key Val))) [
         testSemigroupoidLaws
       , testGroupoidLaws
       ]
-  , testGroupWithProxy (Proxy @(InternalMeasure X X)) [
+  , testGroupWithProxy (Proxy @(InternalMeasure Key Val)) [
         testSemigroupLaws
       , testMonoidLaws
       ]
-  , testGroupWithProxy (Proxy @(Auto (InternalMeasure X X))) [
+  , testGroupWithProxy (Proxy @(Auto (InternalMeasure Key Val))) [
         testSemigroupoidLaws
       ]
   ]
 
-type X = Small Int
+type Key = Small Int
+type Val = Small Int

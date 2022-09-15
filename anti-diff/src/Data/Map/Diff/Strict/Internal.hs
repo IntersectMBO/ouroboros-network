@@ -57,9 +57,9 @@ import           NoThunks.Class (NoThunks)
 
 -- | A diff for key-value stores.
 --
--- INVARIANT: A key @k@ is present in the @Map@, iff the corresponding
--- @DiffHistory@ is non-empty. This prevents the @Map@ from getting bloated with
--- empty diff histories.
+-- INVARIANT: A key @k@ is present in the @'Map'@, iff the corresponding
+-- @'DiffHistory'@ is non-empty. This prevents the @'Map'@ from getting bloated
+-- with empty diff histories.
 newtype Diff k v = Diff (Map k (DiffHistory v))
   deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
@@ -85,7 +85,7 @@ data DiffEntry v = Insert !v | Delete !v | AntiInsert !v | AntiDelete !v
   Construction
 ------------------------------------------------------------------------------}
 
--- | Compute the difference between two @Map@s.
+-- | Compute the difference between two 'Map's.
 diff :: Ord k => Map k v -> Map k v -> Diff k v
 diff m1 m2 = Diff $
   Merge.merge
@@ -150,6 +150,7 @@ instance (Ord k, Eq v) => Group (Diff k v) where
 -- diff entries are removed the diff history.
 --
 -- Examples:
+--
 -- > [Insert 1, AntiDelete 2] <> [Delete 2, AntiInsert 1] = []
 --
 -- > [Insert 1, Delete 2]     <> [AntiDelete 2, Delete 3] = [Insert 1, Delete 3]
@@ -186,7 +187,7 @@ instance Eq v => Group (DiffHistory v) where
   Utility
 ------------------------------------------------------------------------------}
 
--- | @'isNonEmptyHisory' h@ checks whether the history is empty.
+-- | @'isNonEmptyHistory' h@ checks whether the history is empty.
 --
 -- In the context of diffs, this function is used to filter empty diff
 -- histories from the larger diff, since they are then only inflating the size
@@ -198,8 +199,8 @@ isNonEmptyHistory h@(DiffHistory s)
 
 -- | @`invertDiffEntry` e@ inverts a @'DiffEntry' e@ to its counterpart.
 --
--- Note: We invert @DiffEntry@s, but it is not a @Group@: We do not have an
--- identity element, so it is not a @Monoid@ or @Semigroup@.
+-- Note: We invert @'DiffEntry'@s, but it is not a @'Group'@: We do not have an
+-- identity element, so it is not a @'Monoid'@ or @'Semigroup'@.
 invertDiffEntry :: DiffEntry v -> DiffEntry v
 invertDiffEntry = \case
   Insert x     -> AntiInsert x
@@ -341,10 +342,10 @@ instance Eq v => Groupoid (Act v) where
 
       InsDel     -> InsDel
 
--- | Given a valid @DiffHistory@, its @DiffEntry@s should fold to a sensible
--- @Act@.
+-- | Given a valid @'DiffHistory'@, its @'DiffEntry'@s should fold to a sensible
+-- @'Act'@.
 --
--- Note: Only @Insert@s and @Delete@s translate to an @Act@.
+-- Note: Only @'Insert'@s and @'Delete'@s translate to an @'Act'@.
 foldToAct :: Eq v => DiffHistory v -> Maybe (Act v)
 foldToAct (DiffHistory Seq.Empty) = error "Impossible: Invariant"
 foldToAct (DiffHistory (z Seq.:<| zs)) = foldl (\x y -> pappendM x (fromDiffEntry y)) (fromDiffEntry z) zs

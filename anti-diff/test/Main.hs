@@ -56,12 +56,17 @@ diffSeqTests = testGroup "DiffSeq" [
     ]
   ]
 
-type X = Small Int
+type Key = Small Int
+type Val = Small Int
 
-type DiffSeq = StrictFingerTree (Diff X X) (Sum Int) (Diff X X)
+type DiffSeq =
+  StrictFingerTree
+    (Diff Key Val)
+    (Sum Int)
+    (Diff Key Val)
 
-instance Measured (Sum Int) (Diff X X) where
+instance Measured (Sum Int) (Diff Key Val) where
   measure _ = Sum 1
 
-instance RootMeasured (Diff X X) (Diff X X) where
+instance RootMeasured (Diff Key Val) (Diff Key Val) where
   measureRoot d = d
