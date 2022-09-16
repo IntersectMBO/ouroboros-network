@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE FlexibleContexts           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
