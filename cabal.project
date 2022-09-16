@@ -1,4 +1,17 @@
-index-state: 2022-07-01T00:00:00Z
+repository ghc-next-packages
+  url: https://input-output-hk.github.io/ghc-next-packages
+  secure: True
+  root-keys:
+  key-threshold: 0
+
+-- run `nix flake lock --update-input hackageNix` after updating index-state.
+-- the both lines are a bit of a quirk. The haskell.nix parser will just ignore
+-- the second line, which it can't parse anyway, while cabal will parse both
+-- lines just fine. As we want to _always_ use the latest from ghc-next-packages
+-- we specify HEAD. This is tracked in nix via
+-- `nix flake lock --update-input ghc-next-package`
+index-state: 2022-09-10T00:00:00Z
+index-state: ghc-next-packages HEAD
 
 packages: ./ouroboros-network-testing
           ./monoidal-synchronisation
@@ -31,6 +44,17 @@ constraints:
 
   -- Plutus dependency
   , algebraic-graphs < 0.7
+  , Cabal > 3.4.0.0
+
+allow-newer:
+   *:base,
+   *:bytestring,
+   *:cryptonite,
+   *:measures,
+   *:formatting,
+   *:hashable,
+   *:Cabal,
+   size-based:template-haskell,
 
 package Win32-network
   tests: True
@@ -158,129 +182,3 @@ constraints:
   -- constraint from dependent-sum-template (which is the library we actually use).
   , dependent-sum > 0.6.2.0
 
--- ---------------------------------------------------------
--- The "cabal" wrapper script provided by nix-shell will cut off / restore the remainder of this file
--- in order to force usage of nix provided dependencies for `source-repository-package`s.
--- --------------------------- 8< --------------------------
--- Please do not put any `source-repository-package` clause above this line.
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/io-sim
-  tag: f4183f274d88d0ad15817c7052df3a6a8b40e6dc
-  --sha256: 0vb2pd9hl89v2y5hrhrsm69yx0jf98vppjmfncj2fraxr3p3lldw
-  subdir:
-    io-classes
-    io-sim
-    strict-stm
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/typed-protocols
-  tag: 181601bc3d9e9d21a671ce01e0b481348b3ca104
-  --sha256: 1lr97b2z7l0rpsmmz92rsv27qzd5vavz10cf7n25svya4kkiysp5
-  subdir:
-    typed-protocols
-    typed-protocols-cborg
-    typed-protocols-examples
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/Win32-network
-  tag: 3825d3abf75f83f406c1f7161883c438dac7277d
-  --sha256: 19wahfv726fa3mqajpqdqhnl9ica3xmf68i254q45iyjcpj1psqx
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/iohk-monitoring-framework
-  tag: 066f7002aac5a0efc20e49643fea45454f226caa
-  --sha256: 0s6x4in11k5ba7nl7la896g28sznf9185xlqg9c604jqz58vj9nj
-  subdir: contra-tracer
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-prelude
-  tag: 533aec85c1ca05c7d171da44b89341fb736ecfe5
-  --sha256: 0z2y3wzppc12bpn9bl48776ms3nszw8j58xfsdxf97nzjgrmd62g
-  subdir:
-    cardano-prelude
-    cardano-prelude-test
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-base
-  tag: 631cb6cf1fa01ab346233b610a38b3b4cba6e6ab
-  --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
-  subdir:
-    base-deriving-via
-    binary
-    binary/test
-    cardano-crypto-class
-    cardano-crypto-praos
-    cardano-crypto-tests
-    measures
-    orphans-deriving-via
-    slotting
-    strict-containers
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-ledger
-  tag: 49613f11e034485c8377945c86c0465726c0860c
-  --sha256: 0gxb9xghsacr0qaljhq3qzvmb2f1wwmly89prwqy4fdm9mvqiq95
-  subdir:
-    eras/alonzo/impl
-    eras/alonzo/test-suite
-    eras/babbage/impl
-    eras/babbage/test-suite
-    eras/byron/chain/executable-spec
-    eras/byron/crypto
-    eras/byron/crypto/test
-    eras/byron/ledger/executable-spec
-    eras/byron/ledger/impl
-    eras/byron/ledger/impl/test
-    eras/shelley-ma/impl
-    eras/shelley-ma/test-suite
-    eras/shelley/impl
-    eras/shelley/test-suite
-    libs/cardano-data
-    libs/cardano-ledger-core
-    libs/cardano-ledger-pretty
-    libs/cardano-protocol-tpraos
-    libs/non-integral
-    libs/set-algebra
-    libs/small-steps
-    libs/small-steps-test
-    libs/vector-map
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/plutus
-  tag: 8ab4c3355c5fdf67dcf6acc1f5a14668d5e6f0a9
-  --sha256: 12d6bndmj0dxl6xlaqmf78326yp5hw093bmybmqfpdkvk4mgz03j
-  subdir:
-    plutus-ledger-api
-    plutus-tx
-    plutus-core
-    prettyprinter-configurable
-    word-array
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/goblins
-  tag: cde90a2b27f79187ca8310b6549331e59595e7ba
-  --sha256: 17c88rbva3iw82yg9srlxjv2ia5wjb9cyqw44hik565f5v9svnyg
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/cardano-crypto
-  tag: f73079303f663e028288f9f4a9e08bcca39a923e
-  --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
-
--- Drops an instance breaking the Plutus code. Should be released to Hackage
--- eventually.
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/flat
-  tag: ee59880f47ab835dbd73bea0847dab7869fc20d8
-  --sha256: 1lrzknw765pz2j97nvv9ip3l1mcpf2zr4n56hwlz0rk7wq7ls4cm
