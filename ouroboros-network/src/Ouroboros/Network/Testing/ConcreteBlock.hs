@@ -4,6 +4,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE FlexibleContexts           #-}
 
 -- This module is for examples and tests (not the library) so orphans are ok
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -121,7 +122,7 @@ deriving instance Hashable BlockNo
 --
 -- This requires @UndecidableInstances@ because @Hashable (HeaderHash b)@
 -- is no smaller than @Hashable (ChainHash b)@.
-instance Hashable (HeaderHash b) => Hashable (ChainHash b)
+instance (StandardHash b, Hashable (HeaderHash b)) => Hashable (ChainHash b)
  -- use generic instance
 
 -- | The hash of all the information in a 'BlockHeader'.
