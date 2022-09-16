@@ -114,6 +114,7 @@ parseAnalysis = asum [
               <> "blocks to put in the mempool at once."
         , metavar "INT"
         ]
+    , benchmarkLedgerOpsParser
     , pure OnlyValidation
     ]
 
@@ -138,6 +139,28 @@ parseLimit = asum [
       ])
   , pure Unlimited
   ]
+
+benchmarkLedgerOpsParser :: Parser AnalysisName
+benchmarkLedgerOpsParser =
+    BenchmarkLedgerOps <$> (benchmarkLedgerOpsFlagParser *> pMaybeOutputFile)
+  where
+    benchmarkLedgerOpsFlagParser =
+      flag' BenchmarkLedgerOps $ mconcat [
+            long "benchmark-ledger-ops"
+          , help $ "Maintain ledger state and benchmark the main ledger calculations for each block."
+                  <> " Prints one line of stats per block to the given output file "
+                  <> " (defaults to stdout)."
+          ]
+
+pMaybeOutputFile :: Parser (Maybe FilePath)
+pMaybeOutputFile =
+  optional $
+    strOption
+      (  long "out-file"
+      <> metavar "FILE"
+      <> help "Optional output file. Default is to write to stdout."
+      <> completer (bashCompleter "file")
+      )
 
 blockTypeParser :: Parser BlockType
 blockTypeParser = subparser $ mconcat
