@@ -32,6 +32,8 @@ library
     Cardano.Node.Protocol
     Cardano.Node.Protocol.Types
     Cardano.Node.Types
+    Cardano.Tools.CardanoLedgerStateConverter.Run
+    Cardano.Tools.CardanoLedgerStateConverter.Types
     Cardano.Tools.DBAnalyser.Analysis
     Cardano.Tools.DBAnalyser.Block.Byron
     Cardano.Tools.DBAnalyser.Block.Cardano
@@ -147,6 +149,32 @@ executable db-synthesizer
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
     -O2 -threaded -rtsopts "-with-rtsopts=-N -I0 -A16m"
+
+executable cardano-ledger-state-converter
+  hs-source-dirs:      app
+  main-is:             cardano-ledger-state-converter.hs
+  build-depends:       base
+                     , cardano-crypto-wrapper
+                     , optparse-applicative
+                     , ouroboros-consensus
+                     , ouroboros-consensus-byron
+                     , ouroboros-consensus-cardano-tools
+                     , ouroboros-consensus-shelley
+
+  other-modules:     CardanoLedgerStateConverter.Parsers
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -threaded
+                       -rtsopts
+                       "-with-rtsopts=-T -I0 -N2 -A16m"
 
 test-suite test
   type:             exitcode-stdio-1.0
