@@ -14,7 +14,7 @@ import           Cardano.Tools.CardanoLedgerStateConverter.Types
 
 
 main :: IO ()
-main = getCmdLine >>= analyse
+main = getCmdLine >>= convert
 
 getCmdLine :: IO Config
 getCmdLine = execParser opts
