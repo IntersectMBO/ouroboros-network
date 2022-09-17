@@ -77,7 +77,7 @@ data MuxErrorType = MuxUnknownMiniProtocol
 
 instance Exception MuxError where
     displayException MuxError{errorType, errorMsg}
-      = (show errorType) ++ " " ++ (show errorMsg)
+      = show errorType ++ " " ++ show errorMsg
 
 -- | Handler for 'IOException's which wraps them in 'MuxError'.
 --
