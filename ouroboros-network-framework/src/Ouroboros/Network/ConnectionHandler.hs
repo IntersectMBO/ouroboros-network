@@ -230,7 +230,7 @@ makeConnectionHandler muxTracer singMuxMode
               throwTo mainThreadId (ExceptionInHandler remoteAddress err)
               throwIO err
             ShutdownPeer ->
-              throwIO err
+              throwIO (ExceptionInHandler remoteAddress err)
 
     outboundConnectionHandler
       :: HasInitiator muxMode ~ True
