@@ -458,10 +458,10 @@ mkNextEBB canContainEBB tb =
 -------------------------------------------------------------------------------}
 
 data BftWithEBBsSelectView = BftWithEBBsSelectView {
-      bebbBlockNo     :: BlockNo
-    , bebbIsEBB       :: IsEBB
-    , bebbChainLength :: ChainLength
-    , bebbHash        :: TestHeaderHash
+      bebbBlockNo     :: !BlockNo
+    , bebbIsEBB       :: !IsEBB
+    , bebbChainLength :: !ChainLength
+    , bebbHash        :: !TestHeaderHash
     }
   deriving (Show, Eq, Generic, NoThunks)
 
