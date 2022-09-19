@@ -433,8 +433,7 @@ addBlock cfg blk m = Model {
       immutableChainHashes `isPrefixOf`
       map blockHash (Chain.toOldestFirst fork)
 
-    consideredCandidates = filter (extendsImmutableChain . fst)
-      $ candidates
+    consideredCandidates = filter (extendsImmutableChain . fst) candidates
 
     newChain  :: Chain blk
     newLedger :: ExtLedgerState blk
@@ -450,7 +449,8 @@ addBlock cfg blk m = Model {
     valid' = foldl
                (Chain.foldChain (\s b -> Set.insert (blockHash b) s))
                (valid m)
-               (takeWhile (not . Chain.isPrefixOf newChain) (map fst consideredCandidates) ++ [newChain])
+               (takeWhile (not . Chain.isPrefixOf newChain)
+                (map fst consideredCandidates) ++ [newChain])
 
 -- = Getting the valid blocks
 --
@@ -876,8 +876,12 @@ validChains cfg m bs =
     -- first, which results in the valid chain A->B', which is then chosen
     -- over the equally preferable A->B as it will be the first in the list
     -- after a stable sort.
-    sortChains $ chains bs
+    sortChains $ pruneKnownInvalid <$> chains bs
   where
+    pruneKnownInvalid chain =
+      -- We don't want known invalid blocks to influence the sorting of candidate chains.
+      Chain.takeWhile (\b -> blockHash b `Map.notMember` (invalid m)) chain
+
     sortChains :: [Chain blk] -> [Chain blk]
     sortChains =
       sortBy $ flip (
