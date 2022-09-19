@@ -370,8 +370,8 @@ data Inactive =
   deriving (Eq, Show)
 
 
--- | Exception which where caught in the connection thread and were re-thrown
--- in the main thread by the 'rethrowPolicy'.
+-- | Exception which where caught in the connection thread and were re-thrown in
+-- the main thread by the 'rethrowPolicy'.
 --
 data ExceptionInHandler peerAddr where
     ExceptionInHandler :: !peerAddr
