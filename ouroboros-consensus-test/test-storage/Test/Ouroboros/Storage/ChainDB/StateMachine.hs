@@ -558,6 +558,23 @@ instance (TestConstraints blk, Eq it, Eq flr) => Eq (Resp blk it flr) where
   Resp (Right a) == Resp (Right a') = a == a'
   _              == _               = False
 
+
+{-------------------------------------------------------------------------------
+  Bitraversable instances
+-------------------------------------------------------------------------------}
+
+TH.deriveBifunctor     ''Cmd
+TH.deriveBifoldable    ''Cmd
+TH.deriveBitraversable ''Cmd
+
+TH.deriveBifunctor     ''Success
+TH.deriveBifoldable    ''Success
+TH.deriveBitraversable ''Success
+
+TH.deriveBifunctor     ''Resp
+TH.deriveBifoldable    ''Resp
+TH.deriveBitraversable ''Resp
+
 -- We can't reuse 'run' because the 'ChainDB' API uses 'STM'. Instead, we call
 -- the model directly.
 runPure :: forall blk.
@@ -1131,21 +1148,6 @@ sm env genBlock cfg initLedger maxClockSkew = StateMachine
   , cleanup       = noCleanup
   }
 
-{-------------------------------------------------------------------------------
-  Bitraversable instances
--------------------------------------------------------------------------------}
-
-TH.deriveBifunctor     ''Cmd
-TH.deriveBifoldable    ''Cmd
-TH.deriveBitraversable ''Cmd
-
-TH.deriveBifunctor     ''Success
-TH.deriveBifoldable    ''Success
-TH.deriveBitraversable ''Success
-
-TH.deriveBifunctor     ''Resp
-TH.deriveBifoldable    ''Resp
-TH.deriveBitraversable ''Resp
 
 {-------------------------------------------------------------------------------
   Required instances

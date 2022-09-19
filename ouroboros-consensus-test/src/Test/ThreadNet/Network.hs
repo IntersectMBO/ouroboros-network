@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PolyKinds            #-}
 
 -- | Setup network
 module Test.ThreadNet.Network (
