@@ -373,19 +373,20 @@ data Inactive =
 -- | Exception which where caught in the connection thread and were re-thrown in
 -- the main thread by the 'rethrowPolicy'.
 --
-data ExceptionInHandler peerAddr where
-    ExceptionInHandler :: !peerAddr
+data ExceptionInHandler where
+    ExceptionInHandler :: forall peerAddr.
+                          (Typeable peerAddr, Show peerAddr)
+                       => !peerAddr
                        -> !SomeException
-                       -> ExceptionInHandler peerAddr
+                       -> ExceptionInHandler
   deriving Typeable
 
-instance   Show peerAddr => Show (ExceptionInHandler peerAddr) where
+instance Show ExceptionInHandler where
     show (ExceptionInHandler peerAddr e) = "ExceptionInHandler "
                                         ++ show peerAddr
                                         ++ " "
                                         ++ show e
-instance ( Show peerAddr
-         , Typeable peerAddr ) => Exception (ExceptionInHandler peerAddr)
+instance Exception ExceptionInHandler
 
 
 -- | Data type used to classify 'handleErrors'.
