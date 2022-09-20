@@ -58,7 +58,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.TxLimits
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
@@ -156,7 +156,7 @@ instance ShelleyCompatible proto era
   getTransactionKeySets (ShelleyTx _ tx) =
         ShelleyLedger.ShelleyLedgerTables
       $ ApplyKeysMK
-      $ HD.UtxoKeys
+      $ DS.Keys
       $ SL.getAllTxInputs (getField @"body"  tx)
 
 mkShelleyTx :: forall era proto. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock proto era)

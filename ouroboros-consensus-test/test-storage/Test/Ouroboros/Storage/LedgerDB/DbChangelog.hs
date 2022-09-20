@@ -17,7 +17,6 @@ module Test.Ouroboros.Storage.LedgerDB.DbChangelog (tests) where
 import           Control.Monad hiding (ap)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Monad.Trans.State.Strict hiding (state)
-import qualified Data.FingerTree.Strict as FT
 import           Data.Foldable
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -41,7 +40,7 @@ import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
 import           Ouroboros.Consensus.Ledger.Basics hiding (LedgerState)
-import           Ouroboros.Consensus.Storage.LedgerDB.HD
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 import           Test.Util.QuickCheck (frequency', oneof')
@@ -95,7 +94,7 @@ data TestLedger (mk :: MapKind) = TestLedger {
 nextState :: DbChangelog TestLedger -> TestLedger DiffMK
 nextState dblog = TestLedger {
               tlTip = pointAtSlot $ nextSlot (getTipSlot old)
-            , tlUtxos = ApplyDiffMK emptyUtxoDiff
+            , tlUtxos = ApplyDiffMK mempty
             }
   where
     old = unDbChangelogState $ either id id $ AS.head (changelogVolatileStates dblog)
@@ -235,7 +234,7 @@ immutableAnchored DbChangelog { changelogDiffAnchor, changelogImmutableStates } 
 
 -- | There should be a diff for every state.
 sameNumberOfDiffsAsStates :: DbChangelog TestLedger -> Property
-sameNumberOfDiffsAsStates dblog = AS.length imm + AS.length vol === lengthSeqUtxoDiff diffs
+sameNumberOfDiffsAsStates dblog = AS.length imm + AS.length vol === DS.length diffs
   where
     imm = changelogImmutableStates dblog
     vol = changelogVolatileStates dblog
@@ -269,7 +268,7 @@ prop_flushingSplitsTheChangelog setup =
     .&&. AS.null (changelogVolatileStates toFlush)
     .&&. changelogVolatileStates toKeep === changelogVolatileStates dblog
     .&&. changelogImmutableStates toFlush === changelogImmutableStates dblog
-    .&&. diffs === unsafeJoinSeqUtxoDiffs toFlushDiffs toKeepDiffs
+    .&&. diffs === toFlushDiffs `DS.append` toKeepDiffs
   where
     dblog                                    = resultingDbChangelog setup
     (toFlush, toKeep)                        = flushDbChangelog DbChangelogFlushAllImmutable dblog
@@ -345,12 +344,8 @@ prop_rollBackToVolatileTipIsNoop (Positive n) setup = property $ Just dblog == d
     dblog' = prefixDbChangelog pt $ nExtensions n dblog
 
 nExtensions :: Int -> DbChangelog TestLedger -> DbChangelog TestLedger
-nExtensions n dblog = iterate extend dblog !! n
-  where extend dblog' = extendDbChangelog dblog' (nextState dblog')
-
-unsafeJoinSeqUtxoDiffs :: Ord k => SeqUtxoDiff k v -> SeqUtxoDiff k v -> SeqUtxoDiff k v
-unsafeJoinSeqUtxoDiffs (SeqUtxoDiff ft1) (SeqUtxoDiff ft2) =
-  SeqUtxoDiff (ft1 FT.>< ft2)
+nExtensions n dblog = iterate ext dblog !! n
+  where ext dblog' = extendDbChangelog dblog' (nextState dblog')
 
 {-------------------------------------------------------------------------------
   Generators
@@ -397,8 +392,8 @@ genOperations slotNo nOps = gosOps <$> execStateT (replicateM_ nOps genOperation
     genExtend :: StateT GenOperationsState Gen (Operation TestLedger)
     genExtend = do
       nextSlotNo <- advanceSlotNo =<< lift (chooseEnum (1, 5))
-      diff <- genUtxoDiff
-      pure $ Extend $ TestLedger (ApplyDiffMK diff) (castPoint $ pointAtSlot nextSlotNo)
+      d <- genUtxoDiff
+      pure $ Extend $ TestLedger (ApplyDiffMK d) (castPoint $ pointAtSlot nextSlotNo)
 
     advanceSlotNo :: SlotNo -> StateT GenOperationsState Gen (WithOrigin SlotNo)
     advanceSlotNo by = do
@@ -406,14 +401,14 @@ genOperations slotNo nOps = gosOps <$> execStateT (replicateM_ nOps genOperation
       modify' $ \st -> st { gosSlotNo = nextSlotNo }
       pure nextSlotNo
 
-    genUtxoDiff :: StateT GenOperationsState Gen (UtxoDiff Key Int)
+    genUtxoDiff :: StateT GenOperationsState Gen (Diff Key Int)
     genUtxoDiff = do
       nEntries <- lift $ chooseInt (1, 10)
       entries <- replicateM nEntries genUtxoDiffEntry
       modify' applyPending
-      pure $ UtxoDiff $ Map.fromList entries
+      pure $ DS.fromListEntries entries
 
-    genUtxoDiffEntry :: StateT GenOperationsState Gen (Key, UtxoEntryDiff Int)
+    genUtxoDiffEntry :: StateT GenOperationsState Gen (Key, DiffEntry Int)
     genUtxoDiffEntry = do
       activeUtxos <- gets gosActiveUtxos
       consumedUtxos <- gets gosConsumedUtxos
@@ -421,7 +416,7 @@ genOperations slotNo nOps = gosOps <$> execStateT (replicateM_ nOps genOperation
         genDelEntry activeUtxos,
         genInsertEntry consumedUtxos]
 
-    genDelEntry :: Map Key Int -> Maybe (StateT GenOperationsState Gen (Key, UtxoEntryDiff Int))
+    genDelEntry :: Map Key Int -> Maybe (StateT GenOperationsState Gen (Key, DiffEntry Int))
     genDelEntry activeUtxos =
       if Map.null activeUtxos then Nothing
       else Just $ do
@@ -429,9 +424,9 @@ genOperations slotNo nOps = gosOps <$> execStateT (replicateM_ nOps genOperation
         modify' $ \st -> st
           { gosActiveUtxos = Map.delete k (gosActiveUtxos st)
           }
-        pure (k, UtxoEntryDiff v UedsDel)
+        pure (k, Delete v )
 
-    genInsertEntry :: Set Key -> Maybe (StateT GenOperationsState Gen (Key, UtxoEntryDiff Int))
+    genInsertEntry :: Set Key -> Maybe (StateT GenOperationsState Gen (Key, DiffEntry Int))
     genInsertEntry consumedUtxos = Just $ do
       k <- lift $ genKey `suchThat` (`Set.notMember` consumedUtxos)
       v <- lift arbitrary
@@ -439,7 +434,7 @@ genOperations slotNo nOps = gosOps <$> execStateT (replicateM_ nOps genOperation
         { gosPendingInsertions = Map.insert k v (gosPendingInsertions st)
         , gosConsumedUtxos = Set.insert k (gosConsumedUtxos st)
         }
-      pure (k, UtxoEntryDiff v UedsIns)
+      pure (k, Insert v)
 
 genKey :: Gen Key
 genKey = replicateM 2 $ elements ['A'..'Z']

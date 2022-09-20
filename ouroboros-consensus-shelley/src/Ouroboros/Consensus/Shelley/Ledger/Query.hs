@@ -51,7 +51,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import qualified Cardano.Ledger.Core as LC
@@ -298,7 +298,7 @@ instance ShelleyCompatible proto era => QueryLedger (ShelleyBlock proto era) whe
 
   prepareBlockQuery = \case
       GetCBOR q        -> prepareBlockQuery q
-      GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK $ HD.UtxoKeys ks
+      GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK $ DS.Keys ks
 
   answerWholeBlockQuery = \case
       GetCBOR qry            -> case answerWholeBlockQuery qry of

@@ -49,8 +49,8 @@ import           Cardano.Slotting.Slot (SlotNo, WithOrigin (At))
 import           Ouroboros.Consensus.Ledger.Basics
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util (foldlM')
 import           Ouroboros.Consensus.Util.IOLike (Exception (..), IOLike,
                      MonadCatch (..), MonadThrow (..), bracket, onException)
@@ -375,7 +375,7 @@ initRangeReadLMDBTable count (LMDBMK _ db) codecMK =
       -- TODO improve lmdb-simple bindings to give better access to cursors
       wrangle <$> foldrWithKey go (Right Map.empty) codecMK db
       where
-        wrangle = either HD.UtxoValues HD.UtxoValues
+        wrangle = either DS.Values DS.Values
         go k v acc = do
           m <- acc
           when (Map.size m >= count) $ Left m
@@ -394,7 +394,7 @@ rangeReadLMDBTable ::
   -> CodecMK k v
   -> KeysMK  k v
   -> LMDB.Transaction mode (ValuesMK k v)
-rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) =
+rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (DS.Keys keys)) =
     ApplyValuesMK <$> lmdbRangeReadTable
   where
     lmdbRangeReadTable =
@@ -402,10 +402,10 @@ rangeReadLMDBTable count (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) 
           -- This is inadequate. We are folding over the whole table, the
           -- fiddling with either is to short circuit as best we can.
           -- TODO improve llvm-simple bindings to give better access to cursors
-          Nothing -> pure $ HD.UtxoValues Map.empty
+          Nothing -> pure $ DS.Values Map.empty
           Just lastExcludedKey ->
             let
-              wrangle = either HD.UtxoValues HD.UtxoValues
+              wrangle = either DS.Values DS.Values
               go k v acc
                 | k <= lastExcludedKey = acc
                 | otherwise = do
@@ -420,7 +420,7 @@ initLMDBTable ::
   -> CodecMK  k v
   -> ValuesMK k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
-initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK (HD.UtxoValues utxoVals)) =
+initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK (DS.Values utxoVals)) =
     ApplyEmptyMK <$ lmdbInitTable
   where
     lmdbInitTable  = do
@@ -440,34 +440,31 @@ readLMDBTable ::
   -> CodecMK k v
   -> KeysMK  k v
   -> LMDB.Transaction mode (ValuesMK k v)
-readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK (HD.UtxoKeys keys)) =
+readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK (DS.Keys keys)) =
     ApplyValuesMK <$> lmdbReadTable
   where
-    lmdbReadTable = HD.UtxoValues <$> foldlM' go Map.empty (Set.toList keys)
+    lmdbReadTable = DS.Values <$> foldlM' go Map.empty (Set.toList keys)
       where
         go m k = get codecMK db k <&> \case
           Nothing -> m
           Just v  -> Map.insert k v m
 
 writeLMDBTable ::
-     LMDBMK  k v
+     Eq v
+  => LMDBMK  k v
   -> CodecMK k v
   -> DiffMK  k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
-writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK (HD.UtxoDiff diff)) =
+writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK d) =
     ApplyEmptyMK <$ lmdbWriteTable
   where
-    lmdbWriteTable = void $ Map.traverseWithKey go diff
+    lmdbWriteTable = void $ DS.traverseActs_ go d
       where
-        go k (HD.UtxoEntryDiff v reason) = put codecMK db k value
-          where
-            value = case reason of
-              HD.UedsDel ->
-                Nothing
-              HD.UedsInsAndDel ->
-                Nothing
-              HD.UedsIns ->
-                Just v
+        go k act = put codecMK db k $ case act of
+          DS.Del _v       -> Nothing
+          DS.Ins v        -> Just v
+          DS.DelIns _v v' -> Just v'
+          DS.InsDel       -> Nothing
 
 {-------------------------------------------------------------------------------
  Db Settings
