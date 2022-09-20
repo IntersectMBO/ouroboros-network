@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Node.Tracers (
   , TraceLabelCreds (..)
   ) where
 
+import           Control.Exception (SomeException)
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 import           Data.Text (Text)
 import           Data.Time (UTCTime)
@@ -63,6 +64,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , blockchainTimeTracer          :: f (TraceBlockchainTimeEvent UTCTime)
   , forgeStateInfoTracer          :: f (TraceLabelCreds (ForgeStateInfo blk))
   , keepAliveClientTracer         :: f (TraceKeepAliveClient remotePeer)
+  , consensusStartupErrorTracer   :: f SomeException
   }
 
 instance (forall a. Semigroup (f a))
@@ -82,6 +84,7 @@ instance (forall a. Semigroup (f a))
       , blockchainTimeTracer          = f blockchainTimeTracer
       , forgeStateInfoTracer          = f forgeStateInfoTracer
       , keepAliveClientTracer         = f keepAliveClientTracer
+      , consensusStartupErrorTracer   = f consensusStartupErrorTracer
       }
     where
       f :: forall a. Semigroup a
@@ -109,6 +112,7 @@ nullTracers = Tracers
     , blockchainTimeTracer          = nullTracer
     , forgeStateInfoTracer          = nullTracer
     , keepAliveClientTracer         = nullTracer
+    , consensusStartupErrorTracer            = nullTracer
     }
 
 showTracers :: ( Show blk
@@ -139,6 +143,7 @@ showTracers tr = Tracers
     , blockchainTimeTracer          = showTracing tr
     , forgeStateInfoTracer          = showTracing tr
     , keepAliveClientTracer         = showTracing tr
+    , consensusStartupErrorTracer   = showTracing tr
     }
 
 {-------------------------------------------------------------------------------
