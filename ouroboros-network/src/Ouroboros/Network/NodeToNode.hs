@@ -70,6 +70,8 @@ module Ouroboros.Network.NodeToNode
   , LocalAddresses (..)
   , Socket
   , isPipeliningEnabled
+    -- ** Exceptions
+  , ExceptionInHandler (..)
     -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , remoteNetworkErrorPolicy
@@ -113,6 +115,8 @@ import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import           Ouroboros.Network.ConnectionManager.Types
+                     (ExceptionInHandler (..))
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)
