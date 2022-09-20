@@ -5,6 +5,12 @@ team.  See [consensus
 CHANGELOG](../ouroboros-consensus/docs/interface-CHANGELOG.md) file for how
 this changelog is supposed to be used.
 
+## Circa 2022-09-20
+
+- 'InitializationTracer' type renamed as 'DiffusionTracer'.
+- The 'dtDiffusionInitializationTracer' record field of
+  'Ouoroboros.Network.Diffusion.Tracers' record renamed as 'dtDiffusionTracer'.
+
 ## Circa 2022-07-25
 
 - renamed `TrError` as `TrConnectionHandlerError` which is a constructor of
