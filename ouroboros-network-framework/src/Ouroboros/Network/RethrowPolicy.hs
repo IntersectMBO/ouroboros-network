@@ -70,12 +70,12 @@ instance Monoid ErrorCommand where
     mempty = ShutdownPeer
 
 
--- | Whether an exception happend on outbound or inbound connection.
+-- | Whether an exception happened on outbound or inbound connection.
 --
--- TODO: It would be more useful to have access whether the exception happend
--- on initiator or responder. The easiest way to fix this is make mux throw the
--- exception together with context.  This allows to keep error handling be done
--- only by the connection manager (rather than by server and
+-- TODO: It would be more useful to have access to whether the exception
+-- happened on initiator or responder. The easiest way to fix this is make mux
+-- throw the exception together with context.  This allows to keep error
+-- handling be done only by the connection manager (rather than by server and
 -- 'PeerStateActions').
 --
 data ErrorContext = OutboundError
