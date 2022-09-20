@@ -3,9 +3,10 @@ module Test.Ouroboros.Network.PeerSelection.Json (tests) where
 import           Data.Aeson (decode, encode, fromJSON, toJSON)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), RelayAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise)
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)

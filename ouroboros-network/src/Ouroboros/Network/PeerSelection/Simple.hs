@@ -21,7 +21,9 @@ import           Control.Tracer (Tracer)
 import           Data.Foldable (toList)
 
 import           Data.Map (Map)
+import qualified Data.Map as Map
 import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Data.Void (Void)
 
 import qualified Network.DNS as DNS
@@ -29,8 +31,10 @@ import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 
 
 withPeerSelectionActions
@@ -49,8 +53,10 @@ withPeerSelectionActions
   -> STM m PeerSelectionTargets
   -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
   -- ^ local root peers
-  -> STM m [RelayAccessPoint]
+  -> STM m (Map RelayAccessPoint PeerAdvertise)
   -- ^ public root peers
+  -> PeerSharing
+  -- ^ peer sharing configured value
   -> PeerStateActions peeraddr peerconn m
   -> (NumberOfPeers -> m (Maybe (Set peeraddr, DiffTime)))
   -> (   Async m Void
@@ -67,6 +73,7 @@ withPeerSelectionActions
   readTargets
   readLocalRootPeers
   readPublicRootPeers
+  peerSharing
   peerStateActions
   getLedgerPeers
   k = do
@@ -74,6 +81,7 @@ withPeerSelectionActions
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
             readLocalRootPeers = toList <$> readTVar localRootsVar,
+            peerSharing,
             requestPublicRootPeers = requestPublicRootPeers,
             requestPeerGossip = \_ -> pure [],
             peerStateActions
@@ -91,17 +99,30 @@ withPeerSelectionActions
     -- We first try to get public root peers from the ledger, but if it fails
     -- (for example because the node hasn't synced far enough) we fall back
     -- to using the manually configured bootstrap root peers.
-    requestPublicRootPeers :: Int -> m (Set peeraddr, DiffTime)
+    requestPublicRootPeers :: Int -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime)
     requestPublicRootPeers n = do
       peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n)
       case peers_m of
-           Nothing    -> requestConfiguredRootPeers n
-           Just peers -> return peers
+           -- No peers from Ledger
+           Nothing    -> do
+             (m, dt) <- requestConfiguredRootPeers n
+             let m' = Map.map (\a -> (a, IsNotLedgerPeer)) m
+             return (m', dt)
+
+           -- These peers come from Ledger
+           --
+           -- We set peers coming from ledger as DoNotAdvertisePeer so they do
+           -- not get shared via Peer Sharing
+           Just (peers, dt) ->
+             return ( Map.fromList
+                      $ map (\a -> (a, (DoNotAdvertisePeer, IsLedgerPeer)))
+                      $ Set.toList peers
+                    , dt)
 
     -- For each call we re-initialise the dns library which forces reading
     -- `/etc/resolv.conf`:
     -- https://github.com/input-output-hk/cardano-node/issues/731
-    requestConfiguredRootPeers :: Int -> m (Set peeraddr, DiffTime)
+    requestConfiguredRootPeers :: Int -> m (Map peeraddr PeerAdvertise, DiffTime)
     requestConfiguredRootPeers n =
       publicRootPeersProvider publicRootTracer
                               toPeerAddr

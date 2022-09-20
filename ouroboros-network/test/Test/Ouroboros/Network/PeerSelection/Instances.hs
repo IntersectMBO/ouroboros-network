@@ -15,11 +15,15 @@ import           Data.Text.Encoding (encodeUtf8)
 import           Data.Word (Word32)
 
 import           Ouroboros.Network.PeerSelection.Governor
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), RelayAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Types
 
 import qualified Data.IP as IP
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+                     (PeerSharing (..))
 import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
                      prop_shrink_valid)
 import           Test.QuickCheck
@@ -50,6 +54,14 @@ instance Arbitrary PeerAdvertise where
   shrink DoAdvertisePeer    = []
   shrink DoNotAdvertisePeer = [DoAdvertisePeer]
 
+instance Arbitrary PeerSharing where
+  arbitrary = elements [ NoPeerSharing, PeerSharingPrivate, PeerSharingPublic ]
+  shrink PeerSharingPublic  = [PeerSharingPrivate, NoPeerSharing]
+  shrink PeerSharingPrivate = [NoPeerSharing]
+  shrink NoPeerSharing      = []
+
+instance Arbitrary IsLedgerPeer where
+  arbitrary = elements [ IsLedgerPeer, IsNotLedgerPeer ]
 
 instance Arbitrary PeerSelectionTargets where
   arbitrary = do

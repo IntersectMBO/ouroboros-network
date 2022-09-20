@@ -59,12 +59,13 @@ import qualified Data.IP as IP
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions (..), DNSorIOError (..), LookupReqs (..),
                      Resource (..), constantResource, ioDNSActions,
                      withResource')
-import           Ouroboros.Network.PeerSelection.Types
 
 -----------------------------------------------
 -- local root peer set provider based on DNS
@@ -275,7 +276,7 @@ localRootPeersProvider tracer
 --
 
 data TracePublicRootPeers =
-       TracePublicRootRelayAccessPoint [RelayAccessPoint]
+       TracePublicRootRelayAccessPoint (Map RelayAccessPoint PeerAdvertise)
      | TracePublicRootDomains [DomainAccessPoint]
      | TracePublicRootResult  DNS.Domain [(IP, DNS.TTL)]
      | TracePublicRootFailure DNS.Domain DNS.DNSError
@@ -283,7 +284,6 @@ data TracePublicRootPeers =
   deriving Show
 
 -- |
--- TODO track PeerAdvertise
 --
 publicRootPeersProvider
   :: forall peerAddr resolver exception a m.
@@ -292,9 +292,9 @@ publicRootPeersProvider
   => Tracer m TracePublicRootPeers
   -> (IP -> Socket.PortNumber -> peerAddr)
   -> DNS.ResolvConf
-  -> STM m [RelayAccessPoint]
+  -> STM m (Map RelayAccessPoint PeerAdvertise)
   -> DNSActions resolver exception m
-  -> ((Int -> m (Set peerAddr, DiffTime)) -> m a)
+  -> ((Int -> m (Map peerAddr PeerAdvertise, DiffTime)) -> m a)
   -> m a
 publicRootPeersProvider tracer
                         toPeerAddr
@@ -311,20 +311,20 @@ publicRootPeersProvider tracer
     resourceVar <- newTVarIO rr
     action (requestPublicRootPeers resourceVar)
   where
-    processResult :: (DomainAccessPoint, ([DNS.DNSError], [(IP, DNS.TTL)]))
-                  -> m (DomainAccessPoint, [(IP, DNS.TTL)])
-    processResult (domain, (errs, result)) = do
+    processResult :: ((DomainAccessPoint, PeerAdvertise), ([DNS.DNSError], [(IP, DNS.TTL)]))
+                  -> m ((DomainAccessPoint, PeerAdvertise), [(IP, DNS.TTL)])
+    processResult ((domain, pa), (errs, result)) = do
         mapM_ (traceWith tracer . TracePublicRootFailure (dapDomain domain))
               errs
         when (not $ null result) $
             traceWith tracer $ TracePublicRootResult (dapDomain domain) result
 
-        return (domain, result)
+        return ((domain, pa), result)
 
     requestPublicRootPeers
       :: StrictTVar m (Resource m (DNSorIOError exception) resolver)
       -> Int
-      -> m (Set peerAddr, DiffTime)
+      -> m (Map peerAddr PeerAdvertise, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
         domains <- atomically readDomains
         traceWith tracer (TracePublicRootRelayAccessPoint domains)
@@ -336,26 +336,26 @@ publicRootPeersProvider tracer
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ (,) (DomainAccessPoint domain port)
+                  [ (,) (DomainAccessPoint domain port, pa)
                       <$> dnsLookupWithTTL
                             resolvConf
                             resolver
                             domain
-                  | RelayAccessDomain domain port <- domains ]
+                  | (RelayAccessDomain domain port, pa) <- Map.assocs domains ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.
             results <- withAsyncAll lookups (atomically . mapM waitSTM)
             results' <- mapM processResult results
-            let successes = [ ( toPeerAddr ip dapPortNumber
+            let successes = [ ( (toPeerAddr ip dapPortNumber, pa)
                               , ipttl)
-                            | ( DomainAccessPoint {dapPortNumber}
+                            | ( (DomainAccessPoint {dapPortNumber}, pa)
                               , ipttls) <- results'
                             , (ip, ipttl) <- ipttls
                             ]
-                !domainsIps = [toPeerAddr ip port
-                              | RelayAccessAddress ip port <- domains ]
-                !ips      = Set.fromList  (map fst successes ++ domainsIps)
+                !domainsIps = [(toPeerAddr ip port, pa)
+                              | (RelayAccessAddress ip port, pa) <- Map.assocs domains ]
+                !ips      = Map.fromList (map fst successes) `Map.union` Map.fromList domainsIps
                 !ttl      = ttlForResults (map snd successes)
             -- If all the lookups failed we'll return an empty set with a minimum
             -- TTL, and the governor will invoke its exponential backoff.

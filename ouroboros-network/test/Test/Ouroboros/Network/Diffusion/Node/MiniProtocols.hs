@@ -86,6 +86,7 @@ import           Network.TypedProtocol
 
 import qualified Pipes
 
+import qualified Ouroboros.Network.PeerSelection.PeerSharing.Type as PSTypes
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 
@@ -183,6 +184,8 @@ data AppArgs block m = AppArgs
     -- simulates too far behind the chain in a crude way.
     --
   , aaChainSyncEarlyExit  :: Bool
+  , aaOwnPeerSharing
+     :: PSTypes.PeerSharing
   }
 
 

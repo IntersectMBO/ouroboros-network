@@ -44,6 +44,12 @@ import qualified Data.Set as Set
 import           Control.Exception (assert)
 import           Control.Monad.Class.MonadTime
 
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing,
+                     combinePeerInformation)
+
 
 -------------------------------
 -- Known peer set representation
@@ -105,7 +111,36 @@ data KnownPeerInfo = KnownPeerInfo {
        -- thus it can be present for warm or cold peers.  It's purpose is to
        -- provide information to demotion policies.
        --
-       knownPeerTepid     :: !Bool
+       -- It is also used as useful information for the Peer Selection Governor
+       -- when deciding which peers to share when Peer Sharing.
+       --
+       knownPeerTepid     :: !Bool,
+
+       -- | Indicates current remote Peer Willingness information.
+       --
+       -- If a connection with this address hasn't been established we won't
+       -- have any information about this particular flag
+       --
+       -- It is used by the Peer Sharing logic to decide if we should share/ask
+       -- about/to this peer's address to others.
+       knownPeerSharing   :: !PeerSharing,
+
+       -- | Indicates current local Peer Willingness information.
+       --
+       -- If this address didn't come from a local configuration then this
+       -- value is set to 'DoAdvertise' by default.
+       --
+       -- It is used by the Peer Sharing logic to decide if we should share
+       -- about this peer's address to others.
+       knownPeerAdvertise :: !PeerAdvertise,
+
+       -- | Indicates if peer came from ledger.
+       --
+       -- It is used so we can filter out the ledger Peers from a Peer Sharing
+       -- reply, since ledger peers are not particularly what one is looking for
+       -- in a Peer Sharing reply.
+       --
+       knownLedgerPeer    :: !IsLedgerPeer
      }
   deriving (Eq, Show)
 
@@ -164,7 +199,7 @@ member peeraddr KnownPeers {allPeers} =
     peeraddr `Map.member` allPeers
 
 insert :: Ord peeraddr
-       => Set peeraddr
+       => Map peeraddr (PeerSharing, PeerAdvertise, IsLedgerPeer)
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
 insert peeraddrs
@@ -173,11 +208,12 @@ insert peeraddrs
          availableForGossip,
          availableToConnect
        } =
-    let knownPeers' = knownPeers {
+    let allPeersAddrs = Map.keysSet peeraddrs
+        knownPeers' = knownPeers {
           allPeers =
               let (<+>) = Map.unionWith mergePeerInfo in
               allPeers
-          <+> Map.fromSet newPeerInfo peeraddrs,
+          <+> Map.map newPeerInfo peeraddrs,
 
           -- The sets tracking peers ready for gossip or to connect to need to
           -- be updated with any /fresh/ peers, but any already present are
@@ -185,23 +221,35 @@ insert peeraddrs
           -- the corresponding PSQs, for which we also preserve existing info.
           availableForGossip =
               availableForGossip
-           <> Set.filter (`Map.notMember` allPeers) peeraddrs,
+           <> Set.filter (`Map.notMember` allPeers) allPeersAddrs,
 
           availableToConnect =
               availableToConnect
-           <> Set.filter (`Map.notMember` allPeers) peeraddrs
+           <> Set.filter (`Map.notMember` allPeers) allPeersAddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeerInfo _peeraddr =
+    newPeerInfo (ps, pa, lp) =
       KnownPeerInfo {
         knownPeerFailCount = 0
       , knownPeerTepid     = False
+      , knownPeerSharing   = ps
+      , knownPeerAdvertise = pa
+      , knownLedgerPeer    = lp
       }
-    mergePeerInfo old _new =
+    mergePeerInfo old new =
       KnownPeerInfo {
         knownPeerFailCount = knownPeerFailCount old
       , knownPeerTepid     = knownPeerTepid old
+      -- It might be the case we are updating a peer's particular willingness
+      -- flags or we just learned this peer comes from ledger.
+      , knownPeerSharing   = combinePeerInformation (knownPeerSharing new)
+                                                    (knownPeerAdvertise new)
+      , knownPeerAdvertise = knownPeerAdvertise new
+      -- Preserve Ledger Peer information if the peer is ledger.
+      , knownLedgerPeer    = case (knownLedgerPeer old) of
+                               IsLedgerPeer    -> IsLedgerPeer
+                               IsNotLedgerPeer -> knownLedgerPeer new
       }
 
 delete :: Ord peeraddr

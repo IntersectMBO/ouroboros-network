@@ -18,6 +18,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , accPoolStake
   , withLedgerPeers
   , UseLedgerAfter (..)
+  , IsLedgerPeer (..)
   , Socket.PortNumber
   ) where
 
@@ -47,7 +48,6 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (AccPoolStake (..), PoolStake (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), RelayAccessPoint (..))
-
 import           Text.Printf
 
 -- | Only use the ledger after the given slot number.
@@ -56,6 +56,10 @@ data UseLedgerAfter = DontUseLedger | UseLedgerAfter SlotNo deriving (Eq, Show)
 isLedgerPeersEnabled :: UseLedgerAfter -> Bool
 isLedgerPeersEnabled DontUseLedger = False
 isLedgerPeersEnabled _             = True
+
+-- | Identifies a peer as coming from ledger or not
+data IsLedgerPeer = IsLedgerPeer | IsNotLedgerPeer
+  deriving (Eq, Show)
 
 newtype NumberOfPeers = NumberOfPeers Word16 deriving Show
 
