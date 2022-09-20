@@ -278,6 +278,7 @@ test-suite test-storage
                      , generics-sop
                      , hashable
                      , mtl
+                     , nonempty-containers
                      , nothunks
                      , pretty-show
                      , QuickCheck

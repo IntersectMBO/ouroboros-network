@@ -63,6 +63,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import qualified Ouroboros.Consensus.Util.SOP as SOP
 
+import qualified Cardano.Ledger.Core
 import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
@@ -360,6 +361,8 @@ translateShelleyTables ::
      ( SL.TranslateEra     era TxOutWrapper
      , SL.TranslationError era TxOutWrapper ~ Void
      , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+     , Eq (Cardano.Ledger.Core.TxOut (SL.PreviousEra era))
+     , Eq (Cardano.Ledger.Core.TxOut era)
      )
   => SL.TranslationContext era
   -> LedgerTables (LedgerState (ShelleyBlock proto (SL.PreviousEra era))) (ApplyMapKind' mk)

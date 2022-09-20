@@ -33,8 +33,8 @@ import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (SomeHasFS))
 import           Ouroboros.Consensus.Storage.FS.API.Types
                      (MountPoint (MountPoint))
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
 
 import           Test.Util.TestBlock ()
@@ -74,8 +74,8 @@ test1 =
 
   step "read1"
   TLedgerTables
-    { lgrTbl1 = ApplyValuesMK (HD.UtxoValues t1_1)
-    , lgrTbl2 = ApplyValuesMK (HD.UtxoValues t2_1)
+    { lgrTbl1 = ApplyValuesMK (DS.Values t1_1)
+    , lgrTbl2 = ApplyValuesMK (DS.Values t2_1)
     } <- HD.bsvhRead vh1 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 True) t1_1
   Tasty.assertEqual "" (Map.singleton "1" 1) t2_1
@@ -83,8 +83,8 @@ test1 =
 
   step "read2"
   TLedgerTables
-    { lgrTbl1 = ApplyValuesMK (HD.UtxoValues t1_2)
-    , lgrTbl2 = ApplyValuesMK (HD.UtxoValues t2_2)
+    { lgrTbl1 = ApplyValuesMK (DS.Values t1_2)
+    , lgrTbl2 = ApplyValuesMK (DS.Values t2_2)
     } <- HD.bsvhRead vh2 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 False) t1_2
   Tasty.assertEqual "" (Map.singleton "1" 2) t2_2
@@ -233,18 +233,18 @@ instance  SufficientSerializationForAnyBackingStore T where
 
 simpleWrite1 :: LedgerTables T DiffMK
 simpleWrite1 = TLedgerTables
-  { lgrTbl1 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton 1 (HD.UtxoEntryDiff True HD.UedsIns)
-  , lgrTbl2 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton "1" (HD.UtxoEntryDiff 1 HD.UedsIns)
+  { lgrTbl1 = ApplyDiffMK $ DS.fromListInserts [(1, True)]
+  , lgrTbl2 = ApplyDiffMK $ DS.fromListInserts [("1", 1)]
   }
 
 simpleWrite2 :: LedgerTables T DiffMK
 simpleWrite2 = TLedgerTables
-  { lgrTbl1 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton 1 (HD.UtxoEntryDiff False HD.UedsIns)
-  , lgrTbl2 = ApplyDiffMK $ HD.UtxoDiff $ Map.singleton "1" (HD.UtxoEntryDiff 2 HD.UedsIns)
+  { lgrTbl1 = ApplyDiffMK $ DS.fromListInserts [(1, False)]
+  , lgrTbl2 = ApplyDiffMK $ DS.fromListInserts [("1", 2)]
   }
 
 simpleKeys :: LedgerTables T KeysMK
 simpleKeys = TLedgerTables
-  { lgrTbl1 = ApplyKeysMK $ HD.UtxoKeys $ Set.singleton 1
-  , lgrTbl2 = ApplyKeysMK $ HD.UtxoKeys $ Set.singleton "1"
+  { lgrTbl1 = ApplyKeysMK $ DS.Keys $ Set.singleton 1
+  , lgrTbl2 = ApplyKeysMK $ DS.Keys $ Set.singleton "1"
   }
