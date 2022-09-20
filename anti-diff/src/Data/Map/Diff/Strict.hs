@@ -103,7 +103,7 @@ deriving stock instance Eq v => Eq (UnsafeDiffHistory NESeq v)
 
 newtype DiffHistory v = MkDiffHistory (UnsafeDiffHistory Seq v)
   deriving stock (Generic, Show, Eq, Functor)
-  deriving newtype NoThunks
+  deriving newtype (NoThunks, Foldable)
 
 {-# COMPLETE NEDiffHistory #-}
 
