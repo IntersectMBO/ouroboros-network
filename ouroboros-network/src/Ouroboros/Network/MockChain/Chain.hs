@@ -40,6 +40,7 @@ module Ouroboros.Network.MockChain.Chain
   , drop
   , length
   , null
+  , takeWhile
     -- ** Update type and operations
   , ChainUpdate (..)
   , addBlock
@@ -64,7 +65,8 @@ module Ouroboros.Network.MockChain.Chain
   , prettyPrintChain
   ) where
 
-import           Prelude hiding (drop, head, length, null)
+import           Prelude hiding (drop, head, length, null, takeWhile)
+import qualified Prelude
 
 import           Codec.CBOR.Decoding (decodeListLen)
 import           Codec.CBOR.Encoding (encodeListLen)
@@ -86,6 +88,15 @@ data Chain block = Genesis | Chain block :> block
   deriving (Eq, Ord, Show, Functor)
 
 infixl 5 :>
+
+takeWhile :: (blk -> Bool) -> Chain blk -> Chain blk
+takeWhile p c = go Genesis (toOldestFirst c)
+  where
+    go acc [] = acc
+    go acc (b : bs) =
+      if p b
+      then go (acc :> b) bs
+      else acc
 
 foldChain :: (a -> b -> a) -> a -> Chain b -> a
 foldChain _blk gen Genesis  = gen
@@ -294,7 +305,7 @@ selectBlockRange c from to
   , pointOnChain to c
   =   Just
     . reverse
-    . takeWhile (\b -> blockPoint b /= from)
+    . Prelude.takeWhile (\b -> blockPoint b /= from)
     . dropWhile (\b -> blockPoint b /= to)
     . toNewestFirst
     $ c
