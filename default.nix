@@ -19,6 +19,9 @@ let
 
   coveredProject = ouroborosNetworkHaskellPackages.appendModule { coverage = true; };
 
+  haskellPackagesWithTVarCheck = recRecurseIntoAttrs
+    (selectProjectPackages ouroborosNetworkHaskellPackagesWithTVarCheck);
+
   validate-mainnet = import ./nix/validate-mainnet.nix {
     inherit pkgs;
     byron-db-converter =
@@ -63,6 +66,11 @@ let
         haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
       Shelley =
         haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
+    };
+
+    tvar-invariant-checks = recurseIntoAttrs {
+      inherit haskellPackagesWithTVarCheck;
+      tests = collectChecks' haskellPackagesWithTVarCheck;
     };
 
     shell = import ./shell.nix {

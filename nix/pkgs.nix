@@ -5,6 +5,11 @@ with pkgs; {
     inherit config pkgs lib stdenv haskell-nix buildPackages;
   };
 
+  ouroborosNetworkHaskellPackagesWithTVarCheck = import ./ouroboros-network.nix {
+    inherit config pkgs lib stdenv haskell-nix buildPackages;
+    checkTVarInvariant = true;
+  };
+
   network-docs = callPackage ./network-docs.nix { };
   consensus-docs = callPackage ./consensus-docs.nix { };
 
