@@ -79,7 +79,6 @@ import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..),
                      RelayAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (VersionDataCodec (..), noTimeLimitsHandshake,
@@ -99,6 +98,9 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -130,10 +132,13 @@ data Arguments m = Arguments
     , aDiffusionMode        :: DiffusionMode
     , aKeepAliveInterval    :: DiffTime
     , aPingPongInterval     :: DiffTime
+    , aShouldChainSyncExit  :: Block -> m Bool
+    , aChainSyncEarlyExit   :: Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
-    , aReadPublicRootPeers  :: STM m [RelayAccessPoint]
+    , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerAfter   :: STM m UseLedgerAfter
     , aProtocolIdleTimeout  :: DiffTime
     , aTimeWaitTimeout      :: DiffTime
@@ -362,6 +367,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
+      , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
       , Diff.P2P.daReadUseLedgerAfter    = aReadUseLedgerAfter na
       , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na
       , Diff.P2P.daTimeWaitTimeout       = aTimeWaitTimeout na
@@ -369,7 +375,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       , Diff.P2P.daBulkChurnInterval     = 300
       }
 
-    appArgs :: Node.AppArgs m
+    appArgs :: Node.AppArgs Block m
     appArgs = Node.AppArgs
       { Node.aaLedgerPeersConsensusInterface
                                         = iLedgerPeersConsensusInterface ni
@@ -377,6 +383,9 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       , Node.aaDiffusionMode            = aDiffusionMode na
       , Node.aaKeepAliveInterval        = aKeepAliveInterval na
       , Node.aaPingPongInterval         = aPingPongInterval na
+      , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
+      , Node.aaChainSyncEarlyExit       = aChainSyncEarlyExit na
+      , Node.aaOwnPeerSharing           = aOwnPeerSharing na
       }
 
 --- Utils

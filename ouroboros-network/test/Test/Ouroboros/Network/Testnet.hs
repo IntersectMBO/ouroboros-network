@@ -71,6 +71,10 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+                     (PeerSharing (..))
 import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
                      connectionManagerTraceMap, validTransitionMap,
                      verifyAbstractTransition, verifyAbstractTransitionOrder)
@@ -439,13 +443,16 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
     script =
       DiffusionScript (SimArgs 1 10)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
-              [RelayAccessDomain "test2" 65535]
+              (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
               (Map.fromList [("test2", [read "9022:64c9:4e9b:9281:913f:3fb4:a447:28e", read "d412:ff8f:ce57:932d:b74c:989:48af:73f4", read "0:6:0:3:0:6:0:5"])])
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
+              NoPeerSharing
               [(1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
               PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 2, targetNumberOfEstablishedPeers = 2, targetNumberOfActivePeers = 1}
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
+              Nothing
+              False
           , [JoinNetwork 1.742857142857 Nothing
             ,Reconfigure 6.33333333333 [(1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)])
                                         ,(1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)])]
@@ -454,13 +461,16 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
             ]
           )
         , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
-             [RelayAccessAddress "0:7:0:7::" 65533]
+             (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
              (Map.fromList [("test2", [read "0:7:0:7::"])])
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
+             NoPeerSharing
              []
              PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 1, targetNumberOfActivePeers = 1}
              (Script (DNSTimeout {getDNSTimeout = 0.28} :| [DNSTimeout {getDNSTimeout = 0.204},DNSTimeout {getDNSTimeout = 0.213}]))
              (Script (DNSLookupDelay {getDNSLookupDelay = 0.066} :| [DNSLookupDelay {getDNSLookupDelay = 0.102},DNSLookupDelay {getDNSLookupDelay = 0.031}]))
+             Nothing
+             False
           , [JoinNetwork 0.183783783783 Nothing
             ,Reconfigure 4.533333333333 [(1,Map.fromList [])]
             ]
@@ -856,7 +866,7 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
             16
             InitiatorAndResponderDiffusionMode
             (Just 224)
-            []
+            Map.empty
             (Map.fromList
               [ ("test2", [ read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9"
                           , read "254.167.216.215"
@@ -869,6 +879,7 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
                           ])
               ])
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
+            NoPeerSharing
             [ (2,Map.fromList [ (RelayAccessDomain "test2" 15,DoNotAdvertisePeer)
                               , (RelayAccessDomain "test3" 4,DoAdvertisePeer)])
             ]
@@ -904,6 +915,8 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.05}
                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.039}
                                                                    ]))
+            Nothing
+            False
             , [ JoinNetwork 6.710144927536 Nothing
               , Kill 7.454545454545
               , JoinNetwork 10.763157894736 (Just (TestAddress (IPAddr (read "4.138.119.62") 65527)))
@@ -1794,7 +1807,7 @@ async_demotion_network_script =
         naSeed             = 10,
         naDiffusionMode    = InitiatorAndResponderDiffusionMode,
         naMbTime           = Just 1,
-        naRelays           = [],
+        naRelays           = Map.empty,
         naDomainMap        = Map.empty,
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
@@ -1802,7 +1815,12 @@ async_demotion_network_script =
                            = Governor.PeerSelectionTargets 0 1 1 1,
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
-                           = singletonScript (DNSLookupDelay 0.2)
+                           = singletonScript (DNSLookupDelay 0.2),
+        naChainSyncExitOnBlockNo
+                           = Nothing,
+        naChainSyncEarlyExit
+                           = False,
+        naPeerSharing      = NoPeerSharing
       }
 
 
@@ -2199,7 +2217,7 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
 prop_unit_4258 :: Property
 prop_unit_4258 =
   let bearerInfo = AbsBearerInfo {abiConnectionDelay = NormalDelay, abiInboundAttenuation = NoAttenuation FastSpeed, abiOutboundAttenuation = NoAttenuation FastSpeed, abiInboundWriteFailure = Nothing, abiOutboundWriteFailure = Nothing, abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted), abiSDUSize = LargeSDU}
-      diffScript = DiffusionScript (SimArgs 1 10) [(NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224) [] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.4") 9)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.397} :| [DNSTimeout {getDNSTimeout = 0.382},DNSTimeout {getDNSTimeout = 0.321},DNSTimeout {getDNSTimeout = 0.143},DNSTimeout {getDNSTimeout = 0.256},DNSTimeout {getDNSTimeout = 0.142},DNSTimeout {getDNSTimeout = 0.341},DNSTimeout {getDNSTimeout = 0.236}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| [])),[JoinNetwork 4.166666666666 Nothing,Kill 0.3,JoinNetwork 1.517857142857 Nothing,Reconfigure 0.245238095238 [],Reconfigure 4.190476190476 []]),(NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269) [RelayAccessAddress "0.0.0.4" 9] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.8") 65531)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 4, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.281} :| [DNSTimeout {getDNSTimeout = 0.177},DNSTimeout {getDNSTimeout = 0.164},DNSTimeout {getDNSTimeout = 0.373}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.133} :| [DNSLookupDelay {getDNSLookupDelay = 0.128},DNSLookupDelay {getDNSLookupDelay = 0.049},DNSLookupDelay {getDNSLookupDelay = 0.058},DNSLookupDelay {getDNSLookupDelay = 0.042},DNSLookupDelay {getDNSLookupDelay = 0.117},DNSLookupDelay {getDNSLookupDelay = 0.064}])),[JoinNetwork 3.384615384615 Nothing,Reconfigure 3.583333333333 [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],Kill 15.55555555555,JoinNetwork 30.53333333333 Nothing,Kill 71.11111111111])]
+      diffScript = DiffusionScript (SimArgs 1 10) [(NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224) Map.empty (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.4") 9)) NoPeerSharing [(1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.397} :| [DNSTimeout {getDNSTimeout = 0.382},DNSTimeout {getDNSTimeout = 0.321},DNSTimeout {getDNSTimeout = 0.143},DNSTimeout {getDNSTimeout = 0.256},DNSTimeout {getDNSTimeout = 0.142},DNSTimeout {getDNSTimeout = 0.341},DNSTimeout {getDNSTimeout = 0.236}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| [])) Nothing False,[JoinNetwork 4.166666666666 Nothing,Kill 0.3,JoinNetwork 1.517857142857 Nothing,Reconfigure 0.245238095238 [],Reconfigure 4.190476190476 []]),(NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269) (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoNotAdvertisePeer)]) (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.8") 65531)) NoPeerSharing [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 4, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.281} :| [DNSTimeout {getDNSTimeout = 0.177},DNSTimeout {getDNSTimeout = 0.164},DNSTimeout {getDNSTimeout = 0.373}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.133} :| [DNSLookupDelay {getDNSLookupDelay = 0.128},DNSLookupDelay {getDNSLookupDelay = 0.049},DNSLookupDelay {getDNSLookupDelay = 0.058},DNSLookupDelay {getDNSLookupDelay = 0.042},DNSLookupDelay {getDNSLookupDelay = 0.117},DNSLookupDelay {getDNSLookupDelay = 0.064}])) Nothing False,[JoinNetwork 3.384615384615 Nothing,Reconfigure 3.583333333333 [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],Kill 15.55555555555,JoinNetwork 30.53333333333 Nothing,Kill 71.11111111111])]
    in prop_diffusion_cm_valid_transition_order bearerInfo diffScript
 
 -- | A variant of ouroboros-network-framework

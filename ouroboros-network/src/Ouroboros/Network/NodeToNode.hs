@@ -126,9 +126,10 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (PeerSelectionTargets (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)

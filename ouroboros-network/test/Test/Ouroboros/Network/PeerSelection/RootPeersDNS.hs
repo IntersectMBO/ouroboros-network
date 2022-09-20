@@ -16,7 +16,6 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   ) where
 
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 
 import           Control.Monad (forever, replicateM_)
 import           Data.ByteString.Char8 (pack)
@@ -50,6 +49,8 @@ import qualified Control.Monad.Class.MonadTimer as MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
+import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+                     (PeerAdvertise (..))
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
                      Script (Script), initScript', scriptHead, singletonScript,
                      stepScript, stepScript')
@@ -88,7 +89,7 @@ tests =
 data MockRoots = MockRoots {
     mockLocalRootPeers        :: [(Int, Map RelayAccessPoint PeerAdvertise)]
   , mockLocalRootPeersDNSMap  :: Script (Map Domain [(IP, TTL)])
-  , mockPublicRootPeers       :: [RelayAccessPoint]
+  , mockPublicRootPeers       :: Map RelayAccessPoint PeerAdvertise
   , mockPublicRootPeersDNSMap :: Script (Map Domain [(IP, TTL)])
   }
   deriving Show
@@ -124,11 +125,15 @@ genMockRoots = sized $ \relaysNumber -> do
     -- Generate PublicRootPeers
     --
     publicRootRelays <- vectorOf relaysNumber arbitrary
+    publicRootPeersAdvertise <- vectorOf relaysNumber arbitrary
 
-    let publicRootPeers = tagRelays publicRootRelays
+    let publicRootPeers =
+          Map.fromList (zip (tagRelays publicRootRelays)
+                            publicRootPeersAdvertise)
 
         publicRootDomains = [ domain
-                            | RelayAccessDomain domain _ <- publicRootPeers ]
+                            | (RelayAccessDomain domain _, _)
+                                <- Map.assocs publicRootPeers ]
 
     publicRootPeersDNSMap <- Script . NonEmpty.fromList
                           <$> listOf1 (genDomainLookupTable ipsPerDomain publicRootDomains)
@@ -191,9 +196,10 @@ instance Arbitrary MockRoots where
       [ roots { mockPublicRootPeers       = prp
               , mockPublicRootPeersDNSMap = prpDNSMap
               }
-      | prp <- shrinkList (const []) mockPublicRootPeers,
+      | prp <- shrink mockPublicRootPeers,
         let prpDomains = Set.fromList [ domain
-                                      | RelayAccessDomain domain _ <- prp ]
+                                      | (RelayAccessDomain domain _, _)
+                                          <- Map.assocs prp ]
             prpDNSMap  = (`Map.restrictKeys` prpDomains)
                        <$> mockPublicRootPeersDNSMap
       ]
@@ -201,7 +207,7 @@ instance Arbitrary MockRoots where
 -- | Used for debugging in GHCI
 --
 simpleMockRoots :: MockRoots
-simpleMockRoots = MockRoots localRootPeers dnsMap [] (singletonScript Map.empty)
+simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map.empty)
   where
     localRootPeers =
       [ ( 2
@@ -364,7 +370,7 @@ mockPublicRootPeersProvider :: forall m a.
                             -> MockRoots
                             -> Script DNSTimeout
                             -> Script DNSLookupDelay
-                            -> ((Int -> m (Set SockAddr, DiffTime)) -> m a)
+                            -> ((Int -> m (Map SockAddr PeerAdvertise, DiffTime)) -> m a)
                             -> m ()
 mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                             dnsTimeoutScript dnsLookupDelayScript action = do
@@ -414,7 +420,8 @@ mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                                                         dnsTimeoutScriptVar
                                                         dnsLookupDelayScriptVar)
                                [ domain
-                               | RelayDomainAccessPoint domain <- publicRootPeers ]
+                               | (RelayDomainAccessPoint domain, _)
+                                    <- Map.assocs publicRootPeers ]
 
 --
 -- Utils for properties

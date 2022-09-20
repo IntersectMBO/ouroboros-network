@@ -85,6 +85,7 @@ import           Network.TypedProtocol
 
 import qualified Pipes
 
+import qualified Ouroboros.Network.PeerSelection.PeerSharing.Type as PSTypes
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 
@@ -161,7 +162,7 @@ data LimitsAndTimeouts block = LimitsAndTimeouts
 
 -- | Arguments for protocol handlers required by 'nodeApplications'.
 --
-data AppArgs m = AppArgs
+data AppArgs block m = AppArgs
   { aaLedgerPeersConsensusInterface
      :: LedgerPeersConsensusInterface m
   , aaKeepAliveStdGen
@@ -172,6 +173,18 @@ data AppArgs m = AppArgs
      :: DiffTime
   , aaPingPongInterval
      :: DiffTime
+
+    -- | if returns true, `chain-sync` client will exit as soon as it will see
+    -- that block.
+    --
+  , aaShouldChainSyncExit :: block -> m Bool
+
+    -- | if true, `chain-sync` will never go pass the query tip phase.  This
+    -- simulates too far behind the chain in a crude way.
+    --
+  , aaChainSyncEarlyExit  :: Bool
+  , aaOwnPeerSharing
+     :: PSTypes.PeerSharing
   }
 
 
@@ -196,7 +209,7 @@ applications :: forall block header m.
              -> NodeKernel header block m
              -> Codecs block m
              -> LimitsAndTimeouts block
-             -> AppArgs m
+             -> AppArgs block m
              -> m (Diff.Applications NtNAddr NtNVersion NtNVersionData
                                      NtCAddr NtCVersion NtCVersionData
                                      m ())

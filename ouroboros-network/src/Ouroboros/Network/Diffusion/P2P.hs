@@ -101,6 +101,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), withPeerStateActions)
@@ -213,7 +214,11 @@ data ArgumentsExtra m = ArgumentsExtra {
       daPeerSelectionTargets :: PeerSelectionTargets
 
     , daReadLocalRootPeers  :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
-    , daReadPublicRootPeers :: STM m [RelayAccessPoint]
+    , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
+    -- | Peer's own PeerSharing value.
+    --
+    -- This value comes from the node's configuration file and is static.
+    , daOwnPeerSharing      :: PeerSharing
     , daReadUseLedgerAfter  :: STM m UseLedgerAfter
 
       -- | Timeout which starts once all responder protocols are idle. If the
@@ -646,6 +651,7 @@ runM Interfaces
        { daPeerSelectionTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
+       , daOwnPeerSharing
        , daReadUseLedgerAfter
        , daProtocolIdleTimeout
        , daTimeWaitTimeout
@@ -907,6 +913,7 @@ runM Interfaces
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
+                      daOwnPeerSharing
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerSelectionActionsThread
@@ -1032,6 +1039,7 @@ runM Interfaces
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
+                      daOwnPeerSharing
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerRootProviderThread
