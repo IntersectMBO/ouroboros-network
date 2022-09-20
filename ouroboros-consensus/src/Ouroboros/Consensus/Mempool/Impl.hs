@@ -30,7 +30,6 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import qualified Control.Exception as Exn
-import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)
 import           Control.Monad.Except
 import           Data.Bifunctor (Bifunctor (second), bimap)
 import qualified Data.List.NonEmpty as NE
@@ -122,7 +121,7 @@ mkMempool mpEnv = Mempool
                                $ pureRemoveTxs cfg capacityOverride txids is (ledgerState ls)
           traceWith trcr mTrace
     , syncWithLedger = implSyncWithLedger mpEnv
-    , getSnapshot    = implSnapshotFromIS <$> readTMVar istate
+    , getSnapshot    = implSnapshotFromIS <$> readTVar istate
     , getLedgerAndSnapshotFor = \p slot -> do
         o <- getStatePair mpEnv (StaticRight p) [] []
         let StaticRight mbPair = o
@@ -135,9 +134,9 @@ mkMempool mpEnv = Mempool
                     cfg
                     capacityOverride
                     (ForgeInKnownSlot slot $ ledgerState ls')
-            atomically $ putTMVar istate is
+            atomically $ writeTVar istate is
             pure $ Just (forgetLedgerTables ls', ticked, snapshot)
-    , getCapacity    = isCapacity <$> readTMVar istate
+    , getCapacity    = isCapacity <$> readTVar istate
     , getTxSize      = txSize
     }
   where
@@ -192,14 +191,14 @@ chainDBLedgerInterface chainDB = LedgerInterface
 data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger           :: LedgerInterface m blk
     , mpEnvLedgerCfg        :: LedgerConfig blk
-    , mpEnvStateVar         :: StrictTMVar m (InternalState blk)
+    , mpEnvStateVar         :: StrictTVar m (InternalState blk)
     , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
     , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
     , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
     }
 
 initMempoolEnv :: ( IOLike m
---                  , NoThunks (GenTxId blk)   -- TODO how to use this with the TMVar?
+                  , NoThunks (GenTxId blk)
                   , LedgerSupportsMempool blk
                   , ValidateEnvelope blk
                   )
@@ -212,7 +211,7 @@ initMempoolEnv :: ( IOLike m
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ ledgerState <$> getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg $ ForgeInUnknownSlot $ unstowLedgerTables st
-    isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
+    isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
@@ -312,7 +311,7 @@ implTryAddTxs mpEnv wti =
                 void $ atomically $ runSyncWithLedger istate p
                 pure (reverse acc, tx:txs)
               TryAddTxs mbIs2 result ev -> do
-                atomically $ putTMVar istate $ fromMaybe is1 mbIs2
+                atomically $ writeTVar istate $ fromMaybe is1 mbIs2
                 traceWith trcr ev
                 go (result:acc) txs
 
@@ -395,7 +394,7 @@ getStatePair MempoolEnv { mpEnvStateVar, mpEnvLedger } seP removals txs =
     $ getLedgerStateForTxs mpEnvLedger seP
     $ \ls -> atomically $ do
         let tip = getTip ls
-        is0 <- takeTMVar mpEnvStateVar
+        is0 <- readTVar mpEnvStateVar
         let nothingToDo =
                  isTip is0 == castHash (pointHash tip)
               && null removals

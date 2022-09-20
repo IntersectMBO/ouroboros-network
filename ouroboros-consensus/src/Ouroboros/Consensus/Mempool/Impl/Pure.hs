@@ -119,11 +119,11 @@ data RemoveTxs blk =
 -- removing the transactions given to 'pureRemoveTxs' from the mempool.
 runRemoveTxs
   :: forall m blk. IOLike m
-  => StrictTMVar m (InternalState blk)
+  => StrictTVar m (InternalState blk)
   -> RemoveTxs blk
   -> STM m (TraceEventMempool blk)
 runRemoveTxs stateVar (WriteRemoveTxs is t) = do
-    putTMVar stateVar is
+    writeTVar stateVar is
     return t
 
 -- | Craft a 'RemoveTxs' that manually removes the given transactions from the
@@ -186,7 +186,7 @@ data SyncWithLedger blk =
 -- point changes.
 runSyncWithLedger
   :: forall m blk. IOLike m
-  => StrictTMVar m (InternalState blk)
+  => StrictTVar m (InternalState blk)
   -> SyncWithLedger blk
   -> STM m
        ( InternalState blk
@@ -194,7 +194,7 @@ runSyncWithLedger
        , MempoolSnapshot blk TicketNo
        )
 runSyncWithLedger stateVar (NewSyncedState is msp mTrace) = do
-    putTMVar stateVar is
+    writeTVar stateVar is
     return (is, mTrace, msp)
 
 -- | Create a 'SyncWithLedger' value representing the values that will need to
