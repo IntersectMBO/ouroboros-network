@@ -123,9 +123,10 @@ logger msgQueue json = go True
 
 supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
 supportedNodeToNodeVersions magic =
-  [ NodeToNodeVersionV7 magic False
-  , NodeToNodeVersionV8 magic False
-  , NodeToNodeVersionV9 magic False
+  [ NodeToNodeVersionV7  magic False
+  , NodeToNodeVersionV8  magic False
+  , NodeToNodeVersionV9  magic False
+  , NodeToNodeVersionV10 magic False
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -134,6 +135,8 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV10 magic
   , NodeToClientVersionV11 magic
   , NodeToClientVersionV12 magic
+  , NodeToClientVersionV13 magic
+  , NodeToClientVersionV14 magic
   ]
 
 main :: IO ()
