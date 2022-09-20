@@ -78,7 +78,7 @@ import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      addSlots)
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.RedundantConstraints
@@ -669,7 +669,7 @@ instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c)
       byron = InjectLedgerTables $ \NoByronLedgerTables -> polyEmptyLedgerTables
 
       shelley ::
-           forall era proto. SL.Crypto era ~ c
+           forall era proto. (SL.Crypto era ~ c, Eq (Core.TxOut era))
         => Index (ShelleyBasedEras c) era
         -> InjectLedgerTables (CardanoEras c) (ShelleyBlock proto era)
       shelley idx =
@@ -882,8 +882,8 @@ translateLedgerStateShelleyToAllegraWrapper =
                   -- differences, we will have to revisit this.
                   avvmsAsDeletions = ShelleyLedgerTables
                                    . ApplyDiffMK
-                                   . HD.UtxoDiff
-                                   . Map.map (  (`HD.UtxoEntryDiff` HD.UedsDel)
+                                   . DS.Diff
+                                   . Map.map (  DS.singletonDelete
                                               . unTxOutWrapper
                                               . SL.translateEra' ()
                                               . TxOutWrapper
@@ -898,7 +898,7 @@ translateLedgerStateShelleyToAllegraWrapper =
                               . withLedgerTables ls
                               . ShelleyLedgerTables
                               . ApplyValuesMK
-                              . HD.UtxoValues
+                              . DS.Values
                               $ avvms
 
                   resultingState = unFlip . unComp
@@ -909,11 +909,8 @@ translateLedgerStateShelleyToAllegraWrapper =
               in resultingState `withLedgerTables` avvmsAsDeletions
 
         , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
-             ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
-                                                    . HD.UtxoDiff
-                                                    . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff (SL.translateEra' () x) y)
-                                                    $ vals
+            \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
+             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff (SL.translateEra' ()) diffMK
                                  }
         }
 
@@ -955,11 +952,8 @@ translateLedgerStateAllegraToMaryWrapper =
               . Comp
               . Flip
         , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
-             ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
-                                                    . HD.UtxoDiff
-                                                    . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff (SL.translateEra' () x) y)
-                                                    $ vals
+            \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
+             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff (SL.translateEra' ()) diffMK
                                  }
         }
 
@@ -1005,11 +999,8 @@ translateLedgerStateMaryToAlonzoWrapper =
               . Comp
               . Flip
         , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
-             ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
-                                                    . HD.UtxoDiff
-                                                    . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff (Alonzo.translateTxOut x) y)
-                                                    $ vals
+            \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
+             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff Alonzo.translateTxOut diffMK
                                  }
         }
 
@@ -1061,11 +1052,8 @@ translateLedgerStateAlonzoToBabbageWrapper =
               . Flip
               . transPraosLS
         , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } ->
-             ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK
-                                                    . HD.UtxoDiff
-                                                    . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff (Babbage.translateTxOut x) y)
-                                                    $ vals
+            \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
+             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff Babbage.translateTxOut diffMK
                                  }
         }
   where

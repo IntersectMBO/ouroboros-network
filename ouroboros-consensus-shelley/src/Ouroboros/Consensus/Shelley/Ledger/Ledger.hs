@@ -84,7 +84,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
@@ -384,7 +384,7 @@ projectUtxoSL ::
   -> ApplyMapKind ValuesMK (SL.TxIn (EraCrypto era)) (Core.TxOut era)
 projectUtxoSL =
       ApplyValuesMK
-    . HD.UtxoValues
+    . DS.Values
     . SL.unUTxO
     . SL._utxo
     . SL.lsUTxOState
@@ -395,7 +395,7 @@ withUtxoSL ::
      SL.NewEpochState era
   -> ApplyMapKind ValuesMK (SL.TxIn (EraCrypto era)) (Core.TxOut era)
   -> SL.NewEpochState era
-withUtxoSL nes (ApplyValuesMK (HD.UtxoValues m)) =
+withUtxoSL nes (ApplyValuesMK (DS.Values m)) =
     nes {
         SL.nesEs = es {
             SL.esLState = us {
@@ -554,7 +554,7 @@ instance ShelleyCompatible proto era
   getBlockKeySets =
         ShelleyLedgerTables
       . ApplyKeysMK
-      . HD.UtxoKeys
+      . DS.Keys
       . Core.neededTxInsForBlock
       . shelleyBlockRaw
 
