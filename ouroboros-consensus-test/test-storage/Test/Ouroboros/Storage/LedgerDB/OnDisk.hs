@@ -57,6 +57,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import qualified System.Directory as Dir
 import qualified System.IO.Temp as Temp
+import           System.Info (os)
 import           System.Random (getStdRandom, randomR)
 
 import qualified Test.QuickCheck as QC
@@ -102,11 +103,14 @@ import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
 tests :: TestTree
 tests = askOption $ \showTrace -> testGroup "OnDisk"
-  [ TTT.testPropertyTraceable' "LedgerSimple-InMem" $
-      prop_sequential 100000 (inMemDbEnv showTrace) uniform
-  , TTT.testPropertyTraceable' "LedgerSimple-LMDB" $
-      prop_sequential 2000 (lmdbDbEnv showTrace testLMDBLimits) lmdbCustom
-  ]
+  ([ TTT.testPropertyTraceable' "LedgerSimple-InMem" $
+     prop_sequential 100000 (inMemDbEnv showTrace) uniform
+   ] <>
+   [ TTT.testPropertyTraceable' "LedgerSimple-LMDB" $
+     prop_sequential 2000 (lmdbDbEnv showTrace testLMDBLimits) lmdbCustom
+   | os /= "mingw32"  -- FIXME: Should re-enable at some point, see #4022
+   ]
+  )
   where
     uniform = CmdDistribution
         { freqCurrent = 1
