@@ -78,7 +78,7 @@ jobs:
         echo 'TMPDIR=${{ runner.temp }}'  >> $GITHUB_ENV
         echo 'TMP=${{ runner.temp }}'     >> $GITHUB_ENV
 
-    - uses: actions/cache@v2
+    - uses: actions/cache@v3
       name: Cache cabal store
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
