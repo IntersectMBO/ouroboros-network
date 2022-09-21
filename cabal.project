@@ -200,7 +200,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: f3548c2bc620c8df4bc6e28830544f813ef533dc
+  tag: a6361f3dbe017f9b79c2d9556984fc5cf637a4e4
   --sha256: 04h8n0m93rgr8xcynypjh6mc7kmb450c17cfvpyzpa36yld599fy
   subdir:
     cardano-prelude
@@ -209,7 +209,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 631cb6cf1fa01ab346233b610a38b3b4cba6e6ab
+  tag: 83718afad02fb4559086753afe4eb9d308137d19
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     base-deriving-via
@@ -218,6 +218,7 @@ source-repository-package
     cardano-crypto-class
     cardano-crypto-praos
     cardano-crypto-tests
+    heapwords
     measures
     orphans-deriving-via
     slotting
@@ -226,7 +227,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: f49879a79098d9372d63baa13b94a941a56eda34
+  tag: 65ba6245fa0020d7aa0416c72aaed550c37e98e4
   --sha256: 0i9x66yqkrvx2w79dy6lzlya82yxc8567rgjj828vc2d46d6nvx6
   subdir:
     eras/alonzo/impl
@@ -256,7 +257,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: f680ac6979e069fcc013e4389ee607ff5fa6672f
+  tag: 3ba4f5cf18887148abac3e46cc2ff7bb4e904995
   --sha256: 180jq8hd0jlg48ya7b5yw3bnd2d5czy0b1agy9ng3mgnzpyq747i
   subdir:
     plutus-ledger-api
@@ -275,7 +276,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-crypto
-  tag: f73079303f663e028288f9f4a9e08bcca39a923e
+  tag: 2547ad1e80aeabca2899951601079408becbc92c
   --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
 
 -- Drops an instance breaking the Plutus code. Should be released to Hackage
