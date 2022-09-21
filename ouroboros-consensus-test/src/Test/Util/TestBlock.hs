@@ -350,6 +350,7 @@ class ( Typeable ptype
       , TickedTableStuff     (LedgerState (TestBlockWith ptype))
       , StowableLedgerTables (LedgerState (TestBlockWith ptype))
       , ShowLedgerState      (LedgerState (TestBlockWith ptype))
+      , SufficientSerializationForAnyBackingStore (LedgerState (TestBlockWith ptype))
 
       , NoThunks (LedgerTables (LedgerState (TestBlockWith ptype)) SeqDiffMK)
       , NoThunks (LedgerTables (LedgerState (TestBlockWith ptype)) ValuesMK)
@@ -895,8 +896,8 @@ instance DecodeDisk (TestBlockWith ptype) (AnnTip (TestBlockWith ptype))
 
 instance ReconstructNestedCtxt Header (TestBlockWith ptype)
 
-instance PayloadSemantics ptype => EncodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype))
-instance PayloadSemantics ptype => DecodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype))
+instance PayloadSemantics ptype => EncodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype) EmptyMK)
+instance PayloadSemantics ptype => DecodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype) EmptyMK)
 
 instance Serialise ptype => EncodeDiskDep (NestedCtxt Header) (TestBlockWith ptype)
 instance Serialise ptype => DecodeDiskDep (NestedCtxt Header) (TestBlockWith ptype)

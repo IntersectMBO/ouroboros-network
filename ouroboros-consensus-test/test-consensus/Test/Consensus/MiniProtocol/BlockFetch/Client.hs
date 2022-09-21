@@ -78,6 +78,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (DefaultSnapshotInterval),
                      defaultDiskPolicy)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Consensus.Util.IOLike
@@ -271,6 +272,7 @@ runBlockFetchTest BlockFetchClientTestSetup{..} = withRegistry \registry -> do
               -- not relevant for this test
               cdbGcDelay                = 1
               cdbGcInterval             = 1
+              cdbBackingStoreSelector   = LedgerDB.InMemoryBackingStore
           pure ChainDbArgs {..}
         (_, (chainDB, ChainDBImpl.Internal{intAddBlockRunner})) <-
           allocate
