@@ -46,8 +46,8 @@ type HardForkLedgerView = HardForkLedgerView_ WrapLedgerView
 -------------------------------------------------------------------------------}
 
 data instance Ticked (HardForkLedgerView_ f xs) = TickedHardForkLedgerView {
-      tickedHardForkLedgerViewTransition :: TransitionInfo
-    , tickedHardForkLedgerViewPerEra     :: HardForkState (Ticked :.: f) xs
+      tickedHardForkLedgerViewTransition :: !TransitionInfo
+    , tickedHardForkLedgerViewPerEra     :: !(HardForkState (Ticked :.: f) xs)
     }
 
 {-------------------------------------------------------------------------------
