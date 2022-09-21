@@ -128,8 +128,8 @@ import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
-import           Ouroboros.Consensus.Storage.Serialisation
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as InMemory
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
