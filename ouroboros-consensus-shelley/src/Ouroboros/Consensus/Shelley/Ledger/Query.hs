@@ -213,6 +213,7 @@ data instance BlockQuery (ShelleyBlock proto era) :: FootprintL -> Type -> Type 
   GetPoolState
     :: Maybe (Set (SL.KeyHash 'SL.StakePool (EraCrypto era)))
     -> BlockQuery (ShelleyBlock proto era)
+                  SmallL
                   (SL.PState (EraCrypto era))
 
   GetStakeSnapshots
@@ -488,6 +489,13 @@ instance EqQuery (BlockQuery (ShelleyBlock proto era)) where
      = Just Refl
    eqQuery GetRewardInfoPools _
      = Nothing
+   eqQuery (GetPoolState s) (GetPoolState s')
+     | s == s'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetPoolState _) _
+     = Nothing
 
 
 instance SameDepIndex (BlockQuery (ShelleyBlock proto era) fp) where
@@ -654,6 +662,7 @@ instance (ShelleyCompatible proto era, EqQuery (BlockQuery (ShelleyBlock proto e
       GetStakePools                              -> SmallQ
       GetStakePoolParams {}                      -> SmallQ
       GetRewardInfoPools {}                      -> SmallQ
+      GetPoolState {}                            -> SmallQ
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) fp result -> ShelleyNodeToClientVersion -> Bool
