@@ -1,12 +1,18 @@
 # This file is used by nix-shell.
 # It just takes the shell attribute from default.nix.
 { config ? { }, sourcesOverride ? { }, withHoogle ? false
-, pkgs ? import ./nix { inherit config sourcesOverride; } }:
+, pkgs ? import ./nix { inherit config sourcesOverride; }
+, checkTVarInvariant ? false }:
 with pkgs;
 let
+  hsPkgs =
+    if checkTVarInvariant
+    then ouroborosNetworkHaskellPackagesWithTVarCheck
+    else ouroborosNetworkHaskellPackages;
+
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
-  shell = ouroborosNetworkHaskellPackages.shellFor {
+  shell = hsPkgs.shellFor {
     name = "cabal-dev-shell";
 
     packages = ps:
