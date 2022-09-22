@@ -12,7 +12,8 @@
 -- > import           Ouroboros.Consensus.Mempool.TxSeq (TxSeq (..))
 -- > import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 module Ouroboros.Consensus.Mempool.TxSeq (
-    TicketNo (..)
+    MempoolSize (..)
+  , TicketNo (..)
   , TxSeq (Empty, (:>), (:<))
   , TxTicket (..)
   , fromList
@@ -30,13 +31,30 @@ module Ouroboros.Consensus.Mempool.TxSeq (
 import           Data.FingerTree.Strict (StrictFingerTree)
 import qualified Data.FingerTree.Strict as FingerTree
 import qualified Data.Foldable as Foldable
-import           Data.Word (Word64)
+import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
-import           Ouroboros.Consensus.Mempool.API (MempoolSize (..))
+{-------------------------------------------------------------------------------
+  Size of the mempool
+-------------------------------------------------------------------------------}
+
+-- | The size of a mempool.
+data MempoolSize = MempoolSize
+  { msNumTxs   :: !Word32
+    -- ^ The number of transactions in the mempool.
+  , msNumBytes :: !Word32
+    -- ^ The summed byte size of all the transactions in the mempool.
+  } deriving (Eq, Show)
+
+instance Semigroup MempoolSize where
+  MempoolSize xt xb <> MempoolSize yt yb = MempoolSize (xt + yt) (xb + yb)
+
+instance Monoid MempoolSize where
+  mempty = MempoolSize { msNumTxs = 0, msNumBytes = 0 }
+  mappend = (<>)
 
 {-------------------------------------------------------------------------------
   Mempool transaction sequence as a finger tree
