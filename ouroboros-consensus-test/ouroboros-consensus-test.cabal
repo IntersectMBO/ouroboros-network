@@ -52,7 +52,10 @@ library
                        Test.Util.MockChain
                        Test.Util.Nightly
                        Test.Util.Orphans.Arbitrary
+                       Test.Util.Orphans.DiffSeq.Arbitrary
                        Test.Util.Orphans.IOLike
+                       Test.Util.Orphans.Isomorphism
+                       Test.Util.Orphans.NFData
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
                        Test.Util.Orphans.Slotting.Arbitrary
@@ -115,6 +118,7 @@ library
                      , utf8-string
                      , tagged
 
+                     , anti-diff
                      , io-classes
                      , io-sim
                      , ouroboros-network
@@ -230,6 +234,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.DiffSeq
                        Test.Ouroboros.Storage.LedgerDB.HD.LMDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk
@@ -273,6 +278,7 @@ test-suite test-storage
                      , tree-diff
                      , vector
 
+                     , semigroupoid
                      , io-classes
                      , io-sim
                      , ouroboros-network
@@ -321,3 +327,40 @@ test-suite test-infra
                        -Wmissing-export-lists
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+
+benchmark bench-storage
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      bench-storage
+  main-is:             Main.hs
+  other-modules:
+                       Bench.Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
+
+  build-depends:       base
+                     , bytestring
+                     , containers
+                     , deepseq
+                     , mtl
+                     , QuickCheck
+                     , QuickCheck-GenT
+                     , strict-containers
+                     , tasty-bench <= 0.3.1
+                     , tasty-quickcheck
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-test
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts
+                       -rtsopts
+                       -- https://hackage.haskell.org/package/tasty-bench-0.3.1
+                       -- advises setting this RTS option.
+                       "-with-rtsopts=-A32m"
