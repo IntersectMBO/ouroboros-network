@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      UtxoValues (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq (..),
                      Element (..), InternalMeasure (..), Length (..),
-                     RootMeasure (..), SlotNo (..))
+                     RootMeasure (..), SlotNoLB (..), SlotNoUB (..))
 
 {------------------------------------------------------------------------------
   StrictFingerTree
@@ -69,7 +69,8 @@ deriving newtype instance NFData k => NFData (Keys k v)
 deriving newtype instance (NFData k, NFData v) => NFData (Values k v)
 
 deriving newtype instance NFData Length
-deriving newtype instance NFData SlotNo
+deriving newtype instance NFData SlotNoUB
+deriving newtype instance NFData SlotNoLB
 
 deriving anyclass instance (NFData k, NFData v) => NFData (RootMeasure k v)
 deriving anyclass instance (NFData k, NFData v) => NFData (InternalMeasure k v)
