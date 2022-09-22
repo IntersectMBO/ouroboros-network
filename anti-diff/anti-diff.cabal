@@ -20,7 +20,6 @@ library
 
   exposed-modules:     Data.FingerTree.RootMeasured.Strict
                        Data.Map.Diff.Strict
-                       Data.Map.Diff.Strict.Internal
 
   other-extensions:    BangPatterns
                        ConstraintKinds
