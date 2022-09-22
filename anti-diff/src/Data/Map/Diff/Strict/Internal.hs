@@ -1,43 +1,63 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveFunctor         #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DerivingStrategies    #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module Data.Map.Diff.Strict.Internal (
     Diff (..)
   , DiffEntry (..)
-  , DiffHistory (..)
+  , DiffHistory (.., DiffHistory)
+  , NEDiffHistory (.., NEDiffHistory)
+  , UnsafeDiffHistory (..)
+  , unDiffHistory
+  , unNEDiffHistory
+    -- * Conversions between empty and non-empty diff histories
+  , nonEmptyDiffHistory
+  , toDiffHistory
+  , unsafeFromDiffHistory
     -- * Construction
   , diff
   , fromList
   , fromListDeletes
+  , fromListEntries
   , fromListInserts
-  , fromSeq
+  , singleton
   , singletonDelete
   , singletonInsert
     -- * Values and keys
   , Keys (..)
   , Values (..)
+  , castKeys
   , diffKeys
   , keysFromList
   , restrictValues
   , valuesFromList
+  , valuesKeys
     -- * Forwarding keys and values
+  , Act (..)
   , forwardValues
   , forwardValuesAndKeys
-    -- * Utilities
-  , isNonEmptyHistory
+  , traverseActs_
+    -- * Folds over actions
+  , foldMapAct
+  , unsafeFoldMapDiffEntry
   ) where
 
 import           Prelude hiding (length, splitAt)
 
 import           Data.Bifunctor
+import           Data.Foldable (toList)
 import           Data.Group
 import qualified Data.Map.Merge.Strict as Merge
 import           Data.Map.Strict (Map)
@@ -45,11 +65,13 @@ import qualified Data.Map.Strict as Map
 import           Data.Semigroupoid
 import           Data.Sequence (Seq (..))
 import qualified Data.Sequence as Seq
+import           Data.Sequence.NonEmpty (NESeq (..))
+import qualified Data.Sequence.NonEmpty as NESeq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-import           NoThunks.Class (NoThunks)
+import           NoThunks.Class (NoThunks (..), noThunksInValues)
 
 {------------------------------------------------------------------------------
   General-purposes diffs for key-value stores
@@ -58,9 +80,9 @@ import           NoThunks.Class (NoThunks)
 -- | A diff for key-value stores.
 --
 -- INVARIANT: A key @k@ is present in the @'Map'@, iff the corresponding
--- @'DiffHistory'@ is non-empty. This prevents the @'Map'@ from getting bloated
--- with empty diff histories.
-newtype Diff k v = Diff (Map k (DiffHistory v))
+-- @'DiffHistory'@ is non-empty. This prevents the @'Map'@ from getting bloated with
+-- empty diff histories.
+newtype Diff k v = Diff (Map k (NEDiffHistory v))
   deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
 
@@ -69,34 +91,94 @@ newtype Diff k v = Diff (Map k (DiffHistory v))
 -- A history has an implicit sense of ordering according to time: from left to
 -- right. This means that the left-most element in the history is the /earliest/
 -- change, while the right-most element in the history is the /latest/ change.
-newtype DiffHistory v = DiffHistory (Seq (DiffEntry v))
+newtype UnsafeDiffHistory t v = UnsafeDiffHistory (t (DiffEntry v))
+  deriving stock (Generic, Functor, Foldable)
+
+deriving stock instance Show v => Show (UnsafeDiffHistory Seq v)
+deriving stock instance Show v => Show (UnsafeDiffHistory NESeq v)
+deriving stock instance Eq v => Eq (UnsafeDiffHistory Seq v)
+deriving stock instance Eq v => Eq (UnsafeDiffHistory NESeq v)
+
+{-# COMPLETE DiffHistory #-}
+
+newtype DiffHistory v = MkDiffHistory (UnsafeDiffHistory Seq v)
   deriving stock (Generic, Show, Eq, Functor)
-  deriving anyclass (NoThunks)
+  deriving newtype NoThunks
+
+{-# COMPLETE NEDiffHistory #-}
+
+-- | A non-empty diff history.
+newtype NEDiffHistory v = MkNEDiffHistory (UnsafeDiffHistory NESeq v)
+  deriving stock (Generic, Show, Eq, Functor)
+  deriving newtype (NoThunks, Foldable)
+
+pattern DiffHistory :: Seq (DiffEntry v) -> DiffHistory v
+pattern DiffHistory { unDiffHistory } =
+  MkDiffHistory (UnsafeDiffHistory unDiffHistory)
+
+pattern NEDiffHistory :: NESeq (DiffEntry v) -> NEDiffHistory v
+pattern NEDiffHistory { unNEDiffHistory } =
+  MkNEDiffHistory (UnsafeDiffHistory unNEDiffHistory)
+
+-- | Instance for @'Seq'@ checks elements only
+--
+-- The internal fingertree in @'Seq'@ might have thunks, which is essential for
+-- its asymptotic complexity.
+instance (NoThunks v, Foldable t) => NoThunks (UnsafeDiffHistory t v) where
+  showTypeOf _ = "DiffHistory"
+  wNoThunks ctxt = noThunksInValues ctxt . toList
 
 -- | A change to a value in a key-value store.
 --
 -- Note: The @Anti-@ constructors are only used to cancel out entries in a diff
 -- history. These constructors should not be exposed from the module.
-data DiffEntry v = Insert !v | Delete !v | AntiInsert !v | AntiDelete !v
-  deriving stock (Generic, Show, Eq, Functor)
+data DiffEntry v =
+      Insert !v
+    | Delete !v
+    | UnsafeAntiInsert !v
+    | UnsafeAntiDelete !v
+  deriving stock (Generic, Show, Eq, Functor, Foldable)
   deriving anyclass (NoThunks)
+
+{------------------------------------------------------------------------------
+  Conversions between empty and non-empty diff histories
+------------------------------------------------------------------------------}
+
+toDiffHistory :: NEDiffHistory v -> DiffHistory v
+toDiffHistory (NEDiffHistory sq) = DiffHistory $ NESeq.toSeq sq
+
+unsafeFromDiffHistory :: DiffHistory v -> NEDiffHistory v
+unsafeFromDiffHistory (DiffHistory sq) = NEDiffHistory $ NESeq.unsafeFromSeq sq
+
+nonEmptyDiffHistory :: DiffHistory v -> Maybe (NEDiffHistory v)
+nonEmptyDiffHistory (DiffHistory sq) = NEDiffHistory <$> NESeq.nonEmptySeq sq
 
 {------------------------------------------------------------------------------
   Construction
 ------------------------------------------------------------------------------}
 
--- | Compute the difference between two 'Map's.
-diff :: Ord k => Map k v -> Map k v -> Diff k v
-diff m1 m2 = Diff $
-  Merge.merge
-    (Merge.mapMissing $ \_k v -> singletonDelete v)
-    (Merge.mapMissing $ \_k v -> singletonInsert v)
-    (Merge.zipWithMaybeMatched $ \ _k _v1 v2 -> Just $ singletonInsert v2)
-    m1
-    m2
+-- | Compute the difference between @'Values'@.
+diff :: Ord k => Values k v -> Values k v -> Diff k v
+diff (Values m1) (Values m2) = Diff $
+    Merge.merge
+      (Merge.mapMissing $ \_k v -> singletonDelete v)
+      (Merge.mapMissing $ \_k v -> singletonInsert v)
+      (Merge.zipWithMaybeMatched $ \ _k v1 v2 ->
+        Just $ singletonDelete v1 `unsafeMappend` singletonInsert v2
+      )
+      m1
+      m2
+  where
+    -- Bypass the @'Semigroupoid'@ instance for @'NEDiffHistory'@, because we
+    -- know that @h1@ and @h2@ will not cancel out.
+    unsafeMappend (NEDiffHistory h1) (NEDiffHistory h2) =
+      NEDiffHistory $ h1 <> h2
 
-fromList :: Ord k => [(k, DiffHistory v)] -> Diff k v
+fromList :: Ord k => [(k, NEDiffHistory v)] -> Diff k v
 fromList = Diff . Map.fromList
+
+fromListEntries :: Ord k => [(k, DiffEntry v)] -> Diff k v
+fromListEntries = fromList . fmap (second singleton)
 
 fromListInserts :: Ord k => [(k, v)] -> Diff k v
 fromListInserts = fromList . fmap (second singletonInsert)
@@ -104,32 +186,25 @@ fromListInserts = fromList . fmap (second singletonInsert)
 fromListDeletes :: Ord k => [(k, v)] -> Diff k v
 fromListDeletes = fromList . fmap (second singletonDelete)
 
-singleton :: DiffEntry v -> DiffHistory v
-singleton = DiffHistory . Seq.singleton
+singleton :: DiffEntry v -> NEDiffHistory v
+singleton = NEDiffHistory . NESeq.singleton
 
-singletonInsert :: v -> DiffHistory v
+singletonInsert :: v -> NEDiffHistory v
 singletonInsert = singleton . Insert
 
-singletonDelete :: v -> DiffHistory v
+singletonDelete :: v -> NEDiffHistory v
 singletonDelete = singleton . Delete
-
-fromSeq :: DiffEntry v -> Seq (DiffEntry v) -> DiffHistory v
-fromSeq x xs = DiffHistory $ x Seq.:<| xs
 
 {------------------------------------------------------------------------------
   Class instances for @'Diff'@
 ------------------------------------------------------------------------------}
 
--- Note: The use of @'isNonEmptyHistory'@ prevents the merged @'Diff'@s from
--- getting bloated with empty @'DiffHistory'@s.
 instance (Ord k, Eq v) => Semigroup (Diff k v) where
   Diff m1 <> Diff m2 = Diff $
     Merge.merge
       Merge.preserveMissing
       Merge.preserveMissing
-      (Merge.zipWithMaybeMatched
-        (\_k h1 h2 -> isNonEmptyHistory $ h1 <> h2)
-      )
+      (Merge.zipWithMaybeMatched(\_k h1 h2 -> h1 <>? h2))
       m1
       m2
 
@@ -137,7 +212,8 @@ instance (Ord k, Eq v) => Monoid (Diff k v) where
   mempty = Diff mempty
 
 instance (Ord k, Eq v) => Group (Diff k v) where
-  invert (Diff m) = Diff $ fmap invert m
+  invert (Diff m) = Diff $
+    fmap (unsafeFromDiffHistory . invert . toDiffHistory) m
 
 {------------------------------------------------------------------------------
   Class instances for @'DiffHistory'@
@@ -147,10 +223,9 @@ instance (Ord k, Eq v) => Group (Diff k v) where
 -- entries as possible.
 --
 -- Diff entries that are each other's inverse can cancel out. In this case, both
--- diff entries are removed the diff history.
+-- diff entries are removed from the diff history.
 --
 -- Examples:
---
 -- > [Insert 1, AntiDelete 2] <> [Delete 2, AntiInsert 1] = []
 --
 -- > [Insert 1, Delete 2]     <> [AntiDelete 2, Delete 3] = [Insert 1, Delete 3]
@@ -183,30 +258,16 @@ instance Eq v => Monoid (DiffHistory v) where
 instance Eq v => Group (DiffHistory v) where
   invert (DiffHistory s) = DiffHistory $ Seq.reverse . fmap invertDiffEntry $ s
 
-{------------------------------------------------------------------------------
-  Utility
-------------------------------------------------------------------------------}
-
--- | @'isNonEmptyHistory' h@ checks whether the history is empty.
---
--- In the context of diffs, this function is used to filter empty diff
--- histories from the larger diff, since they are then only inflating the size
--- of the larger diff.
-isNonEmptyHistory :: DiffHistory v -> Maybe (DiffHistory v)
-isNonEmptyHistory h@(DiffHistory s)
-  | Seq.null s = Nothing
-  | otherwise  = Just h
-
 -- | @`invertDiffEntry` e@ inverts a @'DiffEntry' e@ to its counterpart.
 --
--- Note: We invert @'DiffEntry'@s, but it is not a @'Group'@: We do not have an
--- identity element, so it is not a @'Monoid'@ or @'Semigroup'@.
+-- Note: We invert @DiffEntry@s, but it is not a @Group@: We do not have an
+-- identity element, so it is not a @Monoid@ or @Semigroup@.
 invertDiffEntry :: DiffEntry v -> DiffEntry v
 invertDiffEntry = \case
-  Insert x     -> AntiInsert x
-  Delete x     -> AntiDelete x
-  AntiInsert x -> Insert x
-  AntiDelete x -> Delete x
+  Insert x           -> UnsafeAntiInsert x
+  Delete x           -> UnsafeAntiDelete x
+  UnsafeAntiInsert x -> Insert x
+  UnsafeAntiDelete x -> Delete x
 
 -- | @'areInverses e1 e2@ checks whether @e1@ and @e2@ are each other's inverse.
 --
@@ -215,6 +276,9 @@ invertDiffEntry = \case
 areInverses :: Eq v => DiffEntry v -> DiffEntry v -> Bool
 areInverses e1 e2 = invertDiffEntry e1 == e2
 
+instance Eq v => Semigroupoid (NEDiffHistory v) where
+  dh1 <>? dh2 = nonEmptyDiffHistory (toDiffHistory dh1 <> toDiffHistory dh2)
+
 {------------------------------------------------------------------------------
   Values and keys
 ------------------------------------------------------------------------------}
@@ -222,10 +286,12 @@ areInverses e1 e2 = invertDiffEntry e1 == e2
 -- | A key-value store.
 newtype Values k v = Values (Map k v)
   deriving stock (Generic, Show, Eq, Functor)
+  deriving newtype (Semigroup, Monoid)
   deriving anyclass (NoThunks)
 
 newtype Keys k v = Keys (Set k)
   deriving stock (Generic, Show, Eq, Functor)
+  deriving newtype (Semigroup, Monoid)
   deriving anyclass (NoThunks)
 
 valuesFromList :: Ord k => [(k, v)] -> Values k v
@@ -237,14 +303,27 @@ keysFromList = Keys . Set.fromList
 diffKeys :: Diff k v -> Keys k v
 diffKeys (Diff m) = Keys $ Map.keysSet m
 
+valuesKeys :: Values k v -> Keys k v
+valuesKeys (Values m) = Keys $ Map.keysSet m
+
 restrictValues :: Ord k => Values k v -> Keys k v -> Values k v
 restrictValues (Values m) (Keys s) = Values (Map.restrictKeys m s)
+
+castKeys :: Keys k v -> Keys k v'
+castKeys (Keys s) = Keys s
 
 {------------------------------------------------------------------------------
   Forwarding values and keys
 ------------------------------------------------------------------------------}
 
-forwardValues :: (Ord k, Eq v, HasCallStack) => Values k v -> Diff k v -> Values k v
+-- | Forward values through a diff.
+--
+-- Note: Errors if a fold of a diff history to an action fails.
+forwardValues ::
+     forall k v. (Ord k, Eq v, HasCallStack)
+  => Values k v
+  -> Diff k v
+  -> Values k v
 forwardValues (Values values) (Diff diffs) = Values $
     Merge.merge
       Merge.preserveMissing
@@ -253,28 +332,27 @@ forwardValues (Values values) (Diff diffs) = Values $
       values
       diffs
   where
-    newKeys :: Eq v => k -> DiffHistory v -> Maybe v
-    newKeys _k (DiffHistory Empty) = error "impossible"
-    newKeys _k h = case foldToAct h of
-      Nothing             -> error "impossible"
-      Just (Ins x)        -> Just x
-      Just (Del _x)       -> error "impossible"
-      Just (DelIns _x _y) -> error "impossible"
-      Just InsDel         -> Nothing
+    newKeys :: k -> NEDiffHistory v -> Maybe v
+    newKeys _k h = case unsafeFoldToAct h of
+      Ins x        -> Just x
+      Del _x       -> error "impossible"
+      DelIns _x _y -> error "impossible"
+      InsDel       -> Nothing
 
 
-    oldKeys :: Eq v => k -> v -> DiffHistory v -> Maybe v
-    oldKeys _k _v1 (DiffHistory Empty) = error "impossible"
-    oldKeys _k v1 h = case foldToAct h of
-      Nothing                  -> error "impossible"
-      Just (Ins _x)            -> error "impossible"
-      Just (Del x) | x == v1   -> Nothing
-                   | otherwise -> error "impossible"
-      Just (DelIns x y)
-                   | x == v1   -> Just y
-                   | otherwise -> error "impossible"
-      Just InsDel              -> error "impossible"
+    oldKeys :: k -> v -> NEDiffHistory v -> Maybe v
+    oldKeys _k v1 h = case unsafeFoldToAct h of
+      Ins _x                 -> error "impossible"
+      Del x      | x == v1   -> Nothing
+                 | otherwise -> error "impossible"
+      DelIns x y
+                 | x == v1   -> Just y
+                 | otherwise -> error "impossible"
+      InsDel                 -> error "impossible"
 
+-- | Forwards values through a diff for a specific set of keys.
+--
+-- Note: Errors if a fold of a diff history to an action fails.
 forwardValuesAndKeys ::
      (Ord k, Eq v, HasCallStack)
   => Values k v
@@ -285,6 +363,10 @@ forwardValuesAndKeys v@(Values values) (Keys keys) (Diff diffs) =
   forwardValues
     v
     (Diff $ diffs `Map.restrictKeys` (Map.keysSet values `Set.union` keys))
+
+{------------------------------------------------------------------------------
+  Folding diff entries to concrete actions
+------------------------------------------------------------------------------}
 
 -- | A diff action to apply to a key-value pair.
 data Act v = Del !v | Ins !v | DelIns !v !v | InsDel
@@ -342,16 +424,48 @@ instance Eq v => Groupoid (Act v) where
 
       InsDel     -> InsDel
 
--- | Given a valid @'DiffHistory'@, its @'DiffEntry'@s should fold to a sensible
+-- | Given a valid @'NEDiffHistory'@, its @'DiffEntry'@s should fold to a sensible
 -- @'Act'@.
 --
 -- Note: Only @'Insert'@s and @'Delete'@s translate to an @'Act'@.
-foldToAct :: Eq v => DiffHistory v -> Maybe (Act v)
-foldToAct (DiffHistory Seq.Empty) = error "Impossible: Invariant"
-foldToAct (DiffHistory (z Seq.:<| zs)) = foldl (\x y -> pappendM x (fromDiffEntry y)) (fromDiffEntry z) zs
+--
+-- Note: For a diff history to be valid, the diff entries in the diff history
+-- should not fail to fold to a sensible action.
+foldToAct :: Eq v => NEDiffHistory v -> Maybe (Act v)
+foldToAct (NEDiffHistory (z NESeq.:<|| zs)) =
+    foldl (\x y -> pappendM x (fromDiffEntry y)) (fromDiffEntry z) zs
   where
     fromDiffEntry = \case
-      Insert x      -> Just $ Ins x
-      Delete x      -> Just $ Del x
-      AntiInsert _x -> Nothing
-      AntiDelete _x -> Nothing
+      Insert x            -> Just $ Ins x
+      Delete x            -> Just $ Del x
+      UnsafeAntiInsert _x -> Nothing
+      UnsafeAntiDelete _x -> Nothing
+
+-- | Like @'foldToAct'@, but errors if the fold fails.
+unsafeFoldToAct :: (Eq v, HasCallStack) => NEDiffHistory v -> Act v
+unsafeFoldToAct dh = case foldToAct dh of
+  Nothing  -> error "Could not fold diff history to a sensible action."
+  Just act -> act
+
+-- | Traverse over folded actions and discard the result.
+--
+-- Note: Errors if a fold of a diff history to an action fails.
+traverseActs_ ::
+     (Applicative t, Eq v)
+  => (k -> Act v -> t a)
+  -> Diff k v
+  -> t ()
+traverseActs_ f (Diff m) = () <$ Map.traverseWithKey g m
+  where
+    g k dh = f k (unsafeFoldToAct dh)
+
+foldMapAct :: (Monoid m, Eq v) => (Act v -> m) -> Diff k v -> Maybe m
+foldMapAct f (Diff m) = foldMap (fmap f . foldToAct)  m
+
+-- | @'foldMap'@ over the last diff entry in each diff history.
+--
+-- Deemed unsafe, because the diff history can be invalid and we bypass the
+-- validity check.
+unsafeFoldMapDiffEntry :: (Monoid m) => (DiffEntry v -> m) -> Diff k v -> m
+unsafeFoldMapDiffEntry f (Diff m) =
+  foldMap (f . NESeq.last . unNEDiffHistory) m
