@@ -20,7 +20,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , selectGovernorEvents
   , selectPeerSelectionTraceEvents
   , selectPeerSelectionTraceEventsUntil
-  , firstGossipReachablePeers
+  , gossipReachablePeers
   , module Ouroboros.Network.Testing.Data.Script
   , module Ouroboros.Network.PeerSelection.Types
   , tests

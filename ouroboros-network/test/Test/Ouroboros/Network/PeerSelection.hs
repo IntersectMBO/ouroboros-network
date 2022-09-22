@@ -102,9 +102,7 @@ tests =
     -- The no livelock property is needed to ensure other tests terminate
   , after AllSucceed "Ouroboros.Network.PeerSelection.basic" $
     testGroup "progress"
-    [ testProperty "gossip reachable"    prop_governor_gossip_1hr
-
-    , testProperty "progresses towards root peers target (from below)"
+    [ testProperty "progresses towards root peers target (from below)"
                    prop_governor_target_root_below
 
     , testProperty "progresses towards established public root peers"
@@ -633,11 +631,11 @@ allTraceNames =
 -- subset of those that are in principle reachable in the mock network
 -- environment.
 --
--- More interestingly, we expect the governor to find enough peers. Either it
--- must find all the reachable ones, or if the target for the number of known
--- peers to find is too low then it should at least find the target number.
+-- More interestingly, we expect the governor to find enough peers. However,
+-- one can not test that it will find all reachable addresses, since we only
+-- gossip with established peers and the mock environment might never promote
+-- the peer that would allow us to reach every other peer.
 --
-
 prop_governor_gossip_1hr :: GovernorMockEnvironment -> Property
 prop_governor_gossip_1hr env@GovernorMockEnvironment {
                                peerGraph,
@@ -650,7 +648,7 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
                        }
         trace      = selectPeerSelectionTraceEvents ioSimTrace
         Just found = knownPeersAfter1Hour trace
-        reachable  = firstGossipReachablePeers peerGraph
+        reachable  = gossipReachablePeers peerGraph
                        (LocalRootPeers.keysSet localRootPeers <> Map.keysSet publicRootPeers)
      in counterexample ( intercalate "\n"
                        . map (ppSimEvent 20 20 20)
@@ -658,15 +656,11 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
                        . Trace.toList
                        $ ioSimTrace) $
         subsetProperty    found reachable
-   .&&. bigEnoughProperty found reachable
   where
     -- This test is only about testing gossiping,
     -- so do not try to establish connections:
     targets' :: PeerSelectionTargets
-    targets' = (fst (scriptHead targets)) {
-                 targetNumberOfEstablishedPeers = 0,
-                 targetNumberOfActivePeers      = 0
-               }
+    targets' = fst (scriptHead targets)
 
     knownPeersAfter1Hour :: [(Time, TestTraceEvent)] -> Maybe (Set PeerAddr)
     knownPeersAfter1Hour trace =
@@ -681,30 +675,6 @@ prop_governor_gossip_1hr env@GovernorMockEnvironment {
       counterexample ("reachable: " ++ show reachable ++ "\n" ++
                       "found:     " ++ show found) $
       property (found `Set.isSubsetOf` reachable)
-
-    -- We expect to find enough of them, either the target number or the
-    -- maximum reachable.
-    bigEnoughProperty found reachable
-        -- But there's an awkward corner case: if the number of public roots
-        -- available is bigger than the target then we will likely not get
-        -- all the roots (but which subset we get is random), but if we don't
-        -- get all the roots then the set of peers actually reachable is
-        -- incomplete, so we cannot expect to reach the usual target.
-        --
-        -- But we can at least expect to hit the target for root peers.
-      | Set.size (Map.keysSet publicRootPeers `Set.union` localRootPeersSet)
-      > targetNumberOfRootPeers targets'
-      = property (Set.size found >= targetNumberOfRootPeers targets')
-
-      | otherwise
-      = counterexample ("reachable : " ++ show reachable ++ "\n" ++
-                        "found     : " ++ show found ++ "\n" ++
-                        "found #   : " ++ show (Set.size found) ++ "\n" ++
-                        "expected #: " ++ show expected) $
-        property (Set.size found == expected)
-      where
-        localRootPeersSet = LocalRootPeers.keysSet localRootPeers
-        expected = Set.size reachable `min` targetNumberOfKnownPeers targets'
 
 -- | Check the governor's view of connection status does not lag behind reality
 -- by too much.
@@ -973,8 +943,8 @@ prop_governor_target_active_public env =
 --    environment informs it about new peers.
 --
 -- 2. If the governor is below target and has the opportunity to gossip then
---    within a bounded time it should perform a gossip with one of its known
---    peers.
+--    within a bounded time it should perform a gossip with one of its
+--    established peers.
 --
 --    This is the primary progress property. It is a relatively weak property:
 --    we do not require that progress is actually made, just that opportunities
@@ -990,10 +960,10 @@ prop_governor_target_active_public env =
 --    This is both useful in its own right, but it also helps to strengthen the
 --    primary property by helping to ensure that the choices of which peers to
 --    gossip with are reasonable. In the primary property we do not require that
---    the peer the  the governor chooses to gossip with is one of the
---    opportunities as defined by the property. We do not require this because
---    the set of opportunities is a lower bound not an upper bound, and trying
---    to make it a tight bound becomes complex and over-specifies behaviour.
+--    the peer the governor chooses to gossip with is one of the opportunities
+--    as defined by the property. We do not require this because the set of
+--    opportunities is a lower bound not an upper bound, and trying to make it a
+--    tight bound becomes complex and over-specifies behaviour.
 --    There is the danger however that the governor could appear to try to make
 --    progress by gossiping but always picking useless choices that avoid making
 --    actual progress. By requiring that the governor not gossip with any
@@ -1117,23 +1087,26 @@ prop_governor_target_known_1_valid_subset env =
 
 
 -- | If the governor is below target and has the opportunity to gossip then
--- within a bounded time it should perform a gossip with one of its known peers.
+-- within a bounded time it should perform a gossip with one of its established
+-- peers, unless there isn't any available.
 --
 -- We derive a number of signals:
 --
 -- 1. A signal of the target for known peers from the environment
 --
--- 2. A signal of the set of known peers in the governor state.
+-- 2. A signal of the set of established peers in the governor state.
 --
--- 3. A signal of the set of peers with which the governor has gossiped
+-- 3. A signal of the set of established peers in the governor state.
+--
+-- 4. A signal of the environment gossip request events.
+--
+-- 5. A signal of the set of peers with which the governor has gossiped
 --    recently, based on the requests to the environment
 --
--- 4. Based on 2 and 3, a signal of the set of gossip opportunities: the
---    current known peers that are not in the recent gossip set.
+-- 6. Based on 2 and 3, a signal of the set of gossip opportunities: the
+--    current established peers that are not in the recent gossip set.
 --
--- 5. A signal of the environment gossip request events.
---
--- 6. Based on 1, 2, 4 and 5, a signal that becomes False if for 30 seconds:
+-- 7. Based on 1, 2, 4 and 5, a signal that becomes False if for 30 seconds:
 --    the number of known peers is below target; the set of opportunities is
 --    non empty; and no gossip request event has occurred.
 --
@@ -1158,27 +1131,9 @@ prop_governor_target_known_2_opportunity_taken env =
         govKnownPeersSig =
           selectGovState (KnownPeers.toSet . Governor.knownPeers) events
 
-        envGossipUnavailableSig :: Signal (Set PeerAddr)
-        envGossipUnavailableSig =
-            Signal.keyedLinger
-              -- peers are unavailable for gossip for at least an
-              -- hour after each gossip interaction
-              (60 * 60)
-              (maybe Set.empty Set.singleton)
-          . Signal.fromEvents
-          . Signal.selectEvents
-              (\case TraceEnvGossipRequest peer _ -> Just peer
-                     _                            -> Nothing)
-          . selectEnvEvents
-          $ events
-
-        -- We define the governor's gossip opportunities at any point in time
-        -- to be the governor's set of known peers, less the ones we can see
-        -- that it has gossiped with recently.
-        --
-        gossipOpportunitiesSig :: Signal (Set PeerAddr)
-        gossipOpportunitiesSig =
-          (Set.\\) <$> govKnownPeersSig <*> envGossipUnavailableSig
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState (EstablishedPeers.toSet . Governor.establishedPeers) events
 
         -- Note that we only require that the governor try to gossip, it does
         -- not have to succeed.
@@ -1190,6 +1145,23 @@ prop_governor_target_known_2_opportunity_taken env =
                      _                            -> Nothing)
           . selectEnvEvents
           $ events
+
+        envGossipUnavailableSig :: Signal (Set PeerAddr)
+        envGossipUnavailableSig =
+            Signal.keyedLinger
+              -- peers are unavailable for gossip for at least an
+              -- hour after each gossip interaction
+              (60 * 60)
+              (maybe Set.empty Set.singleton)
+              envGossipsEventsAsSig
+
+        -- We define the governor's gossip opportunities at any point in time
+        -- to be the governor's set of known peers, less the ones we can see
+        -- that it has gossiped with recently.
+        --
+        gossipOpportunitiesSig :: Signal (Set PeerAddr)
+        gossipOpportunitiesSig =
+          (Set.\\) <$> govEstablishedPeersSig <*> envGossipUnavailableSig
 
         -- The signal of all the things of interest for this property.
         -- This is used to compute the final predicate, and is also what
@@ -1230,10 +1202,10 @@ governorEventuallyTakesGossipOpportunities =
     timeLimit :: DiffTime
     timeLimit = 30
 
-    badState (target, govKnownPeers, gossipOpportunities, gossipEvent) =
+    badState (target, govEstablishedPeers, gossipOpportunities, gossipEvent) =
 
         -- A bad state is one where we are below target;
-        Set.size govKnownPeers < target
+        Set.size govEstablishedPeers < target
 
         -- where we do have opportunities; and
      && not (Set.null gossipOpportunities)
@@ -1250,7 +1222,8 @@ governorEventuallyTakesGossipOpportunities =
 
 
 -- | The governor should not gossip too frequently with any individual peer,
--- except when the governor forgets known peers.
+-- except when the governor demotes an established peer or there's an
+-- asynchronous demotion.
 --
 -- We derive a number of signals:
 --
@@ -1304,7 +1277,7 @@ recentGossipActivity d =
         : E (TS t (i+1)) (Nothing, recentSet') -- updated in next change at same time
         : go recentSet' recentPSQ' txs
 
-    -- When the governor is forced to forget known peers, we drop it from
+    -- When the governor demotes an established peer, we drop it from
     -- the recent activity tracking, which means if it is added back again
     -- later then we can gossip with it again earlier than the normal limit.
     --
@@ -1312,13 +1285,59 @@ recentGossipActivity d =
     -- when the targets are adjusted downwards, but we use small target
     -- adjustments to perform churn.
     --
-    -- There is a separate property to check that the governor does not forget
+    -- There is a separate property to check that the governor does not demote
     -- peers unnecessarily.
     --
     go !recentSet !recentPSQ
-        (E t (GovernorEvent (TraceForgetColdPeers _ _ addrs)) : txs) =
-      let recentSet' = foldl' (flip Set.delete) recentSet addrs
-          recentPSQ' = foldl' (flip PSQ.delete) recentPSQ addrs
+        (E t (GovernorEvent (TraceDemoteWarmDone _ _ addr)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    -- When the governor demotes a local established peer, we drop it from
+    -- the recent activity tracking, which means if it is added back again
+    -- later then we can peer share with it again earlier than the normal limit.
+    --
+    -- Alternatively we could track this more coarsely by dropping all tracking
+    -- when the targets are adjusted downwards, but we use small target
+    -- adjustments to perform churn.
+    --
+    -- There is a separate property to check that the governor does not demote
+    -- peers unnecessarily.
+    --
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteLocalAsynchronous m)) : txs) =
+      let peersDemotedToCold = Map.foldrWithKey'
+                                (\k v r -> case v of
+                                  (PeerCold, _) -> k : r
+                                  _             -> r
+                                ) [] m
+          recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
+          recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    -- When the governor demotes an non-local established peer, we drop it from
+    -- the recent activity tracking, which means if it is added back again
+    -- later then we can gossip with it again earlier than the normal limit.
+    --
+    -- Alternatively we could track this more coarsely by dropping all tracking
+    -- when the targets are adjusted downwards, but we use small target
+    -- adjustments to perform churn.
+    --
+    -- There is a separate property to check that the governor does not demote
+    -- peers unnecessarily.
+    --
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteAsynchronous m)) : txs) =
+      let peersDemotedToCold = Map.foldrWithKey'
+                                (\k v r -> case v of
+                                  (PeerCold, _) -> k : r
+                                  _             -> r
+                                ) [] m
+          recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
+          recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
        in E t (Nothing, recentSet')
         : go recentSet' recentPSQ' txs
 
