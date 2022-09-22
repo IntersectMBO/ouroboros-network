@@ -74,15 +74,17 @@ instance (Isomorphism a c, Isomorphism b d) => Isomorphism (a, b) (c, d) where
 
 instance (Ord k, Eq v)
       => Isomorphism (DS.DiffSeq k v) (HD.SeqUtxoDiff k v) where
-  to (DS.DiffSeq ft) = HD.SeqUtxoDiff . FT.fromList . map to' . toList $ ft
+  to (DS.UnsafeDiffSeq ft) =
+      HD.SeqUtxoDiff . FT.fromList . map to' . toList $ ft
     where
-      to' (DS.Element slot d)= HD.SudElement (to slot) (to d)
+      to' (DS.Element slot d)= HD.SudElement slot (to d)
 
 instance (Ord k, Eq v)
       => Isomorphism (HD.SeqUtxoDiff k v) (DS.DiffSeq k v) where
-  to (HD.SeqUtxoDiff ft) = DS.DiffSeq . RMFT.fromList . map to' . toList $ ft
+  to (HD.SeqUtxoDiff ft) =
+      DS.UnsafeDiffSeq . RMFT.fromList . map to' . toList $ ft
     where
-      to' (HD.SudElement slot d) = DS.Element (to slot) (to d)
+      to' (HD.SudElement slot d) = DS.Element slot (to d)
 
 instance Eq v => Isomorphism (MapDiff.Diff k v) (HD.UtxoDiff k v) where
   to (MapDiff.Diff m) = HD.UtxoDiff (fmap to' m)
@@ -123,8 +125,17 @@ instance Isomorphism (MapDiff.Keys k v) (HD.UtxoKeys k v) where
 instance Isomorphism (HD.UtxoKeys k v) (MapDiff.Keys k v) where
   to (HD.UtxoKeys m) = MapDiff.Keys m
 
-instance Isomorphism DS.SlotNo Block.SlotNo where
-  to (DS.SlotNo slot) = slot
+instance Isomorphism Block.SlotNo Block.SlotNo where
+  to = id
 
-instance Isomorphism Block.SlotNo DS.SlotNo where
-  to = DS.SlotNo
+instance Isomorphism DS.SlotNoUB Block.SlotNo where
+  to = DS.unSlotNoUB
+
+instance Isomorphism DS.SlotNoLB Block.SlotNo where
+  to = DS.unSlotNoLB
+
+instance Isomorphism Block.SlotNo DS.SlotNoUB where
+  to = DS.SlotNoUB
+
+instance Isomorphism Block.SlotNo DS.SlotNoLB where
+  to = DS.SlotNoLB

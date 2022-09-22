@@ -120,7 +120,7 @@ import           Test.Tasty.QuickCheck (Positive (getPositive), Property,
                      Small (getSmall), conjoin, counterexample, forAll,
                      generate, once, testProperty, (.&&.), (===))
 
-import qualified Ouroboros.Consensus.Block.Abstract as Block (SlotNo)
+import           Ouroboros.Consensus.Block (SlotNo (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
@@ -221,10 +221,10 @@ benchComparative name boundsMay benchEnv =
   Commands
 -------------------------------------------------------------------------------}
 
-type Pushes (ds :: DiffSeqKind) k v = [(SlotNo ds, Diff ds k v)]
+type Pushes (ds :: DiffSeqKind) k v = [(SlotNo, Diff ds k v)]
 
 data Cmd (ds :: DiffSeqKind) k v =
-    Push     (SlotNo ds)     (Diff ds k v)
+    Push     SlotNo          (Diff ds k v)
   | Flush    Int
   | Switch Int               (Pushes ds k v)
   | Forward  (Values ds k v) (Keys ds k v)
@@ -234,21 +234,18 @@ deriving anyclass instance ( NFData (ds k v)
                            , NFData (Diff ds k v)
                            , NFData (Values ds k v)
                            , NFData (Keys ds k v)
-                           , NFData (SlotNo ds)
                            ) => NFData (Cmd ds k v)
 
 deriving stock instance ( Show (ds k v)
                         , Show (Diff ds k v)
                         , Show (Values ds k v)
                         , Show (Keys ds k v)
-                        , Show (SlotNo ds)
                         ) => Show (Cmd ds k v)
 
 deriving stock instance ( Eq (ds k v)
                         , Eq (Diff ds k v)
                         , Eq (Values ds k v)
                         , Eq (Keys ds k v)
-                        , Eq (SlotNo ds)
                         ) => Eq (Cmd ds k v)
 
 instance ( Ord k, Eq v
@@ -256,10 +253,9 @@ instance ( Ord k, Eq v
          , Isomorphism (Diff ds k v) (Diff ds' k v)
          , Isomorphism (Values ds k v) (Values ds' k v)
          , Isomorphism (Keys ds k v) (Keys ds' k v)
-         , Isomorphism (SlotNo ds) (SlotNo ds')
          , Isomorphism (Pushes ds k v) (Pushes ds' k v)
          ) => Isomorphism (Cmd ds k v) (Cmd ds' k v) where
-  to (Push sl d)     = Push (to sl) (to d)
+  to (Push sl d)     = Push sl (to d)
   to (Flush n)       = Flush n
   to (Switch n ps)   = Switch n (to ps)
   to (Forward vs ks) = Forward (to vs) (to ks)
@@ -318,10 +314,9 @@ class IsDiffSeq (ds :: DiffSeqKind) k v where
   type Diff ds k v   = r | r -> ds k v
   type Values ds k v = r | r -> ds k v
   type Keys ds k v   = r | r -> ds k v
-  type SlotNo ds     = r | r -> ds
 
   -- | Mimicks @'Ouroboros.Consensus.Ledger.Basics.extendDbChangelog.ext'@
-  push :: ds k v -> SlotNo ds -> Diff ds k v -> ds k v
+  push :: ds k v -> SlotNo -> Diff ds k v -> ds k v
 
   -- | Mimicks @'Ouroboros.Consensus.Ledger.Basics.flushDbChangelog.split'@
   flush :: Int -> ds k v -> (ds k v, ds k v)
@@ -360,9 +355,8 @@ instance (Ord k, Eq v) => IsDiffSeq DS.DiffSeq k v where
   type Diff DS.DiffSeq k v   = DS.Diff k v
   type Values DS.DiffSeq k v = DS.Values k v
   type Keys DS.DiffSeq k v   = DS.Keys k v
-  type SlotNo DS.DiffSeq     = DS.SlotNo
 
-  push ds sl d         = DS.extend' ds $ DS.Element sl d
+  push                 = DS.extend
   flush                = DS.splitlAt
   rollback             = DS.splitrAtFromEnd
   forwardValuesAndKeys = DS.forwardValuesAndKeys
@@ -372,7 +366,6 @@ instance Ord k => IsDiffSeq HD.SeqUtxoDiff k v where
   type Diff HD.SeqUtxoDiff k v    = HD.UtxoDiff k v
   type Values HD.SeqUtxoDiff k v  = HD.UtxoValues k v
   type Keys HD.SeqUtxoDiff k v    = HD.UtxoKeys k v
-  type SlotNo HD.SeqUtxoDiff      = Block.SlotNo
 
   push                 = HD.extendSeqUtxoDiff
   flush                = HD.splitAtSeqUtxoDiff
@@ -548,7 +541,7 @@ genInitialModel ::
   -> Gen (Model k v)
 genInitialModel GenConfig{nrInitialValues} = do
     kvs <- replicateM nrInitialValues arbitrary
-    pure $ Model mempty 0 (DS.valuesFromList kvs) 0
+    pure $ Model DS.empty 0 (DS.valuesFromList kvs) 0
 
 newtype Key = Key ShortByteString
   deriving stock (Show, Eq, Ord, Generic)
@@ -748,8 +741,8 @@ warmup = do
 -- | Generate a @'Push'@ command.
 --
 -- > data Cmd (ds :: DiffSeqKind) k v =
--- >    Push (SlotNo i) (Diff i k v)
--- >    -- ...
+--     Push SlotNo (Diff ds k v)
+--     -- ...
 --
 -- Steps to generate a @'Push'@ command:
 -- * Forward flushed values.
@@ -889,7 +882,7 @@ genSwitch = do
 
     Exn.assert invariant $ pure $ Switch n ps
   where
-    fromPushCmd :: Cmd i k v -> (SlotNo i, Diff i k v)
+    fromPushCmd :: Cmd ds k v -> (SlotNo, Diff ds k v)
     fromPushCmd = \case
       Push sl d -> (sl, d)
       _         -> error "fromPushCmd"
@@ -898,7 +891,7 @@ genSwitch = do
 --
 -- >  data Cmd (ds :: DiffSeqKind) k v =
 -- >    -- ...
--- >    | Forward (Values i k v) (Keys i k v)
+-- >    | Forward (Values ds k v) (Keys ds k v)
 --
 -- Steps to generate a @'Forward'@ command:
 -- * Determine which keys to forward.
