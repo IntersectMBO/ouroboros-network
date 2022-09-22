@@ -311,15 +311,28 @@ data ChainDB m blk = ChainDB {
       -- Blocks unknown to the ChainDB will result in 'False'.
       --
       -- If the hash corresponds to a block that is known to be invalid, but
-      -- is now older than @k@, this function may return 'False'.
+      -- is now older than 'k', this function may return 'False'.
       --
-      -- Whenever a new invalid block is added, the @Fingerprint@ will be
+      -- Whenever a new invalid block is added, the 'Fingerprint' will be
       -- changed. This is useful when \"watching\" this function in a
       -- transaction.
       --
       -- Note that when invalid blocks are garbage collected and thus no
       -- longer detected by this function, the 'Fingerprint' doesn't have to
       -- change, since the function will not detect new invalid blocks.
+      --
+      -- It might seem natural to have this function also return whether the
+      -- ChainDB knows that a block is valid, thereby subsuming the 'getIsValid'
+      -- function and simplifying the API. However, this adds the overhead of
+      -- checking whether the block is valid for blocks that are not known to be
+      -- invalid that does not give useful information to current clients
+      -- (ChainSync), since they are only interested in whether a block is known
+      -- to be invalid. The extra information of whether a block is valid is
+      -- only used for testing.
+      --
+      -- In particular, this affects the watcher in 'bracketChainSyncClient',
+      -- which rechecks the blocks in all candidate chains whenever a new
+      -- invalid block is detected. These blocks are likely to be valid.
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
       -- | Close the ChainDB
