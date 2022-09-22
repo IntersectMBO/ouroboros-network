@@ -316,6 +316,7 @@ translateLedgerViewAcrossShelley =
 -------------------------------------------------------------------------------}
 
 instance ( ShelleyBasedEra era
+         , SL.Era (SL.PreviousEra era)
          , ShelleyBasedEra (SL.PreviousEra era)
          , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
          ) => SL.TranslateEra era (ShelleyTip proto) where

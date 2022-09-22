@@ -713,7 +713,7 @@ toMock Model {..} (At t) = bimap (knownIters RE.!) (knownFollowers RE.!) t
 --
 -- We cannot step the whole Model here (see 'event', below)
 step ::
-     (TestConstraints blk, Eq1 r)
+     (TestConstraints blk, Eq1 r, Bifunctor (Cmd blk))
   => Model  blk m r
   -> At Cmd blk m r
   -> (Resp  blk IteratorId FollowerId, DBModel blk)
@@ -772,7 +772,7 @@ data Event blk m r = Event
 deriving instance (TestConstraints blk, Show1 r) => Show (Event blk m r)
 
 -- | Construct an event
-lockstep :: (TestConstraints blk, Eq1 r, Show1 r)
+lockstep :: (TestConstraints blk, Eq1 r, Show1 r, Bifunctor (Cmd blk), Bitraversable (Resp blk))
          => Model     blk m r
          -> At Cmd    blk m r
          -> At Resp   blk m r
@@ -999,7 +999,7 @@ shrinker _ = const [] -- TODO: implement the shrinker. Command
 --
 -- We do this by running the pure semantics and then generating mock
 -- references for any new handles.
-mock :: (TestConstraints blk, Typeable m)
+mock :: (TestConstraints blk, Typeable m, Bitraversable (Resp blk), Bifunctor (Cmd blk))
      => Model            blk m Symbolic
      ->         At Cmd   blk m Symbolic
      -> GenSym (At Resp  blk m Symbolic)
@@ -1007,7 +1007,7 @@ mock model cmd = At <$> bitraverse (const genSym) (const genSym) resp
   where
     (resp, _dbm) = step model cmd
 
-precondition :: forall m blk. TestConstraints blk
+precondition :: forall m blk. (TestConstraints blk, Bitraversable (Cmd blk))
              => Model blk m Symbolic -> At Cmd blk m Symbolic -> Logic
 precondition Model {..} (At cmd) =
    forall (iters cmd) (`member` RE.keys knownIters)   .&&
@@ -1076,7 +1076,7 @@ precondition Model {..} (At cmd) =
           Right blks -> forall blks $ \blk -> Boolean $
             Map.notMember (blockHash blk) $ Model.invalid dbModel
 
-transition :: (TestConstraints blk, Show1 r, Eq1 r)
+transition :: (TestConstraints blk, Show1 r, Eq1 r, Bitraversable (Resp blk), Bifunctor (Cmd blk))
            => Model   blk m r
            -> At Cmd  blk m r
            -> At Resp blk m r
@@ -1099,7 +1099,7 @@ invariant cfg Model {..} =
         . Model.volatileChain (configSecurityParam cfg) id
         $ dbModel
 
-postcondition :: TestConstraints blk
+postcondition :: (TestConstraints blk, Bifunctor (Cmd blk), Bitraversable (Resp blk))
               => Model   blk m Concrete
               -> At Cmd  blk m Concrete
               -> At Resp blk m Concrete
@@ -1110,7 +1110,7 @@ postcondition model cmd resp =
   where
     ev = lockstep model cmd resp
 
-semantics :: forall blk. TestConstraints blk
+semantics :: forall blk. (TestConstraints blk, Bifunctor (Cmd blk), Bifunctor (Resp blk))
           => ChainDBEnv IO blk
           -> At Cmd blk IO Concrete
           -> IO (At Resp blk IO Concrete)
@@ -1119,7 +1119,7 @@ semantics env (At cmd) =
     runIO env (bimap QSM.opaque QSM.opaque cmd)
 
 -- | The state machine proper
-sm :: TestConstraints blk
+sm :: (TestConstraints blk, Bitraversable (Resp blk), Bitraversable (Cmd blk))
    => ChainDBEnv IO blk
    -> BlockGen                  blk IO
    -> TopLevelConfig            blk
