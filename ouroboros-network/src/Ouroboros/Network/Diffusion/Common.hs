@@ -2,7 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 
 module Ouroboros.Network.Diffusion.Common
-  ( InitializationTracer (..)
+  ( DiffusionTracer (..)
   , Failure (..)
   , Tracers (..)
   , nullTracers
@@ -31,9 +31,12 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.Snocket (FileDescriptor)
 import           Ouroboros.Network.Socket (SystemdSocketTracer)
 
--- TODO: use LocalAddress where appropriate rather than 'path'.
+-- | The 'DiffusionTracer' logs
 --
-data InitializationTracer ntnAddr ntcAddr
+-- * diffusion initialisation messages
+-- * terminal errors thrown by diffusion
+--
+data DiffusionTracer ntnAddr ntcAddr
   = RunServer (NonEmpty ntnAddr)
   | RunLocalServer ntcAddr
   | UsingSystemdSocket ntcAddr
@@ -89,8 +92,8 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
         :: Tracer m (NodeToClient.HandshakeTr ntcAddr ntcVersion)
 
       -- | Diffusion initialisation tracer
-    , dtDiffusionInitializationTracer
-        :: Tracer m (InitializationTracer ntnAddr ntcAddr)
+    , dtDiffusionTracer
+        :: Tracer m (DiffusionTracer ntnAddr ntcAddr)
 
       -- | Ledger Peers tracer
     , dtLedgerPeersTracer
@@ -103,12 +106,12 @@ nullTracers :: Applicative m
                        ntcAddr ntcVersion
                        m
 nullTracers = Tracers {
-    dtMuxTracer                     = nullTracer
-  , dtHandshakeTracer               = nullTracer
-  , dtLocalMuxTracer                = nullTracer
-  , dtLocalHandshakeTracer          = nullTracer
-  , dtDiffusionInitializationTracer = nullTracer
-  , dtLedgerPeersTracer             = nullTracer
+    dtMuxTracer            = nullTracer
+  , dtHandshakeTracer      = nullTracer
+  , dtLocalMuxTracer       = nullTracer
+  , dtLocalHandshakeTracer = nullTracer
+  , dtDiffusionTracer      = nullTracer
+  , dtLedgerPeersTracer    = nullTracer
   }
 
 -- | Common DiffusionArguments interface between P2P and NonP2P

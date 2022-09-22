@@ -32,7 +32,7 @@ withSockets :: forall m ntnFd ntnAddr ntcAddr a.
                , Typeable ntnAddr
                , Show     ntnAddr
                )
-            => Tracer m (InitializationTracer ntnAddr ntcAddr)
+            => Tracer m (DiffusionTracer ntnAddr ntcAddr)
             -> Snocket m ntnFd ntnAddr
             -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a socket
             -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a systemd socket
@@ -82,7 +82,7 @@ withLocalSocket :: forall ntnAddr ntcFd ntcAddr m a.
                    , Typeable ntnAddr
                    , Show     ntnAddr
                    )
-                => Tracer m (InitializationTracer ntnAddr ntcAddr)
+                => Tracer m (DiffusionTracer ntnAddr ntcAddr)
                 -> (ntcFd -> m FileDescriptor)
                 -> Snocket m ntcFd ntcAddr
                 -> Either ntcFd ntcAddr
@@ -95,7 +95,7 @@ withLocalSocket tracer getFileDescriptor sn localAddress k =
 #if defined(mingw32_HOST_OS)
          -- Windows uses named pipes so can't take advantage of existing sockets
          Left _ -> traceWith tracer (UnsupportedReadySocketCase
-                                       :: InitializationTracer ntnAddr ntcAddr)
+                                       :: DiffusionTracer ntnAddr ntcAddr)
                 >> throwIO (UnsupportedReadySocket :: Failure ntnAddr)
 #else
          Left sd -> do
