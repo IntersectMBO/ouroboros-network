@@ -13,6 +13,7 @@
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ViewPatterns            #-}
+{-# LANGUAGE FlexibleContexts        #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module Ouroboros.Consensus.Protocol.Praos (
@@ -39,6 +40,7 @@ import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Ledger.BaseTypes (ActiveSlotCoeff, Nonce, (⭒))
 import qualified Cardano.Ledger.BaseTypes as SL
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, KES, StandardCrypto, VRF)
+import           Cardano.Ledger.Core (Era)
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer),
                      VKey (VKey), coerceKeyRole, hashKey)
@@ -101,7 +103,7 @@ class
   ) =>
   PraosCrypto c
 
-instance PraosCrypto StandardCrypto
+instance (Era StandardCrypto) => PraosCrypto StandardCrypto
 
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header
@@ -362,13 +364,13 @@ deriving instance PraosCrypto c => NoThunks (PraosValidationErr c)
 deriving instance PraosCrypto c => Show (PraosValidationErr c)
 
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
-  type ChainDepState _ = PraosState c
-  type IsLeader _ = PraosIsLeader c
-  type CanBeLeader _ = PraosCanBeLeader c
-  type SelectView _ = PraosChainSelectView c
-  type LedgerView _ = Views.LedgerView c
-  type ValidationErr _ = PraosValidationErr c
-  type ValidateView _ = PraosValidateView c
+  type ChainDepState (Praos c) = PraosState c
+  type IsLeader (Praos c) = PraosIsLeader c
+  type CanBeLeader (Praos c) = PraosCanBeLeader c
+  type SelectView (Praos c) = PraosChainSelectView c
+  type LedgerView (Praos c) = Views.LedgerView c
+  type ValidationErr (Praos c) = PraosValidationErr c
+  type ValidateView (Praos c) = PraosValidateView c
 
   protocolSecurityParam = praosSecurityParam . praosParams
 

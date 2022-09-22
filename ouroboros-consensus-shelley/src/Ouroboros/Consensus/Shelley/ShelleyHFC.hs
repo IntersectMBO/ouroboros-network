@@ -318,6 +318,7 @@ translateLedgerViewAcrossShelley =
 instance ( ShelleyBasedEra era
          , ShelleyBasedEra (SL.PreviousEra era)
          , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+         , SL.Era (SL.PreviousEra era)
          ) => SL.TranslateEra era (ShelleyTip proto) where
   translateEra _ (ShelleyTip sno bno (ShelleyHash hash)) =
       return $ ShelleyTip sno bno (ShelleyHash hash)

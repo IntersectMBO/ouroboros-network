@@ -13,6 +13,7 @@ import qualified Cardano.Crypto.KES as KES
 import           Cardano.Crypto.VRF (certifiedOutput)
 import           Cardano.Ledger.BHeaderView
 import           Cardano.Ledger.BaseTypes (ProtVer (ProtVer))
+import           Cardano.Ledger.Core (Era, EraCrypto)
 import           Cardano.Ledger.Keys (hashKey)
 import           Cardano.Ledger.Slot (SlotNo (unSlotNo))
 import           Cardano.Protocol.TPraos.OCert
@@ -52,7 +53,7 @@ data PraosEnvelopeError
 
 instance NoThunks PraosEnvelopeError
 
-instance PraosCrypto c => ProtocolHeaderSupportsEnvelope (Praos c) where
+instance (Era c, PraosCrypto c, EraCrypto c ~ c) => ProtocolHeaderSupportsEnvelope (Praos c) where
   pHeaderHash hdr = ShelleyHash $ headerHash hdr
   pHeaderPrevHash (Header body _) = hbPrev body
   pHeaderBodyHash (Header body _) = hbBodyHash body
@@ -79,7 +80,7 @@ instance PraosCrypto c => ProtocolHeaderSupportsEnvelope (Praos c) where
       maxBodySize = lvMaxBodySize lv
       bhv = mkHeaderView hdr
 
-instance PraosCrypto c => ProtocolHeaderSupportsKES (Praos c) where
+instance (Era c, PraosCrypto c, EraCrypto c ~ c) => ProtocolHeaderSupportsKES (Praos c) where
   configSlotsPerKESPeriod cfg = praosSlotsPerKESPeriod $ praosParams cfg
   verifyHeaderIntegrity slotsPerKESPeriod header =
     isRight $ KES.verifySignedKES () ocertVkHot t headerBody headerSig
@@ -123,8 +124,8 @@ instance PraosCrypto c => ProtocolHeaderSupportsKES (Praos c) where
               hbProtVer = protVer
             }
 
-instance PraosCrypto c => ProtocolHeaderSupportsProtocol (Praos c) where
-  type CannotForgeError _ = PraosCannotForge c
+instance (Era c, PraosCrypto c, EraCrypto c ~ c) => ProtocolHeaderSupportsProtocol (Praos c) where
+  type CannotForgeError (Praos c) = PraosCannotForge c
   protocolHeaderView Header {headerBody, headerSig} =
     HeaderView
       { hvPrevHash = hbPrev headerBody,
@@ -140,7 +141,7 @@ instance PraosCrypto c => ProtocolHeaderSupportsProtocol (Praos c) where
   pHeaderIssueNo = SL.ocertN . hbOCert . headerBody
   pHeaderVRFValue = certifiedOutput . hbVrfRes . headerBody
 
-instance PraosCrypto c => ProtocolHeaderSupportsLedger (Praos c) where
+instance (Era c, PraosCrypto c, EraCrypto c ~ c) => ProtocolHeaderSupportsLedger (Praos c) where
   mkHeaderView hdr@Header {headerBody} =
     BHeaderView
       { bhviewID = hashKey $ hbVk headerBody,
@@ -151,7 +152,7 @@ instance PraosCrypto c => ProtocolHeaderSupportsLedger (Praos c) where
       }
 
 type instance Signed (Header c) = HeaderBody c
-instance PraosCrypto c => SignedHeader (Header c) where
+instance (Era c, PraosCrypto c) => SignedHeader (Header c) where
   headerSigned = headerBody
 
-instance PraosCrypto c => ShelleyProtocol (Praos c)
+instance (Era c, PraosCrypto c, EraCrypto c ~ c) => ShelleyProtocol (Praos c)

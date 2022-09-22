@@ -41,9 +41,6 @@ constraints:
   , bimap >= 0.4.0
   , ListLike >= 4.7.3
   , witherable >= 0.4
-
-  -- Plutus dependency
-  , algebraic-graphs < 0.7
   , Cabal > 3.4.0.0
 
 allow-newer:
