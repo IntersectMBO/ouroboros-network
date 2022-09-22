@@ -17,6 +17,6 @@ tests =
   testGroup "byron"
   [ Test.Consensus.Byron.Golden.tests
   , Test.Consensus.Byron.Serialisation.tests
-  -- , Test.ThreadNet.Byron.tests
-  -- , Test.ThreadNet.DualByron.tests
+  , Test.ThreadNet.Byron.tests
+  , Test.ThreadNet.DualByron.tests
   ]

@@ -127,15 +127,7 @@ data instance Ticked1 (LedgerState (HardForkBlock xs)) mk =
 
 deriving anyclass instance
      CanHardFork xs
-  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) EmptyMK)
-
-deriving anyclass instance
-     CanHardFork xs
-  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) ValuesMK)
-
-deriving anyclass instance
-     CanHardFork xs
-  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) SeqDiffMK)
+  => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) TrackingMK)
 
 instance ( CanHardFork xs
          , NoThunks (LedgerTables (LedgerState (HardForkBlock xs)) SeqDiffMK)

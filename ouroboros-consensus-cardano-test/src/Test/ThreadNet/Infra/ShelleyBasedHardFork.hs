@@ -316,7 +316,7 @@ withLedgerTablesHelper ::
   -> HardForkState fany (ShelleyBasedHardForkEras proto1 era1 proto2 era2)
   -> LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)) mk
   -> HardForkState fmk (ShelleyBasedHardForkEras proto1 era1 proto2 era2)
-withLedgerTablesHelper with (HardForkState tele) (ShelleyBasedHardForkLedgerTables appliedMK) = undefined
+withLedgerTablesHelper with (HardForkState tele) (ShelleyBasedHardForkLedgerTables appliedMK) =
       HardForkState
     $ unconsolidateShelleyTele
     $ SOP.hap
