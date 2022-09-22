@@ -8,7 +8,7 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
   ( PeerGraph (..)
   , validPeerGraph
   , allPeers
-  , firstGossipReachablePeers
+  , gossipReachablePeers
   , GovernorScripts (..)
   , GossipScript
   , ConnectionScript
@@ -24,7 +24,7 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Data.Graph (Graph)
 import qualified Data.Graph as Graph
-import           Data.List.NonEmpty (NonEmpty ((:|)))
+import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
@@ -140,8 +140,8 @@ _notionallyReachablePeers pg roots =
   where
     (graph, vertexToAddr, addrToVertex) = peerGraphAsGraph pg
 
-firstGossipReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
-firstGossipReachablePeers pg roots =
+gossipReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
+gossipReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
   . concatMap Tree.flatten
@@ -149,7 +149,7 @@ firstGossipReachablePeers pg roots =
   . map addrToVertex
   $ Set.toList roots
   where
-    (graph, vertexToAddr, addrToVertex) = firstGossipGraph pg
+    (graph, vertexToAddr, addrToVertex) = gossipGraph pg
 
 peerGraphAsGraph :: PeerGraph
                  -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
@@ -157,20 +157,25 @@ peerGraphAsGraph (PeerGraph adjacency) =
     simpleGraphRep $
       Graph.graphFromEdges [ ((), node, edges) | (node, edges, _) <- adjacency ]
 
-firstGossipGraph :: PeerGraph
+gossipGraph :: PeerGraph
                  -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
-firstGossipGraph (PeerGraph adjacency) =
+gossipGraph (PeerGraph adjacency) =
     simpleGraphRep $
       Graph.graphFromEdges
         [ ((), node, gossipScriptEdges gossipScript)
         | (node, _edges, GovernorScripts { gossipScript }) <- adjacency ]
   where
     gossipScriptEdges :: GossipScript -> [PeerAddr]
-    gossipScriptEdges (Script (script :| _)) =
+    gossipScriptEdges (Script (script :| [])) =
       case script of
         Nothing                     -> []
         Just (_, GossipTimeTimeout) -> []
         Just (edges, _)             -> edges
+    gossipScriptEdges (Script (script :| (h:t))) =
+      case script of
+        Nothing                     -> gossipScriptEdges (Script (h :| t))
+        Just (_, GossipTimeTimeout) -> gossipScriptEdges (Script (h :| t))
+        Just (edges, _)             -> edges ++ gossipScriptEdges (Script (h :| t))
 
 simpleGraphRep :: forall a n.
                   (Graph, Graph.Vertex -> (a, n, [n]), n -> Maybe Graph.Vertex)

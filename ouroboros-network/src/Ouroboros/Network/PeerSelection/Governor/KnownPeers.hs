@@ -49,6 +49,7 @@ belowTarget actions
             }
             st@PeerSelectionState {
               knownPeers,
+              establishedPeers,
               inProgressGossipReqs,
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
@@ -78,10 +79,10 @@ belowTarget actions
         decisionState = st {
                           inProgressGossipReqs = inProgressGossipReqs
                                                + numGossipReqs,
-                          knownPeers = KnownPeers.setGossipTime
-                                         selectedForGossip
-                                         (addTime policyGossipRetryTime now)
-                                         knownPeers
+                          establishedPeers = EstablishedPeers.setGossipTime
+                                              selectedForGossip
+                                              (addTime policyGossipRetryTime now)
+                                              establishedPeers
                         },
         decisionJobs  = [jobGossip actions policy
                            (Set.toList selectedForGossip)]
@@ -92,7 +93,7 @@ belowTarget actions
   | numKnownPeers < targetNumberOfKnownPeers
   , numGossipReqsPossible > 0
   , Set.null availableForGossip
-  = GuardedSkip (Min <$> KnownPeers.minGossipTime knownPeers)
+  = GuardedSkip (Min <$> EstablishedPeers.minGossipTime establishedPeers)
 
   | otherwise
   = GuardedSkip Nothing
@@ -100,7 +101,7 @@ belowTarget actions
     numKnownPeers         = KnownPeers.size knownPeers
     numGossipReqsPossible = policyMaxInProgressGossipReqs
                           - inProgressGossipReqs
-    availableForGossip    = KnownPeers.availableForGossip knownPeers
+    availableForGossip    = EstablishedPeers.availableForGossip establishedPeers
 
 
 jobGossip :: forall m peeraddr peerconn.
