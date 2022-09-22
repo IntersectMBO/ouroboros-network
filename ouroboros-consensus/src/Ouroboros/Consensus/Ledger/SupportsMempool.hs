@@ -58,10 +58,9 @@ data WhetherToIntervene
 
 class ( UpdateLedger blk
       , NoThunks (GenTx blk)
+      , NoThunks (GenTxId blk)
       , NoThunks (Validated (GenTx blk))
-      , NoThunks (TickedLedgerState blk EmptyMK)
-      , NoThunks (TickedLedgerState blk ValuesMK)
-      , NoThunks (TickedLedgerState blk SeqDiffMK)
+      , NoThunks (TickedLedgerState blk TrackingMK)
       , Show (GenTx blk)
       , Show (Validated (GenTx blk))
       , Show (ApplyTxErr blk)

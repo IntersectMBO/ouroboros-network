@@ -20,6 +20,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
   , TVarBackingStoreDeserialiseExn (..)
   , TVarBackingStoreValueHandleClosedExn (..)
   , newTVarBackingStore
+    -- * A trivial backing store
+  , trivialBackingStore
   ) where
 
 import qualified Codec.CBOR.Read as CBOR
@@ -254,3 +256,20 @@ newTVarBackingStore lookup_ rangeRead_ forwardValues_ enc dec initialization = d
   where
     extendPath path =
       FS.fsPathFromList $ FS.fsPathToList path <> [fromString "tvar"]
+
+trivialBackingStore :: IOLike m => values -> m (BackingStore m keys values diff)
+trivialBackingStore emptyValues = do
+  seqNo <- IOLike.newMVar Origin
+  pure $ BackingStore
+              (pure ())
+              (\_ _ -> pure ())
+              (do
+                  s <- IOLike.readMVar seqNo
+                  pure $ ( s
+                         , BackingStoreValueHandle
+                             (pure ())
+                             (\_ -> pure emptyValues)
+                             (\_ -> pure emptyValues)
+                         )
+              )
+              (\s _ -> void $ IOLike.swapMVar seqNo (At s))

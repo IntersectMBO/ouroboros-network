@@ -218,13 +218,14 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             , stream                = Iterator.stream  h
             , newFollower           = Follower.newFollower h
             , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
-            , getLedgerStateForKeys = \p m -> getEnv h $ \env' -> do
-                Query.getLedgerStateForKeys env' p m
             , closeDB               = closeDB h
             , isOpen                = isOpen  h
 
             , getLedgerBackingStoreValueHandle = \rreg p -> getEnv h $ \env' -> do
                 Query.getLedgerBackingStoreValueHandle env' rreg p
+
+            , getBackingStore       =       getEnv h (pure . LgrDB.lgrBackingStore . cdbLgrDB)
+            , withLgrReadLock       = \m -> getEnv h (flip LgrDB.withReadLock m    . cdbLgrDB)
             }
           testing = Internal
             { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB

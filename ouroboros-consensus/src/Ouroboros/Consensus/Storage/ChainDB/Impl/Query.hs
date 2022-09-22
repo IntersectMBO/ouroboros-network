@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
   , getIsValid
   , getLedgerBackingStoreValueHandle
   , getLedgerDB
-  , getLedgerStateForKeys
   , getMaxSlotNo
   , getTipBlock
   , getTipHeader
@@ -195,46 +194,6 @@ getMaxSlotNo CDB{..} = do
                      <$> readTVar cdbChain
     volatileDbMaxSlotNo    <- VolatileDB.getMaxSlotNo cdbVolatileDB
     return $ curChainMaxSlotNo `max` volatileDbMaxSlotNo
-
-getLedgerStateForKeys :: forall m blk b a.
-     (IOLike m, LedgerSupportsProtocol blk)
-  => ChainDbEnv m blk
-  -> StaticEither b () (Point blk)
-  -> (ExtLedgerState blk EmptyMK -> m (a, LedgerTables (ExtLedgerState blk) KeysMK))
-  -> m (StaticEither
-         b
-         (a, LedgerTables (ExtLedgerState blk) ValuesMK)
-         (Maybe (a, LedgerTables (ExtLedgerState blk) ValuesMK))
-       )
-getLedgerStateForKeys CDB{..} seP m = LgrDB.withReadLock cdbLgrDB $ do
-    ldb0 <- atomically $ LgrDB.getCurrent cdbLgrDB
-    case seP of
-      StaticLeft () -> StaticLeft <$> do
-        (a, ks) <- m (LedgerDB.ledgerDbCurrent ldb0)
-        finish a ks ldb0
-      StaticRight p -> StaticRight <$> case LedgerDB.ledgerDbPrefix p ldb0 of
-        Nothing  -> pure Nothing
-        Just ldb -> Just <$> do
-          (a, ks) <- m (LedgerDB.ledgerDbCurrent ldb)
-          finish a ks ldb
-  where
-    finish ::
-         a
-      -> LedgerTables (ExtLedgerState blk) KeysMK
-      -> LedgerDB.LedgerDB' blk
-      -> m (a, LedgerTables (ExtLedgerState blk) ValuesMK)
-    finish a ks ldb = (,) a <$> do
-      let chlog :: DbChangelog (ExtLedgerState blk)
-          chlog = LedgerDB.ledgerDbChangelog ldb
-
-          rew :: LedgerDB.RewoundTableKeySets (ExtLedgerState blk)
-          rew = LedgerDB.rewindTableKeySets chlog ks
-
-      ufs <- LedgerDB.readKeySets (LgrDB.lgrBackingStore cdbLgrDB) rew
-      let _ = ufs :: LedgerDB.UnforwardedReadSets (ExtLedgerState blk)
-      case LedgerDB.forwardTableKeySets chlog ufs of
-        Left err     -> error $ "getLedgerStateForKeys: rewind;read;forward failed " <> show err
-        Right values -> pure values
 
 getLedgerBackingStoreValueHandle :: forall b m blk.
      (IOLike m, LedgerSupportsProtocol blk)

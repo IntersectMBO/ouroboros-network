@@ -1,7 +1,7 @@
 index-state: 2022-02-18T00:00:00Z
 -- ^ When updating the index state to a date after 2022-06-21, the @Isomorphism@
-class in @ouroboros-consensus-test.Test.Util.Orphans.Isomorphism@ should be
-replaced by the @IsomorphicTo@ class from the @isomorphism-class@ package.
+-- class in @ouroboros-consensus-test.Test.Util.Orphans.Isomorphism@ should be
+-- replaced by the @IsomorphicTo@ class from the @isomorphism-class@ package.
 
 packages: ./ouroboros-network-testing
           ./monoidal-synchronisation
