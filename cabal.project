@@ -297,5 +297,10 @@ source-repository-package
   location: https://github.com/input-output-hk/moo
   tag: b9ab5acfd19c2b16161b30357c09dcf18e2655be
 
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/nothunks
+  tag: 97719eea93244af84910e43de90f725c53e11793
+
 package typed-protocols
   ghc-options: -XFlexibleContexts
