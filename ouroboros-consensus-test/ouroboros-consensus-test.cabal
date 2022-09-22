@@ -100,12 +100,14 @@ library
                      , generics-sop
                      , graphviz
                      , mtl               >=2.2   && <2.3
+                     , nonempty-containers
                      , nothunks
                      , optparse-applicative
                      , QuickCheck
                      , quickcheck-state-machine
                      , quiet             >=0.2   && <0.3
                      , random
+                     , semigroupoid
                      , serialise         >=0.2   && <0.3
                      , sop-core
                      , cardano-strict-containers
