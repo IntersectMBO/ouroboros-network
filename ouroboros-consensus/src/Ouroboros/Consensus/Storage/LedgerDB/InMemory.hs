@@ -38,6 +38,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , UnforwardedReadSets (..)
   , defaultReadKeySets
   , forwardTableKeySets
+  , forwardTableKeySets'
   , rewindTableKeySets
     -- ** Serialisation
   , decodeSnapshotBackwardsCompatible
@@ -367,20 +368,18 @@ data UnforwardedReadSets l = UnforwardedReadSets {
   , ursKeys   :: !(LedgerTables l KeysMK)
   }
 
-forwardTableKeySets ::
+forwardTableKeySets' ::
      TableStuff l
-  => DbChangelog l
+  => WithOrigin SlotNo
+  -> LedgerTables l SeqDiffMK
   -> UnforwardedReadSets l
   -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
             (LedgerTables l ValuesMK)
-forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
+forwardTableKeySets' seqNo chdiffs = \(UnforwardedReadSets seqNo' values keys) ->
     if seqNo /= seqNo' then Left (seqNo, seqNo') else
     Right
-      $ zipLedgerTables2 forward values keys
-      $ changelogDiffs dblog
+      $ zipLedgerTables2 forward values keys chdiffs
   where
-    seqNo = changelogDiffAnchor dblog
-
     forward ::
          (Ord k, Eq v)
       => ApplyMapKind ValuesMK  k v
@@ -389,6 +388,15 @@ forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
       -> ApplyMapKind ValuesMK  k v
     forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
       ApplyValuesMK $ applyDiffForKeys values keys (cumulativeDiff diffs)
+
+forwardTableKeySets ::
+     TableStuff l
+  => DbChangelog l
+  -> UnforwardedReadSets l
+  -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
+            (LedgerTables l ValuesMK)
+forwardTableKeySets dblog =
+  forwardTableKeySets' (changelogDiffAnchor dblog) (changelogDiffs dblog)
 
 -- | Isolates the prefix of the changelog that should be flushed
 --
