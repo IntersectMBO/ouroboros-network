@@ -7,7 +7,7 @@
 module Ouroboros.Network.Diffusion
   ( -- * Common API
     P2P (..)
-  , InitializationTracer (..)
+  , DiffusionTracer (..)
   , Tracers (..)
   , nullTracers
   , ExtraTracers (..)
