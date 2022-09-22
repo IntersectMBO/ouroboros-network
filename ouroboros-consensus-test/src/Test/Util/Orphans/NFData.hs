@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
@@ -9,11 +10,14 @@ module Test.Util.Orphans.NFData () where
 
 import           Control.DeepSeq (NFData (..))
 import           Data.Foldable
+import           Data.Sequence (Seq)
+import           Data.Sequence.NonEmpty (NESeq)
 
 import           Data.FingerTree.RootMeasured.Strict as RMFT
 import qualified Data.FingerTree.Strict as FT
-import           Data.Map.Diff.Strict.Internal (Diff (..), DiffEntry (..),
-                     DiffHistory (..), Keys (..), Values (..))
+import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
+                     DiffHistory (..), Keys (..), NEDiffHistory (..),
+                     UnsafeDiffHistory (..), Values (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      SudElement (..), SudMeasure (..), UtxoDiff (..),
                      UtxoEntryDiff (..), UtxoEntryDiffState (..), UtxoKeys (..),
@@ -56,7 +60,10 @@ deriving anyclass instance ( NFData vt, NFData vi, NFData a
                            ) => NFData (RMFT.StrictFingerTree vt vi a)
 
 deriving anyclass instance NFData v => NFData (DiffEntry v)
+deriving newtype instance NFData v => NFData (UnsafeDiffHistory Seq v)
+deriving newtype instance NFData v => NFData (UnsafeDiffHistory NESeq v)
 deriving newtype instance NFData v => NFData (DiffHistory v)
+deriving newtype instance NFData v => NFData (NEDiffHistory v)
 deriving newtype instance (NFData k, NFData v) => NFData (Diff k v)
 deriving newtype instance NFData k => NFData (Keys k v)
 deriving newtype instance (NFData k, NFData v) => NFData (Values k v)
