@@ -16,7 +16,7 @@ import           Data.Sequence.NonEmpty (NESeq (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
                      (InternalMeasure (..), RootMeasure (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-                     (Length (..), SlotNo (..))
+                     (Length (..), SlotNoLB (..), SlotNoUB (..))
 
 import           Test.Util.Orphans.Slotting.Arbitrary ()
 
@@ -52,7 +52,8 @@ instance (Ord k, Arbitrary k, Arbitrary v)
   arbitrary = RootMeasure <$> arbitrary <*> arbitrary
 
 instance Arbitrary (InternalMeasure k v) where
-  arbitrary = InternalMeasure <$> arbitrary <*> arbitrary
+  arbitrary = InternalMeasure <$> arbitrary <*> arbitrary <*> arbitrary
 
 deriving newtype instance Arbitrary DS.Length
-deriving newtype instance Arbitrary DS.SlotNo
+deriving newtype instance Arbitrary DS.SlotNoUB
+deriving newtype instance Arbitrary DS.SlotNoLB
