@@ -108,6 +108,7 @@ executable db-analyser
   main-is:             db-analyser.hs
   build-depends:       base
                      , cardano-crypto-wrapper
+                     , cardano-ledger-core
                      , optparse-applicative
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
@@ -141,6 +142,7 @@ executable db-synthesizer
                      , directory
                      , filepath
                      , optparse-applicative
+                     , cardano-ledger-core
                      , ouroboros-consensus
                      , ouroboros-consensus-cardano-tools
                      , transformers

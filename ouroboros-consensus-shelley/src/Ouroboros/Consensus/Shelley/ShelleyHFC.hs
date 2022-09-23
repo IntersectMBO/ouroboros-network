@@ -315,7 +315,8 @@ translateLedgerViewAcrossShelley =
   Translation from one Shelley-based era to another Shelley-based era
 -------------------------------------------------------------------------------}
 
-instance ( ShelleyBasedEra era
+instance ( SL.Era (SL.PreviousEra era)
+         , ShelleyBasedEra era
          , ShelleyBasedEra (SL.PreviousEra era)
          , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
          ) => SL.TranslateEra era (ShelleyTip proto) where

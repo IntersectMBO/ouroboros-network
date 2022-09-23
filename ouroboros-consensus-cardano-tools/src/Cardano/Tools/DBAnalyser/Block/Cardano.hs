@@ -74,6 +74,7 @@ import           Cardano.Tools.DBAnalyser.HasAnalysis
 
 
 analyseBlock ::
+     (Core.Era StandardCrypto) =>
      (forall blk. HasAnalysis blk => blk -> a)
   -> CardanoBlock StandardCrypto -> a
 analyseBlock f =
@@ -88,6 +89,7 @@ analyseBlock f =
 -- | Lift a function polymorphic over all block types supporting `HasAnalysis`
 -- into a corresponding function over `CardanoBlock.`
 analyseWithLedgerState ::
+  (Core.Era StandardCrypto) =>
   forall a.
   (forall blk. HasAnalysis blk => WithLedgerState blk -> a) ->
   WithLedgerState (CardanoBlock StandardCrypto) ->
@@ -118,7 +120,7 @@ analyseWithLedgerState f (WithLedgerState cb sb sa) =
         . getHardForkState
         . hardForkLedgerStatePerEra
 
-instance HasProtocolInfo (CardanoBlock StandardCrypto) where
+instance (Core.Era StandardCrypto) => HasProtocolInfo (CardanoBlock StandardCrypto) where
   data Args (CardanoBlock StandardCrypto) = CardanoBlockArgs {
           configFile           :: FilePath
         , threshold            :: Maybe PBftSignatureThreshold
@@ -252,7 +254,7 @@ instance Aeson.FromJSON CardanoConfig where
         , hardForkTriggers = hardForkTriggers
         }
 
-instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
+instance (Core.Era StandardCrypto, HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
   countTxOutputs = analyseBlock countTxOutputs
   blockTxSizes   = analyseBlock blockTxSizes
   knownEBBs _    =
@@ -264,7 +266,8 @@ instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock Sta
 type CardanoBlockArgs = Args (CardanoBlock StandardCrypto)
 
 mkCardanoProtocolInfo ::
-     Byron.Genesis.Config
+    (Core.Era StandardCrypto)
+  => Byron.Genesis.Config
   -> Maybe PBftSignatureThreshold
   -> ShelleyGenesis StandardShelley
   -> SL.AlonzoGenesis

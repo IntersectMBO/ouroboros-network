@@ -7,6 +7,8 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE FlexibleContexts           #-}
 
 -- | Block header associated with Praos.
 --
@@ -48,7 +50,8 @@ import           Cardano.Slotting.Block (BlockNo)
 import           Cardano.Slotting.Slot (SlotNo)
 import qualified Data.ByteString.Short as SBS
 import           Data.Coders
-import           Data.MemoBytes (Mem, MemoBytes (Memo), memoBytes)
+import           Cardano.Ledger.MemoBytes (Mem, MemoBytes (Memo), memoBytes)
+import           Cardano.Ledger.Core (Era, EraCrypto)
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -105,16 +108,21 @@ instance
   NoThunks (HeaderRaw crypto)
 
 -- | Full header type, carrying its own memoised bytes.
-newtype Header crypto = HeaderConstr (MemoBytes (HeaderRaw crypto))
-  deriving newtype (Eq, Show, NoThunks, ToCBOR)
+newtype Header crypto = HeaderConstr (MemoBytes HeaderRaw crypto)
+  deriving newtype (Eq, NoThunks, ToCBOR)
+
+instance
+  Hash.HashAlgorithm (CC.HASH (EraCrypto crypto)) =>
+  Show (Header crypto)
+
 
 deriving via
-  (Mem (HeaderRaw crypto))
+  (Mem HeaderRaw crypto)
   instance
-    CC.Crypto crypto => (FromCBOR (Annotator (Header crypto)))
+    (Era crypto, CC.Crypto crypto) => (FromCBOR (Annotator (Header crypto)))
 
 pattern Header ::
-  CC.Crypto crypto =>
+  (Era crypto, CC.Crypto crypto) =>
   HeaderBody crypto ->
   SignedKES crypto (HeaderBody crypto) ->
   Header crypto
@@ -134,7 +142,7 @@ pattern Header {headerBody, headerSig} <-
 {-# COMPLETE Header #-}
 
 -- | Compute the size of the header
-headerSize :: Header crypto -> Int
+headerSize :: Era crypto => Header crypto -> Int
 headerSize (HeaderConstr (Memo _ bytes)) = SBS.length bytes
 
 -- | Hash a header

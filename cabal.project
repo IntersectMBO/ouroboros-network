@@ -43,7 +43,6 @@ constraints:
   , witherable >= 0.4
 
   -- Plutus dependency
-  , algebraic-graphs < 0.7
   , Cabal > 3.4.0.0
 
 allow-newer:

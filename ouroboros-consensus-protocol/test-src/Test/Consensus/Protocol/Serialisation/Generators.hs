@@ -8,6 +8,7 @@ module Test.Consensus.Protocol.Serialisation.Generators where
 import           Cardano.Crypto.KES (signedKES)
 import           Cardano.Crypto.VRF (evalCertified)
 import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Ledger.Core (Era)
 import           Cardano.Protocol.TPraos.BHeader (HashHeader, PrevHash (..))
 import           Cardano.Protocol.TPraos.OCert (KESPeriod (KESPeriod),
                      OCert (OCert))
@@ -56,7 +57,7 @@ instance Praos.PraosCrypto c => Arbitrary (HeaderBody c) where
           <*> ocert
           <*> arbitrary
 
-instance Praos.PraosCrypto c => Arbitrary (Header c) where
+instance (Era c, Praos.PraosCrypto c) => Arbitrary (Header c) where
   arbitrary = do
     hBody <- arbitrary
     period <- arbitrary

@@ -14,6 +14,8 @@ module Cardano.Node.Protocol.Cardano (
   , CardanoProtocolInstantiationError (..)
   ) where
 
+import           Cardano.Ledger.Core (Era)
+import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT)
 
@@ -54,7 +56,8 @@ import           Cardano.Node.Types
 -- type class instances available.
 --
 mkSomeConsensusProtocolCardano
-  :: NodeByronProtocolConfiguration
+  :: (Era StandardCrypto)
+  => NodeByronProtocolConfiguration
   -> NodeShelleyProtocolConfiguration
   -> NodeAlonzoProtocolConfiguration
   -> NodeHardForkProtocolConfiguration

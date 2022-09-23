@@ -65,8 +65,7 @@ import           Cardano.Ledger.Mary.Translation ()
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.LedgerState as SL
-import qualified Cardano.Ledger.Shelley.Rules.Ledger as SL
-import qualified Cardano.Ledger.Shelley.Rules.Utxow as SL
+import qualified Cardano.Ledger.Shelley.Rules as SL
 import           Cardano.Ledger.ShelleyMA ()
 import qualified Cardano.Protocol.TPraos.API as SL
 import           Control.State.Transition (PredicateFailure, State)
@@ -93,16 +92,6 @@ type StandardAlonzo = AlonzoEra StandardCrypto
 
 -- | The Babbage era with standard crypto
 type StandardBabbage = BabbageEra StandardCrypto
-
-{-------------------------------------------------------------------------------
-  Type synonyms for convenience
--------------------------------------------------------------------------------}
-
--- | The 'Cardano.Ledger.Era.Crypto' type family conflicts with the
--- 'Cardano.Ledger.Crypto.Crypto' class. To avoid having to import one or both
--- of them qualified, define 'EraCrypto' as an alias of the former: /return the
--- crypto used by this era/.
-type EraCrypto era = Crypto era
 
 {-------------------------------------------------------------------------------
   Era polymorphism

@@ -1,4 +1,5 @@
 -- DUPLICATE -- adapted from: cardano-node/src/Cardano/Node/Protocol.hs
+{-# LANGUAGE FlexibleContexts #-}
 
 module Cardano.Node.Protocol (
     ProtocolInstantiationError (..)
@@ -10,6 +11,9 @@ import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT)
 
 import           Cardano.Api.Any
+
+import           Cardano.Ledger.Core (Era)
+import           Cardano.Ledger.Crypto (StandardCrypto)
 
 import           Cardano.Node.Protocol.Byron
 import           Cardano.Node.Protocol.Cardano
@@ -23,7 +27,8 @@ import           Cardano.Node.Types
 --
 
 mkConsensusProtocol
-  :: NodeProtocolConfiguration
+  :: (Era StandardCrypto)
+  => NodeProtocolConfiguration
   -> Maybe ProtocolFilepaths
   -> ExceptT ProtocolInstantiationError IO SomeConsensusProtocol
 mkConsensusProtocol ncProtocolConfig mProtocolFiles =
