@@ -94,19 +94,19 @@ fromMinimalChainDbArgs MinimalChainDbArgs {..} = ChainDbArgs {
   , cdbMaxBlocksPerFile       = VolatileDB.mkBlocksPerFile 4
   , cdbDiskPolicy             = LedgerDB.defaultDiskPolicy (configSecurityParam mcdbTopLevelConfig)
                                   LedgerDB.DefaultSnapshotInterval
-  -- ^ Keep 2 ledger snapshots, and take a new snapshot at least every 2 * k seconds, where k is the
+  -- Keep 2 ledger snapshots, and take a new snapshot at least every 2 * k seconds, where k is the
   -- security parameter.
   , cdbTopLevelConfig         = mcdbTopLevelConfig
   , cdbChunkInfo              = mcdbChunkInfo
   , cdbCheckIntegrity         = const True
-  -- ^ Getting a verified block component does not do any integrity checking, both for the
+  -- Getting a verified block component does not do any integrity checking, both for the
   -- ImmutableDB, as the VolatileDB. This is done in @extractBlockComponent@ in the iterator for the
   -- ImmutableDB, and in @getBlockComponent@ for the VolatileDB.
   , cdbGenesis                = return mcdbInitLedger
   , cdbCheckInFuture          = CheckInFuture $ \vf -> pure (VF.validatedFragment vf, [])
-  -- ^ Blocks are never in the future.
+  -- Blocks are never in the future.
   , cdbImmutableDbCacheConfig = ImmutableDB.CacheConfig 2 60
-  -- ^ Cache at most 2 chunks and expire each chunk after 60 seconds of being unused.
+  -- Cache at most 2 chunks and expire each chunk after 60 seconds of being unused.
   , cdbTracer                 = nullTracer
   , cdbTraceLedger            = nullTracer
   , cdbRegistry               = mcdbRegistry
