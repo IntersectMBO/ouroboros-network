@@ -185,7 +185,7 @@ data BlockContext blk = BlockContext
   , bcPrevPoint :: !(Point blk)
   }
 
-  -- | Create the 'BlockContext' from the header of the previous block
+-- | Create the 'BlockContext' from the header of the previous block
 blockContextFromPrevHeader ::
      HasHeader (Header blk)
   => Header blk
