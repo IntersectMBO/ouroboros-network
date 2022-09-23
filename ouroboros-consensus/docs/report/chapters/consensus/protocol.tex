@@ -142,7 +142,7 @@ overall efficiency of the system.
 blocks, those new blocks must be verified against the ledger state as it was
 at the point we rolled back to. This means we must be able to construct
 historical ledger states. In principle this is always possible, as we can always
-reply the entire chain, but doing so would be expensive. However, since we have
+replay the entire chain, but doing so would be expensive. However, since we have
 a limit on the maximum rollback, we also have a limit on how old the oldest
 ledger state is we might have to reconstruct; we take advantage of this in the
 Ledger Database (\cref{ledgerdb}) which can efficiently reconstruct any of those
