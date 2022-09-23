@@ -7,8 +7,6 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Block header associated with Praos.
 --
@@ -50,16 +48,12 @@ import           Cardano.Slotting.Block (BlockNo)
 import           Cardano.Slotting.Slot (SlotNo)
 import qualified Data.ByteString.Short as SBS
 import           Data.Coders
-import           Cardano.Ledger.MemoBytes (Mem, MemoBytes (Memo), memoBytes)
+import           Data.MemoBytes (Mem, MemoBytes (Memo), memoBytes)
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Protocol.Praos.VRF (InputVRF)
 
-import           Cardano.Crypto.Hash.Class (HashAlgorithm)
-import           Cardano.Ledger.Crypto (HASH)
-import           Cardano.Ledger.Core (EraCrypto, Era)
-import           Cardano.Crypto.KES.Class (KESAlgorithm)
 -- | The body of the header is the part which gets hashed to form the hash
 -- chain.
 data HeaderBody crypto = HeaderBody
@@ -68,68 +62,59 @@ data HeaderBody crypto = HeaderBody
     -- | block slot
     hbSlotNo   :: !SlotNo,
     -- | Hash of the previous block header
-    hbPrev     :: !(PrevHash (EraCrypto crypto)),
+    hbPrev     :: !(PrevHash crypto),
     -- | verification key of block issuer
-    hbVk       :: !(VKey 'BlockIssuer (EraCrypto crypto)),
+    hbVk       :: !(VKey 'BlockIssuer crypto),
     -- | VRF verification key for block issuer
-    hbVrfVk    :: !(VerKeyVRF (EraCrypto crypto)),
+    hbVrfVk    :: !(VerKeyVRF crypto),
     -- | Certified VRF value
-    hbVrfRes   :: !(CertifiedVRF (EraCrypto crypto) InputVRF),
+    hbVrfRes   :: !(CertifiedVRF crypto InputVRF),
     -- | Size of the block body
     hbBodySize :: !Word32,
     -- | Hash of block body
-    hbBodyHash :: !(Hash (EraCrypto crypto) EraIndependentBlockBody),
+    hbBodyHash :: !(Hash crypto EraIndependentBlockBody),
     -- | operational certificate
-    hbOCert    :: !(OCert (EraCrypto crypto)),
+    hbOCert    :: !(OCert crypto),
     -- | protocol version
     hbProtVer  :: !ProtVer
   }
   deriving (Generic)
 
-deriving instance Era crypto => Show (HeaderBody crypto)
+deriving instance CC.Crypto crypto => Show (HeaderBody crypto)
 
-deriving instance Era crypto => Eq (HeaderBody crypto)
+deriving instance CC.Crypto crypto => Eq (HeaderBody crypto)
 
 instance
-  Era crypto =>
+  CC.Crypto crypto =>
   SignableRepresentation (HeaderBody crypto)
   where
   getSignableRepresentation = serialize'
 
 instance
-  Era crypto =>
+  CC.Crypto crypto =>
   NoThunks (HeaderBody crypto)
 
 data HeaderRaw crypto = HeaderRaw
   { headerRawBody :: !(HeaderBody crypto),
     headerRawSig  :: !(SignedKES crypto (HeaderBody crypto))
   }
-  deriving (Generic)
+  deriving (Show, Generic)
 
 instance
-  Era crypto =>
-  Show (HeaderRaw crypto)
-
-instance
-  (Era crypto, KESAlgorithm (CC.KES crypto)) =>
+  CC.Crypto crypto =>
   NoThunks (HeaderRaw crypto)
 
 -- | Full header type, carrying its own memoised bytes.
--- deriving instance HashAlgorithm (HASH (EraCrypto era)) => Show (HeaderRaw era)
-
-newtype Header era = HeaderConstr (MemoBytes HeaderRaw era)
-  deriving newtype (Eq, ToCBOR)
-
-deriving instance (Era era, KESAlgorithm (CC.KES era)) => NoThunks (Header era)
-deriving instance (Era era, HashAlgorithm (HASH (EraCrypto era))) => Show (Header era)
+newtype Header crypto = HeaderConstr (MemoBytes (HeaderRaw crypto))
+  deriving newtype (Eq, Show, NoThunks, ToCBOR)
 
 deriving via
-  (Mem HeaderRaw crypto)
+  (Mem (HeaderRaw crypto))
   instance
-    (Era crypto, KESAlgorithm (CC.KES crypto)) => (FromCBOR (Annotator (Header crypto)))
+    CC.Crypto crypto => (FromCBOR (Annotator (Header crypto)))
 
 pattern Header ::
-  (Era crypto, KESAlgorithm (CC.KES crypto)) =>
+  CC.Crypto crypto =>
   HeaderBody crypto ->
   SignedKES crypto (HeaderBody crypto) ->
   Header crypto
@@ -149,12 +134,12 @@ pattern Header {headerBody, headerSig} <-
 {-# COMPLETE Header #-}
 
 -- | Compute the size of the header
-headerSize :: Era crypto => Header crypto -> Int
+headerSize :: Header crypto -> Int
 headerSize (HeaderConstr (Memo _ bytes)) = SBS.length bytes
 
 -- | Hash a header
 headerHash ::
-  (Era crypto, HashAlgorithm (HASH crypto)) =>
+  CC.Crypto crypto =>
   Header crypto ->
   Hash.Hash (CC.HASH crypto) EraIndependentBlockHeader
 headerHash = Hash.castHash . Hash.hashWithSerialiser toCBOR
@@ -163,7 +148,7 @@ headerHash = Hash.castHash . Hash.hashWithSerialiser toCBOR
 -- Serialisation
 --------------------------------------------------------------------------------
 
-instance Era crypto => ToCBOR (HeaderBody crypto) where
+instance CC.Crypto crypto => ToCBOR (HeaderBody crypto) where
   toCBOR
     HeaderBody
       { hbBlockNo,
@@ -176,21 +161,21 @@ instance Era crypto => ToCBOR (HeaderBody crypto) where
         hbBodyHash,
         hbOCert,
         hbProtVer
-      } = undefined
-      -- encode $
-      --   Rec HeaderBody
-      --     !> To hbBlockNo
-      --     !> To hbSlotNo
-      --     !> To hbPrev
-      --     !> To hbVk
-      --     !> E encodeVerKeyVRF hbVrfVk
-      --     !> To hbVrfRes
-      --     !> To hbBodySize
-      --     !> To hbBodyHash
-      --     !> To hbOCert
-      --     !> To hbProtVer
+      } =
+      encode $
+        Rec HeaderBody
+          !> To hbBlockNo
+          !> To hbSlotNo
+          !> To hbPrev
+          !> To hbVk
+          !> E encodeVerKeyVRF hbVrfVk
+          !> To hbVrfRes
+          !> To hbBodySize
+          !> To hbBodyHash
+          !> To hbOCert
+          !> To hbProtVer
 
-instance Era crypto => FromCBOR (HeaderBody crypto) where
+instance CC.Crypto crypto => FromCBOR (HeaderBody crypto) where
   fromCBOR =
     decode $
       RecD HeaderBody
@@ -206,17 +191,17 @@ instance Era crypto => FromCBOR (HeaderBody crypto) where
         <! From
 
 encodeHeaderRaw ::
-  (Era crypto, KESAlgorithm (CC.KES crypto)) =>
+  CC.Crypto crypto =>
   HeaderRaw crypto ->
   Encode ('Closed 'Dense) (HeaderRaw crypto)
 encodeHeaderRaw (HeaderRaw body sig) =
   Rec HeaderRaw !> To body !> E encodeSignedKES sig
 
-instance (Era crypto, KESAlgorithm (CC.KES crypto)) => ToCBOR (HeaderRaw crypto) where
+instance CC.Crypto crypto => ToCBOR (HeaderRaw crypto) where
   toCBOR = encode . encodeHeaderRaw
 
-instance (Era crypto, KESAlgorithm (CC.KES crypto)) => FromCBOR (HeaderRaw crypto) where
+instance CC.Crypto crypto => FromCBOR (HeaderRaw crypto) where
   fromCBOR = decode $ RecD HeaderRaw <! From <! D decodeSignedKES
 
-instance (Era crypto, KESAlgorithm (CC.KES crypto)) => FromCBOR (Annotator (HeaderRaw crypto)) where
+instance CC.Crypto crypto => FromCBOR (Annotator (HeaderRaw crypto)) where
   fromCBOR = pure <$> fromCBOR
