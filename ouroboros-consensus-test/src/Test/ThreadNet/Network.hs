@@ -36,9 +36,9 @@ module Test.ThreadNet.Network (
   ) where
 
 import           Codec.CBOR.Read (DeserialiseFailure)
+import qualified Control.Concurrent.Class.MonadSTM as MonadSTM
 import qualified Control.Exception as Exn
 import           Control.Monad
-import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc

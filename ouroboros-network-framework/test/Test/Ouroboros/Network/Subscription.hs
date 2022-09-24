@@ -14,9 +14,9 @@
 module Test.Ouroboros.Network.Subscription (tests) where
 
 import           Control.Concurrent hiding (threadDelay)
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

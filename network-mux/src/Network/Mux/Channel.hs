@@ -28,7 +28,7 @@ import qualified Network.Socket.ByteString as Socket
 import qualified System.IO as IO (Handle, IOMode (..), hFlush, hIsEOF, withFile)
 import qualified System.Process as IO (createPipe)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTimer
 

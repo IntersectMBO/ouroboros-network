@@ -20,9 +20,9 @@ import           Data.Monoid (First (..))
 import qualified Data.Set as Set
 import           Text.Printf
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer

@@ -37,10 +37,10 @@ import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           System.Random (mkStdGen)
 
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow

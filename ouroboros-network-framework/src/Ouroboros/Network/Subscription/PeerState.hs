@@ -44,9 +44,9 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (eqT, (:~:) (..))
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 

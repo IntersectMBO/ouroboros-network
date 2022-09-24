@@ -41,9 +41,9 @@ module Simulation.Network.Snocket
 
 import           Prelude hiding (read)
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -469,7 +469,7 @@ data FD_ m addr
         !addr
         -- ^ listening address
 
-        !(TBQueue m (ChannelWithInfo m addr))
+        !(StrictTBQueue m (ChannelWithInfo m addr))
         -- ^ listening queue; when 'connect' is called; dual 'AttenuatedChannel'
         -- of 'FDConnected' file descriptor is passed through the listening
         -- queue.
@@ -1085,7 +1085,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   FDListening localAddress queue -> do
                     -- We should not accept nor fail the 'accept' call in the
                     -- presence of a connection that is __not__ in SYN_SENT
-                    -- state. So we take from the TBQueue until we have found
+                    -- state. So we take from the StrictTBQueue until we have found
                     -- one that is SYN_SENT state.
                     cwi <- readTBQueueUntil (synSent localAddress) queue
                     let connId = ConnectionId localAddress (cwiAddress cwi)
@@ -1340,7 +1340,7 @@ hush Left {}   = Nothing
 hush (Right a) = Just a
 {-# INLINE hush #-}
 
-drainTBQueue :: MonadSTM m => TBQueue m a -> STM m [a]
+drainTBQueue :: MonadSTM m => StrictTBQueue m a -> STM m [a]
 drainTBQueue q = do
   ma <- tryReadTBQueue q
   case ma of
@@ -1352,7 +1352,7 @@ drainTBQueue q = do
 --
 readTBQueueUntil :: MonadSTM m
                  => (a -> STM m Bool) -- ^ a monadic predicate
-                 -> TBQueue m a  -- ^ queue
+                 -> StrictTBQueue m a -- ^ queue
                  -> STM m a
 readTBQueueUntil p q = do
   a <- readTBQueue q

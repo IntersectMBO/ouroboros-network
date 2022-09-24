@@ -31,7 +31,7 @@ import           Numeric.Natural
 
 import qualified System.IO as IO (Handle, hFlush, hIsEOF)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Concurrent.Class.MonadSTM
 
 import qualified Network.Mux.Channel as Mx
 

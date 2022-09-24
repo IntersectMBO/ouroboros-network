@@ -15,11 +15,11 @@ module Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
   , applications
   ) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

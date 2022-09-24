@@ -8,7 +8,7 @@ import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe)
 import qualified Pipes
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 

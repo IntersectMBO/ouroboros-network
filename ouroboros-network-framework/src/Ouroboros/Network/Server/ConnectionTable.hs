@@ -23,8 +23,8 @@ module Ouroboros.Network.Server.ConnectionTable
   , readValencyCounter
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM.Strict
 --import           Control.Tracer XXX Not Yet
 import qualified Data.Map.Strict as M
 import           Data.Set (Set)

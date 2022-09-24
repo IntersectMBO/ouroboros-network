@@ -16,10 +16,10 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.List (nub)
 import           Text.Printf
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)

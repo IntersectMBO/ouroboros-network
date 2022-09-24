@@ -69,8 +69,6 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
 
-import           Control.Monad.Class.MonadSTM.Strict (newEmptyTMVarIO)
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 
 import           Ouroboros.Consensus.Block

@@ -35,11 +35,11 @@ module Ouroboros.Network.InboundGovernor
   , TransitionTrace' (..)
   ) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeAsyncException (..), assert)
 import           Control.Monad (foldM, when)
 import           Control.Monad.Class.MonadAsync
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

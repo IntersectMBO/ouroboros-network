@@ -5,7 +5,7 @@
 -- Constants used in 'Ouroboros.Network.Diffusion'
 module Ouroboros.Network.Diffusion.Policies where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
 import           Data.List (sortOn, unfoldr)

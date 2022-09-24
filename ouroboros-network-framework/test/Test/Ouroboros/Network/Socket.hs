@@ -30,11 +30,11 @@ import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #endif
 
 import           Control.Concurrent (ThreadId)
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (IOException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Tracer

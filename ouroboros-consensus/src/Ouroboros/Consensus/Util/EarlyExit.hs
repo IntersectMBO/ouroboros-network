@@ -32,7 +32,7 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
+import           Control.Monad.Class.MonadSTM.Internal
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 
@@ -89,6 +89,9 @@ instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   type TMVar   (WithEarlyExit m) = TMVar   m
   type TQueue  (WithEarlyExit m) = TQueue  m
   type TBQueue (WithEarlyExit m) = TBQueue m
+  type TArray  (WithEarlyExit m) = TArray  m
+  type TSem    (WithEarlyExit m) = TSem    m
+  type TChan   (WithEarlyExit m) = TChan   m
 
   newTVar         = lift .  newTVar
   readTVar        = lift .  readTVar
@@ -110,8 +113,10 @@ instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   tryReadTQueue   = lift .  tryReadTQueue
   peekTQueue      = lift .  peekTQueue
   tryPeekTQueue   = lift .  tryPeekTQueue
+  flushTQueue     = lift .  flushTQueue
   writeTQueue     = lift .: writeTQueue
   isEmptyTQueue   = lift .  isEmptyTQueue
+  unGetTQueue     = lift .: unGetTQueue
   newTBQueue      = lift .  newTBQueue
   readTBQueue     = lift .  readTBQueue
   tryReadTBQueue  = lift .  tryReadTBQueue
@@ -122,6 +127,23 @@ instance MonadSTM m => MonadSTM (WithEarlyExit m) where
   lengthTBQueue   = lift .  lengthTBQueue
   isEmptyTBQueue  = lift .  isEmptyTBQueue
   isFullTBQueue   = lift .  isFullTBQueue
+  unGetTBQueue    = lift .: unGetTBQueue
+  newTSem         = lift .  newTSem
+  waitTSem        = lift .  waitTSem
+  signalTSem      = lift .  signalTSem
+  signalTSemN     = lift .: signalTSemN
+
+  newTChan          = lift    newTChan
+  newBroadcastTChan = lift    newBroadcastTChan
+  dupTChan          = lift .  dupTChan
+  cloneTChan        = lift .  cloneTChan
+  readTChan         = lift .  readTChan
+  tryReadTChan      = lift .  tryReadTChan
+  peekTChan         = lift .  peekTChan
+  tryPeekTChan      = lift .  tryPeekTChan
+  writeTChan        = lift .: writeTChan
+  unGetTChan        = lift .: unGetTChan
+  isEmptyTChan      = lift .  isEmptyTChan
 
   newTMVarIO      = lift . newTMVarIO
   newEmptyTMVarIO = lift   newEmptyTMVarIO
@@ -175,6 +197,8 @@ instance (MonadMask m, MonadAsync m, MonadCatch (STM m))
   type Async (WithEarlyExit m) = WithEarlyExit (Async m)
 
   async            = lift . (fmap earlyExit . async) . withEarlyExit
+  asyncBound       = lift . (fmap earlyExit . async) . withEarlyExit
+  asyncOn n        = lift . (fmap earlyExit . asyncOn n) . withEarlyExit
   asyncThreadId    = asyncThreadId
   cancel        a  = lift $ cancel     (withEarlyExit a)
   cancelWith    a  = lift . cancelWith (withEarlyExit a)
@@ -186,6 +210,10 @@ instance (MonadMask m, MonadAsync m, MonadCatch (STM m))
     asyncWithUnmask $ \unmask ->
       withEarlyExit (f (earlyExit . unmask . withEarlyExit))
 
+  asyncOnWithUnmask n f = earlyExit $ fmap (Just . earlyExit) $
+    asyncOnWithUnmask n $ \unmask ->
+      withEarlyExit (f (earlyExit . unmask . withEarlyExit))
+
 commute :: Either SomeException (Maybe a) -> Maybe (Either SomeException a)
 commute (Left e)         = Just (Left e)
 commute (Right Nothing)  = Nothing
@@ -193,6 +221,7 @@ commute (Right (Just a)) = Just (Right a)
 
 instance MonadFork m => MonadFork (WithEarlyExit m) where
   forkIO           f = lift $ forkIO (collapse <$> withEarlyExit f)
+  forkOn n         f = lift $ forkOn n (collapse <$> withEarlyExit f)
   forkIOWithUnmask f = lift $ forkIOWithUnmask $ \unmask ->
                          let unmask' :: forall a. WithEarlyExit m a -> WithEarlyExit m a
                              unmask' = earlyExit . unmask . withEarlyExit

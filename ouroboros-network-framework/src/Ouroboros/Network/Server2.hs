@@ -31,9 +31,9 @@ module Ouroboros.Network.Server2
   , module ControlChannel
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

@@ -155,8 +155,8 @@ module Ouroboros.Network.ConnectionManager.Types
   , AbstractTransitionTrace
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (unless)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)

@@ -9,7 +9,7 @@
 
 module Test.Ouroboros.Network.Diffusion.Policies where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim (runSimOrThrow)
 import qualified Data.IntPSQ as Pq

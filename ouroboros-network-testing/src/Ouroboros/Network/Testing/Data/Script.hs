@@ -34,9 +34,9 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
+import           Control.Concurrent.Class.MonadSTM
+import           Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
-import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 
