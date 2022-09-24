@@ -1,6 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts    #-}
 
 module Cardano.Tools.DBSynthesizer.Run (
     initialize
@@ -18,9 +17,6 @@ import           System.Directory
 import           System.FilePath (takeDirectory, (</>))
 
 import           Control.Tracer (nullTracer)
-
-import           Cardano.Ledger.Core (Era)
-import           Cardano.Ledger.Crypto (StandardCrypto)
 
 import           Ouroboros.Consensus.Config (configSecurityParam, configStorage)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture (dontCheck)
@@ -52,8 +48,7 @@ import           Cardano.Tools.DBSynthesizer.Types
 
 
 initialize
-    :: (Era StandardCrypto)
-    => NodeFilePaths
+    :: NodeFilePaths
     -> NodeCredentials
     -> DBSynthesizerOptions
     -> IO (Either String (DBSynthesizerConfig, SomeConsensusProtocol))

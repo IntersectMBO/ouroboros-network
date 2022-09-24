@@ -2,8 +2,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE TypeFamilies        #-}
 
 module Cardano.Tools.DBAnalyser.Run (analyse) where
 
@@ -14,9 +12,6 @@ import qualified Debug.Trace as Debug
 import           System.IO
 
 import           Control.Tracer (Tracer (..), nullTracer)
-
-import           Cardano.Ledger.Core (Era (..))
-import           Cardano.Ledger.Crypto (StandardCrypto)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -44,10 +39,6 @@ import           Cardano.Tools.DBAnalyser.Analysis
 import           Cardano.Tools.DBAnalyser.HasAnalysis
 import           Cardano.Tools.DBAnalyser.Types
 
-instance Era StandardCrypto where
-  type EraCrypto StandardCrypto = StandardCrypto
-  type ProtVerLow StandardCrypto = 0
-  type ProtVerHigh StandardCrypto = 1
 
 {-------------------------------------------------------------------------------
   Analyse

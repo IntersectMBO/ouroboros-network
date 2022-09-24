@@ -19,7 +19,6 @@ module Ouroboros.Consensus.Shelley.HFEras (
 import           Cardano.Crypto.DSIGN (Signable)
 import           Cardano.Crypto.Hash (Hash)
 import           Cardano.Ledger.Crypto (DSIGN, HASH)
-import           Cardano.Ledger.Core (Era)
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
@@ -78,4 +77,4 @@ instance
   ShelleyCompatible (TPraos c) (BabbageEra c)
 
 instance
-  (Era c, Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (BabbageEra c)
+  (Praos.PraosCrypto c) => ShelleyCompatible (Praos c) (BabbageEra c)

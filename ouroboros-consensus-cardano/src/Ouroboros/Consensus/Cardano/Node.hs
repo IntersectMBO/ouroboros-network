@@ -501,7 +501,7 @@ data ProtocolTransitionParamsShelleyBased era = ProtocolTransitionParamsShelleyB
 -- PRECONDITION: only a single set of Shelley credentials is allowed when used
 -- for mainnet (check against @'SL.gNetworkId' 'shelleyBasedGenesis'@).
 protocolInfoCardano ::
-     forall c m. (Core.Era c, IOLike m, CardanoHardForkConstraints c)
+     forall c m. (IOLike m, CardanoHardForkConstraints c)
   => ProtocolParamsByron
   -> ProtocolParamsShelleyBased (ShelleyEra c)
   -> ProtocolParamsShelley c

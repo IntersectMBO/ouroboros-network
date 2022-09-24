@@ -1,6 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE TypeFamilies     #-}
 -- | This tool synthesizes a valid ChainDB, replicating cardano-node's UX
 --
 -- Usage: db-synthesizer --config FILE --db PATH
@@ -30,16 +27,8 @@ import           System.Exit
 
 import           Cardano.Tools.DBSynthesizer.Run
 
-import           Cardano.Ledger.Core (Era (..))
-import           Cardano.Ledger.Crypto (StandardCrypto)
-
 import           DBSynthesizer.Parsers
 
-
-instance Era StandardCrypto where
-  type EraCrypto StandardCrypto = StandardCrypto
-  type ProtVerLow StandardCrypto = 0
-  type ProtVerHigh StandardCrypto = 1
 
 main :: IO ()
 main = do

@@ -103,7 +103,7 @@ instance PraosCrypto c => ProtocolHeaderSupportsKES (TPraos c) where
             } = toSign
 
 instance PraosCrypto c => ProtocolHeaderSupportsProtocol (TPraos c) where
-  type CannotForgeError (TPraos c) = TPraosCannotForge c
+  type CannotForgeError _ = TPraosCannotForge c
 
   protocolHeaderView = id
   pHeaderIssuer = SL.bheaderVk . SL.bhbody
