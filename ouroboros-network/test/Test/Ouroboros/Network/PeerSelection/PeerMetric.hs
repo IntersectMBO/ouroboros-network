@@ -6,10 +6,10 @@
 module Test.Ouroboros.Network.PeerSelection.PeerMetric where
 
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer (..), traceWith)

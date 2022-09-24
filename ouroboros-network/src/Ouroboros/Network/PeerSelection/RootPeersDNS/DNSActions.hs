@@ -25,7 +25,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime

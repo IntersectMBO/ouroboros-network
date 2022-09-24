@@ -45,7 +45,7 @@ jobs:
         echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
 
     - name: Set cache version
-      run: echo "CACHE_VERSION=9w76Z3Q" >> $GITHUB_ENV
+      run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
 
     - name: Install pkgconfiglite
       if: matrix.os == 'windows-latest'

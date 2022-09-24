@@ -28,8 +28,8 @@ module Ouroboros.Network.PeerSelection.PeerMetric
   , newPeerMetric'
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 import           Data.Bifunctor (Bifunctor (..))

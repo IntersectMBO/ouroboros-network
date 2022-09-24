@@ -14,7 +14,7 @@ module Ouroboros.Network.InboundGovernor.ControlChannel
   , newControlChannel
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Data.Functor (($>))
 import           GHC.Natural (Natural)

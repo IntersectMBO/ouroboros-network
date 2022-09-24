@@ -23,12 +23,12 @@ module Ouroboros.Network.ConnectionManager.Core
   , abstractState
   ) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork, ThreadId, throwTo)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

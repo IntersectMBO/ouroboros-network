@@ -36,10 +36,10 @@ import           Data.Semigroup (Min (..))
 import           Data.Void (Void)
 
 import           Control.Applicative (Alternative ((<|>)))
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

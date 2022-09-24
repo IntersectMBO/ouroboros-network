@@ -51,7 +51,7 @@ import           Quiet
 
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
+import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import           Control.Monad.Class.MonadTime
 
 import           Network.Mux.Channel (Channel (..))

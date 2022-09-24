@@ -25,8 +25,8 @@ module Ouroboros.Network.InboundGovernor.State
   , MiniProtocolData (..)
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
 import           Data.ByteString.Lazy (ByteString)

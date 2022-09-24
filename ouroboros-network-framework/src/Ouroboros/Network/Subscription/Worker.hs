@@ -47,8 +47,8 @@ import           GHC.Stack
 import           Network.Socket (Family (AF_UNIX))
 import           Text.Printf
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -91,7 +91,7 @@ data ResOrAct m addr tr r =
 -- | Result queue.  The spawned threads will keep writing to it, while the main
 -- server will read from it.
 --
-type ResultQ m addr tr r = TQueue m (ResOrAct m addr tr r)
+type ResultQ m addr tr r = StrictTQueue m (ResOrAct m addr tr r)
 
 newResultQ :: forall m addr tr r. MonadSTM m => m (ResultQ m addr tr r)
 newResultQ = atomically $ newTQueue
@@ -500,7 +500,7 @@ mainLoop errorPolicyTracer resQ threadsVar statusVar completeApplicationTx main 
     -- then recurse onto `mainLoop`.
     connectionTx :: STM IO (IO t)
     connectionTx = do
-      result <- STM.readTQueue resQ
+      result <- readTQueue resQ
       case result of
         Act threads tr -> pure $ do
           traverse_ cancel threads

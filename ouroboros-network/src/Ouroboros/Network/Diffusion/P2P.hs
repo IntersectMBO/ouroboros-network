@@ -29,11 +29,11 @@ module Ouroboros.Network.Diffusion.P2P
   ) where
 
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

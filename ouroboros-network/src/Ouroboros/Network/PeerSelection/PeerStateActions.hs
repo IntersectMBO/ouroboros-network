@@ -25,10 +25,10 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
   , PeerSelectionActionsTrace (..)
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad (when, (<=<))
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
 

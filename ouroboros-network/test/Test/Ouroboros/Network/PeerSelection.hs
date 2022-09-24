@@ -41,7 +41,7 @@ import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
 import           Control.Exception (AssertionFailed (..), catch, evaluate)
-import           Control.Monad.Class.MonadSTM.Strict (STM)
+import           Control.Monad.Class.MonadSTM (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim.Types hiding (STM)
 import           Control.Tracer (Tracer (..))

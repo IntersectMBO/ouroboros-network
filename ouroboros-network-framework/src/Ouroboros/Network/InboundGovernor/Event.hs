@@ -23,7 +23,7 @@ module Ouroboros.Network.InboundGovernor.Event
   , firstPeerCommitRemote
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
 import           Data.ByteString.Lazy (ByteString)

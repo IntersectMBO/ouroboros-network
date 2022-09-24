@@ -25,7 +25,7 @@ import           Test.Tasty hiding (after)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck hiding (Fixed)
 
-import qualified Control.Monad.Class.MonadSTM as LazySTM
+import qualified Control.Monad.Class.MonadSTM.Internal as LazySTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
 
@@ -428,6 +428,8 @@ instance MonadSTM m => MonadSTM (OverrideDelay m) where
   tryPeekTQueue = OverrideDelaySTM . lift . LazySTM.tryPeekTQueue
   writeTQueue v = OverrideDelaySTM . lift . LazySTM.writeTQueue v
   isEmptyTQueue = OverrideDelaySTM . lift . LazySTM.isEmptyTQueue
+  flushTQueue   = OverrideDelaySTM . lift . LazySTM.flushTQueue
+  unGetTQueue v = OverrideDelaySTM . lift . LazySTM.unGetTQueue v
 
   type TBQueue (OverrideDelay m) = LazySTM.TBQueue m
   newTBQueue     = OverrideDelaySTM . lift . LazySTM.newTBQueue
@@ -440,6 +442,28 @@ instance MonadSTM m => MonadSTM (OverrideDelay m) where
   isEmptyTBQueue = OverrideDelaySTM . lift . LazySTM.isEmptyTBQueue
   isFullTBQueue  = OverrideDelaySTM . lift . LazySTM.isFullTBQueue
   flushTBQueue   = OverrideDelaySTM . lift . LazySTM.flushTBQueue
+  unGetTBQueue v = OverrideDelaySTM . lift . LazySTM.unGetTBQueue v
+
+  type TArray  (OverrideDelay m) = LazySTM.TArray m
+
+  type TSem    (OverrideDelay m) = LazySTM.TSem m
+  newTSem        = OverrideDelaySTM . lift . LazySTM.newTSem
+  waitTSem       = OverrideDelaySTM . lift . LazySTM.waitTSem
+  signalTSem     = OverrideDelaySTM . lift . LazySTM.signalTSem
+  signalTSemN v  = OverrideDelaySTM . lift . LazySTM.signalTSemN v
+
+  type TChan   (OverrideDelay m) = LazySTM.TChan m
+  newTChan          = OverrideDelaySTM . lift $  LazySTM.newTChan
+  newBroadcastTChan = OverrideDelaySTM . lift $ LazySTM.newBroadcastTChan
+  dupTChan          = OverrideDelaySTM . lift . LazySTM.dupTChan
+  cloneTChan        = OverrideDelaySTM . lift . LazySTM.cloneTChan
+  readTChan         = OverrideDelaySTM . lift . LazySTM.readTChan
+  tryReadTChan      = OverrideDelaySTM . lift . LazySTM.tryReadTChan
+  peekTChan         = OverrideDelaySTM . lift . LazySTM.peekTChan
+  tryPeekTChan      = OverrideDelaySTM . lift . LazySTM.tryPeekTChan
+  writeTChan v      = OverrideDelaySTM . lift . LazySTM.writeTChan v
+  unGetTChan v      = OverrideDelaySTM . lift . LazySTM.unGetTChan v
+  isEmptyTChan      = OverrideDelaySTM . lift . LazySTM.isEmptyTChan
 
 newtype OverrideDelayAsync m a = OverrideDelayAsync {
     unOverrideDelayAsync :: Async m a
@@ -449,6 +473,10 @@ instance (MonadAsync m, MonadMask m, MonadThrow (STM m)) => MonadAsync (Override
   type Async (OverrideDelay m) = OverrideDelayAsync m
   async io = OverrideDelay $ ReaderT $
     \schedule -> OverrideDelayAsync <$> async (runReaderT (unOverrideDelay io) schedule)
+  asyncBound io = OverrideDelay $ ReaderT $
+    \schedule -> OverrideDelayAsync <$> asyncBound (runReaderT (unOverrideDelay io) schedule)
+  asyncOn n io = OverrideDelay $ ReaderT $
+    \schedule -> OverrideDelayAsync <$> asyncOn n (runReaderT (unOverrideDelay io) schedule)
   asyncThreadId (OverrideDelayAsync a) = asyncThreadId a
   cancel       = OverrideDelay . lift . cancel . unOverrideDelayAsync
   cancelWith a = OverrideDelay . lift . cancelWith (unOverrideDelayAsync a)
@@ -456,6 +484,16 @@ instance (MonadAsync m, MonadMask m, MonadThrow (STM m)) => MonadAsync (Override
     \schedule ->
       OverrideDelayAsync <$>
       asyncWithUnmask
+        (\unmask ->
+            let unmask' :: forall x. OverrideDelay m x -> OverrideDelay m x
+                unmask' (OverrideDelay (ReaderT m)) =
+                  OverrideDelay $ ReaderT $ \schedule' -> unmask (m schedule')
+            in runReaderT (unOverrideDelay $ f unmask') schedule
+        )
+  asyncOnWithUnmask n f = OverrideDelay $ ReaderT $
+    \schedule ->
+      OverrideDelayAsync <$>
+      asyncOnWithUnmask n
         (\unmask ->
             let unmask' :: forall x. OverrideDelay m x -> OverrideDelay m x
                 unmask' (OverrideDelay (ReaderT m)) =

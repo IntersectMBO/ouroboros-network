@@ -68,12 +68,12 @@ module Ouroboros.Network.Socket
   ) where
 
 import           Control.Concurrent.Async
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeException (..))
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad (unless, when)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import qualified Control.Monad.STM as STM

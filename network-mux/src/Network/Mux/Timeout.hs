@@ -22,12 +22,12 @@ module Network.Mux.Timeout
   , withTimeoutSerialAlternative
   ) where
 
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Exception (asyncExceptionFromException,
                      asyncExceptionToException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer (MonadTimer, registerDelay)

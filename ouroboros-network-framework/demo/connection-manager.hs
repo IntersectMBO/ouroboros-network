@@ -19,12 +19,12 @@
 --
 module Main (main) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST (MonadST)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (MonadTime (..))

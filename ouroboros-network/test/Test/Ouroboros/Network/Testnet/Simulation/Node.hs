@@ -22,14 +22,12 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   , module PeerSelection
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (forM, replicateM, (>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, cancel, waitAny, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM), MonadTraceSTM, StrictTVar, atomically,
-                     newTVarIO, readTVar, writeTVar)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
                      MonadMask, MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)

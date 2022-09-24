@@ -20,9 +20,9 @@ module Ouroboros.Network.BlockFetch.Client
   , BlockFetchProtocolFailure
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (unless)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 

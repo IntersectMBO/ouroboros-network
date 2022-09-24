@@ -28,9 +28,9 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 import           GHC.Generics (Generic)
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer

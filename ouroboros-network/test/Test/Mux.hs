@@ -11,10 +11,10 @@ module Test.Mux (tests) where
 
 import           Codec.Serialise (Serialise (..))
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime

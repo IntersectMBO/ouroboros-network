@@ -2,8 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Data.Monoid.Synchronisation where
 
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
 
 import           Data.Monoid.Synchronisation
 

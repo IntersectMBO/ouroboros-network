@@ -7,7 +7,7 @@ module Ouroboros.Network.PeerSelection.PeerMetric.Type
   , TraceLabelPeer (..)
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer)
 

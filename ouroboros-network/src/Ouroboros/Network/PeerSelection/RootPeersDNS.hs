@@ -46,9 +46,9 @@ import           Data.Void (Void, absurd)
 import           Data.Word (Word32)
 
 import           Control.Applicative ((<|>))
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
