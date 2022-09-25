@@ -304,3 +304,6 @@ source-repository-package
 
 package typed-protocols
   ghc-options: -XFlexibleContexts
+
+package cabal
+  ghc-options: -Wno-deprecated-flags
