@@ -1,0 +1,41 @@
+{-#LANGUAGE GADTs #-}
+{-#LANGUAGE TypeFamilies #-}
+{-#LANGUAGE DataKinds #-}
+{-#LANGUAGE EmptyCase #-}
+module Cardano.KESAgent.Protocol
+where
+
+import Network.TypedProtocol.Core
+import Cardano.Crypto.KES.Class
+
+data KESProtocol k where
+  IdleState :: KESProtocol k
+
+-- | The protocol for pushing KES keys.
+--
+-- Intended use:
+--
+-- - The Node acts as the Client, the Agent acts as a Server
+-- - When a Node connects, the Agent will push the current key
+-- - When the Agent generates a new key, it will push the new key
+--
+-- Hence, the Agent always has agency, and there is only one protocol state,
+-- the 'IdleState'. From there, the Agent can always push keys, and the Node
+-- will always accept new keys.
+instance Protocol (KESProtocol k) where
+  data Message (KESProtocol k) IdleState IdleState =
+          Message (SignKeyKES k)
+
+  -- | Server always has agency
+  data ServerHasAgency st where
+    TokIdle :: ServerHasAgency IdleState
+
+  -- | Client never has agency
+  data ClientHasAgency st where
+
+  -- | Someone, i.e., the server, always has agency
+  data NobodyHasAgency st where
+
+  exclusionLemma_ClientAndServerHaveAgency tok TokIdle = case tok of {}
+  exclusionLemma_NobodyAndClientHaveAgency tok _ = case tok of {}
+  exclusionLemma_NobodyAndServerHaveAgency tok TokIdle = case tok of {}
