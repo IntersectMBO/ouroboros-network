@@ -7,6 +7,8 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Block header associated with Praos.
 --
@@ -81,46 +83,48 @@ data HeaderBody era = HeaderBody
   }
   deriving (Generic)
 
-deriving instance (Era era) => Show (HeaderBody era)
+deriving instance Era era => Show (HeaderBody era)
 
 deriving instance Era era => Eq (HeaderBody era)
 
 instance
-  CC.Crypto crypto =>
-  SignableRepresentation (HeaderBody crypto)
+  Era era =>
+  SignableRepresentation (HeaderBody era)
   where
   getSignableRepresentation = serialize'
 
 instance
-  CC.Crypto crypto =>
-  NoThunks (HeaderBody crypto)
+  Era era =>
+  NoThunks (HeaderBody era)
 
 data HeaderRaw era = HeaderRaw
   { headerRawBody :: !(HeaderBody era),
     headerRawSig  :: !(SignedKES (EraCrypto era) (HeaderBody era))
   }
-  deriving (Show, Generic)
+  deriving (Generic)
 
 instance
-  CC.Crypto crypto =>
-  NoThunks (HeaderRaw crypto)
+  Era era =>
+  NoThunks (HeaderRaw era)
 
-deriving instance Hash.HashAlgorithm (CC.HASH (EraCrypto era)) => Show (MemoBytes HeaderRaw era)
+deriving instance 
+  Era era =>
+  Show (HeaderRaw era)
 
 -- | Full header type, carrying its own memoised bytes.
 newtype Header era = HeaderConstr (MemoBytes HeaderRaw era)
-  deriving newtype (Eq, Show, NoThunks, ToCBOR)
+  deriving newtype (Eq, NoThunks, Show, ToCBOR)
 
 deriving via
-  (Mem HeaderRaw crypto)
+  (Mem HeaderRaw era)
   instance
-    CC.Crypto crypto => (FromCBOR (Annotator (Header crypto)))
+    Era era => (FromCBOR (Annotator (Header era)))
 
 pattern Header ::
-  CC.Crypto crypto =>
-  HeaderBody crypto ->
-  SignedKES crypto (HeaderBody crypto) ->
-  Header crypto
+  Era era =>
+  HeaderBody era ->
+  SignedKES (EraCrypto era) (HeaderBody era) ->
+  Header era
 pattern Header {headerBody, headerSig} <-
   HeaderConstr
     ( Memo
@@ -137,21 +141,21 @@ pattern Header {headerBody, headerSig} <-
 {-# COMPLETE Header #-}
 
 -- | Compute the size of the header
-headerSize :: Header crypto -> Int
+headerSize :: Era era => Header era -> Int
 headerSize (HeaderConstr (Memo _ bytes)) = SBS.length bytes
 
 -- | Hash a header
 headerHash ::
-  CC.Crypto crypto =>
-  Header crypto ->
-  Hash.Hash (CC.HASH crypto) EraIndependentBlockHeader
+  Era era =>
+  Header era ->
+  Hash.Hash (CC.HASH (EraCrypto era)) EraIndependentBlockHeader
 headerHash = Hash.castHash . Hash.hashWithSerialiser toCBOR
 
 --------------------------------------------------------------------------------
 -- Serialisation
 --------------------------------------------------------------------------------
 
-instance CC.Crypto crypto => ToCBOR (HeaderBody crypto) where
+instance Era era => ToCBOR (HeaderBody era) where
   toCBOR
     HeaderBody
       { hbBlockNo,
@@ -178,7 +182,7 @@ instance CC.Crypto crypto => ToCBOR (HeaderBody crypto) where
           !> To hbOCert
           !> To hbProtVer
 
-instance CC.Crypto crypto => FromCBOR (HeaderBody crypto) where
+instance Era era => FromCBOR (HeaderBody era) where
   fromCBOR =
     decode $
       RecD HeaderBody
@@ -194,17 +198,17 @@ instance CC.Crypto crypto => FromCBOR (HeaderBody crypto) where
         <! From
 
 encodeHeaderRaw ::
-  CC.Crypto crypto =>
-  HeaderRaw crypto ->
-  Encode ('Closed 'Dense) (HeaderRaw crypto)
+  Era era =>
+  HeaderRaw era ->
+  Encode ('Closed 'Dense) (HeaderRaw era)
 encodeHeaderRaw (HeaderRaw body sig) =
   Rec HeaderRaw !> To body !> E encodeSignedKES sig
 
-instance CC.Crypto crypto => ToCBOR (HeaderRaw crypto) where
+instance Era era => ToCBOR (HeaderRaw era) where
   toCBOR = encode . encodeHeaderRaw
 
-instance CC.Crypto crypto => FromCBOR (HeaderRaw crypto) where
+instance Era era => FromCBOR (HeaderRaw era) where
   fromCBOR = decode $ RecD HeaderRaw <! From <! D decodeSignedKES
 
-instance CC.Crypto crypto => FromCBOR (Annotator (HeaderRaw crypto)) where
+instance Era era => FromCBOR (Annotator (HeaderRaw era)) where
   fromCBOR = pure <$> fromCBOR
