@@ -36,6 +36,7 @@ import           Cardano.Crypto.Util
                      (SignableRepresentation (getSignableRepresentation))
 import           Cardano.Ledger.BaseTypes (ProtVer)
 import qualified Cardano.Ledger.Crypto as CC
+import           Cardano.Ledger.Core (Era, EraCrypto)
 import           Cardano.Ledger.Hashes (EraIndependentBlockBody,
                      EraIndependentBlockHeader)
 import           Cardano.Ledger.Keys (CertifiedVRF, Hash, KeyRole (BlockIssuer),
@@ -48,7 +49,7 @@ import           Cardano.Slotting.Block (BlockNo)
 import           Cardano.Slotting.Slot (SlotNo)
 import qualified Data.ByteString.Short as SBS
 import           Data.Coders
-import           Data.MemoBytes (Mem, MemoBytes (Memo), memoBytes)
+import           Cardano.Ledger.MemoBytes (Mem, MemoBytes (Memo), memoBytes)
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -56,33 +57,33 @@ import           Ouroboros.Consensus.Protocol.Praos.VRF (InputVRF)
 
 -- | The body of the header is the part which gets hashed to form the hash
 -- chain.
-data HeaderBody crypto = HeaderBody
+data HeaderBody era = HeaderBody
   { -- | block number
     hbBlockNo  :: !BlockNo,
     -- | block slot
     hbSlotNo   :: !SlotNo,
     -- | Hash of the previous block header
-    hbPrev     :: !(PrevHash crypto),
+    hbPrev     :: !(PrevHash (EraCrypto era)),
     -- | verification key of block issuer
-    hbVk       :: !(VKey 'BlockIssuer crypto),
+    hbVk       :: !(VKey 'BlockIssuer (EraCrypto era)),
     -- | VRF verification key for block issuer
-    hbVrfVk    :: !(VerKeyVRF crypto),
+    hbVrfVk    :: !(VerKeyVRF (EraCrypto era)),
     -- | Certified VRF value
-    hbVrfRes   :: !(CertifiedVRF crypto InputVRF),
+    hbVrfRes   :: !(CertifiedVRF (EraCrypto era) InputVRF),
     -- | Size of the block body
     hbBodySize :: !Word32,
     -- | Hash of block body
-    hbBodyHash :: !(Hash crypto EraIndependentBlockBody),
+    hbBodyHash :: !(Hash (EraCrypto era) EraIndependentBlockBody),
     -- | operational certificate
-    hbOCert    :: !(OCert crypto),
+    hbOCert    :: !(OCert (EraCrypto era)),
     -- | protocol version
     hbProtVer  :: !ProtVer
   }
   deriving (Generic)
 
-deriving instance CC.Crypto crypto => Show (HeaderBody crypto)
+deriving instance (Era era) => Show (HeaderBody era)
 
-deriving instance CC.Crypto crypto => Eq (HeaderBody crypto)
+deriving instance Era era => Eq (HeaderBody era)
 
 instance
   CC.Crypto crypto =>
@@ -94,9 +95,9 @@ instance
   CC.Crypto crypto =>
   NoThunks (HeaderBody crypto)
 
-data HeaderRaw crypto = HeaderRaw
-  { headerRawBody :: !(HeaderBody crypto),
-    headerRawSig  :: !(SignedKES crypto (HeaderBody crypto))
+data HeaderRaw era = HeaderRaw
+  { headerRawBody :: !(HeaderBody era),
+    headerRawSig  :: !(SignedKES (EraCrypto era) (HeaderBody era))
   }
   deriving (Show, Generic)
 
@@ -104,12 +105,14 @@ instance
   CC.Crypto crypto =>
   NoThunks (HeaderRaw crypto)
 
+deriving instance Hash.HashAlgorithm (CC.HASH (EraCrypto era)) => Show (MemoBytes HeaderRaw era)
+
 -- | Full header type, carrying its own memoised bytes.
-newtype Header crypto = HeaderConstr (MemoBytes (HeaderRaw crypto))
+newtype Header era = HeaderConstr (MemoBytes HeaderRaw era)
   deriving newtype (Eq, Show, NoThunks, ToCBOR)
 
 deriving via
-  (Mem (HeaderRaw crypto))
+  (Mem HeaderRaw crypto)
   instance
     CC.Crypto crypto => (FromCBOR (Annotator (Header crypto)))
 
