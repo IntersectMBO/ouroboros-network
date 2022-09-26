@@ -83,7 +83,7 @@ withPeerSelectionActions
             readLocalRootPeers = toList <$> readTVar localRootsVar,
             peerSharing,
             requestPublicRootPeers = requestPublicRootPeers,
-            requestPeerGossip = \_ -> pure [],
+            requestPeerShare = \_ -> pure [],
             peerStateActions
           }
     withAsync

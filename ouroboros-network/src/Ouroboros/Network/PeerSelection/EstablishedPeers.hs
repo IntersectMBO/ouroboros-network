@@ -23,10 +23,10 @@ module Ouroboros.Network.PeerSelection.EstablishedPeers
   , setActivateTimes
     -- ** Tracking when we can (re)activate
   , minActivateTime
-    -- ** Tracking when we can gossip
-  , minGossipTime
-  , setGossipTime
-  , availableForGossip
+    -- ** Tracking when we can peer share
+  , minPeerShareTime
+  , setPeerShareTime
+  , availableForPeerShare
   , invariant
   ) where
 
@@ -54,42 +54,42 @@ import           Control.Monad.Class.MonadTime
 --
 -- It has one special feature:
 --
---  * It tracks which peers we are permitted to gossip with now, or for peers
---    we cannot gossip with now the time at which we would next be allowed to
---    do so.
+--  * It tracks which peers we are permitted to ask for peers now, or for peers
+--    we cannot issue share requests with now the time at which we would next be
+--    allowed to do so.
 --
 data EstablishedPeers peeraddr peerconn = EstablishedPeers {
     -- | Peers which are either ready to become active or are active.
     --
-    allPeers           :: !(Map peeraddr peerconn),
+    allPeers              :: !(Map peeraddr peerconn),
 
-    -- | The subset of established peers that we would be allowed to gossip with
-    -- now. This is because we have not gossiped with them recently.
+    -- | The subset of established peers that we would be allowed to peer share
+    -- with now. This is because we have not peer shared with them recently.
     --
     -- NOTE that this is the set of available peers one would be able to perform
     -- peer sharing _now_, it doesn't mean they are 100% eligible. This will
     -- depend on other factors like the peer's 'PeerSharing' value.
     --
-    availableForGossip :: !(Set peeraddr),
+    availableForPeerShare :: !(Set peeraddr),
 
-    -- | The subset of established peers that we cannot gossip with now. It
-    -- keeps track of the next time we are allowed to gossip with them.
+    -- | The subset of established peers that we cannot peer share with now. It
+    -- keeps track of the next time we are allowed to peer share with them.
     --
-    nextGossipTimes    :: !(OrdPSQ peeraddr Time ()),
+    nextPeerShareTimes    :: !(OrdPSQ peeraddr Time ()),
 
 
     -- | Peers which are not ready to become active.
-    nextActivateTimes  :: !(OrdPSQ peeraddr Time ())
+    nextActivateTimes     :: !(OrdPSQ peeraddr Time ())
   }
   deriving (Show, Functor)
 
 
 empty :: EstablishedPeers peeraddr perconn
 empty = EstablishedPeers {
-      allPeers           = Map.empty,
-      availableForGossip = Set.empty,
-      nextGossipTimes    = PSQ.empty,
-      nextActivateTimes  = PSQ.empty
+      allPeers              = Map.empty,
+      availableForPeerShare = Set.empty,
+      nextPeerShareTimes    = PSQ.empty,
+      nextActivateTimes     = PSQ.empty
     }
 
 
@@ -97,15 +97,15 @@ invariant :: Ord peeraddr
           => EstablishedPeers peeraddr peerconn
           -> Bool
 invariant EstablishedPeers {..} =
-       -- The combo of the gossip set + psq = the whole set of peers
-       availableForGossip
-    <> Set.fromList (PSQ.keys nextGossipTimes)
+       -- The combo of the peer share set + psq = the whole set of peers
+       availableForPeerShare
+    <> Set.fromList (PSQ.keys nextPeerShareTimes)
     == Map.keysSet allPeers
-       -- The gossip set and psq do not overlap
+       -- The peer share set and psq do not overlap
  && Set.null
       (Set.intersection
-         availableForGossip
-        (Set.fromList (PSQ.keys nextGossipTimes)))
+         availableForPeerShare
+        (Set.fromList (PSQ.keys nextPeerShareTimes)))
      -- nextActivateTimes is a subset of allPeers
  &&  Set.fromList (PSQ.keys nextActivateTimes)
      `Set.isSubsetOf`
@@ -164,17 +164,17 @@ insert :: Ord peeraddr
        -> peerconn
        -> EstablishedPeers peeraddr peerconn
        -> EstablishedPeers peeraddr peerconn
-insert peeraddr peerconn ep@EstablishedPeers { allPeers, availableForGossip } =
+insert peeraddr peerconn ep@EstablishedPeers { allPeers, availableForPeerShare } =
    ep { allPeers = Map.insert peeraddr peerconn allPeers,
 
-        -- The sets tracking peers ready for gossip need to be updated with any
+        -- The sets tracking peers ready for peer share need to be updated with any
         -- /fresh/ peers, but any already present are ignored since they are
         -- either already in these sets or they are in the corresponding PSQs,
         -- for which we also preserve existing info.
-        availableForGossip =
+        availableForPeerShare =
           if Map.member peeraddr allPeers
-             then availableForGossip
-             else Set.insert peeraddr availableForGossip
+             then availableForPeerShare
+             else Set.insert peeraddr availableForPeerShare
       }
 
 delete :: Ord peeraddr
@@ -182,14 +182,14 @@ delete :: Ord peeraddr
        -> EstablishedPeers peeraddr peerconn
        -> EstablishedPeers peeraddr peerconn
 delete peeraddr es@EstablishedPeers { allPeers
-                                    , availableForGossip
-                                    , nextGossipTimes
+                                    , availableForPeerShare
+                                    , nextPeerShareTimes
                                     , nextActivateTimes
                                     } =
-    es { allPeers           = Map.delete peeraddr allPeers,
-         availableForGossip = Set.delete peeraddr availableForGossip,
-         nextGossipTimes    = PSQ.delete peeraddr nextGossipTimes,
-         nextActivateTimes  = PSQ.delete peeraddr nextActivateTimes
+    es { allPeers              = Map.delete peeraddr allPeers,
+         availableForPeerShare = Set.delete peeraddr availableForPeerShare,
+         nextPeerShareTimes    = PSQ.delete peeraddr nextPeerShareTimes,
+         nextActivateTimes     = PSQ.delete peeraddr nextActivateTimes
        }
 
 
@@ -201,15 +201,15 @@ deletePeers :: Ord peeraddr
             -> EstablishedPeers peeraddr peerconn
             -> EstablishedPeers peeraddr peerconn
 deletePeers peeraddrs es@EstablishedPeers { allPeers
-                                          , availableForGossip
-                                          , nextGossipTimes
+                                          , availableForPeerShare
+                                          , nextPeerShareTimes
                                           , nextActivateTimes
                                           } =
-    es { allPeers           = Map.withoutKeys allPeers peeraddrs,
-         availableForGossip = Set.difference availableForGossip peeraddrs,
-         nextGossipTimes    =
-           List.foldl' (flip PSQ.delete) nextGossipTimes peeraddrs,
-         nextActivateTimes  =
+    es { allPeers              = Map.withoutKeys allPeers peeraddrs,
+         availableForPeerShare = Set.difference availableForPeerShare peeraddrs,
+         nextPeerShareTimes    =
+           List.foldl' (flip PSQ.delete) nextPeerShareTimes peeraddrs,
+         nextActivateTimes     =
            List.foldl' (flip PSQ.delete) nextActivateTimes peeraddrs
        }
 
@@ -222,33 +222,33 @@ setCurrentTime :: Ord peeraddr
                => Time
                -> EstablishedPeers peeraddr peerconn
                -> EstablishedPeers peeraddr peerconn
-setCurrentTime now ep@EstablishedPeers { nextGossipTimes
+setCurrentTime now ep@EstablishedPeers { nextPeerShareTimes
                                        , nextActivateTimes
                                        }
  -- Efficient check for the common case of there being nothing to do:
-  | Just (Min t) <- (f <$> PSQ.minView nextGossipTimes)
+  | Just (Min t) <- (f <$> PSQ.minView nextPeerShareTimes)
                  <> (f <$> PSQ.minView nextActivateTimes)
   , t > now
   = ep
   where
     f (_,t,_,_) = Min t
 
-setCurrentTime now ep@EstablishedPeers { nextGossipTimes
-                                       , availableForGossip
+setCurrentTime now ep@EstablishedPeers { nextPeerShareTimes
+                                       , availableForPeerShare
                                        , nextActivateTimes
                                        } =
-  let ep' = ep { nextGossipTimes   = nextGossipTimes'
-               , availableForGossip = availableForGossip'
-               , nextActivateTimes = nextActivateTimes'
+  let ep' = ep { nextPeerShareTimes    = nextPeerShareTimes'
+               , availableForPeerShare = availableForPeerShare'
+               , nextActivateTimes     = nextActivateTimes'
                }
     in assert (invariant ep') ep'
   where
-    (nowAvailableForGossip, nextGossipTimes') =
-      PSQ.atMostView now nextGossipTimes
+    (nowAvailableForPeerShare, nextPeerShareTimes') =
+      PSQ.atMostView now nextPeerShareTimes
 
-    availableForGossip' =
-         availableForGossip
-      <> Set.fromList [ peeraddr | (peeraddr, _, _) <- nowAvailableForGossip ]
+    availableForPeerShare' =
+         availableForPeerShare
+      <> Set.fromList [ peeraddr | (peeraddr, _, _) <- nowAvailableForPeerShare ]
 
     (_, nextActivateTimes') = PSQ.atMostView now nextActivateTimes
 
@@ -287,45 +287,46 @@ setActivateTimes times ep@EstablishedPeers { nextActivateTimes } =
        $ ep'
 
 -------------------------------
--- Tracking when we can gossip
+-- Tracking when we can peer share
 --
 
--- | The first time that a peer will become available for gossip. If peers are
--- already available for gossip, or there are no peers at all then the
--- result is @Nothing@.
+-- | The first time that a peer will become available for peer sharing. If
+-- peers are already available for peer share, or there are no peers at all
+-- then the result is @Nothing@.
 --
-minGossipTime :: Ord peeraddr => EstablishedPeers peeraddr peercon -> Maybe Time
-minGossipTime EstablishedPeers {
-                availableForGossip,
-                nextGossipTimes
-              }
-  | Set.null availableForGossip
-  , Just (_k, t, _, _psq) <- PSQ.minView nextGossipTimes
+minPeerShareTime :: Ord peeraddr
+                 => EstablishedPeers peeraddr peercon
+                 -> Maybe Time
+minPeerShareTime EstablishedPeers { availableForPeerShare,
+                                    nextPeerShareTimes
+                                  }
+  | Set.null availableForPeerShare
+  , Just (_k, t, _, _psq) <- PSQ.minView nextPeerShareTimes
   = Just t
 
   | otherwise
   = Nothing
 
-setGossipTime :: Ord peeraddr
+setPeerShareTime :: Ord peeraddr
                  => Set peeraddr
                  -> Time
                  -> EstablishedPeers peeraddr peercon
                  -> EstablishedPeers peeraddr peercon
-setGossipTime peeraddrs time
+setPeerShareTime peeraddrs time
                  ep@EstablishedPeers {
                    allPeers,
-                   availableForGossip,
-                   nextGossipTimes
+                   availableForPeerShare,
+                   nextPeerShareTimes
                  } =
     assert (all (`Map.member` allPeers) peeraddrs) $
     let ep' = ep {
-          availableForGossip =
-                   availableForGossip
+          availableForPeerShare =
+                   availableForPeerShare
             Set.\\ peeraddrs,
 
-          nextGossipTimes =
+          nextPeerShareTimes =
             List.foldl' (\psq peeraddr -> PSQ.insert peeraddr time () psq)
-                        nextGossipTimes
+                        nextPeerShareTimes
                         peeraddrs
         }
     in assert (invariant ep') ep'
