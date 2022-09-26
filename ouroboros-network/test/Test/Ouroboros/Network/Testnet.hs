@@ -596,10 +596,10 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePublicRootsResults"
       peerSelectionTraceMap (TracePublicRootsFailure se _ _)    =
         "TracePublicRootsFailure " ++ show se
-      peerSelectionTraceMap (TraceGossipRequests _ _ _ _)       =
-        "TraceGossipRequests"
-      peerSelectionTraceMap (TraceGossipResults _)              =
-        "TraceGossipResults"
+      peerSelectionTraceMap (TracePeerShareRequests _ _ _ _)    =
+        "TracePeerShareRequests"
+      peerSelectionTraceMap (TracePeerShareResults _)           =
+        "TracePeerShareResults"
       peerSelectionTraceMap (TraceForgetColdPeers _ _ _)        =
         "TraceForgetColdPeers"
       peerSelectionTraceMap (TracePromoteColdPeers _ _ _)       =

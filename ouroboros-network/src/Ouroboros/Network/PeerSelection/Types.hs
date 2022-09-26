@@ -10,7 +10,7 @@ module Ouroboros.Network.PeerSelection.Types
 --
 data PeerSource = PeerSourceLocalRoot
                 | PeerSourcePublicRoot
-                | PeerSourceGossip
+                | PeerSourcePeerShare
   deriving (Eq, Ord, Show, Enum)
 
 data PeerStatus =

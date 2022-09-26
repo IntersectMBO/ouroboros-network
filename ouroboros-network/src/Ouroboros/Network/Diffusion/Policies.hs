@@ -78,21 +78,21 @@ simplePeerSelectionPolicy :: forall m peerAddr.
                           -> ReconnectDelay
                           -> PeerSelectionPolicy peerAddr m
 simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelectionPolicy {
-      policyPickKnownPeersForGossip = simplePromotionPolicy,
-      policyPickColdPeersToPromote  = simplePromotionPolicy,
-      policyPickWarmPeersToPromote  = simplePromotionPolicy,
+      policyPickKnownPeersForPeerShare = simplePromotionPolicy,
+      policyPickColdPeersToPromote     = simplePromotionPolicy,
+      policyPickWarmPeersToPromote     = simplePromotionPolicy,
 
-      policyPickHotPeersToDemote    = hotDemotionPolicy,
-      policyPickWarmPeersToDemote   = warmDemotionPolicy,
-      policyPickColdPeersToForget   = coldForgetPolicy,
+      policyPickHotPeersToDemote  = hotDemotionPolicy,
+      policyPickWarmPeersToDemote = warmDemotionPolicy,
+      policyPickColdPeersToForget = coldForgetPolicy,
 
-      policyFindPublicRootTimeout   = 5,    -- seconds
-      policyMaxInProgressGossipReqs = 2,
-      policyGossipRetryTime         = 3600, -- seconds
-      policyGossipBatchWaitTime     = 3,    -- seconds
-      policyGossipOverallTimeout    = 10,   -- seconds
+      policyFindPublicRootTimeout      = 5,    -- seconds
+      policyMaxInProgressPeerShareReqs = 2,
+      policyPeerShareRetryTime         = 3600, -- seconds
+      policyPeerShareBatchWaitTime     = 3,    -- seconds
+      policyPeerShareOverallTimeout    = 10,   -- seconds
 
-      policyErrorDelay              = ExitPolicy.reconnectDelay errorDelay
+      policyErrorDelay = ExitPolicy.reconnectDelay errorDelay
     }
   where
 

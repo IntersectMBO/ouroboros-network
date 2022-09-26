@@ -163,7 +163,7 @@ playTimedScript tracer (Script ((x0,d0) :| script)) = do
 -- Pick scripts
 --
 
--- | A pick script is used to interpret the 'policyPickKnownPeersForGossip' and
+-- | A pick script is used to interpret the 'policyPickKnownPeersForPeerShare' and
 -- the 'policyPickColdPeersToForget'. It selects elements from the given
 -- choices by their index (modulo the number of choices). This representation
 -- was chosen because it allows easy shrinking.
