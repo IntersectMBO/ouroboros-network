@@ -485,6 +485,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePeerShareRequests"
       peerSelectionTraceMap (TracePeerShareResults _)           =
         "TracePeerShareResults"
+      peerSelectionTraceMap (TracePeerShareResultsFiltered _)   =
+        "TracePeerShareResultsFiltered"
       peerSelectionTraceMap (TraceForgetColdPeers _ _ _)        =
         "TraceForgetColdPeers"
       peerSelectionTraceMap (TracePromoteColdPeers _ _ _)       =
