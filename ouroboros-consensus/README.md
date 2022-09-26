@@ -12,14 +12,14 @@ This package contains:
 * `docs`: documentation, in particular, `docs/report` contains the technical
   report about the consensus and storage layer.
 
-Related packages:
+The following packages use `ouroboros-consensus` to integrate specific ledgers:
 
 * `../ouroboros-consensus-byron`: integration with the Byron ledger, including
   protocol tests simulating various node setups.
 
 * `../ouroboros-consensus-byronspec`: integration with the Byron spec ledger.
   This is used to run the Byron protocol tests in lockstep with the spec to
-  detect any discrepancies.
+  detect any discrepancies between the specification and the implementation.
 
 * `../ouroboros-consensus-shelley`: integration with the Shelley ledger,
   including protocol tests simulating various node setups.
