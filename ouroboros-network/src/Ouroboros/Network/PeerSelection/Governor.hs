@@ -58,6 +58,7 @@ import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.PeerMetric
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 
 {- $overview
 
@@ -498,7 +499,7 @@ peerSelectionGovernorLoop tracer
           st'               = st { knownPeers       = knownPeers',
                                    establishedPeers = establishedPeers' }
 
-      timedDecision <- evalGuardedDecisions blockedAt st'
+      timedDecision <- evalGuardedDecisions blockedAt (peerSharing actions) st'
 
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
@@ -515,10 +516,11 @@ peerSelectionGovernorLoop tracer
       loop (decisionState { countersCache = Cache newCounters })
 
     evalGuardedDecisions :: Time
+                         -> PeerSharing
                          -> PeerSelectionState peeraddr peerconn
                          -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt st =
-      case guardedDecisions blockedAt st of
+    evalGuardedDecisions blockedAt peerSharing st =
+      case guardedDecisions blockedAt peerSharing st of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
@@ -537,9 +539,10 @@ peerSelectionGovernorLoop tracer
           return timedDecision
 
     guardedDecisions :: Time
+                     -> PeerSharing
                      -> PeerSelectionState peeraddr peerconn
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt st =
+    guardedDecisions blockedAt peerSharing st =
       -- All the alternative potentially-blocking decisions.
          Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
@@ -547,13 +550,13 @@ peerSelectionGovernorLoop tracer
       <> Monitor.localRoots           actions policy st
 
       -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt  st
-      <> KnownPeers.belowTarget       actions     policy st
-      <> KnownPeers.aboveTarget                   policy st
-      <> EstablishedPeers.belowTarget actions     policy st
-      <> EstablishedPeers.aboveTarget actions     policy st
-      <> ActivePeers.belowTarget      actions     policy st
-      <> ActivePeers.aboveTarget      actions     policy st
+      <> RootPeers.belowTarget        actions blockedAt         st
+      <> KnownPeers.belowTarget       actions peerSharing policy st
+      <> KnownPeers.aboveTarget                           policy st
+      <> EstablishedPeers.belowTarget actions             policy st
+      <> EstablishedPeers.aboveTarget actions             policy st
+      <> ActivePeers.belowTarget      actions             policy st
+      <> ActivePeers.aboveTarget      actions             policy st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
