@@ -336,9 +336,8 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
   where
     process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
     process oldLedger blk = do
-      let ledgerCfg     = ExtLedgerCfg cfg
-          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
-          newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
+      let ledgerCfg = ExtLedgerCfg cfg
+          newLedger = tickThenReapply ledgerCfg blk oldLedger
       when (blockSlot blk >= slotNo) $ storeLedgerState blk newLedger
       when (blockSlot blk > slotNo) $ issueWarning blk
       when ((unBlockNo $ blockNo blk) `mod` 1000 == 0) $ reportProgress blk
