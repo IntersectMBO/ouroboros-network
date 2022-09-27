@@ -601,7 +601,7 @@ runM Interfaces
        { dtMuxTracer
        , dtLocalMuxTracer
        , dtLedgerPeersTracer
-       , dtDiffusionInitializationTracer = tracer
+       , dtDiffusionTracer = tracer
        }
      TracersExtra
        { dtTracePeerSelectionTracer
@@ -1135,7 +1135,7 @@ run
     -> ApplicationsExtra RemoteAddress IO a
     -> IO Void
 run tracers tracersExtra args argsExtra apps appsExtra = do
-    let tracer = dtDiffusionInitializationTracer tracers
+    let tracer = dtDiffusionTracer tracers
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
