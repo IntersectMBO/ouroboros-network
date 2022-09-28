@@ -47,12 +47,12 @@ import           Ouroboros.Network.Mux
 
 -- | Edge triggered events to which the /inbound protocol governor/ reacts.
 --
-data Event (muxMode :: MuxMode) peerAddr m a b
+data Event (muxMode :: MuxMode) peerAddr versionData m a b
     -- | A request to start mini-protocol bundle, either from the server or from
     -- connection manager after a duplex connection was negotiated.
     --
     = NewConnection !(ControlChannel.NewConnection peerAddr
-                        (Handle muxMode peerAddr ByteString m a b))
+                        (Handle muxMode peerAddr versionData ByteString m a b))
 
     -- | A multiplexer exited.
     --
@@ -93,15 +93,15 @@ data Event (muxMode :: MuxMode) peerAddr m a b
 -- | A signal which returns an 'Event'.  Signals are combined together and
 -- passed used to fold the current state map.
 --
-type EventSignal (muxMode :: MuxMode) peerAddr m a b =
+type EventSignal (muxMode :: MuxMode) peerAddr versionData m a b =
         ConnectionId peerAddr
      -> ConnectionState muxMode peerAddr m a b
-     -> FirstToFinish (STM m) (Event muxMode peerAddr m a b)
+     -> FirstToFinish (STM m) (Event muxMode peerAddr versionData m a b)
 
 -- | A mux stopped.  If mux exited cleanly no error is attached.
 --
 firstMuxToFinish :: MonadSTM m
-                 => EventSignal muxMode peerAddr m a b
+                 => EventSignal muxMode peerAddr versionData m a b
 firstMuxToFinish connId ConnectionState { csMux } =
     FirstToFinish $ MuxFinished connId <$> Mux.muxStopped csMux
 
@@ -124,7 +124,7 @@ data Terminated muxMode peerAddr m a b = Terminated {
 -- /triggers:/ 'MiniProtocolTerminated'.
 --
 firstMiniProtocolToFinish :: MonadSTM m
-                          => EventSignal muxMode peerAddr m a b
+                          => EventSignal muxMode peerAddr versionData m a b
 firstMiniProtocolToFinish
     connId
     ConnectionState { csMux,
@@ -157,9 +157,9 @@ firstMiniProtocolToFinish
 -- transition, but here we don't make a distinction on @Duplex@ and
 -- @Unidirectional@ connections.
 --
-firstPeerPromotedToWarm :: forall muxMode peerAddr m a b.
+firstPeerPromotedToWarm :: forall muxMode peerAddr versionData m a b.
                            MonadSTM m
-                        => EventSignal muxMode peerAddr m a b
+                        => EventSignal muxMode peerAddr versionData m a b
 firstPeerPromotedToWarm
     connId
     ConnectionState { csMux, csRemoteState }
@@ -192,7 +192,7 @@ firstPeerPromotedToWarm
   where
     fn :: (MiniProtocolNum, MiniProtocolDir)
        -> STM m MiniProtocolStatus
-       -> FirstToFinish (STM m) (Event muxMode peerAddr m a b)
+       -> FirstToFinish (STM m) (Event muxMode peerAddr versionData m a b)
     fn = \(_miniProtocolNum, miniProtocolDir) miniProtocolStatus ->
       case miniProtocolDir of
         InitiatorDir -> mempty
@@ -208,9 +208,9 @@ firstPeerPromotedToWarm
 -- | Detect when a first warm peer is promoted to hot (all hot mini-protocols
 -- run running).
 --
-firstPeerPromotedToHot :: forall muxMode peerAddr m a b.
+firstPeerPromotedToHot :: forall muxMode peerAddr versionData m a b.
                           MonadSTM m
-                       => EventSignal muxMode peerAddr m a b
+                       => EventSignal muxMode peerAddr versionData m a b
 firstPeerPromotedToHot
    connId connState@ConnectionState { csRemoteState }
    = case csRemoteState of
@@ -258,9 +258,9 @@ firstPeerPromotedToHot
 -- | Detect when a first hot mini-protocols terminates, which triggers the
 -- `RemoteHot → RemoteWarm` transition.
 --
-firstPeerDemotedToWarm :: forall muxMode peerAddr m a b.
+firstPeerDemotedToWarm :: forall muxMode peerAddr versionData m a b.
                           MonadSTM m
-                       => EventSignal muxMode peerAddr m a b
+                       => EventSignal muxMode peerAddr versionData m a b
 firstPeerDemotedToWarm
     connId connState@ConnectionState { csRemoteState }
     = case csRemoteState of
@@ -303,7 +303,7 @@ firstPeerDemotedToWarm
 -- /triggers:/ 'DemotedToColdRemote'
 --
 firstPeerDemotedToCold :: MonadSTM m
-                       => EventSignal muxMode peerAddr m a b
+                       => EventSignal muxMode peerAddr versionData m a b
 firstPeerDemotedToCold
     connId
     ConnectionState {
@@ -344,7 +344,7 @@ firstPeerDemotedToCold
 -- | First peer for which the 'RemoteIdle' timeout expires.
 --
 firstPeerCommitRemote :: MonadSTM m
-                      => EventSignal muxMode peerAddr m a b
+                      => EventSignal muxMode peerAddr versionData m a b
 firstPeerCommitRemote
     connId ConnectionState { csRemoteState }
     = case csRemoteState of

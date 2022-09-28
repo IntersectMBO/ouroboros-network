@@ -22,6 +22,8 @@ import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
 import           Ouroboros.Network.Magic
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+                     (PeerSharing (..))
 
 
 -- | Enumeration of node to node protocol versions.
@@ -48,6 +50,10 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable @CardanoNodeToNodeVersion7@, i.e., Conway
+    -- * Adds a new extra parameter to handshake: PeerSharing
+    --   This version is needed to support the new  Peer Sharing miniprotocol
+    --   older versions that are negotiated will appear as not participating
+    --   in Peer Sharing to newer versions.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -98,6 +104,7 @@ data DiffusionMode
 data NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic  :: !NetworkMagic
   , diffusionMode :: !DiffusionMode
+  , peerSharing   :: !PeerSharing
   }
   deriving (Show, Typeable, Eq)
   -- 'Eq' instance is not provided, it is not what we need in version
@@ -106,12 +113,14 @@ data NodeToNodeVersionData = NodeToNodeVersionData
 instance Acceptable NodeToNodeVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
     -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
-    -- agree on it.
+    -- agree on it. Keep the remote's PeerSharing information PeerSharing
+    -- information.
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
       = Accept NodeToNodeVersionData
           { networkMagic  = networkMagic local
           , diffusionMode = diffusionMode local `min` diffusionMode remote
+          , peerSharing   = peerSharing remote
           }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
@@ -120,18 +129,58 @@ instance Acceptable NodeToNodeVersionData where
 
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm _version
-  = let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode }
-          = CBOR.TList
+nodeToNodeCodecCBORTerm version
+  | version >= NodeToNodeV_11 =
+    let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
+        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing }
+          = CBOR.TList $
               [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
               , CBOR.TBool (case diffusionMode of
                              InitiatorOnlyDiffusionMode         -> True
                              InitiatorAndResponderDiffusionMode -> False)
+              , CBOR.TInt (case peerSharing of
+                             NoPeerSharing      -> 0
+                             PeerSharingPrivate -> 1
+                             PeerSharingPublic  -> 2)
               ]
 
-        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
+        decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
+        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing])
+          | x >= 0
+          , x <= 0xffffffff
+          , peerSharing >= 0
+          , peerSharing <= 2
+          = Right
+              NodeToNodeVersionData {
+                  networkMagic = NetworkMagic (fromIntegral x),
+                  diffusionMode = if diffusionMode
+                                  then InitiatorOnlyDiffusionMode
+                                  else InitiatorAndResponderDiffusionMode,
+                  peerSharing = case peerSharing of
+                                  0 -> NoPeerSharing
+                                  1 -> PeerSharingPrivate
+                                  2 -> PeerSharingPublic
+                                  _ -> error "decodeTerm: impossible happened!"
+                }
+          | x < 0 || x > 0xffffffff
+          = Left $ T.pack $ "networkMagic out of bound: " <> show x
+          | otherwise -- peerSharing < 0 || peerSharing > 2
+          = Left $ T.pack $ "peerSharing out of bound: " <> show peerSharing
+        decodeTerm _ t
+          = Left $ T.pack $ "unknown encoding: " ++ show t
+     in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
+  | otherwise =
+    let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
+        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode }
+          = CBOR.TList $
+                  [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+                  , CBOR.TBool (case diffusionMode of
+                                 InitiatorOnlyDiffusionMode         -> True
+                                 InitiatorAndResponderDiffusionMode -> False)
+                  ]
+
+        decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
+        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
           | x >= 0
           , x <= 0xffffffff
           = Right
@@ -139,13 +188,16 @@ nodeToNodeCodecCBORTerm _version
                   networkMagic = NetworkMagic (fromIntegral x),
                   diffusionMode = if diffusionMode
                                   then InitiatorOnlyDiffusionMode
-                                  else InitiatorAndResponderDiffusionMode
+                                  else InitiatorAndResponderDiffusionMode,
+                  -- By default older versions do not participate in Peer
+                  -- Sharing, since they do not support the new miniprotocol
+                  peerSharing = NoPeerSharing
                 }
           | otherwise
           = Left $ T.pack $ "networkMagic out of bound: " <> show x
-        decodeTerm t
+        decodeTerm _ t
           = Left $ T.pack $ "unknown encoding: " ++ show t
-    in CodecCBORTerm {encodeTerm, decodeTerm}
+     in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
 
 
 data ConnectionMode = UnidirectionalMode | DuplexMode

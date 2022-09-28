@@ -1,4 +1,6 @@
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingStrategies  #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -8,6 +10,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
+
+-- TODO: Needed for PeerSharing arbitrary instance see
+-- todo there.
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Ouroboros.Network.Protocol.Handshake.Test where
 
@@ -64,6 +70,8 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient.Version
 import           Ouroboros.Network.NodeToNode.Version
 
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+                     (PeerSharing (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -612,33 +620,54 @@ newtype ArbitraryNodeToNodeVersionData =
         ArbitraryNodeToNodeVersionData
           { getNodeToNodeVersionData :: NodeToNodeVersionData }
     deriving Show
+    deriving Acceptable via NodeToNodeVersionData
+
+-- | With the introduction of PeerSaring to 'NodeToNodeVersionData' this type's
+-- 'Acceptable' instance is no longer symmetric. Because when handshake is
+-- performed we keep only the remote's side PeerSharing information. Due to this,
+-- the 'ArbitraryNodeToNodeVersionData' needs to have a custom 'Eq' type that
+-- ignores this parameter.
+--
+instance Eq ArbitraryNodeToNodeVersionData where
+  (==) (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm dm _))
+       (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm' dm' _))
+    = nm == nm' && dm == dm'
 
 instance Arbitrary ArbitraryNodeToNodeVersionData where
-    arbitrary = ( fmap ArbitraryNodeToNodeVersionData
-                . NodeToNodeVersionData
-                )
-            <$> (NetworkMagic <$> arbitrary)
-            <*> elements [ InitiatorOnlyDiffusionMode
-                         , InitiatorAndResponderDiffusionMode
-                         ]
+    arbitrary = fmap (fmap ArbitraryNodeToNodeVersionData)
+              . NodeToNodeVersionData
+             <$> (NetworkMagic <$> arbitrary)
+             <*> elements [ InitiatorOnlyDiffusionMode
+                          , InitiatorAndResponderDiffusionMode
+                          ]
+             <*> elements [ NoPeerSharing
+                          , PeerSharingPrivate
+                          , PeerSharingPublic
+                          ]
     shrink (ArbitraryNodeToNodeVersionData
-             (NodeToNodeVersionData magic mode)) =
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode)
+             (NodeToNodeVersionData magic mode peerSharing)) =
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode peerSharing')
         | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
+        , peerSharing' <- shrinkPeerSharing peerSharing
         ]
         ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode')
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' peerSharing')
         | mode' <- shrinkMode mode
+        , peerSharing' <- shrinkPeerSharing peerSharing
         ]
       where
         shrinkMode :: DiffusionMode -> [DiffusionMode]
         shrinkMode InitiatorOnlyDiffusionMode = []
         shrinkMode InitiatorAndResponderDiffusionMode = [InitiatorOnlyDiffusionMode]
 
+        shrinkPeerSharing PeerSharingPublic  = [PeerSharingPrivate, NoPeerSharing]
+        shrinkPeerSharing PeerSharingPrivate = [NoPeerSharing]
+        shrinkPeerSharing NoPeerSharing      = []
+
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions
           { getArbitraryNodeToNodeVersiosn :: Versions NodeToNodeVersion
-                                                       NodeToNodeVersionData Bool }
+                                                       ArbitraryNodeToNodeVersionData Bool }
 
 instance Show ArbitraryNodeToNodeVersions where
     show (ArbitraryNodeToNodeVersions (Versions vs))
@@ -647,7 +676,7 @@ instance Show ArbitraryNodeToNodeVersions where
 instance Arbitrary ArbitraryNodeToNodeVersions where
     arbitrary = do
       vs <- listOf (getNodeToNodeVersion <$> arbitrary)
-      ds <- vectorOf (length vs) (getNodeToNodeVersionData <$> arbitrary)
+      ds <- vectorOf (length vs) arbitrary
       r  <- arbitrary
       return $ ArbitraryNodeToNodeVersions
              $ Versions
@@ -733,8 +762,7 @@ prop_acceptable_symmetric_NodeToNode
   :: ArbitraryNodeToNodeVersionData
   -> ArbitraryNodeToNodeVersionData
   -> Bool
-prop_acceptable_symmetric_NodeToNode (ArbitraryNodeToNodeVersionData a)
-                                     (ArbitraryNodeToNodeVersionData b) =
+prop_acceptable_symmetric_NodeToNode a b =
     prop_acceptable_symmetric a b
 
 
@@ -920,9 +948,16 @@ prop_channel_simultaneous_open_NodeToNode_ST
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    (cborTermVersionDataCodec (fmap transform nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
+  where
+    transform :: CodecCBORTerm Text NodeToNodeVersionData
+              -> CodecCBORTerm Text ArbitraryNodeToNodeVersionData
+    transform (CodecCBORTerm g h) =
+      CodecCBORTerm { encodeTerm = \(ArbitraryNodeToNodeVersionData a) -> g a
+                    , decodeTerm = fmap (fmap ArbitraryNodeToNodeVersionData) h
+                    }
 
 
 prop_channel_simultaneous_open_NodeToNode_IO :: ArbitraryNodeToNodeVersions
@@ -934,9 +969,16 @@ prop_channel_simultaneous_open_NodeToNode_IO
   ioProperty $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    (cborTermVersionDataCodec (fmap transform nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
+  where
+    transform :: CodecCBORTerm Text NodeToNodeVersionData
+              -> CodecCBORTerm Text ArbitraryNodeToNodeVersionData
+    transform (CodecCBORTerm g h) =
+      CodecCBORTerm { encodeTerm = \(ArbitraryNodeToNodeVersionData a) -> g a
+                    , decodeTerm = fmap (fmap ArbitraryNodeToNodeVersionData) h
+                    }
 
 
 prop_channel_simultaneous_open_NodeToClient_ST :: ArbitraryNodeToClientVersions
@@ -1062,9 +1104,16 @@ prop_channel_simultaneous_open_NodeToNode_SimNet
     (ArbitraryNodeToNodeVersions serverVersions) =
       runSimOrThrow $ prop_channel_simultaneous_open_sim
         (codecHandshake nodeToNodeVersionCodec)
-        (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+        (cborTermVersionDataCodec (fmap transform nodeToNodeCodecCBORTerm))
         clientVersions
         serverVersions
+  where
+    transform :: CodecCBORTerm Text NodeToNodeVersionData
+              -> CodecCBORTerm Text ArbitraryNodeToNodeVersionData
+    transform (CodecCBORTerm g h) =
+      CodecCBORTerm { encodeTerm = \(ArbitraryNodeToNodeVersionData a) -> g a
+                    , decodeTerm = fmap (fmap ArbitraryNodeToNodeVersionData) h
+                    }
 
 prop_channel_simultaneous_open_NodeToClient_SimNet :: ArbitraryNodeToClientVersions
                                                    -> ArbitraryNodeToClientVersions
