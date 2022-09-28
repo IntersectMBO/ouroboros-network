@@ -17,7 +17,7 @@ maintainer:         tobias@well-typed.com
 
 library
     exposed-modules: Cardano.KESAgent.Protocol
-                   -- , Cardano.KESAgent.Driver
+                   , Cardano.KESAgent.Driver
 
     -- other-modules:
 
