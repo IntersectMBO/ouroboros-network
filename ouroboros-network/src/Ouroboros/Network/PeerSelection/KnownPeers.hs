@@ -378,9 +378,9 @@ setConnectTimes times
 canPeerShareRequest :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canPeerShareRequest pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
-    Just (KnownPeerInfo _ _ (Just PeerSharingPublic) _ _)  -> True
-    Just (KnownPeerInfo _ _ (Just PeerSharingPrivate) _ _) -> True
-    _                                                      -> False
+    Just (KnownPeerInfo _ _ PeerSharingPublic _ _)  -> True
+    Just (KnownPeerInfo _ _ PeerSharingPrivate _ _) -> True
+    _                                               -> False
 
 -- Filter available for Peer Sharing peers according to their PeerSharing
 -- information

@@ -122,6 +122,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
+import Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 
 {-------------------------------------------------------------------------------
   The arguments to the Consensus Layer node functionality
@@ -172,6 +173,9 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
 
       -- | Network P2P Mode switch
     , rnEnableP2P :: NetworkP2PMode p2p
+
+      -- | Network PeerSharing miniprotocol willingness flag
+    , rnPeerSharing :: PeerSharing
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -693,10 +697,14 @@ stdChainSyncTimeout = do
       ix <- randomRIO (0, length xs - 1)
       return $ xs !! ix
 
-stdVersionDataNTN :: NetworkMagic -> DiffusionMode -> NodeToNodeVersionData
-stdVersionDataNTN networkMagic diffusionMode = NodeToNodeVersionData
+stdVersionDataNTN :: NetworkMagic
+                  -> DiffusionMode
+                  -> PeerSharing
+                  -> NodeToNodeVersionData
+stdVersionDataNTN networkMagic diffusionMode peerSharing = NodeToNodeVersionData
     { networkMagic
     , diffusionMode
+    , peerSharing
     }
 
 stdVersionDataNTC :: NetworkMagic -> NodeToClientVersionData
@@ -767,7 +775,10 @@ stdLowLevelRunNodeArgsIO ::
           NodeToClientVersionData
           blk
           p2p)
-stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo
+                                    , rnEnableP2P
+                                    , rnPeerSharing
+                                    }
                          StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
@@ -800,6 +811,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
                -- `InitiatorAndResponderDiffusionMode`.
                DisabledP2PMode -> InitiatorOnlyDiffusionMode
             )
+            rnPeerSharing
       , llrnNodeToNodeVersions =
           limitToLatestReleasedVersion
             fst
