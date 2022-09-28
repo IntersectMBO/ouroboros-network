@@ -272,7 +272,7 @@ subscriptionLoop
           threadDelay $ ipRetryDelay - duration
 
   where
-    -- a single run through @sTarget :: SubcriptionTarget m addr@.
+    -- a single run through @sTarget :: SubscriptionTarget m addr@.
     innerLoop :: StrictTVar m (Set (Async m ()))
               -> ValencyCounter m
               -> SubscriptionTarget m addr
