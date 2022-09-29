@@ -70,6 +70,8 @@ import           Simulation.Network.Snocket (AddressType (..),
 
 import           Test.Ouroboros.Network.Orphans ()
 
+import           Ouroboros.Network.NodeToNode ()
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
                      oneof)
 
@@ -113,7 +115,10 @@ instance Hashable NtNAddr_
 
 type NtNAddr        = TestAddress NtNAddr_
 type NtNVersion     = UnversionedProtocol
-data NtNVersionData = NtNVersionData { ntnDiffusionMode :: DiffusionMode }
+data NtNVersionData = NtNVersionData
+  { ntnDiffusionMode :: DiffusionMode
+  , ntnPeerSharing   :: PeerSharing
+  }
   deriving Show
 type NtCAddr        = TestAddress Int
 type NtCVersion     = UnversionedProtocol

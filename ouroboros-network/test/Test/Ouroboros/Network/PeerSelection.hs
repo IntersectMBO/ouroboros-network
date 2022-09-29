@@ -2271,12 +2271,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing =
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
 
-    actions :: PeerSelectionActions SockAddr () IO
+    actions :: PeerSelectionActions SockAddr PeerSharing IO
     actions = PeerSelectionActions {
                 readLocalRootPeers       = return [],
                 peerSharing              = peerSharing,
                 readPeerSelectionTargets = return targets,
                 requestPeerShare         = \_ -> return [],
+                peerConnToPeerSharing    = \ps -> ps,
                 requestPublicRootPeers   = \_ -> return (Map.empty, 0),
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",

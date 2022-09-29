@@ -100,7 +100,8 @@ import           Simulation.Network.Snocket (AddressType (..), FD)
 
 import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+                     (PeerSharing (..))
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -210,6 +211,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
                   case ntnDiffusionMode of
                     InitiatorOnlyDiffusionMode         -> Unidirectional
                     InitiatorAndResponderDiffusionMode -> Duplex
+              , Diff.P2P.diNtnPeerSharing        = ntnPeerSharing
               , Diff.P2P.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
               , Diff.P2P.diNtnDomainResolver     = iNtnDomainResolver ni
               , Diff.P2P.diNtcSnocket            = iNtcSnocket ni
@@ -249,7 +251,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daReturnPolicy           = \_ -> 0
               }
 
-        apps <- Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
+        let apps = Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
 
         registry <- newFetchClientRegistry
 
@@ -343,13 +345,24 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
     ntnUnversionedDataCodec :: VersionDataCodec CBOR.Term NtNVersion NtNVersionData
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
       where
-        encodeData _ NtNVersionData { ntnDiffusionMode } =
+        encodeData _ NtNVersionData { ntnDiffusionMode, ntnPeerSharing } =
           case ntnDiffusionMode of
-            InitiatorOnlyDiffusionMode         -> CBOR.TBool False
-            InitiatorAndResponderDiffusionMode -> CBOR.TBool True
+            InitiatorOnlyDiffusionMode         -> case ntnPeerSharing of
+              NoPeerSharing      -> CBOR.TList [CBOR.TBool False, CBOR.TInt 0]
+              PeerSharingPrivate -> CBOR.TList [CBOR.TBool False, CBOR.TInt 1]
+              PeerSharingPublic  -> CBOR.TList [CBOR.TBool False, CBOR.TInt 2]
+            InitiatorAndResponderDiffusionMode -> case ntnPeerSharing of
+              NoPeerSharing      -> CBOR.TList [CBOR.TBool True, CBOR.TInt 0]
+              PeerSharingPrivate -> CBOR.TList [CBOR.TBool True, CBOR.TInt 1]
+              PeerSharingPublic  -> CBOR.TList [CBOR.TBool True, CBOR.TInt 2]
         decodeData _ bytes = case bytes of
-          CBOR.TBool False -> Right (NtNVersionData InitiatorOnlyDiffusionMode)
-          CBOR.TBool True  -> Right (NtNVersionData InitiatorAndResponderDiffusionMode)
+          CBOR.TList [CBOR.TBool False, CBOR.TInt 0] -> Right (NtNVersionData InitiatorOnlyDiffusionMode NoPeerSharing)
+          CBOR.TList [CBOR.TBool False, CBOR.TInt 1] -> Right (NtNVersionData InitiatorOnlyDiffusionMode PeerSharingPrivate)
+          CBOR.TList [CBOR.TBool False, CBOR.TInt 2] -> Right (NtNVersionData InitiatorOnlyDiffusionMode PeerSharingPublic)
+
+          CBOR.TList [CBOR.TBool True, CBOR.TInt 0] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode NoPeerSharing)
+          CBOR.TList [CBOR.TBool True, CBOR.TInt 1] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode PeerSharingPrivate)
+          CBOR.TList [CBOR.TBool True, CBOR.TInt 2] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode PeerSharingPublic)
           _                -> Left (Text.pack "unversionedDataCodec: unexpected term")
 
     args :: Diff.Arguments (NtNFD m) NtNAddr (NtCFD m) NtCAddr
