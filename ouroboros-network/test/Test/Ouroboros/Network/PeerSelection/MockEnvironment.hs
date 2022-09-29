@@ -59,7 +59,8 @@ import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeer
 import           Ouroboros.Network.Testing.Data.Script (PickScript,
                      ScriptDelay (..), TimedScript, arbitraryPickScript,
                      initScript', interpretPickScript, playTimedScript,
-                     prop_shrink_Script, singletonScript, stepScript)
+                     prop_shrink_Script, singletonScript, stepScript,
+                     stepScriptSTM)
 import           Ouroboros.Network.Testing.Utils (arbitrarySubset,
                      prop_shrink_nonequal, prop_shrink_valid)
 
@@ -126,10 +127,11 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
      }
   deriving (Show, Eq)
 
-data PeerConn m = PeerConn !PeerAddr !(TVar m PeerStatus)
+data PeerConn m = PeerConn !PeerAddr !PeerSharing !(TVar m PeerStatus)
 
 instance Show (PeerConn m) where
-    show (PeerConn peeraddr _) = "PeerConn " ++ show peeraddr
+    show (PeerConn peeraddr peerSharing _) =
+      "PeerConn " ++ show peeraddr ++ " " ++ show peerSharing
 
 
 -- | 'GovernorMockEnvironment' which does not do any asynchronous demotions.
@@ -302,6 +304,7 @@ mockPeerSelectionActions' tracer
     PeerSelectionActions {
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharing,
+      peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
       requestPeerShare,
@@ -347,12 +350,12 @@ mockPeerSelectionActions' tracer
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
-      conn@(PeerConn _ v) <- atomically $ do
+      conn@(PeerConn _ _ v) <- atomically $ do
         conn  <- newTVar PeerWarm
         conns <- readTVar connsVar
         let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
-        return (PeerConn peeraddr conn)
+        return (PeerConn peeraddr peerSharing conn)
       let Just (_, connectScript) = Map.lookup peeraddr scripts
       _ <- async $
         -- monitoring loop which does asynchronous demotions. It will terminate
@@ -397,7 +400,7 @@ mockPeerSelectionActions' tracer
       return conn
 
     activatePeerConnection :: PeerConn m -> m ()
-    activatePeerConnection (PeerConn peeraddr conn) = do
+    activatePeerConnection (PeerConn peeraddr _ conn) = do
       traceWith tracer (TraceEnvActivatePeer peeraddr)
       threadDelay 1
       atomically $ do
@@ -417,7 +420,7 @@ mockPeerSelectionActions' tracer
           PeerCold -> throwIO ActivationError
 
     deactivatePeerConnection :: PeerConn m -> m ()
-    deactivatePeerConnection (PeerConn peeraddr conn) = do
+    deactivatePeerConnection (PeerConn peeraddr _ conn) = do
       traceWith tracer (TraceEnvDeactivatePeer peeraddr)
       atomically $ do
         status <- readTVar conn
@@ -430,7 +433,7 @@ mockPeerSelectionActions' tracer
           PeerCold -> throwIO DeactivationError
 
     closePeerConnection :: PeerConn m -> m ()
-    closePeerConnection (PeerConn peeraddr conn) = do
+    closePeerConnection (PeerConn peeraddr _ conn) = do
       traceWith tracer (TraceEnvCloseConn peeraddr)
       atomically $ do
         status <- readTVar conn
@@ -444,7 +447,7 @@ mockPeerSelectionActions' tracer
         writeTVar connsVar conns'
 
     monitorPeerConnection :: PeerConn m -> STM m (PeerStatus, Maybe ReconnectDelay)
-    monitorPeerConnection (PeerConn _peeraddr conn) = (,) <$> readTVar conn
+    monitorPeerConnection (PeerConn _peeraddr _ conn) = (,) <$> readTVar conn
                                                           <*> pure Nothing
 
 

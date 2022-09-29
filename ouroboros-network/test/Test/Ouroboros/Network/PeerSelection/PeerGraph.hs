@@ -12,6 +12,7 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
   , GovernorScripts (..)
   , PeerShareScript
   , ConnectionScript
+  , PeerSharingScript
   , AsyncDemotion (..)
   , PeerShareTime (..)
   , interpretPeerShareTime
@@ -40,6 +41,7 @@ import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.ShrinkCarefully
 
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Test.QuickCheck
 
 
@@ -100,7 +102,10 @@ data AsyncDemotion = ToWarm
                    | Noop
   deriving (Eq, Show)
 
-
+-- | PeerSharing script is the script which provides PeerSharing values
+-- when a new connection is established.
+--
+type PeerSharingScript = Script PeerSharing
 
 -- | Invariant. Used to check the QC generator and shrinker.
 --
