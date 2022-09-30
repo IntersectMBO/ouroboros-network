@@ -368,7 +368,7 @@ data UnforwardedReadSets l = UnforwardedReadSets {
   }
 
 forwardTableKeySets ::
-     (TableStuff l, HasCallStack)
+     TableStuff l
   => DbChangelog l
   -> UnforwardedReadSets l
   -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
@@ -388,7 +388,7 @@ forwardTableKeySets dblog = \(UnforwardedReadSets seqNo' values keys) ->
       -> ApplyMapKind SeqDiffMK k v
       -> ApplyMapKind ValuesMK  k v
     forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
-      ApplyValuesMK $ forwardValuesAndKeys values keys (cumulativeDiff diffs)
+      ApplyValuesMK $ applyDiffForKeys values keys (cumulativeDiff diffs)
 
 -- | Isolates the prefix of the changelog that should be flushed
 --
