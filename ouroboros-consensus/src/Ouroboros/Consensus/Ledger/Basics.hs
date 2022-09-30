@@ -676,7 +676,7 @@ applyLedgerTablesDiffsTicked = flip (zipOverLedgerTablesTicked $ flip rawApplyDi
 -- Calculate differences
 
 rawCalculateDifference ::
-     Ord k
+     (Ord k, Eq v)
   => ValuesMK   k v
   -> ValuesMK   k v
   -> TrackingMK k v
