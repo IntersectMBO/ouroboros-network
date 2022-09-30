@@ -789,12 +789,21 @@ newtype Completion m peeraddr peerconn =
 data TracePeerSelection peeraddr =
        TraceLocalRootPeersChanged (LocalRootPeers peeraddr)
                                   (LocalRootPeers peeraddr)
+     --
+     -- Churn
+     --
+
      -- | Peer selection targets changed: old targets, new targets.
      | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
+
+     --
+     -- Ledger Peers
+     --
 
      | TracePublicRootsRequest Int Int
      | TracePublicRootsResults (Map peeraddr PeerAdvertise) Int DiffTime
      | TracePublicRootsFailure SomeException Int DiffTime
+
      -- | target known peers, actual known peers, selected peers
      | TraceForgetColdPeers    Int Int (Set peeraddr)
 
@@ -805,12 +814,20 @@ data TracePeerSelection peeraddr =
      -- peers
      | TraceForgetBigLedgerPeers Int Int (Set peeraddr)
 
+     --
+     -- Peer Sharing
+     --
+
      -- | target known peers, actual known peers, peers available for
      -- peer sharing, peers selected for peer sharing
      | TracePeerShareRequests     Int Int (Set peeraddr) (Set peeraddr)
      | TracePeerShareResults         [(peeraddr, Either SomeException (PeerSharingResult peeraddr))] --TODO: classify failures
      | TracePeerShareResultsFiltered [peeraddr]
      | TraceKnownInboundConnection peeraddr PeerSharing
+
+     --
+     -- Promote Cold Peers
+     --
 
      -- | target established, actual established, selected peers
      | TracePromoteColdPeers   Int Int (Set peeraddr)
@@ -830,6 +847,10 @@ data TracePeerSelection peeraddr =
      -- | target established big ledger peers, actual established big ledger
      -- peers, peer
      | TracePromoteColdBigLedgerPeerDone    Int Int peeraddr
+
+     --
+     -- Promote Warm Peers
+     --
 
      -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
@@ -863,6 +884,10 @@ data TracePeerSelection peeraddr =
      -- target active, actual active, peer
      | TracePromoteWarmBigLedgerPeerAborted Int Int peeraddr
 
+     --
+     -- Demote Warm Peers
+     --
+
      -- | target established, actual established, selected peers
      | TraceDemoteWarmPeers    Int Int (Set peeraddr)
      -- | target established, actual established, peer, reason
@@ -879,6 +904,10 @@ data TracePeerSelection peeraddr =
      -- | target established big ledger peers, actual established big ledger
      -- peers, peer
      | TraceDemoteWarmBigLedgerPeerDone     Int Int peeraddr
+
+     --
+     -- Demote Hot Peers
+     --
 
      -- | target active, actual active, selected peers
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
@@ -898,12 +927,21 @@ data TracePeerSelection peeraddr =
      -- | target active big ledger peers, actual active big ledger peers, peer
      | TraceDemoteHotBigLedgerPeerDone   Int Int peeraddr
 
+     --
+     -- Async Demotions
+     --
+
      | TraceDemoteAsynchronous      (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
      | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
      | TraceDemoteBigLedgerPeersAsynchronous
                                     (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
 
      | TraceGovernorWakeup
+
+     --
+     -- Churn Trace
+     --
+
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
   deriving Show
