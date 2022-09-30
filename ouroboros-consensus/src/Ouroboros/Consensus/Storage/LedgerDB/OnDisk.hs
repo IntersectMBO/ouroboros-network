@@ -580,12 +580,12 @@ rangeRead_ n prev (ApplyValuesMK (DS.Values vs)) =
     ApplyKeysMK (DS.Keys ks) = prev
 
 applyDiff_ ::
-     (Ord k, Eq v)
+     Ord k
   => ApplyMapKind ValuesMK k v
   -> ApplyMapKind DiffMK   k v
   -> ApplyMapKind ValuesMK k v
 applyDiff_ (ApplyValuesMK values) (ApplyDiffMK diff) =
-  ApplyValuesMK (DS.forwardValues values diff)
+  ApplyValuesMK (DS.applyDiff values diff)
 
 -- | A handle to the backing store for the ledger tables
 newtype LedgerBackingStore m l = LedgerBackingStore
@@ -712,7 +712,7 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
     -- stay as-is? Maybe some existing general wisdom out there about range
     -- queries could guide us here.
     doFixupReadResult ::
-         (Ord k, Eq v)
+         Ord k
       => Int
       -- ^ Number of requested keys from the backing store.
       -> ApplyMapKind DiffMK   k v
@@ -727,7 +727,7 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
       (ApplyDiffMK (DS.Diff ds))
       (ApplyValuesMK (DS.Values vs)) =
         let includingAllKeys        =
-              DS.forwardValues (DS.Values vs) (DS.Diff ds)
+              DS.applyDiff (DS.Values vs) (DS.Diff ds)
             definitelyNoMoreToFetch = Map.size vs < nrequested
         in
         ApplyValuesMK
@@ -738,7 +738,7 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
               else error $ "Size of values " <> show (Map.size vs) <> ", nrequested " <> show nrequested
           Just ((k, _v), vs') ->
             if definitelyNoMoreToFetch then includingAllKeys else
-            DS.forwardValues
+            DS.applyDiff
               (DS.Values vs')
               (DS.Diff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
 

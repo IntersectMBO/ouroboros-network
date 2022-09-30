@@ -13,6 +13,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 module Data.Map.Diff.Strict (
     Diff (..)
@@ -44,17 +45,20 @@ module Data.Map.Diff.Strict (
   , restrictValues
   , valuesFromList
   , valuesKeys
-    -- * Forwarding keys and values
-  , Act (..)
-  , forwardValues
-  , forwardValuesAndKeys
-  , traverseActs_
+    -- * Applying diffs
+  , ApplyDiffError (..)
+  , applyDiff
+  , applyDiffForKeys
+  , applyDiffForKeysScrutinous
+  , applyDiffScrutinous
     -- * Folds over actions
+  , Act (..)
   , foldMapAct
+  , traverseActs_
   , unsafeFoldMapDiffEntry
   ) where
 
-import           Prelude hiding (length, splitAt)
+import           Prelude hiding (last, length, splitAt)
 
 import           Data.Bifunctor
 import           Data.Foldable (toList)
@@ -70,7 +74,6 @@ import qualified Data.Sequence.NonEmpty as NESeq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), noThunksInValues)
 
 {------------------------------------------------------------------------------
@@ -199,6 +202,13 @@ singletonDelete :: v -> NEDiffHistory v
 singletonDelete = singleton . Delete
 
 {------------------------------------------------------------------------------
+  Deconstruction
+------------------------------------------------------------------------------}
+
+last :: NEDiffHistory v -> DiffEntry v
+last (unNEDiffHistory -> _ NESeq.:||> e) = e
+
+{------------------------------------------------------------------------------
   Class instances for @'Diff'@
 ------------------------------------------------------------------------------}
 
@@ -316,18 +326,34 @@ castKeys :: Keys k v -> Keys k v'
 castKeys (Keys s) = Keys s
 
 {------------------------------------------------------------------------------
-  Forwarding values and keys
+  Applying diffs
 ------------------------------------------------------------------------------}
 
--- | Forward values through a diff.
+-- | Applies a diff to values.
 --
--- Note: Errors if a fold of a diff history to an action fails.
-forwardValues ::
-     forall k v. (Ord k, Eq v, HasCallStack)
+-- This function throws an error if an @Unsafe@ diff entry like
+-- @'UnsafeAntiInsert'@ or @'UnsafeAntiDelete'@ is found. These @Unsafe@ diff
+-- entries can not be applied, but are necessary for the @'Group'@ instance of
+-- the @'Diff'@ datatype.
+--
+-- FIXME(jdral): In this section, we distinguish between scrutinous and
+-- non-scrutinous application of diffs. For now, `consensus` libraries uses the
+-- non-scrutinous version, since the scrutinous version will consistently throw
+-- errors as sanity checks fail due to era translations and the multi-era nature
+-- of on-disk ledger values like the UTxO. In particular, a UTxO that is read
+-- from disk can either be from the current era, but also any one era before it.
+-- A UTxO is translated to the current era such that we can use it in the
+-- current era's ledger rules, but this translation information is then lost. A
+-- translation to a new era is essentially an update, and as such should be
+-- reflected in diffs, but that is currently not the case. We should use the
+-- scrutinous version once the ledger implements tracking maps, in which case we
+-- can keep track of exactly which era translations have happened.
+applyDiff ::
+     Ord k
   => Values k v
   -> Diff k v
   -> Values k v
-forwardValues (Values values) (Diff diffs) = Values $
+applyDiff (Values values) (Diff diffs) = Values $
     Merge.merge
       Merge.preserveMissing
       (Merge.mapMaybeMissing     newKeys)
@@ -336,34 +362,98 @@ forwardValues (Values values) (Diff diffs) = Values $
       diffs
   where
     newKeys :: k -> NEDiffHistory v -> Maybe v
-    newKeys _k h = case unsafeFoldToAct h of
-      Ins x        -> Just x
-      Del _x       -> error "impossible"
-      DelIns _x _y -> error "impossible"
-      InsDel       -> Nothing
-
+    newKeys _k h = case last h of
+      Insert x            -> Just x
+      Delete _x           -> Nothing
+      UnsafeAntiInsert _x -> error "impossible b"
+      UnsafeAntiDelete _x -> error "impossible c"
 
     oldKeys :: k -> v -> NEDiffHistory v -> Maybe v
-    oldKeys _k v1 h = case unsafeFoldToAct h of
-      Ins _x                 -> error "impossible"
-      Del x      | x == v1   -> Nothing
-                 | otherwise -> error "impossible"
-      DelIns x y
-                 | x == v1   -> Just y
-                 | otherwise -> error "impossible"
-      InsDel                 -> error "impossible"
+    oldKeys _k _v1 h = case last h of
+      Insert x            -> Just x
+      Delete _x           -> Nothing
+      UnsafeAntiInsert _x -> error "impossible e"
+      UnsafeAntiDelete _x -> error "impossible f"
 
--- | Forwards values through a diff for a specific set of keys.
+-- | Applies a diff to values for a specific set of keys.
 --
--- Note: Errors if a fold of a diff history to an action fails.
-forwardValuesAndKeys ::
-     (Ord k, Eq v, HasCallStack)
+-- See @'applyDiff'@ for more information about the scenarios in which
+-- @'applyDiffForKeys'@ fail.
+applyDiffForKeys ::
+     Ord k
   => Values k v
   -> Keys k v
   -> Diff k v
   -> Values k v
-forwardValuesAndKeys v@(Values values) (Keys keys) (Diff diffs) =
-  forwardValues
+applyDiffForKeys v@(Values values) (Keys keys) (Diff diffs) =
+  applyDiff
+    v
+    (Diff $ diffs `Map.restrictKeys` (Map.keysSet values `Set.union` keys))
+
+data ApplyDiffError k v =
+    FoldToActFailed k (NEDiffHistory v)
+  | DelMissingKey k v (NEDiffHistory v)
+  | DelInsMissingKey k v v (NEDiffHistory v)
+  | InsMatchingKey k v v (NEDiffHistory v)
+  | BadDelMatchingKey k v v (NEDiffHistory v)
+  | BadDelInsMatchingKey k v v v (NEDiffHistory v)
+  | InsDelMatchingKey k v (NEDiffHistory v)
+  deriving (Show, Eq)
+
+-- | Applies a diff to values, performs sanity checks.
+--
+-- This a /scrutinous/ version of @'applyDiff'@ in the sense that
+-- @'applyDiffScrutinous'@ performs sanity checks like (i) a diff history should
+-- be sensible (if we insert x, we can only delete x), (ii) we can not delete a
+-- key from @'Values'@ if it is not already present, etc. If a sanity check
+-- fails, an @'ApplyDiffError'@ will be returned.
+applyDiffScrutinous ::
+     forall k v. (Ord k, Eq v)
+  => Values k v
+  -> Diff k v
+  -> Either (ApplyDiffError k v) (Values k v)
+applyDiffScrutinous (Values v) (Diff d) = Values <$>
+    Merge.mergeA
+      Merge.preserveMissing
+      (Merge.traverseMaybeMissing newKeys)
+      (Merge.zipWithMaybeAMatched oldKeys)
+      v
+      d
+  where
+    newKeys :: k -> NEDiffHistory v -> Either (ApplyDiffError k v) (Maybe v)
+    newKeys k h = case foldToAct h of
+      Nothing -> Left $ FoldToActFailed k h
+      Just a  -> case a of
+        Ins x      -> Right $ Just x
+        Del x      -> Left  $ DelMissingKey k x h
+        DelIns x y -> Left  $ DelInsMissingKey k x y h
+        InsDel     -> Right   Nothing
+
+    oldKeys :: k -> v -> NEDiffHistory v -> Either (ApplyDiffError k v) (Maybe v)
+    oldKeys k v1 h = case foldToAct h of
+      Nothing -> Left $ FoldToActFailed k h
+      Just a  -> case a of
+        Ins x                  -> Left  $ InsMatchingKey k v1 x h
+        Del x      | x == v1   -> Right   Nothing
+                   | otherwise -> Left  $ BadDelMatchingKey k v1 x h
+        DelIns x y | x == v1   -> Right $ Just y
+                   | otherwise -> Left  $ BadDelInsMatchingKey k v1 x y h
+        InsDel                 -> Left  $ InsDelMatchingKey k v1 h
+
+-- | Applies a diff to values for a specific set of keys, performs sanity
+-- checks.
+--
+-- See @'applyDiffScrutinous'@ for more information about the sanity checks
+-- this function performs, and how this affects the result of
+-- @'applyDiffForKeysScrutinous'@.
+applyDiffForKeysScrutinous ::
+     (Ord k, Eq v)
+  => Values k v
+  -> Keys k v
+  -> Diff k v
+  -> Either (ApplyDiffError k v) (Values k v)
+applyDiffForKeysScrutinous v@(Values values) (Keys keys) (Diff diffs) =
+  applyDiffScrutinous
     v
     (Diff $ diffs `Map.restrictKeys` (Map.keysSet values `Set.union` keys))
 
@@ -445,7 +535,7 @@ foldToAct (NEDiffHistory (z NESeq.:<|| zs)) =
       UnsafeAntiDelete _x -> Nothing
 
 -- | Like @'foldToAct'@, but errors if the fold fails.
-unsafeFoldToAct :: (Eq v, HasCallStack) => NEDiffHistory v -> Act v
+unsafeFoldToAct :: Eq v => NEDiffHistory v -> Act v
 unsafeFoldToAct dh = case foldToAct dh of
   Nothing  -> error "Could not fold diff history to a sensible action."
   Just act -> act
