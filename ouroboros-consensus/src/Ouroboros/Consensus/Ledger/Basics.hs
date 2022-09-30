@@ -662,11 +662,11 @@ prependLedgerTablesDiffsTicked     = flip (zipOverLedgerTablesTicked rawPrependD
 -- Apply diffs
 
 rawApplyDiffs ::
-     (Ord k, Eq v)
+     Ord k
   => ValuesMK k v -- ^ Values to which differences are applied
   -> DiffMK   k v -- ^ Differences to apply
   -> ValuesMK k v
-rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (forwardValues vals diffs)
+rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (applyDiff vals diffs)
 
 applyLedgerTablesDiffs       ::       TableStuff l => l ValuesMK ->         l DiffMK ->         l ValuesMK
 applyLedgerTablesDiffsTicked :: TickedTableStuff l => l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
@@ -690,12 +690,11 @@ calculateDifference       before after = zipOverLedgerTables       (flip rawCalc
 calculateDifferenceTicked before after = zipOverLedgerTablesTicked (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
 
 rawAttachAndApplyDiffs ::
-     (Ord k, Eq v)
+     Ord k
   => DiffMK     k v
   -> ValuesMK   k v
   -> TrackingMK k v
-rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) =
-  ApplyTrackingMK (forwardValues v d) d
+rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (applyDiff v d) d
 
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them
@@ -728,12 +727,11 @@ prependLedgerTablesTrackingDiffs after before =
   $ projectLedgerTablesTicked before
 
 rawReapplyTracking ::
-     (Ord k, Eq v)
+     Ord k
   => TrackingMK k v
   -> ValuesMK   k v
   -> TrackingMK k v
-rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) =
-  ApplyTrackingMK (forwardValues v d) d
+rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) = ApplyTrackingMK (applyDiff v d) d
 
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them
