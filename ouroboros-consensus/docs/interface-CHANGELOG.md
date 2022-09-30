@@ -56,6 +56,13 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-09-30
+
+### Fixed
+
+- The maximum major protocol version of the Cardano protocol is now correctly
+  based off of Babbage instead of Alonzo.
+
 ## Circa 2022-07-20
 
 ### Fixed

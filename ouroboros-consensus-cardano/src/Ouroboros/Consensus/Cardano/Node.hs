@@ -559,7 +559,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- The major protocol version of the last era is the maximum major protocol
     -- version we support.
     maxMajorProtVer :: MaxMajorProtVer
-    maxMajorProtVer = MaxMajorProtVer (pvMajor protVerAlonzo)
+    maxMajorProtVer = MaxMajorProtVer (pvMajor protVerBabbage)
 
     -- Byron
 
