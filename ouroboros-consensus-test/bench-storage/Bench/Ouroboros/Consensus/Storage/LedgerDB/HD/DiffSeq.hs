@@ -359,7 +359,7 @@ instance (Ord k, Eq v) => IsDiffSeq DS.DiffSeq k v where
   push                 = DS.extend
   flush                = DS.splitlAt
   rollback             = DS.splitrAtFromEnd
-  forwardValuesAndKeys = DS.forwardValuesAndKeys
+  forwardValuesAndKeys = DS.applyDiffForKeys
   totalDiff            = DS.cumulativeDiff
 
 instance Ord k => IsDiffSeq HD.SeqUtxoDiff k v where
@@ -760,7 +760,7 @@ genPush = do
     vs <- gets flushedValues
 
     let
-      vs' = DS.forwardValues vs (totalDiff ds)
+      vs' = DS.applyDiff vs (totalDiff ds)
 
     d1 <- valuesToDelete vs'
     d2 <- valuesToInsert
@@ -821,7 +821,7 @@ genFlush = do
 
     modify (\st -> st {
         diffs         = r
-      , flushedValues = DS.forwardValues vs (totalDiff l)
+      , flushedValues = DS.applyDiff vs (totalDiff l)
       , nrGenerated   = nrGenerated st + 1
       })
 
