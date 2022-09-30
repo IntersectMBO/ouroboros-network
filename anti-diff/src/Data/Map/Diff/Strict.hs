@@ -158,13 +158,16 @@ nonEmptyDiffHistory (DiffHistory sq) = NEDiffHistory <$> NESeq.nonEmptySeq sq
 ------------------------------------------------------------------------------}
 
 -- | Compute the difference between @'Values'@.
-diff :: Ord k => Values k v -> Values k v -> Diff k v
+diff :: (Ord k, Eq v) => Values k v -> Values k v -> Diff k v
 diff (Values m1) (Values m2) = Diff $
     Merge.merge
       (Merge.mapMissing $ \_k v -> singletonDelete v)
       (Merge.mapMissing $ \_k v -> singletonInsert v)
       (Merge.zipWithMaybeMatched $ \ _k v1 v2 ->
-        Just $ singletonDelete v1 `unsafeMappend` singletonInsert v2
+        if v1 == v2 then
+          Nothing
+        else
+          Just $ singletonDelete v1 `unsafeMappend` singletonInsert v2
       )
       m1
       m2
