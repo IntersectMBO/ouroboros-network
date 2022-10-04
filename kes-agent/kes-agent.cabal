@@ -16,15 +16,18 @@ maintainer:         tobias@well-typed.com
 -- extra-source-files:
 
 library
-    exposed-modules: Cardano.KESAgent.Protocol
-                   , Cardano.KESAgent.Driver
+    exposed-modules: Cardano.KESAgent.POC
+                   , Cardano.KESAgent.API
+                   , Cardano.KESAgent.DirectReadWrite
 
     -- other-modules:
 
     -- other-extensions:
     build-depends: base ^>=4.14.0.0
+                 , async
                  , cardano-crypto-class
                  , typed-protocols
+                 , random >=1.2.1 && <1.3
                  , socket >= 0.8.3 && <0.9
                  , socket-unix >=0.2.0.0 && <0.3
     hs-source-dirs:   src
