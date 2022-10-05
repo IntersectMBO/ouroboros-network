@@ -2,13 +2,15 @@
 {-#LANGUAGE TypeFamilies #-}
 {-#LANGUAGE DataKinds #-}
 {-#LANGUAGE EmptyCase #-}
+{-#LANGUAGE KindSignatures #-}
+{-#LANGUAGE PolyKinds #-}
 module Cardano.KESAgent.Protocol
 where
 
 import Network.TypedProtocol.Core
 import Cardano.Crypto.KES.Class
 
-data KESProtocol k where
+data KESProtocol (k :: *) where
   IdleState :: KESProtocol k
 
 -- | The protocol for pushing KES keys.
@@ -32,7 +34,8 @@ data KESProtocol k where
 --
 instance Protocol (KESProtocol k) where
   data Message (KESProtocol k) st st' where
-          Message :: SignKeyKES k -> Message (KESProtocol k) IdleState IdleState
+          Message :: SignKeyKES k
+                  -> Message (KESProtocol k) IdleState IdleState
 
   -- | Server always has agency
   data ServerHasAgency st where

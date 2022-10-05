@@ -21,6 +21,7 @@ library
     exposed-modules: Cardano.KESAgent.Protocol
                    , Cardano.KESAgent.Driver
                    , Cardano.KESAgent.DirectReadWrite
+                   , Cardano.KESAgent.Peers
 
     -- other-modules:
 

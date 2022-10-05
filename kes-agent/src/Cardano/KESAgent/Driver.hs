@@ -22,14 +22,12 @@ import Cardano.KESAgent.DirectReadWrite
 driver :: DirectWrite (SignKeyKES k)
        => DirectRead (SignKeyKES k)
        => Socket f t p -- | A socket to read from
-       -> (SignKeyKES k -> IO ()) -- | What to do with KES keys we receive
        -> Driver (KESProtocol k) () IO
-driver s handle = Driver
+driver s = Driver
   { sendMessage = \(ServerAgency TokIdle) (Message sk) -> do
       directRead (\buf bufSize -> void $ unsafeSend s buf bufSize msgNoSignal) sk
   , recvMessage = \(ServerAgency TokIdle) () -> do
       sk <- directWrite (\buf bufSize -> void (unsafeReceive s buf bufSize msgNoSignal))
-      handle sk
       return (SomeMessage (Message sk), ())
   , startDState = ()
   }
