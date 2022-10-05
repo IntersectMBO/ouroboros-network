@@ -16,8 +16,10 @@ maintainer:         tobias@well-typed.com
 -- extra-source-files:
 
 library
-    exposed-modules: Cardano.KESAgent.POC
-                   , Cardano.KESAgent.API
+    -- exposed-modules: Cardano.KESAgent.POC
+    --                , Cardano.KESAgent.API
+    exposed-modules: Cardano.KESAgent.Protocol
+                   , Cardano.KESAgent.Driver
                    , Cardano.KESAgent.DirectReadWrite
 
     -- other-modules:

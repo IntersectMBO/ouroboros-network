@@ -22,9 +22,17 @@ data KESProtocol k where
 -- Hence, the Agent always has agency, and there is only one protocol state,
 -- the 'IdleState'. From there, the Agent can always push keys, and the Node
 -- will always accept new keys.
+--
+-- **OR:**
+--
+-- - The Agent acts as the Client, and the Control Server as a Server
+-- - When the Control Server connects, it pushes a key to the Agent
+-- - The Agent stores the key locally in memory and pushes it to any connected
+--   Nodes.
+--
 instance Protocol (KESProtocol k) where
-  data Message (KESProtocol k) IdleState IdleState =
-          Message (SignKeyKES k)
+  data Message (KESProtocol k) st st' where
+          Message :: SignKeyKES k -> Message (KESProtocol k) IdleState IdleState
 
   -- | Server always has agency
   data ServerHasAgency st where
