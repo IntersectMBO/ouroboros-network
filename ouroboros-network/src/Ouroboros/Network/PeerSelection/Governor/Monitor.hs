@@ -33,7 +33,8 @@ import qualified Ouroboros.Network.ExitPolicy as ExitPolicy
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
                      (jobDemoteActivePeer)
-import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.Governor.Types hiding
+                     (PeerSelectionCounters (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
