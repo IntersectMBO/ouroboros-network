@@ -37,7 +37,7 @@ import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Tracer (Tracer, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (($>))
+import           Data.Functor (void, ($>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable, cast)
@@ -587,17 +587,19 @@ withPeerStateActions PeerStateActionsArguments {
           --
 
           WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
+            -- current `pchPeerStatus` must be 'HotPeer'
             traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
-            atomically (writeTVar pchPeerStatus PeerCold)
+            void $ atomically (updateUnlessCold pchPeerStatus PeerCold)
           WithSomeProtocolTemperature (WithWarm MiniProtocolError{}) -> do
+            -- current `pchPeerStatus` must be 'WarmPeer'
             traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
-            atomically (writeTVar pchPeerStatus PeerCold)
+            void $ atomically (updateUnlessCold pchPeerStatus PeerCold)
           WithSomeProtocolTemperature (WithEstablished MiniProtocolError{}) -> do
             -- update 'pchPeerStatus' and log (as the two other transition to
             -- cold state.
             state <- atomically $ do
               peerState <- readTVar pchPeerStatus
-              writeTVar pchPeerStatus PeerCold
+              _  <- updateUnlessCold pchPeerStatus PeerCold
               pure peerState
             case state of
               PeerCold -> return ()
