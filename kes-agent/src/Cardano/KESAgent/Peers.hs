@@ -21,3 +21,18 @@ kesReceiver receiveKey =
             Effect $ do
               receiveKey sk
               return go
+
+kesPusher :: forall (k :: *)
+           . KESAlgorithm k
+          => (IO (SignKeyKES k))
+          -> (IO (SignKeyKES k))
+          -> Peer (KESProtocol k) AsServer IdleState IO ()
+kesPusher currentKey nextKey =
+  Effect $ do
+    sk <- currentKey
+    return $ Yield (ServerAgency TokIdle) (Message sk) go
+  where
+    go = Effect $ do
+      sk <- nextKey
+      return $ Yield (ServerAgency TokIdle) (Message sk) go
+
