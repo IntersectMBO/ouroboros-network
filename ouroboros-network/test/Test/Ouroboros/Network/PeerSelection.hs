@@ -2155,7 +2155,7 @@ selectGovState :: Eq a
 selectGovState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState $ mkStdGen 42)
+  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
   . Signal.selectEvents
       (\case GovernorDebug (TraceGovernorState _ _ st) -> Just (f st)
              _                                         -> Nothing)
