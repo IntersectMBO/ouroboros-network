@@ -54,7 +54,7 @@ library
                      , mtl
                      , nothunks
                      , serialise
-                     , strict-containers
+                     , cardano-strict-containers
                      , text
                      , transformers
                      , transformers-except

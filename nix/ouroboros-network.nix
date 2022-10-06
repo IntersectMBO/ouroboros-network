@@ -4,7 +4,7 @@
 { lib, stdenv, pkgs, haskell-nix, buildPackages, config ? { }
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
-, libsodium-vrf ? pkgs.libsodium-vrf 
+, libsodium-vrf ? pkgs.libsodium-vrf
   # Enable strict TVar invariant check flag in strict-stm
 , checkTVarInvariant ? false }:
 let
@@ -45,7 +45,7 @@ let
           doCoverage = config.coverage;
         });
       }
-      {   
+      {
         packages.strict-stm.components.library.configureFlags =
           lib.mkForce (if checkTVarInvariant then ["-f checktvarinvariant"] else []);
       }
@@ -62,9 +62,9 @@ let
           lib.mkForce [ "--no-create" ];
 
         packages.cardano-crypto-praos.components.library.pkgconfig =
-          lib.mkForce [ [ libsodium-vrf ] ];
+          lib.mkForce [ [ libsodium-vrf pkgs.secp256k1 ] ];
         packages.cardano-crypto-class.components.library.pkgconfig =
-          lib.mkForce [ [ libsodium-vrf ] ];
+          lib.mkForce [ [ libsodium-vrf pkgs.secp256k1 ] ];
       }
 
       # Options specific to the windows cross-compiled build:

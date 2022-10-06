@@ -1,4 +1,4 @@
-index-state: 2022-07-01T00:00:00Z
+index-state: 2022-09-07T00:00:00Z
 
 packages: ./ouroboros-network-testing
           ./monoidal-synchronisation
@@ -23,14 +23,23 @@ packages: ./ouroboros-network-testing
           ./cardano-client
 
 constraints:
-    ip < 1.5
+  -- bizarre issue: in earlier versions they define their own 'GEq', in newer
+  -- ones they reuse the one from 'some', but there isn't e.g. a proper version
+  -- constraint from dependent-sum-template (which is the library we actually use).
+  , dependent-sum > 0.6.2.0
+
+  -- Plutus dependency
+  , algebraic-graphs >= 0.7
+
+  , ip < 1.5
   , hedgehog >= 1.0
   , bimap >= 0.4.0
   , ListLike >= 4.7.3
   , witherable >= 0.4
 
-  -- Plutus dependency
-  , algebraic-graphs < 0.7
+  , protolude >= 0.3.2
+
+  , persistent < 2.14
 
 package Win32-network
   tests: True
@@ -150,13 +159,9 @@ package prettyprinter-configurable
   tests: False
 
 allow-newer:
-  size-based:template-haskell
-
-constraints:
-  -- bizarre issue: in earlier versions they define their own 'GEq', in newer
-  -- ones they reuse the one from 'some', but there isn't e.g. a proper version
-  -- constraint from dependent-sum-template (which is the library we actually use).
-  , dependent-sum > 0.6.2.0
+  monoidal-containers:aeson,
+  size-based:template-haskell,
+  Unique:hashable
 
 -- ---------------------------------------------------------
 -- The "cabal" wrapper script provided by nix-shell will cut off / restore the remainder of this file
@@ -209,8 +214,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 631cb6cf1fa01ab346233b610a38b3b4cba6e6ab
-  --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
+  tag: 46cd4c97cff9f1f0a0da976aa9e32bd2899c85ee
+  --sha256: 0qn56ahqmy79riwyaq5m0d4vpamdjkkk04b0x8zwlyd5y3pg58xd
   subdir:
     base-deriving-via
     binary
@@ -218,21 +223,24 @@ source-repository-package
     cardano-crypto-class
     cardano-crypto-praos
     cardano-crypto-tests
+    heapwords
     measures
     orphans-deriving-via
     slotting
-    strict-containers
+    cardano-strict-containers
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 49613f11e034485c8377945c86c0465726c0860c
-  --sha256: 0gxb9xghsacr0qaljhq3qzvmb2f1wwmly89prwqy4fdm9mvqiq95
+  tag: 863f1d2f53852369802f070e16509ba3c896b47a
+  --sha256: 1y5835mv1yzi5l19sa25sax4a846178zp69y69rzgwwalqsll4bh
   subdir:
     eras/alonzo/impl
     eras/alonzo/test-suite
     eras/babbage/impl
     eras/babbage/test-suite
+    eras/conway/impl
+    eras/conway/test-suite
     eras/byron/chain/executable-spec
     eras/byron/crypto
     eras/byron/crypto/test
@@ -256,8 +264,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: 8ab4c3355c5fdf67dcf6acc1f5a14668d5e6f0a9
-  --sha256: 12d6bndmj0dxl6xlaqmf78326yp5hw093bmybmqfpdkvk4mgz03j
+  tag: ecbfc46d3302f438a31c4f2f8f30cd1a87dab271
+  --sha256: 1r16a9xk49bw3r9wihmf49p2f8pfqqymrpgf85lzccyjrxdvxd7r
   subdir:
     plutus-ledger-api
     plutus-tx
