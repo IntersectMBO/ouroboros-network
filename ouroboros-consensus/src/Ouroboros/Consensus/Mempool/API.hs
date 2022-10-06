@@ -43,24 +43,44 @@ import           Ouroboros.Consensus.Util.IOLike
   Mempool API
 -------------------------------------------------------------------------------}
 
--- | Mempool
---
--- The mempool is the set of transactions that should be included in the next
+-- | The mempool is the set of transactions that should be included in the next
 -- block. In principle this is a /set/ of all the transactions that we receive
 -- from our peers. In order to avoid flooding the network with invalid
 -- transactions, however, we only want to keep /valid/ transactions in the
 -- mempool. That raises the question: valid with respect to which ledger state?
 --
--- We opt for a very simple answer to this: the mempool will be interpreted
--- as a /list/ of transactions; which are validated strictly in order, starting
--- from the current ledger state. This has a number of advantages:
+-- We opt for a very simple answer to this: the mempool will be interpreted as a
+-- /list/ of transactions; which are validated strictly in order, starting from the
+-- current ledger state (the current LedgerDB tip). This has a number of
+-- advantages:
 --
--- * It's simple to implement and it's efficient. In particular, no search for
---   a valid subset is ever required.
--- * When producing a block, we can simply take the longest possible prefix
---   of transactions that fits in a block.
--- * It supports wallets that submit dependent transactions (where later
---   transaction depends on outputs from earlier ones).
+--  * It's simple to implement and it's efficient. In particular, no search for a
+--    valid subset is ever required.
+--
+--  * When producing a block, we can simply take the longest possible prefix of
+--    transactions that fits in a block.
+--
+--  * It supports wallets that submit dependent transactions (where later
+--    transaction depends on outputs from earlier ones).
+--
+-- It has a some drawbacks too:
+--
+--  * A transaction we discard as invalid on the current ledger state might
+--    become valid when validated against some other ledger state we adopt later
+--    on.
+--
+-- However this event is very unlikely and can be solved easily by resubmission of
+-- the transaction at the appropriate time.
+--
+-- We can consider the mempool as an ubiquitous container of transactions that
+-- is accessed from multiple places at the same time and should be able to provide
+-- a list of transactions (what we call a /snapshot/) which are valid on top
+-- a of a given state, possibly on top of the current LedgerDB's tip.
+--
+-- If the mempool is asked for a snapshot on top of the current LedgerDB's tip, it
+-- already has a cached version ready to be provided. If instead it is asked for a
+-- snapshot on top of a different ledger state, it will have to revalidate all the
+-- /previously valid/ transactions on top of said ledger state.
 --
 -- When only one thread is operating on the mempool, operations that mutate the
 -- state based on the input arguments (tryAddTxs and removeTxs) will produce the

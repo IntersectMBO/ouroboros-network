@@ -80,3 +80,12 @@ haddocks/
 
 # Ignore directory used by .github/bin/check-dependencies
 /tmp
+
+ouroboros-consensus/docs/utxo-hd/*.aux
+ouroboros-consensus/docs/utxo-hd/*.log
+ouroboros-consensus/docs/utxo-hd/*.out
+ouroboros-consensus/docs/utxo-hd/*.toc
+ouroboros-consensus/docs/utxo-hd/*.pdf
+ouroboros-consensus/docs/utxo-hd/*.bbl
+ouroboros-consensus/docs/utxo-hd/*.blg
+ouroboros-consensus/docs/utxo-hd/_minted-report
