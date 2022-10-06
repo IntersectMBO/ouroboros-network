@@ -21,11 +21,11 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (AssertionFailed (..), throw)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer

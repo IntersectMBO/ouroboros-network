@@ -9,11 +9,11 @@
 module Test.Pipe (tests) where
 
 import           Codec.Serialise (Serialise (..))
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)

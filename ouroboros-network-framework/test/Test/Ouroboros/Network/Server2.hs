@@ -19,13 +19,13 @@
 
 module Test.Ouroboros.Network.Server2 (tests) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (AssertionFailed, SomeAsyncException (..))
 import           Control.Monad (replicateM, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST (MonadST)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
@@ -1466,7 +1466,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
   where
 
     loop :: Map.Map peerAddr acc
-         -> Map.Map peerAddr (TQueue m (ConnectionHandlerMessage peerAddr req))
+         -> Map.Map peerAddr (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
          -> [ConnectionEvent req peerAddr]
          -> JobPool () m (Maybe SomeException)
          -> m ()
@@ -1525,7 +1525,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
             Nothing -> throwIO (NodeNotRunningException addr)
             Just cc -> writeTQueue cc msg
 
-    mkNextRequests :: StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (TQueue m [req]))) ->
+    mkNextRequests :: StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req]))) ->
                       TemperatureBundle (ConnectionId peerAddr -> STM m [req])
     mkNextRequests connVar = makeBundle next
       where
@@ -1539,7 +1539,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
     startClientConnectionHandler :: Name peerAddr
                                  -> peerAddr
                                  -> JobPool () m (Maybe SomeException)
-                                 -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
+                                 -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
     startClientConnectionHandler name localAddr jobpool  = do
         cc      <- atomically $ newTQueue
         labelTQueueIO cc $ "cc/" ++ show name
@@ -1571,7 +1571,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                                  -> acc
                                  -> peerAddr
                                  -> JobPool () m (Maybe SomeException)
-                                 -> m (TQueue m (ConnectionHandlerMessage peerAddr req))
+                                 -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
     startServerConnectionHandler name dataFlow serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
@@ -1635,12 +1635,12 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
             (HasInitiator muxMode ~ True)
          => SingMuxMode muxMode
          -> peerAddr
-         -> TQueue m (ConnectionHandlerMessage peerAddr req)
+         -> StrictTQueue m (ConnectionHandlerMessage peerAddr req)
          -- ^ control channel
          -> MuxConnectionManager muxMode socket peerAddr UnversionedProtocol ByteString m [resp] a
          -> Map.Map peerAddr (Handle muxMode peerAddr ByteString m [resp] a)
          -- ^ active connections
-         -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (TQueue m [req])))
+         -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req])))
          -- ^ mini protocol queues
          -> m ()
     connectionLoop muxMode localAddr cc cm connMap0 connVar = go True connMap0
@@ -1651,7 +1651,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
         go !unregister !connMap = atomically (readTQueue cc) >>= \ case
           NewConnection remoteAddr -> do
             let mkQueue :: forall pt. SingProtocolTemperature pt
-                        -> STM m (TQueue m [req])
+                        -> STM m (StrictTQueue m [req])
                 mkQueue tok = do
                   q <- newTQueue
                   let temp = case tok of

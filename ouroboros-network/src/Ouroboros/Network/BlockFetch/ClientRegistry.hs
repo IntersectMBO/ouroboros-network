@@ -19,12 +19,12 @@ import           Data.Functor.Contravariant (contramap)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork (throwTo),
                      MonadThread (ThreadId, myThreadId))
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 

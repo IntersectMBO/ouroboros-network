@@ -28,15 +28,13 @@ module Test.Ouroboros.Network.Diffusion.Node
   , UseLedgerAfter (..)
   ) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, wait, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
 import           Control.Monad.Class.MonadST (MonadST)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict (MonadLabelledSTM,
-                     MonadSTM (STM, atomically), MonadTraceSTM, StrictTVar,
-                     modifyTVar', readTVar)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
@@ -289,7 +287,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
                                    LazySTM.readTVar blockHeapVar,
           mkAddFetchedBlock        = \_enablePipelining -> do
               pure $ \p _b ->
-                atomically (modifyTVar' blockHeapVar (Set.insert p)),
+                atomically (LazySTM.modifyTVar' blockHeapVar (Set.insert p)),
 
           plausibleCandidateChain,
           compareCandidateChains,

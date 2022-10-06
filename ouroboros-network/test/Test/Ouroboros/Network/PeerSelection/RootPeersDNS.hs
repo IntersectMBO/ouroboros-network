@@ -29,7 +29,6 @@ import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
-import           Data.Proxy (Proxy (..))
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)
@@ -40,12 +39,10 @@ import           Network.DNS (DNSError (NameError, TimeoutExpired))
 import qualified Network.DNS.Resolver as DNSResolver
 import           Network.Socket (SockAddr (..))
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict (MonadSTM, MonadTraceSTM,
-                     StrictTVar, TraceValue (..), atomically, newTVarIO,
-                     readTVar, traceTVarIO, writeTVar)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (Time (..))
 import           Control.Monad.Class.MonadTimer
@@ -328,8 +325,7 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
-      _ <- traceTVarIO proxy
-                       resultVar
+      _ <- traceTVarIO resultVar
                        (\_ a -> pure $ TraceDynamic (Solo a))
       withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
         void $ MonadTimer.timeout 3600 $
@@ -342,9 +338,6 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
                                  (readTVar localRootPeersVar)
                                  resultVar
   where
-    proxy :: Proxy m
-    proxy = Proxy
-
     updateDNSMap :: LazySTM.TVar m (Script (Map Domain [(IP, TTL)]))
                  -> StrictTVar m (Map Domain [(IP, TTL)])
                  -> m Void

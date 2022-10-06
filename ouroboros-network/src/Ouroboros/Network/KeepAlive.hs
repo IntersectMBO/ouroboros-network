@@ -11,9 +11,9 @@ module Ouroboros.Network.KeepAlive
   , TraceKeepAliveClient (..)
   ) where
 
+import qualified Control.Concurrent.Class.MonadSTM as Lazy
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
-import qualified Control.Monad.Class.MonadSTM as Lazy
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)

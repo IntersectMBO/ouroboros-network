@@ -11,10 +11,10 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)

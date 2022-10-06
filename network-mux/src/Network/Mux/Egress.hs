@@ -16,9 +16,9 @@ module Network.Mux.Egress
 import           Control.Monad
 import qualified Data.ByteString.Lazy as BL
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
@@ -112,7 +112,7 @@ import           Network.Mux.Types
 -- >                           ▼
 -- >                           ●
 
-type EgressQueue m = TBQueue m (TranslocationServiceRequest m)
+type EgressQueue m = StrictTBQueue m (TranslocationServiceRequest m)
 
 -- | A TranslocationServiceRequest is a demand for the translocation
 --  of a single mini-protocol message. This message can be of

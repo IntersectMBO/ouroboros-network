@@ -24,8 +24,8 @@ import           Data.Maybe (catMaybes)
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
@@ -187,7 +187,7 @@ blockGenerator slotDuration chain = do
   void $ forkIO $ go var Nothing chain
   return (readTBQueue var)
  where
-  go :: TBQueue m (Maybe block) -> Maybe SlotNo -> [block] -> m ()
+  go :: StrictTBQueue m (Maybe block) -> Maybe SlotNo -> [block] -> m ()
   go var _ [] = do
     atomically (writeTBQueue var Nothing)
   go var mslot (b : bs) = do

@@ -22,11 +22,11 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   ) where
 
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.DeepSeq (NFData (..))
 import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.IP as IP

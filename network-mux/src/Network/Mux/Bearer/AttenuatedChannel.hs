@@ -18,8 +18,8 @@ module Network.Mux.Bearer.AttenuatedChannel
 
 import           Prelude hiding (read)
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -56,8 +56,8 @@ data Message =
 -- 'MsgClose' is written.
 --
 data QueueChannel m = QueueChannel {
-    qcRead  :: StrictTVar m (Maybe (TQueue m Message)),
-    qcWrite :: StrictTVar m (Maybe (TQueue m Message))
+    qcRead  :: StrictTVar m (Maybe (StrictTQueue m Message)),
+    qcWrite :: StrictTVar m (Maybe (StrictTQueue m Message))
   }
 
 --

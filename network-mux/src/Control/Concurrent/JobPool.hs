@@ -21,11 +21,11 @@ import           Data.Functor (($>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad (void, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadThread (..))
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 
 -- | JobPool allows to submit asynchronous jobs, wait for their completion or

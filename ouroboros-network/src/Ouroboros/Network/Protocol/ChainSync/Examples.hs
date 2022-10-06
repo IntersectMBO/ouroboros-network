@@ -15,7 +15,7 @@ module Ouroboros.Network.Protocol.ChainSync.Examples
   , chainSyncServerExample
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Tip (..),
                      castPoint, castTip, genesisPoint)

@@ -6,7 +6,7 @@ module Network.Mux.DeltaQ.TraceTransformer
   , initDeltaQTracer'
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Tracer
 
 import           Network.Mux.DeltaQ.TraceStats

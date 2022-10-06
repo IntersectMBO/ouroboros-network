@@ -24,9 +24,9 @@ import           GHC.Generics
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
                      MonadThrow, bracket)
 import           Control.Monad.Class.MonadTime

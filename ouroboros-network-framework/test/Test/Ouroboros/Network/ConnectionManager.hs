@@ -21,11 +21,11 @@ module Test.Ouroboros.Network.ConnectionManager (tests) where
 
 import           Prelude hiding (read)
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forever, unless, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime

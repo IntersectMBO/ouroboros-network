@@ -12,11 +12,11 @@ import           Prelude hiding (seq)
 
 import           NoThunks.Class (NoThunks)
 
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Exception (SomeException (..))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime

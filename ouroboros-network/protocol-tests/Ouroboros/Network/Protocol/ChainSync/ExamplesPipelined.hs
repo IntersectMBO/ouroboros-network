@@ -12,7 +12,7 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
   , chainSyncClientPipelinedLowHigh
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Data.Word
 
 import           Network.TypedProtocol.Pipelined
