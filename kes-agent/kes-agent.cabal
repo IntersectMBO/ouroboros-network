@@ -20,7 +20,7 @@ library
     --                , Cardano.KESAgent.API
     exposed-modules: Cardano.KESAgent.Protocol
                    , Cardano.KESAgent.Driver
-                   , Cardano.KESAgent.DirectReadWrite
+                   , Cardano.KESAgent.DirectSerialise
                    , Cardano.KESAgent.Peers
 
     -- other-modules:
