@@ -1148,7 +1148,7 @@ withConnectionManager ConnectionManagerArguments {
                     --
                     -- Key was overwritten in the dictionary (stateVar),
                     -- so we do not trace anything as it was already traced upon
-                    -- overwritting.
+                    -- overwriting.
                      else return [ ]
 
                 traverse_ (traceWith trTracer . TransitionTrace peerAddr) transitions
@@ -1243,8 +1243,9 @@ withConnectionManager ConnectionManagerArguments {
                       NotInResponderMode -> return ()
                     return $ Connected connId dataFlow handle
 
-    -- Needs 'mask' in order to guarantee that the traces are logged if the an
-    -- Async exception lands between the successful STM action and the logging action.
+    -- We need 'mask' in order to guarantee that the traces are logged if an
+    -- async exception lands between the successful STM action and the logging
+    -- action.
     unregisterInboundConnectionImpl
         :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> peerAddr
