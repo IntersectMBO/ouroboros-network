@@ -193,6 +193,15 @@ instance AdjustFilePaths CardanoConfig where
           , shelleyGenesisPath  = f $ shelleyGenesisPath cc
           , alonzoGenesisPath   = f $ alonzoGenesisPath cc
           , conwayGenesisPath   = f $ conwayGenesisPath cc
+          -- Byron, Shelley, Alonzo, and Conway are the only eras that have genesis
+          -- data. The actual genesis block is a Byron block, therefore we needed a
+          -- genesis file. To transition to Shelley, we needed to add some additional
+          -- genesis data (eg some initial values of new protocol parametrers like
+          -- @d@). Similarly in Alonzo (eg Plutus interpreter parameters/limits) and
+          -- in Conway too (ie keys of the new genesis delegates).
+          --
+          -- In contrast, the Allegra, Mary, and Babbage eras did not introduce any new
+          -- genesis data.
           }
 
 -- | Shelley transition arguments
