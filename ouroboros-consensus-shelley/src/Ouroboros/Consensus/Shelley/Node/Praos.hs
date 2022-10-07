@@ -69,16 +69,16 @@ import           Ouroboros.Consensus.Util.IOLike (IOLike)
 
 -- | Create a 'BlockForging' record for a single era.
 praosBlockForging ::
-  forall m era c.
-  ( ShelleyCompatible (Praos c) era,
-    c ~ EraCrypto era,
-    TxLimits (ShelleyBlock (Praos c) era),
-    IOLike m
-  ) =>
-  PraosParams ->
-  TxLimits.Overrides (ShelleyBlock (Praos c) era) ->
-  ShelleyLeaderCredentials (EraCrypto era) ->
-  m (BlockForging m (ShelleyBlock (Praos c) era))
+     forall m era c.
+     ( ShelleyCompatible (Praos c) era
+     , c ~ EraCrypto era
+     , TxLimits (ShelleyBlock (Praos c) era)
+     , IOLike m
+     )
+  => PraosParams
+  -> TxLimits.Overrides (ShelleyBlock (Praos c) era)
+  -> ShelleyLeaderCredentials (EraCrypto era)
+  -> m (BlockForging m (ShelleyBlock (Praos c) era))
 praosBlockForging praosParams maxTxCapacityOverrides credentials = do
     hotKey <- HotKey.mkHotKey @m @c initSignKey startPeriod praosMaxKESEvo
     pure $ praosSharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
@@ -102,10 +102,10 @@ praosBlockForging praosParams maxTxCapacityOverrides credentials = do
 -- The name of the era (separated by a @_@) will be appended to each
 -- 'forgeLabel'.
 praosSharedBlockForging ::
-  forall m c era.
-  ( ShelleyEraWithCrypto c (Praos c) era,
-    IOLike m
-  )
+     forall m c era.
+     ( ShelleyEraWithCrypto c (Praos c) era
+     , IOLike m
+     )
   => HotKey.HotKey c m
   -> (SlotNo -> Absolute.KESPeriod)
   -> ShelleyLeaderCredentials c
@@ -114,55 +114,55 @@ praosSharedBlockForging ::
 praosSharedBlockForging
   hotKey
   slotToPeriod
-  ShelleyLeaderCredentials
-    { shelleyLeaderCredentialsCanBeLeader = canBeLeader,
-      shelleyLeaderCredentialsLabel = label
+  ShelleyLeaderCredentials {
+      shelleyLeaderCredentialsCanBeLeader = canBeLeader
+    , shelleyLeaderCredentialsLabel = label
     }
   maxTxCapacityOverrides = do
-      BlockForging
-        { forgeLabel = label <> "_" <> shelleyBasedEraName (Proxy @era),
-          canBeLeader = canBeLeader,
-          updateForgeState = \_ curSlot _ ->
-            forgeStateUpdateInfoFromUpdateInfo
-              <$> HotKey.evolve hotKey (slotToPeriod curSlot),
-          checkCanForge = \cfg curSlot _tickedChainDepState _isLeader ->
-            praosCheckCanForge
-              (configConsensus cfg)
-              curSlot,
-          forgeBlock = \cfg ->
-            forgeShelleyBlock
-              hotKey
-              canBeLeader
-              cfg
-              maxTxCapacityOverrides
-        }
+    BlockForging
+      { forgeLabel = label <> "_" <> shelleyBasedEraName (Proxy @era),
+        canBeLeader = canBeLeader,
+        updateForgeState = \_ curSlot _ ->
+          forgeStateUpdateInfoFromUpdateInfo
+            <$> HotKey.evolve hotKey (slotToPeriod curSlot),
+        checkCanForge = \cfg curSlot _tickedChainDepState _isLeader ->
+          praosCheckCanForge
+            (configConsensus cfg)
+            curSlot,
+        forgeBlock = \cfg ->
+          forgeShelleyBlock
+            hotKey
+            canBeLeader
+            cfg
+            maxTxCapacityOverrides
+      }
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
 -- | Parameters needed to run Babbage
-data ProtocolParamsBabbage c = ProtocolParamsBabbage
-  { babbageProtVer :: SL.ProtVer,
-    babbageMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (BabbageEra c))
+data ProtocolParamsBabbage c = ProtocolParamsBabbage {
+    babbageProtVer                :: SL.ProtVer
+  , babbageMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (BabbageEra c))
   }
 
 protocolInfoPraosBabbage ::
-  forall m c.
-  ( IOLike m,
-    ShelleyCompatible (Praos c) (BabbageEra c),
-    TxLimits (ShelleyBlock (Praos c) (BabbageEra c))
-  ) =>
-  ProtocolParamsShelleyBased (BabbageEra c) ->
-  AlonzoGenesis ->
-  ProtocolParamsBabbage c ->
-  ProtocolInfo m (ShelleyBlock (Praos c) (BabbageEra c))
+     forall m c.
+     ( IOLike m,
+       ShelleyCompatible (Praos c) (BabbageEra c),
+       TxLimits (ShelleyBlock (Praos c) (BabbageEra c))
+     )
+  => ProtocolParamsShelleyBased (BabbageEra c)
+  -> AlonzoGenesis
+  -> ProtocolParamsBabbage c
+  -> ProtocolInfo m (ShelleyBlock (Praos c) (BabbageEra c))
 protocolInfoPraosBabbage
   protocolParamsShelleyBased
   genesisAlonzo
-  ProtocolParamsBabbage
-    { babbageProtVer = protVer,
-      babbageMaxTxCapacityOverrides = maxTxCapacityOverrides
+  ProtocolParamsBabbage {
+      babbageProtVer                = protVer
+    , babbageMaxTxCapacityOverrides = maxTxCapacityOverrides
     } =
     protocolInfoPraosShelleyBased
       protocolParamsShelleyBased
@@ -171,27 +171,27 @@ protocolInfoPraosBabbage
       maxTxCapacityOverrides
 
 -- | Parameters needed to run Conway
-data ProtocolParamsConway c = ProtocolParamsConway
-  { conwayProtVer :: SL.ProtVer,
-    conwayMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (ConwayEra c))
+data ProtocolParamsConway c = ProtocolParamsConway {
+    conwayProtVer                :: SL.ProtVer
+  , conwayMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (ConwayEra c))
   }
 
 protocolInfoPraosConway ::
-  forall m c.
-  ( IOLike m,
-    ShelleyCompatible (Praos c) (ConwayEra c),
-    TxLimits (ShelleyBlock (Praos c) (ConwayEra c))
-  ) =>
-  ProtocolParamsShelleyBased (ConwayEra c) ->
-  (AlonzoGenesis, ConwayGenesis c) ->
-  ProtocolParamsConway c ->
-  ProtocolInfo m (ShelleyBlock (Praos c) (ConwayEra c))
+     forall m c.
+     ( IOLike m,
+       ShelleyCompatible (Praos c) (ConwayEra c),
+       TxLimits (ShelleyBlock (Praos c) (ConwayEra c))
+     )
+  => ProtocolParamsShelleyBased (ConwayEra c)
+  -> (AlonzoGenesis, ConwayGenesis c)
+  -> ProtocolParamsConway c
+  -> ProtocolInfo m (ShelleyBlock (Praos c) (ConwayEra c))
 protocolInfoPraosConway
   protocolParamsShelleyBased
   (genesisAlonzo, genesisConway)
-  ProtocolParamsConway
-    { conwayProtVer = protVer,
-      conwayMaxTxCapacityOverrides = maxTxCapacityOverrides
+  ProtocolParamsConway {
+      conwayProtVer                = protVer
+    , conwayMaxTxCapacityOverrides = maxTxCapacityOverrides
     } =
     protocolInfoPraosShelleyBased
       protocolParamsShelleyBased
@@ -200,30 +200,30 @@ protocolInfoPraosConway
       maxTxCapacityOverrides
 
 protocolInfoPraosShelleyBased ::
-  forall m era c.
-  ( IOLike m,
-    ShelleyCompatible (Praos c) era,
-    TxLimits (ShelleyBlock (Praos c) era),
-    c ~ EraCrypto era
-  ) =>
-  ProtocolParamsShelleyBased era ->
-  (SL.AdditionalGenesisConfig era, Core.TranslationContext era) ->
-  SL.ProtVer ->
-  TxLimits.Overrides (ShelleyBlock (Praos c) era) ->
-  ProtocolInfo m (ShelleyBlock (Praos c) era)
+     forall m era c.
+     ( IOLike m,
+       ShelleyCompatible (Praos c) era,
+       TxLimits (ShelleyBlock (Praos c) era),
+       c ~ EraCrypto era
+     )
+  => ProtocolParamsShelleyBased era
+  -> (SL.AdditionalGenesisConfig era, Core.TranslationContext era)
+  -> SL.ProtVer
+  -> TxLimits.Overrides (ShelleyBlock (Praos c) era)
+  -> ProtocolInfo m (ShelleyBlock (Praos c) era)
 protocolInfoPraosShelleyBased
-  ProtocolParamsShelleyBased
-    { shelleyBasedGenesis = genesis,
-      shelleyBasedInitialNonce = initialNonce,
-      shelleyBasedLeaderCredentials = credentialss
+  ProtocolParamsShelleyBased {
+      shelleyBasedGenesis           = genesis
+    , shelleyBasedInitialNonce      = initialNonce
+    , shelleyBasedLeaderCredentials = credentialss
     }
   (additionalGenesisConfig, transCtxt)
   protVer
   maxTxCapacityOverrides =
     assertWithMsg (validateGenesis genesis) $
       ProtocolInfo
-        { pInfoConfig = topLevelConfig,
-          pInfoInitLedger = initExtLedgerState,
+        { pInfoConfig       = topLevelConfig,
+          pInfoInitLedger   = initExtLedgerState,
           pInfoBlockForging =
             traverse
               (praosBlockForging praosParams maxTxCapacityOverrides)
@@ -234,20 +234,18 @@ protocolInfoPraosShelleyBased
       maxMajorProtVer = MaxMajorProtVer $ SL.pvMajor protVer
 
       topLevelConfig :: TopLevelConfig (ShelleyBlock (Praos c) era)
-      topLevelConfig =
-        TopLevelConfig
-          { topLevelConfigProtocol = consensusConfig,
-            topLevelConfigLedger = ledgerConfig,
-            topLevelConfigBlock = blockConfig,
-            topLevelConfigCodec = ShelleyCodecConfig,
-            topLevelConfigStorage = storageConfig
+      topLevelConfig = TopLevelConfig {
+            topLevelConfigProtocol = consensusConfig
+          , topLevelConfigLedger   = ledgerConfig
+          , topLevelConfigBlock    = blockConfig
+          , topLevelConfigCodec    = ShelleyCodecConfig
+          , topLevelConfigStorage  = storageConfig
           }
 
       consensusConfig :: ConsensusConfig (BlockProtocol (ShelleyBlock (Praos c) era))
-      consensusConfig =
-        PraosConfig
-          { praosParams,
-            praosEpochInfo = epochInfo
+      consensusConfig = PraosConfig {
+            praosParams
+          , praosEpochInfo = epochInfo
           }
 
       ledgerConfig :: LedgerConfig (ShelleyBlock (Praos c) era)
@@ -260,17 +258,16 @@ protocolInfoPraosShelleyBased
           (mkSlotLength $ SL.sgSlotLength genesis)
 
       praosParams :: PraosParams
-      praosParams =
-        PraosParams
-          { praosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis,
-            praosLeaderF = SL.mkActiveSlotCoeff $ SL.sgActiveSlotsCoeff genesis,
-            praosSecurityParam = SecurityParam $ SL.sgSecurityParam genesis,
-            praosMaxKESEvo = SL.sgMaxKESEvolutions genesis,
-            praosQuorum = SL.sgUpdateQuorum genesis,
-            praosMaxMajorPV = maxMajorProtVer,
-            praosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesis,
-            praosNetworkId = SL.sgNetworkId genesis,
-            praosSystemStart = SystemStart $ SL.sgSystemStart genesis
+      praosParams = PraosParams {
+              praosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesis
+            , praosLeaderF           = SL.mkActiveSlotCoeff $ SL.sgActiveSlotsCoeff genesis
+            , praosSecurityParam     = SecurityParam $ SL.sgSecurityParam genesis
+            , praosMaxKESEvo         = SL.sgMaxKESEvolutions genesis
+            , praosQuorum            = SL.sgUpdateQuorum genesis
+            , praosMaxMajorPV        = maxMajorProtVer
+            , praosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesis
+            , praosNetworkId         = SL.sgNetworkId genesis
+            , praosSystemStart       = SystemStart $ SL.sgSystemStart genesis
           }
 
       blockConfig :: BlockConfig (ShelleyBlock (Praos c) era)
@@ -281,35 +278,31 @@ protocolInfoPraosShelleyBased
           (shelleyBlockIssuerVKey <$> credentialss)
 
       storageConfig :: StorageConfig (ShelleyBlock (Praos c) era)
-      storageConfig =
-        ShelleyStorageConfig
-          { shelleyStorageConfigSlotsPerKESPeriod = praosSlotsPerKESPeriod praosParams,
-            shelleyStorageConfigSecurityParam = praosSecurityParam praosParams
+      storageConfig = ShelleyStorageConfig {
+            shelleyStorageConfigSlotsPerKESPeriod = praosSlotsPerKESPeriod praosParams
+          , shelleyStorageConfigSecurityParam     = praosSecurityParam praosParams
           }
 
       initLedgerState :: LedgerState (ShelleyBlock (Praos c) era)
-      initLedgerState =
-        ShelleyLedgerState
-          { shelleyLedgerTip = Origin,
-            shelleyLedgerState = SL.initialState genesis additionalGenesisConfig,
-            shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+      initLedgerState = ShelleyLedgerState {
+            shelleyLedgerTip        = Origin
+          , shelleyLedgerState      = SL.initialState genesis additionalGenesisConfig
+          , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
           }
 
       initChainDepState :: PraosState c
-      initChainDepState =
-        PraosState
-          { praosStateLastSlot = Origin,
-            praosStateOCertCounters = mempty,
-            praosStateEvolvingNonce = initialNonce,
-            praosStateCandidateNonce = initialNonce,
-            praosStateEpochNonce = initialNonce,
-            praosStateLabNonce = initialNonce,
-            praosStateLastEpochBlockNonce = initialNonce
+      initChainDepState = PraosState {
+            praosStateLastSlot            = Origin
+          , praosStateOCertCounters       = mempty
+          , praosStateEvolvingNonce       = initialNonce
+          , praosStateCandidateNonce      = initialNonce
+          , praosStateEpochNonce          = initialNonce
+          , praosStateLabNonce            = initialNonce
+          , praosStateLastEpochBlockNonce = initialNonce
           }
 
       initExtLedgerState :: ExtLedgerState (ShelleyBlock (Praos c) era)
-      initExtLedgerState =
-        ExtLedgerState
-          { ledgerState = initLedgerState,
-            headerState = HeaderState Origin initChainDepState
+      initExtLedgerState = ExtLedgerState {
+            ledgerState = initLedgerState
+          , headerState = HeaderState Origin initChainDepState
           }
