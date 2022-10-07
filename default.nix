@@ -68,7 +68,7 @@ let
         haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
     };
 
-    tvar-invariant-checks = recurseIntoAttrs {
+    nightly-checks.tvar-invariant-checks = recurseIntoAttrs {
       inherit haskellPackagesWithTVarCheck;
       tests = collectChecks' haskellPackagesWithTVarCheck;
     };
