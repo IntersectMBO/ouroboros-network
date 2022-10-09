@@ -15,7 +15,7 @@ import           Control.Monad.Class.MonadTime
 import           Data.Semigroup (Max (..))
 
 newtype ReconnectDelay = ReconnectDelay { reconnectDelay :: DiffTime }
-  deriving Eq
+  deriving (Eq, Ord)
   deriving newtype Num
   deriving newtype Fractional
   deriving Semigroup via Max DiffTime

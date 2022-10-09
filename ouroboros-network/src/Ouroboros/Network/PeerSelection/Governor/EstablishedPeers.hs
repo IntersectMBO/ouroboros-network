@@ -266,9 +266,10 @@ jobPromoteColdPeer PeerSelectionActions {
                                                    (EstablishedPeers.size establishedPeers)
                                                    peeraddr delay e,
             decisionState = st {
-                              knownPeers            = KnownPeers.setConnectTime
-                                                        (Set.singleton peeraddr)
-                                                        (delay `addTime` now)
+                              knownPeers            = KnownPeers.setConnectTimes
+                                                        (Map.singleton
+                                                          peeraddr
+                                                          (delay `addTime` now))
                                                         knownPeers',
                               inProgressPromoteCold = Set.delete peeraddr
                                                         (inProgressPromoteCold st),
@@ -426,14 +427,15 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
         let (rFuzz, fuzzRng')     = randomR (-2, 2 :: Double) fuzzRng
             peerSet               = Set.singleton peeraddr
             inProgressDemoteWarm' = Set.delete peeraddr inProgressDemoteWarm
-            knownPeers'           = KnownPeers.setConnectTime
-                                     peerSet
-                                     ((realToFrac rFuzz + policyErrorDelay)
-                                      `addTime` now)
-                                   . Set.foldr'
-                                     ((snd .) . KnownPeers.incrementFailCount)
-                                     knownPeers
-                                   $ peerSet
+            knownPeers'           = KnownPeers.setConnectTimes
+                                      (Map.singleton
+                                        peeraddr
+                                        ((realToFrac rFuzz + policyErrorDelay)
+                                         `addTime` now))
+                                  . Set.foldr'
+                                      ((snd .) . KnownPeers.incrementFailCount)
+                                      knownPeers
+                                  $ peerSet
             establishedPeers'     = EstablishedPeers.deletePeers
                                      peerSet
                                      establishedPeers in

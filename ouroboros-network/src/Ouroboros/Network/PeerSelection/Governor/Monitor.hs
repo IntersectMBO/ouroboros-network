@@ -94,13 +94,11 @@ jobs jobPool st =
 connections :: forall m peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionPolicy peeraddr m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
-            PeerSelectionPolicy { policyErrorDelay }
             st@PeerSelectionState {
               activePeers,
               establishedPeers,
@@ -115,17 +113,27 @@ connections PeerSelectionActions{
       let demotions = asynchronousDemotions monitorStatus
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition ((==PeerWarm) . fst) demotions
+          -- fuzz reconnect delays
+          (aFuzz, fuzzRng')  = randomR (-5, 5 :: Double) fuzzRng
+          (rFuzz, fuzzRng'') = randomR (-2, 2 :: Double) fuzzRng'
+          demotions' = (\a@(peerState, reconnectDelay) -> case peerState of
+                         PeerHot  -> a
+                         PeerWarm -> ( peerState
+                                     , (\x -> (x + realToFrac aFuzz) `max` 0) <$> reconnectDelay
+                                     )
+                         PeerCold -> ( peerState
+                                     , (\x -> (x + realToFrac rFuzz) `max` 0) <$> reconnectDelay
+                                     )
+                       ) <$> demotions
       return $ \now ->
-        let (aFuzz, fuzzRng')  = randomR (-5, 5 :: Double) fuzzRng
-            (rFuzz, fuzzRng'') = randomR (-2, 2 :: Double) fuzzRng'
-            activePeers'       = activePeers Set.\\ Map.keysSet demotions
+        let -- Remove all asynchronous demotions from 'activePeers'
+            activePeers'       = activePeers Set.\\ Map.keysSet demotions'
 
             -- Note that we do not use establishedStatus' which
             -- has the synchronous ones that are supposed to be
             -- handled elsewhere. We just update the async ones:
             establishedPeers'  = EstablishedPeers.setActivateTimes
-                                   ( (\(_, a) -> (realToFrac aFuzz + ExitPolicy.reconnectDelay (fromMaybe 0 a))
-                                                     `addTime` now)
+                                   ( (\(_, a) -> ExitPolicy.reconnectDelay (fromMaybe 0 a) `addTime` now)
                                       -- 'monitorPeerConnection' returns
                                       -- 'Nothing' iff all mini-protocols are
                                       -- either still running or 'NotRunning'
@@ -141,10 +149,10 @@ connections PeerSelectionActions{
 
             -- Asynchronous transition to cold peer can only be
             -- a result of a failure.
-            knownPeers'        = KnownPeers.setConnectTime
-                                   (Map.keysSet demotedToCold)
-                                   ((realToFrac rFuzz + policyErrorDelay)
-                                    `addTime` now)
+            knownPeers'        = KnownPeers.setConnectTimes
+                                    ( (\(_, a) -> ExitPolicy.reconnectDelay (fromMaybe 0 a) `addTime` now)
+                                      <$> demotedToCold
+                                    )
                                . Set.foldr'
                                    ((snd .) . KnownPeers.incrementFailCount)
                                    (knownPeers st)
@@ -153,7 +161,7 @@ connections PeerSelectionActions{
         in assert (activePeers' `Set.isSubsetOf`
                      Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
-              decisionTrace = TraceDemoteAsynchronous demotions,
+              decisionTrace = TraceDemoteAsynchronous demotions',
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',

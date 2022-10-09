@@ -246,9 +246,10 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                      (fuzz, fuzzRng')  = randomR (-2, 2 :: Double) fuzzRng
                      delay             = realToFrac fuzz + policyErrorDelay
                      knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
-                                            then KnownPeers.setConnectTime
-                                                   (Set.singleton peeraddr)
-                                                   (delay `addTime` now)
+                                            then KnownPeers.setConnectTimes
+                                                   (Map.singleton
+                                                     peeraddr
+                                                     (delay `addTime` now))
                                                  $ snd $ KnownPeers.incrementFailCount
                                                    peeraddr
                                                    knownPeers
@@ -503,10 +504,10 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
             peerSet               = Set.singleton peeraddr
             activePeers'          = Set.delete peeraddr activePeers
             inProgressDemoteHot'  = Set.delete peeraddr inProgressDemoteHot
-            knownPeers'           = KnownPeers.setConnectTime
-                                      peerSet
-                                      ((realToFrac rFuzz + policyErrorDelay)
-                                       `addTime` now)
+            knownPeers'           = KnownPeers.setConnectTimes
+                                      (Map.singleton
+                                        peeraddr
+                                        ((realToFrac rFuzz + policyErrorDelay) `addTime` now))
                                   . Set.foldr'
                                       ((snd .) . KnownPeers.incrementFailCount)
                                       knownPeers
