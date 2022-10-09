@@ -1643,7 +1643,7 @@ prop_governor_target_established_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) status)
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing
@@ -1730,7 +1730,7 @@ prop_governor_target_active_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                      _ -> Nothing
               )
           . selectGovEvents
@@ -1950,7 +1950,7 @@ prop_governor_target_established_local env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) status)
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing
@@ -2039,7 +2039,7 @@ prop_governor_target_active_local_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                      _ -> Nothing
               )
           . selectGovEvents

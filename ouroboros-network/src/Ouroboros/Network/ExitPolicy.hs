@@ -20,6 +20,10 @@ newtype ReconnectDelay = ReconnectDelay { reconnectDelay :: DiffTime }
   deriving newtype Fractional
   deriving Semigroup via Max DiffTime
 
+-- It ought to be derived via 'Quiet' but 'Difftime' lacks 'Generic' instance.
+instance Show ReconnectDelay where
+    show (ReconnectDelay d) = "ReconnectDelay " ++ show d
+
 type ReturnPolicy a = a -> ReconnectDelay
 
 -- | 'ReturnPolicy' allows to compute reconnection delay from value return by
