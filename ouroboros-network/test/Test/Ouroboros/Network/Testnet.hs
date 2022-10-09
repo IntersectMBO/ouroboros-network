@@ -1223,7 +1223,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCold) status)
+                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                        TracePromoteWarmFailed _ _ peer _ ->
                          Just (Set.singleton peer)
                        _ -> Nothing
@@ -1376,7 +1376,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
-                           failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                           failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents

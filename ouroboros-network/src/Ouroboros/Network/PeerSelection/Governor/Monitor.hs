@@ -153,7 +153,7 @@ connections PeerSelectionActions{
         in assert (activePeers' `Set.isSubsetOf`
                      Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
-              decisionTrace = TraceDemoteAsynchronous (fst <$> demotions),
+              decisionTrace = TraceDemoteAsynchronous demotions,
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',
