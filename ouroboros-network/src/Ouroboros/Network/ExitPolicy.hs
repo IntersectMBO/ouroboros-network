@@ -17,6 +17,7 @@ import           Data.Semigroup (Max (..))
 newtype ReconnectDelay = ReconnectDelay { reconnectDelay :: DiffTime }
   deriving Eq
   deriving newtype Num
+  deriving newtype Fractional
   deriving Semigroup via Max DiffTime
 
 type ReturnPolicy a = a -> ReconnectDelay
