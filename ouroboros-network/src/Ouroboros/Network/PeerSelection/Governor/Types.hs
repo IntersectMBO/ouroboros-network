@@ -621,7 +621,7 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TraceDemoteHotDone      Int Int peeraddr
-     | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
+     | TraceDemoteAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
