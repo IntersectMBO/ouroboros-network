@@ -212,9 +212,9 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 -- | Callbacks which are performed to change peer state.
 --
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
-    -- | Monitor peer state.
+    -- | Monitor peer state.  Must be non-blocking.
     --
-    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, ReconnectDelay),
+    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe ReconnectDelay),
 
     -- | Establish new connection: cold to warm.
     --
