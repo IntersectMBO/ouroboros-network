@@ -771,7 +771,7 @@ withPeerStateActions PeerStateActionsArguments {
         h (Just (Returned a)) = Just $ epReturnDelay spsExitPolicy a
         -- Note: we do 'RethrowPolicy' in 'ConnectionHandler' (see
         -- 'makeConnectionHandler').
-        h (Just Errored {})   = Just $ ReconnectDelay 10
+        h (Just Errored {})   = Just $ epErrorDelay spsExitPolicy
         h (Just NotRunning)   = Nothing
         h Nothing             = Nothing
 
