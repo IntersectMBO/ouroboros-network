@@ -233,7 +233,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daPeerMetrics            = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
-              , Diff.P2P.daReturnPolicy           = mempty
+              , Diff.P2P.daReturnPolicy           = \_ -> 0
               }
 
         apps <- Node.applications @_ @BlockHeader nodeKernel Node.cborCodecs limits appArgs

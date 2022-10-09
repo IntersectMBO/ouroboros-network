@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 
@@ -11,18 +12,12 @@ module Ouroboros.Network.ExitPolicy
   ) where
 
 import           Control.Monad.Class.MonadTime
+import           Data.Semigroup (Max (..))
 
 newtype ReconnectDelay = ReconnectDelay { reconnectDelay :: DiffTime }
   deriving Eq
   deriving newtype Num
-
--- | 'ReconnectDelay' is an additive monoid.
---
-instance Semigroup ReconnectDelay where
-    ReconnectDelay a <> ReconnectDelay b = ReconnectDelay (a + b)
-
-instance Monoid ReconnectDelay where
-    mempty = ReconnectDelay 0
+  deriving Semigroup via Max DiffTime
 
 type ReturnPolicy a = a -> ReconnectDelay
 
@@ -42,7 +37,7 @@ data ExitPolicy a =
 
 alwaysCleanReturnPolicy :: ReconnectDelay -- ^ reconnection delay on error
                         -> ExitPolicy a
-alwaysCleanReturnPolicy = ExitPolicy mempty
+alwaysCleanReturnPolicy = ExitPolicy $ \_ -> 0
 
 -- | 'ExitPolicy' with 10s error delay.
 --
