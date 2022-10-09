@@ -538,7 +538,7 @@ peerSelectionGovernorLoop tracer
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
     guardedDecisions blockedAt st =
       -- All the alternative potentially-blocking decisions.
-         Monitor.connections          actions policy st
+         Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions policy st
