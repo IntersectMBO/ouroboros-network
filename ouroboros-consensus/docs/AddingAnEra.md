@@ -21,7 +21,7 @@ previous Shelley-based case. Be sure to run both the Shelley
 (`ouroboros-consensus-cardano-test`) tests.
 
 For exhaustiveness, we give an overview of the changes needed. The new era we'll
-be adding is the Alonzo era, which comes after the Mary era.
+be using as a running example is the Alonzo era, which comes after the Mary era.
 
 ## Preparation
 
