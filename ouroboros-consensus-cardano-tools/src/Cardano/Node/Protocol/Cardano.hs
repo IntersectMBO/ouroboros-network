@@ -229,8 +229,12 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           Praos.conwayMaxTxCapacityOverrides =
             TxLimits.mkOverrides TxLimits.noOverridesMeasure
         }
-        -- ProtocolParamsTransition specifies the parameters needed to transition between two eras
-        -- The comments below also apply for the Shelley -> Allegra and Allegra -> Mary hard forks.
+        -- 'ProtocolTransitionParamsShelleyBased' specifies the parameters
+        -- needed to transition between two eras The comments below also apply
+        -- for the Shelley -> Allegra and Allegra -> Mary hard forks.
+        --
+        -- FIXME: The sentence below seems incomplete
+        --
         -- Byron to Shelley hard fork parameters
         Consensus.ProtocolTransitionParamsShelleyBased {
           transitionTranslationContext = (),
