@@ -85,9 +85,8 @@ be using as a running example is the Alonzo era, which comes after the Mary era.
   ones so that they disable the new era. Be sure to include the new versions in
   the two methods of the `SupportedNetworkProtocolVersion` instance. Extend
   `protocolInfoCardano` with the new era by following the type errors and adding
-  the missing parameters (including `ProtocolParamsTransition`). Don't forget to
-  derive `maxMajorProtVer` from the new final era. Update
-  `protocolClientInfoCardano` too.
+  the missing parameters. Don't forget to derive `maxMajorProtVer` from the new
+  final era. Update `protocolClientInfoCardano` too.
 
 * In `Ouroboros.Consensus.Cardano`, update the `ProtocolCardano` type synonym,
   add the extra arguments needed for `protocolInfoCardano` to the
