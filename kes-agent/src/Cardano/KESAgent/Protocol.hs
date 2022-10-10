@@ -4,14 +4,35 @@
 {-#LANGUAGE EmptyCase #-}
 {-#LANGUAGE KindSignatures #-}
 {-#LANGUAGE PolyKinds #-}
+{-#LANGUAGE FlexibleInstances #-}
+{-#LANGUAGE OverloadedStrings #-}
 module Cardano.KESAgent.Protocol
 where
 
 import Network.TypedProtocol.Core
 import Cardano.Crypto.KES.Class
+import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.DSIGN.Ed25519ML
+import Cardano.Crypto.Hash.Blake2b
+import Cardano.Binary
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import Data.Proxy (Proxy (..))
 
 data KESProtocol (k :: *) where
+  InitialState :: KESProtocol k
   IdleState :: KESProtocol k
+
+class VersionedProtocol (p :: *) where
+  versionIdentifier :: Proxy p -> VersionIdentifier
+
+data VersionIdentifier =
+  VersionIdentifier ByteString
+  deriving (Show, Eq)
+
+instance VersionedProtocol (KESProtocol (Sum6KES Ed25519DSIGNM Blake2b_256)) where
+  versionIdentifier _ =
+    VersionIdentifier "\xC3\x3E\x24\x0D\xAA\xB9\xC8\xB6\x84\x7C\xBD\x93\xBC\xD8\x04\xC9\x12\xF5\xC1\xBF\xC1\x87\x59\x52\xF2\x97\x76\x0B\xB0\xCE\x73"
 
 -- | The protocol for pushing KES keys.
 --
@@ -34,11 +55,13 @@ data KESProtocol (k :: *) where
 --
 instance Protocol (KESProtocol k) where
   data Message (KESProtocol k) st st' where
-          Message :: SignKeyKES k
+          VersionMessage :: Message (KESProtocol k) InitialState IdleState
+          KeyMessage :: SignKeyKES k
                   -> Message (KESProtocol k) IdleState IdleState
 
   -- | Server always has agency
   data ServerHasAgency st where
+    TokInitial :: ServerHasAgency InitialState
     TokIdle :: ServerHasAgency IdleState
 
   -- | Client never has agency
@@ -47,6 +70,6 @@ instance Protocol (KESProtocol k) where
   -- | Someone, i.e., the server, always has agency
   data NobodyHasAgency st where
 
-  exclusionLemma_ClientAndServerHaveAgency tok TokIdle = case tok of {}
+  exclusionLemma_ClientAndServerHaveAgency tok _ = case tok of {}
   exclusionLemma_NobodyAndClientHaveAgency tok _ = case tok of {}
-  exclusionLemma_NobodyAndServerHaveAgency tok TokIdle = case tok of {}
+  exclusionLemma_NobodyAndServerHaveAgency tok _ = case tok of {}
