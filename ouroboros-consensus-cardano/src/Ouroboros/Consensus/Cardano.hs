@@ -47,4 +47,5 @@ type ProtocolCardano = HardForkProtocol '[ ByronBlock
                                          , ShelleyBlock (TPraos StandardCrypto) StandardMary
                                          , ShelleyBlock (TPraos StandardCrypto) StandardAlonzo
                                          , ShelleyBlock (Praos StandardCrypto)  StandardBabbage
+                                         , ShelleyBlock (Praos StandardCrypto)  StandardConway
                                          ]
