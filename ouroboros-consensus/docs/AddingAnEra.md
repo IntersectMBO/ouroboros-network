@@ -6,6 +6,7 @@ consensus and to add it as an extra era to the Cardano blockchain.
 Prior art upon which this is based:
 * [#2666](https://github.com/input-output-hk/ouroboros-network/pull/2666)
 * [#2679](https://github.com/input-output-hk/ouroboros-network/pull/2679)
+* [#3971](https://github.com/input-output-hk/ouroboros-network/pull/3971/)
 
 The steps are fairly straightforward. We have put things in place (in consensus
 and in the ledger) when adding the Allegra and Mary eras that should now make it
