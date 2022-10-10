@@ -68,11 +68,11 @@ be adding is the Alonzo era, which comes after the Mary era.
 
 ## `ouroboros-consensus-cardano`
 
-* In `Ouroboros.Consensus.Cardano.Block`, include `AlonzoEra` in `CardanoEras`
-  and `ShelleyBasedEras`. Update all the pattern synonyms in the module with the
-  new era. Don't forget to update the comments, the `COMPLETE` pragmas, and the
-  export lists. It's easy to forget a case and the compiler will likely not warn
-  you, you'll notice it when trying to use the pattern synonyms.
+* In `Ouroboros.Consensus.Cardano.Block`, include `AlonzoEra` in `CardanoEras`.
+  Update all the pattern synonyms in the module with the new era. Don't forget
+  to update the comments, the `COMPLETE` pragmas, and the export lists. It's
+  easy to forget a case and the compiler will likely not warn you, you'll notice
+  it when trying to use the pattern synonyms.
 
 * In `Ouroboros.Consensus.Cardano.CanHardFork`, update
   `CardanoHardForkConstraints`, add additional translations to the `CanHardFork`
