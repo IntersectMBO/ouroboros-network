@@ -118,6 +118,8 @@ tests =
                    prop_diffusion_target_active_root
     , testProperty "diffusion target active below"
                    prop_diffusion_target_active_below
+    , testProperty "diffusion target active local below"
+                   prop_diffusion_target_active_local_below
     , testProperty "diffusion target active local above"
                    prop_diffusion_target_active_local_above
     , testProperty "diffusion connection manager valid transitions"
@@ -1445,6 +1447,128 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
             (\toolong -> Set.null toolong)
             promotionOpportunitiesIgnoredTooLong
 
+
+prop_diffusion_target_active_local_below :: AbsBearerInfo
+                                         -> DiffusionScript
+                                         -> Property
+prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_below ev
+        )
+      <$> events
+
+  where
+    verify_target_active_below :: Events DiffusionTestTrace -> Property
+    verify_target_active_below events =
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+          govLocalRootPeersSig =
+            selectDiffusionPeerSelectionState Governor.localRootPeers events
+
+          govEstablishedPeersSig :: Signal (Set NtNAddr)
+          govEstablishedPeersSig =
+            selectDiffusionPeerSelectionState
+              (EstablishedPeers.toSet . Governor.establishedPeers)
+              events
+
+          govActivePeersSig :: Signal (Set NtNAddr)
+          govActivePeersSig =
+            selectDiffusionPeerSelectionState Governor.activePeers events
+
+          govActiveFailuresSig :: Signal (Set NtNAddr)
+          govActiveFailuresSig =
+              Signal.keyedLinger
+                180 -- 3 minutes  -- TODO: too eager to reconnect?
+                (fromMaybe Set.empty)
+            . Signal.fromEvents
+            . Signal.selectEvents
+                (\case TracePromoteWarmFailed _ _ peer _ ->
+                         --TODO: the simulation does not yet cause this to happen
+                         Just (Set.singleton peer)
+                       TraceDemoteAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           -- unlike in the governor case we take into account
+                           -- all asynchronous demotions
+                           failures = Map.keysSet status
+                       _ -> Nothing
+                )
+            . selectDiffusionPeerSelectionEvents
+            $ events
+
+          promotionOpportunities :: Signal (Set NtNAddr)
+          promotionOpportunities =
+            (\local established active recentFailures ->
+                Set.unions
+                  [ -- There are no opportunities if we're at or above target
+                    if Set.size groupActive >= target
+                       then Set.empty
+                       else groupEstablished Set.\\ active
+                                             Set.\\ recentFailures
+                  | (target, group) <- LocalRootPeers.toGroupSets local
+                  , let groupActive      = group `Set.intersection` active
+                        groupEstablished = group `Set.intersection` established
+                  ]
+            ) <$> govLocalRootPeersSig
+              <*> govEstablishedPeersSig
+              <*> govActivePeersSig
+              <*> govActiveFailuresSig
+
+          promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
+          promotionOpportunitiesIgnoredTooLong =
+            Signal.keyedTimeout
+              10 -- seconds
+              id
+              promotionOpportunities
+
+       in counterexample
+            ("\nSignal key: (local, established peers, active peers, " ++
+             "recent failures, opportunities, ignored too long)") $
+
+          signalProperty 20 show
+            (\(_,_,_,_,_,toolong) -> Set.null toolong)
+            ((,,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                     <*> govEstablishedPeersSig
+                     <*> govActivePeersSig
+                     <*> govActiveFailuresSig
+                     <*> promotionOpportunities
+                     <*> promotionOpportunitiesIgnoredTooLong)
+
+
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_local_above'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -2045,4 +2169,3 @@ toBearerInfo abi =
         biAcceptFailures       = Nothing, -- TODO
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
-
