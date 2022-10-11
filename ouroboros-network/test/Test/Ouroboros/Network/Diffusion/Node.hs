@@ -242,7 +242,8 @@ run blockGeneratorArgs limits ni na tracersExtra =
 
         withAsync
            (Diff.P2P.runM interfaces
-                          Diff.nullTracers tracersExtra
+                          Diff.nullTracers
+                          tracersExtra
                           args argsExtra apps appsExtra)
            $ \ diffusionThread ->
                withAsync (blockFetch registry nodeKernel) $ \blockFetchLogicThread ->
