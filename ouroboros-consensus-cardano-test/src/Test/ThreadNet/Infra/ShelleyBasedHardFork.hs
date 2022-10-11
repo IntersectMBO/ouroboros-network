@@ -204,7 +204,7 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
               . Flip
           , translateLedgerTablesWith =
             \ShelleyLedgerTables { shelleyUTxOTable = diffMK } -> ShelleyLedgerTables {
-                shelleyUTxOTable = rawTranslateDiff
+                shelleyUTxOTable = fmap
                                       ( unTxOutWrapper
                                       . SL.translateEra' (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
                                       . TxOutWrapper
