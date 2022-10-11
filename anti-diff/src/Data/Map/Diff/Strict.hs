@@ -36,6 +36,8 @@ module Data.Map.Diff.Strict (
   , singleton
   , singletonDelete
   , singletonInsert
+    -- * Class instances for @'DiffHistory'@
+  , areInverses
     -- * Values and keys
   , Keys (..)
   , Values (..)
@@ -92,8 +94,8 @@ newtype Diff k v = Diff (Map k (NEDiffHistory v))
 -- | A history of changes to a value in a key-value store.
 --
 -- A history has an implicit sense of ordering according to time: from left to
--- right. This means that the left-most element in the history is the /earliest/
--- change, while the right-most element in the history is the /latest/ change.
+-- right. This means that the leftmost element in the history is the /earliest/
+-- change, while the rightmost element in the history is the /latest/ change.
 newtype UnsafeDiffHistory t v = UnsafeDiffHistory (t (DiffEntry v))
   deriving stock (Generic, Functor, Foldable)
 
@@ -217,7 +219,9 @@ instance (Ord k, Eq v) => Semigroup (Diff k v) where
     Merge.merge
       Merge.preserveMissing
       Merge.preserveMissing
-      (Merge.zipWithMaybeMatched(\_k h1 h2 -> h1 <>? h2))
+      (Merge.zipWithMaybeMatched(\_k h1 h2 ->
+        nonEmptyDiffHistory (toDiffHistory h1 <> toDiffHistory h2)
+      ))
       m1
       m2
 
@@ -288,9 +292,6 @@ invertDiffEntry = \case
 -- second argument. That is, inversion should be invertible.
 areInverses :: Eq v => DiffEntry v -> DiffEntry v -> Bool
 areInverses e1 e2 = invertDiffEntry e1 == e2
-
-instance Eq v => Semigroupoid (NEDiffHistory v) where
-  dh1 <>? dh2 = nonEmptyDiffHistory (toDiffHistory dh1 <> toDiffHistory dh2)
 
 {------------------------------------------------------------------------------
   Values and keys
