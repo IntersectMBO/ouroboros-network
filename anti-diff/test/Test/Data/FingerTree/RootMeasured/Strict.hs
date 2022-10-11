@@ -12,6 +12,7 @@ module Test.Data.FingerTree.RootMeasured.Strict (
   , splitProp
   ) where
 
+import           Data.Foldable (toList)
 import           Data.Monoid (Sum (..))
 import           Data.Proxy
 
@@ -41,6 +42,7 @@ type T = StrictFingerTree (Sum Int) (Sum Int) (Small Int)
 instance (SuperMeasured vr vi a, Arbitrary a)
       => Arbitrary (StrictFingerTree vr vi a) where
   arbitrary = fromList <$> arbitrary
+  shrink sft = fromList <$> shrink (toList sft)
 
 instance Measured (Sum Int) (Small Int) where
   measure _ = Sum 1
