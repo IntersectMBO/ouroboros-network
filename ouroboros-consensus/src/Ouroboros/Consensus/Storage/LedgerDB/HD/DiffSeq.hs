@@ -155,14 +155,14 @@ data RootMeasure k v = RootMeasure {
 data InternalMeasure k v = InternalMeasure {
     -- | Cumulative length
     imLength  :: {-# UNPACK #-} !Length
-    -- | Left-most slot number (or lower bound)
+    -- | Leftmost slot number (or lower bound)
     --
-    -- Empty diff sequences have no right-most slot number, so in that case
+    -- Empty diff sequences have no rightmost slot number, so in that case
     -- @imSlotNo == Nothing@.
   , imSlotNoL ::                !(Maybe SlotNoLB)
-    -- | Right-most slot number (or upper bound)
+    -- | Rightmost slot number (or upper bound)
     --
-    -- Empty diff sequences have no left-most slot number, so in that case
+    -- Empty diff sequences have no leftmost slot number, so in that case
     -- @imSlotNo == Nothing@.
   , imSlotNoR ::                !(Maybe SlotNoUB)
   }

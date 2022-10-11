@@ -679,8 +679,8 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
         oneIfDel x = case x of
           DS.Delete _           -> 1
           DS.Insert _           -> 0
-          DS.UnsafeAntiDelete _ -> error "Found UnsafeAntiDelete"
-          DS.UnsafeAntiInsert _ -> error "Found UnsafeAntiInsert"
+          DS.UnsafeAntiDelete _ -> 0
+          DS.UnsafeAntiInsert _ -> 0
 
 
     -- INVARIANT: nrequested > 0
