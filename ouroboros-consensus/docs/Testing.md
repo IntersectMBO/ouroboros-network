@@ -307,6 +307,19 @@ far behind the wallclock, we might not have sufficient knowledge to translate
 the wallclock to a `SlotNo`, although we _can_ always translate the `SlotNo`
 at the tip of the chain to a `UTCTime`.
 
+
+## Golden tests
+
+Golden tests are specific to each era:
+
+- [`Test.Consensus.Byron.Golden`](ouroboros-consensus-byron-test/test/Test/Consensus/Byron/Golden.hs)
+- [`Test.Consensus.Cardano.Golden`](ouroboros-consensus-cardano-test/test/Test/Consensus/Cardano/Golden.hs)
+- [`Test.Consensus.Shelley.Golden`](ouroboros-consensus-shelley-test/test/Test/Consensus/Shelley/Golden.hs)
+
+When adding a new golden test, running the test suite locally will generate the
+golden files. These files should be checked in as CI will fail if there are
+missing golden files.
+
 ## Miscellanous tests (`test-consensus` test suite)
 
 This test suite contains tests for a number of components of the rest of the
