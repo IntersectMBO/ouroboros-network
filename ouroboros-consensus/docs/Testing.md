@@ -320,6 +320,29 @@ When adding a new golden test, running the test suite locally will generate the
 golden files. These files should be checked in as CI will fail if there are
 missing golden files.
 
+Failing a golden test suite when the corresponding golden files are not found is
+done via the `--no-create` flag, which surprisingly is opt-in. In our `nix`
+infrastructure, this flag for CI is set in
+[`ouroboros-network.nix`](/nix/ouroboros-network.nix):
+
+```nix
+ # Command-line options for test suites:
+ packages.ouroboros-consensus-byron-test.components.tests.test.testFlags = 
+   lib.mkForce [ "--no-create" ];
+ packages.ouroboros-consensus-shelley-test.components.tests.test.testFlags = 
+   lib.mkForce [ "--no-create" ];
+ packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags = 
+   lib.mkForce [ "--no-create" ];
+```
+
+In particular, if we introduce golden tests in different suites, we need to add
+a line in the nix configuration above similar to the previous ones, eg:
+
+```nix
+packages.some-new-package.components.tests.test.testFlags = 
+   lib.mkForce [ "--no-create" ];
+```
+
 ## Miscellanous tests (`test-consensus` test suite)
 
 This test suite contains tests for a number of components of the rest of the
