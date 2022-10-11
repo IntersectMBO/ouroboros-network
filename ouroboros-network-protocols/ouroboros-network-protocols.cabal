@@ -65,6 +65,10 @@ library
                        Ouroboros.Network.Protocol.KeepAlive.Client
                        Ouroboros.Network.Protocol.KeepAlive.Server
                        Ouroboros.Network.Protocol.KeepAlive.Codec
+                       Ouroboros.Network.Protocol.PeerSharing.Type
+                       Ouroboros.Network.Protocol.PeerSharing.Client
+                       Ouroboros.Network.Protocol.PeerSharing.Server
+                       Ouroboros.Network.Protocol.PeerSharing.Codec
 
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
@@ -94,10 +98,10 @@ library
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
 
-                       io-classes,
-                       ouroboros-network-api
-                                        ^>=0.1,
-                       typed-protocols,
+                       io-classes       ^>=0.3,
+                       ouroboros-network-api,
+                       serialise,
+                       typed-protocols   >=0.1 && <1.0,
                        typed-protocols-cborg
                                          >=0.1 && <1.0
 
@@ -143,6 +147,9 @@ library testlib
                        Ouroboros.Network.Protocol.KeepAlive.Direct
                        Ouroboros.Network.Protocol.KeepAlive.Examples
                        Ouroboros.Network.Protocol.KeepAlive.Test
+                       Ouroboros.Network.Protocol.PeerSharing.Direct
+                       Ouroboros.Network.Protocol.PeerSharing.Examples
+                       Ouroboros.Network.Protocol.PeerSharing.Test
 
                        Test.ChainGenerators
                        Test.ChainProducerState
@@ -196,7 +203,7 @@ test-suite test
 
   ghc-options:         -Wall
                        -Wunused-packages
-                       
+
 test-suite cddl
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test-cddl
@@ -217,6 +224,7 @@ test-suite cddl
                        serialise,
                        text,
                        temporary,
+                       network,
 
                        QuickCheck,
                        quickcheck-instances,

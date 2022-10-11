@@ -1,13 +1,23 @@
 {-# LANGUAGE DeriveGeneric #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Ouroboros.Network.PeerSelection.PeerSharing.Type
   ( PeerSharing (..)
   , combinePeerInformation
+  , encodePortNumber
+  , decodePortNumber
+  , encodeRemoteAddress
+  , decodeRemoteAddress
   ) where
 
-import           Data.Aeson
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import           Data.Aeson.Types (FromJSON (..), ToJSON (..), Value (..),
+                     withText)
 import qualified Data.Text as Text
 import           GHC.Generics (Generic)
+import           Network.Socket (PortNumber, SockAddr (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
                      (PeerAdvertise (..))
 import           Text.Read (readMaybe)
@@ -50,4 +60,57 @@ combinePeerInformation :: PeerSharing -> PeerAdvertise -> PeerSharing
 combinePeerInformation NoPeerSharing      _                  = NoPeerSharing
 combinePeerInformation PeerSharingPrivate _                  = PeerSharingPrivate
 combinePeerInformation PeerSharingPublic  DoNotAdvertisePeer = PeerSharingPrivate
-combinePeerInformation _                  _                  = PeerSharingPublic
+combinePeerInformation _                         _           = PeerSharingPublic
+
+encodePortNumber :: PortNumber -> CBOR.Encoding
+encodePortNumber = CBOR.encodeWord16 . fromIntegral
+
+decodePortNumber :: CBOR.Decoder s PortNumber
+decodePortNumber = fromIntegral <$> CBOR.decodeWord16
+
+
+-- | This encoder should be faithful to the PeerSharing
+-- CDDL Specification.
+--
+-- See the network design document for more details
+--
+encodeRemoteAddress :: SockAddr -> CBOR.Encoding
+encodeRemoteAddress (SockAddrInet pn w) = CBOR.encodeListLen 3
+                           <> CBOR.encodeWord 0
+                           <> CBOR.encodeWord32 w
+                           <> encodePortNumber pn
+encodeRemoteAddress (SockAddrInet6 pn fi (w1, w2, w3, w4) si) = CBOR.encodeListLen 8
+                                                <> CBOR.encodeWord 1
+                                                <> CBOR.encodeWord32 w1
+                                                <> CBOR.encodeWord32 w2
+                                                <> CBOR.encodeWord32 w3
+                                                <> CBOR.encodeWord32 w4
+                                                <> CBOR.encodeWord32 fi
+                                                <> CBOR.encodeWord32 si
+                                                <> encodePortNumber pn
+encodeRemoteAddress (SockAddrUnix _) = error "Should never be encoding a SockAddrUnix!"
+
+-- | This decoder should be faithful to the PeerSharing
+-- CDDL Specification.
+--
+-- See the network design document for more details
+--
+decodeRemoteAddress :: CBOR.Decoder s SockAddr
+decodeRemoteAddress = do
+  _ <- CBOR.decodeListLen
+  tok <- CBOR.decodeWord
+  case tok of
+    0 -> do
+      w <- CBOR.decodeWord32
+      pn <- decodePortNumber
+      return (SockAddrInet pn w)
+    1 -> do
+      w1 <- CBOR.decodeWord32
+      w2 <- CBOR.decodeWord32
+      w3 <- CBOR.decodeWord32
+      w4 <- CBOR.decodeWord32
+      fi <- CBOR.decodeWord32
+      si <- CBOR.decodeWord32
+      pn <- decodePortNumber
+      return (SockAddrInet6 pn fi (w1, w2, w3, w4) si)
+    _ -> fail ("Serialise.decode.SockAddr unexpected tok " ++ show tok)

@@ -16,4 +16,3 @@ instance Hashable IP.IP
 instance Hashable PortNumber where
   hashWithSalt salt pn =
     hashUsing (fromIntegral :: PortNumber -> Word16) salt pn
-
