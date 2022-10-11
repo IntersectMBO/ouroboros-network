@@ -910,7 +910,7 @@ translateLedgerStateShelleyToAllegraWrapper =
 
         , translateLedgerTablesWith =
             \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
-             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff (SL.translateEra' ()) diffMK
+             ShelleyLedgerTables { shelleyUTxOTable = fmap (SL.translateEra' ()) diffMK
                                  }
         }
 
@@ -953,7 +953,7 @@ translateLedgerStateAllegraToMaryWrapper =
               . Flip
         , translateLedgerTablesWith =
             \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
-             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff (SL.translateEra' ()) diffMK
+             ShelleyLedgerTables { shelleyUTxOTable = fmap (SL.translateEra' ()) diffMK
                                  }
         }
 
@@ -1000,7 +1000,7 @@ translateLedgerStateMaryToAlonzoWrapper =
               . Flip
         , translateLedgerTablesWith =
             \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
-             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff Alonzo.translateTxOut diffMK
+             ShelleyLedgerTables { shelleyUTxOTable = fmap Alonzo.translateTxOut diffMK
                                  }
         }
 
@@ -1053,7 +1053,7 @@ translateLedgerStateAlonzoToBabbageWrapper =
               . transPraosLS
         , translateLedgerTablesWith =
             \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
-             ShelleyLedgerTables { shelleyUTxOTable = rawTranslateDiff Babbage.translateTxOut diffMK
+             ShelleyLedgerTables { shelleyUTxOTable = fmap Babbage.translateTxOut diffMK
                                  }
         }
   where

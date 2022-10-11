@@ -365,15 +365,15 @@ applyDiff (Values values) (Diff diffs) = Values $
     newKeys _k h = case last h of
       Insert x            -> Just x
       Delete _x           -> Nothing
-      UnsafeAntiInsert _x -> error "impossible b"
-      UnsafeAntiDelete _x -> error "impossible c"
+      UnsafeAntiInsert _x -> error "Can not apply UnsafeAntiInsert diff"
+      UnsafeAntiDelete _x -> error "Can not apply UnsafeAntiDelete diff"
 
     oldKeys :: k -> v -> NEDiffHistory v -> Maybe v
     oldKeys _k _v1 h = case last h of
       Insert x            -> Just x
       Delete _x           -> Nothing
-      UnsafeAntiInsert _x -> error "impossible e"
-      UnsafeAntiDelete _x -> error "impossible f"
+      UnsafeAntiInsert _x -> error "Can not apply UnsafeAntiInsert diff"
+      UnsafeAntiDelete _x -> error "Can not apply UnsafeAntiDelete diff"
 
 -- | Applies a diff to values for a specific set of keys.
 --
