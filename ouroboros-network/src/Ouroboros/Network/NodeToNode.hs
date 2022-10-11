@@ -7,6 +7,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 -- | This is the starting point for a module that will bring together the
 -- overall node to node protocol, as a collection of mini-protocols.
 --
@@ -148,6 +150,7 @@ import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
 import           Ouroboros.Network.Tracers
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 
 
 -- The Handshake tracer types are simply terrible.
@@ -684,4 +687,8 @@ localNetworkErrorPolicy = ErrorPolicies {
     }
 
 type RemoteAddress      = Socket.SockAddr
+
+instance ShowProxy RemoteAddress where
+  showProxy _ = "SockAddr"
+
 type RemoteConnectionId = ConnectionId RemoteAddress

@@ -11,6 +11,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -26,7 +27,11 @@ import qualified Codec.CBOR.Read as CBOR
 import           Codec.CBOR.Term (Term (..))
 import qualified Codec.CBOR.Term as CBOR
 import qualified Codec.CBOR.Write as CBOR
+import           Codec.Serialise.Class (Serialise)
 import qualified Codec.Serialise.Class as Serialise
+import qualified Codec.Serialise.Decoding as CBOR
+import qualified Codec.Serialise.Encoding as CBOR
+
 
 import           Data.Bool (bool)
 import qualified Data.ByteString.Lazy as BL
@@ -35,6 +40,7 @@ import           Data.List (sortOn)
 import qualified Data.Map as Map
 import           Data.Ord (Down (..))
 import qualified Data.Text as Text
+import           Data.Word (Word16)
 
 import           System.Directory (doesDirectoryExist)
 import           System.Exit (ExitCode (..))
@@ -52,12 +58,12 @@ import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Mock.ConcreteBlock (Block, BlockHeader (..))
 
-import           Ouroboros.Network.NodeToClient.Version
-                     (NodeToClientVersion (..), NodeToClientVersionData (..),
-                     nodeToClientCodecCBORTerm)
+import           Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
+                     NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..),
                      NodeToNodeVersion (..), NodeToNodeVersionData (..),
                      nodeToNodeCodecCBORTerm)
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import           Ouroboros.Network.Protocol.BlockFetch.Test ()
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
@@ -97,14 +103,20 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Test (Tx, TxId)
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
 
+import           Network.Socket (SockAddr (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type
-                     (PeerSharing (..))
+                     (PeerSharing (..), decodeRemoteAddress,
+                     encodeRemoteAddress)
+import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
+import           Ouroboros.Network.Protocol.PeerSharing.Test ()
+import           Ouroboros.Network.Protocol.PeerSharing.Type
+                     (ClientHasAgency (TokIdle), ServerHasAgency (..))
+import qualified Ouroboros.Network.Protocol.PeerSharing.Type as PeerSharing
 import           Test.QuickCheck
 import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
-
 
 -- | The main program, it requires both
 --
@@ -129,6 +141,7 @@ tests CDDLSpecs { cddlChainSync
                 , cddlHandshakeNodeToNodeV7To10
                 , cddlHandshakeNodeToNodeV11
                 , cddlHandshakeNodeToClient
+                , cddlPeerSharing
                 } =
   adjustOption (const $ QuickCheckMaxSize 10) $
   testGroup "cddl"
@@ -163,6 +176,8 @@ tests CDDLSpecs { cddlChainSync
                                                cddlLocalTxMonitor)
       , testProperty "LocalStateQuery"   (prop_encodeLocalStateQuery
                                                cddlLocalStateQuery)
+      , testProperty "PeerSharing "      (prop_encodePeerSharing
+                                               cddlPeerSharing)
       ]
     , testGroup "decoder"
       -- validate decoder by generating messages from the specification
@@ -189,6 +204,8 @@ tests CDDLSpecs { cddlChainSync
                                            cddlLocalTxMonitor)
       , testCase "LocalStateQuery"   (unit_decodeLocalStateQuery
                                            cddlLocalStateQuery)
+      , testCase "PeerSharing"       (unit_decodePeerSharing
+                                           cddlPeerSharing)
       ]
     ]
 
@@ -213,7 +230,8 @@ data CDDLSpecs = CDDLSpecs {
     cddlLocalTxMonitor            :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
     cddlLocalStateQuery           :: CDDLSpec (LocalStateQuery
                                                  Block (Point Block)
-                                                 LocalStateQuery.Query)
+                                                 LocalStateQuery.Query),
+    cddlPeerSharing               :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
   }
 
 
@@ -233,6 +251,7 @@ readCDDLSpecs = do
     localTxSubmission     <- BL.readFile (dir </> "local-tx-submission.cddl")
     localTxMonitor        <- BL.readFile (dir </> "local-tx-monitor.cddl")
     localStateQuery       <- BL.readFile (dir </> "local-state-query.cddl")
+    peerSharing           <- BL.readFile (dir </> "peer-sharing.cddl")
     -- append common definitions; they must be appended since the first
     -- definition is the entry point for a cddl spec.
     return CDDLSpecs {
@@ -251,6 +270,8 @@ readCDDLSpecs = do
         cddlLocalTxMonitor        = CDDLSpec $ localTxMonitor
                                             <> common,
         cddlLocalStateQuery       = CDDLSpec $ localStateQuery
+                                            <> common,
+        cddlPeerSharing           = CDDLSpec $ peerSharing
                                             <> common
       }
 
@@ -551,6 +572,25 @@ prop_encodeLocalStateQuery
     -> Property
 prop_encodeLocalStateQuery spec = validateEncoder spec localStateQueryCodec
 
+instance Arbitrary PortNumber where
+  arbitrary = fromIntegral @Word16 <$> arbitrary
+
+instance Arbitrary SockAddr where
+  arbitrary = oneof [ SockAddrInet <$> arbitrary
+                                   <*> arbitrary
+                    , SockAddrInet6 <$> arbitrary
+                                    <*> arbitrary
+                                    <*> arbitrary
+                                    <*> arbitrary
+                    ]
+
+prop_encodePeerSharing
+    :: CDDLSpec            (PeerSharing.PeerSharing SockAddr)
+    -> AnyMessageAndAgency (PeerSharing.PeerSharing SockAddr)
+    -> Property
+prop_encodePeerSharing spec =
+  validateEncoder spec (codecPeerSharing encodeRemoteAddress decodeRemoteAddress)
+
 
 --
 -- Test decoders
@@ -764,6 +804,17 @@ unit_decodeLocalStateQuery spec =
       , SomeAgency $ ClientAgency LocalStateQuery.TokAcquired
       , SomeAgency $ ServerAgency LocalStateQuery.TokAcquiring
       , SomeAgency $ ServerAgency (LocalStateQuery.TokQuerying LocalStateQuery.QueryPoint)
+      ]
+      100
+
+unit_decodePeerSharing
+    :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
+    -> Assertion
+unit_decodePeerSharing spec =
+    validateDecoder Nothing
+      spec (codecPeerSharing encodeRemoteAddress decodeRemoteAddress)
+      [ SomeAgency $ ClientAgency TokIdle
+      , SomeAgency $ ServerAgency TokBusy
       ]
       100
 

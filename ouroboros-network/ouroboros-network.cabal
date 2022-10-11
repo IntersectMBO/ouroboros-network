@@ -57,6 +57,7 @@ library
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.PeerSelection.Simple
+                       Ouroboros.Network.PeerSharing
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
@@ -233,8 +234,6 @@ test-suite test
                        -threaded
                        -rtsopts
                        +RTS -T -RTS
-
-
 
 executable demo-chain-sync
   hs-source-dirs:      demo
