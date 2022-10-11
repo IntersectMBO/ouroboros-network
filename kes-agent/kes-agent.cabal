@@ -20,6 +20,8 @@ library
                    , Cardano.KESAgent.Driver
                    , Cardano.KESAgent.Peers
                    , Cardano.KESAgent.Agent
+                   , Cardano.KESAgent.ServiceClient
+                   , Cardano.KESAgent.ControlClient
 
     -- other-modules:
 
