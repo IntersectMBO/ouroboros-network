@@ -14,9 +14,7 @@ module Test.Util.Orphans.Isomorphism (
   ) where
 
 import           Data.Foldable (toList)
-import           Data.Maybe (fromJust)
 import           Data.Proxy
-import           Data.Semigroupoid
 import           Data.Sequence (Seq (..))
 import           Data.Sequence.NonEmpty (NESeq (..))
 
@@ -111,7 +109,10 @@ instance Eq v => Isomorphism (HD.UtxoDiff k v) (MapDiff.Diff k v) where
         HD.UedsIns       -> MapDiff.singletonInsert x
         HD.UedsDel       -> MapDiff.singletonDelete x
         HD.UedsInsAndDel ->
-          fromJust (MapDiff.singletonInsert x <>? MapDiff.singletonDelete x)
+          MapDiff.unsafeFromDiffHistory (
+            MapDiff.toDiffHistory (MapDiff.singletonInsert x) <>
+            MapDiff.toDiffHistory (MapDiff.singletonDelete x)
+          )
 
 instance Isomorphism (MapDiff.Values k v) (HD.UtxoValues k v) where
   to (MapDiff.Values m) = HD.UtxoValues m
