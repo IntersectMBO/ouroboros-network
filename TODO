@@ -2,6 +2,5 @@
     - format
     - ser/deser
     - process?
-- Finish moving Direct{Deser,Ser}ialise to cardano-base
 - Node + Control Clients
 - Simulation test
