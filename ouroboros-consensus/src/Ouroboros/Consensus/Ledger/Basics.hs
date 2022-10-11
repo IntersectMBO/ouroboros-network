@@ -102,7 +102,6 @@ module Ouroboros.Consensus.Ledger.Basics (
   , prependLedgerTablesDiffsRaw
   , prependLedgerTablesDiffsTicked
   , prependLedgerTablesTrackingDiffs
-  , rawTranslateDiff
   , reapplyTrackingTicked
     -- ** Special classes of ledger states
   , InMemory (..)
@@ -744,12 +743,6 @@ reapplyTrackingTicked after before =
     zipOverLedgerTablesTicked rawReapplyTracking after
   $ projectLedgerTables before
 
-rawTranslateDiff ::
-     (v -> v')
-  -> DiffMK k v
-  -> DiffMK k v'
-rawTranslateDiff f (ApplyDiffMK d) = ApplyDiffMK $ fmap f d
-
 {-------------------------------------------------------------------------------
   Concrete ledger tables
 -------------------------------------------------------------------------------}
@@ -812,6 +805,9 @@ instance Ord k => Semigroup (ApplyMapKind' KeysMK' k v) where
 
 instance Ord k => Monoid (ApplyMapKind' KeysMK' k v) where
   mempty = ApplyKeysMK mempty
+
+instance Functor (DiffMK k) where
+  fmap f (ApplyDiffMK d) = ApplyDiffMK $ fmap f d
 
 mapValuesAppliedMK :: (Ord k, Eq v, Eq v') => (v -> v') -> ApplyMapKind' mk k v ->  ApplyMapKind' mk k v'
 mapValuesAppliedMK f = \case
