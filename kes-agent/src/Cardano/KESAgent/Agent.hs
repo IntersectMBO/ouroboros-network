@@ -15,7 +15,7 @@ where
 import Cardano.KESAgent.Driver (driver)
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.DirectSerialise
+import Cardano.Crypto.DirectSerialise
 
 import Cardano.Crypto.KES.Class
 

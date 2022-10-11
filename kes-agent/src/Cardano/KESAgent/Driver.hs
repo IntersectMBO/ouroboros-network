@@ -21,7 +21,7 @@ import Cardano.Crypto.KES.Class
 import Cardano.Binary
 
 import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.DirectSerialise
+import Cardano.Crypto.DirectSerialise
 
 driver :: forall k f t p
         . DirectDeserialise (SignKeyKES k)

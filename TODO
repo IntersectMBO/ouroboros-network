@@ -2,4 +2,6 @@
     - format
     - ser/deser
     - process?
-- POC
+- Finish moving Direct{Deser,Ser}ialise to cardano-base
+- Node + Control Clients
+- Simulation test
