@@ -227,7 +227,7 @@ genBlocks n pt0 = take (fromIntegral n) (go pt0)
 genBlock ::
      Point TestBlock -> TestBlock
 genBlock pt =
-  mkBlockFrom pt Tx { consumed = Token pt'
+  mkBlockFrom pt Tx { consumed = Token pt
                     , produced = ( Token pt', TValue (pointSlot pt'))
                     }
   where
