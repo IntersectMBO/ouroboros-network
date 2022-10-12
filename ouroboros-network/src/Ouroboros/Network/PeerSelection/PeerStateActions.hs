@@ -21,6 +21,7 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
   , PeerSelectionActionException (..)
   , EstablishConnectionException (..)
   , PeerSelectionTimeoutException (..)
+  , MonitorPeerConnectionBlocked (..)
     -- * Trace
   , PeerSelectionActionsTrace (..)
   ) where
@@ -430,6 +431,12 @@ peerSelectionActionExceptionFromException x = do
     PeerSelectionActionException e <- fromException x
     cast e
 
+-- | Throw an exception when 'monitorPeerConnection' blocks.
+--
+data MonitorPeerConnectionBlocked = MonitorPeerConnectionBlocked
+  deriving Show
+
+instance Exception MonitorPeerConnectionBlocked
 
 data EstablishConnectionException versionNumber
       -- | Handshake client failed
@@ -753,6 +760,7 @@ withPeerStateActions PeerStateActionsArguments {
     monitorPeerConnection PeerConnectionHandle { pchPeerStatus, pchAppHandles } =
         (,) <$> readTVar pchPeerStatus
             <*> (g <$> traverse f pchAppHandles)
+        `orElse` throwSTM MonitorPeerConnectionBlocked
       where
         f :: ApplicationHandle muxMode ByteString m a b
           -> STM m (Map MiniProtocolNum (Maybe (HasReturned a)))
