@@ -56,8 +56,8 @@ runControlClient1 proxy options key = do
       putStrLn $ "Control client connected to " ++ show (controlClientSocketAddress options)
       void $ runPeerWithDriver
         (driver s)
-        (kesPusher (return key) (throw ControlClientTermination))
+        (kesPusher (putStrLn "Sending key" >> return key) (throw ControlClientTermination))
         ()
-    ) `catch`
-    (\(e :: ControlClientTermination) -> putStrLn "Control client terminated normally")
+    )
+    `catch` (\(e :: ControlClientTermination) -> putStrLn "Control client terminated normally")
 

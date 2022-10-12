@@ -57,6 +57,9 @@ runAgent proxy options = do
   let pushKey key = do
         -- Empty the var in case there's anything there already
         oldKeyMay <- tryTakeMVar currentKeyVar
+        case oldKeyMay of
+          Just _ -> putStrLn "Replacing previous key"
+          Nothing -> putStrLn "Installing initial key"
         -- The MVar is now empty; we write to the next key signal channel
         -- /before/ putting the new key in the MVar, because we want to make it
         -- such that when the consumer picks up the signal, the next update
@@ -97,12 +100,14 @@ runAgent proxy options = do
                       putStrLn $ "Client service connected from " ++ show addr
                       myNextKeyChan <- dupChan nextKeyChan
                       void $ runPeerWithDriver
-                        (driver s)
-                        (kesPusher currentKey nextKey)
+                        (driver p)
+                        (kesPusher currentKey (Just <$> nextKey))
                         ()
                   )
 
-            forever $ acceptAndHandle s `catch` \e -> print (e :: SocketException)
+            forever $ acceptAndHandle s `catch` \e -> do
+              putStrLn "Service socket acceptAndHandle: error"
+              print (e :: SocketException)
           )
 
   let runControl =
@@ -125,12 +130,13 @@ runAgent proxy options = do
                   ( \(p, addr) -> do
                       putStrLn $ "Client control connected from " ++ show addr
                       void $ runPeerWithDriver
-                        (driver s)
+                        (driver p)
                         (kesReceiver pushKey)
                         ()
                   )
 
-            forever $ acceptAndHandle s `catch` \e -> print (e :: SocketException)
+            forever $ acceptAndHandle s `catch` \e -> do
+              putStrLn $ "Control socket acceptAndHandle: " ++ show (e :: SocketException)
           )
 
   void $ concurrently runService runControl
