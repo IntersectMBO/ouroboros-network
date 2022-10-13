@@ -172,14 +172,12 @@ diff (Values m1) (Values m2) = Diff $
         if v1 == v2 then
           Nothing
         else
-          Just $ singletonDelete v1 `unsafeMappend` singletonInsert v2
+          Just $ singletonDelete v1 `unsafeAppend` singletonInsert v2
       )
       m1
       m2
   where
-    -- Bypass the @'Semigroupoid'@ instance for @'NEDiffHistory'@, because we
-    -- know that @h1@ and @h2@ will not cancel out.
-    unsafeMappend (NEDiffHistory h1) (NEDiffHistory h2) =
+    unsafeAppend (NEDiffHistory h1) (NEDiffHistory h2) =
       NEDiffHistory $ h1 <> h2
 
 fromList :: Ord k => [(k, NEDiffHistory v)] -> Diff k v
