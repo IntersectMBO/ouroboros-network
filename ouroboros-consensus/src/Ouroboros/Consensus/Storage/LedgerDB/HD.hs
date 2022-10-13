@@ -9,7 +9,11 @@
 -- Except for the backing store, this interface would also be required for any
 -- other kind of table. Some definitions would change depending on that table's
 -- specifics.
-module Ouroboros.Consensus.Storage.LedgerDB.HD {-# DEPRECATED "Use Data.Map.Diff.Strict instead" #-} (
+--
+-- TODO: Previously, we had a deprecation warning pragma on this module, but
+-- this made CI fail. However, since we should remove this module at some point,
+-- we add this TODO here: remove this module.
+module Ouroboros.Consensus.Storage.LedgerDB.HD (
     -- * Values
     UtxoValues (..)
   , emptyUtxoValues
