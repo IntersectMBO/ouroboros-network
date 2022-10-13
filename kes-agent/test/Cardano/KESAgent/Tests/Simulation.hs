@@ -72,7 +72,7 @@ testOneKeyThroughChain p lock seedPSB nodeDelay controlDelay =
       (threadDelay $ 1000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
       (race
         -- run these to "completion"
-        (agent `concurrently_` 
+        (agent `concurrently_`
           node resultVar `concurrently_`
           controlServer expected)
         -- ...until this one finished
