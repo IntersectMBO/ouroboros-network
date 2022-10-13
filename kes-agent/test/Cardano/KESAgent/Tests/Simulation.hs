@@ -1,3 +1,6 @@
+-- TODO: replace psbFromBytes with something non-deprecated and remove this pragma
+{-#OPTIONS_GHC -Wno-deprecations#-}
+
 {-#LANGUAGE OverloadedStrings #-}
 {-#LANGUAGE FlexibleContexts #-}
 {-#LANGUAGE FlexibleInstances #-}

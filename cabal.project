@@ -35,7 +35,7 @@ package kes-agent
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 79b2b02aedc14d0abd2b6d0ecd2cbbd900bd4c1f
+  tag: 92ff2ececeaa82ef02009abba6ed7242bf7f0de2
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     base-deriving-via
@@ -47,7 +47,8 @@ source-repository-package
     measures
     orphans-deriving-via
     slotting
-    strict-containers
+    cardano-strict-containers
+    heapwords
 
 source-repository-package
   type: git
