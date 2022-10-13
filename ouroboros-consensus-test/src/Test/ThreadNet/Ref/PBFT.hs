@@ -47,8 +47,8 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 
 import           Test.ThreadNet.Util.NodeJoinPlan
 
-import           Test.Util.InvertedMap (InvertedMap)
 import qualified Test.Util.InvertedMap as InvertedMap
+import           Test.Util.InvertedMap (InvertedMap)
 import           Test.Util.Slots (NumSlots (..))
 
 oneK :: Num a => PBftParams -> a

@@ -41,9 +41,9 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import           Data.TreeDiff (ToExpr (..), defaultExprViaShow)
 import           Data.Word (Word64)
+import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
-import qualified Generics.SOP as SOP
 import           System.IO.Temp (withTempDirectory)
 import           System.Random (getStdRandom, randomR)
 import           Text.Read (readMaybe)
@@ -52,8 +52,8 @@ import           Text.Show.Pretty (ppShow)
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Random (mkQCGen)
-import           Test.StateMachine (Concrete, Symbolic)
 import qualified Test.StateMachine as QSM
+import           Test.StateMachine (Concrete, Symbolic)
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -69,12 +69,12 @@ import           Ouroboros.Consensus.Util.Condense
 
 import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.FsTree (FsTree (..))
-import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import           Test.Util.FS.Sim.Pure
 import           Test.Util.QuickCheck (collects)
-import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
+import           Test.Util.RefEnv (RefEnv)
 import           Test.Util.SOP
 
 {-------------------------------------------------------------------------------

@@ -37,8 +37,8 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.IOLike hiding (invariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
-import           Test.Util.FS.Sim.MockFS
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.MockFS
 import           Test.Util.FS.Sim.STM (simHasFS)
 
 

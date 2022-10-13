@@ -76,8 +76,8 @@ import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.CallStack
 
-import           Test.Util.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
 import qualified Test.Util.FS.Sim.FsTree as FS
+import           Test.Util.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
 
 {-------------------------------------------------------------------------------
   Mock FS types

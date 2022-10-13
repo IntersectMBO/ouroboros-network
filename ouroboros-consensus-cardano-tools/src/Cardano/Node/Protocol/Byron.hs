@@ -25,8 +25,8 @@ import           Data.Text as Text (unpack)
 import           Cardano.Prelude
 
 import qualified Cardano.Chain.Genesis as Genesis
-import qualified Cardano.Chain.UTxO as UTxO
 import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.UTxO as UTxO
 import qualified Cardano.Crypto.Hash as Crypto
 import qualified Cardano.Crypto.Hashing as Byron.Crypto
 import           Cardano.Crypto.ProtocolMagic (RequiresNetworkMagic)

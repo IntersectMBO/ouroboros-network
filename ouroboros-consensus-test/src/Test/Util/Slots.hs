@@ -8,8 +8,8 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Quiet (Quiet (..))
-import           Test.QuickCheck (Arbitrary (..))
 import qualified Test.QuickCheck as QC
+import           Test.QuickCheck (Arbitrary (..))
 
 -- | Number of slots
 newtype NumSlots = NumSlots {unNumSlots :: Word64}

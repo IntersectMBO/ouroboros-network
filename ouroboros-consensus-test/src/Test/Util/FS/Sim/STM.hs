@@ -13,8 +13,8 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
-import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import           Test.Util.FS.Sim.Pure (PureSimFS, runPureSimFS)
 
 {------------------------------------------------------------------------------

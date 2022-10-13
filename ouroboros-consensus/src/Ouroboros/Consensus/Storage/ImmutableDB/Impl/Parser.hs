@@ -18,8 +18,8 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Functor ((<&>))
 import           Data.Word (Word64)
-import           Streaming (Of, Stream)
 import qualified Streaming as S
+import           Streaming (Of, Stream)
 import qualified Streaming.Prelude as S
 
 import           Ouroboros.Consensus.Block hiding (headerHash)

@@ -39,9 +39,9 @@ import           Data.Maybe (listToMaybe)
 import           Data.TreeDiff (Expr (App), defaultExprViaShow)
 import           Data.Typeable (Typeable)
 import           Data.Word (Word16, Word32, Word64)
+import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
-import qualified Generics.SOP as SOP
 import           NoThunks.Class (AllowThunk (..))
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
@@ -80,8 +80,8 @@ import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck (collects)
-import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
+import           Test.Util.RefEnv (RefEnv)
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 import           Test.Util.WithEq

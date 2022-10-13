@@ -14,9 +14,9 @@ import           Control.Exception (assert)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (maybeToList)
-import           Data.SOP.Strict
 import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set
+import           Data.SOP.Strict
 
 import           Ouroboros.Consensus.Block (SlotNo (..))
 import           Ouroboros.Consensus.Config

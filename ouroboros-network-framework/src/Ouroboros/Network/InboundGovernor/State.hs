@@ -33,8 +33,8 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Cache (Cache)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           System.Random (StdGen)
 import qualified System.Random as Rnd
+import           System.Random (StdGen)
 
 import qualified Network.Mux as Mux
 

@@ -21,8 +21,8 @@ import qualified Data.ByteString.Internal as Internal
 import           Data.Int (Int64)
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Ptr)
-import           System.Posix (Fd)
 import qualified System.Posix as Posix
+import           System.Posix (Fd)
 
 -- Package 'unix' exports the same module.
 import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)

@@ -45,8 +45,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Void (Void)
-import           System.Random (StdGen, mkStdGen)
 import qualified System.Random as Random
+import           System.Random (StdGen, mkStdGen)
 
 import           Network.DNS (Domain, TTL)
 
@@ -87,10 +87,10 @@ import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
                      (BlockGeneratorArgs, NtCAddr, NtCVersion, NtCVersionData,
                      NtNAddr, NtNAddr_ (IPAddr), NtNVersion, NtNVersionData,
                      randomBlockGenerationArgs)
-import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DNSLookupDelay (..), DNSTimeout (..))
 import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelection hiding
                      (tests)
+import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+                     (DNSLookupDelay (..), DNSTimeout (..))
 
 import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
                      chooseInt, counterexample, frequency, oneof, property,

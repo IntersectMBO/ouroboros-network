@@ -47,8 +47,8 @@ import           Data.List (dropWhileEnd, intercalate)
 import           Data.Maybe (catMaybes, isNothing)
 import           Data.Word (Word64)
 
-import           Test.QuickCheck (Arbitrary (..), Gen)
 import qualified Test.QuickCheck as QC
+import           Test.QuickCheck (Arbitrary (..), Gen)
 
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.CallStack
