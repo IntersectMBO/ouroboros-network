@@ -40,8 +40,8 @@ import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.Condense (Condense, condense)
 import           Ouroboros.Consensus.Util.SOP
 
-import           Test.QuickCheck hiding (elements)
 import qualified Test.QuickCheck as QC
+import           Test.QuickCheck hiding (elements)
 
 {-------------------------------------------------------------------------------
   Generic QuickCheck utilities

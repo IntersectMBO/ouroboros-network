@@ -50,8 +50,8 @@ import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
 import qualified Streaming as S
-import           Streaming.Prelude (Of (..), Stream)
 import qualified Streaming.Prelude as S
+import           Streaming.Prelude (Of (..), Stream)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike

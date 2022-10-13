@@ -11,8 +11,8 @@ module Ouroboros.Consensus.Shelley.Protocol.Praos (PraosEnvelopeError (..)) wher
 
 import qualified Cardano.Crypto.KES as KES
 import           Cardano.Crypto.VRF (certifiedOutput)
-import           Cardano.Ledger.BHeaderView
 import           Cardano.Ledger.BaseTypes (ProtVer (ProtVer))
+import           Cardano.Ledger.BHeaderView
 import           Cardano.Ledger.Keys (hashKey)
 import           Cardano.Ledger.Slot (SlotNo (unSlotNo))
 import           Cardano.Protocol.TPraos.OCert

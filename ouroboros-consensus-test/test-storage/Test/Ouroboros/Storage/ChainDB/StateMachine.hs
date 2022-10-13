@@ -95,20 +95,20 @@ import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
+import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.Model (FollowerId, IteratorId,
                      ModelSupportsBlock,
                      ShouldGarbageCollect (DoNotGarbageCollect, GarbageCollect))
-import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
 
 import           Test.Util.ChunkInfo
 import qualified Test.Util.Classify as C
-import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.MockFS (MockFS)
 import           Test.Util.Orphans.ToExpr ()
-import           Test.Util.RefEnv (RefEnv)
 import qualified Test.Util.RefEnv as RE
+import           Test.Util.RefEnv (RefEnv)
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 import           Test.Util.WithEq

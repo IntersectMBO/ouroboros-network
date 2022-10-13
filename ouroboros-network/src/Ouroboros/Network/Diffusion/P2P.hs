@@ -79,9 +79,9 @@ import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.Diffusion.Utils
 import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
                      RemoteTransitionTrace)
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),

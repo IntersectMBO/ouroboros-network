@@ -28,13 +28,13 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.TreeDiff (defaultExprViaShow)
 import           Data.Typeable
-import           GHC.Generics (Generic, Generic1)
 import qualified Generics.SOP as SOP
+import           GHC.Generics (Generic, Generic1)
 
 import           Control.Monad.Class.MonadTimer
 
-import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck as QC
+import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.StateMachine
 import qualified Test.StateMachine.Types as QSM

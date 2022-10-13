@@ -25,8 +25,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),
 
 import           Test.Util.TestBlock
 
-import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as M
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock)
 
 tests :: TestTree
 tests = testGroup "Model" [

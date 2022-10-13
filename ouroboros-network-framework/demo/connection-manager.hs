@@ -24,8 +24,8 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (MonadTime (..))
 import           Control.Monad.Class.MonadTimer
@@ -44,8 +44,8 @@ import           Network.TypedProtocol.Core
 
 import           Options.Applicative
 
-import           System.Random (RandomGen)
 import qualified System.Random as Random
+import           System.Random (RandomGen)
 
 import           Network.TypedProtocol.ReqResp.Client
 import           Network.TypedProtocol.ReqResp.Codec.CBOR
@@ -58,8 +58,8 @@ import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.IOManager
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
+import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Protocol.Handshake

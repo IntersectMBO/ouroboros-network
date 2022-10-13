@@ -13,8 +13,8 @@ import           Control.Monad.State
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
-import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.MockFS (MockFS)
 
 -- | Monad useful for running 'HasFS' in pure code
 newtype PureSimFS a = PureSimFS (StateT MockFS (Except FsError) a)

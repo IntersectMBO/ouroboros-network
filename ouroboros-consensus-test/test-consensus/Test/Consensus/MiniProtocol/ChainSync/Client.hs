@@ -69,14 +69,14 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Test.Util.ChainUpdates (ChainUpdate (..), UpdateBehavior (..),
                      genChainUpdates, toChainUpdates)
-import           Test.Util.LogicalClock (NumTicks (..), Tick (..))
 import qualified Test.Util.LogicalClock as LogicalClock
+import           Test.Util.LogicalClock (NumTicks (..), Tick (..))
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Schedule (Schedule (..), genSchedule, joinSchedule,
                      lastTick, shrinkSchedule)
-import           Test.Util.TestBlock
 import qualified Test.Util.TestBlock as TestBlock
+import           Test.Util.TestBlock
 import           Test.Util.Tracer (recordingTracerTVar)
 
 {-------------------------------------------------------------------------------

@@ -119,12 +119,12 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
 
 import           Test.Util.ChainDB
-import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.HardFork.Future (Future)
+import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.HardFork.Future as HFF
-import           Test.Util.HardFork.OracularClock (OracularClock (..))
+import           Test.Util.HardFork.Future (Future)
 import qualified Test.Util.HardFork.OracularClock as OracularClock
+import           Test.Util.HardFork.OracularClock (OracularClock (..))
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time
 import           Test.Util.Tracer

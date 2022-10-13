@@ -59,8 +59,8 @@ import           Test.Cardano.Ledger.Shelley.Examples.Consensus
                      ledgerExamplesShelley, testShelleyGenesis)
 import           Test.Cardano.Ledger.Shelley.Orphans ()
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Golden (labelled, unlabelled)
 import qualified Test.Util.Serialisation.Golden as Golden
+import           Test.Util.Serialisation.Golden (labelled, unlabelled)
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 

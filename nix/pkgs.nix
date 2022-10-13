@@ -16,10 +16,17 @@ with pkgs; {
   cabal =
     haskell-nix.tool localConfig.ghcVersion "cabal" { version = "latest"; };
 
-  stylish-haskell = haskell-nix.tool localConfig.ghcVersion "stylish-haskell" {
-    version = "0.13.0.0";
+  # can be changed back to haskell-nix.tool when we bump our index-state
+  stylish-haskell = (haskell-nix.cabalProject {
+    src = pkgs.fetchFromGitHub {
+      owner = "haskell";
+      repo = "stylish-haskell";
+      rev = "v0.14.3.0";
+      sha256 = "sha256-TF8VxrkE142D6dhWMbuAWTfVTafm8I2kpSnyW4eA8d0=";
+    };
+    compiler-nix-name = localConfig.ghcVersion;
     inherit (ouroborosNetworkHaskellPackages) index-state;
-  };
+  }).stylish-haskell.components.exes.stylish-haskell;
 
   trace = builtins.trace;
 }

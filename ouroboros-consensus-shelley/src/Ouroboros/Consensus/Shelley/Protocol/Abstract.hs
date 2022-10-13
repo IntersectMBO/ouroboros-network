@@ -28,8 +28,8 @@ module Ouroboros.Consensus.Shelley.Protocol.Abstract (
 
 import           Cardano.Binary (FromCBOR (fromCBOR), ToCBOR (toCBOR))
 import           Cardano.Crypto.VRF (OutputVRF)
-import           Cardano.Ledger.BHeaderView (BHeaderView)
 import           Cardano.Ledger.BaseTypes (ProtVer)
+import           Cardano.Ledger.BHeaderView (BHeaderView)
 import           Cardano.Ledger.Crypto (Crypto, VRF)
 import           Cardano.Ledger.Hashes (EraIndependentBlockBody,
                      EraIndependentBlockHeader)

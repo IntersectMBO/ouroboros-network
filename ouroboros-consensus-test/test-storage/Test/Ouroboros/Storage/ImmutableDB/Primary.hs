@@ -31,8 +31,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types (BlockOrEBB)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                      (ShouldBeFinalised (..), reconstructPrimaryIndex)
 
-import           Test.Util.FS.Sim.MockFS (HandleMock)
 import qualified Test.Util.FS.Sim.MockFS as Mock
+import           Test.Util.FS.Sim.MockFS (HandleMock)
 import qualified Test.Util.FS.Sim.STM as Sim
 import           Test.Util.Orphans.Arbitrary ()
 

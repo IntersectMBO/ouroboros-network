@@ -14,8 +14,8 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Word (Word32)
-import           System.Random
 import qualified System.Random as Rnd
+import           System.Random
 
 import           Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
                      Provenance (..), PrunePolicy)

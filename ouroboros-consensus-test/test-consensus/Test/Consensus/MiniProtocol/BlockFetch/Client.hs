@@ -76,8 +76,8 @@ import           Ouroboros.Consensus.Util.STM (blockUntilJust,
                      forkLinkedWatcher)
 
 import           Test.Util.ChainUpdates
-import           Test.Util.LogicalClock (Tick (..))
 import qualified Test.Util.LogicalClock as LogicalClock
+import           Test.Util.LogicalClock (Tick (..))
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Schedule
 import           Test.Util.TestBlock

@@ -50,8 +50,8 @@ import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork ()
 
-import           Test.Util.Serialisation.Golden (Examples, Labelled, labelled)
 import qualified Test.Util.Serialisation.Golden as Golden
+import           Test.Util.Serialisation.Golden (Examples, Labelled, labelled)
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 import qualified Test.Consensus.Byron.Examples as Byron

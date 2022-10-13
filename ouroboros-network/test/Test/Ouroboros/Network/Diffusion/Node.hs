@@ -99,10 +99,10 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
+import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
                      (NodeKernel (..), NtCAddr, NtCVersion, NtCVersionData,
                      NtNAddr, NtNVersion, NtNVersionData (..))
-import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay, DNSTimeout, mockDNSActions)
 
