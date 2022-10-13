@@ -124,7 +124,7 @@ test-suite test
   build-depends:       base,
                        io-classes,
                        strict-stm,
-                       io-sim           ^>=0.3,
+                       io-sim            >=0.3 && < 0.4,
                        contra-tracer,
                        network-mux,
                        Win32-network,

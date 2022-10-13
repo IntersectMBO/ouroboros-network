@@ -295,7 +295,7 @@ library
   build-depends:       base              >=4.9 && <4.15
                      , base-deriving-via
                      , base16-bytestring
-                     , bimap             >=0.3   && <0.5
+                     , bimap             >=0.4   && <0.5
                      , binary            >=0.8   && <0.11
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary

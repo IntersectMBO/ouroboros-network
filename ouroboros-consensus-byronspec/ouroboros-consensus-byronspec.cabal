@@ -34,7 +34,7 @@ library
                        Ouroboros.Consensus.ByronSpec.Ledger.Rules
 
   build-depends:       base              >=4.9   && <4.15
-                     , bimap             >=0.3   && <0.5
+                     , bimap             >=0.4   && <0.5
                      , cardano-binary
                      , cardano-ledger-byron-test
                      , cardano-slotting

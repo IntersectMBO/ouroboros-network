@@ -88,9 +88,6 @@ jobs:
         cabal --version
         echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT
 
-    - name: Update Hackage index
-      run: cabal update
-
     - name: Set cache version
       run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
 
@@ -133,6 +130,9 @@ jobs:
       if: runner.os == 'Windows'
       run: |
         cp .github/workflows/cabal.project.local.Windows cabal.project.local
+
+    - name: Update Hackage and CHaP
+      run: cabal update
 
     - name: Record dependencies
       id: record-deps

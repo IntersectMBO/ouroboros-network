@@ -1,4 +1,16 @@
 {
+    "CHaP": {
+        "branch": "repo",
+        "description": "Metadata for Cardano's Haskell package repository",
+        "homepage": "https://input-output-hk.github.io/cardano-haskell-packages/",
+        "owner": "input-output-hk",
+        "repo": "cardano-haskell-packages",
+        "rev": "9510ea6b12779d0cef602e78924c115f1ec3b0f9",
+        "sha256": "06pc1qz365jn6kkqjvnav14z350pji3nd0735xy94sqb0gs7vbi9",
+        "type": "tarball",
+        "url": "https://github.com/input-output-hk/cardano-haskell-packages/archive/9510ea6b12779d0cef602e78924c115f1ec3b0f9.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
     "hackage.nix": {
         "branch": "master",
         "description": "Automatically generated Nix expressions for Hackage",
