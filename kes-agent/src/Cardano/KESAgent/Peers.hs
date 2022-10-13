@@ -16,12 +16,9 @@ kesReceiver :: forall (k :: *)
             -> Peer (KESProtocol k) AsClient InitialState IO ()
 kesReceiver receiveKey =
   Effect $ do
-    putStrLn "RECEIVER: Starting."
     return $
       Await (ServerAgency TokInitial) $ \VersionMessage ->
-        Effect $ do
-          putStrLn "RECEIVER: Version received."
-          return go
+        Effect $ return go
   where
     go :: Peer (KESProtocol k) AsClient IdleState IO ()
     go = Await (ServerAgency TokIdle) $ \(KeyMessage sk) ->

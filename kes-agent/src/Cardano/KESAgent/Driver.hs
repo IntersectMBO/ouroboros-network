@@ -43,7 +43,7 @@ driver s = Driver
         void $ send s v msgNoSignal
       (ServerAgency TokIdle, KeyMessage sk) -> do
         putStrLn "DRIVER: Send key"
-        directSerialise (\buf bufSize -> unsafeSend s buf bufSize (msgNoSignal <> msgWaitAll) >>= \n -> printf "sent %i/%i\n" (fromIntegral n :: Int) (fromIntegral bufSize :: Int)) sk
+        directSerialise (\buf bufSize -> void $ unsafeSend s buf bufSize (msgNoSignal <> msgWaitAll)) sk
         putStrLn "DRIVER: Key sent."
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
@@ -51,7 +51,7 @@ driver s = Driver
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
         putStrLn "DRIVER: Receive version"
-        v <- VersionIdentifier <$> receive s 8 msgNoSignal
+        v <- VersionIdentifier <$> receive s versionIdentifierLength msgNoSignal
         putStrLn $ "DRIVER: Received VersionID: " ++ show v
         let expectedV = versionIdentifier (Proxy @(KESProtocol k))
         if v == expectedV then
@@ -71,6 +71,9 @@ driver s = Driver
           putStrLn "DRIVER: Key received."
           return (SomeMessage (KeyMessage sk), ())
         else do
+          -- We're not actually returning the key, because it hasn't been
+          -- loaded properly, however it has been allocated nonetheless,
+          -- so we must forget it, otherwise we will leak mlocked memory.
           forgetSignKeyKES sk
           putStrLn "DRIVER: Remote has closed the connection."
           return (SomeMessage EndMessage, ())

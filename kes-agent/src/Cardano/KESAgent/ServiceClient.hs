@@ -42,11 +42,12 @@ runServiceClient proxy options handleKey = do
     (socket @Unix @Stream @Default)
     (\s -> do
       close s
-      putStrLn "Service client socket closed"
+      putStrLn "SERVICE_CLIENT: socket closed"
     )
     (\s -> do
+      putStrLn $ "SERVICE_CLIENT: starting..."
       connect s (serviceClientSocketAddress options)
-      putStrLn $ "Service client connected to " ++ show (serviceClientSocketAddress options)
+      putStrLn $ "SERVICE_CLIENT: connected to " ++ show (serviceClientSocketAddress options)
       void $ runPeerWithDriver
         (driver s)
         (kesReceiver handleKey)

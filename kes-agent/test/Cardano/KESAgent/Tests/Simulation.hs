@@ -52,18 +52,23 @@ testOneKeyThroughChain lock seedPSB = ioProperty . withLock lock . withMLSBFromP
   expected <- (genKeyKES @IO @(Sum6KES Ed25519DSIGNM Blake2b_256) seed)
   resultVar <- newEmptyMVar :: IO (MVar (SignKeyKES (Sum6KES Ed25519DSIGNM Blake2b_256)))
 
-  Right result <- race
-    -- run these to "completion"
-    (agent `concurrently_` 
-      -- node resultVar `concurrently_`
-      controlServer expected)
-    -- ...until this one finished
-    (watch resultVar expected)
+  Right (Right result) <- race
+    -- abort after 5 seconds
+    (threadDelay 5000000)
+    (race
+      -- run these to "completion"
+      (agent `concurrently_` 
+        node resultVar `concurrently_`
+        controlServer expected)
+      -- ...until this one finished
+      (watch resultVar expected)
+    )
 
-  let returnee = result === expected
+  expectedBS <- rawSerialiseSignKeyKES expected
+  resultBS <- rawSerialiseSignKeyKES result
   forgetSignKeyKES expected
   forgetSignKeyKES result
-  return returnee
+  return (expectedBS === resultBS)
 
   where
     p = Proxy :: Proxy (Sum6KES Ed25519DSIGNM Blake2b_256)
@@ -73,14 +78,19 @@ testOneKeyThroughChain lock seedPSB = ioProperty . withLock lock . withMLSBFromP
               AgentOptions { agentServiceSocketAddress = serviceSocketAddr
                            , agentControlSocketAddress = controlSocketAddr
                            }
+    -- node :: MVar (SignKeyKES (Sum6KES Ed25519DSIGNM Blake2b_256)) -> IO ()
     node mvar = do
-      forever $ threadDelay 1000000
+      threadDelay 500
       (runServiceClient p
         ServiceClientOptions { serviceClientSocketAddress = serviceSocketAddr }
-        (putMVar mvar))
+        (\sk -> do
+          skBS <- rawSerialiseSignKeyKES sk
+          putStrLn $ "NODE: received key " ++ show skBS
+          putMVar mvar sk
+        ))
         `catch` (\(e :: SomeException) -> putStrLn $ "NODE: " ++ show e)
     controlServer sk = do
-      threadDelay 2000000
+      threadDelay 500
       (runControlClient1 p
         ControlClientOptions { controlClientSocketAddress = controlSocketAddr }
         sk)

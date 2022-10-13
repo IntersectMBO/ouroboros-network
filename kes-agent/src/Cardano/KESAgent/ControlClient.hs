@@ -29,11 +29,6 @@ data ControlClientOptions =
     { controlClientSocketAddress :: SocketAddress Unix
     }
 
--- | Used to terminate a client session when we're done.
-data ControlClientTermination =
-  ControlClientTermination
-  deriving (Show, Exception)
-
 -- | A simple control client: push one KES key, then exit.
 runControlClient1 :: forall k
                    . KESSignAlgorithm IO k
@@ -56,8 +51,6 @@ runControlClient1 proxy options key = do
       putStrLn $ "Control client connected to " ++ show (controlClientSocketAddress options)
       void $ runPeerWithDriver
         (driver s)
-        (kesPusher (putStrLn "Sending key" >> return key) (throw ControlClientTermination))
+        (kesPusher (putStrLn "Sending key" >> return key) (return Nothing))
         ()
     )
-    `catch` (\(e :: ControlClientTermination) -> putStrLn "Control client terminated normally")
-

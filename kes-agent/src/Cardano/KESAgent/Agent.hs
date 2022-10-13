@@ -58,8 +58,8 @@ runAgent proxy options = do
         -- Empty the var in case there's anything there already
         oldKeyMay <- tryTakeMVar currentKeyVar
         case oldKeyMay of
-          Just _ -> putStrLn "Replacing previous key"
-          Nothing -> putStrLn "Installing initial key"
+          Just _ -> putStrLn "AGENT: Replacing previous key"
+          Nothing -> putStrLn "AGENT: Installing initial key"
         -- The MVar is now empty; we write to the next key signal channel
         -- /before/ putting the new key in the MVar, because we want to make it
         -- such that when the consumer picks up the signal, the next update
@@ -84,20 +84,20 @@ runAgent proxy options = do
           (socket @Unix @Stream @Default)
           (\s -> do
               close s
-              putStrLn "Service socket closed"
+              putStrLn "AGENT: Service socket closed"
           )
           (\s -> do
             bind s (agentServiceSocketAddress options)
             listen s 0
-            putStrLn "Listening on service socket"
+            putStrLn "AGENT: Listening on service socket"
             let acceptAndHandle s = bracket
                   (accept s)
                   ( \(p, addr) -> do
                       close p
-                      putStrLn $ "Closed service connection from " ++ show addr
+                      putStrLn $ "AGENT: Closed service connection from " ++ show addr
                   )
                   ( \(p, addr) -> do
-                      putStrLn $ "Client service connected from " ++ show addr
+                      putStrLn $ "AGENT: Service client connected from " ++ show addr
                       myNextKeyChan <- dupChan nextKeyChan
                       void $ runPeerWithDriver
                         (driver p)
@@ -106,7 +106,7 @@ runAgent proxy options = do
                   )
 
             forever $ acceptAndHandle s `catch` \e -> do
-              putStrLn "Service socket acceptAndHandle: error"
+              putStrLn "AGENT: Service socket acceptAndHandle: error"
               print (e :: SocketException)
           )
 
@@ -115,20 +115,20 @@ runAgent proxy options = do
           (socket @Unix @Stream @Default)
           (\s -> do
               close s
-              putStrLn "Control socket closed"
+              putStrLn "AGENT: Control socket closed"
           )
           (\s -> do
             bind s (agentControlSocketAddress options)
             listen s 0
-            putStrLn "Listening on control socket"
+            putStrLn "AGENT: Listening on control socket"
             let acceptAndHandle s = bracket
                   (accept s)
                   ( \(p, addr) -> do
                       close p
-                      putStrLn $ "Closed control connection from " ++ show addr
+                      putStrLn $ "AGENT: Closed control connection from " ++ show addr
                   )
                   ( \(p, addr) -> do
-                      putStrLn $ "Client control connected from " ++ show addr
+                      putStrLn $ "AGENT: Control client connected from " ++ show addr
                       void $ runPeerWithDriver
                         (driver p)
                         (kesReceiver pushKey)
@@ -136,7 +136,7 @@ runAgent proxy options = do
                   )
 
             forever $ acceptAndHandle s `catch` \e -> do
-              putStrLn $ "Control socket acceptAndHandle: " ++ show (e :: SocketException)
+              putStrLn $ "AGENT: Control socket acceptAndHandle: " ++ show (e :: SocketException)
           )
 
   void $ concurrently runService runControl
