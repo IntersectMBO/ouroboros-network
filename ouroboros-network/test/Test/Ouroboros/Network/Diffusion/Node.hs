@@ -34,13 +34,14 @@ import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, wait, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer)
 
 import           Data.Foldable (foldl')
 import           Data.IP (IP (..))
@@ -136,6 +137,7 @@ data Arguments m = Arguments
     , aTimeWaitTimeout      :: DiffTime
     , aDNSTimeoutScript     :: Script DNSTimeout
     , aDNSLookupDelayScript :: Script DNSLookupDelay
+    , aDebugTracer          :: Tracer m String
     }
 
 -- The 'mockDNSActions' is not using \/ specifying 'resolverException', thus we
@@ -151,6 +153,7 @@ run :: forall resolver m.
        , MonadLabelledSTM m
        , MonadTraceSTM    m
        , MonadMask        m
+       , MonadSay         m
        , MonadST          m
        , MonadTime        m
        , MonadTimer       m
@@ -236,7 +239,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daReturnPolicy           = \_ -> 0
               }
 
-        apps <- Node.applications @_ @BlockHeader nodeKernel Node.cborCodecs limits appArgs
+        apps <- Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
 
         registry <- newFetchClientRegistry
 
