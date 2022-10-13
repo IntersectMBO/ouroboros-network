@@ -40,7 +40,7 @@ mkVersionIdentifier raw =
 
 instance VersionedProtocol (KESProtocol (Sum6KES Ed25519DSIGNM Blake2b_256)) where
   versionIdentifier _ =
-    mkVersionIdentifier "Sum6KES/Ed25519/Blake2b_256:1.0"
+    mkVersionIdentifier "Sum6/Ed25519/B2b256:1.0"
 
 -- | The protocol for pushing KES keys.
 --
