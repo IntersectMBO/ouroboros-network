@@ -3,11 +3,12 @@
 {-#LANGUAGE FlexibleInstances #-}
 {-#LANGUAGE TypeApplications #-}
 {-#LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-#LANGUAGE ScopedTypeVariables #-}
 module Cardano.KESAgent.Tests.Simulation
 ( tests )
 where
 
+import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DSIGN.Ed25519ML
 import Cardano.Crypto.DSIGNM.Class
@@ -34,8 +35,10 @@ import Test.QuickCheck (Arbitrary (..), vectorOf)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf (printf)
+import Data.Word
 
 import Cardano.KESAgent.Agent
+import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.ServiceClient
 import Cardano.KESAgent.ControlClient
 import Cardano.KESAgent.Tests.Util
@@ -43,54 +46,67 @@ import Cardano.KESAgent.Tests.Util
 tests :: Lock -> TestTree
 tests lock =
   testGroup "Simulation"
-  [ testProperty "One key through chain" (testOneKeyThroughChain lock)
+  [ testProperty "One key through chain" (testOneKeyThroughChain @(Sum6KES Ed25519DSIGNM Blake2b_256) Proxy lock)
   ]
 
-testOneKeyThroughChain :: Lock -> PinnedSizedBytes (SeedSizeKES (Sum6KES Ed25519DSIGNM Blake2b_256)) -> Property
-testOneKeyThroughChain lock seedPSB = ioProperty . withLock lock . withMLSBFromPSB seedPSB $ \seed -> do
-  hSetBuffering stdout LineBuffering
-  expected <- (genKeyKES @IO @(Sum6KES Ed25519DSIGNM Blake2b_256) seed)
-  resultVar <- newEmptyMVar :: IO (MVar (SignKeyKES (Sum6KES Ed25519DSIGNM Blake2b_256)))
+testOneKeyThroughChain :: forall k
+                        . KESSignAlgorithm IO k
+                       => DirectSerialise (SignKeyKES k)
+                       => DirectDeserialise (SignKeyKES k)
+                       => VersionedProtocol (KESProtocol k)
+                       => Show (SignKeyKES k)
+                       => Proxy k
+                       -> Lock
+                       -> PinnedSizedBytes (SeedSizeKES k)
+                       -> Word
+                       -> Word
+                       -> Property
+testOneKeyThroughChain p lock seedPSB nodeDelay controlDelay =
+  ioProperty . withLock lock . withMLSBFromPSB seedPSB $ \seed -> do
+    hSetBuffering stdout LineBuffering
+    expected <- genKeyKES @IO @k seed
+    resultVar <- newEmptyMVar :: IO (MVar (SignKeyKES k))
 
-  Right (Right result) <- race
-    -- abort after 5 seconds
-    (threadDelay 5000000)
-    (race
-      -- run these to "completion"
-      (agent `concurrently_` 
-        node resultVar `concurrently_`
-        controlServer expected)
-      -- ...until this one finished
-      (watch resultVar expected)
-    )
+    Right (Right result) <- race
+      -- abort 1 second after both clients have started
+      (threadDelay $ 1000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
+      (race
+        -- run these to "completion"
+        (agent `concurrently_` 
+          node resultVar `concurrently_`
+          controlServer expected)
+        -- ...until this one finished
+        (watch resultVar expected)
+      )
 
-  expectedBS <- rawSerialiseSignKeyKES expected
-  resultBS <- rawSerialiseSignKeyKES result
-  forgetSignKeyKES expected
-  forgetSignKeyKES result
-  return (expectedBS === resultBS)
+    -- Serialize keys so that we can forget them immediately, and only close over
+    -- their (non-mlocked) serializations when returning the property.
+    -- Serializing KES sign keys like this is normally unsafe, as it violates
+    -- mlocking guarantees, but for testing purposes, this is fine.
+    expectedBS <- rawSerialiseSignKeyKES expected
+    resultBS <- rawSerialiseSignKeyKES result
+    forgetSignKeyKES expected
+    forgetSignKeyKES result
+    return (expectedBS === resultBS)
 
   where
-    p = Proxy :: Proxy (Sum6KES Ed25519DSIGNM Blake2b_256)
     Just serviceSocketAddr = socketAddressUnixAbstract "KESAgent/service"
     Just controlSocketAddr = socketAddressUnixAbstract "KESAgent/control"
     agent = runAgent p
               AgentOptions { agentServiceSocketAddress = serviceSocketAddr
                            , agentControlSocketAddress = controlSocketAddr
                            }
-    -- node :: MVar (SignKeyKES (Sum6KES Ed25519DSIGNM Blake2b_256)) -> IO ()
     node mvar = do
-      threadDelay 500
+      threadDelay (500 + fromIntegral nodeDelay)
       (runServiceClient p
         ServiceClientOptions { serviceClientSocketAddress = serviceSocketAddr }
         (\sk -> do
-          skBS <- rawSerialiseSignKeyKES sk
-          putStrLn $ "NODE: received key " ++ show skBS
+          putStrLn $ "NODE: received key " ++ show sk
           putMVar mvar sk
         ))
         `catch` (\(e :: SomeException) -> putStrLn $ "NODE: " ++ show e)
     controlServer sk = do
-      threadDelay 500
+      threadDelay (500 + fromIntegral controlDelay)
       (runControlClient1 p
         ControlClientOptions { controlClientSocketAddress = controlSocketAddr }
         sk)
@@ -98,18 +114,21 @@ testOneKeyThroughChain lock seedPSB = ioProperty . withLock lock . withMLSBFromP
     watch mvar expected = do
       takeMVar mvar
 
--- We normally ensure that we avoid naively comparing signing keys by not
--- providing instances, but for tests it is fine, so we provide the orphan
--- instances here.
-
+-- Show instances for signing keys violate mlocking guarantees, but for testing
+-- purposes, this is fine, so we'll declare orphan instances here.
+--
 instance Show (SignKeyKES (SingleKES Ed25519DSIGNM)) where
   show (SignKeySingleKES (SignKeyEd25519DSIGNM mlsb)) =
     let bytes = BS.unpack $ mlsbToByteString mlsb
         hexstr = concatMap (printf "%02x") bytes
     in "SignKeySingleKES (SignKeyEd25519DSIGNM " ++ hexstr ++ ")"
 
-instance Show (SignKeyKES (SumKES h d)) where
-  show _ = "<SignKeySumKES>"
+instance Show (SignKeyKES d) => Show (SignKeyKES (SumKES h d)) where
+  show (SignKeySumKES sk r vk0 vk1) = show sk
+
+-- We normally ensure that we avoid naively comparing signing keys by not
+-- providing instances, but for tests it is fine, so we provide the orphan
+-- instances here.
 
 deriving instance Eq (SignKeyDSIGNM d)
                => Eq (SignKeyKES (SingleKES d))

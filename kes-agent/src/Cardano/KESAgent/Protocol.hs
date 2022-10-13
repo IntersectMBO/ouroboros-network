@@ -32,7 +32,7 @@ data VersionIdentifier =
   deriving (Show, Eq)
 
 versionIdentifierLength :: Num a => a
-versionIdentifierLength = 16
+versionIdentifierLength = 32
 
 mkVersionIdentifier :: ByteString -> VersionIdentifier
 mkVersionIdentifier raw =
@@ -40,7 +40,7 @@ mkVersionIdentifier raw =
 
 instance VersionedProtocol (KESProtocol (Sum6KES Ed25519DSIGNM Blake2b_256)) where
   versionIdentifier _ =
-    mkVersionIdentifier "\xC3\x3E\x24\x0D\xAA\xB9\xC8\xB6\x84\x7C\xBD\x93\xBC\xD8\x04\xC9"
+    mkVersionIdentifier "Sum6KES/Ed25519/Blake2b_256:1.0"
 
 -- | The protocol for pushing KES keys.
 --
