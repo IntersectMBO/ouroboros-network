@@ -9,7 +9,7 @@
 -- Except for the backing store, this interface would also be required for any
 -- other kind of table. Some definitions would change depending on that table's
 -- specifics.
-module Ouroboros.Consensus.Storage.LedgerDB.HD (
+module Ouroboros.Consensus.Storage.LedgerDB.HD {-# DEPRECATED "Use Data.Map.Diff.Strict instead" #-} (
     -- * Values
     UtxoValues (..)
   , emptyUtxoValues
