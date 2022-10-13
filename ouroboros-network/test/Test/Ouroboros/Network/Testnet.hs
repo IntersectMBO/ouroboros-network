@@ -187,7 +187,16 @@ data DiffusionTestTrace =
         (RemoteTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
     | DiffusionServerTrace (ServerTrace NtNAddr)
+    | DiffusionDebugTrace String
     deriving (Show)
+
+
+-- | A debug tracer which embeds events in DiffusionTestTrace.
+--
+debugTracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr String))
+debugTracer = Tracer $
+  \(WithTime t (WithName n a)) ->
+    traceM (WithTime t (WithName n (DiffusionDebugTrace a)))
 
 tracersExtraWithTimeName
   :: NtNAddr
@@ -265,12 +274,9 @@ tracersExtraWithTimeName ntnAddr =
     voidDebugPeerSelection (TraceGovernorState btime wtime state) =
                             TraceGovernorState btime wtime (const () <$> state)
 
-tracerDiffusionSimWithTimeName :: NtNAddr -> Tracer (IOSim s) DiffusionSimulationTrace
-tracerDiffusionSimWithTimeName ntnAddr =
-   contramap DiffusionDiffusionSimulationTrace
- . tracerWithName ntnAddr
- . tracerWithTime
- $ dynamicTracer
+
+tracerDiffusionSimWithTimeName :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionSimulationTrace))
+tracerDiffusionSimWithTimeName = dynamicTracer
 
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
@@ -285,6 +291,7 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [ConnectionManagerTrace
                   NtNAddr
@@ -321,6 +328,7 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [AbstractTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionConnectionManagerTransitionTrace st ->
@@ -358,6 +366,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [InboundGovernorTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
@@ -391,6 +400,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
@@ -427,6 +437,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [ServerTrace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
@@ -460,6 +471,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [PeerSelectionActionsTrace NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
@@ -503,6 +515,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [TracePeerSelection NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
@@ -600,6 +613,7 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         trace :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
         trace = take 125000
@@ -670,6 +684,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -790,6 +805,7 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -884,6 +900,7 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -964,6 +981,7 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1044,6 +1062,7 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1165,6 +1184,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1324,6 +1344,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1469,6 +1490,7 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1651,6 +1673,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  debugTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1773,6 +1796,7 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -1874,6 +1898,7 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -1936,6 +1961,7 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2006,6 +2032,7 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2073,6 +2100,7 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (Time, DiffusionTestTrace)]
         events = fmap ( Trace.fromList ()
