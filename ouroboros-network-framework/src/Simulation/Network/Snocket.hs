@@ -135,33 +135,36 @@ mkConnection :: ( MonadLabelledSTM   m
              -> BearerInfo
              -> ConnectionId (TestAddress addr)
              -> STM m (Connection m (TestAddress addr))
-mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } = do
-    (channelLocal, channelRemote)  <-
-      newConnectedAttenuatedChannelPair
-        ( ( WithAddr (Just localAddress) (Just remoteAddress)
-          . STAttenuatedChannelTrace connId
-          )
-          `contramap` tr)
-        ( ( WithAddr (Just remoteAddress) (Just localAddress)
-          . STAttenuatedChannelTrace ConnectionId
-              { localAddress  = remoteAddress
-              , remoteAddress = localAddress
-              }
-          )
-         `contramap` tr)
-        Attenuation
-          { aReadAttenuation  = biOutboundAttenuation  bearerInfo
-          , aWriteAttenuation = biOutboundWriteFailure bearerInfo
-          }
-        Attenuation
-          { aReadAttenuation  = biInboundAttenuation  bearerInfo
-          , aWriteAttenuation = biInboundWriteFailure bearerInfo
-          }
-    return $ Connection channelLocal
-                        channelRemote
-                        (biSDUSize bearerInfo)
-                        SYN_SENT
-                        localAddress
+mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } =
+    (\(connChannelLocal, connChannelRemote) ->
+      Connection {
+          connChannelLocal,
+          connChannelRemote,
+          connSDUSize  = biSDUSize bearerInfo,
+          connState    = SYN_SENT,
+          connProvider = localAddress
+        })
+  <$>
+    newConnectedAttenuatedChannelPair
+      ( ( WithAddr (Just localAddress) (Just remoteAddress)
+        . STAttenuatedChannelTrace connId
+        )
+        `contramap` tr)
+      ( ( WithAddr (Just remoteAddress) (Just localAddress)
+        . STAttenuatedChannelTrace ConnectionId
+            { localAddress  = remoteAddress
+            , remoteAddress = localAddress
+            }
+        )
+       `contramap` tr)
+      Attenuation
+        { aReadAttenuation  = biOutboundAttenuation  bearerInfo
+        , aWriteAttenuation = biOutboundWriteFailure bearerInfo
+        }
+      Attenuation
+        { aReadAttenuation  = biInboundAttenuation  bearerInfo
+        , aWriteAttenuation = biInboundWriteFailure bearerInfo
+        }
 
 
 -- | Connection id independent of who provisioned the connection. 'NormalisedId'
@@ -735,9 +738,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   normalisedId = normaliseId connId
 
               bearerInfo <- case Map.lookup normalisedId (nsAttenuationMap state) of
-                Nothing     -> do
-                  return (nsDefaultBearerInfo state)
-
+                Nothing     -> return (nsDefaultBearerInfo state)
                 Just script -> stepScriptSTM script
 
               connMap <- readTVar (nsConnections state)
