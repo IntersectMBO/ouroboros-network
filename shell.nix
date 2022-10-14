@@ -24,13 +24,8 @@ let
   shell = ouroborosNetworkHaskellPackages.shellFor {
     name = "cabal-dev-shell";
 
-    packages = ps:
-      lib.attrValues (haskell-nix.haskellLib.selectProjectPackages ps);
-
     # These programs will be available inside the nix-shell.
     nativeBuildInputs = [
-      cabalWrapped
-      # we also add cabal (even if cabalWrapped will be used by default) for shell completion:
       cabal
       entr
       fd

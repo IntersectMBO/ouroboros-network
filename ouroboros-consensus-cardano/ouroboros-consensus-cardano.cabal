@@ -91,7 +91,7 @@ executable db-analyser
                      , nothunks
                      , optparse-applicative
                      , serialise
-                     , strict-containers
+                     , cardano-strict-containers
                      , text
 
                      , ouroboros-consensus

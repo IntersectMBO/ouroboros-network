@@ -193,8 +193,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: bb4ed71ba8e587f672d06edf9d2e376f4b055555
-  --sha256: 00h10l5mmiza9819p9v5q5749nb9pzgi20vpzpy1d34zmh6gf1cj
+  tag: f3c145a7f67fe1c1e04828c68fc15608e0debd43
+  --sha256: sha256-tgrPGOFozADrdpLq7obSC2G5k2mOIy79PxIK7F2tsaA=
   subdir:
     cardano-prelude
     cardano-prelude-test
@@ -202,8 +202,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 0f3a867493059e650cda69e20a5cbf1ace289a57
-  --sha256: 0p0az3sbkhb7njji8xxdrfb0yx2gc8fmrh872ffm8sfip1w29gg1
+  tag: 4ef911eb7a4d628c938312ff4c92e7c0bb8c83a1
+  --sha256: sha256-WMgIzv1CTKv48O8aWpjozkdz2GhewZxKCQ4hGjfsQjw=
   subdir:
     base-deriving-via
     binary
@@ -211,16 +211,17 @@ source-repository-package
     cardano-crypto-class
     cardano-crypto-praos
     cardano-crypto-tests
+    heapwords
     measures
     orphans-deriving-via
     slotting
-    strict-containers
+    cardano-strict-containers
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 52da70e5a0472cd4433876289f1aebaa0c6e5c85
-  --sha256: 0aiislbwx5yqdidwd66zqqpskvay84iwkgsgi5l96rbfcsf0n8lq
+  tag: af822e167bb6b3c8c233d63acf30619b55a8fe47
+  --sha256: sha256-g6ERoUB78IQM8dOQDamPZPd94VmIHcshyE/JYqEwIVM=
   subdir:
     eras/alonzo/impl
     eras/alonzo/test-suite
@@ -249,8 +250,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: d24a7540e4659b57ce2ab25dadb968991e232191
-  --sha256: 15glaghkaa5kh1ayfkw2jahkqq3955kmfzplmb210gvrlnlghlaa
+  tag: d5f6f4a5505094490f61c8d164515adf7c8f46cc
+  --sha256: sha256-L5sdp23Cw/4wKIHtve7Q+n3KfSWG2szM6s06drt4xKA=
   subdir:
     plutus-ledger-api
     plutus-tx

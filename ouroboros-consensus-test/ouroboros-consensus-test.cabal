@@ -100,7 +100,7 @@ library
                      , random
                      , serialise         >=0.2   && <0.3
                      , sop-core
-                     , strict-containers
+                     , cardano-strict-containers
                      , tasty
                      , tasty-golden
                      , tasty-quickcheck
@@ -248,7 +248,7 @@ test-suite test-storage
                      , quickcheck-state-machine >=0.7.0
                      , random
                      , serialise
-                     , strict-containers
+                     , cardano-strict-containers
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck

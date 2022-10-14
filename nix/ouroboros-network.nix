@@ -41,7 +41,7 @@ let
         packages.cardano-crypto-praos.components.library.pkgconfig =
           lib.mkForce [ [ libsodium-vrf ] ];
         packages.cardano-crypto-class.components.library.pkgconfig =
-          lib.mkForce [ [ libsodium-vrf ] ];
+          lib.mkForce [ [ libsodium-vrf pkgs.secp256k1 ] ];
       }
 
       # Options specific to the windows cross-compiled build:
