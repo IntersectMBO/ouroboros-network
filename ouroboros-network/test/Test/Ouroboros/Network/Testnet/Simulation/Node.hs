@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -570,8 +571,8 @@ diffusionSimulation
      -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
                               NtCAddr NtCVersion NtCVersionData
                               SomeException m )
-  -> Tracer m (WithTime (WithName NtNAddr DiffusionSimulationTrace))
-  -> Tracer m (WithTime (WithName NtNAddr String))
+  -> Tracer m (WithName NtNAddr DiffusionSimulationTrace)
+  -> Tracer m (WithName NtNAddr String)
   -> m Void
 diffusionSimulation
   defaultBearerInfo
@@ -594,7 +595,6 @@ diffusionSimulation
             (_, x) <- waitAny nodes
             return x
   where
-    tracer' = tracerWithTime tracer
 
     -- | Runs a single node according to a list of commands.
     runCommand
@@ -614,19 +614,19 @@ diffusionSimulation
       -> m Void
     runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs [] = do
       threadDelay 3600
-      traceWith tracer' (WithName (naAddr nArgs) TrRunning)
+      traceWith tracer (WithName (naAddr nArgs) TrRunning)
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs []
     runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs [] = do
       -- We shouldn't block this thread waiting
       -- on the async since this will lead to a deadlock
       -- as thread returns 'Void'.
       threadDelay 3600
-      traceWith tracer' (WithName (naAddr nArgs) TrRunning)
+      traceWith tracer (WithName (naAddr nArgs) TrRunning)
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs []
     runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (JoinNetwork delay Nothing:cs) = do
       threadDelay delay
-      traceWith tracer' (WithName (naAddr nArgs) TrJoiningNetwork)
+      traceWith tracer (WithName (naAddr nArgs) TrJoiningNetwork)
       lrpVar <- newTVarIO $ naLocalRootPeers nArgs
       let dnsMapVar = dMapVarMap Map.! naAddr nArgs
       withAsync (runNode sArgs nArgs ntnSnocket ntcSnocket lrpVar dnsMapVar) $ \nodeAsync ->
@@ -635,7 +635,7 @@ diffusionSimulation
                (JoinNetwork delay (Just ip):cs) = do
       threadDelay delay
       let nArgs' = nArgs { naAddr = ip }
-      traceWith tracer' (WithName ip TrJoiningNetwork)
+      traceWith tracer (WithName ip TrJoiningNetwork)
       lrpVar <- newTVarIO $ naLocalRootPeers nArgs'
 
       -- Updating DomainMap entry now that the node is having a new IP
@@ -654,7 +654,7 @@ diffusionSimulation
     runCommand (Just (async, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Kill delay:cs) = do
       threadDelay delay
-      traceWith tracer' (WithName (naAddr nArgs) TrKillingNode)
+      traceWith tracer (WithName (naAddr nArgs) TrKillingNode)
       cancel async
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs cs
     runCommand _ _ _ _ _ _ (Kill _:_) = do
@@ -664,7 +664,7 @@ diffusionSimulation
     runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
-      traceWith tracer' (WithName (naAddr nArgs) TrReconfigurionNode)
+      traceWith tracer (WithName (naAddr nArgs) TrReconfigurionNode)
       _ <- atomically $ writeTVar lrpVar newLrp
       runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                  cs
@@ -679,7 +679,7 @@ diffusionSimulation
                     (TestAddress (IPAddr newIP _))
                     dMapVarMap = do
       threadDelay delay
-      traceWith tracer' (WithName oip TrUpdatingDNS)
+      traceWith tracer (WithName oip TrUpdatingDNS)
       traverse_ (\dMapVar -> atomically $ do
                   dnsMap <- readTVar dMapVar
                   let dnsMap' =
@@ -801,7 +801,7 @@ diffusionSimulation
               , NodeKernel.aTimeWaitTimeout      = 30
               , NodeKernel.aDNSTimeoutScript     = dnsTimeout
               , NodeKernel.aDNSLookupDelayScript = dnsLookupDelay
-              , NodeKernel.aDebugTracer          = tracerWithName rap (tracerWithTime debugTracer)
+              , NodeKernel.aDebugTracer          = tracerWithName rap debugTracer
               }
 
        in NodeKernel.run blockGeneratorArgs
