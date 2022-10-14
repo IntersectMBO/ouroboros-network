@@ -745,6 +745,10 @@ mkSnocket state tr = Snocket { getLocalAddr
                 Just      Connection { connState = ESTABLISHED } ->
                   throwSTM (connectedIOError fd_)
 
+                Just      Connection { connState = SYN_SENT, connProvider }
+                        | connProvider == localAddress ->
+                  throwSTM (connectedIOError fd_)
+
                 -- simultaneous open
                 Just conn@Connection { connState = SYN_SENT } -> do
                   let conn' = conn { connState = ESTABLISHED }
