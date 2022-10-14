@@ -193,10 +193,12 @@ data DiffusionTestTrace =
 
 -- | A debug tracer which embeds events in DiffusionTestTrace.
 --
-debugTracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr String))
-debugTracer = Tracer $
-  \(WithTime t (WithName n a)) ->
-    traceM (WithTime t (WithName n (DiffusionDebugTrace a)))
+debugTracer :: forall s. Tracer (IOSim s) (WithName NtNAddr String)
+debugTracer = tracerWithTime
+            $ fmap (fmap DiffusionDebugTrace) `contramap` tracer
+  where
+    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
+    tracer = Tracer traceM
 
 tracersExtraWithTimeName
   :: NtNAddr
@@ -275,8 +277,11 @@ tracersExtraWithTimeName ntnAddr =
                             TraceGovernorState btime wtime (const () <$> state)
 
 
-tracerDiffusionSimWithTimeName :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionSimulationTrace))
-tracerDiffusionSimWithTimeName = dynamicTracer
+tracerDiffusionSimWithTimeName :: Tracer (IOSim s) (WithName NtNAddr DiffusionSimulationTrace)
+tracerDiffusionSimWithTimeName = tracerWithTime tracer
+  where
+    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionSimulationTrace))
+    tracer = dynamicTracer
 
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
