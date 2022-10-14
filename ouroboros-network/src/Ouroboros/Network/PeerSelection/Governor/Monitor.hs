@@ -17,6 +17,7 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -27,12 +28,13 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           System.Random (randomR)
 
-import           Ouroboros.Network.ExitPolicy (ReconnectDelay (ReconnectDelay))
+import           Ouroboros.Network.ExitPolicy (ReconnectDelay)
 import qualified Ouroboros.Network.ExitPolicy as ExitPolicy
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
                      (jobDemoteActivePeer)
-import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.Governor.Types hiding
+                     (PeerSelectionCounters (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
@@ -93,13 +95,11 @@ jobs jobPool st =
 connections :: forall m peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> PeerSelectionPolicy peeraddr m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
-            PeerSelectionPolicy { policyErrorDelay }
             st@PeerSelectionState {
               activePeers,
               establishedPeers,
@@ -114,18 +114,34 @@ connections PeerSelectionActions{
       let demotions = asynchronousDemotions monitorStatus
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCold) = Map.partition ((==PeerWarm) . fst) demotions
+          -- fuzz reconnect delays
+          (aFuzz, fuzzRng')  = randomR (-5, 5 :: Double) fuzzRng
+          (rFuzz, fuzzRng'') = randomR (-2, 2 :: Double) fuzzRng'
+          demotions' = (\a@(peerState, reconnectDelay) -> case peerState of
+                         PeerHot  -> a
+                         PeerWarm -> ( peerState
+                                     , (\x -> (x + realToFrac aFuzz) `max` 0) <$> reconnectDelay
+                                     )
+                         PeerCold -> ( peerState
+                                     , (\x -> (x + realToFrac rFuzz) `max` 0) <$> reconnectDelay
+                                     )
+                       ) <$> demotions
       return $ \now ->
-        let (aFuzz, fuzzRng')  = randomR (-5, 5 :: Double) fuzzRng
-            (rFuzz, fuzzRng'') = randomR (-2, 2 :: Double) fuzzRng'
-            activePeers'       = activePeers Set.\\ Map.keysSet demotions
+        let -- Remove all asynchronous demotions from 'activePeers'
+            activePeers'       = activePeers Set.\\ Map.keysSet demotions'
 
             -- Note that we do not use establishedStatus' which
             -- has the synchronous ones that are supposed to be
             -- handled elsewhere. We just update the async ones:
             establishedPeers'  = EstablishedPeers.setActivateTimes
-                                   ( (\(_, a) -> (realToFrac aFuzz + ExitPolicy.reconnectDelay a)
-                                                 `addTime` now)
-                                      <$> Map.filter (\(_, a) -> a /= ReconnectDelay 0)
+                                   ( (\(_, a) -> ExitPolicy.reconnectDelay (fromMaybe 0 a) `addTime` now)
+                                      -- 'monitorPeerConnection' returns
+                                      -- 'Nothing' iff all mini-protocols are
+                                      -- either still running or 'NotRunning'
+                                      -- (e.g.  this possible for warm or hot
+                                      -- peers).  In such case we don't want to
+                                      -- `setActivateTimes`
+                                      <$> Map.filter (\(_, a) -> a /= Nothing)
                                                      demotedToWarm
                                    )
                                . EstablishedPeers.deletePeers
@@ -134,10 +150,10 @@ connections PeerSelectionActions{
 
             -- Asynchronous transition to cold peer can only be
             -- a result of a failure.
-            knownPeers'        = KnownPeers.setConnectTime
-                                   (Map.keysSet demotedToCold)
-                                   ((realToFrac rFuzz + policyErrorDelay)
-                                    `addTime` now)
+            knownPeers'        = KnownPeers.setConnectTimes
+                                    ( (\(_, a) -> ExitPolicy.reconnectDelay (fromMaybe 0 a) `addTime` now)
+                                      <$> demotedToCold
+                                    )
                                . Set.foldr'
                                    ((snd .) . KnownPeers.incrementFailCount)
                                    (knownPeers st)
@@ -146,7 +162,7 @@ connections PeerSelectionActions{
         in assert (activePeers' `Set.isSubsetOf`
                      Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
-              decisionTrace = TraceDemoteAsynchronous (fst <$> demotions),
+              decisionTrace = TraceDemoteAsynchronous demotions',
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',
@@ -173,13 +189,13 @@ connections PeerSelectionActions{
   where
     -- Those demotions that occurred not as a result of action by the governor.
     -- They're further classified into demotions to warm, and demotions to cold.
-    asynchronousDemotions :: Map peeraddr (PeerStatus, ReconnectDelay) -> Map peeraddr (PeerStatus, ReconnectDelay)
+    asynchronousDemotions :: Map peeraddr (PeerStatus, Maybe ReconnectDelay) -> Map peeraddr (PeerStatus, Maybe ReconnectDelay)
     asynchronousDemotions = Map.mapMaybeWithKey asyncDemotion
 
     -- The asynchronous ones, those not directed by the governor, are:
     -- hot -> warm, warm -> cold and hot -> cold, other than the ones in the in
     -- relevant progress set.
-    asyncDemotion :: peeraddr -> (PeerStatus, ReconnectDelay) -> Maybe (PeerStatus, ReconnectDelay)
+    asyncDemotion :: peeraddr -> (PeerStatus, Maybe ReconnectDelay) -> Maybe (PeerStatus, Maybe ReconnectDelay)
 
     -- a hot -> warm transition has occurred if it is now warm, and it was
     -- hot, but not in the set we were deliberately demoting synchronously

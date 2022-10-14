@@ -212,9 +212,9 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 -- | Callbacks which are performed to change peer state.
 --
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
-    -- | Monitor peer state.
+    -- | Monitor peer state.  Must be non-blocking.
     --
-    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, ReconnectDelay),
+    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe ReconnectDelay),
 
     -- | Establish new connection: cold to warm.
     --
@@ -302,27 +302,35 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     network disconnect to cause us to flush our full known peer set by
 --     considering them all to have bad connectivity.
 --     Should also take account of DNS failures for root peer set.
---     lastSucessfulNetworkEvent :: Time
+--     lastSuccessfulNetworkEvent :: Time
      }
   deriving (Show, Functor)
 
 data PeerSelectionCounters = PeerSelectionCounters {
-      coldPeers :: Int,
-      warmPeers :: Int,
-      hotPeers  :: Int
+      coldPeers  :: Int,
+      warmPeers  :: Int,
+      hotPeers   :: Int,
+      localRoots :: [(Int, Int)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
-peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers }
+peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers, localRoots }
   where
     knownPeersSet = KnownPeers.toSet (knownPeers st)
     establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
-    coldPeers = Set.size $ knownPeersSet Set.\\ establishedPeersSet
-    warmPeers = Set.size $ establishedPeersSet Set.\\ activePeers st
-    hotPeers  = Set.size $ activePeers st
+    coldPeers  = Set.size $ knownPeersSet Set.\\ establishedPeersSet
+    warmPeers  = Set.size $ establishedPeersSet Set.\\ activePeers st
+    hotPeers   = Set.size $ activePeers st
+    localRoots =
+      [ (target, active)
+      | (target, members) <- LocalRootPeers.toGroupSets (localRootPeers st)
+      , let active = Set.size (members `Set.intersection` activePeers st)
+      ]
 
-emptyPeerSelectionState :: StdGen -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng =
+emptyPeerSelectionState :: StdGen
+                        -> [(Int, Int)]
+                        -> PeerSelectionState peeraddr peerconn
+emptyPeerSelectionState rng localRoots =
     PeerSelectionState {
       targets              = nullPeerSelectionTargets,
       localRootPeers       = LocalRootPeers.empty,
@@ -339,7 +347,7 @@ emptyPeerSelectionState rng =
       inProgressDemoteWarm     = Set.empty,
       inProgressDemoteHot      = Set.empty,
       fuzzRng                  = rng,
-      countersCache            = Cache (PeerSelectionCounters 0 0 0)
+      countersCache            = Cache (PeerSelectionCounters 0 0 0 localRoots)
     }
 
 
@@ -621,7 +629,7 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TraceDemoteHotDone      Int Int peeraddr
-     | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
+     | TraceDemoteAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode

@@ -21,6 +21,7 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
   , PeerSelectionActionException (..)
   , EstablishConnectionException (..)
   , PeerSelectionTimeoutException (..)
+  , MonitorPeerConnectionBlocked (..)
     -- * Trace
   , PeerSelectionActionsTrace (..)
   ) where
@@ -37,7 +38,7 @@ import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Tracer (Tracer, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (($>))
+import           Data.Functor (void, ($>))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable, cast)
@@ -430,6 +431,12 @@ peerSelectionActionExceptionFromException x = do
     PeerSelectionActionException e <- fromException x
     cast e
 
+-- | Throw an exception when 'monitorPeerConnection' blocks.
+--
+data MonitorPeerConnectionBlocked = MonitorPeerConnectionBlocked
+  deriving Show
+
+instance Exception MonitorPeerConnectionBlocked
 
 data EstablishConnectionException versionNumber
       -- | Handshake client failed
@@ -587,17 +594,19 @@ withPeerStateActions PeerStateActionsArguments {
           --
 
           WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
+            -- current `pchPeerStatus` must be 'HotPeer'
             traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
-            atomically (writeTVar pchPeerStatus PeerCold)
+            void $ atomically (updateUnlessCold pchPeerStatus PeerCold)
           WithSomeProtocolTemperature (WithWarm MiniProtocolError{}) -> do
+            -- current `pchPeerStatus` must be 'WarmPeer'
             traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
-            atomically (writeTVar pchPeerStatus PeerCold)
+            void $ atomically (updateUnlessCold pchPeerStatus PeerCold)
           WithSomeProtocolTemperature (WithEstablished MiniProtocolError{}) -> do
             -- update 'pchPeerStatus' and log (as the two other transition to
             -- cold state.
             state <- atomically $ do
               peerState <- readTVar pchPeerStatus
-              writeTVar pchPeerStatus PeerCold
+              _  <- updateUnlessCold pchPeerStatus PeerCold
               pure peerState
             case state of
               PeerCold -> return ()
@@ -742,27 +751,37 @@ withPeerStateActions PeerStateActionsArguments {
                       ))
 
 
-    -- 'monitorPeerConnection' is only used against established connections
+    -- 'monitorPeerConnection' is only used against established connections.
+    -- It returns 'Nothing' only if all mini-protocols are either not running
+    -- or still executing.
+    --
     monitorPeerConnection :: PeerConnectionHandle muxMode peerAddr ByteString m a b
-                          -> STM m (PeerStatus, ReconnectDelay)
+                          -> STM m (PeerStatus, Maybe ReconnectDelay)
     monitorPeerConnection PeerConnectionHandle { pchPeerStatus, pchAppHandles } =
         (,) <$> readTVar pchPeerStatus
             <*> (g <$> traverse f pchAppHandles)
+        `orElse` throwSTM MonitorPeerConnectionBlocked
       where
         f :: ApplicationHandle muxMode ByteString m a b
-          -> STM m (Map MiniProtocolNum (HasReturned a))
-        f = sequence <=< readTVar . ahMiniProtocolResults
+          -> STM m (Map MiniProtocolNum (Maybe (HasReturned a)))
+             -- do not block when a mini-protocol is still running, otherwise
+             -- outbound governor
+             -- `Ouroboros.Network.PeerSelection.Governor.Monitor.connections`
+             -- will not be able to get the 'PeerStatus' of all peers.
+        f =  traverse (((\stm -> (Just <$> stm) `orElse` pure Nothing)))
+         <=< readTVar . ahMiniProtocolResults
 
-        g :: TemperatureBundle (Map MiniProtocolNum (HasReturned a))
-          -> ReconnectDelay
+        g :: TemperatureBundle (Map MiniProtocolNum (Maybe (HasReturned a)))
+          -> Maybe ReconnectDelay
         g = foldMap (foldMap h)
 
-        h :: HasReturned a -> ReconnectDelay
-        h (Returned a) = epReturnDelay spsExitPolicy a
+        h :: Maybe (HasReturned a) -> Maybe ReconnectDelay
+        h (Just (Returned a)) = Just $ epReturnDelay spsExitPolicy a
         -- Note: we do 'RethrowPolicy' in 'ConnectionHandler' (see
         -- 'makeConnectionHandler').
-        h Errored {}   = ReconnectDelay 10
-        h NotRunning   = mempty
+        h (Just Errored {})   = Just $ epErrorDelay spsExitPolicy
+        h (Just NotRunning)   = Nothing
+        h Nothing             = Nothing
 
 
     -- Take a warm peer and promote it to a hot one.
