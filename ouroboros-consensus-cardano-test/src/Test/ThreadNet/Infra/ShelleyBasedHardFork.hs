@@ -51,7 +51,6 @@ import           Cardano.Binary (fromCBOR, toCBOR)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
@@ -204,14 +203,13 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
               . Comp
               . Flip
           , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = ApplyDiffMK (HD.UtxoDiff vals) } -> ShelleyLedgerTables {
-                shelleyUTxOTable = ApplyDiffMK
-                                 . HD.UtxoDiff
-                                 . fmap (\(HD.UtxoEntryDiff x y) -> HD.UtxoEntryDiff ( unTxOutWrapper
-                                                                                     . SL.translateEra' (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
-                                                                                     . TxOutWrapper
-                                                                                     $ x) y)
-                                 $ vals
+            \ShelleyLedgerTables { shelleyUTxOTable = diffMK } -> ShelleyLedgerTables {
+                shelleyUTxOTable = fmap
+                                      ( unTxOutWrapper
+                                      . SL.translateEra' (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
+                                      . TxOutWrapper
+                                      )
+                                      diffMK
               }
         }
 

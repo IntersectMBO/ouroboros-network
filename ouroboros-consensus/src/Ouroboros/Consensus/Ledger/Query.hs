@@ -79,9 +79,9 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (BlockNodeToClientVersion)
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.DepPair
 
@@ -398,10 +398,10 @@ handleWholeQuery dlv query = do
     DiskLedgerView st _dbRead dbReadRange _dbClose = dlv
 
     f :: ApplyMapKind ValuesMK k v -> Bool
-    f (ApplyValuesMK (HD.UtxoValues vs)) = Map.null vs
+    f (ApplyValuesMK (DS.Values vs)) = Map.null vs
 
     toKeys :: ApplyMapKind ValuesMK k v -> ApplyMapKind KeysMK k v
-    toKeys (ApplyValuesMK (HD.UtxoValues vs)) = ApplyKeysMK $ HD.UtxoKeys $ Map.keysSet vs
+    toKeys (ApplyValuesMK vs) = ApplyKeysMK $ DS.valuesKeys vs
 
     batchSize = 100000   -- TODO tune, expose as config, etc
 

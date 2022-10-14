@@ -20,7 +20,6 @@ library
 
   exposed-modules:     Data.FingerTree.RootMeasured.Strict
                        Data.Map.Diff.Strict
-                       Data.Map.Diff.Strict.Internal
 
   other-extensions:    BangPatterns
                        ConstraintKinds
@@ -60,6 +59,7 @@ library
                      , bimap             >=0.3   && <0.5
                      , containers        >=0.5   && <0.7
                      , groups
+                     , nonempty-containers
                      , nothunks          >=0.1.2 && <0.2
                      , QuickCheck
                      , semigroupoid
@@ -89,6 +89,7 @@ test-suite test
   build-depends:       base              >=4.9 && <4.15
                      , bimap             >=0.3 && <0.5
                      , containers        >=0.5 && <0.7
+                     , nonempty-containers
                      , groups
                      , QuickCheck
                      , strict-containers
