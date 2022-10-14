@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
@@ -77,24 +78,30 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
   , InternalMeasure (..)
   , Length (..)
   , RootMeasure (..)
-  , SlotNo (..)
+  , SlotNoLB (..)
+  , SlotNoUB (..)
     -- * Diff re-export
   , module MapDiff
     -- * Short-hands for type-class constraints
   , SM
     -- * API: derived functions
+  , append
   , cumulativeDiff
+  , empty
   , extend
-  , extend'
   , length
-  , mapDiffSeq
+    -- * Slots
   , maxSlot
+  , minSlot
+    -- * Splitting
   , splitl
   , splitlAt
   , splitlAtFromEnd
   , splitr
   , splitrAt
   , splitrAtFromEnd
+    -- * Maps
+  , mapDiffSeq
   ) where
 
 import           Prelude hiding (length, splitAt)
@@ -102,8 +109,9 @@ import           Prelude hiding (length, splitAt)
 import qualified Control.Exception as Exn
 import           Data.Bifunctor (Bifunctor (bimap))
 import           Data.Group
+import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Sum (..))
-import           Data.Semigroup (Max (..))
+import           Data.Semigroup (Max (..), Min (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
@@ -118,15 +126,19 @@ import qualified Cardano.Slotting.Slot as Slot
   Sequences of diffs
 -------------------------------------------------------------------------------}
 
+-- | A sequence key-value store differences.
+--
+-- INVARIANT: The slot numbers of consecutive elements should be strictly
+-- increasing. Manipulating the underlying @'StrictFingerTree'@ directly may
+-- break this invariant.
 newtype DiffSeq k v =
-  DiffSeq
+  UnsafeDiffSeq
     (StrictFingerTree
       (RootMeasure k v)
       (InternalMeasure k v)
       (Element k v)
     )
   deriving stock (Generic, Show, Eq)
-  deriving newtype (Semigroup, Monoid)
   deriving anyclass (NoThunks)
 
 -- The @'SlotNo'@ is not included in the root measure, since it is
@@ -142,18 +154,23 @@ data RootMeasure k v = RootMeasure {
 
 data InternalMeasure k v = InternalMeasure {
     -- | Cumulative length
-    imLength :: {-# UNPACK #-} !Length
-    -- | Right-most slot number
+    imLength  :: {-# UNPACK #-} !Length
+    -- | Leftmost slot number (or lower bound)
     --
-    -- Empty diff sequences have no right-most slot number, so in that case
+    -- Empty diff sequences have no rightmost slot number, so in that case
     -- @imSlotNo == Nothing@.
-  , imSlotNo ::                !(Maybe SlotNo)
+  , imSlotNoL ::                !(Maybe SlotNoLB)
+    -- | Rightmost slot number (or upper bound)
+    --
+    -- Empty diff sequences have no leftmost slot number, so in that case
+    -- @imSlotNo == Nothing@.
+  , imSlotNoR ::                !(Maybe SlotNoUB)
   }
   deriving stock (Generic, Show, Eq, Functor)
   deriving anyclass (NoThunks)
 
 data Element k v = Element {
-    elSlotNo :: {-# UNPACK #-} !SlotNo
+    elSlotNo :: {-# UNPACK #-} !Slot.SlotNo
   , elDiff   ::                !(Diff k v)
   }
   deriving stock (Generic, Show, Eq, Functor)
@@ -168,13 +185,26 @@ newtype Length = Length { unLength :: Int }
   deriving Monoid via Sum Int
   deriving Group via Sum Int
 
--- | Right-most slot number.
-newtype SlotNo = SlotNo { unSlotNo :: Slot.SlotNo }
+-- | An upper bound on slot numbers.
+newtype SlotNoUB = SlotNoUB {unSlotNoUB :: Slot.SlotNo}
   deriving stock (Generic, Show, Eq, Ord)
   deriving newtype (Num)
   deriving anyclass (NoThunks)
   deriving Semigroup via Max Slot.SlotNo
   deriving Monoid via Max Slot.SlotNo
+
+-- | A lower bound on slot numbers.
+newtype SlotNoLB = SlotNoLB {unSlotNoLB :: Slot.SlotNo}
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving newtype (Num)
+  deriving anyclass (NoThunks)
+  deriving Semigroup via Min Slot.SlotNo
+  deriving Monoid via Min Slot.SlotNo
+
+-- FIXME(jdral): It should be the case that there is a strict inequality, but
+-- EBBs violate this. Should we use something else instead of slots? Points?
+noSlotBoundsIntersect :: SlotNoUB -> SlotNoLB -> Bool
+noSlotBoundsIntersect (SlotNoUB sl1) (SlotNoLB sl2) = sl1 <= sl2
 
 {-------------------------------------------------------------------------------
   Root measuring
@@ -198,15 +228,22 @@ instance (Ord k, Eq v) => Group (RootMeasure k v) where
   Internal measuring
 -------------------------------------------------------------------------------}
 
+-- FIXME(jdral): It is probably preferable to not use bang patterns here, but
+-- instead to rely use bang patterns in types to enforce strictness of the slot
+-- fields.
 instance Measured (InternalMeasure k v) (Element k v) where
-  measure (Element slotNo _d) = InternalMeasure 1 (Just slotNo)
+  measure (Element !sl _d) = InternalMeasure {
+      imLength  = 1
+    , imSlotNoL = Just $ SlotNoLB sl
+    , imSlotNoR = Just $ SlotNoUB sl
+    }
 
 instance Semigroup (InternalMeasure k v) where
-  InternalMeasure len1 sl1 <> InternalMeasure len2 sl2 =
-    InternalMeasure (len1 <> len2) (sl1 <> sl2)
+  InternalMeasure len1 sl1L sl1R <> InternalMeasure len2 sl2L sl2R =
+    InternalMeasure (len1 <> len2) (sl1L <> sl2L) (sl1R <> sl2R)
 
 instance Monoid (InternalMeasure k v) where
-  mempty = InternalMeasure mempty mempty
+  mempty = InternalMeasure mempty mempty mempty
 
 {-------------------------------------------------------------------------------
   Short-hands types and constraints
@@ -224,44 +261,58 @@ cumulativeDiff ::
      SM k v
   => DiffSeq k v
   -> Diff k v
-cumulativeDiff (DiffSeq ft) = rmDiff $ measureRoot ft
+cumulativeDiff (UnsafeDiffSeq ft) = rmDiff $ measureRoot ft
 
 length ::
      SM k v
   => DiffSeq k v -> Int
-length (DiffSeq ft) = unLength . rmLength $ measureRoot ft
+length (UnsafeDiffSeq ft) = unLength . rmLength $ measureRoot ft
 
 extend ::
      SM k v
   => DiffSeq k v
-  -> Element k v
+  -> Slot.SlotNo
+  -> Diff k v
   -> DiffSeq k v
-extend (DiffSeq ft) el = DiffSeq $ ft |> el
-
-extend' ::
-     SM k v
-  => DiffSeq k v
-  -> Element k v
-  -> DiffSeq k v
-extend' (DiffSeq ft) el =
-    Exn.assert invariant $ DiffSeq $ ft |> el
+extend (UnsafeDiffSeq ft) sl d =
+    Exn.assert invariant $ UnsafeDiffSeq $ ft |> Element sl d
   where
-    invariant = case imSlotNo $ measure el of
+    invariant = case imSlotNoR $ measure ft of
       Nothing  -> True
-      Just sl0 -> sl0 <= elSlotNo el
+      Just slR -> noSlotBoundsIntersect slR (SlotNoLB sl)
+
+append ::
+     (Ord k, Eq v)
+  => DiffSeq k v
+  -> DiffSeq k v
+  -> DiffSeq k v
+append (UnsafeDiffSeq ft1) (UnsafeDiffSeq ft2) =
+    Exn.assert invariant $ UnsafeDiffSeq (ft1 <> ft2)
+  where
+    sl1R      = imSlotNoR $ measure ft1
+    sl2L      = imSlotNoL $ measure ft2
+    invariant = fromMaybe True (noSlotBoundsIntersect <$> sl1R <*> sl2L)
+
+empty ::
+     (Ord k, Eq v)
+  => DiffSeq k v
+empty = UnsafeDiffSeq mempty
+
+{-------------------------------------------------------------------------------
+  Slots
+-------------------------------------------------------------------------------}
 
 maxSlot ::
      SM k v
   => DiffSeq k v
   -> Maybe Slot.SlotNo
-maxSlot (DiffSeq ft) =
-    unwrapInner $ imSlotNo $ measure ft
-  where
-    -- We care about /real/ slot numbers, so we should return a
-    -- @'Slot.SlotNo'@.
-    unwrapInner :: Maybe SlotNo -> Maybe Slot.SlotNo
-    unwrapInner Nothing            = Nothing
-    unwrapInner (Just (SlotNo sl)) = Just sl
+maxSlot (UnsafeDiffSeq ft) = unSlotNoUB <$> imSlotNoR (measure ft)
+
+minSlot ::
+     SM k v
+  => DiffSeq k v
+  -> Maybe Slot.SlotNo
+minSlot (UnsafeDiffSeq ft) = unSlotNoLB <$> imSlotNoL (measure ft)
 
 {-------------------------------------------------------------------------------
   Splitting
@@ -272,14 +323,14 @@ splitl ::
   => (InternalMeasure k v -> Bool)
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitl p (DiffSeq ft) = bimap DiffSeq DiffSeq $ RMFT.splitl p ft
+splitl p (UnsafeDiffSeq ft) = bimap UnsafeDiffSeq UnsafeDiffSeq $ RMFT.splitl p ft
 
 splitr ::
      SM k v
   => (InternalMeasure k v -> Bool)
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitr p (DiffSeq ft) = bimap DiffSeq DiffSeq $ RMFT.splitr p ft
+splitr p (UnsafeDiffSeq ft) = bimap UnsafeDiffSeq UnsafeDiffSeq $ RMFT.splitr p ft
 
 splitlAt ::
      SM k v
@@ -326,4 +377,4 @@ mapDiffSeq ::
     => (v -> v')
     -> DiffSeq k v
     -> DiffSeq k v'
-mapDiffSeq f (DiffSeq ft) = DiffSeq $ fmap' (fmap f) ft
+mapDiffSeq f (UnsafeDiffSeq ft) = UnsafeDiffSeq $ fmap' (fmap f) ft

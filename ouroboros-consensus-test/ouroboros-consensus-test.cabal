@@ -98,11 +98,13 @@ library
                      , generics-sop
                      , graphviz
                      , mtl               >=2.2   && <2.3
+                     , nonempty-containers
                      , nothunks
                      , QuickCheck
                      , quickcheck-state-machine
                      , quiet             >=0.2   && <0.3
                      , random
+                     , semigroupoid
                      , serialise         >=0.2   && <0.3
                      , sop-core
                      , strict-containers
@@ -261,6 +263,7 @@ test-suite test-storage
                      , generics-sop
                      , hashable
                      , mtl
+                     , nonempty-containers
                      , nothunks
                      , pretty-show
                      , QuickCheck

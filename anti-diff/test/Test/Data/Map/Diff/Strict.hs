@@ -1,76 +1,122 @@
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Data.Map.Diff.Strict (tests) where
 
-import           Data.Group
+import           Data.Foldable (foldl')
+import           Data.Maybe
 import           Data.Proxy (Proxy (Proxy))
-import qualified Data.Sequence as Seq
+import           Data.Sequence.NonEmpty (NESeq (..))
+import qualified Data.Sequence.NonEmpty as NESeq
 
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck
 
 import           Data.Map.Diff.Strict
-import qualified Data.Map.Diff.Strict.Internal as Internal
 
 import           Data.Semigroupoid.Auto
 import           Data.Semigroupoid.Laws
 
 tests :: TestTree
 tests = testGroup "Data.Map.Diff.Strict" [
-      testGroupWithProxy (Proxy @(DiffEntry (Small Int))) [
+      testGroupWithProxy (Proxy @(DiffEntry (Smaller Int))) [
       ]
-    , testGroupWithProxy (Proxy @(DiffHistory (Small Int))) [
+    , testGroupWithProxy (Proxy @(DiffHistory (Smaller Int))) [
           testSemigroupLaws
         , testMonoidLaws
         , testGroupLaws
         ]
-    , testGroupWithProxy (Proxy @(Auto (DiffHistory (Small Int)))) [
+    , testGroupWithProxy (Proxy @(Auto (DiffHistory (Smaller Int)))) [
           testSemigroupoidLaws
         , testGroupoidLaws
         ]
-    , testGroupWithProxy (Proxy @(Diff (Small Int) (Small Int))) [
+    , testGroupWithProxy (Proxy @(Diff (Smaller Int) (Smaller Int))) [
           testSemigroupLaws
         , testMonoidLaws
         , testGroupLaws
         ]
-    , testGroupWithProxy (Proxy @(Auto (Diff (Small Int) (Small Int)))) [
+    , testGroupWithProxy (Proxy @(Auto (Diff (Smaller Int) (Smaller Int)))) [
+          testSemigroupoidLaws
+        , testGroupoidLaws
+        ]
+    , testGroupWithProxy (Proxy @(Act (Smaller Int))) [
           testSemigroupoidLaws
         , testGroupoidLaws
         ]
     ]
 
 {------------------------------------------------------------------------------
+  Preconditions
+------------------------------------------------------------------------------}
+
+-- | Check if a diff history is in normal form, where no succesive elements are
+-- inverses of each other.
+--
+-- If two succesive diff entries are inverses, they can be cancelled out. In
+-- other words, we can normalise the diff history further by cancelling out the
+-- diff entries. If so, we can conclude that the input diff history is not in
+-- normal form.
+isNormal :: (Foldable t, Eq v) => UnsafeDiffHistory t v -> Bool
+isNormal (UnsafeDiffHistory vs) =
+    snd $ foldl' f (Nothing, True) vs
+  where
+    f (prevMay, b) cur = case prevMay of
+      Nothing   -> (Just cur, b)
+      Just prev -> (Just cur, b && not (areInverses prev cur))
+
+{------------------------------------------------------------------------------
   Types
 ------------------------------------------------------------------------------}
 
+newtype Smaller a = Smaller a
+  deriving newtype (Show, Eq, Ord)
 
-instance (Ord k, Eq v, Arbitrary k, Arbitrary v) => Arbitrary (Diff k v) where
-  arbitrary = oneof [
-      fromList <$> listOf ((,) <$> arbitrary <*> (arbitrary `suchThatMap` isNonEmptyHistory))
-    , diff <$> arbitrary <*> arbitrary
-    ]
-  shrink (Internal.Diff m) = Internal.Diff <$> shrink m
+instance Integral a => Arbitrary (Smaller a) where
+  arbitrary = Smaller . fromIntegral <$> chooseInt (-5, 5)
+  shrink (Smaller x) = Smaller . fromIntegral <$> shrink @Int (fromIntegral x)
 
-instance (Eq v, Arbitrary v) => Arbitrary (DiffHistory v) where
-  arbitrary = sized go
-    where
-      go 0             = pure mempty
-      go n | n < 0     = error "QuickCheck size parameter can not be less than 0."
-           | otherwise = oneof [
-                            (<>) <$> gs <*> go (n - 1)
-                          , (<>) <$> go (n - 1) <*> gs
-                          ]
-      gs = oneof [g1, g2]
-      g1 = invert . fromSeq <$> arbitrary <*> arbitrary
-      g2 = fromSeq <$> arbitrary <*> arbitrary
+deriving newtype instance (Ord k, Eq v, Arbitrary k, Arbitrary v)
+                       => Arbitrary (Diff k v)
 
-  shrink (Internal.DiffHistory sq) = Internal.DiffHistory <$>
-    filter (not . Seq.null) (shrink sq)
+instance (Arbitrary v, Eq v) => Arbitrary (NEDiffHistory v) where
+  arbitrary = (NEDiffHistory <$> ((:<||) <$> arbitrary <*> arbitrary))
+    `suchThat` (\(MkNEDiffHistory h) -> isNormal h)
+  shrink (NEDiffHistory h) =
+    fmap NEDiffHistory $ mapMaybe NESeq.nonEmptySeq $ shrink (NESeq.toSeq h)
 
-instance (Arbitrary v) => Arbitrary (DiffEntry v) where
+instance (Arbitrary v, Eq v) => Arbitrary (DiffHistory v) where
+  arbitrary = (DiffHistory <$> arbitrary)
+    `suchThat` (\(MkDiffHistory h) -> isNormal h)
+  shrink (DiffHistory s) = DiffHistory <$> shrink s
+
+instance Arbitrary v => Arbitrary (DiffEntry v) where
   arbitrary = oneof [
       Insert <$> arbitrary
     , Delete <$> arbitrary
+    , UnsafeAntiInsert <$> arbitrary
+    , UnsafeAntiDelete <$> arbitrary
     ]
+  shrink = \case
+    Insert x           -> Insert <$> shrink x
+    Delete x           -> Delete <$> shrink x
+    UnsafeAntiInsert x -> UnsafeAntiInsert <$> shrink x
+    UnsafeAntiDelete x -> UnsafeAntiDelete <$> shrink x
+
+instance Arbitrary v => Arbitrary (Act v) where
+  arbitrary = oneof [
+      Ins <$> arbitrary
+    , Del <$> arbitrary
+    , pure InsDel
+    , DelIns <$> arbitrary <*> arbitrary
+    ]
+  shrink = \case
+    Ins x      -> Ins <$> shrink x
+    Del x      -> Del <$> shrink x
+    InsDel     -> []
+    DelIns x y -> DelIns <$> shrink x <*> shrink y
