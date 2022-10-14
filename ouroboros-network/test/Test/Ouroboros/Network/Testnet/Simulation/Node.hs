@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -51,6 +52,9 @@ import           System.Random (StdGen, mkStdGen)
 import qualified System.Random as Random
 
 import           Network.DNS (Domain, TTL)
+
+import           Network.TypedProtocol.Core (PeerHasAgency (..))
+import qualified Network.TypedProtocol.PingPong.Type as PingPong
 
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
@@ -757,10 +761,8 @@ diffusionSimulation
                 , NodeKernel.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
                 , NodeKernel.keepAliveTimeLimits  = timeLimitsKeepAlive
                 , NodeKernel.pingPongLimits       = defaultMiniProtocolsLimit
-                , NodeKernel.pingPongSizeLimits   =
-                    ProtocolSizeLimits (const smallByteLimit) (fromIntegral . BL.length)
-                , NodeKernel.pingPongTimeLimits   =
-                    ProtocolTimeLimits (const (Just 60))
+                , NodeKernel.pingPongSizeLimits   = byteLimitsPingPong
+                , NodeKernel.pingPongTimeLimits   = timeLimitsPingPong
                 , NodeKernel.handshakeLimits      = defaultMiniProtocolsLimit
                 , NodeKernel.handshakeTimeLimits  =
                     ProtocolSizeLimits (const (4 * 1440))
@@ -826,6 +828,22 @@ diffusionSimulation
                        , Map.member d dMap
                        ]
       return (Map.fromList mapDomains)
+
+--
+-- PingPong byte & time limits
+--
+
+byteLimitsPingPong :: ProtocolSizeLimits PingPong.PingPong BL.ByteString
+byteLimitsPingPong = ProtocolSizeLimits (const smallByteLimit) (fromIntegral . BL.length)
+
+timeLimitsPingPong :: ProtocolTimeLimits PingPong.PingPong
+timeLimitsPingPong = ProtocolTimeLimits $ \case
+    ClientAgency PingPong.TokIdle -> Nothing
+    ServerAgency PingPong.TokBusy -> Just 60
+
+--
+-- Utils
+--
 
 
 ntnToPeerAddr :: IP -> PortNumber -> NtNAddr
