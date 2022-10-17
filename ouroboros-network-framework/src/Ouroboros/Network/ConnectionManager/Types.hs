@@ -612,7 +612,7 @@ includeInboundConnection
 includeInboundConnection =
     icmIncludeConnection . withResponderMode . getConnectionManager
 
--- | Unregister outbound connection. Returns if the operation was successul.
+-- | Unregister outbound connection. Returns if the operation was successful.
 --
 -- This executes:
 --
@@ -642,8 +642,10 @@ numberOfConnections =
 
 -- | Useful for tracing and error messages.
 --
-data AbstractState
-    = UnknownConnectionSt
+data AbstractState =
+    -- | Unknown connection.  This state indicates the connection manager
+    -- removed this connection from its state.
+      UnknownConnectionSt
     | ReservedOutboundSt
     | UnnegotiatedSt !Provenance
     | InboundIdleSt  !DataFlow
@@ -839,8 +841,8 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionFailure            (ConnectionId peerAddr)
   | TrConnectionNotFound           Provenance peerAddr
   | TrForbiddenOperation           peerAddr                AbstractState
-  | TrPruneConnections             (Set peerAddr) -- ^ prunning set
-                                   Int            -- ^ number connections that must be prunned
+  | TrPruneConnections             (Set peerAddr) -- ^ pruning set
+                                   Int            -- ^ number connections that must be pruned
                                    (Set peerAddr) -- ^ choice set
   | TrConnectionCleanup            (ConnectionId peerAddr)
   | TrConnectionTimeWait           (ConnectionId peerAddr)
