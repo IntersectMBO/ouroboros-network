@@ -2340,7 +2340,7 @@ withConnectionManager ConnectionManagerArguments {
       (result, mbAssertion) <- atomically $ do
         mbConnVar <- Map.lookup peerAddr <$> readTMVar stateVar
         case mbConnVar of
-          Nothing -> return (UnsupportedState UnknownConnectionSt
+          Nothing -> return ( UnsupportedState UnknownConnectionSt
                             , Nothing
                             )
           Just MutableConnState { connVar } -> do
