@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 -- orphaned 'ShowProxy PingPong' instance.
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -186,6 +187,7 @@ applications :: forall block header m.
                 , HasHeader header
                 , HasHeader block
                 , HeaderHash header ~ HeaderHash block
+                , Show block
                 , ShowProxy block
                 )
              => Tracer m String
@@ -264,14 +266,14 @@ applications debugTracer nodeKernel
                     blockFetchResponder
               }
           ]
-      , withWarm = WithWarm $ \ _connId controlMessageSTM ->
+      , withWarm = WithWarm $ \ connId controlMessageSTM ->
           [ MiniProtocol
               { miniProtocolNum    = MiniProtocolNum 9
               , miniProtocolLimits = pingPongLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
-                    (pingPongInitiator controlMessageSTM)
-                    pingPongResponder
+                    (pingPongInitiator connId controlMessageSTM)
+                    (pingPongResponder connId)
               }
           ]
       , withEstablished = WithEstablished $ \ connId controlMessageSTM ->
@@ -379,13 +381,13 @@ applications debugTracer nodeKernel
       :: ConnectionId NtNAddr
       -> ControlMessageSTM m
       -> MuxPeer ByteString m ()
-    keepAliveInitiator ConnectionId { remoteAddress }
+    keepAliveInitiator connId@ConnectionId { remoteAddress }
                        controlMessageSTM =
       MuxPeerRaw $ \channel -> do
         labelThisThread "KeepAliveClient"
         let kacApp =
               \ctxVar -> runPeerWithLimits
-                           nullTracer
+                           ((show . (connId,)) `contramap` debugTracer)
                            keepAliveCodec
                            (keepAliveSizeLimits limits)
                            (keepAliveTimeLimits limits)
@@ -415,11 +417,12 @@ applications debugTracer nodeKernel
         (keepAliveServerPeer keepAliveServer)
 
     pingPongInitiator
-      :: ControlMessageSTM m
+      :: ConnectionId NtNAddr
+      -> ControlMessageSTM m
       -> MuxPeer ByteString m ()
-    pingPongInitiator controlMessageSTM = MuxPeerRaw $ \channel ->
+    pingPongInitiator connId controlMessageSTM = MuxPeerRaw $ \channel ->
         runPeerWithLimits
-          (show `contramap` debugTracer)
+          ((show . (connId,)) `contramap` debugTracer)
           pingPongCodec
           (pingPongSizeLimits limits)
           (pingPongTimeLimits limits)
@@ -454,10 +457,11 @@ applications debugTracer nodeKernel
             else return $ PingPong.SendMsgDone ()
 
     pingPongResponder
-      :: MuxPeer ByteString m ()
-    pingPongResponder = MuxPeerRaw $ \channel ->
+      :: ConnectionId NtNAddr
+      -> MuxPeer ByteString m ()
+    pingPongResponder connId = MuxPeerRaw $ \channel ->
       runPeerWithLimits
-        nullTracer
+        ((show . (connId,)) `contramap` debugTracer)
         pingPongCodec
         (pingPongSizeLimits limits)
         (pingPongTimeLimits limits)

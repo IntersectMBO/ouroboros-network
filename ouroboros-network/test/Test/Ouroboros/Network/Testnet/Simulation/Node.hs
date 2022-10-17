@@ -37,7 +37,7 @@ import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
 import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (Tracer (..), nullTracer, traceWith)
+import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
@@ -45,6 +45,7 @@ import           Data.IP (IP (..), toIPv4, toIPv6)
 import           Data.List (delete, intercalate, nub, (\\))
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
@@ -86,9 +87,10 @@ import           Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
-import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     genDelayWithPrecision, tracerWithName, tracerWithTime)
-import           Simulation.Network.Snocket (BearerInfo (..), FD, withSnocket)
+import           Ouroboros.Network.Testing.Utils (WithName (..),
+                     genDelayWithPrecision, tracerWithName)
+import           Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
+                     WithAddr (..), withSnocket)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as NodeKernel
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -580,7 +582,7 @@ diffusionSimulation
   tracersExtraWithTimeName
   tracer
   debugTracer =
-    withSnocket nullTracer defaultBearerInfo Map.empty
+    withSnocket netSimTracer defaultBearerInfo Map.empty
       $ \ntnSnocket _ ->
         withSnocket nullTracer defaultBearerInfo Map.empty
       $ \ntcSnocket _ -> do
@@ -595,6 +597,9 @@ diffusionSimulation
             (_, x) <- waitAny nodes
             return x
   where
+    netSimTracer :: Tracer m (WithAddr NtNAddr (SnocketTrace m NtNAddr))
+    netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (TestAddress $ IPAddr (read "0.0.0.0") 0) l) (show a))
+       `contramap` debugTracer
 
     -- | Runs a single node according to a list of commands.
     runCommand
@@ -804,7 +809,8 @@ diffusionSimulation
               , NodeKernel.aDebugTracer          = tracerWithName rap debugTracer
               }
 
-       in NodeKernel.run blockGeneratorArgs
+       in NodeKernel.run (WithName rap `contramap` debugTracer)
+                         blockGeneratorArgs
                          limitsAndTimeouts
                          interfaces
                          arguments

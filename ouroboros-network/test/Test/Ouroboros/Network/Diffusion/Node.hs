@@ -164,7 +164,8 @@ run :: forall resolver m.
        , forall a. Semigroup a => Semigroup (m a)
        , Eq (Async m Void)
        )
-    => Node.BlockGeneratorArgs Block StdGen
+    => Tracer m String
+    -> Node.BlockGeneratorArgs Block StdGen
     -> Node.LimitsAndTimeouts Block
     -> Interfaces m
     -> Arguments m
@@ -172,7 +173,7 @@ run :: forall resolver m.
                              NtCAddr NtCVersion NtCVersionData
                              ResolverException m
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra =
+run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
