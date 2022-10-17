@@ -783,8 +783,8 @@ diffusionSimulation
               { NodeKernel.aIPAddress            = rap
               , NodeKernel.aAcceptedLimits       = acceptedConnectionsLimit
               , NodeKernel.aDiffusionMode        = diffusionMode
-              , NodeKernel.aKeepAliveInterval    = 0
-              , NodeKernel.aPingPongInterval     = 0
+              , NodeKernel.aKeepAliveInterval    = 10
+              , NodeKernel.aPingPongInterval     = 10
               , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
