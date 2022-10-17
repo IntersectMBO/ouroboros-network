@@ -49,15 +49,17 @@ import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeer
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerSelectionActionsTrace (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (TraceLocalRootPeers (..), TracePublicRootPeers (..),
-                     dapDomain)
+                     (RelayAccessPoint (..), TraceLocalRootPeers (..),
+                     TracePublicRootPeers (..), dapDomain)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSorIOError (DNSError))
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..),
+                     PeerStatus (..))
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
                      (AbsBearerInfo (..), NonFailingAbsBearerInfo (unNFBI),
-                     attenuation, delay, toSduSize)
+                     absNoAttenuation, attenuation, delay, toSduSize)
+import           Ouroboros.Network.Testing.Data.Script (singletonScript)
 import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
@@ -68,14 +70,14 @@ import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
 import           Simulation.Network.Snocket (BearerInfo (..))
 
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import           Test.Ouroboros.Network.Testnet.Simulation.Node
-                     (DiffusionScript (..), DiffusionSimulationTrace (..),
-                     HotDiffusionScript (HotDiffusionScript),
-                     diffusionSimulation,
+import           Test.Ouroboros.Network.Testnet.Simulation.Node (Command (..),
+                     DNSLookupDelay (..), DNSTimeout (..), DiffusionScript (..),
+                     DiffusionSimulationTrace (..),
+                     HotDiffusionScript (HotDiffusionScript), NodeArgs (..),
+                     SimArgs (..), TestAddress (..), diffusionSimulation,
                      prop_diffusionScript_commandScript_valid,
                      prop_diffusionScript_fixupCommands)
-import           Test.QuickCheck (Property, checkCoverage, classify, conjoin,
-                     counterexample, coverTable, property, tabulate)
+import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -1568,6 +1570,61 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                      <*> promotionOpportunities
                      <*> promotionOpportunitiesIgnoredTooLong)
 
+
+-- | A testing scenario which reproduces issue #4046
+--
+async_demotion_network_script :: DiffusionScript
+async_demotion_network_script =
+    DiffusionScript
+      simArgs
+      [ ( common { naAddr                  = addr1,
+                   naLocalRootPeers        = localRoots1,
+                   naLocalSelectionTargets = Governor.PeerSelectionTargets 0 2 2 2 }
+        , [ JoinNetwork 0 (Just addr1)
+            -- reconfigure the peer to trigger the outbound governor log
+          , Reconfigure 240 localRoots1'
+          ]
+        )
+      , ( common { naAddr           = addr2,
+                   naLocalRootPeers = [(1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
+        , [JoinNetwork 0 (Just addr2), Kill 5, JoinNetwork 20 (Just addr2)]
+        )
+      , ( common { naAddr           = addr3,
+                   naLocalRootPeers = [(1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
+        , [JoinNetwork 0 (Just addr3)]
+        )
+      ]
+  where
+    addr1    = TestAddress (IPAddr (read "10.0.0.1") 3000)
+    ra_addr1 = RelayAccessAddress (read "10.0.0.1") 3000
+    localRoots1  = [(2, Map.fromList [(ra_addr2, DoNotAdvertisePeer)
+                                     ,(ra_addr3, DoNotAdvertisePeer)])]
+    localRoots1' = [(2, Map.fromList [(ra_addr2, DoAdvertisePeer)
+                                     ,(ra_addr3, DoAdvertisePeer)])]
+
+    addr2    = TestAddress (IPAddr (read "10.0.0.2") 3000)
+    ra_addr2 = RelayAccessAddress (read "10.0.0.2") 3000
+
+    addr3    = TestAddress (IPAddr (read "10.0.0.3") 3000)
+    ra_addr3 = RelayAccessAddress (read "10.0.0.3") 3000
+
+    simArgs = SimArgs {
+        saSlot             = secondsToDiffTime 1,
+        saQuota            = 5  -- 5% chance of producing a block
+      }
+    common = NodeArgs {
+        naSeed             = 10,
+        naMbTime           = Just 1,
+        naRelays           = [],
+        naDomainMap        = Map.empty,
+        naAddr             = undefined,
+        naLocalRootPeers   = undefined,
+        naLocalSelectionTargets
+                           = Governor.PeerSelectionTargets 0 1 1 1,
+        naDNSTimeoutScript = singletonScript (DNSTimeout 3),
+        naDNSLookupDelayScript
+                           = singletonScript (DNSLookupDelay 0.2)
+      }
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_local_above'

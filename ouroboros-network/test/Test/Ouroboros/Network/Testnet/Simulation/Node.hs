@@ -8,6 +8,7 @@
 
 module Test.Ouroboros.Network.Testnet.Simulation.Node
   ( SimArgs (..)
+  , NodeArgs (..)
   , DiffusionScript (..)
   , HotDiffusionScript (..)
   , DiffusionSimulationTrace (..)
