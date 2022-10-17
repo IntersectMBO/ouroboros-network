@@ -37,6 +37,7 @@ module Simulation.Network.Snocket
   , FD
   , GlobalAddressScheme (..)
   , AddressType (..)
+  , WithAddr (..)
   ) where
 
 import           Prelude hiding (read)
@@ -528,6 +529,7 @@ newtype FD m peerAddr = FD { fdVar :: (StrictTVar m (FD_ m peerAddr)) }
 -- Simulated snockets
 --
 
+-- TODO: use `Ouroboros.Network.ExitPolicy.WithAddr`
 data WithAddr addr event =
     WithAddr { waLocalAddr  :: Maybe addr
              , waRemoteAddr :: Maybe addr
