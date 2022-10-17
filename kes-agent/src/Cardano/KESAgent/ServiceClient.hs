@@ -6,9 +6,10 @@
 module Cardano.KESAgent.ServiceClient
 where
 
-import Cardano.KESAgent.Driver (driver)
+import Cardano.KESAgent.Driver (driver, DriverTrace)
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
 
 import Cardano.Crypto.KES.Class
@@ -28,6 +29,13 @@ data ServiceClientOptions =
     { serviceClientSocketAddress :: SocketAddress Unix
     }
 
+data ServiceClientTrace
+  = ServiceClientDriverTrace DriverTrace
+  | ServiceClientSocketClosed
+  | ServiceClientConnected (SocketAddress Unix)
+  | ServiceClientReceivedKey
+  deriving (Show)
+
 runServiceClient :: forall k
                   . KESSignAlgorithm IO k
                  => DirectDeserialise (SignKeyKES k)
@@ -36,20 +44,20 @@ runServiceClient :: forall k
                  => Proxy k
                  -> ServiceClientOptions
                  -> (SignKeyKES k -> IO ())
+                 -> Tracer IO ServiceClientTrace
                  -> IO ()
-runServiceClient proxy options handleKey = do
+runServiceClient proxy options handleKey tracer = do
   void $ bracket
     (socket @Unix @Stream @Default)
     (\s -> do
       close s
-      putStrLn "SERVICE_CLIENT: socket closed"
+      traceWith tracer ServiceClientSocketClosed
     )
     (\s -> do
-      putStrLn $ "SERVICE_CLIENT: starting..."
       connect s (serviceClientSocketAddress options)
-      putStrLn $ "SERVICE_CLIENT: connected to " ++ show (serviceClientSocketAddress options)
+      traceWith tracer $ ServiceClientConnected (serviceClientSocketAddress options)
       void $ runPeerWithDriver
-        (driver s)
-        (kesReceiver handleKey)
+        (driver s $ ServiceClientDriverTrace >$< tracer)
+        (kesReceiver $ \k -> handleKey k <* traceWith tracer ServiceClientReceivedKey)
         ()
     )

@@ -7,9 +7,10 @@
 module Cardano.KESAgent.ControlClient
 where
 
-import Cardano.KESAgent.Driver (driver)
+import Cardano.KESAgent.Driver (driver, DriverTrace)
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
 
 import Cardano.Crypto.KES.Class
@@ -29,6 +30,13 @@ data ControlClientOptions =
     { controlClientSocketAddress :: SocketAddress Unix
     }
 
+data ControlClientTrace
+  = ControlClientDriverTrace DriverTrace
+  | ControlClientSocketClosed
+  | ControlClientConnected (SocketAddress Unix)
+  | ControlClientSendingKey
+  deriving (Show)
+
 -- | A simple control client: push one KES key, then exit.
 runControlClient1 :: forall k
                    . KESSignAlgorithm IO k
@@ -38,19 +46,20 @@ runControlClient1 :: forall k
                   => Proxy k
                   -> ControlClientOptions
                   -> SignKeyKES k
+                  -> Tracer IO ControlClientTrace
                   -> IO ()
-runControlClient1 proxy options key = do
+runControlClient1 proxy options key tracer = do
   void $ bracket
     (socket @Unix @Stream @Default)
     (\s -> do
       close s
-      putStrLn "Control client socket closed"
+      traceWith tracer $ ControlClientSocketClosed
     )
     (\s -> do
       connect s (controlClientSocketAddress options)
-      putStrLn $ "Control client connected to " ++ show (controlClientSocketAddress options)
+      traceWith tracer $ ControlClientConnected (controlClientSocketAddress options)
       void $ runPeerWithDriver
-        (driver s)
-        (kesPusher (putStrLn "Sending key" >> return key) (return Nothing))
+        (driver s $ ControlClientDriverTrace >$< tracer)
+        (kesPusher (traceWith tracer ControlClientSendingKey >> return key) (return Nothing))
         ()
     )

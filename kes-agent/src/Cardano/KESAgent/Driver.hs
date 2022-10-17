@@ -26,7 +26,20 @@ import Cardano.Crypto.KES.Class
 import Cardano.Binary
 
 import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
+
+-- | Logging messages that the Driver may send
+data DriverTrace
+  = DriverSendingVersionID VersionIdentifier
+  | DriverReceivingVersionID
+  | DriverReceivedVersionID VersionIdentifier
+  | DriverSendingKey
+  | DriverSentKey
+  | DriverReceivingKey
+  | DriverReceivedKey
+  | DriverConnectionClosed
+  deriving (Show)
 
 driver :: forall k f t p
         . DirectDeserialise (SignKeyKES k)
@@ -34,32 +47,33 @@ driver :: forall k f t p
        => KESSignAlgorithm IO k
        => VersionedProtocol (KESProtocol k)
        => Socket f t p -- | A socket to read from
+       -> Tracer IO DriverTrace
        -> Driver (KESProtocol k) () IO
-driver s = Driver
+driver s tracer = Driver
   { sendMessage = \agency msg -> case (agency, msg) of
       (ServerAgency TokInitial, VersionMessage) -> do
         let VersionIdentifier v = versionIdentifier (Proxy @(KESProtocol k))
-        putStrLn $ "DRIVER: Send VersionID: " ++ show v
+        traceWith tracer (DriverSendingVersionID $ VersionIdentifier v)
         void $ send s v msgNoSignal
       (ServerAgency TokIdle, KeyMessage sk) -> do
-        putStrLn "DRIVER: Send key"
+        traceWith tracer DriverSendingKey
         directSerialise (\buf bufSize -> void $ unsafeSend s buf bufSize (msgNoSignal <> msgWaitAll)) sk
-        putStrLn "DRIVER: Key sent."
+        traceWith tracer DriverSentKey
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
 
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
-        putStrLn "DRIVER: Receive version"
+        traceWith tracer DriverReceivingVersionID
         v <- VersionIdentifier <$> receive s versionIdentifierLength msgNoSignal
-        putStrLn $ "DRIVER: Received VersionID: " ++ show v
+        traceWith tracer $ DriverReceivedVersionID v
         let expectedV = versionIdentifier (Proxy @(KESProtocol k))
         if v == expectedV then
           return (SomeMessage VersionMessage, ())
         else
           fail $ "DRIVER: Invalid version, expected " ++ show expectedV ++ ", but got " ++ show v
       (ServerAgency TokIdle) -> do
-        putStrLn "DRIVER: Receive key"
+        traceWith tracer DriverReceivingKey
         noReadVar <- newEmptyMVar
         sk <- directDeserialise
                 (\buf bufSize -> unsafeReceive s buf bufSize (msgNoSignal <> msgWaitAll) >>= \case
@@ -68,14 +82,14 @@ driver s = Driver
                 )
         succeeded <- isEmptyMVar noReadVar
         if succeeded then do
-          putStrLn "DRIVER: Key received."
+          traceWith tracer DriverReceivedKey
           return (SomeMessage (KeyMessage sk), ())
         else do
           -- We're not actually returning the key, because it hasn't been
           -- loaded properly, however it has been allocated nonetheless,
           -- so we must forget it, otherwise we will leak mlocked memory.
           forgetSignKeyKES sk
-          putStrLn "DRIVER: Remote has closed the connection."
+          traceWith tracer DriverConnectionClosed
           return (SomeMessage EndMessage, ())
 
   , startDState = ()

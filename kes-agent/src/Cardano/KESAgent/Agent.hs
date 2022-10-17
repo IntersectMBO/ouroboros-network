@@ -12,9 +12,10 @@
 module Cardano.KESAgent.Agent
 where
 
-import Cardano.KESAgent.Driver (driver)
+import Cardano.KESAgent.Driver (driver, DriverTrace (..))
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
 
 import Cardano.Crypto.KES.Class
@@ -31,6 +32,23 @@ import System.Socket.Family.Unix
 import System.Socket.Protocol.Default
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Data.Proxy (Proxy (..))
+
+data AgentTrace
+  = AgentServiceDriverTrace DriverTrace
+  | AgentControlDriverTrace DriverTrace
+  | AgentReplacingPreviousKey
+  | AgentInstallingNewKey
+  | AgentServiceSocketClosed
+  | AgentListeningOnServiceSocket
+  | AgentServiceClientConnected (SocketAddress Unix)
+  | AgentServiceClientDisconnected (SocketAddress Unix)
+  | AgentServiceSocketError SocketException
+  | AgentControlSocketClosed
+  | AgentListeningOnControlSocket
+  | AgentControlClientConnected (SocketAddress Unix)
+  | AgentControlClientDisconnected (SocketAddress Unix)
+  | AgentControlSocketError SocketException
+  deriving (Show)
 
 data AgentOptions =
   AgentOptions
@@ -49,8 +67,9 @@ runAgent :: forall k
          => DirectDeserialise (SignKeyKES k)
          => Proxy k
          -> AgentOptions
+         -> Tracer IO AgentTrace
          -> IO ()
-runAgent proxy options = do
+runAgent proxy options tracer = do
   currentKeyVar <- newEmptyMVar
   nextKeyChan <- newChan
 
@@ -58,8 +77,8 @@ runAgent proxy options = do
         -- Empty the var in case there's anything there already
         oldKeyMay <- tryTakeMVar currentKeyVar
         case oldKeyMay of
-          Just _ -> putStrLn "AGENT: Replacing previous key"
-          Nothing -> putStrLn "AGENT: Installing initial key"
+          Just _ -> traceWith tracer AgentReplacingPreviousKey
+          Nothing -> traceWith tracer AgentInstallingNewKey
         -- The MVar is now empty; we write to the next key signal channel
         -- /before/ putting the new key in the MVar, because we want to make it
         -- such that when the consumer picks up the signal, the next update
@@ -84,30 +103,29 @@ runAgent proxy options = do
           (socket @Unix @Stream @Default)
           (\s -> do
               close s
-              putStrLn "AGENT: Service socket closed"
+              traceWith tracer AgentServiceSocketClosed
           )
           (\s -> do
             bind s (agentServiceSocketAddress options)
             listen s 0
-            putStrLn "AGENT: Listening on service socket"
+            traceWith tracer AgentListeningOnServiceSocket
             let acceptAndHandle s = bracket
                   (accept s)
                   ( \(p, addr) -> do
                       close p
-                      putStrLn $ "AGENT: Closed service connection from " ++ show addr
+                      traceWith tracer $ AgentServiceClientDisconnected addr
                   )
                   ( \(p, addr) -> do
-                      putStrLn $ "AGENT: Service client connected from " ++ show addr
+                      traceWith tracer $ AgentServiceClientConnected addr
                       myNextKeyChan <- dupChan nextKeyChan
                       void $ runPeerWithDriver
-                        (driver p)
+                        (driver p $ AgentServiceDriverTrace >$< tracer)
                         (kesPusher currentKey (Just <$> nextKey))
                         ()
                   )
 
             forever $ acceptAndHandle s `catch` \e -> do
-              putStrLn "AGENT: Service socket acceptAndHandle: error"
-              print (e :: SocketException)
+              traceWith tracer $ AgentServiceSocketError e
           )
 
   let runControl =
@@ -115,28 +133,28 @@ runAgent proxy options = do
           (socket @Unix @Stream @Default)
           (\s -> do
               close s
-              putStrLn "AGENT: Control socket closed"
+              traceWith tracer AgentControlSocketClosed
           )
           (\s -> do
             bind s (agentControlSocketAddress options)
             listen s 0
-            putStrLn "AGENT: Listening on control socket"
+            traceWith tracer AgentListeningOnControlSocket
             let acceptAndHandle s = bracket
                   (accept s)
                   ( \(p, addr) -> do
                       close p
-                      putStrLn $ "AGENT: Closed control connection from " ++ show addr
+                      traceWith tracer $ AgentControlClientDisconnected addr
                   )
                   ( \(p, addr) -> do
-                      putStrLn $ "AGENT: Control client connected from " ++ show addr
+                      traceWith tracer $ AgentControlClientConnected addr
                       void $ runPeerWithDriver
-                        (driver p)
+                        (driver p $ AgentControlDriverTrace >$< tracer)
                         (kesReceiver pushKey)
                         ()
                   )
 
             forever $ acceptAndHandle s `catch` \e -> do
-              putStrLn $ "AGENT: Control socket acceptAndHandle: " ++ show (e :: SocketException)
+              traceWith tracer $ AgentControlSocketError e
           )
 
   void $ concurrently runService runControl

@@ -22,6 +22,7 @@ library
                    , Cardano.KESAgent.Agent
                    , Cardano.KESAgent.ServiceClient
                    , Cardano.KESAgent.ControlClient
+                   , Cardano.KESAgent.Logging
 
     -- other-modules:
 

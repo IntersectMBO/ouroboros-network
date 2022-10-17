@@ -44,6 +44,7 @@ import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.ServiceClient
 import Cardano.KESAgent.ControlClient
+import Cardano.KESAgent.Logging
 import Cardano.KESAgent.Tests.Util
 
 tests :: Lock -> TestTree
@@ -99,20 +100,24 @@ testOneKeyThroughChain p lock seedPSB nodeDelay controlDelay =
               AgentOptions { agentServiceSocketAddress = serviceSocketAddr
                            , agentControlSocketAddress = controlSocketAddr
                            }
+              nullTracer
     node mvar = do
       threadDelay (500 + fromIntegral nodeDelay)
       (runServiceClient p
         ServiceClientOptions { serviceClientSocketAddress = serviceSocketAddr }
         (\sk -> do
-          putStrLn $ "NODE: received key " ++ show sk
           putMVar mvar sk
         ))
+        nullTracer
+        `catch` (\(e :: AsyncCancelled) -> return ())
         `catch` (\(e :: SomeException) -> putStrLn $ "NODE: " ++ show e)
     controlServer sk = do
       threadDelay (500 + fromIntegral controlDelay)
       (runControlClient1 p
         ControlClientOptions { controlClientSocketAddress = controlSocketAddr }
         sk)
+        nullTracer
+        `catch` (\(e :: AsyncCancelled) -> return ())
         `catch` (\(e :: SomeException) -> putStrLn $ "CONTROL: " ++ show e)
     watch mvar expected = do
       takeMVar mvar
