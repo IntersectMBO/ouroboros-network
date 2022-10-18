@@ -36,6 +36,7 @@ import           System.Random (mkStdGen)
 import qualified Network.DNS.Types as DNS
 
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.P2P (TracersExtra (..))
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
@@ -47,7 +48,7 @@ import           Ouroboros.Network.PeerSelection.Governor
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerStateActions
-                     (PeerSelectionActionsTrace (..))
+                     (PeerSelectionActionsTrace (..), PeerStatusChangeType (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (RelayAccessPoint (..), TraceLocalRootPeers (..),
                      TracePublicRootPeers (..), dapDomain)
@@ -57,8 +58,6 @@ import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..),
                      PeerStatus (..))
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsBearerInfo (..), NonFailingAbsBearerInfo (unNFBI),
-                     absNoAttenuation, attenuation, delay, toSduSize)
 import           Ouroboros.Network.Testing.Data.Script (singletonScript)
 import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
@@ -122,6 +121,10 @@ tests =
                    prop_diffusion_target_active_below
     , testProperty "diffusion target active local below"
                    prop_diffusion_target_active_local_below
+    , testProperty "diffusion async demotion"
+                   prop_diffusion_async_demotions
+    , testProperty "diffusion async demotion (unit)"
+                   unit_diffusion_async_demotions
     , testProperty "diffusion target active local above"
                    prop_diffusion_target_active_local_above
     , testProperty "diffusion connection manager valid transitions"
@@ -1653,6 +1656,103 @@ async_demotion_network_script =
                            = singletonScript (DNSLookupDelay 0.2)
       }
 
+
+-- | Show that outbound governor reacts to asynchronous demotions
+--
+prop_diffusion_async_demotions :: AbsBearerInfo
+                               -> DiffusionScript
+                               -> Property
+prop_diffusion_async_demotions defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+                                  debugTracer
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . takeUntilEndofTurn 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_async_demotions ev
+        )
+      <$> events
+
+  where
+    verify_async_demotions :: Events DiffusionTestTrace -> Property
+    verify_async_demotions events =
+
+      let demotionOpportunities :: Signal (Set NtNAddr)
+          demotionOpportunities =
+              Signal.keyedUntil
+                (\case Right a -> a
+                       _       -> Set.empty)
+                (\case Left (Just a) -> a
+                       _             -> Set.empty)
+                (\case Left Nothing -> True
+                       _            -> False)
+            . Signal.fromEventsWith (Right Set.empty)
+            . Signal.selectEvents
+                (\case DiffusionPeerSelectionActionsTrace (PeerStatusChanged (HotToCold connId)) ->
+                           Just $ Right demotions
+                         where
+                           demotions = Set.singleton (remoteAddress connId)
+                       DiffusionPeerSelectionTrace (TraceDemoteAsynchronous status) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                       DiffusionPeerSelectionTrace (TraceDemoteHotFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionConnectionManagerTrace TrShutdown ->
+                           Just $ Left Nothing
+                       _ -> Nothing
+                )
+            $ events
+
+          demotionOpportunitiesTooLong :: Signal (Set NtNAddr)
+          demotionOpportunitiesTooLong =
+              Signal.keyedTimeout 1 id demotionOpportunities
+
+       in signalProperty
+            20 show Set.null
+            demotionOpportunitiesTooLong
+
+
+unit_diffusion_async_demotions :: Property
+unit_diffusion_async_demotions =
+    prop_diffusion_async_demotions
+      absNoAttenuation
+      async_demotion_network_script
+
+
+
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_local_above'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -2259,3 +2359,19 @@ toBearerInfo abi =
         biAcceptFailures       = Nothing, -- TODO
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
+
+
+-- | Like 'take' but includes all the traces of the timestamp at the given
+-- index.
+--
+takeUntilEndofTurn :: Int
+                   -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+                   -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+takeUntilEndofTurn n as =
+    case splitAt n as of
+        ([],  _) -> []
+        (hs, ts) ->
+            hs ++ takeWhile (\(t,_,_,_) -> t <= tmax) ts
+          where
+            tmax :: Time
+            tmax = case last hs of (t,_,_,_) -> t
