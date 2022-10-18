@@ -360,7 +360,10 @@ keyedTimeout d arm =
        -> Set b
        -> [E a]
        -> [E (Set b)]
-    go _ _ _ [] = []
+    go _ armedPSQ _ [] =
+      (\(b, t, _) -> E (TS t 0) (Set.singleton b))
+      `map`
+      PSQ.toList armedPSQ
 
     go armedSet armedPSQ timedout (E ts@(TS t _) x : txs)
       | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
