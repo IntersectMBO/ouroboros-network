@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Consensus.Mempool (tests) where
@@ -35,6 +36,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Cardano.Binary (Encoding, toCBOR)
 import           Cardano.Crypto.Hash
+import           Cardano.Slotting.Slot
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
@@ -44,17 +46,18 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import qualified Ouroboros.Consensus.HeaderValidation as TechDebt
 import           Ouroboros.Consensus.Ledger.Abstract
-import qualified Ouroboros.Consensus.Ledger.Extended as TechDebt
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util (StaticEither (..), repeatedly,
-                     repeatedlyM, safeMaximumOn, (.:))
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+                     (LedgerBackingStore (LedgerBackingStore))
+import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
+                     safeMaximumOn, (.:))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -784,21 +787,11 @@ withTestMempool setup@TestSetup {..} prop =
 
       -- Set up the LedgerInterface
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
-      let fudge ls = TechDebt.ExtLedgerState {
-              headerState = TechDebt.HeaderState {
-                  headerStateTip      = Origin
-                , headerStateChainDep = ()
-                }
-            , ledgerState = ls
-            }
-          ledgerInterface = LedgerInterface
-            { getCurrentLedgerState = fudge <$> readTVar varCurrentLedgerState
-            , getLedgerStateForTxs  = \seP m -> case seP of
-                StaticLeft () -> do
-                  lst <- atomically $ readTVar varCurrentLedgerState
-                  (a, _) <- m $ fudge lst
-                  pure $ StaticLeft (a, polyEmptyLedgerTables)   -- TestBlock has no tables
-                StaticRight _p -> error "TODO Mempool test does not yet exercise this, does it?"
+      trivialLedgerBackingStore <- trivialBackingStore polyEmptyLedgerTables
+      let ledgerInterface = LedgerInterface
+            { getCurrentLedgerAndChangelog = (, MempoolChangelog Origin polyEmptyLedgerTables) <$> readTVar varCurrentLedgerState
+            , getBackingStore  = pure $ LedgerBackingStore trivialLedgerBackingStore
+            , withReadLock     = id
             }
 
       -- Set up the Tracer
