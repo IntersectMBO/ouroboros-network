@@ -24,6 +24,8 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
   , MonitorPeerConnectionBlocked (..)
     -- * Trace
   , PeerSelectionActionsTrace (..)
+  , PeerStatusChangeType (..)
+  , FailureType (..)
   ) where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
