@@ -41,6 +41,11 @@ newtype instance Validated (GenTx ByronSpecBlock) = ValidatedByronSpecGenTx {
 
 type instance ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
 
+-- | This data family instance is not used anywhere but still required by the
+-- instance of @LedgerSupportsMempool ByronSpecBlock@
+newtype instance TxId (GenTx ByronSpecBlock) = TxId Int
+  deriving newtype NoThunks
+
 instance LedgerSupportsMempool ByronSpecBlock where
   applyTx cfg _wti _slot tx (TickedByronSpecLedgerState tip st) =
         fmap (\st' ->
