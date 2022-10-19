@@ -36,6 +36,8 @@ module Data.Map.Diff.Strict (
   , singleton
   , singletonDelete
   , singletonInsert
+    -- * Predicates
+  , null
     -- * Class instances for @'DiffHistory'@
   , areInverses
     -- * Values and keys
@@ -60,7 +62,7 @@ module Data.Map.Diff.Strict (
   , unsafeFoldMapDiffEntry
   ) where
 
-import           Prelude hiding (last, length, splitAt)
+import           Prelude hiding (last, length, null, splitAt)
 
 import           Data.Bifunctor
 import           Data.Foldable (toList)
@@ -207,6 +209,14 @@ singletonDelete = singleton . Delete
 
 last :: NEDiffHistory v -> DiffEntry v
 last (unNEDiffHistory -> _ NESeq.:||> e) = e
+
+{------------------------------------------------------------------------------
+  Predicates
+------------------------------------------------------------------------------}
+
+null :: Diff k v -> Bool
+null (Diff m) = Map.null m
+
 
 {------------------------------------------------------------------------------
   Class instances for @'Diff'@
