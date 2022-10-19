@@ -11,6 +11,7 @@ import           Test.Util.Nightly
 import qualified Test.Consensus.Cardano.ByronCompatibility (tests)
 import qualified Test.Consensus.Cardano.Golden (tests)
 import qualified Test.Consensus.Cardano.Serialisation (tests)
+import qualified Test.Consensus.Cardano.Translation (tests)
 -- import qualified Test.ThreadNet.AllegraMary (tests)
 -- import qualified Test.ThreadNet.Cardano (tests)
 -- import qualified Test.ThreadNet.MaryAlonzo (tests)
@@ -33,4 +34,5 @@ tests =
   -- , Test.ThreadNet.Cardano.tests
   -- , Test.ThreadNet.MaryAlonzo.tests
   -- , Test.ThreadNet.ShelleyAllegra.tests
+  , Test.Consensus.Cardano.Translation.tests
   ]
