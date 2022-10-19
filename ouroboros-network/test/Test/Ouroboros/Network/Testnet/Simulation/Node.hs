@@ -338,7 +338,9 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
 
 -- | Multinode Diffusion Simulator Script
 --
--- List of 'SimArgs'. Each element of the list represents one running node.
+-- 'SimArgs' with all the values needed for running the simulation, followed
+-- by a list of 'NodeArgs' where each element represents one running node and
+-- respective 'Command's.
 --
 data DiffusionScript = DiffusionScript SimArgs [(NodeArgs, [Command])]
   deriving Show
