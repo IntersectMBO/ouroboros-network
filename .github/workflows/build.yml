@@ -1,9 +1,11 @@
 name: Haskell CI
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   build:
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name != 'input-output-hk/ouroboros-network' }}
+
     runs-on: ${{ matrix.os }}
 
     defaults:
