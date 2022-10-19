@@ -96,72 +96,71 @@ import           TestLib.Utils (AllProperty (..), TestProperty (..),
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Testnet"
-  [ testGroup "multinodeSim"
+  [ testGroup "generators"
     [ testProperty "diffusionScript fixupCommands idempotent"
-                   prop_diffusionScript_fixupCommands
+                    prop_diffusionScript_fixupCommands
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
-#if !defined(mingw32_HOST_OS)
-    , testProperty "diffusion no livelock"
-                   prop_diffusion_nolivelock
-    , ignoreTest $
-      testProperty "diffusion dns can recover from fails"
-                   prop_diffusion_dns_can_recover
-    , testProperty "diffusion target established public"
-                   prop_diffusion_target_established_public
-    , testProperty "diffusion target active public"
-                   prop_diffusion_target_active_public
-    , testProperty "diffusion target established local"
-                   prop_diffusion_target_established_local
-    , testProperty "diffusion target active local"
-                   prop_diffusion_target_active_local
-    , testProperty "diffusion target active root"
-                   prop_diffusion_target_active_root
-    , testProperty "diffusion target active below"
-                   prop_diffusion_target_active_below
-    , testProperty "diffusion target active local below"
-                   prop_diffusion_target_active_local_below
-    , testProperty "diffusion async demotion"
-                   prop_diffusion_async_demotions
-    , testProperty "diffusion async demotion (unit)"
-                   unit_diffusion_async_demotions
-    , testProperty "diffusion target active local above"
-                   prop_diffusion_target_active_local_above
-    , testProperty "diffusion connection manager valid transitions"
-                   prop_diffusion_cm_valid_transitions
-    , testProperty "diffusion connection manager valid transition order"
-                   prop_diffusion_cm_valid_transition_order
-    , testProperty "diffusion inbound governor valid transitions"
-                   prop_diffusion_ig_valid_transitions
-    , testProperty "diffusion inbound governor valid transition order"
-                   prop_diffusion_ig_valid_transition_order
-    , testProperty "diffusion cm & ig timeouts enforced"
-                   prop_diffusion_timeouts_enforced
-#endif
     ]
 #if !defined(mingw32_HOST_OS)
+  , testProperty "no livelock"
+                 prop_diffusion_nolivelock
+  , testProperty "dns can recover from fails"
+                 prop_diffusion_dns_can_recover
+  , testProperty "target established public"
+                 prop_diffusion_target_established_public
+  , testProperty "target active public"
+                 prop_diffusion_target_active_public
+  , testProperty "target established local"
+                 prop_diffusion_target_established_local
+  , testProperty "target active local"
+                 prop_diffusion_target_active_local
+  , testProperty "target active root"
+                 prop_diffusion_target_active_root
+  , testProperty "target active below"
+                 prop_diffusion_target_active_below
+  , testProperty "target active local below"
+                 prop_diffusion_target_active_local_below
+  , testProperty "async demotion"
+                 prop_diffusion_async_demotions
+  , testProperty "async demotion (unit)"
+                 unit_diffusion_async_demotions
+  , testProperty "target active local above"
+                 prop_diffusion_target_active_local_above
+  , testProperty "connection manager valid transitions"
+                 prop_diffusion_cm_valid_transitions
+  , testProperty "connection manager valid transition order"
+                 prop_diffusion_cm_valid_transition_order
+  , testProperty "inbound governor valid transitions"
+                 prop_diffusion_ig_valid_transitions
+  , testProperty "inbound governor valid transition order"
+                 prop_diffusion_ig_valid_transition_order
+  , testProperty "cm & ig timeouts enforced"
+                 prop_diffusion_timeouts_enforced
+#endif
+#if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
-    [ testProperty "diffusion server trace coverage"
+    [ testProperty "server trace coverage"
                    prop_server_trace_coverage
-    , testProperty "diffusion peer selection actions trace coverage"
+    , testProperty "peer selection actions trace coverage"
                    prop_peer_selection_action_trace_coverage
-    , testProperty "diffusion peer selection trace coverage"
+    , testProperty "peer selection trace coverage"
                    prop_peer_selection_trace_coverage
-    , testProperty "diffusion connection manager trace coverage"
+    , testProperty "connection manager trace coverage"
                    prop_connection_manager_trace_coverage
-    , testProperty "diffusion connection manager transitions coverage"
+    , testProperty "connection manager transitions coverage"
                    prop_connection_manager_transitions_coverage
-    , testProperty "diffusion inbound governor trace coverage"
+    , testProperty "inbound governor trace coverage"
                    prop_inbound_governor_trace_coverage
-    , testProperty "diffusion inbound governor transitions coverage"
+    , testProperty "inbound governor transitions coverage"
                    prop_inbound_governor_transitions_coverage
     ]
   , testGroup "hot diffusion script"
-    [ testProperty "hot diffusion target active public"
+    [ testProperty "target active public"
                    prop_hot_diffusion_target_active_public
-    , testProperty "hot diffusion target active local"
+    , testProperty "target active local"
                    prop_hot_diffusion_target_active_local
-    , testProperty "hot diffusion target active root"
+    , testProperty "target active root"
                    prop_hot_diffusion_target_active_root
     ]
 #endif
