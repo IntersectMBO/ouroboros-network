@@ -125,3 +125,8 @@ be adding is the Alonzo era, which comes after the Mary era.
 
 * Extend `Test.ThreadNet.Cardano` with the new era. At the time of writing this
   hasn't been done yet for Allegra or Mary, though.
+
+* In `Test.Consensus.Cardano.Translation` add a `TranslationPredicate` that
+  specifies how the ledger tables should be updated on era transition, e.g., in
+  the case of Byron to Shelley all Byron UTxOs should be added as inserts to the
+  Shelley ledger tables.
