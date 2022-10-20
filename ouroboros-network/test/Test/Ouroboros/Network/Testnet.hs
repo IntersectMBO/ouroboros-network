@@ -18,7 +18,6 @@ import           Control.Monad.IOSim.Types (ThreadId)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 import           Data.Bifoldable (bifoldMap)
 
-import           Data.Dynamic (Typeable)
 import           Data.List (intercalate)
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
@@ -28,6 +27,7 @@ import           Data.Monoid (Sum (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (secondsToDiffTime)
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
 import           GHC.Exception.Type (SomeException)
@@ -43,39 +43,26 @@ import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.InboundGovernor hiding
                      (TrUnexpectedlyFalseAssertion)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.Governor
-                     (DebugPeerSelection (..), TracePeerSelection (..))
+import           Ouroboros.Network.PeerSelection.Governor hiding
+                     (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerStateActions
-                     (PeerSelectionActionsTrace (..), PeerStatusChangeType (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (RelayAccessPoint (..), TraceLocalRootPeers (..),
-                     TracePublicRootPeers (..), dapDomain)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSorIOError (DNSError))
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..),
-                     PeerStatus (..))
+import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
 import           Ouroboros.Network.Testing.Data.Script (singletonScript)
 import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
-import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     ignoreTest, sayTracer, splitWithNameTrace, tracerWithName,
-                     tracerWithTime)
+import           Ouroboros.Network.Testing.Utils hiding (debugTracer)
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-import           Test.Ouroboros.Network.Testnet.Simulation.Node (Command (..),
-                     DNSLookupDelay (..), DNSTimeout (..), DiffusionScript (..),
-                     DiffusionSimulationTrace (..),
-                     HotDiffusionScript (HotDiffusionScript), NodeArgs (..),
-                     SimArgs (..), TestAddress (..), diffusionSimulation,
-                     prop_diffusionScript_commandScript_valid,
-                     prop_diffusionScript_fixupCommands)
+import           Test.Ouroboros.Network.Testnet.Simulation.Node
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
