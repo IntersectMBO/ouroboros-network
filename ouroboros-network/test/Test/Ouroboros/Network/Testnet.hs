@@ -590,7 +590,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 prop_diffusion_nolivelock :: AbsBearerInfo
                          -> DiffusionScript
                          -> Property
-prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript l) =
+prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
@@ -1122,8 +1122,8 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
 prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
                                         -> HotDiffusionScript
                                         -> Property
-prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript hds) =
-  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript hds)
+prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa hds) =
+  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1131,8 +1131,8 @@ prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript hd
 prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
                                        -> HotDiffusionScript
                                        -> Property
-prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript hds) =
-  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript hds)
+prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa hds) =
+  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
 
 -- | This test checks the percentage of root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1140,8 +1140,8 @@ prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript hds
 prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
                                       -> HotDiffusionScript
                                       -> Property
-prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript hds) =
-  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript hds)
+prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa hds) =
+  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
