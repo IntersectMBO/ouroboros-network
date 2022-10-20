@@ -30,7 +30,7 @@ import qualified Cardano.Chain.Delegation as CC.Del
 import qualified Cardano.Chain.Delegation.Validation.Activation as CC.Act
 import qualified Cardano.Chain.Delegation.Validation.Interface as CC.DI
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as CC.Sched
-import           Cardano.Chain.Genesis as Byron
+import qualified Cardano.Chain.Genesis as Byron
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Chain.Slotting (EpochNumber, EpochSlots (..),
                      SlotNumber)
@@ -288,7 +288,7 @@ genByronLedgerState = do
   ledgerTipBlockNo <- genLedgerTipBlockNo chainValidationState
   pure $ ByronLedgerState {
       byronLedgerTipBlockNo = ledgerTipBlockNo
-    , byronLedgerState = chainValidationState
+    , byronLedgerState      = chainValidationState
     , byronLedgerTransition = ledgerTransition
     }
   where

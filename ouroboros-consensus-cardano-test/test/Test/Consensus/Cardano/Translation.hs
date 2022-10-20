@@ -148,8 +148,8 @@ shelleyAvvmAddressesAreDeletesInUtxoDiff srcLedgerState destLedgerState =
       -> Diff (TxIn Crypto) (Core.TxOut (AllegraEra Crypto))
     toNextUtxoDiff = avvmAddressesToUtxoDiff . stashedAVVMAddresses . shelleyLedgerState
     avvmAddressesToUtxoDiff (UTxO m) =
-      let fn txOut = Diff.singletonDelete (Core.translateEra' () txOut)
-      in Diff $ dimap id fn m
+      let func txOut = Diff.singletonDelete (Core.translateEra' () txOut)
+      in Diff $ dimap id func m
 
 utxoTablesAreEmpty
   :: LedgerState (ShelleyBlock srcProto srcEra) EmptyMK
