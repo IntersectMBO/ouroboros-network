@@ -26,6 +26,7 @@ import           Cardano.Slotting.Slot (EpochNo (..))
 
 import qualified Cardano.Chain.Block as Byron
 import qualified Cardano.Chain.UTxO as Byron
+
 import           Cardano.Ledger.Alonzo ()
 import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis (..))
 import           Cardano.Ledger.Alonzo.Scripts (CostModels (..), ExUnits (..),
@@ -39,8 +40,9 @@ import           Cardano.Ledger.Shelley.API
                      ShelleyGenesisStaking (..), TxIn (..),
                      translateCompactTxOutByronToShelley,
                      translateTxIdByronToShelley)
+import           Cardano.Ledger.Shelley.LedgerState hiding (LedgerState)
 import           Cardano.Ledger.Shelley.PParams (emptyPParams)
-import           Cardano.Ledger.Shelley.UTxO
+import           Cardano.Ledger.Shelley.UTxO (UTxO (..))
 
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
                      (slotLengthFromSec)
@@ -92,11 +94,16 @@ tests = testGroup "UpdateTablesOnEraTransition" $ toTestTrees predicates tls
     tls = translateLedgerState hardForkEraTranslation
     predicates :: InPairs TranslationPredicate (CardanoEras Crypto)
     predicates =
-        PCons (TranslationPredicate "ByronToShelley" byronUtxosAreInsertsInShelleyUtxoDiff)
-      $ PCons (TranslationPredicate "ShelleyToAllegra" shelleyAvvmAddressesAreDeletesInUtxoDiff)
-      $ PCons (TranslationPredicate "AllegraToMary" utxoTablesAreEmpty)
-      $ PCons (TranslationPredicate "MaryToAlonzo" utxoTablesAreEmpty)
-      $ PCons (TranslationPredicate "AlonzoToBabbage" utxoTablesAreEmpty)
+        PCons (TranslationPredicate "ByronToShelley" byronUtxosAreInsertsInShelleyUtxoDiff
+                                    nonEmptyUtxosByron)
+      $ PCons (TranslationPredicate "ShelleyToAllegra" shelleyAvvmAddressesAreDeletesInUtxoDiff
+                                    nonEmptyAvvmAddresses)
+      $ PCons (TranslationPredicate "AllegraToMary" utxoTablesAreEmpty
+                                    nonEmptyUtxosShelley)
+      $ PCons (TranslationPredicate "MaryToAlonzo" utxoTablesAreEmpty
+                                    nonEmptyUtxosShelley)
+      $ PCons (TranslationPredicate "AlonzoToBabbage" utxoTablesAreEmpty
+                                    nonEmptyUtxosShelley)
         PNil
 
 {-------------------------------------------------------------------------------
@@ -150,6 +157,21 @@ utxoTablesAreEmpty
   -> Bool
 utxoTablesAreEmpty _ destLedgerState = Diff.null $ extractUtxoDiff destLedgerState
 
+nonEmptyUtxosByron :: LedgerState ByronBlock EmptyMK -> Bool
+nonEmptyUtxosByron ledgerState =
+  let Byron.UTxO utxo = Byron.cvsUtxo $ byronLedgerState ledgerState
+  in not $ Map.null utxo
+
+nonEmptyUtxosShelley :: LedgerState (ShelleyBlock proto era) EmptyMK -> Bool
+nonEmptyUtxosShelley ledgerState =
+  let UTxO m = _utxo $ lsUTxOState $ esLState $ nesEs $ shelleyLedgerState ledgerState
+  in not $ Map.null m
+
+nonEmptyAvvmAddresses :: LedgerState (ShelleyBlock Proto (ShelleyEra Crypto)) EmptyMK -> Bool
+nonEmptyAvvmAddresses ledgerState =
+  let UTxO m = stashedAVVMAddresses $ shelleyLedgerState ledgerState
+  in not $ Map.null m
+
 {-------------------------------------------------------------------------------
     Generating tests for all translation predicates
 -------------------------------------------------------------------------------}
@@ -158,14 +180,16 @@ utxoTablesAreEmpty _ destLedgerState = Diff.null $ extractUtxoDiff destLedgerSta
 data TranslationPredicate src dest = TranslationPredicate {
     tpTestName :: TestName
   , tpRun      :: LedgerState src EmptyMK -> LedgerState dest DiffMK -> Bool
+  , tpCoverage :: LedgerState src EmptyMK -> Bool
 }
 
 -- Intermediate data type
 -- REVIEW: Can we get rid of this?
 data PreProperty x y = PreProperty {
     ppTestName :: TestName
-  , ppRun      :: TestSetup x y -> Bool
+  , ppRun      :: TestSetup x y -> Property
 }
+
 
 toTestTrees
   :: (AllPairs TestSetup Arbitrary xs, AllPairs TestSetup Show xs)
@@ -186,7 +210,8 @@ toTestTrees predicates translations = mkTestTrees $ zipInPairs predicates transl
                 (WrapLedgerConfig tsSrcLedgerConfig)
                 (WrapLedgerConfig tsDestLedgerConfig)
             destState = translateLedgerStateWith translation tsEpochNo tsSrcLedgerState
-        in tpRun tsSrcLedgerState destState
+        in checkCoverage $ cover 50 (tpCoverage tsSrcLedgerState) "boom"
+                         $ property $ tpRun tsSrcLedgerState destState
     }
 
     zipInPairs
