@@ -19,6 +19,7 @@ module Ouroboros.Network.Testing.Data.Signal
   , fromChangeEvents
   , toChangeEvents
   , fromEvents
+  , fromEventsWith
     -- ** QuickCheck
   , signalProperty
     -- * Simple signal transformations
@@ -190,6 +191,17 @@ fromEvents (Events txs) =
            , (i', s) <- [(i, Just x), (i+1, Nothing)]
            ]
 
+
+-- | Like 'fromEvents' but it is using the given value 'a' instead of 'Nothing.
+-- It is equivalent to `\a -> fmap (fromMaybe a) . fromEvents`
+--
+fromEventsWith :: a -> Events a -> Signal a
+fromEventsWith a (Events txs) =
+    Signal a
+           [ E (TS t i') s
+           | E (TS t i) x <- txs
+           , (i', s) <- [(i, x), (i+1, a)]
+           ]
 
 -- | A signal can change value more than once at a single point of time.
 --
