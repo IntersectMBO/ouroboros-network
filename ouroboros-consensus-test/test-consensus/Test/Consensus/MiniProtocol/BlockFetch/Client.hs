@@ -70,6 +70,9 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.ChainDB
+
+
+import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Test.Util.ChainUpdates
 import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.LogicalClock (Tick (..))
@@ -111,8 +114,8 @@ prop_blockFetch bfcts@BlockFetchClientTestSetup{..} =
 -------------------------------------------------------------------------------}
 
 data BlockFetchClientOutcome = BlockFetchClientOutcome {
-    bfcoBlockFetchResults :: Map PeerId (Either SomeException ())
-  , bfcoFetchedBlocks     :: Map PeerId Word
+    bfcoBlockFetchResults :: Map (ConnectionId PeerId) (Either SomeException ())
+  , bfcoFetchedBlocks     :: Map (ConnectionId PeerId) Word
   , bfcoTrace             :: [(Tick, String)]
   }
 
@@ -271,9 +274,9 @@ runBlockFetchTest BlockFetchClientTestSetup{..} = withRegistry \registry -> do
 
 
     mkTestBlockFetchConsensusInterface ::
-         STM m (Map PeerId (AnchoredFragment (Header TestBlock)))
+         STM m (Map (ConnectionId PeerId) (AnchoredFragment (Header TestBlock)))
       -> BlockFetchClientInterface.ChainDbView m TestBlock
-      -> BlockFetchConsensusInterface PeerId (Header TestBlock) TestBlock m
+      -> BlockFetchConsensusInterface (ConnectionId PeerId) (Header TestBlock) TestBlock m
     mkTestBlockFetchConsensusInterface getCandidates chainDbView =
         BlockFetchClientInterface.mkBlockFetchConsensusInterface
           (TestBlockConfig numCoreNodes)
@@ -317,7 +320,7 @@ ntnVersion = maxBound
 data BlockFetchClientTestSetup = BlockFetchClientTestSetup {
     -- | A 'Schedule' of 'ChainUpdate's for every peer. This emulates
     -- the candidate fragments provided by the ChainSync client.
-    peerUpdates    :: Map PeerId (Schedule ChainUpdate)
+    peerUpdates    :: Map (ConnectionId PeerId) (Schedule ChainUpdate)
     -- | BlockFetch 'FetchMode'
   , blockFetchMode :: FetchMode
   , blockFetchCfg  :: BlockFetchConfiguration
@@ -343,7 +346,9 @@ instance Condense BlockFetchClientTestSetup where
 instance Arbitrary BlockFetchClientTestSetup where
   arbitrary = do
       numPeers <- chooseInt (1, 3)
-      let peerIds = PeerId <$> [1 .. numPeers]
+      let local = PeerId 0
+          peerIds = map (ConnectionId local)
+                  $ PeerId <$> [1 .. numPeers]
       peerUpdates <-
             Map.fromList . zip peerIds
         <$> replicateM numPeers genUpdateSchedule

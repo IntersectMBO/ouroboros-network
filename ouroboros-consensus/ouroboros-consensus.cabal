@@ -314,6 +314,7 @@ library
     , mtl                          >=2.2   && <2.3
     , nothunks                     >=0.1.2 && <0.2
     , ouroboros-network-api
+    , ouroboros-network-framework
     , ouroboros-network-mock
     , ouroboros-network-protocols  >=0.2
     , psqueues                     >=0.2.3 && <0.3
@@ -330,10 +331,22 @@ library
     , typed-protocols
     , vector                       >=0.12  && <0.13
 
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+
+  if os(windows)
+     build-depends:    Win32            >= 2.6.1.0
+  else
+     build-depends:    unix
+                     , unix-bytestring
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wunused-packages
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts

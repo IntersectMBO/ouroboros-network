@@ -111,9 +111,9 @@ import           Ouroboros.Network.TxSubmission.Outbound
 -------------------------------------------------------------------------------}
 
 -- | Protocol handlers for node-to-node (remote) communication
-data Handlers m peer blk = Handlers {
+data Handlers m addr blk = Handlers {
       hChainSyncClient
-        :: peer
+        :: ConnectionId addr
         -> NodeToNodeVersion
         -> ControlMessageSTM m
         -> HeaderMetricsTracer m
@@ -144,41 +144,41 @@ data Handlers m peer blk = Handlers {
     , hTxSubmissionClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> peer
+        -> ConnectionId addr
         -> TxSubmissionClient (GenTxId blk) (GenTx blk) m ()
 
     , hTxSubmissionServer
         :: NodeToNodeVersion
-        -> peer
+        -> ConnectionId addr
         -> TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
 
     , hKeepAliveClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> peer
-        -> StrictTVar m (Map peer PeerGSV)
+        -> ConnectionId addr
+        -> StrictTVar m (Map (ConnectionId addr) PeerGSV)
         -> KeepAliveInterval
         -> KeepAliveClient m ()
 
     , hKeepAliveServer
         :: NodeToNodeVersion
-        -> peer
+        -> ConnectionId addr
         -> KeepAliveServer m ()
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer.
+  :: forall m blk addrNTN addrNTC.
      ( IOLike m
      , MonadTime m
      , MonadTimer m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
-     , Ord remotePeer
+     , Ord addrNTN
      )
-  => NodeKernelArgs m remotePeer localPeer blk
-  -> NodeKernel     m remotePeer localPeer blk
-  -> Handlers       m remotePeer           blk
+  => NodeKernelArgs m addrNTN addrNTC blk
+  -> NodeKernel     m addrNTN addrNTC blk
+  -> Handlers       m addrNTN           blk
 mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
       NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
@@ -389,33 +389,33 @@ type ServerApp m peer bytes a =
 -- | Applications for the node-to-node protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
-data Apps m peer bCS bBF bTX bKA a b = Apps {
+data Apps m addr bCS bBF bTX bKA a b = Apps {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      aChainSyncClient     :: ClientApp m peer bCS a
+      aChainSyncClient     :: ClientApp m (ConnectionId addr) bCS a
 
       -- | Start a chain sync server.
-    , aChainSyncServer     :: ServerApp m peer bCS b
+    , aChainSyncServer     :: ServerApp m (ConnectionId addr) bCS b
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , aBlockFetchClient    :: ClientApp m peer bBF a
+    , aBlockFetchClient    :: ClientApp m (ConnectionId addr) bBF a
 
       -- | Start a block fetch server.
-    , aBlockFetchServer    :: ServerApp m peer bBF b
+    , aBlockFetchServer    :: ServerApp m (ConnectionId addr) bBF b
 
       -- | Start a transaction submission v2 client that communicates with the
       -- given upstream node.
-    , aTxSubmission2Client :: ClientApp m peer bTX a
+    , aTxSubmission2Client :: ClientApp m (ConnectionId addr) bTX a
 
       -- | Start a transaction submission v2 server.
-    , aTxSubmission2Server :: ServerApp m peer bTX b
+    , aTxSubmission2Server :: ServerApp m (ConnectionId addr) bTX b
 
       -- | Start a keep-alive client.
-    , aKeepAliveClient     :: ClientApp m peer bKA a
+    , aKeepAliveClient     :: ClientApp m (ConnectionId addr) bKA a
 
       -- | Start a keep-alive server.
-    , aKeepAliveServer     :: ServerApp m peer bKA b
+    , aKeepAliveServer     :: ServerApp m (ConnectionId addr) bKA b
     }
 
 
@@ -469,10 +469,10 @@ byteLimits = ByteLimits {
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bBF bTX bKA.
+  :: forall m addrNTN addrNTC blk e bCS bBF bTX bKA.
      ( IOLike m
      , MonadTimer m
-     , Ord remotePeer
+     , Ord addrNTN
      , Exception e
      , LedgerSupportsProtocol blk
      , ShowProxy blk
@@ -480,21 +480,21 @@ mkApps
      , ShowProxy (TxId (GenTx blk))
      , ShowProxy (GenTx blk)
      )
-  => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
-  -> Tracers m remotePeer blk e
+  => NodeKernel m addrNTN addrNTC blk -- ^ Needed for bracketing only
+  -> Tracers m (ConnectionId addrNTN) blk e
   -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bKA)
   -> ByteLimits bCS bBF bTX bKA
   -> m ChainSyncTimeout
-  -> ReportPeerMetrics m remotePeer
-  -> Handlers m remotePeer blk
-  -> Apps m remotePeer bCS bBF bTX bKA NodeToNodeInitiatorResult ()
+  -> ReportPeerMetrics m (ConnectionId addrNTN)
+  -> Handlers m addrNTN blk
+  -> Apps m addrNTN bCS bBF bTX bKA NodeToNodeInitiatorResult ()
 mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPeerMetrics {..} Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bCS
       -> m (NodeToNodeInitiatorResult, Maybe bCS)
     aChainSyncClient version controlMessageSTM them channel = do
@@ -528,7 +528,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aChainSyncServer
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bCS
       -> m ((), Maybe bCS)
     aChainSyncServer version them channel = do
@@ -556,7 +556,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
     aBlockFetchClient
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bBF
       -> m (NodeToNodeInitiatorResult, Maybe bBF)
     aBlockFetchClient version controlMessageSTM them channel = do
@@ -575,7 +575,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aBlockFetchServer
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bBF
       -> m ((), Maybe bBF)
     aBlockFetchServer version them channel = do
@@ -593,7 +593,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
     aTxSubmission2Client
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bTX
       -> m (NodeToNodeInitiatorResult, Maybe bTX)
     aTxSubmission2Client version controlMessageSTM them channel = do
@@ -609,7 +609,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aTxSubmission2Server
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bTX
       -> m ((), Maybe bTX)
     aTxSubmission2Server version them channel = do
@@ -625,7 +625,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
     aKeepAliveClient
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bKA
       -> m (NodeToNodeInitiatorResult, Maybe bKA)
     aKeepAliveClient version controlMessageSTM them channel = do
@@ -646,7 +646,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aKeepAliveServer
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bKA
       -> m ((), Maybe bKA)
     aKeepAliveServer version _them channel = do
@@ -673,8 +673,8 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 initiator
   :: MiniProtocolParameters
   -> NodeToNodeVersion
-  -> Apps m (ConnectionId peer) b b b b a c
-  -> OuroborosBundle 'InitiatorMode peer b m a Void
+  -> Apps m addr b b b b a c
+  -> OuroborosBundle 'InitiatorMode addr b m a Void
 initiator miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
@@ -704,8 +704,8 @@ initiator miniProtocolParameters version Apps {..} =
 initiatorAndResponder
   :: MiniProtocolParameters
   -> NodeToNodeVersion
-  -> Apps m (ConnectionId peer) b b b b a c
-  -> OuroborosBundle 'InitiatorResponderMode peer b m a c
+  -> Apps m addr b b b b a c
+  -> OuroborosBundle 'InitiatorResponderMode addr b m a c
 initiatorAndResponder miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters

@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
