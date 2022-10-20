@@ -17,6 +17,7 @@ import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (foldl')
+import           Data.Word (Word8)
 import           Network.TypedProtocol.Codec (AnyMessage (..),
                      AnyMessageAndAgency (..), Codec (..), PeerHasAgency (..),
                      prop_codecM, prop_codec_splitsM)
@@ -38,11 +39,10 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type
                      PeerSharing, PeerSharingAmount (..), ServerHasAgency (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
+import           Test.QuickCheck.Function (Fun, applyFun)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (Arbitrary (..), Property, ioProperty,
                      oneof, testProperty, withMaxSuccess, (===))
-import Data.Word (Word8)
-import Test.QuickCheck.Function (Fun, applyFun)
 
 tests :: TestTree
 tests =

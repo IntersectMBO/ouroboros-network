@@ -72,7 +72,8 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
 import           Ouroboros.Network.ControlMessage (ControlMessage (..),
                      ControlMessageSTM)
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.NodeToNode (ConnectionId (..),
+                     MiniProtocolParameters (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
@@ -107,13 +108,13 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
-
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 
+import           System.Random (mkStdGen)
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
@@ -1228,7 +1229,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
 
     atomically $ writeTVar edgeStatusVar EUp
 
-    let miniProtocol ::
+    let local = CoreId (CoreNodeId 0)
+        miniProtocol ::
              String
              -- ^ protocol name
           -> (String -> a -> RestartCause)
@@ -1236,14 +1238,14 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
              -> ControlMessageSTM m
-             -> NodeId
+             -> ConnectionId NodeId
              -> Channel m msg
              -> m (a, trailingBytes)
              )
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
-             -> NodeId
+             -> ConnectionId NodeId
              -> Channel m msg
              -> m (b, trailingBytes)
              )
@@ -1254,8 +1256,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( (retClient (proto <> ".client") . fst) <$> client app1 version (return Continue) (fromCoreNodeId node2) chan
-             , (retServer (proto <> ".server") . fst) <$> server app2 version (fromCoreNodeId node1) dualChan
+             ( (retClient (proto <> ".client") . fst) <$> client app1 version (return Continue) (ConnectionId local (fromCoreNodeId node2)) chan
+             , (retServer (proto <> ".server") . fst) <$> server app2 version (ConnectionId local (fromCoreNodeId node1)) dualChan
              )
 
     (>>= withAsyncsWaitAny) $
@@ -1600,14 +1602,14 @@ withAsyncsWaitAny = go [] . NE.toList
 -- its use in this module
 --
 -- Used internal to this module, essentially as an abbreviation.
-data LimitedApp m peer blk =
-   LimitedApp (LimitedApp' m peer blk)
+data LimitedApp m addr blk =
+   LimitedApp (LimitedApp' m addr blk)
 
 -- | Argument of 'LimitedApp' data constructor
 --
 -- Used internal to this module, essentially as an abbreviation.
-type LimitedApp' m peer blk =
-    NTN.Apps m peer
+type LimitedApp' m addr blk =
+    NTN.Apps m addr
         -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
         -- the servers and @x@ for the clients. Since both have to match to be
         -- sent across a channel, we can't use @'AnyMessage' ..@, instead, we

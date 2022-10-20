@@ -2,13 +2,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.PeerSharing.Examples where
 
+import           Data.Word (Word8)
 import           Ouroboros.Network.Protocol.PeerSharing.Client
                      (PeerSharingClient (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Server
                      (PeerSharingServer (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
-import Data.Word (Word8)
-import Test.QuickCheck.Function (Fun, applyFun)
+import           Ouroboros.Network.Protocol.PeerSharing.Type
+                     (PeerSharingAmount (..))
+import           Test.QuickCheck.Function (Fun, applyFun)
 
 
 -- | A client which collects answers whenever it receives

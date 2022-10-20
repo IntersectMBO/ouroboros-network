@@ -168,7 +168,7 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
       -- Called on the 'NodeKernel' after creating it, but before the network
       -- layer is initialised.
     , rnNodeKernelHook :: ResourceRegistry m
-                       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+                       -> NodeKernel m addrNTN (ConnectionId addrNTC) blk
                        -> m ()
 
       -- | Network P2P Mode switch
@@ -207,8 +207,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
 
       -- | Customise the 'NodeArgs'
     , llrnCustomiseNodeKernelArgs ::
-           NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-        -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+           NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+        -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
 
       -- | Ie 'bfcSalt'
     , llrnBfcSalt :: Int
@@ -388,12 +388,12 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
     codecConfig = configCodec cfg
 
     mkNodeToNodeApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+      -> NodeKernel     m addrNTN (ConnectionId addrNTC) blk
       -> PeerMetrics m addrNTN
       -> BlockNodeToNodeVersion blk
       -> NTN.Apps m
-          (ConnectionId addrNTN)
+          addrNTN
           ByteString
           ByteString
           ByteString
@@ -411,8 +411,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+      -> NodeKernel     m addrNTN (ConnectionId addrNTC) blk
       -> BlockNodeToClientVersion blk
       -> NodeToClientVersion
       -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ByteString ()
@@ -429,7 +429,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       -> (   BlockNodeToNodeVersion blk
           -> NTN.Apps
                m
-               (ConnectionId addrNTN)
+               addrNTN
                ByteString
                ByteString
                ByteString
@@ -442,7 +442,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NTC.Apps
                m (ConnectionId addrNTC) ByteString ByteString ByteString ByteString ()
         )
-      -> NodeKernel m remotePeer localPeer blk
+      -> NodeKernel m addrNTN (ConnectionId addrNTC) blk
       -> PeerMetrics m addrNTN
       -> ( Diffusion.Applications
              addrNTN NodeToNodeVersion   versionDataNTN
@@ -595,7 +595,7 @@ mkNodeKernelArgs
   -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> BlockchainTime m
   -> ChainDB m blk
-  -> m (NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
+  -> m (NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk)
 mkNodeKernelArgs
   registry
   bfcSalt
@@ -636,8 +636,8 @@ mkNodeKernelArgs
 -- values. This function makes sure we don't exceed those limits and that the
 -- values are consistent.
 nodeKernelArgsEnforceInvariants
-  :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
 nodeKernelArgsEnforceInvariants nodeKernelArgs = nodeKernelArgs
     { miniProtocolParameters = miniProtocolParameters
         -- If 'blockFetchPipeliningMax' exceeds the configured default, it
@@ -849,8 +849,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo
           })
 
     llrnCustomiseNodeKernelArgs ::
-         NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+         NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+      -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
     llrnCustomiseNodeKernelArgs =
         overBlockFetchConfiguration modifyBlockFetchConfiguration
       . modifyMempoolCapacityOverride
@@ -886,8 +886,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo
 
 overBlockFetchConfiguration ::
      (BlockFetchConfiguration -> BlockFetchConfiguration)
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
 overBlockFetchConfiguration f args = args {
       blockFetchConfiguration = f blockFetchConfiguration
     }

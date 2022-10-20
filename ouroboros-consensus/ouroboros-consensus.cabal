@@ -318,10 +318,10 @@ library
                      , io-classes       ^>=0.3
                      , typed-protocols
                      , ouroboros-network-api
+                     , ouroboros-network-framework
                      , ouroboros-network-mock
                      , ouroboros-network-protocols ^>=0.2
                      , strict-stm       ^>=0.2
-
 
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0
@@ -337,6 +337,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
 
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts

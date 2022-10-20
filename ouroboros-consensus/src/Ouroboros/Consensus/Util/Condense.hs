@@ -47,6 +47,7 @@ import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
                      WithOrigin (..))
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash, Tip (..))
+import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 
 {-------------------------------------------------------------------------------
   Main class
@@ -170,6 +171,9 @@ instance Condense (HeaderHash b) => Condense (Tip b) where
 instance Condense a => Condense (WithOrigin a) where
   condense Origin = "origin"
   condense (At a) = condense a
+
+instance Condense addr => Condense (ConnectionId addr) where
+  condense (ConnectionId l r) = condense l <> " " <> condense r
 
 {-------------------------------------------------------------------------------
   Orphans for cardano-crypto-classes

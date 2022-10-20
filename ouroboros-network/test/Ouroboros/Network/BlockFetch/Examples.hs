@@ -111,7 +111,7 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
     return ()
 
   where
-    peerno = 1 :: Int
+    peerno = 1
 
     serverMsgTracer = nullTracer
 
