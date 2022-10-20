@@ -1,13 +1,14 @@
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- | Intended for qualified import
 --
@@ -128,10 +129,7 @@ requiringBoth = flip go
   Constraints
 -------------------------------------------------------------------------------}
 
-type family AllPairs
-  (f :: k -> k -> Type)
-  (c :: Type -> Constraint)
-  (ts :: [Type]) :: Constraint where
-
+type AllPairs :: (k -> k -> Type) -> (Type -> Constraint) -> [k] -> Constraint
+type family AllPairs f c t where
   AllPairs f c '[t] = ()
   AllPairs f c (t ': s ': ts) = (c (f t s) , AllPairs f c (s ': ts))
