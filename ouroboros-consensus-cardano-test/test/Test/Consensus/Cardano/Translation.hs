@@ -40,7 +40,8 @@ import           Cardano.Ledger.Shelley.API
                      ShelleyGenesisStaking (..), TxIn (..),
                      translateCompactTxOutByronToShelley,
                      translateTxIdByronToShelley)
-import           Cardano.Ledger.Shelley.LedgerState hiding (LedgerState)
+import           Cardano.Ledger.Shelley.LedgerState (_utxo, esLState,
+                     lsUTxOState, nesEs)
 import           Cardano.Ledger.Shelley.PParams (emptyPParams)
 import           Cardano.Ledger.Shelley.UTxO (UTxO (..))
 
@@ -73,7 +74,6 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      shelleyLedgerState, shelleyLedgerTables, shelleyUTxOTable)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 
--- TODO: Not sure where to put these
 import           Test.Cardano.Ledger.Alonzo.Serialisation.Generators ()
 import           Test.Cardano.Ledger.Shelley.Utils (unsafeBoundRational)
 import           Test.Consensus.Byron.Generators (genByronLedgerConfig,
@@ -298,9 +298,9 @@ instance Arbitrary (TestSetup (ShelleyBlock (TPraos Crypto) (AlonzoEra Crypto))
 genShelleyLedgerState :: CanMock proto era => Gen (LedgerState (ShelleyBlock proto era) EmptyMK)
 genShelleyLedgerState = arbitrary
 
--- A fixed ledger config should be sufficient as the updating of the ledger tables on era
--- transitions does not depend on the configurations of any of the ledgers involved..
--- TODO: Check this
+-- | A fixed ledger config should be sufficient as the updating of the ledger
+-- tables on era transitions does not depend on the configurations of any of
+-- the ledgers involved.
 fixedShelleyLedgerConfig :: Core.TranslationContext era -> ShelleyLedgerConfig era
 fixedShelleyLedgerConfig translationContext = mkShelleyLedgerConfig
       shelleyGenesis
@@ -309,21 +309,21 @@ fixedShelleyLedgerConfig translationContext = mkShelleyLedgerConfig
       (MaxMajorProtVer 1000)
   where
     shelleyGenesis = ShelleyGenesis {
-          sgSystemStart = dawnOfTime
-        , sgNetworkMagic = 0
-        , sgNetworkId = Testnet
-        , sgActiveSlotsCoeff = unsafeBoundRational 0.8
-        , sgSecurityParam = 10
-        , sgEpochLength = 10
+          sgSystemStart       = dawnOfTime
+        , sgNetworkMagic      = 0
+        , sgNetworkId         = Testnet
+        , sgActiveSlotsCoeff  = unsafeBoundRational 0.8
+        , sgSecurityParam     = 10
+        , sgEpochLength       = 10
         , sgSlotsPerKESPeriod = 10
-        , sgMaxKESEvolutions = 10
-        , sgSlotLength = 10
-        , sgUpdateQuorum = 6
+        , sgMaxKESEvolutions  = 10
+        , sgSlotLength        = 10
+        , sgUpdateQuorum      = 6
         , sgMaxLovelaceSupply = 10
-        , sgProtocolParams = emptyPParams
-        , sgGenDelegs = Map.empty
-        , sgInitialFunds = ListMap.empty
-        , sgStaking = ShelleyGenesisStaking ListMap.empty ListMap.empty
+        , sgProtocolParams    = emptyPParams
+        , sgGenDelegs         = Map.empty
+        , sgInitialFunds      = ListMap.empty
+        , sgStaking           = ShelleyGenesisStaking ListMap.empty ListMap.empty
     }
 
 genAlonzoGenesis :: Gen AlonzoGenesis
