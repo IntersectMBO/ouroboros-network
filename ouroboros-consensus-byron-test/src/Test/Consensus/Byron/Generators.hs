@@ -279,8 +279,8 @@ instance Arbitrary (LedgerState ByronBlock EmptyMK) where
   arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
 
 -- | Generator for a Byron ledger state in which the tip of the ledger given by
--- `byronLedgerTipBlockNo` matches that derived from the `ChainValidationState` in
--- `byronLedgerState`.
+-- `byronLedgerTipBlockNo` is consistent with the chain validation state, i.e., if there is no
+-- previous block, the ledger tip wil be `Origin`.
 genByronLedgerState :: Gen (LedgerState ByronBlock EmptyMK)
 genByronLedgerState = do
   chainValidationState <- arbitrary
