@@ -34,13 +34,14 @@ import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, wait, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer)
 
 import           Data.Foldable (foldl')
 import           Data.IP (IP (..))
@@ -136,6 +137,7 @@ data Arguments m = Arguments
     , aTimeWaitTimeout      :: DiffTime
     , aDNSTimeoutScript     :: Script DNSTimeout
     , aDNSLookupDelayScript :: Script DNSLookupDelay
+    , aDebugTracer          :: Tracer m String
     }
 
 -- The 'mockDNSActions' is not using \/ specifying 'resolverException', thus we
@@ -151,6 +153,7 @@ run :: forall resolver m.
        , MonadLabelledSTM m
        , MonadTraceSTM    m
        , MonadMask        m
+       , MonadSay         m
        , MonadST          m
        , MonadTime        m
        , MonadTimer       m
@@ -161,7 +164,8 @@ run :: forall resolver m.
        , forall a. Semigroup a => Semigroup (m a)
        , Eq (Async m Void)
        )
-    => Node.BlockGeneratorArgs Block StdGen
+    => Tracer m String
+    -> Node.BlockGeneratorArgs Block StdGen
     -> Node.LimitsAndTimeouts Block
     -> Interfaces m
     -> Arguments m
@@ -169,7 +173,7 @@ run :: forall resolver m.
                              NtCAddr NtCVersion NtCVersionData
                              ResolverException m
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra =
+run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
@@ -236,13 +240,14 @@ run blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daReturnPolicy           = \_ -> 0
               }
 
-        apps <- Node.applications @_ @BlockHeader nodeKernel Node.cborCodecs limits appArgs
+        apps <- Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
 
         registry <- newFetchClientRegistry
 
         withAsync
            (Diff.P2P.runM interfaces
-                          Diff.nullTracers tracersExtra
+                          Diff.nullTracers
+                          tracersExtra
                           args argsExtra apps appsExtra)
            $ \ diffusionThread ->
                withAsync (blockFetch registry nodeKernel) $ \blockFetchLogicThread ->

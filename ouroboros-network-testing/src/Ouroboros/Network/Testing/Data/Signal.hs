@@ -19,6 +19,7 @@ module Ouroboros.Network.Testing.Data.Signal
   , fromChangeEvents
   , toChangeEvents
   , fromEvents
+  , fromEventsWith
     -- ** QuickCheck
   , signalProperty
     -- * Simple signal transformations
@@ -191,6 +192,17 @@ fromEvents (Events txs) =
            ]
 
 
+-- | Like 'fromEvents' but it is using the given value 'a' instead of 'Nothing.
+-- It is equivalent to `\a -> fmap (fromMaybe a) . fromEvents`
+--
+fromEventsWith :: a -> Events a -> Signal a
+fromEventsWith a (Events txs) =
+    Signal a
+           [ E (TS t i') s
+           | E (TS t i) x <- txs
+           , (i', s) <- [(i, x), (i+1, a)]
+           ]
+
 -- | A signal can change value more than once at a single point of time.
 --
 -- Sometimes we are interested only in the final \"stable\" value of the signal
@@ -360,7 +372,10 @@ keyedTimeout d arm =
        -> Set b
        -> [E a]
        -> [E (Set b)]
-    go _ _ _ [] = []
+    go _ armedPSQ _ [] =
+      (\(b, t, _) -> E (TS t 0) (Set.singleton b))
+      `map`
+      PSQ.toList armedPSQ
 
     go armedSet armedPSQ timedout (E ts@(TS t _) x : txs)
       | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ

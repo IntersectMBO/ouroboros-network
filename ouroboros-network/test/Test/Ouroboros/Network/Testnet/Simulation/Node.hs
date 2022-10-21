@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -8,6 +10,7 @@
 
 module Test.Ouroboros.Network.Testnet.Simulation.Node
   ( SimArgs (..)
+  , NodeArgs (..)
   , DiffusionScript (..)
   , HotDiffusionScript (..)
   , DiffusionSimulationTrace (..)
@@ -27,13 +30,14 @@ import           Control.Monad (forM, replicateM, (>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, cancel, waitAny, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
                      MonadMask, MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
 import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (Tracer, nullTracer, traceWith)
+import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
@@ -41,6 +45,7 @@ import           Data.IP (IP (..), toIPv4, toIPv6)
 import           Data.List (delete, intercalate, nub, (\\))
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
@@ -49,6 +54,9 @@ import qualified System.Random as Random
 import           System.Random (StdGen, mkStdGen)
 
 import           Network.DNS (Domain, TTL)
+
+import           Network.TypedProtocol.Core (PeerHasAgency (..))
+import qualified Network.TypedProtocol.PingPong.Type as PingPong
 
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
@@ -79,8 +87,10 @@ import           Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
 import           Ouroboros.Network.Testing.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
-import           Ouroboros.Network.Testing.Utils (genDelayWithPrecision)
-import           Simulation.Network.Snocket (BearerInfo (..), FD, withSnocket)
+import           Ouroboros.Network.Testing.Utils (WithName (..),
+                     genDelayWithPrecision, tracerWithName)
+import           Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
+                     WithAddr (..), withSnocket)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as NodeKernel
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -544,6 +554,7 @@ diffusionSimulation
   :: forall m. ( MonadAsync       m
                , MonadFix         m
                , MonadFork        m
+               , MonadSay         m
                , MonadST          m
                , MonadEvaluate    m
                , MonadLabelledSTM m
@@ -562,15 +573,16 @@ diffusionSimulation
      -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
                               NtCAddr NtCVersion NtCVersionData
                               SomeException m )
-  -> ( NtNAddr
-     -> Tracer m DiffusionSimulationTrace )
+  -> Tracer m (WithName NtNAddr DiffusionSimulationTrace)
+  -> Tracer m (WithName NtNAddr String)
   -> m Void
 diffusionSimulation
   defaultBearerInfo
   (DiffusionScript simArgs nodeArgs)
   tracersExtraWithTimeName
-  diffSimTracerWithTimName =
-    withSnocket nullTracer defaultBearerInfo Map.empty
+  tracer
+  debugTracer =
+    withSnocket netSimTracer defaultBearerInfo Map.empty
       $ \ntnSnocket _ ->
         withSnocket nullTracer defaultBearerInfo Map.empty
       $ \ntcSnocket _ -> do
@@ -585,6 +597,10 @@ diffusionSimulation
             (_, x) <- waitAny nodes
             return x
   where
+    netSimTracer :: Tracer m (WithAddr NtNAddr (SnocketTrace m NtNAddr))
+    netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (TestAddress $ IPAddr (read "0.0.0.0") 0) l) (show a))
+       `contramap` debugTracer
+
     -- | Runs a single node according to a list of commands.
     runCommand
       :: Maybe ( Async m Void
@@ -603,19 +619,19 @@ diffusionSimulation
       -> m Void
     runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs [] = do
       threadDelay 3600
-      traceWith (diffSimTracerWithTimName (naAddr nArgs)) TrRunning
+      traceWith tracer (WithName (naAddr nArgs) TrRunning)
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs []
     runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs [] = do
       -- We shouldn't block this thread waiting
       -- on the async since this will lead to a deadlock
       -- as thread returns 'Void'.
       threadDelay 3600
-      traceWith (diffSimTracerWithTimName (naAddr nArgs)) TrRunning
+      traceWith tracer (WithName (naAddr nArgs) TrRunning)
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs []
     runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (JoinNetwork delay Nothing:cs) = do
       threadDelay delay
-      traceWith (diffSimTracerWithTimName (naAddr nArgs)) TrJoiningNetwork
+      traceWith tracer (WithName (naAddr nArgs) TrJoiningNetwork)
       lrpVar <- newTVarIO $ naLocalRootPeers nArgs
       let dnsMapVar = dMapVarMap Map.! naAddr nArgs
       withAsync (runNode sArgs nArgs ntnSnocket ntcSnocket lrpVar dnsMapVar) $ \nodeAsync ->
@@ -624,7 +640,7 @@ diffusionSimulation
                (JoinNetwork delay (Just ip):cs) = do
       threadDelay delay
       let nArgs' = nArgs { naAddr = ip }
-      traceWith (diffSimTracerWithTimName ip) TrJoiningNetwork
+      traceWith tracer (WithName ip TrJoiningNetwork)
       lrpVar <- newTVarIO $ naLocalRootPeers nArgs'
 
       -- Updating DomainMap entry now that the node is having a new IP
@@ -643,7 +659,7 @@ diffusionSimulation
     runCommand (Just (async, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Kill delay:cs) = do
       threadDelay delay
-      traceWith (diffSimTracerWithTimName (naAddr nArgs)) TrKillingNode
+      traceWith tracer (WithName (naAddr nArgs) TrKillingNode)
       cancel async
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs cs
     runCommand _ _ _ _ _ _ (Kill _:_) = do
@@ -653,7 +669,7 @@ diffusionSimulation
     runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
-      traceWith (diffSimTracerWithTimName (naAddr nArgs)) TrReconfigurionNode
+      traceWith tracer (WithName (naAddr nArgs) TrReconfigurionNode)
       _ <- atomically $ writeTVar lrpVar newLrp
       runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                  cs
@@ -668,7 +684,7 @@ diffusionSimulation
                     (TestAddress (IPAddr newIP _))
                     dMapVarMap = do
       threadDelay delay
-      traceWith (diffSimTracerWithTimName oip) TrUpdatingDNS
+      traceWith tracer (WithName oip TrUpdatingDNS)
       traverse_ (\dMapVar -> atomically $ do
                   dnsMap <- readTVar dMapVar
                   let dnsMap' =
@@ -750,10 +766,8 @@ diffusionSimulation
                 , NodeKernel.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
                 , NodeKernel.keepAliveTimeLimits  = timeLimitsKeepAlive
                 , NodeKernel.pingPongLimits       = defaultMiniProtocolsLimit
-                , NodeKernel.pingPongSizeLimits   =
-                    ProtocolSizeLimits (const smallByteLimit) (const 0)
-                , NodeKernel.pingPongTimeLimits   =
-                    ProtocolTimeLimits (const (Just 60))
+                , NodeKernel.pingPongSizeLimits   = byteLimitsPingPong
+                , NodeKernel.pingPongTimeLimits   = timeLimitsPingPong
                 , NodeKernel.handshakeLimits      = defaultMiniProtocolsLimit
                 , NodeKernel.handshakeTimeLimits  =
                     ProtocolSizeLimits (const (4 * 1440))
@@ -782,8 +796,8 @@ diffusionSimulation
               { NodeKernel.aIPAddress            = rap
               , NodeKernel.aAcceptedLimits       = acceptedConnectionsLimit
               , NodeKernel.aDiffusionMode        = diffusionMode
-              , NodeKernel.aKeepAliveInterval    = 0
-              , NodeKernel.aPingPongInterval     = 0
+              , NodeKernel.aKeepAliveInterval    = 10
+              , NodeKernel.aPingPongInterval     = 10
               , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
@@ -792,9 +806,11 @@ diffusionSimulation
               , NodeKernel.aTimeWaitTimeout      = 30
               , NodeKernel.aDNSTimeoutScript     = dnsTimeout
               , NodeKernel.aDNSLookupDelayScript = dnsLookupDelay
+              , NodeKernel.aDebugTracer          = tracerWithName rap debugTracer
               }
 
-       in NodeKernel.run blockGeneratorArgs
+       in NodeKernel.run (WithName rap `contramap` debugTracer)
+                         blockGeneratorArgs
                          limitsAndTimeouts
                          interfaces
                          arguments
@@ -818,6 +834,22 @@ diffusionSimulation
                        , Map.member d dMap
                        ]
       return (Map.fromList mapDomains)
+
+--
+-- PingPong byte & time limits
+--
+
+byteLimitsPingPong :: ProtocolSizeLimits PingPong.PingPong BL.ByteString
+byteLimitsPingPong = ProtocolSizeLimits (const smallByteLimit) (fromIntegral . BL.length)
+
+timeLimitsPingPong :: ProtocolTimeLimits PingPong.PingPong
+timeLimitsPingPong = ProtocolTimeLimits $ \case
+    ClientAgency PingPong.TokIdle -> Nothing
+    ServerAgency PingPong.TokBusy -> Just 60
+
+--
+-- Utils
+--
 
 
 ntnToPeerAddr :: IP -> PortNumber -> NtNAddr
