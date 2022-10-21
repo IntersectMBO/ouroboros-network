@@ -97,6 +97,7 @@ module Ouroboros.Network.NodeToNode
   , blockFetchMiniProtocolNum
   , txSubmissionMiniProtocolNum
   , keepAliveMiniProtocolNum
+  , peerSharingMiniProtocolNum
   ) where
 
 import qualified Control.Concurrent.Async as Async
@@ -130,6 +131,8 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      (PeerSelectionTargets (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
                      (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+                     (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
@@ -174,7 +177,11 @@ data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
 
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol    :: RunMiniProtocol appType bytes m a b
+    keepAliveProtocol    :: RunMiniProtocol appType bytes m a b,
+
+    -- | peer sharing mini-protocol
+    --
+    peerSharingProtocol  :: RunMiniProtocol appType bytes m a b
 
   }
 
@@ -232,8 +239,9 @@ nodeToNodeProtocols
   :: MiniProtocolParameters
   -> (ConnectionId addr -> STM m ControlMessage -> NodeToNodeProtocols muxMode bytes m a b)
   -> NodeToNodeVersion
+  -> PeerSharing -- ^ Node's own PeerSharing value
   -> OuroborosBundle muxMode addr bytes m a b
-nodeToNodeProtocols miniProtocolParameters protocols _version =
+nodeToNodeProtocols miniProtocolParameters protocols version ownPeerSharing =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
       (WithHot $ \connectionId controlMessageSTM ->
@@ -243,17 +251,17 @@ nodeToNodeProtocols miniProtocolParameters protocols _version =
                                 txSubmissionProtocol
                               } ->
             [ MiniProtocol {
-                miniProtocolNum    = MiniProtocolNum 2,
+                miniProtocolNum    = chainSyncMiniProtocolNum,
                 miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = chainSyncProtocol
               }
             , MiniProtocol {
-                miniProtocolNum    = MiniProtocolNum 3,
+                miniProtocolNum    = blockFetchMiniProtocolNum,
                 miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = blockFetchProtocol
               }
             , MiniProtocol {
-                miniProtocolNum    = MiniProtocolNum 4,
+                miniProtocolNum    = txSubmissionMiniProtocolNum,
                 miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = txSubmissionProtocol
               }
@@ -265,9 +273,25 @@ nodeToNodeProtocols miniProtocolParameters protocols _version =
       -- Established protocols: 'keep-alive'.
       (WithEstablished $ \connectionId controlMessageSTM ->
         case protocols connectionId controlMessageSTM of
-          NodeToNodeProtocols { keepAliveProtocol } ->
+          -- Only register PeerSharing Protocol if version >= NodeToNodeV_11 and if peer
+          -- has PeerSharing enabled
+          NodeToNodeProtocols { keepAliveProtocol, peerSharingProtocol }
+            | version >= NodeToNodeV_11 && ownPeerSharing /= NoPeerSharing ->
             [ MiniProtocol {
-                miniProtocolNum    = MiniProtocolNum 8,
+                miniProtocolNum    = keepAliveMiniProtocolNum,
+                miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
+                miniProtocolRun    = keepAliveProtocol
+              }
+            , MiniProtocol {
+                miniProtocolNum    = peerSharingMiniProtocolNum,
+                miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
+                miniProtocolRun    = peerSharingProtocol
+              }
+            ]
+          NodeToNodeProtocols { keepAliveProtocol }
+            | otherwise ->
+            [ MiniProtocol {
+                miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = keepAliveProtocol
               }
@@ -279,7 +303,8 @@ addSafetyMargin x = x + x `div` 10
 chainSyncProtocolLimits
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
-  , keepAliveProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
+  , keepAliveProtocolLimits
+  , peerSharingProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
 
 chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
   MiniProtocolLimits {
@@ -385,6 +410,17 @@ keepAliveProtocolLimits _ =
       maximumIngressQueue = addSafetyMargin 1280
     }
 
+peerSharingProtocolLimits _ =
+  MiniProtocolLimits {
+  -- This protocol does not need to be pipelined and a peer can only ask
+  -- for a maximum of 255 peers each time. Hence a reply can have up to
+  -- 255 IP (IPv4 or IPv6) addresses so 255 * 16 = 4080. TCP has an initial
+  -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
+  -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
+  -- queue to be a single RTT should be enough to cover for CBOR overhead.
+  maximumIngressQueue = 4 * 1440
+  }
+
 chainSyncMiniProtocolNum :: MiniProtocolNum
 chainSyncMiniProtocolNum = MiniProtocolNum 2
 
@@ -396,6 +432,9 @@ txSubmissionMiniProtocolNum = MiniProtocolNum 4
 
 keepAliveMiniProtocolNum :: MiniProtocolNum
 keepAliveMiniProtocolNum = MiniProtocolNum 8
+
+peerSharingMiniProtocolNum :: MiniProtocolNum
+peerSharingMiniProtocolNum = MiniProtocolNum 10
 
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --

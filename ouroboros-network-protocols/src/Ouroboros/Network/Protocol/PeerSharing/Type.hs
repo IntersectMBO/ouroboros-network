@@ -25,6 +25,15 @@ newtype PeerSharingAmount = PeerSharingAmount { getAmount :: Word8 }
   deriving (Eq, Show, Ord, Generic)
   deriving (Enum, Num, Real, Integral, Serialise) via Word8
 
+-- | PeerSharing Result type.
+--
+-- We need a constructor for the case when the Governor wins the race versus
+-- the Mux (when initialising the peer sharing miniprotocol). This leads the
+-- Governor to lookup a peer that hasn't been registered yet.
+data PeerSharingResult peerAddress = PeerSharingResult [peerAddress]
+                                   | PeerSharingNotRegisteredYet
+                                   deriving (Eq, Show)
+
 -- | A kind to identify our protocol, and the types of the states in the state
 -- transition diagram of the protocol.
 --

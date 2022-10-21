@@ -26,6 +26,9 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , emptyPeerSelectionState
   , assertPeerSelectionState
   , establishedPeersStatus
+  , PublicPeerSelectionState (..)
+  , emptyPublicPeerSelectionState
+  , toPublicState
   , Guarded (GuardedSkip, Guarded)
   , Decision (..)
   , TimedDecision
@@ -33,6 +36,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , Completion (..)
   , PeerSelectionCounters (..)
   , peerStateToCounters
+    -- * Peer Sharing Auxiliary data type
+  , PeerSharingResult (..)
     -- * Traces
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
@@ -57,6 +62,7 @@ import           System.Random (StdGen)
 import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.EstablishedPeers
                      (EstablishedPeers)
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as Established
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
@@ -68,6 +74,8 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Ouroboros.Network.PeerSelection.Types (PeerSource (..),
                      PeerStatus (PeerHot, PeerWarm))
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+                     PeerSharingResult (..))
 
 
 -- | A peer pick policy is an action that picks a subset of elements from a
@@ -225,10 +233,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- | The action to contact a known peer and request a sample of its
        -- known peers.
        --
-       -- This is synchronous, but it should expect to be interrupted by a
-       -- timeout asynchronous exception. Failures are throw as exceptions.
-       --
-       requestPeerShare        :: peeraddr -> m [peeraddr],
+       requestPeerShare         :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr),
 
        -- | Core actions run by the governor to change 'PeerStatus'.
        --
@@ -331,6 +336,41 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     lastSuccessfulNetworkEvent :: Time
      }
   deriving (Show, Functor)
+
+-- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
+-- mechaninsms without any problem.
+--
+-- This data type should not expose too much information and keep only
+-- essential data needed for computing the peer sharing request result
+--
+data PublicPeerSelectionState peeraddr =
+  PublicPeerSelectionState {
+    availableToShare :: Set peeraddr
+  }
+
+emptyPublicPeerSelectionState :: Ord peeraddr
+                              => PublicPeerSelectionState peeraddr
+emptyPublicPeerSelectionState =
+  PublicPeerSelectionState {
+    availableToShare = mempty
+  }
+
+-- | Convert a 'PeerSelectionState' into a public record accessible by the
+-- Peer Sharing mechanisms so we can know about which peers are available and
+-- possibly other needed context.
+--
+toPublicState :: Ord peeraddr
+              => PeerSelectionState peeraddr peerconn
+              -> PublicPeerSelectionState peeraddr
+toPublicState PeerSelectionState { knownPeers
+                                 , establishedPeers
+                                 } =
+  let availableNow = Established.availableForPeerShare establishedPeers
+      availableNowWithPermission =
+        Set.filter (`KnownPeers.canPeerShareRequest` knownPeers) availableNow
+   in PublicPeerSelectionState {
+        availableToShare = availableNowWithPermission
+      }
 
 data PeerSelectionCounters = PeerSelectionCounters {
       coldPeers  :: Int,
@@ -613,7 +653,7 @@ data TracePeerSelection peeraddr =
      -- | target known peers, actual known peers, peers available for
      -- peer sharing, peers selected for peer sharing
      | TracePeerShareRequests     Int Int (Set peeraddr) (Set peeraddr)
-     | TracePeerShareResults         [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
+     | TracePeerShareResults         [(peeraddr, Either SomeException (PeerSharingResult peeraddr))] --TODO: classify failures
      | TracePeerShareResultsFiltered [peeraddr]
      -- | target known peers, actual known peers, selected peer
      | TraceForgetColdPeers    Int Int (Set peeraddr)

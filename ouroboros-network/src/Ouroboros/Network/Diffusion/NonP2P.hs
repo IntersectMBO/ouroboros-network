@@ -443,7 +443,12 @@ run Tracers
             networkState
             daAcceptedConnectionsLimit
             sd
-            (mkResponderApp <$> daApplicationInitiatorResponderMode applications)
+            -- NonP2P does not use Peer Sharing so the callback is set to return
+            -- [].
+            (mkResponderApp
+              <$> daApplicationInitiatorResponderMode
+                    applications
+                    (\_ -> pure []))
             remoteErrorPolicy
         )
     runIpSubscriptionWorker :: SocketSnocket

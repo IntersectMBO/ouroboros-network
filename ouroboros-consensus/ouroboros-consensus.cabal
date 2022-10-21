@@ -335,8 +335,7 @@ library
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0
   else
-     build-depends:    unix
-                     , unix-bytestring
+     build-depends:
 
   ghc-options:         -Wall
                        -Wcompat

@@ -82,6 +82,15 @@ import           Ouroboros.Consensus.Node.RethrowPolicy
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
+import           Ouroboros.Consensus.Util.Args
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
+
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
@@ -90,11 +99,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
                      defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
-import           Ouroboros.Consensus.Util.Args
-import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import qualified Ouroboros.Network.Diffusion as Diffusion
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
@@ -120,6 +125,8 @@ import           System.FS.API.Types
 import           System.FS.IO (ioHasFS)
 import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing.Type (decodeRemoteAddress, encodeRemoteAddress)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 {-------------------------------------------------------------------------------
   The arguments to the Consensus Layer node functionality
@@ -267,7 +274,7 @@ run :: forall blk p2p.
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
-run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
+run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args encodeRemoteAddress decodeRemoteAddress
 
 -- | Start a node.
 --
@@ -277,13 +284,15 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 -- This function runs forever unless an exception is thrown.
 runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      ( RunNode blk
-     , IOLike m, MonadTime m, MonadTimer m
+     , IOLike m, MonadTime m, MonadTimer m, MonadMVar m
      , Hashable addrNTN, Ord addrNTN, Show addrNTN, Typeable addrNTN
      )
   => RunNodeArgs m addrNTN addrNTC blk p2p
+  -> (addrNTN -> CBOR.Encoding)
+  -> (forall s . CBOR.Decoder s addrNTN)
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
   -> m ()
-runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
+runWith RunNodeArgs{..} encAddrNtN decAddrNtN LowLevelRunNodeArgs{..} =
 
     llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) continueWithCleanChainDB ->
     withRegistry $ \registry ->
@@ -363,7 +372,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           rnNodeKernelHook registry nodeKernel
 
           peerMetrics <- newPeerMetric Diffusion.peerMetricsConfiguration
-          let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
+          let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics encAddrNtN decAddrNtN
               ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
               (apps, appsExtra) = mkDiffusionApplications
                                         rnEnableP2P
@@ -388,24 +397,29 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
       -> NodeKernel     m addrNTN (ConnectionId addrNTC) blk
       -> PeerMetrics m addrNTN
+      -> (addrNTN -> CBOR.Encoding)
+      -> (forall s . CBOR.Decoder s addrNTN)
       -> BlockNodeToNodeVersion blk
+      -> (PeerSharingAmount -> m [addrNTN])
+      -- ^ Peer Sharing result computation callback
       -> NTN.Apps m
           addrNTN
           ByteString
           ByteString
           ByteString
           ByteString
+          ByteString
           NodeToNodeInitiatorResult
           ()
-    mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics version =
+    mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics encAddrNTN decAddrNTN version computePeers =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
-          (NTN.defaultCodecs codecConfig version)
+          (NTN.defaultCodecs codecConfig version encAddrNTN decAddrNTN)
           NTN.byteLimits
           llrnChainSyncTimeout
           (reportMetric Diffusion.peerMetricsConfiguration peerMetrics)
-          (NTN.mkHandlers nodeKernelArgs nodeKernel)
+          (NTN.mkHandlers nodeKernelArgs nodeKernel computePeers)
 
     mkNodeToClientApps
       :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
@@ -424,9 +438,12 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       :: NetworkP2PMode p2p
       -> MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
+          -- Peer Sharing result computation callback
+          -> (PeerSharingAmount -> m [addrNTN])
           -> NTN.Apps
                m
                addrNTN
+               ByteString
                ByteString
                ByteString
                ByteString
@@ -463,7 +480,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 P2P.daReturnPolicy           = returnPolicy,
                 P2P.daLocalRethrowPolicy     = localRethrowPolicy,
                 P2P.daPeerMetrics            = peerMetrics,
-                P2P.daBlockFetchMode         = getFetchMode kernel
+                P2P.daBlockFetchMode         = getFetchMode kernel,
+                P2P.daPeerSharingRegistry    = getPeerSharingRegistry kernel
               }
           )
         DisabledP2PMode ->
@@ -480,17 +498,20 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 [ simpleSingletonVersions
                     version
                     llrnVersionDataNTN
-                    (NTN.initiator miniProtocolParams version
-                      $ ntnApps blockVersion)
+                    (NTN.initiator miniProtocolParams version rnPeerSharing
+                      -- Initiator side won't start responder side of Peer
+                      -- Sharing protocol so we give a dummy implementation
+                      -- here.
+                      $ ntnApps blockVersion (error "impossible happened!"))
                 | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
                 ],
-            Diffusion.daApplicationInitiatorResponderMode =
+            Diffusion.daApplicationInitiatorResponderMode = \computePeers ->
               combineVersions
                 [ simpleSingletonVersions
                     version
                     llrnVersionDataNTN
-                    (NTN.initiatorAndResponder miniProtocolParams version
-                      $ ntnApps blockVersion)
+                    (NTN.initiatorAndResponder miniProtocolParams version rnPeerSharing
+                      $ ntnApps blockVersion computePeers)
                 | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
                 ],
             Diffusion.daLocalResponderApplication =

@@ -39,6 +39,7 @@ import           Data.Void (Void)
 import           System.Random (mkStdGen)
 
 import           Control.Concurrent.Class.MonadSTM
+import qualified Control.Concurrent.Class.MonadSTM.Strict as StrictTVar
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -76,6 +77,8 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type
                      (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+                     PeerSharingResult (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, localOption, testGroup)
 import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
@@ -186,6 +189,7 @@ runGovernorInMockEnvironment mockEnv =
 
 governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv = do
+    publicStateVar <- StrictTVar.newTVarIO emptyPublicPeerSelectionState
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv policy
     exploreRaces      -- explore races within the governor
@@ -195,6 +199,7 @@ governorAction mockEnv = do
         tracerDebugPeerSelection
         tracerTracePeerSelectionCounters
         (mkStdGen 42)
+        publicStateVar
         actions
         policy
       atomically retry
@@ -328,7 +333,8 @@ mockPeerSelectionActions' tracer
       traceWith tracer (TraceEnvRootsResult (Map.keys publicRootPeers))
       return (publicRootPeers, ttl)
 
-    requestPeerShare addr = do
+    requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
+    requestPeerShare _ addr = do
       let Just (peerShareScript, _) = Map.lookup addr scripts
       mPeerShare <- stepScript peerShareScript
       traceWith tracer (TraceEnvPeerShareRequest addr mPeerShare)
@@ -343,7 +349,7 @@ mockPeerSelectionActions' tracer
         Just (peeraddrs, time) -> do
           threadDelay (interpretPeerShareTime time)
           traceWith tracer (TraceEnvPeerShareResult addr peeraddrs)
-          return peeraddrs
+          return (PeerSharingResult peeraddrs)
 
     establishPeerConnection :: PeerAddr -> m (PeerConn m)
     establishPeerConnection peeraddr = do

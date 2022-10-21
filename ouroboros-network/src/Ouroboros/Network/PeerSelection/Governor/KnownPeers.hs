@@ -29,6 +29,7 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type
                      (PeerSharing (..))
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
 ---------------------------
@@ -74,11 +75,24 @@ belowTarget actions
     -- (i.e. have correct PeerSharing permissions)?
   , not (Set.null canAsk)
   = Guarded Nothing $ do
+      -- Max selected should be <= numPeerShareReqsPossible
       selectedForPeerShare <- pickPeers st
                              policyPickKnownPeersForPeerShare
                              canAsk
                              numPeerShareReqsPossible
-      let numPeerShareReqs = Set.size selectedForPeerShare
+
+      let -- Should be <= numPeerShareReqsPossible
+          numPeerShareReqs = Set.size selectedForPeerShare
+          objective        = targetNumberOfKnownPeers - numKnownPeers
+          -- Split current peer target objective across all peer sharing
+          -- candidates. If the objective is smaller than the number of
+          -- peer share requests available, ask for at 1 peer to each.
+          --
+          -- This is to increase diversity.
+          numPeersToReq      = min 255 (max 1 (objective `div` numPeerShareReqs))
+          selForPSWithAmount = Set.toList
+                             $ Set.map (\a -> (fromIntegral numPeersToReq, a))
+                                       selectedForPeerShare
       return $ \now -> Decision {
         decisionTrace = [TracePeerShareRequests
                           targetNumberOfKnownPeers
@@ -93,8 +107,8 @@ belowTarget actions
                                               (addTime policyPeerShareRetryTime now)
                                               establishedPeers
                         },
-        decisionJobs  = [jobPeerShare actions policy
-                           (Set.toList selectedForPeerShare)]
+        decisionJobs  =
+          [jobPeerShare actions policy selForPSWithAmount]
       }
 
     -- If we could peer share except that there are none currently available
@@ -120,11 +134,11 @@ jobPeerShare :: forall m peeraddr peerconn.
              (MonadAsync m, MonadTimer m, Ord peeraddr)
              => PeerSelectionActions peeraddr peerconn m
              -> PeerSelectionPolicy peeraddr m
-             -> [peeraddr]
+             -> [(PeerSharingAmount, peeraddr)]
              -> Job () m (Completion m peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy{..} =
-    \peers -> Job (jobPhase1 peers) (handler peers) () "peerSharePhase1"
+    \peers -> Job (jobPhase1 peers) (handler (map snd peers)) () "peerSharePhase1"
   where
     handler :: [peeraddr] -> SomeException -> m (Completion m peeraddr peerconn)
     handler peers e = return $
@@ -137,14 +151,15 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                , decisionJobs  = []
                }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
+    jobPhase1 :: [(PeerSharingAmount, peeraddr)] -> m (Completion m peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
       -- add them to the known peers set in one go.
       --
       -- So fire them all off in one go:
-      peerShares <- sequence [ async (requestPeerShare peer) | peer <- peers ]
+      peerShares <- sequence [ async (requestPeerShare amount peer)
+                             | (amount, peer) <- peers ]
 
       -- First to finish synchronisation between /all/ the peer share requests
       -- completing or the timeout (with whatever partial results we have at
@@ -153,7 +168,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       case results of
         Right totalResults ->
           return $ Completion $ \st _ ->
-           let peerResults = zip peers totalResults
+           let peerResults = zip (map snd peers) totalResults
                -- Filter known-to-be ledger peers before adding them to known
                -- peers. We to improve efficacy of Peer Sharing, because ledger
                -- peers are going to be hub nodes in the network (i.e. nodes
@@ -161,7 +176,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                -- which means other smaller valency nodes won't be shared that
                -- much. So any chance we can have of filtering them from peer
                -- sharing results is welcome.
-               newPeers    = [ p | Right ps <- totalResults
+               newPeers    = [ p | Right (PeerSharingResult ps) <- totalResults
                                  , p <- ps
                                  , not (isKnownLedgerPeer p (knownPeers st)) ]
             in Decision { decisionTrace = [ TracePeerShareResults peerResults
@@ -191,23 +206,23 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
           -- We have to keep track of the relationship between the peer
           -- addresses and the peer share requests, completed and still in progress:
           let peerResults      = [ (p, r)
-                                 | (p, Just r)  <- zip peers   partialResults ]
+                                 | ((_, p), Just r)  <- zip peers partialResults ]
               peersRemaining   = [  p
-                                 | (p, Nothing) <- zip peers   partialResults ]
+                                 | ((_, p), Nothing) <- zip peers partialResults ]
               peerSharesRemaining = [  a
                                     | (a, Nothing) <- zip peerShares partialResults ]
 
           return $ Completion $ \st _ ->
-               -- Filter known-to-be ledger peers before adding them to known
-               -- peers. We to improve efficacy of Peer Sharing, because ledger
-               -- peers are going to be hub nodes in the network (i.e. nodes
-               -- with higher valency) they are going to be shared quite often,
-               -- which means other smaller valency nodes won't be shared that
-               -- much. So any chance we can have of filtering them from peer
-               -- sharing results is welcome.
-            let newPeers = [  p | Just (Right ps) <- partialResults
-                                , p <- ps
-                                , not (isKnownLedgerPeer p (knownPeers st)) ]
+                -- Filter known-to-be ledger peers before adding them to known
+                -- peers. We to improve efficacy of Peer Sharing, because ledger
+                -- peers are going to be hub nodes in the network (i.e. nodes
+                -- with higher valency) they are going to be shared quite often,
+                -- which means other smaller valency nodes won't be shared that
+                -- much. So any chance we can have of filtering them from peer
+                -- sharing results is welcome.
+            let newPeers = [ p | Just (Right (PeerSharingResult ps)) <- partialResults
+                               , p <- ps
+                               , not (isKnownLedgerPeer p (knownPeers st)) ]
              in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                            , TracePeerShareResultsFiltered newPeers
                                            ]
@@ -231,7 +246,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                                 "peerSharePhase2"]
                          }
 
-    jobPhase2 :: [peeraddr] -> [Async m [peeraddr]]
+    jobPhase2 :: [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
               -> m (Completion m peeraddr peerconn)
     jobPhase2 peers peerShares = do
 
@@ -265,12 +280,12 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
             -- sharing results is welcome.
         let newPeers =
               case results of
-                Right totalResults  -> [ p | Right ps <- totalResults
-                                          , p <- ps
-                                          , not (isKnownLedgerPeer p (knownPeers st)) ]
-                Left partialResults -> [ p | Just (Right ps) <- partialResults
-                                          , p <- ps
-                                          , not (isKnownLedgerPeer p (knownPeers st)) ]
+                Right totalResults  -> [ p | Right (PeerSharingResult ps) <- totalResults
+                                           , p <- ps
+                                           , not (isKnownLedgerPeer p (knownPeers st)) ]
+                Left partialResults -> [ p | Just (Right (PeerSharingResult ps)) <- partialResults
+                                           , p <- ps
+                                           , not (isKnownLedgerPeer p (knownPeers st)) ]
 
          in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                        , TracePeerShareResultsFiltered newPeers
