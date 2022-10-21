@@ -3,11 +3,14 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 module Ouroboros.Consensus.NodeId (
     -- * Node IDs
     CoreNodeId (..)
   , NodeId (..)
+  , decodeNodeId
+  , encodeNodeId
   , fromCoreNodeId
   ) where
 
@@ -19,6 +22,9 @@ import           NoThunks.Class (NoThunks)
 import           Quiet
 
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 {-------------------------------------------------------------------------------
   Node IDs
@@ -45,6 +51,26 @@ newtype CoreNodeId = CoreNodeId {
   deriving Show via Quiet CoreNodeId
 
 instance Hashable CoreNodeId
+
+instance ShowProxy NodeId where
+  showProxy _ = "NodeId"
+
+encodeNodeId :: NodeId -> CBOR.Encoding
+encodeNodeId (CoreId (CoreNodeId wo)) = CBOR.encodeListLen 2
+                                     <> CBOR.encodeWord 0
+                                     <> CBOR.encodeWord64 wo
+encodeNodeId (RelayId wo) = CBOR.encodeListLen 2
+                         <> CBOR.encodeWord 1
+                         <> CBOR.encodeWord64 wo
+
+decodeNodeId :: CBOR.Decoder s NodeId
+decodeNodeId = do
+  _ <- CBOR.decodeListLen
+  tok <- CBOR.decodeWord
+  case tok of
+    0 -> (CoreId . CoreNodeId) <$> CBOR.decodeWord64
+    1 -> RelayId <$> CBOR.decodeWord64
+    _ -> fail ("decodeNodeId: unknown tok:" ++ show tok)
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId = CoreId

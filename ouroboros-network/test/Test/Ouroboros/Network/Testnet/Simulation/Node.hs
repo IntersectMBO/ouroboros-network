@@ -108,6 +108,9 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import Ouroboros.Network.Block (BlockNo(..))
+import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Ouroboros.Network.Protocol.PeerSharing.Codec
+                     (byteLimitsPeerSharing, timeLimitsPeerSharing)
 
 -- | Diffusion Simulator Arguments
 --
@@ -597,6 +600,7 @@ diffusionSimulation
                , MonadTime        m
                , MonadTimer       m
                , MonadThrow  (STM m)
+               , MonadMVar        m
                , Eq (Async m Void)
                , forall a. Semigroup a => Semigroup (m a)
                )
@@ -807,10 +811,16 @@ diffusionSimulation
                 , NodeKernel.pingPongTimeLimits   = timeLimitsPingPong
                 , NodeKernel.handshakeLimits      = defaultMiniProtocolsLimit
                 , NodeKernel.handshakeTimeLimits  =
+                    ProtocolTimeLimits (const shortWait)
+                , NodeKernel.handhsakeSizeLimits  =
                     ProtocolSizeLimits (const (4 * 1440))
                                        (fromIntegral . BL.length)
-                , NodeKernel.handhsakeSizeLimits  =
-                    ProtocolTimeLimits (const shortWait)
+                , NodeKernel.peerSharingLimits     = defaultMiniProtocolsLimit
+                , NodeKernel.peerSharingTimeLimits =
+                    timeLimitsPeerSharing
+                , NodeKernel.peerSharingSizeLimits =
+                    byteLimitsPeerSharing (const 0)
+
                 }
 
           interfaces :: NodeKernel.Interfaces m

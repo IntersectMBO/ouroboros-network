@@ -9,6 +9,7 @@ import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
+import qualified Ouroboros.Network.Protocol.PeerSharing.Test (tests)
 import qualified Ouroboros.Network.Protocol.TxSubmission2.Test (tests)
 import qualified Test.AnchoredFragment (tests)
 import qualified Test.Chain (tests)
@@ -35,4 +36,5 @@ tests =
   , Ouroboros.Network.Protocol.TxSubmission2.Test.tests
   , Ouroboros.Network.Protocol.Handshake.Test.tests
   , Ouroboros.Network.Protocol.KeepAlive.Test.tests
+  , Ouroboros.Network.Protocol.PeerSharing.Test.tests
   ]

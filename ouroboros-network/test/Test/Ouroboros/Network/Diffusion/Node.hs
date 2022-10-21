@@ -98,10 +98,13 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing.Type
                      (PeerSharing (..))
+import           Ouroboros.Network.PeerSharing
+                     (PeerSharingRegistry (PeerSharingRegistry))
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -167,6 +170,7 @@ run :: forall resolver m.
        , MonadTimer       m
        , MonadThrow       m
        , MonadThrow       (STM m)
+       , MonadMVar        m
 
        , resolver ~ ()
        , forall a. Semigroup a => Semigroup (m a)
@@ -187,6 +191,9 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
+
+        peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
+
         let -- diffusion interfaces
             interfaces :: Diff.P2P.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                               (NtCFD m) NtCAddr NtCVersion NtCVersionData
@@ -249,6 +256,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
               , Diff.P2P.daReturnPolicy           = \_ -> 0
+              , Diff.P2P.daPeerSharingRegistry    = peerSharingRegistry
               }
 
         let apps = Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs

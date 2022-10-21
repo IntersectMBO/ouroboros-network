@@ -3,8 +3,6 @@ module Ouroboros.Network.PeerSelection.Types
   , PeerStatus (..)
   ) where
 
-
-
 -- | Where did this peer come from? Policy functions can choose to treat
 -- peers differently depending on where we found them from.
 --
