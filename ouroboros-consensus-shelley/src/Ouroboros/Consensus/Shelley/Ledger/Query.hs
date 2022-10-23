@@ -16,6 +16,7 @@
 
 module Ouroboros.Consensus.Shelley.Ledger.Query (
     BlockQuery (.., GetUTxO, GetFilteredUTxO)
+  , KESConfig (..)
   , NonMyopicMemberRewards (..)
   , querySupportedVersion
     -- * Serialisation
@@ -34,6 +35,7 @@ import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
+import           Data.Time (UTCTime)
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
 import           Data.UMap (View (..), domRestrictedView)
@@ -84,6 +86,13 @@ type Delegations c =
 instance Crypto c => Serialise (NonMyopicMemberRewards c) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
+
+-- TODO: Move somewhere else
+data KESConfig = KESConfig {
+    kcSlotsPerKESPeriod :: Int
+  , kcMaxKESEvolutions  :: Int
+  , kcSystemStart       :: UTCTime
+  }
 
 data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
   GetLedgerTip :: BlockQuery (ShelleyBlock proto era) (Point (ShelleyBlock proto era))
@@ -148,6 +157,9 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
     :: Set (SL.Credential 'SL.Staking (EraCrypto era))
     -> BlockQuery (ShelleyBlock proto era)
              (Delegations (EraCrypto era), SL.RewardAccounts (EraCrypto era))
+
+  GetKESConfig
+    :: BlockQuery (ShelleyBlock proto era) KESConfig
 
   GetGenesisConfig
     :: BlockQuery (ShelleyBlock proto era) (CompactGenesis era)
