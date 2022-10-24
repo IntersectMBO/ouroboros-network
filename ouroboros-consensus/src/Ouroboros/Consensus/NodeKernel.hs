@@ -56,7 +56,6 @@ import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
 import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
@@ -279,25 +278,45 @@ forkBlockForging IS{..} blockForging =
 
         trace $ TraceLedgerState currentSlot bcPrevPoint
 
-        -- We require the ticked ledger view in order to construct the ticked
-        -- 'ChainDepState'.
-        ledgerView <-
-          case runExcept $ forecastFor
-                           (ledgerViewForecastAt
-                              (configLedger cfg)
-                              (ledgerState unticked))
-                           currentSlot of
-            Left err -> do
-              -- There are so many empty slots between the tip of our chain and
-              -- the current slot that we cannot get an ledger view anymore
-              -- In principle, this is no problem; we can still produce a block
-              -- (we use the ticked ledger state). However, we probably don't
-              -- /want/ to produce a block in this case; we are most likely
-              -- missing a blocks on our chain.
-              trace $ TraceNoLedgerView currentSlot err
-              exitEarly
-            Right lv ->
-              return lv
+        -- Tick the ledger state for the 'SlotNo' we're producing a block for
+        --
+        -- We need to produce a LedgerView for the slot we are currently
+        -- producing a block for. Ticking the previous ledger state (as we are
+        -- doing here) has no range restriction, it can tick arbitrarily far
+        -- into the future. However, when other peers receive our block, they
+        -- will first judge it by the header through the ChainSync protocol, by
+        -- forecasting the ledger state at the intersection to the slot of our
+        -- block, and forecasting (as opposed to ticking) *does have* a limit on
+        -- how far it can forecast for.
+        --
+        -- If we happen to be forging for a slot which is outside of the
+        -- forecast range from the slot of the previous ledger state, our block
+        -- /will/ be rejected by /every/ peer. This shouldn't be a problem
+        -- because if the honest chain keeps growing as expected, the
+        -- intersection with our chain will be more than @k@ deep and therefore
+        -- our candidate will be rejected even before trying to validate the
+        -- header.
+        --
+        -- There is however a subtlety here: the node would be forging a chain
+        -- which violates the Chain Growth property as stated in the Ouroboros
+        -- papers as described here
+        -- <https://github.com/input-output-hk/ouroboros-network/issues/1941#issuecomment-625404054>.
+        --
+        -- In principle, the check for being outside the forecast range could be
+        -- split out from executing the actual @TICKF@ rule application which
+        -- should at least prevent the same cases in which forecasting (instead
+        -- of ticking) would complain.
+        let tickedLedgerState :: Ticked (LedgerState blk)
+            tickedLedgerState =
+              applyChainTick
+                (configLedger cfg)
+                currentSlot
+                (ledgerState unticked)
+
+        _ <- evaluate tickedLedgerState
+        trace $ TraceForgeTickedLedgerState currentSlot bcPrevPoint
+
+        let ledgerView = protocolLedgerView (configLedger cfg) tickedLedgerState
 
         trace $ TraceLedgerView currentSlot
 
@@ -336,17 +355,6 @@ forkBlockForging IS{..} blockForging =
 
         -- At this point we have established that we are indeed slot leader
         trace $ TraceNodeIsLeader currentSlot
-
-        -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: Ticked (LedgerState blk)
-            tickedLedgerState =
-              applyChainTick
-                (configLedger cfg)
-                currentSlot
-                (ledgerState unticked)
-
-        _ <- evaluate tickedLedgerState
-        trace $ TraceForgeTickedLedgerState currentSlot bcPrevPoint
 
         -- Get a snapshot of the mempool that is consistent with the ledger
         --

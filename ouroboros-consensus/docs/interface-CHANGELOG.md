@@ -56,6 +56,14 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-10-25
+
+### Changed
+
+- The ordering of the events emited by the forging logic has changed. In particular:
+  - `TraceForgeTickedLedgerState` happens just before `TraceLedgerView`.
+  - `TraceNoLedgerView` will never be emitted.
+
 ## Circa 2022-09-30
 
 ### Fixed
