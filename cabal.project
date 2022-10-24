@@ -1,5 +1,6 @@
 -- run `nix flake lock --update-input hackageNix` after updating index-state.
-index-state: 2022-02-18T00:00:00Z
+index-state: 2022-10-20T01:00:00Z
+index-state: cardano-haskell-packages 2022-10-20T01:58:16Z
 
 packages:
   kes-agent
@@ -35,8 +36,9 @@ package kes-agent
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 92ff2ececeaa82ef02009abba6ed7242bf7f0de2
+  tag: b97d76a9d3fe0724692f0ced1e96fbff58e398b8
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
+  -- tag: 92ff2ececeaa82ef02009abba6ed7242bf7f0de2
   subdir:
     base-deriving-via
     binary
@@ -52,8 +54,12 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/input-output-hk/cardano-crypto
+
+source-repository-package
+  type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: 595cddc31fd4994217b8075cfa83345704d20784 
+  tag: b6053a23f53acd5c519cc559c3861dda3ebf8b35
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     cardano-prelude
@@ -74,6 +80,37 @@ source-repository-package
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     typed-protocols
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/plutus
+  tag: ecbfc46d3302f438a31c4f2f8f30cd1a87dab271
+  subdir:
+    plutus-tx
+    plutus-ledger-api
+    plutus-core
+    prettyprinter-configurable
+
+source-repository-package
+  type: git
+  -- location: https://github.com/input-output-hk/cardano-ledger
+  location: https://github.com/tdammers/cardano-ledger
+  tag: 7871ccd78e95030483d6d3d21f7042203781dfd0
+  subdir:
+    eras/alonzo/impl
+    eras/babbage/impl
+    eras/byron/crypto
+    eras/byron/ledger/impl
+    eras/conway/impl
+    eras/shelley/impl
+    eras/shelley-ma/impl
+    libs/cardano-data
+    libs/cardano-ledger-core
+    libs/cardano-protocol-tpraos
+    libs/non-integral
+    libs/set-algebra
+    libs/small-steps
+    libs/vector-map
 
 allow-newer:
   base,

@@ -3,46 +3,49 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Cardano.KESAgent.Peers
 where
 
 import Cardano.KESAgent.Protocol
 import Cardano.Crypto.KES.Class
+import Cardano.Protocol.TPraos.OCert (OCert)
+import Cardano.Ledger.Crypto (Crypto (..))
 import Network.TypedProtocol.Core
 
-kesReceiver :: forall (k :: *)
-             . KESAlgorithm k
-            => (SignKeyKES k -> IO ())
-            -> Peer (KESProtocol k) AsClient InitialState IO ()
+kesReceiver :: forall (c :: *)
+             . KESAlgorithm (KES c)
+            => (SignKeyKES (KES c) -> OCert c -> IO ())
+            -> Peer (KESProtocol c) AsClient InitialState IO ()
 kesReceiver receiveKey =
   Effect $ do
     return $
       Await (ServerAgency TokInitial) $ \VersionMessage ->
         Effect $ return go
   where
-    go :: Peer (KESProtocol k) AsClient IdleState IO ()
-    go = Await (ServerAgency TokIdle) $ \(KeyMessage sk) ->
+    go :: Peer (KESProtocol c) AsClient IdleState IO ()
+    go = Await (ServerAgency TokIdle) $ \(KeyMessage sk oc) ->
             Effect $ do
-              receiveKey sk
+              receiveKey sk oc
               return go
 
-kesPusher :: forall (k :: *)
-           . KESAlgorithm k
-          => (IO (SignKeyKES k))
-          -> (IO (Maybe (SignKeyKES k)))
-          -> Peer (KESProtocol k) AsServer InitialState IO ()
+kesPusher :: forall (c :: *)
+           . KESAlgorithm (KES c)
+          => (IO (SignKeyKES (KES c), OCert c))
+          -> (IO (Maybe (SignKeyKES (KES c), OCert c)))
+          -> Peer (KESProtocol c) AsServer InitialState IO ()
 kesPusher currentKey nextKey =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
-      sk <- currentKey
-      return $ Yield (ServerAgency TokIdle) (KeyMessage sk) go
+      (sk, oc) <- currentKey
+      return $ Yield (ServerAgency TokIdle) (KeyMessage sk oc) go
   where
-    go :: Peer (KESProtocol k) AsServer IdleState IO ()
+    go :: Peer (KESProtocol c) AsServer IdleState IO ()
     go = Effect $ do
-      skMay <- nextKey
-      case skMay of
+      skOcMay <- nextKey
+      case skOcMay of
         Nothing -> return $
           Yield (ServerAgency TokIdle) EndMessage $
           Done TokEnd ()
-        Just sk -> return $
-          Yield (ServerAgency TokIdle) (KeyMessage sk) go
+        Just (sk, oc) -> return $
+          Yield (ServerAgency TokIdle) (KeyMessage sk oc) go

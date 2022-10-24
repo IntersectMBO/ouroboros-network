@@ -14,6 +14,9 @@ import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
 
 import Cardano.Crypto.KES.Class
+import Cardano.Ledger.Crypto (Crypto (..))
+import Cardano.Protocol.TPraos.OCert (OCert)
+import Cardano.Binary
 
 import System.Socket (socket, SocketException, close, connect)
 import System.Socket.Type.Stream
@@ -38,17 +41,19 @@ data ControlClientTrace
   deriving (Show)
 
 -- | A simple control client: push one KES key, then exit.
-runControlClient1 :: forall k
-                   . KESSignAlgorithm IO k
-                  => DirectDeserialise (SignKeyKES k)
-                  => DirectSerialise (SignKeyKES k)
-                  => VersionedProtocol (KESProtocol k)
-                  => Proxy k
+runControlClient1 :: forall c
+                   . Crypto c
+                  => KESSignAlgorithm IO (KES c)
+                  => DirectDeserialise (SignKeyKES (KES c))
+                  => DirectSerialise (SignKeyKES (KES c))
+                  => VersionedProtocol (KESProtocol c)
+                  => Proxy c
                   -> ControlClientOptions
-                  -> SignKeyKES k
+                  -> SignKeyKES (KES c)
+                  -> OCert c
                   -> Tracer IO ControlClientTrace
                   -> IO ()
-runControlClient1 proxy options key tracer = do
+runControlClient1 proxy options key oc tracer = do
   void $ bracket
     (socket @Unix @Stream @Default)
     (\s -> do
@@ -60,6 +65,6 @@ runControlClient1 proxy options key tracer = do
       traceWith tracer $ ControlClientConnected (controlClientSocketAddress options)
       void $ runPeerWithDriver
         (driver s $ ControlClientDriverTrace >$< tracer)
-        (kesPusher (traceWith tracer ControlClientSendingKey >> return key) (return Nothing))
+        (kesPusher (traceWith tracer ControlClientSendingKey >> return (key, oc)) (return Nothing))
         ()
     )

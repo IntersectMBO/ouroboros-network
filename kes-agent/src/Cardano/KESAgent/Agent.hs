@@ -17,6 +17,9 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
+import Cardano.Ledger.Crypto (Crypto (..))
+import Cardano.Protocol.TPraos.OCert (OCert)
+import Cardano.Binary
 
 import Cardano.Crypto.KES.Class
 
@@ -60,12 +63,13 @@ data AgentOptions =
     , agentServiceSocketAddress :: SocketAddress Unix
     }
 
-runAgent :: forall k
-          . KESSignAlgorithm IO k
-         => VersionedProtocol (KESProtocol k)
-         => DirectSerialise (SignKeyKES k)
-         => DirectDeserialise (SignKeyKES k)
-         => Proxy k
+runAgent :: forall c
+          . Crypto c
+         => KESSignAlgorithm IO (KES c)
+         => VersionedProtocol (KESProtocol c)
+         => DirectSerialise (SignKeyKES (KES c))
+         => DirectDeserialise (SignKeyKES (KES c))
+         => Proxy c
          -> AgentOptions
          -> Tracer IO AgentTrace
          -> IO ()
@@ -73,10 +77,11 @@ runAgent proxy options tracer = do
   currentKeyVar <- newEmptyMVar
   nextKeyChan <- newChan
 
-  let pushKey key = do
+  let pushKey :: SignKeyKES (KES c) -> OCert c -> IO ()
+      pushKey key oc = do
         -- Empty the var in case there's anything there already
-        oldKeyMay <- tryTakeMVar currentKeyVar
-        case oldKeyMay of
+        oldKeyOcMay <- tryTakeMVar currentKeyVar
+        case oldKeyOcMay of
           Just _ -> traceWith tracer AgentReplacingPreviousKey
           Nothing -> traceWith tracer AgentInstallingNewKey
         -- The MVar is now empty; we write to the next key signal channel
@@ -86,9 +91,9 @@ runAgent proxy options tracer = do
         -- consumers will block until we put the key back in.
         writeChan nextKeyChan ()
         -- Consumers have been notified, put the key to un-block them.
-        putMVar currentKeyVar key
-        case oldKeyMay of
-          Just key -> forgetSignKeyKES @IO @k key
+        putMVar currentKeyVar (key, oc)
+        case oldKeyOcMay of
+          Just (key, _) -> forgetSignKeyKES @IO @(KES c) key
           Nothing -> return ()
 
       currentKey =

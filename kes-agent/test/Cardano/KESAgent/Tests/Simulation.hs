@@ -12,6 +12,7 @@ module Cardano.KESAgent.Tests.Simulation
 where
 
 import Cardano.Crypto.DirectSerialise
+import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DSIGN.Ed25519ML
 import Cardano.Crypto.DSIGNM.Class
@@ -21,7 +22,12 @@ import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
 import Cardano.Crypto.PinnedSizedBytes
+import Cardano.Crypto.Seed
 import Cardano.Crypto.SafePinned
+import Cardano.Protocol.TPraos.OCert (OCert (..), KESPeriod (..), OCertSignable (..))
+import Cardano.Ledger.Crypto (Crypto (..), StandardCrypto)
+import Cardano.Binary (FromCBOR)
+
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
@@ -50,76 +56,95 @@ import Cardano.KESAgent.Tests.Util
 tests :: Lock -> TestTree
 tests lock =
   testGroup "Simulation"
-  [ testProperty "One key through chain" (testOneKeyThroughChain @(Sum6KES Ed25519DSIGNM Blake2b_256) Proxy lock)
+  [ testProperty "One key through chain" (testOneKeyThroughChain @StandardCrypto Proxy lock)
   ]
 
-testOneKeyThroughChain :: forall k
-                        . KESSignAlgorithm IO k
-                       => DirectSerialise (SignKeyKES k)
-                       => DirectDeserialise (SignKeyKES k)
-                       => VersionedProtocol (KESProtocol k)
-                       => Show (SignKeyKES k)
-                       => Proxy k
+testOneKeyThroughChain :: forall c
+                        . Crypto c
+                       => VersionedProtocol (KESProtocol c)
+                       => KESSignAlgorithm IO (KES c)
+                       => DirectSerialise (SignKeyKES (KES c))
+                       => DirectDeserialise (SignKeyKES (KES c))
+                       => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                       => Show (SignKeyKES (KES c))
+                       => Proxy c
                        -> Lock
-                       -> PinnedSizedBytes (SeedSizeKES k)
+                       -> PinnedSizedBytes (SeedSizeKES (KES c))
+                       -> Word64
+                       -> Word
                        -> Word
                        -> Word
                        -> Property
-testOneKeyThroughChain p lock seedPSB nodeDelay controlDelay =
+testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay =
   ioProperty . withLock lock . withMLSBFromPSB seedPSB $ \seed -> do
+    let seedP = mkSeedFromBytes . psbToByteString $ seedPSB
     hSetBuffering stdout LineBuffering
-    expected <- genKeyKES @IO @k seed
-    resultVar <- newEmptyMVar :: IO (MVar (SignKeyKES k))
+    expectedSK <- genKeyKES @IO @(KES c) seed
+    vkHot <- deriveVerKeyKES expectedSK
+    let skCold = genKeyDSIGN @(DSIGN c) seedP
+        kesPeriod = KESPeriod kesPeriodRaw
+        signable = OCertSignable vkHot certN kesPeriod
+        sig = signedDSIGN () signable skCold
+        expectedOC = OCert vkHot certN kesPeriod sig
+    resultVar <- newEmptyMVar :: IO (MVar (SignKeyKES (KES c), OCert c))
+    let tracer :: forall a. Show a => Tracer IO a
+        -- Change tracer to Tracer print for debugging
+        -- tracer = Tracer print
+        tracer = nullTracer
 
-    Right (Right result) <- race
-      -- abort 1 second after both clients have started
-      (threadDelay $ 1000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
-      (race
-        -- run these to "completion"
-        (agent `concurrently_`
-          node resultVar `concurrently_`
-          controlServer expected)
-        -- ...until this one finished
-        (watch resultVar expected)
-      )
+    output <- race
+          -- abort 1 second after both clients have started
+          (threadDelay $ 1000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
+          (race
+            -- run these to "completion"
+            (agent tracer `concurrently_`
+              node tracer resultVar `concurrently_`
+              controlServer tracer (expectedSK, expectedOC))
+            -- ...until this one finished
+            (watch resultVar)
+          )
 
-    -- Serialize keys so that we can forget them immediately, and only close over
-    -- their (non-mlocked) serializations when returning the property.
-    -- Serializing KES sign keys like this is normally unsafe, as it violates
-    -- mlocking guarantees, but for testing purposes, this is fine.
-    expectedBS <- rawSerialiseSignKeyKES expected
-    resultBS <- rawSerialiseSignKeyKES result
-    forgetSignKeyKES expected
-    forgetSignKeyKES result
-    return (expectedBS === resultBS)
+    case output of
+        Left err -> error (show err)
+        Right (Left err) -> error (show err)
+        Right (Right (resultSK, resultOC)) -> do
+          -- Serialize keys so that we can forget them immediately, and only close over
+          -- their (non-mlocked) serializations when returning the property.
+          -- Serializing KES sign keys like this is normally unsafe, as it violates
+          -- mlocking guarantees, but for testing purposes, this is fine.
+          expectedSKBS <- rawSerialiseSignKeyKES expectedSK
+          resultSKBS <- rawSerialiseSignKeyKES resultSK
+          forgetSignKeyKES expectedSK
+          forgetSignKeyKES resultSK
+          return (expectedSKBS === resultSKBS)
 
   where
     Just serviceSocketAddr = socketAddressUnixAbstract "KESAgent/service"
     Just controlSocketAddr = socketAddressUnixAbstract "KESAgent/control"
-    agent = runAgent p
+    agent tracer = runAgent p
               AgentOptions { agentServiceSocketAddress = serviceSocketAddr
                            , agentControlSocketAddress = controlSocketAddr
                            }
-              nullTracer
-    node mvar = do
+              tracer
+    node tracer mvar = do
       threadDelay (500 + fromIntegral nodeDelay)
       (runServiceClient p
         ServiceClientOptions { serviceClientSocketAddress = serviceSocketAddr }
-        (\sk -> do
-          putMVar mvar sk
+        (\sk oc -> do
+          putMVar mvar (sk, oc)
         ))
-        nullTracer
+        tracer
         `catch` (\(e :: AsyncCancelled) -> return ())
         `catch` (\(e :: SomeException) -> putStrLn $ "NODE: " ++ show e)
-    controlServer sk = do
+    controlServer tracer (sk, oc) = do
       threadDelay (500 + fromIntegral controlDelay)
       (runControlClient1 p
         ControlClientOptions { controlClientSocketAddress = controlSocketAddr }
-        sk)
-        nullTracer
+        sk oc)
+        tracer
         `catch` (\(e :: AsyncCancelled) -> return ())
         `catch` (\(e :: SomeException) -> putStrLn $ "CONTROL: " ++ show e)
-    watch mvar expected = do
+    watch mvar = do
       takeMVar mvar
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing

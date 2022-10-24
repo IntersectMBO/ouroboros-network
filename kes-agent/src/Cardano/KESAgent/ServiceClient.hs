@@ -13,6 +13,9 @@ import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
 
 import Cardano.Crypto.KES.Class
+import Cardano.Ledger.Crypto (Crypto (..))
+import Cardano.Protocol.TPraos.OCert (OCert)
+import Cardano.Binary
 
 import System.Socket (socket, SocketException, close, connect)
 import System.Socket.Type.Stream
@@ -36,14 +39,15 @@ data ServiceClientTrace
   | ServiceClientReceivedKey
   deriving (Show)
 
-runServiceClient :: forall k
-                  . KESSignAlgorithm IO k
-                 => DirectDeserialise (SignKeyKES k)
-                 => DirectSerialise (SignKeyKES k)
-                 => VersionedProtocol (KESProtocol k)
-                 => Proxy k
+runServiceClient :: forall c
+                  . Crypto c
+                 => KESSignAlgorithm IO (KES c)
+                 => DirectDeserialise (SignKeyKES (KES c))
+                 => DirectSerialise (SignKeyKES (KES c))
+                 => VersionedProtocol (KESProtocol c)
+                 => Proxy c
                  -> ServiceClientOptions
-                 -> (SignKeyKES k -> IO ())
+                 -> (SignKeyKES (KES c) -> OCert c -> IO ())
                  -> Tracer IO ServiceClientTrace
                  -> IO ()
 runServiceClient proxy options handleKey tracer = do
@@ -58,6 +62,6 @@ runServiceClient proxy options handleKey tracer = do
       traceWith tracer $ ServiceClientConnected (serviceClientSocketAddress options)
       void $ runPeerWithDriver
         (driver s $ ServiceClientDriverTrace >$< tracer)
-        (kesReceiver $ \k -> handleKey k <* traceWith tracer ServiceClientReceivedKey)
+        (kesReceiver $ \k o -> handleKey k o <* traceWith tracer ServiceClientReceivedKey)
         ()
     )

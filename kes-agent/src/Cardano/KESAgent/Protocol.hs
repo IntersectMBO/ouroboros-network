@@ -15,6 +15,8 @@ import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.DSIGN.Ed25519ML
 import Cardano.Crypto.Hash.Blake2b
 import Cardano.Binary
+import Cardano.Protocol.TPraos.OCert (OCert)
+import Cardano.Ledger.Crypto (Crypto (..), StandardCrypto)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Proxy (Proxy (..))
@@ -38,9 +40,9 @@ mkVersionIdentifier :: ByteString -> VersionIdentifier
 mkVersionIdentifier raw =
   VersionIdentifier $ BS.take versionIdentifierLength $ raw <> BS.replicate versionIdentifierLength 0
 
-instance VersionedProtocol (KESProtocol (Sum6KES Ed25519DSIGNM Blake2b_256)) where
+instance VersionedProtocol (KESProtocol StandardCrypto) where
   versionIdentifier _ =
-    mkVersionIdentifier "Sum6/Ed25519/B2b256:1.0"
+    mkVersionIdentifier "StandardCrypto:0.1"
 
 -- | The protocol for pushing KES keys.
 --
@@ -61,12 +63,13 @@ instance VersionedProtocol (KESProtocol (Sum6KES Ed25519DSIGNM Blake2b_256)) whe
 -- - The Agent stores the key locally in memory and pushes it to any connected
 --   Nodes.
 --
-instance Protocol (KESProtocol k) where
-  data Message (KESProtocol k) st st' where
-          VersionMessage :: Message (KESProtocol k) InitialState IdleState
-          KeyMessage :: SignKeyKES k
-                  -> Message (KESProtocol k) IdleState IdleState
-          EndMessage :: Message (KESProtocol k) IdleState EndState
+instance Protocol (KESProtocol c) where
+  data Message (KESProtocol c) st st' where
+          VersionMessage :: Message (KESProtocol c) InitialState IdleState
+          KeyMessage :: SignKeyKES (KES c)
+                     -> OCert c
+                     -> Message (KESProtocol c) IdleState IdleState
+          EndMessage :: Message (KESProtocol c) IdleState EndState
 
   -- | Server always has agency
   data ServerHasAgency st where
