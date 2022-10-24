@@ -20,7 +20,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Config ()
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (ShelleyProtocolHeader, pHeaderIssueNo, pHeaderIssuer,
-                     pHeaderVRFValue, protocolHeaderView)
+                     pTieBreakVRFValue, protocolHeaderView)
 
 {-------------------------------------------------------------------------------
   Support for Transitional Praos consensus algorithm
@@ -36,7 +36,7 @@ instance ShelleyCompatible proto era => BlockSupportsProtocol (ShelleyBlock prot
       , csvSlotNo      = blockSlot hdr
       , csvIssuer      = hdrIssuer
       , csvIssueNo     = pHeaderIssueNo shdr
-      , csvLeaderVRF   = pHeaderVRFValue shdr
+      , csvTieBreakVRF = pTieBreakVRFValue shdr
       }
     where
       hdrIssuer ::  SL.VKey 'SL.BlockIssuer (EraCrypto era)
