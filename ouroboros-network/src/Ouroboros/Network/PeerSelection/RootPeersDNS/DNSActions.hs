@@ -175,6 +175,8 @@ getResolver resolvConf = do
 -- The IPv4 and IPv6 addresses the node will be using should determine the
 -- LookupReqs so that we can avoid lookups for address types that wont be used.
 --
+-- It guarantees that returned TTLs are strictly greater than 0.
+--
 ioDNSActions :: LookupReqs
              -> DNSActions DNS.Resolver IOException IO
 ioDNSActions =
@@ -315,7 +317,7 @@ ioDNSActions =
           --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
       where
         selectA DNS.DNSMessage { DNS.answer } =
-          [ (IPv4 addr, ttl)
+          [ (IPv4 addr, fixupTTL ttl)
           | DNS.ResourceRecord {
               DNS.rdata = DNS.RD_A addr,
               DNS.rrttl = ttl
@@ -338,7 +340,7 @@ ioDNSActions =
           --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
       where
         selectAAAA DNS.DNSMessage { DNS.answer } =
-          [ (IPv6 addr, ttl)
+          [ (IPv6 addr, fixupTTL ttl)
           | DNS.ResourceRecord {
               DNS.rdata = DNS.RD_AAAA addr,
               DNS.rrttl = ttl
@@ -371,3 +373,13 @@ ioDNSActions =
              (Right r6, Left  e4) -> return ([e4], r6)
              (Left  e6, Right r4) -> return ([e6], r4)
              (Right r6, Right r4) -> return ([], r6 <> r4)
+
+
+--
+-- Utils
+--
+
+
+fixupTTL :: DNS.TTL -> DNS.TTL
+fixupTTL 0 = maxBound
+fixupTTL a = a `max` 30
