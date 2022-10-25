@@ -138,7 +138,13 @@ instance PraosCrypto c => ProtocolHeaderSupportsProtocol (Praos c) where
       }
   pHeaderIssuer = hbVk . headerBody
   pHeaderIssueNo = SL.ocertN . hbOCert . headerBody
-  pHeaderVRFValue = certifiedOutput . hbVrfRes . headerBody
+
+  -- This is the "unified" VRF value, prior to range extension which yields e.g.
+  -- the leader VRF value used for slot election.
+  --
+  -- In the future, we might want to use a dedicated range-extended VRF value
+  -- here instead.
+  pTieBreakVRFValue = certifiedOutput . hbVrfRes . headerBody
 
 instance PraosCrypto c => ProtocolHeaderSupportsLedger (Praos c) where
   mkHeaderView hdr@Header {headerBody} =

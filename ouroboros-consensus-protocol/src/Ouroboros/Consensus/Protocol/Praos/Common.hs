@@ -49,13 +49,14 @@ newtype MaxMajorProtVer = MaxMajorProtVer
 -- 1. By chain length, with longer chains always preferred.
 -- 2. If the tip of each chain was issued by the same agent, then we prefer
 --    the chain whose tip has the highest ocert issue number.
--- 3. By the leader value of the chain tip, with lower values preferred.
+-- 3. By a VRF value from the chain tip, with lower values preferred. See
+--    @pTieBreakVRFValue@ for which one is used.
 data PraosChainSelectView c = PraosChainSelectView
   { csvChainLength :: BlockNo,
     csvSlotNo      :: SlotNo,
     csvIssuer      :: SL.VKey 'SL.BlockIssuer c,
     csvIssueNo     :: Word64,
-    csvLeaderVRF   :: VRF.OutputVRF (VRF c)
+    csvTieBreakVRF :: VRF.OutputVRF (VRF c)
   }
   deriving (Show, Eq, Generic, NoThunks)
 
@@ -64,7 +65,7 @@ instance Crypto c => Ord (PraosChainSelectView c) where
     mconcat
       [ compare `on` csvChainLength,
         whenSame csvIssuer (compare `on` csvIssueNo),
-        compare `on` Down . csvLeaderVRF
+        compare `on` Down . csvTieBreakVRF
       ]
     where
       -- When the @a@s are equal, use the given comparison function,

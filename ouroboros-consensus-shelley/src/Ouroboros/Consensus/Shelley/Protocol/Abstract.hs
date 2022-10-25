@@ -178,9 +178,9 @@ class ProtocolHeaderSupportsProtocol proto where
     ShelleyProtocolHeader proto -> VKey 'BlockIssuer (ProtoCrypto proto)
   pHeaderIssueNo ::
     ShelleyProtocolHeader proto -> Word64
-  -- | VRF value in the header, used to choose between otherwise equally
+  -- | A VRF value in the header, used to choose between otherwise equally
   -- preferable chains.
-  pHeaderVRFValue ::
+  pTieBreakVRFValue ::
     ShelleyProtocolHeader proto -> OutputVRF (VRF (ProtoCrypto proto))
 
 -- | Indicates that the protocol header supports the Shelley ledger. We may need
