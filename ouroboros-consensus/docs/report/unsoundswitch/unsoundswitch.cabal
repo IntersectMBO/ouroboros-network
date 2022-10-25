@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               unsoundswitch
-version:            0.1.0.0
+version:            0.1.0.1
 author:             IOHK Engineering Team
 maintainer:         operations@iohk.io
 

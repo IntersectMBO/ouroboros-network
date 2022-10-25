@@ -1,5 +1,5 @@
 name:                  ouroboros-consensus-shelley
-version:               0.1.0.0
+version:               0.1.0.1
 synopsis:              Shelley ledger integration in the Ouroboros consensus layer
 -- description:
 license:               Apache-2.0

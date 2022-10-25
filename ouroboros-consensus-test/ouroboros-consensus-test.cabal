@@ -1,5 +1,5 @@
 name:                  ouroboros-consensus-test
-version:               0.1.0.0
+version:               0.1.0.1
 synopsis:              Tests of the consensus layer
 -- description:
 license:               Apache-2.0

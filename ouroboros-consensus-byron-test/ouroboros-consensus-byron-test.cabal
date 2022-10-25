@@ -1,5 +1,5 @@
 name:                  ouroboros-consensus-byron-test
-version:               0.1.0.0
+version:               0.1.0.1
 synopsis:              Test infrastructure for Byron
 -- description:
 license:               Apache-2.0

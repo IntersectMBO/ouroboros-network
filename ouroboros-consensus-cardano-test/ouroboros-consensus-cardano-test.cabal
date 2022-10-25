@@ -1,6 +1,6 @@
 cabal-version:         3.0
 name:                  ouroboros-consensus-cardano-test
-version:               0.1.0.0
+version:               0.1.0.1
 synopsis:              Test of the instantation of the Ouroboros consensus layer used by Cardano
 -- description:
 license:               Apache-2.0
