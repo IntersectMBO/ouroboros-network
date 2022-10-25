@@ -281,8 +281,6 @@ asyncResolverResource resolvConf =
               return (Right resolver', go filePath resourceVar)
 
 
-
-
 -- | Like 'DNS.lookupA' but also return the TTL for the results.
 --
 -- DNS library timeouts do not work reliably on Windows (#1873), hence the
@@ -294,8 +292,8 @@ lookupAWithTTL :: DNS.ResolvConf
                -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
 lookupAWithTTL resolvConf resolver domain = do
     reply <- timeout (microsecondsAsIntToDiffTime
-                      $ DNS.resolvTimeout resolvConf)
-                    (DNS.lookupRaw resolver domain DNS.A)
+                       $ DNS.resolvTimeout resolvConf)
+                     (DNS.lookupRaw resolver domain DNS.A)
     case reply of
       Nothing          -> return (Left DNS.TimeoutExpired)
       Just (Left  err) -> return (Left err)
@@ -310,14 +308,15 @@ lookupAWithTTL resolvConf resolver domain = do
         } <- answer
       ]
 
+
 lookupAAAAWithTTL :: DNS.ResolvConf
                   -> DNS.Resolver
                   -> DNS.Domain
                   -> IO (Either DNS.DNSError [(IP, DNS.TTL)])
 lookupAAAAWithTTL resolvConf resolver domain = do
     reply <- timeout (microsecondsAsIntToDiffTime
-                      $ DNS.resolvTimeout resolvConf)
-                    (DNS.lookupRaw resolver domain DNS.AAAA)
+                       $ DNS.resolvTimeout resolvConf)
+                     (DNS.lookupRaw resolver domain DNS.AAAA)
     case reply of
       Nothing          -> return (Left DNS.TimeoutExpired)
       Just (Left  err) -> return (Left err)
@@ -332,6 +331,7 @@ lookupAAAAWithTTL resolvConf resolver domain = do
         } <- answer
       ]
 
+
 lookupWithTTL :: LookupReqs
               -> DNS.ResolvConf
               -> DNS.Resolver
@@ -342,11 +342,13 @@ lookupWithTTL LookupReqAOnly resolvConf resolver domain = do
     case res of
          Left err -> return ([err], [])
          Right r  -> return ([], r)
+
 lookupWithTTL LookupReqAAAAOnly resolvConf resolver domain = do
     res <- lookupAAAAWithTTL resolvConf resolver domain
     case res of
          Left err -> return ([err], [])
          Right r  -> return ([], r)
+
 lookupWithTTL LookupReqAAndAAAA resolvConf resolver domain = do
     (r_ipv6, r_ipv4) <- concurrently (lookupAAAAWithTTL resolvConf resolver domain)
                                      (lookupAWithTTL resolvConf resolver domain)
@@ -355,6 +357,7 @@ lookupWithTTL LookupReqAAndAAAA resolvConf resolver domain = do
          (Right r6, Left  e4) -> return ([e4], r6)
          (Left  e6, Right r4) -> return ([e6], r4)
          (Right r6, Right r4) -> return ([], r6 <> r4)
+
 
 -- | Bundle of DNS Actions that runs in IO
 -- The IPv4 and IPv6 addresses the node will be using should determine the
