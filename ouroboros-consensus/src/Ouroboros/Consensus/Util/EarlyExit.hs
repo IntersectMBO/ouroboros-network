@@ -189,8 +189,9 @@ instance MonadMask m => MonadMask (WithEarlyExit m) where
 instance MonadThread m => MonadThread (WithEarlyExit m) where
   type ThreadId (WithEarlyExit m) = ThreadId m
 
-  myThreadId  = lift    myThreadId
-  labelThread = lift .: labelThread
+  myThreadId   = lift    myThreadId
+  labelThread  = lift .: labelThread
+  threadStatus = lift .  threadStatus
 
 instance (MonadMask m, MonadAsync m, MonadCatch (STM m))
       => MonadAsync (WithEarlyExit m) where
