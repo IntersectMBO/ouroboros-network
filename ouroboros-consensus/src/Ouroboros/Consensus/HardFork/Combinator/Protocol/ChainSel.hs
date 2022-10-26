@@ -39,18 +39,11 @@ data AcrossEraSelection :: Type -> Type -> Type where
   -- protocols, and we just want to choose the longer chain.
   CompareBlockNo :: AcrossEraSelection x y
 
-  -- | Two eras running the same protocol
-  --
-  -- In this case, we can just call @compareChains@ even across eras.
-  -- (The 'ChainSelConfig' must also be the same in both eras: we assert this
-  -- at the value level.)
-  --
-  -- NOTE: We require that the eras have the same /protocol/, not merely the
-  -- same 'SelectView', because if we have two eras with different protocols
-  -- that happen to use the same 'SelectView' but a different way to compare
-  -- chains, it's not clear how to do cross-era selection.
-  SelectSameProtocol ::
-       BlockProtocol x ~ BlockProtocol y
+  -- | Two eras using the same 'SelectView'. In this case, we can just compare
+  -- chains even across eras, as the chain ordering is fully captured by
+  -- 'SelectView' and its 'Ord' instance.
+  CompareSameSelectView ::
+       SelectView (BlockProtocol x) ~ SelectView (BlockProtocol y)
     => AcrossEraSelection x y
 
   -- | Custom chain selection
@@ -76,9 +69,9 @@ acrossEras ::
   -> Ordering
 acrossEras (WithBlockNo bnoL (WrapSelectView l))
            (WithBlockNo bnoR (WrapSelectView r)) = \case
-    CompareBlockNo     -> compare bnoL bnoR
-    CustomChainSel f   -> f l r
-    SelectSameProtocol -> compare l r
+    CompareBlockNo        -> compare bnoL bnoR
+    CustomChainSel f      -> f l r
+    CompareSameSelectView -> compare l r
 
 acrossEraSelection ::
      All SingleEraBlock              xs

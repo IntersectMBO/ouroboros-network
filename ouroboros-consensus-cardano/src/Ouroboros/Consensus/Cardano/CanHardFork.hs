@@ -308,25 +308,16 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
               :* CompareBlockNo
               :* Nil)
         -- Shelley <-> Allegra, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
+      $ TCons (CompareSameSelectView :* CompareSameSelectView :* CompareSameSelectView :* CompareSameSelectView :* Nil)
         -- Allegra <-> Mary, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
+      $ TCons (CompareSameSelectView :* CompareSameSelectView :* CompareSameSelectView :* Nil)
         -- Mary <-> Alonzo, ...
-      $ TCons (SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
+      $ TCons (CompareSameSelectView :* CompareSameSelectView :* Nil)
         -- Alonzo <-> Babbage, ...
-      $ TCons (alonzoBabbageEraSelection :* Nil)
+      $ TCons (CompareSameSelectView :* Nil)
         -- Babbage <-> ...
       $ TCons Nil
       $ TNil
-    where
-      -- Across alonzo and Babbage, the protocol changes, but the select view
-      -- remains the same.
-      alonzoBabbageEraSelection :: AcrossEraSelection
-        (ShelleyBlock (TPraos c) e1)
-        (ShelleyBlock (Praos c) e2)
-      alonzoBabbageEraSelection = CustomChainSel (
-          \l r -> compare l (coerce r)
-        )
   hardForkInjectTxs =
         PCons (ignoringBoth $ Pair2 cannotInjectTx cannotInjectValidatedTx)
       $ PCons (   ignoringBoth

@@ -181,7 +181,7 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
           InPairs.RequireBoth $ \(WrapLedgerConfig cfg1) (WrapLedgerConfig cfg2) ->
             HFC.TranslateForecast $ forecastAcrossShelley cfg1 cfg2
 
-  hardForkChainSel = Tails.mk2 SelectSameProtocol
+  hardForkChainSel = Tails.mk2 CompareSameSelectView
 
   hardForkInjectTxs =
         InPairs.mk2
