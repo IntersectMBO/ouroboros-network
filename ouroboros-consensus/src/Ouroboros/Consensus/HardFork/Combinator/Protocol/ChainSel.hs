@@ -46,17 +46,6 @@ data AcrossEraSelection :: Type -> Type -> Type where
        SelectView (BlockProtocol x) ~ SelectView (BlockProtocol y)
     => AcrossEraSelection x y
 
-  -- | Custom chain selection
-  --
-  -- This is the most general form, and allows to override chain selection for
-  -- the specific combination of two eras with a custom comparison function.
-  CustomChainSel ::
-       (    SelectView (BlockProtocol x)
-         -> SelectView (BlockProtocol y)
-         -> Ordering
-       )
-    -> AcrossEraSelection x y
-
 {-------------------------------------------------------------------------------
   Compare two eras
 -------------------------------------------------------------------------------}
@@ -70,7 +59,6 @@ acrossEras ::
 acrossEras (WithBlockNo bnoL (WrapSelectView l))
            (WithBlockNo bnoR (WrapSelectView r)) = \case
     CompareBlockNo        -> compare bnoL bnoR
-    CustomChainSel f      -> f l r
     CompareSameSelectView -> compare l r
 
 acrossEraSelection ::
