@@ -30,11 +30,10 @@
 ]
 
 # The systems used for cross-compiling (default: linux)
-, supportedCrossSystems ? [
-  (builtins.head supportedSystems)
-]
+, supportedCrossSystems ?
+  (builtins.filter (s: s == "x86_64-linux") supportedSystems)
 
-# Cross compilation to Windows is currently only supported on linux.
+  # Cross compilation to Windows is currently only supported on linux.
 , windowsBuild ? builtins.elem "x86_64-linux" supportedCrossSystems
 
   # A Hydra option
@@ -139,19 +138,19 @@ let
     "${mingwW64.config}" = mapTestOnCross mingwW64
       (packagePlatformsCross (filterProject noCrossBuild));
   }) // (mkRequiredJob (concatLists [
-    (collectJobs jobs."${mingwW64.config}".checks.tests)
     (collectJobs jobs.native.checks)
     (collectJobs jobs.native.benchmarks)
     (collectJobs jobs.native.libs)
     (collectJobs jobs.native.exes)
-  ])) // {
-    # This is used for testing the build on windows.
-    ouroboros-network-tests-win64 =
-      pkgs.callPackage ./nix/windows-testing-bundle.nix {
-        inherit project;
-        tests = collectJobs jobs."${mingwW64.config}".tests;
-        benchmarks = collectJobs jobs."${mingwW64.config}".benchmarks;
-      };
-  };
+  ] ++ lib.optionals windowsBuild
+    (collectJobs jobs."${mingwW64.config}".checks.tests))) // {
+      # This is used for testing the build on windows.
+      ouroboros-network-tests-win64 =
+        pkgs.callPackage ./nix/windows-testing-bundle.nix {
+          inherit project;
+          tests = collectJobs jobs."${mingwW64.config}".tests;
+          benchmarks = collectJobs jobs."${mingwW64.config}".benchmarks;
+        };
+    };
 
 in jobs
