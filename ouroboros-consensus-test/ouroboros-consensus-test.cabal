@@ -114,6 +114,7 @@ library
 
                      , io-classes
                      , io-sim
+
                      , ouroboros-network
                      , ouroboros-network-framework
                      , ouroboros-consensus

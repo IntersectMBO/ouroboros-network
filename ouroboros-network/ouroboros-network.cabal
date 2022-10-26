@@ -183,11 +183,11 @@ library
                        contra-tracer,
                        monoidal-synchronisation,
 
-                       io-classes        >=0.3 && <0.4,
+                       io-classes       ^>=0.3,
                        network-mux       >=0.1 && <1.0,
                        ouroboros-network-framework
                                          >=0.1 && <1.0,
-                       strict-stm        >=0.2 && <0.3,
+                       strict-stm       ^>=0.2,
                        typed-protocols   >=0.1.0.1 && <1.0,
                        typed-protocols-cborg
                                          >=0.1 && <1.0
