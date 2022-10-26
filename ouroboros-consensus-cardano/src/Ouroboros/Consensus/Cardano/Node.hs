@@ -579,7 +579,22 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- The major protocol version of the last era is the maximum major protocol
     -- version we support.
     maxMajorProtVer :: MaxMajorProtVer
-    maxMajorProtVer = MaxMajorProtVer (pvMajor protVerBabbage)
+    maxMajorProtVer =
+          MaxMajorProtVer
+        $ pvMajor
+        $ nonEmptyLast
+        $ exactlyWeakenNonEmpty
+        $ protVers
+      where
+        protVers :: Exactly (CardanoShelleyEras StandardCrypto) ProtVer
+        protVers = Exactly $
+          -- ensure that these have the same order as 'CardanoShelleyEras'!
+          K protVerShelley :*
+          K protVerAllegra :*
+          K protVerMary :*
+          K protVerAlonzo :*
+          K protVerBabbage :*
+          Nil
 
     -- Byron
 
