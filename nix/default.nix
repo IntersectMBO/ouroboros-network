@@ -4,7 +4,10 @@ let
   sources = import ./sources.nix { pkgs = import nixpkgs { }; }
     // sourcesOverride;
   iohkNixMain = import sources.iohk-nix { };
-  haskellNix = import sources."haskell.nix" { inherit system sourcesOverride; };
+  haskellNix = import sources."haskell.nix" {
+    inherit system sourcesOverride;
+    pkgs = import iohkNixMain.sources.nixpkgs { inherit system; };
+  };
   haskellNixArgs = haskellNix.nixpkgsArgs;
   nixpkgs = if (sources ? nixpkgs) then
     (builtins.trace ''
