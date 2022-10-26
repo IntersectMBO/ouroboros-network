@@ -3,13 +3,13 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-
 module Test.Consensus.Cardano.Translation (tests) where
 
 import           Data.Int (Int64)
@@ -53,10 +53,10 @@ import           Ouroboros.Consensus.HardFork.Combinator (InPairs (..),
                      hardForkEraTranslation, translateLedgerState)
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
                      (TranslateLedgerState (translateLedgerStateWith))
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (AllPairs,
-                     RequiringBoth, provideBoth)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
+                     (RequiringBoth, provideBoth)
 import           Ouroboros.Consensus.Ledger.Basics (ApplyMapKind' (..), DiffMK,
-                     EmptyMK, LedgerConfig, LedgerState)
+                     EmptyMK, LedgerCfg, LedgerConfig, LedgerState)
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (MaxMajorProtVer (..))
@@ -89,22 +89,112 @@ type Crypto = MockCryptoCompatByron
 type Proto  = TPraos Crypto
 
 tests :: TestTree
-tests = testGroup "UpdateTablesOnEraTransition" $ toTestTrees predicates tls
+tests = testGroup "UpdateTablesOnEraTransition"
+  [ testTablesTranslation "Byron to Shelley"
+                          byronToShelleyLedgerStateTranslation
+                          byronUtxosAreInsertsInShelleyUtxoDiff
+                          (\st -> cover 50 (      nonEmptyUtxosByron st) "UTxO set is not empty"
+                                -- FIXME: we should test with empyt UTxO!
+                                -- . cover 1  (not $ nonEmptyUtxosByron st) "UTxO set is empty"
+                          )
+  , testTablesTranslation "Shelley to Allegra"
+                          shelleyToAllegraLedgerStateTranslation
+                          shelleyAvvmAddressesAreDeletesInUtxoDiff
+                          (\st -> cover 50 (nonEmptyAvvmAddresses st) "AVVM set is not empty")
+  , testTablesTranslation "Allegra to Mary"
+                          allegraToMaryLedgerStateTranslation
+                          utxoTablesAreEmpty
+                          (\st -> cover 50 (nonEmptyUtxosShelley st) "UTxO set is not empty")
+  , testTablesTranslation "Mary to Alonzo"
+                          maryToAlonzoLedgerStateTranslation
+                          utxoTablesAreEmpty
+                          (\st -> cover 50 (nonEmptyUtxosShelley st) "UTxO set is not empty")
+  , testTablesTranslation "Alonzo to Babbage"
+                          alonzoToBabbageLedgerStateTranslation
+                          utxoTablesAreEmpty
+                          (\st -> cover 50 (nonEmptyUtxosShelley st) "UTxO set is not empty")
+  ]
+
+
+{-------------------------------------------------------------------------------
+  Ledger-state translations between eras that we test in this module
+-------------------------------------------------------------------------------}
+
+-- | TODO: we should simply expose 'translateLedgerStateByronToShelleyWrapper'
+-- and other translations in ' Ouroboros.Consensus.Cardano.CanHardFork'.
+byronToShelleyLedgerStateTranslation ::
+  RequiringBoth
+        WrapLedgerConfig
+        TranslateLedgerState
+        ByronBlock
+        (ShelleyBlock (TPraos Crypto) (ShelleyEra Crypto))
+shelleyToAllegraLedgerStateTranslation :: RequiringBoth
+  WrapLedgerConfig
+  TranslateLedgerState
+  (ShelleyBlock (TPraos Crypto) (ShelleyEra Crypto))
+  (ShelleyBlock (TPraos Crypto) (AllegraEra Crypto))
+allegraToMaryLedgerStateTranslation :: RequiringBoth
+  WrapLedgerConfig
+  TranslateLedgerState
+  (ShelleyBlock (TPraos Crypto) (AllegraEra Crypto))
+  (ShelleyBlock (TPraos Crypto) (MaryEra Crypto))
+maryToAlonzoLedgerStateTranslation :: RequiringBoth
+  WrapLedgerConfig
+  TranslateLedgerState
+  (ShelleyBlock (TPraos Crypto) (MaryEra Crypto))
+  (ShelleyBlock (TPraos Crypto) (AlonzoEra Crypto))
+alonzoToBabbageLedgerStateTranslation :: RequiringBoth
+  WrapLedgerConfig
+  TranslateLedgerState
+  (ShelleyBlock (TPraos Crypto) (AlonzoEra Crypto))
+  (ShelleyBlock (Praos Crypto) (BabbageEra Crypto))
+PCons byronToShelleyLedgerStateTranslation
+      (PCons shelleyToAllegraLedgerStateTranslation
+       (PCons allegraToMaryLedgerStateTranslation
+        (PCons maryToAlonzoLedgerStateTranslation
+         (PCons alonzoToBabbageLedgerStateTranslation
+          PNil)))) = tls
   where
+    tls :: InPairs
+             (RequiringBoth WrapLedgerConfig TranslateLedgerState)
+             (CardanoEras Crypto)
     tls = translateLedgerState hardForkEraTranslation
-    predicates :: InPairs TranslationPredicate (CardanoEras Crypto)
-    predicates =
-        PCons (TranslationPredicate "ByronToShelley" byronUtxosAreInsertsInShelleyUtxoDiff
-                                    nonEmptyUtxosByron)
-      $ PCons (TranslationPredicate "ShelleyToAllegra" shelleyAvvmAddressesAreDeletesInUtxoDiff
-                                    nonEmptyAvvmAddresses)
-      $ PCons (TranslationPredicate "AllegraToMary" utxoTablesAreEmpty
-                                    nonEmptyUtxosShelley)
-      $ PCons (TranslationPredicate "MaryToAlonzo" utxoTablesAreEmpty
-                                    nonEmptyUtxosShelley)
-      $ PCons (TranslationPredicate "AlonzoToBabbage" utxoTablesAreEmpty
-                                    nonEmptyUtxosShelley)
-        PNil
+
+-- | Check that the tables are correctly translated from one era to the next.
+testTablesTranslation ::
+     forall srcBlk dstBlk.
+     ( Arbitrary (TestSetup srcBlk dstBlk)
+     , Show (LedgerCfg (LedgerState srcBlk))
+     , Show (LedgerCfg (LedgerState dstBlk))
+     , Show (LedgerState srcBlk EmptyMK)
+     )
+  => String
+  -- ^ Property label
+  -> RequiringBoth
+        WrapLedgerConfig
+        TranslateLedgerState
+        srcBlk
+        dstBlk
+  -> (LedgerState srcBlk EmptyMK -> LedgerState dstBlk DiffMK -> Bool)
+  -> (LedgerState srcBlk EmptyMK -> Property -> Property)
+  -- ^ Coverage testing function (TODO: it can be abused)
+  -> TestTree
+testTablesTranslation propLabel translateWithConfig translationShouldSatisfy ledgerStateShouldCover =
+    testProperty propLabel withTestSetup
+  where
+    withTestSetup :: TestSetup srcBlk dstBlk -> Property
+    withTestSetup ts =
+        checkCoverage $ ledgerStateShouldCover tsSrcLedgerState
+                      $ property
+                      $ translationShouldSatisfy tsSrcLedgerState destState
+      where
+        TestSetup {tsSrcLedgerConfig, tsDestLedgerConfig, tsSrcLedgerState, tsEpochNo} = ts
+        destState = translateLedgerStateWith translation tsEpochNo tsSrcLedgerState
+          where
+            translation :: TranslateLedgerState srcBlk dstBlk
+            translation = provideBoth translateWithConfig
+                                      (WrapLedgerConfig tsSrcLedgerConfig)
+                                      (WrapLedgerConfig tsDestLedgerConfig)
 
 {-------------------------------------------------------------------------------
     Specific predicates
@@ -173,62 +263,6 @@ nonEmptyAvvmAddresses ledgerState =
   in not $ Map.null m
 
 {-------------------------------------------------------------------------------
-    Generating tests for all translation predicates
--------------------------------------------------------------------------------}
-
--- | Predicate on pairs of ledger states of subsequent eras that are converted to property tests.
-data TranslationPredicate src dest = TranslationPredicate {
-    tpTestName :: TestName
-  , tpRun      :: LedgerState src EmptyMK -> LedgerState dest DiffMK -> Bool
-  , tpCoverage :: LedgerState src EmptyMK -> Bool
-}
-
--- Intermediate data type
--- REVIEW: Can we get rid of this?
-data PreProperty x y = PreProperty {
-    ppTestName :: TestName
-  , ppRun      :: TestSetup x y -> Property
-}
-
-
-toTestTrees
-  :: (AllPairs TestSetup Arbitrary xs, AllPairs TestSetup Show xs)
-  => InPairs TranslationPredicate xs
-  -> InPairs (RequiringBoth WrapLedgerConfig TranslateLedgerState) xs
-  -> [TestTree]
-toTestTrees predicates translations = mkTestTrees $ zipInPairs predicates translations
-  where
-    fn
-      :: TranslationPredicate x y
-      -> RequiringBoth WrapLedgerConfig TranslateLedgerState x y
-      -> PreProperty x y
-    fn TranslationPredicate {..} translateLedgerState = PreProperty {
-      ppTestName = tpTestName
-    , ppRun = \TestSetup {..} ->
-        let translation = provideBoth
-                translateLedgerState
-                (WrapLedgerConfig tsSrcLedgerConfig)
-                (WrapLedgerConfig tsDestLedgerConfig)
-            destState = translateLedgerStateWith translation tsEpochNo tsSrcLedgerState
-        in checkCoverage $ cover 50 (tpCoverage tsSrcLedgerState) "boom"
-                         $ property $ tpRun tsSrcLedgerState destState
-    }
-
-    zipInPairs
-      :: InPairs TranslationPredicate xs
-      -> InPairs (RequiringBoth WrapLedgerConfig TranslateLedgerState) xs
-      -> InPairs PreProperty xs
-    zipInPairs PNil PNil                 = PNil
-    zipInPairs (PCons b bs) (PCons z zs) = PCons (fn b z) (zipInPairs bs zs)
-
-    mkTestTrees
-      :: (AllPairs TestSetup Arbitrary xs, AllPairs TestSetup Show xs)
-      => InPairs PreProperty xs -> [TestTree]
-    mkTestTrees PNil                        = []
-    mkTestTrees (PCons PreProperty {..} cs) =
-      testProperty ppTestName ppRun : mkTestTrees cs
-
-{-------------------------------------------------------------------------------
     Utilities
 -------------------------------------------------------------------------------}
 
@@ -254,7 +288,7 @@ deriving instance ( Show (LedgerConfig src)
                   , Show (LedgerConfig dest)
                   , Show (LedgerState src EmptyMK)) => Show (TestSetup src dest)
 
--- todo: Useful to merge some of these instances?
+-- TODO: Useful to merge some of these instances?
 instance Arbitrary (TestSetup ByronBlock (ShelleyBlock Proto (ShelleyEra Crypto))) where
   arbitrary =
     let ledgerConfig = fixedShelleyLedgerConfig ()
