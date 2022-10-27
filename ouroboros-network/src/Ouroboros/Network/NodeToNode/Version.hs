@@ -45,9 +45,6 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable full duplex connections.
-    --   NOTE: This is an experimental protocol version, which is not yet
-    --   released.  Until initial P2P version it must be kept as the last
-    --   version, which allows us to keep it as an experimental version.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
