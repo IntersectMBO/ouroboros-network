@@ -30,7 +30,7 @@ import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict (NP (..), unComp, (:.:) (..))
+import           Data.SOP.Strict (hpure, unComp, (:.:) (..))
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -57,10 +57,12 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 
 import           Ouroboros.Consensus.Byron.Ledger
 import qualified Ouroboros.Consensus.Byron.Ledger.Inspect as Byron.Inspect
 import           Ouroboros.Consensus.Byron.Node ()
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT (PBft, PBftCrypto)
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
@@ -301,32 +303,9 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
     }
   hardForkChainSel =
         -- Byron <-> Shelley, ...
-        TCons (  CompareBlockNo
-              :* CompareBlockNo
-              :* CompareBlockNo
-              :* CompareBlockNo
-              :* CompareBlockNo
-              :* Nil)
-        -- Shelley <-> Allegra, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
-        -- Allegra <-> Mary, ...
-      $ TCons (SelectSameProtocol :* SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
-        -- Mary <-> Alonzo, ...
-      $ TCons (SelectSameProtocol :* alonzoBabbageEraSelection :* Nil)
-        -- Alonzo <-> Babbage, ...
-      $ TCons (alonzoBabbageEraSelection :* Nil)
-        -- Babbage <-> ...
-      $ TCons Nil
-      $ TNil
-    where
-      -- Across alonzo and Babbage, the protocol changes, but the select view
-      -- remains the same.
-      alonzoBabbageEraSelection :: AcrossEraSelection
-        (ShelleyBlock (TPraos c) e1)
-        (ShelleyBlock (Praos c) e2)
-      alonzoBabbageEraSelection = CustomChainSel (
-          \l r -> compare l (coerce r)
-        )
+        TCons (hpure CompareBlockNo)
+        -- Inter-Shelley-based
+      $ Tails.hcpure (Proxy @(HasPraosSelectView c)) CompareSameSelectView
   hardForkInjectTxs =
         PCons (ignoringBoth $ Pair2 cannotInjectTx cannotInjectValidatedTx)
       $ PCons (   ignoringBoth
@@ -354,6 +333,9 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
                   (translateValidatedTxAlonzoToBabbageWrapper ctxt)
               )
       $ PNil
+
+class    (SelectView (BlockProtocol blk) ~ PraosChainSelectView c) => HasPraosSelectView c blk
+instance (SelectView (BlockProtocol blk) ~ PraosChainSelectView c) => HasPraosSelectView c blk
 
 {-------------------------------------------------------------------------------
   Translation from Byron to Shelley
