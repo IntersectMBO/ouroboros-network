@@ -43,8 +43,8 @@ common demo-deps
 
 library
   build-depends:       base            >=4.9 && <4.15,
-                       io-classes      >=0.1 && <0.3,
-                       strict-stm      >=0.1 && <0.2,
+                       io-classes      >=0.3 && <0.4,
+                       strict-stm      >=0.2 && <0.3,
                        contra-tracer   >=0.1 && <0.2,
                        monoidal-synchronisation
                                        >=0.1 && <0.2,
@@ -124,7 +124,7 @@ test-suite test
   build-depends:       base,
                        io-classes,
                        strict-stm,
-                       io-sim            >=0.2 && < 0.3,
+                       io-sim            >=0.3 && < 0.4,
                        contra-tracer,
                        network-mux,
                        Win32-network,

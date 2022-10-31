@@ -328,12 +328,12 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
-                     , io-classes        >=0.2   && <0.3
+                     , io-classes        >=0.3   && <0.4
                      , typed-protocols
                      , network-mux
                      , ouroboros-network-framework
                      , ouroboros-network
-                     , strict-stm        >=0.1   && <0.2
+                     , strict-stm        >=0.2   && <0.3
 
 
   if os(windows)
