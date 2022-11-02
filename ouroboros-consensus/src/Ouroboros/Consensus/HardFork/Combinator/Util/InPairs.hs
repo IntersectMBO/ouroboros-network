@@ -1,12 +1,14 @@
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- | Intended for qualified import
 --
@@ -31,6 +33,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
   , ignoringBoth
   , requiring
   , requiringBoth
+    -- * Constraints
+  , AllPairs
   ) where
 
 import           Data.Kind (Type)
@@ -120,3 +124,12 @@ requiringBoth = flip go
     go :: InPairs (RequiringBoth h f) xs -> NP h xs -> InPairs f xs
     go PNil         _              = PNil
     go (PCons f fs) (x :* y :* zs) = PCons (provideBoth f x y) (go fs (y :* zs))
+
+{-------------------------------------------------------------------------------
+  Constraints
+-------------------------------------------------------------------------------}
+
+type AllPairs :: (k -> k -> Type) -> (Type -> Constraint) -> [k] -> Constraint
+type family AllPairs f c t where
+  AllPairs f c '[t] = ()
+  AllPairs f c (t ': s ': ts) = (c (f t s) , AllPairs f c (s ': ts))
