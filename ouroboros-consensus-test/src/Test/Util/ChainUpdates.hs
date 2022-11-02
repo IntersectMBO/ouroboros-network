@@ -7,6 +7,7 @@ module Test.Util.ChainUpdates (
     ChainUpdate (..)
   , UpdateBehavior (..)
   , behaviorValidity
+  , blocksFromChainUpdates
   , classifyBehavior
   , genChainUpdates
   , toChainUpdates
@@ -45,6 +46,11 @@ toChainUpdates :: [ChainUpdate] -> [Chain.ChainUpdate TestBlock TestBlock]
 toChainUpdates = concatMap $ \case
     SwitchFork pt bs -> Chain.RollBack pt : map Chain.AddBlock bs
     AddBlock b       -> Chain.AddBlock b  : []
+
+blocksFromChainUpdates :: [ChainUpdate] -> [TestBlock]
+blocksFromChainUpdates = concatMap $ \case
+    SwitchFork _ blks -> blks
+    AddBlock blk      -> [blk]
 
 {-------------------------------------------------------------------------------
   Generating ChainUpdates
@@ -91,7 +97,8 @@ data UpdateBehavior =
     InvalidChainBehavior
   deriving stock (Show, Eq, Ord, Enum, Bounded)
 
--- | Whether an 'UpdateBehavior' should cause a disconnect.
+-- | Whether an 'UpdateBehavior' should cause a ChainSync and/or BlockFetch
+-- client to disconnect from its peer.
 behaviorValidity :: UpdateBehavior -> Validity
 behaviorValidity = \case
     SelectedChainBehavior  -> Valid
@@ -138,7 +145,7 @@ genChainUpdateState behavior securityParam n =
 
     genChainUpdate = frequency' $
            -- Generate two normal updates, as the other option generates two
-           -- updates, in order to keep the number of updates propertional to n.
+           -- updates, in order to keep the number of updates proportional to n.
            [ (5, replicateM_ 2 genNormalUpdate) ]
         <> [ (1, genTrapTentativeBlock)
            | behavior == TentativeChainBehavior
@@ -174,7 +181,8 @@ genChainUpdateState behavior securityParam n =
             , (1, choose (1, 2))
             ]
           -- Blocks with equal hashes have to have equal validity, so we reserve
-          -- specific ForkNos for invalid blocks to ensure this.
+          -- specific ForkNos for invalid blocks to ensure this. Note that the
+          -- concrete numbers chosen here don't have any real semantics.
           Invalid -> elements [3, 4]
 
     genAddBlock validity = do
@@ -186,12 +194,7 @@ genChainUpdateState behavior securityParam n =
       rollBackBlocks <- lift genRollBackBlocks
       let chain' = Chain.drop rollBackBlocks chain
       modify $ setChain chain'
-      let rollForwardBlocks = case behavior of
-            -- Make sure to switch to a better fork, such that the invalid
-            -- behavior can be detected.
-            InvalidChainBehavior -> rollBackBlocks + 1
-            _                    -> rollBackBlocks
-      blocks <- replicateM rollForwardBlocks (genBlockToAdd =<< genValidity)
+      blocks <- replicateM rollBackBlocks (genBlockToAdd =<< genValidity)
       modify $ addUpdate (SwitchFork (Chain.headPoint chain') blocks)
 
     genTrapTentativeBlock = do
@@ -230,15 +233,13 @@ classifyBehavior updates
     -- The behavior is tentative iff:
     --  1. The sequence of invalid blocks is strictly improving.
     invalidBlocksImproving = strictlyIncreasing $ blockNo <$> invalidBlocks
-    --  2. An invalid block is not followed by a descendant.
-    noInvalidBlockExtended = all successorIsValid allBlocks
+    --  2. No block ever extends an invalid block.
+    noInvalidBlockExtended = all predecessorIsValid allBlocks
 
-    allBlocks = updates >>= \case
-        AddBlock blk      -> [blk]
-        SwitchFork _ blks -> blks
+    allBlocks = blocksFromChainUpdates updates
     invalidBlocks = filter ((Invalid ==) . tbValid) allBlocks
 
-    successorIsValid =
+    predecessorIsValid =
         \blk -> blockPrevHash blk `Set.notMember` invalidBlockHashes
       where
         invalidBlockHashes =
@@ -256,5 +257,5 @@ prop_genChainUpdates securityParam n =
       Just (cusCurrentChain cus)
   where
     genCUS = do
-      behavior <- chooseEnum (minBound, maxBound)
+      behavior <- arbitraryBoundedEnum
       genChainUpdateState behavior securityParam n emptyUpdateState

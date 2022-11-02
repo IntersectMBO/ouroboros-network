@@ -44,13 +44,13 @@ instance Condense ChainUpdatesTestSetup where
 instance Arbitrary ChainUpdatesTestSetup where
   arbitrary = do
       numUpdates     <- chooseInt (5, 100)
-      updateBehavior <- chooseEnum (minBound, maxBound)
+      updateBehavior <- arbitraryBoundedEnum
       chainUpdates   <- genChainUpdates updateBehavior securityParam numUpdates
       pure ChainUpdatesTestSetup {..}
 
   shrink ChainUpdatesTestSetup{..} =
-      [ ChainUpdatesTestSetup{chainUpdates = init chainUpdates, ..}
-      | not $ null chainUpdates
+      [ ChainUpdatesTestSetup{chainUpdates = chainUpdates', ..}
+      | _ : chainUpdates' <- [chainUpdates]
       ]
 
 prop_consistency :: ChainUpdatesTestSetup -> Property
@@ -68,9 +68,7 @@ prop_consistency cuts@ChainUpdatesTestSetup{..} =
         counterexample "hash validity inconsistency" $
         property $ all allEqual validityByHash
       where
-        allBlocks = chainUpdates >>= \case
-          AddBlock blk      -> [blk]
-          SwitchFork _ blks -> blks
+        allBlocks = blocksFromChainUpdates chainUpdates
         validityByHash = Map.fromListWith (<>)
           [ (blockHash blk, [tbValid blk]) | blk <- allBlocks ]
 
