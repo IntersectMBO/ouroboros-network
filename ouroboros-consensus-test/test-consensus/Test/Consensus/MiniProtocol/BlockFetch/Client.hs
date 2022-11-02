@@ -149,7 +149,8 @@ prop_blockFetch bfcts@BlockFetchClientTestSetup{..} =
 data BlockFetchClientOutcome = BlockFetchClientOutcome {
     bfcoPeerOutcomes  :: Map PeerId PeerOutcome
   , bfcoFetchedBlocks :: Map PeerId Word
-  , bfcoTrace         :: [(Tick, String)]
+  , -- | Trace messages, only used for debugging.
+    bfcoTrace         :: [(Tick, String)]
   }
 
 data PeerOutcome = PeerOutcome {
