@@ -287,6 +287,7 @@ test-suite test-infra
   hs-source-dirs:      test-infra
   main-is:             Main.hs
   other-modules:
+                       Ouroboros.Consensus.Util.Tests
                        Test.ThreadNet.Util.Tests
                        Test.Util.ChainUpdates.Tests
                        Test.Util.Schedule.Tests

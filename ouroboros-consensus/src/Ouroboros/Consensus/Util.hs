@@ -32,6 +32,7 @@ module Ouroboros.Consensus.Util (
   , groupSplit
   , markLast
   , pickOne
+  , split
   , splits
   , takeLast
   , takeUntil
@@ -78,6 +79,7 @@ import           Data.Functor.Identity
 import           Data.Functor.Product
 import           Data.Kind (Constraint, Type)
 import           Data.List (foldl', maximumBy)
+import           Data.List.NonEmpty (NonEmpty (..), (<|))
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -246,6 +248,21 @@ groupSplit f = \case
 splits :: [a] -> [([a], a, [a])]
 splits []     = []
 splits (a:as) = ([], a, as) : map (\(xs, y, zs) -> (a:xs, y, zs)) (splits as)
+
+-- | Split a list given a delimiter predicate.
+--
+-- >>> split (`elem` "xy") "axbyxc"
+-- "a" :| ["b","","c"]
+--
+-- We have the laws
+--
+-- > concat (split p as) === filter (not . p) as
+-- > length (split p as) === length (filter p as) + 1
+split :: (a -> Bool) -> [a] -> NonEmpty [a]
+split p = \case
+    []           -> pure []
+    a : as | p a -> [] <| split p as
+    a : as       -> let bs :| bss = split p as in (a : bs) :| bss
 
 {-------------------------------------------------------------------------------
   Safe variants of existing base functions
