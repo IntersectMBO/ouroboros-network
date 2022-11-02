@@ -7,6 +7,7 @@
 {-#LANGUAGE TypeApplications #-}
 {-#LANGUAGE StandaloneDeriving #-}
 {-#LANGUAGE ScopedTypeVariables #-}
+{-#LANGUAGE TypeFamilies #-}
 module Cardano.KESAgent.Tests.Simulation
 ( tests )
 where
@@ -24,8 +25,6 @@ import Cardano.Crypto.Libsodium
 import Cardano.Crypto.PinnedSizedBytes
 import Cardano.Crypto.Seed
 import Cardano.Crypto.SafePinned
-import Cardano.Protocol.TPraos.OCert (OCert (..), KESPeriod (..), OCertSignable (..))
-import Cardano.Ledger.Crypto (Crypto (..), StandardCrypto)
 import Cardano.Binary (FromCBOR)
 
 import Control.Concurrent (threadDelay)
@@ -45,6 +44,7 @@ import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf (printf)
 import Data.Word
+import Data.Typeable
 
 import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
@@ -61,11 +61,13 @@ tests lock =
 
 testOneKeyThroughChain :: forall c
                         . Crypto c
+                       => Typeable c
                        => VersionedProtocol (KESProtocol c)
                        => KESSignAlgorithm IO (KES c)
                        => DirectSerialise (SignKeyKES (KES c))
                        => DirectDeserialise (SignKeyKES (KES c))
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                       => ContextDSIGN (DSIGN c) ~ ()
                        => Show (SignKeyKES (KES c))
                        => Proxy c
                        -> Lock

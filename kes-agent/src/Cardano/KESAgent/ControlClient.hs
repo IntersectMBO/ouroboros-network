@@ -14,8 +14,6 @@ import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
 
 import Cardano.Crypto.KES.Class
-import Cardano.Ledger.Crypto (Crypto (..))
-import Cardano.Protocol.TPraos.OCert (OCert)
 import Cardano.Binary
 
 import System.Socket (socket, SocketException, close, connect)
@@ -24,6 +22,7 @@ import System.Socket.Family.Unix
 import System.Socket.Protocol.Default
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Data.Proxy (Proxy (..))
+import Data.Typeable
 
 import Control.Monad (forever, void)
 import Control.Exception (Exception, bracket, catch, throw)
@@ -43,6 +42,7 @@ data ControlClientTrace
 -- | A simple control client: push one KES key, then exit.
 runControlClient1 :: forall c
                    . Crypto c
+                  => Typeable c
                   => KESSignAlgorithm IO (KES c)
                   => DirectDeserialise (SignKeyKES (KES c))
                   => DirectSerialise (SignKeyKES (KES c))

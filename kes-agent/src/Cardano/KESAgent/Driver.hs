@@ -25,6 +25,7 @@ import Data.Word
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Binary (encode, decode)
+import Data.Typeable
 
 import Cardano.Crypto.KES.Class
 import Cardano.Binary
@@ -32,9 +33,6 @@ import Cardano.Binary
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
-import Cardano.Protocol.TPraos.OCert (OCert)
-import Cardano.Ledger.Crypto (Crypto (..), StandardCrypto)
-import Cardano.Ledger.Serialization (CBORGroup (..))
 
 -- | Logging messages that the Driver may send
 data DriverTrace
@@ -50,6 +48,7 @@ data DriverTrace
 
 driver :: forall c f t p
         . Crypto c
+       => Typeable c
        => VersionedProtocol (KESProtocol c)
        => KESSignAlgorithm IO (KES c)
        => DirectDeserialise (SignKeyKES (KES c))
@@ -66,7 +65,7 @@ driver s tracer = Driver
       (ServerAgency TokIdle, KeyMessage sk oc) -> do
         traceWith tracer DriverSendingKey
         directSerialise (\buf bufSize -> void $ unsafeSend s buf bufSize (msgNoSignal <> msgWaitAll)) sk
-        let serializedOC = serialize' (CBORGroup oc)
+        let serializedOC = serialize' oc
         send s (LBS.toStrict $ encode @Word32 (fromIntegral $ BS.length serializedOC)) (msgNoSignal <> msgWaitAll)
         send s serializedOC (msgNoSignal <> msgWaitAll)
         traceWith tracer DriverSentKey
@@ -94,7 +93,7 @@ driver s tracer = Driver
         l <- receive s 4 (msgNoSignal <> msgWaitAll) >>= \case
               "" -> putMVar noReadVar () >> return 0
               xs -> (return . fromIntegral) (decode @Word32 $ LBS.fromStrict xs)
-        oc <- unCBORGroup . unsafeDeserialize' <$> receive s l (msgNoSignal <> msgWaitAll)
+        oc <- unsafeDeserialize' <$> receive s l (msgNoSignal <> msgWaitAll)
 
         succeeded <- isEmptyMVar noReadVar
         if succeeded then do

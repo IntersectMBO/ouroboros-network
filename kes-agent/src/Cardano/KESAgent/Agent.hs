@@ -17,8 +17,6 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.Crypto.DirectSerialise
-import Cardano.Ledger.Crypto (Crypto (..))
-import Cardano.Protocol.TPraos.OCert (OCert)
 import Cardano.Binary
 
 import Cardano.Crypto.KES.Class
@@ -35,6 +33,7 @@ import System.Socket.Family.Unix
 import System.Socket.Protocol.Default
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Data.Proxy (Proxy (..))
+import Data.Typeable
 
 data AgentTrace
   = AgentServiceDriverTrace DriverTrace
@@ -65,6 +64,7 @@ data AgentOptions =
 
 runAgent :: forall c
           . Crypto c
+         => Typeable c
          => KESSignAlgorithm IO (KES c)
          => VersionedProtocol (KESProtocol c)
          => DirectSerialise (SignKeyKES (KES c))

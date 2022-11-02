@@ -9,8 +9,6 @@ where
 
 import Cardano.KESAgent.Protocol
 import Cardano.Crypto.KES.Class
-import Cardano.Protocol.TPraos.OCert (OCert)
-import Cardano.Ledger.Crypto (Crypto (..))
 import Network.TypedProtocol.Core
 
 kesReceiver :: forall (c :: *)
