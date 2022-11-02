@@ -87,6 +87,7 @@ test-suite test
                        Test.Consensus.Cardano.ByronCompatibility
                        Test.Consensus.Cardano.Golden
                        Test.Consensus.Cardano.Serialisation
+                       Test.Consensus.Cardano.Translation
                        Test.ThreadNet.AllegraMary
                        Test.ThreadNet.Cardano
                        Test.ThreadNet.MaryAlonzo
@@ -103,11 +104,18 @@ test-suite test
                      , sop-core
                      , tasty
                      , tasty-quickcheck
+                     , hedgehog-quickcheck
+                     , anti-diff
 
+                     , cardano-crypto-wrapper
+                     , cardano-data
                      , cardano-ledger-alonzo
+                     , cardano-ledger-alonzo-test
                      , cardano-ledger-byron
+                     , cardano-ledger-byron-test
                      , cardano-ledger-core
                      , cardano-ledger-shelley
+                     , cardano-ledger-shelley-test
                      , cardano-protocol-tpraos
 
                      , ouroboros-network

@@ -1,14 +1,15 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeApplications   #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Consensus.Byron.Generators (
     RegularBlock (..)
   , epochSlots
+  , genByronLedgerConfig
+  , genByronLedgerState
   , k
   , protocolMagicId
   ) where
@@ -19,7 +20,9 @@ import qualified Data.Map.Strict as Map
 
 import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
-                     ABlockOrBoundaryHdr (..))
+                     ABlockOrBoundaryHdr (..), ChainValidationState (..),
+                     cvsPreviousHash)
+
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as API
 import           Cardano.Chain.Common (KeyHash)
@@ -27,6 +30,7 @@ import qualified Cardano.Chain.Delegation as CC.Del
 import qualified Cardano.Chain.Delegation.Validation.Activation as CC.Act
 import qualified Cardano.Chain.Delegation.Validation.Interface as CC.DI
 import qualified Cardano.Chain.Delegation.Validation.Scheduling as CC.Sched
+import qualified Cardano.Chain.Genesis as Byron
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import           Cardano.Chain.Slotting (EpochNumber, EpochSlots (..),
                      SlotNumber)
@@ -36,6 +40,7 @@ import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.Update.Validation.Registration as CC.Reg
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
+import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -55,6 +60,7 @@ import           Test.QuickCheck.Hedgehog (hedgehog)
 import qualified Test.Cardano.Chain.Block.Gen as CC
 import qualified Test.Cardano.Chain.Common.Gen as CC
 import qualified Test.Cardano.Chain.Delegation.Gen as CC
+import qualified Test.Cardano.Chain.Genesis.Gen as CC
 import qualified Test.Cardano.Chain.MempoolPayload.Gen as CC
 import qualified Test.Cardano.Chain.Slotting.Gen as CC
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
@@ -271,6 +277,28 @@ instance Arbitrary ByronTransition where
 
 instance Arbitrary (LedgerState ByronBlock EmptyMK) where
   arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
+
+-- | Generator for a Byron ledger state in which the tip of the ledger given by
+-- `byronLedgerTipBlockNo` is consistent with the chain validation state, i.e., if there is no
+-- previous block, the ledger tip wil be `Origin`.
+genByronLedgerState :: Gen (LedgerState ByronBlock EmptyMK)
+genByronLedgerState = do
+  chainValidationState <- arbitrary
+  ledgerTransition <- arbitrary
+  ledgerTipBlockNo <- genLedgerTipBlockNo chainValidationState
+  pure $ ByronLedgerState {
+      byronLedgerTipBlockNo = ledgerTipBlockNo
+    , byronLedgerState      = chainValidationState
+    , byronLedgerTransition = ledgerTransition
+    }
+  where
+    genLedgerTipBlockNo ChainValidationState { cvsPreviousHash } =
+      case cvsPreviousHash of
+        Left _  -> pure Origin
+        Right _ -> At <$> arbitrary
+
+genByronLedgerConfig :: Gen Byron.Config
+genByronLedgerConfig = hedgehog $ CC.genConfig protocolMagicId
 
 instance Arbitrary (TipInfoIsEBB ByronBlock) where
   arbitrary = TipInfoIsEBB <$> arbitrary <*> elements [IsEBB, IsNotEBB]

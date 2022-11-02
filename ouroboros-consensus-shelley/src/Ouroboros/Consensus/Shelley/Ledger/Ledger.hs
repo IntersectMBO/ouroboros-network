@@ -134,6 +134,8 @@ data ShelleyLedgerConfig era = ShelleyLedgerConfig {
     }
   deriving (Generic, NoThunks)
 
+deriving instance Show (Core.TranslationContext era) => Show (ShelleyLedgerConfig era)
+
 shelleyLedgerGenesis :: ShelleyLedgerConfig era -> SL.ShelleyGenesis era
 shelleyLedgerGenesis = getCompactGenesis . shelleyLedgerCompactGenesis
 
