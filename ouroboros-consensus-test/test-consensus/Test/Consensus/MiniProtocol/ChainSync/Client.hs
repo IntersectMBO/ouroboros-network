@@ -622,7 +622,7 @@ genInvalidBlocks ::
   -> ServerUpdates
   -> Gen InvalidBlocks
 genInvalidBlocks updateBehavior (ServerUpdates schedule) =
-    case behaviorValidity  updateBehavior of
+    case behaviorValidity updateBehavior of
       -- If we spread the invalid block discoveries arbitrarily, we might not
       -- detect intermediate invalid behavior before a fork. Hence, we ensure
       -- that the discovery of an invalid block happens before the next
@@ -636,17 +636,15 @@ genInvalidBlocks updateBehavior (ServerUpdates schedule) =
             pure (discoveryTick, [hash])
         pure $ InvalidBlocks $ Schedule $
           Map.fromListWith (<>) invalidBlockDiscoveries
-      Valid ->
-            fmap InvalidBlocks
-        .   genSchedule DefaultSchedulingStrategy
-        =<< shuffle (fst <$> invalidBlocksWithTick)
+      Valid -> do
+        invalidBlockTick <- shuffle (fst <$> invalidBlocksWithTick)
+        InvalidBlocks
+          <$> genSchedule DefaultSchedulingStrategy invalidBlockTick
   where
     invalidBlocksWithTick =
         [ (blockHash blk, tick)
         | (tick, updates) <- Map.toList $ getSchedule schedule
-        ,  blk <- updates >>= \case
-            AddBlock blk      -> [blk]
-            SwitchFork _ blks -> blks
+        ,  blk <- blocksFromChainUpdates updates
         , tbValid blk == Invalid
         ]
 
@@ -656,7 +654,9 @@ genInvalidBlocks updateBehavior (ServerUpdates schedule) =
         , any isSwitchFork updates
         ]
       where
-        isSwitchFork = \case SwitchFork{} -> True; _ -> False
+        isSwitchFork = \case
+          SwitchFork{} -> True
+          AddBlock{}   -> False
 
 {-------------------------------------------------------------------------------
   Pretty-printing
