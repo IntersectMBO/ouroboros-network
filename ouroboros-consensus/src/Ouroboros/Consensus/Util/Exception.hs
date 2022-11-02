@@ -1,5 +1,9 @@
+{-# LANGUAGE LambdaCase   #-}
+{-# LANGUAGE ViewPatterns #-}
+
 module Ouroboros.Consensus.Util.Exception (catchAlsoLinked) where
 
+import qualified Control.Exception as E
 import           Control.Monad.Class.MonadThrow
 
 import           Ouroboros.Consensus.Util.IOLike
@@ -13,6 +17,7 @@ catchAlsoLinked ::
 catchAlsoLinked ma handler =
     ma `catches`
       [ Handler handler
-      , Handler $ \(ExceptionInLinkedThread _ ex) ->
-          throwIO ex `catch` handler
+      , Handler $ \case
+          (ExceptionInLinkedThread _ (E.fromException -> Just ex)) -> handler ex
+          ex                                                       -> throwIO ex
       ]
