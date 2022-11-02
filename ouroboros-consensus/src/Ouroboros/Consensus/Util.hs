@@ -55,6 +55,8 @@ module Ouroboros.Consensus.Util (
   , checkThat
     -- * Sets
   , allDisjoint
+    -- * Maps
+  , dimap
     -- * Composition
   , (......:)
   , (.....:)
@@ -83,6 +85,8 @@ import           Data.Functor.Product
 import           Data.Kind (Constraint, Type)
 import           Data.List (foldl', maximumBy)
 import           Data.List.NonEmpty (NonEmpty (..), (<|))
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -363,6 +367,10 @@ allDisjoint = go Set.empty
     go _   []       = True
     go acc (xs:xss) = Set.disjoint acc xs && go (Set.union acc xs) xss
 
+-- | Map over keys and values
+dimap :: Ord k2 => (k1 -> k2) -> (v1 -> v2) -> Map k1 v1 -> Map k2 v2
+dimap keyFn valFn = Map.foldlWithKey update Map.empty
+  where update m k1 v1 =  Map.insert (keyFn k1) (valFn v1) m
 {-------------------------------------------------------------------------------
   Composition
 -------------------------------------------------------------------------------}

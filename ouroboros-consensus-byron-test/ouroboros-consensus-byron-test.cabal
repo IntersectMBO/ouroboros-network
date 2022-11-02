@@ -49,6 +49,8 @@ library
 
                      , byron-spec-ledger
 
+                     , cardano-slotting
+
                      , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-test
