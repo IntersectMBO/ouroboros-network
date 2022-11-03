@@ -547,7 +547,7 @@ instance Alternative m => Semigroup (Guarded m a) where
 
 data Decision m peeraddr peerconn = Decision {
          -- | A trace event to classify the decision and action
-       decisionTrace :: TracePeerSelection peeraddr,
+       decisionTrace :: [TracePeerSelection peeraddr],
 
          -- | An updated state to use immediately
        decisionState :: PeerSelectionState peeraddr peerconn,
@@ -618,7 +618,7 @@ data TracePeerSelection peeraddr =
      -- | target established, actual established, selected peers
      | TraceDemoteWarmPeers    Int Int (Set peeraddr)
      -- | target established, actual established, peer, reason
-     | TraceDemoteWarmFailed   Int Int  peeraddr SomeException
+     | TraceDemoteWarmFailed   Int Int peeraddr SomeException
      -- | target established, actual established, peer
      | TraceDemoteWarmDone     Int Int peeraddr
      -- | target active, actual active, selected peers
@@ -629,7 +629,8 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TraceDemoteHotDone      Int Int peeraddr
-     | TraceDemoteAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
+     | TraceDemoteAsynchronous      (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
+     | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode

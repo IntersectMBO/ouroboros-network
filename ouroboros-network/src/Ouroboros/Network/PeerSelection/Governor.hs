@@ -32,6 +32,7 @@ module Ouroboros.Network.PeerSelection.Governor
   ) where
 
 import           Data.Cache
+import           Data.Foldable (traverse_)
 import           Data.Semigroup (Min (..))
 import           Data.Void (Void)
 
@@ -505,7 +506,7 @@ peerSelectionGovernorLoop tracer
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
           newCounters = peerStateToCounters decisionState
-      traceWith tracer decisionTrace
+      traverse_ (traceWith tracer) decisionTrace
       traceWithCache countersTracer
                      (countersCache decisionState)
                      newCounters
@@ -569,7 +570,7 @@ wakeupDecision :: PeerSelectionState peeraddr peerconn
                -> TimedDecision m peeraddr peerconn
 wakeupDecision st _now =
   Decision {
-    decisionTrace = TraceGovernorWakeup,
+    decisionTrace = [TraceGovernorWakeup],
     decisionState = st,
     decisionJobs  = []
   }

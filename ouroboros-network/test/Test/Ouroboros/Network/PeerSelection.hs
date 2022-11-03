@@ -556,34 +556,35 @@ collectTraces trace =
     Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
 
 traceNum :: TracePeerSelection peeraddr -> Int
-traceNum TraceLocalRootPeersChanged{} = 00
-traceNum TraceTargetsChanged{}        = 01
-traceNum TracePublicRootsRequest{}    = 02
-traceNum TracePublicRootsResults{}    = 03
-traceNum TracePublicRootsFailure{}    = 04
-traceNum TraceGossipRequests{}        = 05
-traceNum TraceGossipResults{}         = 06
-traceNum TraceForgetColdPeers{}       = 07
-traceNum TracePromoteColdPeers{}      = 08
-traceNum TracePromoteColdLocalPeers{} = 09
-traceNum TracePromoteColdFailed{}     = 10
-traceNum TracePromoteColdDone{}       = 11
-traceNum TracePromoteWarmPeers{}      = 12
-traceNum TracePromoteWarmLocalPeers{} = 13
-traceNum TracePromoteWarmFailed{}     = 14
-traceNum TracePromoteWarmDone{}       = 15
-traceNum TraceDemoteWarmPeers{}       = 16
-traceNum TraceDemoteWarmFailed{}      = 17
-traceNum TraceDemoteWarmDone{}        = 18
-traceNum TraceDemoteHotPeers{}        = 19
-traceNum TraceDemoteLocalHotPeers{}   = 20
-traceNum TraceDemoteHotFailed{}       = 21
-traceNum TraceDemoteHotDone{}         = 22
-traceNum TraceDemoteAsynchronous{}    = 23
-traceNum TraceGovernorWakeup{}        = 24
-traceNum TraceChurnWait{}             = 25
-traceNum TraceChurnMode{}             = 26
-traceNum TracePromoteWarmAborted{}    = 27
+traceNum TraceLocalRootPeersChanged{}   = 00
+traceNum TraceTargetsChanged{}          = 01
+traceNum TracePublicRootsRequest{}      = 02
+traceNum TracePublicRootsResults{}      = 03
+traceNum TracePublicRootsFailure{}      = 04
+traceNum TraceGossipRequests{}          = 05
+traceNum TraceGossipResults{}           = 06
+traceNum TraceForgetColdPeers{}         = 07
+traceNum TracePromoteColdPeers{}        = 08
+traceNum TracePromoteColdLocalPeers{}   = 09
+traceNum TracePromoteColdFailed{}       = 10
+traceNum TracePromoteColdDone{}         = 11
+traceNum TracePromoteWarmPeers{}        = 12
+traceNum TracePromoteWarmLocalPeers{}   = 13
+traceNum TracePromoteWarmFailed{}       = 14
+traceNum TracePromoteWarmDone{}         = 15
+traceNum TraceDemoteWarmPeers{}         = 16
+traceNum TraceDemoteWarmFailed{}        = 17
+traceNum TraceDemoteWarmDone{}          = 18
+traceNum TraceDemoteHotPeers{}          = 19
+traceNum TraceDemoteLocalHotPeers{}     = 20
+traceNum TraceDemoteHotFailed{}         = 21
+traceNum TraceDemoteHotDone{}           = 22
+traceNum TraceDemoteAsynchronous{}      = 23
+traceNum TraceGovernorWakeup{}          = 24
+traceNum TraceChurnWait{}               = 25
+traceNum TraceChurnMode{}               = 26
+traceNum TracePromoteWarmAborted{}      = 27
+traceNum TraceDemoteLocalAsynchronous{} = 28
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -614,7 +615,9 @@ allTraceNames =
    , (23, "TraceDemoteAsynchronous")
    , (24, "TraceGovernorWakeup")
    , (25, "TraceChurnWait")
-   , (26, "TracePromoteWarmAborted")
+   , (26, "TraceChurnMode")
+   , (27, "TracePromoteWarmAborted")
+   , (28, "TraceDemoteAsynchronous")
    ]
 
 
@@ -1644,6 +1647,11 @@ prop_governor_target_established_below env =
                        | otherwise         -> Just failures
                        where
                          failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing
@@ -1727,6 +1735,11 @@ prop_governor_target_active_below env =
                        Just (Set.singleton peer)
                      --TODO
                      TraceDemoteAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
@@ -1951,6 +1964,11 @@ prop_governor_target_established_local env =
                        | otherwise         -> Just failures
                        where
                          failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing
@@ -2036,6 +2054,11 @@ prop_governor_target_active_local_below env =
                        Just (Set.singleton peer)
                      --TODO
                      TraceDemoteAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
