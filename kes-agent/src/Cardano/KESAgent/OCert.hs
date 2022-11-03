@@ -5,6 +5,17 @@
 {-#LANGUAGE DeriveGeneric #-}
 {-#LANGUAGE DerivingVia #-}
 {-#LANGUAGE GeneralizedNewtypeDeriving #-}
+
+-- | A stripped-down version of the @OCert@ and @Crypto@ types used in
+-- @cardano-ledger@. We only replicate what we need here, so as to avoid
+-- depending on @cardano-ledger@.
+--
+-- In order to keep things simple, we do /not/ use the same CBOR serialization
+-- format for the 'OCert' type; this would require using or replicating the
+-- @CBORGroup@ functionality from @cardano-ledger@, which I feel would be too
+-- much to replicate here, and since the KES Agent protocols are not
+-- performance critical, the small overhead introduced by using the default
+-- CBOR serialization seems like an acceptable tradeoff.
 module Cardano.KESAgent.OCert
 where
 
@@ -85,4 +96,3 @@ instance
       <*> fromCBOR
       <*> fromCBOR
       <*> decodeSignedDSIGN
-
