@@ -35,6 +35,8 @@ import NoThunks.Class (NoThunks (..))
 import Quiet (Quiet (..))
 import Data.Word
 
+-- | Convenience class that bundles associated KES and DSIGN algorithms into a
+-- single typeclass
 class ( KESAlgorithm (KES c)
       , KESSignAlgorithm IO (KES c)
       , DSIGNAlgorithm (DSIGN c)
@@ -62,6 +64,7 @@ instance
         <> BSB.word64BE counter
         <> BSB.word64BE (fromIntegral $ unKESPeriod period)
 
+-- | Operational certificate (\"opcert\")
 data OCert c = OCert
   { -- | The operational hot key
     ocertVkHot :: !(VerKeyKES (KES c)),
@@ -74,6 +77,8 @@ data OCert c = OCert
   }
   deriving (Generic, Typeable)
 
+-- | NB this CBOR format is incompatible with the one defined in
+-- cardano-ledger.
 instance ( Crypto c
          , Typeable c
          , Typeable (OCert c)
@@ -84,6 +89,8 @@ instance ( Crypto c
       <> toCBOR (ocertKESPeriod ocert)
       <> encodeSignedDSIGN (ocertSigma ocert)
 
+-- | NB this CBOR format is incompatible with the one defined in
+-- cardano-ledger.
 instance
   ( Crypto c
   , Typeable c
@@ -97,6 +104,7 @@ instance
       <*> fromCBOR
       <*> decodeSignedDSIGN
 
+-- | Generate an operational certificate for a given hot key.
 makeOCert :: Crypto c
           => ContextDSIGN (DSIGN c) ~ ()
           => DSIGN.Signable (DSIGN c) (OCertSignable c)
