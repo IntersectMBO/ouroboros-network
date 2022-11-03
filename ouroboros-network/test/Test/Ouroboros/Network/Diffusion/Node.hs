@@ -34,8 +34,8 @@ import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadAsync
                      (MonadAsync (Async, wait, withAsync))
 import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
+import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
 import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
