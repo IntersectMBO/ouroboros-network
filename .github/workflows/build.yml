@@ -86,7 +86,7 @@ jobs:
 
         ghc --version
         cabal --version
-        echo "::set-output name=cabal-store::$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store"
+        echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT
 
     - name: Update Hackage index
       run: cabal update
@@ -152,7 +152,7 @@ jobs:
       run: |
         cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
-        echo "::set-output name=weeknum::$(/bin/date -u "+%W")"
+        echo "weeknum=$(/bin/date -u "+%W")" >> $GITHUB_OUTPUT
 
     - uses: actions/cache@v3
       name: "Cache `cabal store`"
