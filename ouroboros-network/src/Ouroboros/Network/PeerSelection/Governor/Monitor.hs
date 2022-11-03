@@ -67,7 +67,7 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
       --TODO: trace when the clamping kicks in, and warn operators
 
       return $ \_now -> Decision {
-        decisionTrace = TraceTargetsChanged targets targets',
+        decisionTrace = [TraceTargetsChanged targets targets'],
         decisionJobs  = [],
         decisionState = st {
                           targets        = targets',
@@ -101,6 +101,7 @@ connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
             st@PeerSelectionState {
+              localRootPeers,
               activePeers,
               establishedPeers,
               inProgressDemoteHot,
@@ -158,11 +159,16 @@ connections PeerSelectionActions{
                                    ((snd .) . KnownPeers.incrementFailCount)
                                    (knownPeers st)
                                $ Map.keysSet demotedToCold
+            (localDemotions, nonLocalDemotions) =
+              Map.partitionWithKey
+                (\peer _ -> peer `LocalRootPeers.member` localRootPeers)
+                demotions'
 
         in assert (activePeers' `Set.isSubsetOf`
                      Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
-              decisionTrace = TraceDemoteAsynchronous demotions',
+              decisionTrace = [ TraceDemoteLocalAsynchronous localDemotions
+                              , TraceDemoteAsynchronous nonLocalDemotions],
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',
@@ -294,8 +300,8 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
                    (KnownPeers.toSet knownPeers'))
 
         $ Decision {
-            decisionTrace = TraceLocalRootPeersChanged localRootPeers
-                                                       localRootPeers',
+            decisionTrace = [TraceLocalRootPeersChanged localRootPeers
+                                                        localRootPeers'],
             decisionState = st {
                               localRootPeers      = localRootPeers',
                               publicRootPeers     = publicRootPeers',

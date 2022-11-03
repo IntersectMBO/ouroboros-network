@@ -46,9 +46,9 @@ belowTarget actions
   , blockedAt >= publicRootRetryTime
   = Guarded Nothing $
       return $ \_now -> Decision {
-        decisionTrace = TracePublicRootsRequest
-                          targetNumberOfRootPeers
-                          numRootPeers,
+        decisionTrace = [TracePublicRootsRequest
+                           targetNumberOfRootPeers
+                           numRootPeers],
         decisionState = st { inProgressPublicRootsReq = True },
         decisionJobs  = [jobReqPublicRootPeers actions maxExtraRootPeers]
       }
@@ -92,10 +92,10 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
           publicRootRetryTime'     :: Time
           publicRootRetryTime'     = addTime publicRootRetryDiffTime' now
        in Decision {
-            decisionTrace = TracePublicRootsFailure
-                              e
-                              publicRootBackoffs'
-                              publicRootRetryDiffTime',
+            decisionTrace = [TracePublicRootsFailure
+                               e
+                               publicRootBackoffs'
+                               publicRootRetryDiffTime'],
             decisionState = st {
                               inProgressPublicRootsReq = False,
                               publicRootBackoffs  = publicRootBackoffs',
@@ -140,10 +140,10 @@ jobReqPublicRootPeers PeerSelectionActions{requestPublicRootPeers}
                      (KnownPeers.toSet knownPeers'))
 
              Decision {
-                decisionTrace = TracePublicRootsResults
-                                  newPeers
-                                  publicRootBackoffs'
-                                  publicRootRetryDiffTime,
+                decisionTrace = [TracePublicRootsResults
+                                   newPeers
+                                   publicRootBackoffs'
+                                   publicRootRetryDiffTime],
                 decisionState = st {
                                   publicRootPeers     = publicRootPeers',
                                   knownPeers          = knownPeers',

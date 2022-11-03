@@ -547,7 +547,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePromoteColdPeers"
       peerSelectionTraceMap (TracePromoteColdLocalPeers _ _ _)  =
         "TracePromoteColdLocalPeers"
-      peerSelectionTraceMap (TracePromoteColdFailed _ _ _ _ _) =
+      peerSelectionTraceMap (TracePromoteColdFailed _ _ _ _ _)  =
         "TracePromoteColdFailed"
       peerSelectionTraceMap (TracePromoteColdDone _ _ _)        =
         "TracePromoteColdDone"
@@ -555,7 +555,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePromoteWarmPeers"
       peerSelectionTraceMap (TracePromoteWarmLocalPeers _ _)    =
         "TracePromoteWarmLocalPeers"
-      peerSelectionTraceMap (TracePromoteWarmFailed _ _ _ _)   =
+      peerSelectionTraceMap (TracePromoteWarmFailed _ _ _ _)    =
         "TracePromoteWarmFailed"
       peerSelectionTraceMap (TracePromoteWarmDone _ _ _)        =
         "TracePromoteWarmDone"
@@ -563,7 +563,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePromoteWarmAborted"
       peerSelectionTraceMap (TraceDemoteWarmPeers _ _ _)        =
         "TraceDemoteWarmPeers"
-      peerSelectionTraceMap (TraceDemoteWarmFailed _ _ _ _)    =
+      peerSelectionTraceMap (TraceDemoteWarmFailed _ _ _ _)     =
         "TraceDemoteWarmFailed"
       peerSelectionTraceMap (TraceDemoteWarmDone _ _ _)         =
         "TraceDemoteWarmDone"
@@ -571,12 +571,14 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceDemoteHotPeers"
       peerSelectionTraceMap (TraceDemoteLocalHotPeers _ _)      =
         "TraceDemoteLocalHotPeers"
-      peerSelectionTraceMap (TraceDemoteHotFailed _ _ _ _)     =
+      peerSelectionTraceMap (TraceDemoteHotFailed _ _ _ _)      =
         "TraceDemoteHotFailed"
       peerSelectionTraceMap (TraceDemoteHotDone _ _ _)          =
         "TraceDemoteHotDone"
       peerSelectionTraceMap (TraceDemoteAsynchronous _)         =
         "TraceDemoteAsynchronous"
+      peerSelectionTraceMap (TraceDemoteLocalAsynchronous _)    =
+        "TraceDemoteLocalAsynchronous"
       peerSelectionTraceMap TraceGovernorWakeup                 =
         "TraceGovernorWakeup"
       peerSelectionTraceMap (TraceChurnWait _)                  =
@@ -1242,6 +1244,12 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                          where
                            failures =
                              Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                       TraceDemoteLocalAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           failures =
+                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                        TracePromoteWarmFailed _ _ peer _ ->
                          Just (Set.singleton peer)
                        _ -> Nothing
@@ -1396,6 +1404,11 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                          | otherwise         -> Just failures
                          where
                            failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                       TraceDemoteLocalAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
@@ -1537,6 +1550,13 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                          --TODO: the simulation does not yet cause this to happen
                          Just (Set.singleton peer)
                        TraceDemoteAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           -- unlike in the governor case we take into account
+                           -- all asynchronous demotions
+                           failures = Map.keysSet status
+                       TraceDemoteLocalAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
@@ -1709,6 +1729,10 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                          where
                            demotions = Set.singleton (remoteAddress connId)
                        DiffusionPeerSelectionTrace (TraceDemoteAsynchronous status) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                       DiffusionPeerSelectionTrace (TraceDemoteLocalAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
                            failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
