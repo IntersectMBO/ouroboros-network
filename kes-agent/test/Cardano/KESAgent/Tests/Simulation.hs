@@ -86,9 +86,7 @@ testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay 
     vkHot <- deriveVerKeyKES expectedSK
     let skCold = genKeyDSIGN @(DSIGN c) seedP
         kesPeriod = KESPeriod kesPeriodRaw
-        signable = OCertSignable vkHot certN kesPeriod
-        sig = signedDSIGN () signable skCold
-        expectedOC = OCert vkHot certN kesPeriod sig
+        expectedOC = makeOCert vkHot certN kesPeriod skCold
     resultVar <- newEmptyMVar :: IO (MVar (SignKeyKES (KES c), OCert c))
     let tracer :: forall a. Show a => Tracer IO a
         -- Change tracer to Tracer print for debugging

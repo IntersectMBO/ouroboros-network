@@ -20,7 +20,7 @@ module Cardano.KESAgent.OCert
 where
 
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.DSIGN.Class
+import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.Util (SignableRepresentation (..))
 import Cardano.Binary
 
@@ -96,3 +96,17 @@ instance
       <*> fromCBOR
       <*> fromCBOR
       <*> decodeSignedDSIGN
+
+makeOCert :: Crypto c
+          => ContextDSIGN (DSIGN c) ~ ()
+          => DSIGN.Signable (DSIGN c) (OCertSignable c)
+          => VerKeyKES (KES c)
+          -> Word64
+          -> KESPeriod
+          -> SignKeyDSIGN (DSIGN c)
+          -> OCert c
+makeOCert vkHot n kesPeriod skCold =
+  OCert vkHot n kesPeriod sig
+  where
+    signable = OCertSignable vkHot n kesPeriod
+    sig = signedDSIGN () signable skCold
