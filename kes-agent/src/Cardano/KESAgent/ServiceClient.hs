@@ -10,8 +10,9 @@ import Cardano.KESAgent.Driver (driver, DriverTrace)
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
-import Cardano.Crypto.DirectSerialise
+import Cardano.KESAgent.OCert
 
+import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
 import Cardano.Binary
 

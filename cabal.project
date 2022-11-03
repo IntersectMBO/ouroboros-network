@@ -13,6 +13,8 @@ package cryptonite
   -- generation is dubious. Set the flag so we use /dev/urandom by default.
   flags: -support_rdrand
 
+allow-newer: bytestring
+
 -- ---------------------------------------------------------
 -- Disable all tests by default
 

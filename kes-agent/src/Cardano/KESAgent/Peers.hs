@@ -8,7 +8,10 @@ module Cardano.KESAgent.Peers
 where
 
 import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.OCert
+
 import Cardano.Crypto.KES.Class
+
 import Network.TypedProtocol.Core
 
 kesReceiver :: forall (c :: *)

@@ -28,11 +28,12 @@ import Data.Binary (encode, decode)
 import Data.Typeable
 
 import Cardano.Crypto.KES.Class
+import Cardano.Crypto.DirectSerialise
 import Cardano.Binary
 
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
-import Cardano.Crypto.DirectSerialise
+import Cardano.KESAgent.OCert
 
 -- | Logging messages that the Driver may send
 data DriverTrace

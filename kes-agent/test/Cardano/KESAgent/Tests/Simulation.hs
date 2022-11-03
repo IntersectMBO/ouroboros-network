@@ -48,6 +48,7 @@ import Data.Typeable
 
 import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.OCert
 import Cardano.KESAgent.ServiceClient
 import Cardano.KESAgent.ControlClient
 import Cardano.KESAgent.Logging

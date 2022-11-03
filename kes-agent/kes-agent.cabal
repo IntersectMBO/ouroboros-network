@@ -17,6 +17,7 @@ maintainer:         tobias@well-typed.com
 
 library
     exposed-modules: Cardano.KESAgent.Protocol
+                   , Cardano.KESAgent.OCert
                    , Cardano.KESAgent.Driver
                    , Cardano.KESAgent.Peers
                    , Cardano.KESAgent.Agent
@@ -30,12 +31,12 @@ library
     build-depends: base ^>=4.14.0.0
                  , async
                  , binary
-                 , bytestring
+                 , bytestring >=0.11
                  , cardano-crypto-class
                  , cardano-binary
                  , typed-protocols
                  , socket >= 0.8.3 && <0.9
-                 , socket-unix >=0.2.0.0 && <0.3
+                 , socket-unix >=0.2.0.0
                  , nothunks
                  , quiet
     hs-source-dirs:   src
@@ -55,7 +56,7 @@ test-suite kes-agent-tests
                  , cardano-binary
                  , cardano-crypto-class
                  , QuickCheck
-                 , socket-unix >=0.2.0.0 && <0.3
+                 , socket-unix >=0.2.0.0
                  , tasty
                  , tasty-hunit
                  , tasty-quickcheck
