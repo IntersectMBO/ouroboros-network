@@ -41,7 +41,7 @@ library
                      , mtl
                      , QuickCheck
                      , sop-core
-                     , strict-containers
+                     , cardano-strict-containers
 
                      , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
