@@ -240,6 +240,7 @@ source-repository-package
     eras/byron/ledger/executable-spec
     eras/byron/ledger/impl
     eras/byron/ledger/impl/test
+    eras/conway/impl
     eras/shelley-ma/impl
     eras/shelley-ma/test-suite
     eras/shelley/impl
