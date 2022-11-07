@@ -491,7 +491,7 @@ instance ( Show peerAddr
 data PeerStateActionsArguments muxMode socket peerAddr versionNumber m a b =
     PeerStateActionsArguments {
 
-      spsTracer                 :: Tracer m (PeerSelectionActionsTrace peerAddr),
+      spsTracer                 :: Tracer m (PeerSelectionActionsTrace peerAddr versionNumber),
 
       -- | Peer deactivation timeout: timeouts stopping hot protocols.
       --
@@ -714,13 +714,13 @@ withPeerStateActions PeerStateActionsArguments {
                 HandleHandshakeClientError err -> do
                   traceWith spsTracer (PeerStatusChangeFailure
                                         (ColdToWarm Nothing remotePeerAddr)
-                                        HandshakeClientFailure)
+                                        (HandshakeClientFailure err))
                   throwIO (ClientException err)
 
                 HandleHandshakeServerError err -> do
                   traceWith spsTracer (PeerStatusChangeFailure
                                         (ColdToWarm Nothing remotePeerAddr)
-                                        HandshakeServerFailure)
+                                        (HandshakeServerFailure err))
                   throwIO (ServerException err)
 
                 HandleError err -> do
@@ -1041,9 +1041,9 @@ startProtocols tok PeerConnectionHandle { pchMux, pchAppHandles } = do
 -- | Type of failure with additional exception context; We don't log handshake
 -- errors as this will be done by the handshake tracer.
 --
-data FailureType =
-      HandshakeClientFailure
-    | HandshakeServerFailure
+data FailureType versionNumber =
+      HandshakeClientFailure !(HandshakeException versionNumber)
+    | HandshakeServerFailure !(HandshakeException versionNumber)
     | HandleFailure !SomeException
     | MuxStoppedFailure
     | TimeoutError
@@ -1068,9 +1068,9 @@ data PeerStatusChangeType peerAddr =
 
 -- | Traces produced by 'peerSelectionActions'.
 --
-data PeerSelectionActionsTrace peerAddr =
+data PeerSelectionActionsTrace peerAddr vNumber =
       PeerStatusChanged       (PeerStatusChangeType peerAddr)
-    | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) FailureType
+    | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (WithSomeProtocolTemperature FirstToFinishResult)
   deriving Show
