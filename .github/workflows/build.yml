@@ -86,7 +86,7 @@ jobs:
 
         ghc --version
         cabal --version
-        echo "::set-output name=cabal-store::$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store"
+        echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT
 
     - name: Update Hackage index
       run: cabal update
@@ -125,34 +125,21 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: "Configure cabal.project.local"
+      if: runner.os != 'Windows'
       run: |
-        # running cabal configure overrides every other configuration already
-        # present in the cabal.project.local file so it is quite disruptive. By
-        # manually adding the options we want, this is always consistent.
-        cat ./cabal.project.local.ci >> ./cabal.project.local
+        cp .github/workflows/cabal.project.local.Linux cabal.project.local
 
-        cat >> cabal.project.local <<EOF
-
-        -- Add strcittvar check
-        package io-classes
-          flags: +checktvarinvariant
-
-        package cardano-crypto-praos
-          flags: -external-libsodium-vrf
-
-        -- cabal configure --enable-tests
-        ignore-project: False
-        tests: True
-        EOF
-
-        cat ./cabal.project.local
+    - name: "Configure cabal.project.local Windows"
+      if: runner.os == 'Windows'
+      run: |
+        cp .github/workflows/cabal.project.local.Windows cabal.project.local
 
     - name: Record dependencies
       id: record-deps
       run: |
         cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
-        echo "::set-output name=weeknum::$(/bin/date -u "+%W")"
+        echo "weeknum=$(/bin/date -u "+%W")" >> $GITHUB_OUTPUT
 
     - uses: actions/cache@v3
       name: "Cache `cabal store`"
