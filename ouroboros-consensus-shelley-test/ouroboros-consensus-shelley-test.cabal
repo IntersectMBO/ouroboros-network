@@ -40,7 +40,7 @@ library
                      , quiet             >=0.2   && <0.3
                      , mtl               >=2.2   && <2.3
                      , QuickCheck
-                     , strict-containers
+                     , cardano-strict-containers
                      , transformers
 
                        -- cardano-ledger-specs

@@ -174,7 +174,7 @@ library
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2   && <0.3,
                        random,
-                       strict-containers,
+                       cardano-strict-containers,
 
                        cardano-binary,
                        cardano-prelude,
@@ -253,7 +253,7 @@ library protocol-tests
                        QuickCheck,
                        quickcheck-instances,
                        serialise,
-                       strict-containers,
+                       cardano-strict-containers,
                        tasty,
                        tasty-quickcheck,
                        text,

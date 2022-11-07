@@ -209,8 +209,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 631cb6cf1fa01ab346233b610a38b3b4cba6e6ab
-  --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
+  tag: 4ef911eb7a4d628c938312ff4c92e7c0bb8c83a1
+   --sha256: sha256-WMgIzv1CTKv48O8aWpjozkdz2GhewZxKCQ4hGjfsQjw=
   subdir:
     base-deriving-via
     binary
@@ -221,12 +221,13 @@ source-repository-package
     measures
     orphans-deriving-via
     slotting
-    strict-containers
+    heapwords
+    cardano-strict-containers
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-ledger
-  tag: 49613f11e034485c8377945c86c0465726c0860c
+  tag: cb29b038a5e8ae5a91f3e6fbc34b474c27cc1d87
   --sha256: 0gxb9xghsacr0qaljhq3qzvmb2f1wwmly89prwqy4fdm9mvqiq95
   subdir:
     eras/alonzo/impl
