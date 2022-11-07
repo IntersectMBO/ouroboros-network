@@ -137,7 +137,7 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m PeerSelectionCounters
 
     , dtPeerSelectionActionsTracer
-        :: Tracer m (PeerSelectionActionsTrace ntnAddr)
+        :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
 
     , dtConnectionManagerTracer
         :: Tracer m (ConnectionManagerTrace

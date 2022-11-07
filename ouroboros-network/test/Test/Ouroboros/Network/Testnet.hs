@@ -165,7 +165,7 @@ data DiffusionTestTrace =
       DiffusionLocalRootPeerTrace (TraceLocalRootPeers NtNAddr SomeException)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionPeerSelectionTrace (TracePeerSelection NtNAddr)
-    | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr)
+    | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
     | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
     | DiffusionConnectionManagerTrace
         (ConnectionManagerTrace NtNAddr
@@ -468,7 +468,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
                                 tracerDiffusionSimWithTimeName
                                 nullTracer
 
-      events :: [PeerSelectionActionsTrace NtNAddr]
+      events :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
                                _                                     -> Nothing
                         )
@@ -483,7 +483,8 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
              . traceEvents
              $ runSimTrace sim
 
-      peerSelectionActionsTraceMap :: PeerSelectionActionsTrace NtNAddr -> String
+      peerSelectionActionsTraceMap :: PeerSelectionActionsTrace NtNAddr NtNVersion
+                                   -> String
       peerSelectionActionsTraceMap (PeerStatusChanged _)             =
         "PeerStatusChanged"
       peerSelectionActionsTraceMap (PeerStatusChangeFailure _ ft) =

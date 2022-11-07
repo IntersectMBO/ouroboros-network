@@ -5,6 +5,10 @@ team.  See [consensus
 CHANGELOG](../ouroboros-consensus/docs/interface-CHANGELOG.md) file for how
 this changelog is supposed to be used.
 
+## Circa 2022-11-07
+
+- Improved `outbound-governor`'s `FailureType`: now includes handshake error.
+
 ## Circa 2022-10-11
 
 - `PeerSelectionCounters` includes local peers information.
