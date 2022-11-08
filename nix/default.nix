@@ -48,7 +48,7 @@ let
             };
         })
       # And, of course, our haskell-nix-ified cabal project:
-      (import ./pkgs.nix)
+      (import ./pkgs.nix { inherit sources; })
     ] ++ [
       # This overlay adds a field localConfig to the pkgs that will be used
       # afterwards to retrieve the locally defined values for building the

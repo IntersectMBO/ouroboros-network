@@ -20,6 +20,8 @@ let
 
     # These programs will be available inside the nix-shell.
     nativeBuildInputs = [
+      # TODO: Remove this once we no longer have significant s-r-p dependencies, 
+      # in particular once we're using a released ledger
       cabalWrapped
       # we also add cabal (even if cabalWrapped will be used by default) for shell completion:
       cabal
