@@ -1,10 +1,10 @@
 # ###########################################################################
 # Builds Haskell packages with Haskell.nix
 ############################################################################
-{ lib, stdenv, pkgs, haskell-nix, buildPackages, config ? { }
+{ lib, stdenv, pkgs, haskell-nix, CHaP, buildPackages, config ? { }
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
-, libsodium-vrf ? pkgs.libsodium-vrf 
+, libsodium-vrf ? pkgs.libsodium-vrf
   # Enable strict TVar invariant check flag in strict-stm
 , checkTVarInvariant ? false }:
 let
@@ -13,9 +13,10 @@ let
     name = "ouroboros-network-src";
     src = ../.;
   };
+  inputMap = { "https://input-output-hk.github.io/cardano-haskell-packages" = CHaP; };
 
   projectPackages = lib.attrNames (haskell-nix.haskellLib.selectProjectPackages
-    (haskell-nix.cabalProject { inherit compiler-nix-name src; }));
+    (haskell-nix.cabalProject { inherit compiler-nix-name src inputMap; }));
 
   # This creates the Haskell package set.
   # https://input-output-hk.github.io/haskell.nix/user-guide/projects/
@@ -30,7 +31,7 @@ let
       };
     })
     ({ config, ...}: {
-    inherit compiler-nix-name src;
+    inherit compiler-nix-name src inputMap;
     modules = [
 
       {
@@ -45,7 +46,7 @@ let
           doCoverage = config.coverage;
         });
       }
-      {   
+      {
         packages.strict-stm.components.library.configureFlags =
           lib.mkForce (if checkTVarInvariant then ["-f checktvarinvariant"] else []);
       }

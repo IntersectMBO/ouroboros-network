@@ -48,7 +48,7 @@ library
                        Ouroboros.Consensus.Mock.Protocol.Praos
 
   build-depends:       base              >=4.9   && <4.15
-                     , bimap             >=0.3   && <0.5
+                     , bimap             >=0.4   && <0.5
                      , bytestring        >=0.10  && <0.11
                      , cardano-binary
                      , cardano-crypto-class
