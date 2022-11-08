@@ -425,28 +425,31 @@ forkBlockForging IS{..} blockForging =
         uninterruptibleMask_ $ do
           result <- lift $ ChainDB.addBlockAsync chainDB noPunish newBlock
           -- Block until we have processed the block
-          curTip <- lift $ atomically $ ChainDB.blockProcessed result
-
-          -- Check whether we adopted our block
-          when (curTip /= blockPoint newBlock) $ do
-            isInvalid <- lift $ atomically $
-              ($ blockHash newBlock) . forgetFingerprint <$>
-              ChainDB.getIsInvalidBlock chainDB
-            case isInvalid of
-              Nothing ->
-                trace $ TraceDidntAdoptBlock currentSlot newBlock
-              Just reason -> do
-                trace $ TraceForgedInvalidBlock currentSlot newBlock reason
-                -- We just produced a block that is invalid according to the
-                -- ledger in the ChainDB, while the mempool said it is valid.
-                -- There is an inconsistency between the two!
-                --
-                -- Remove all the transactions in that block, otherwise we'll
-                -- run the risk of forging the same invalid block again. This
-                -- means that we'll throw away some good transactions in the
-                -- process.
-                lift $ removeTxs mempool (map (txId . txForgetValidated) txs)
-            exitEarly
+          mbCurTip <- lift $ atomically $ ChainDB.blockProcessed result
+          case mbCurTip of
+            Nothing -> trace (TraceAdoptionThreadDied currentSlot newBlock)
+                    >> exitEarly
+            Just curTip -> do
+              -- Check whether we adopted our block
+              when (curTip /= blockPoint newBlock) $ do
+                isInvalid <- lift $ atomically $
+                  ($ blockHash newBlock) . forgetFingerprint <$>
+                  ChainDB.getIsInvalidBlock chainDB
+                case isInvalid of
+                  Nothing ->
+                    trace $ TraceDidntAdoptBlock currentSlot newBlock
+                  Just reason -> do
+                    trace $ TraceForgedInvalidBlock currentSlot newBlock reason
+                    -- We just produced a block that is invalid according to the
+                    -- ledger in the ChainDB, while the mempool said it is valid.
+                    -- There is an inconsistency between the two!
+                    --
+                    -- Remove all the transactions in that block, otherwise we'll
+                    -- run the risk of forging the same invalid block again. This
+                    -- means that we'll throw away some good transactions in the
+                    -- process.
+                    lift $ removeTxs mempool (map (txId . txForgetValidated) txs)
+                exitEarly
 
           -- We successfully produced /and/ adopted a block
           --

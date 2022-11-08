@@ -410,7 +410,7 @@ data AddBlockPromise m blk = AddBlockPromise
       -- NOTE: Even when the result is 'False', 'getIsFetched' might still
       -- return 'True', e.g., the block was older than @k@, but it has been
       -- downloaded and stored on disk before.
-    , blockProcessed     :: STM m (Point blk)
+    , blockProcessed     :: STM m (Maybe (Point blk))
       -- ^ Use this 'STM' transaction to wait until the block has been
       -- processed: the block has been written to disk and chain selection has
       -- been performed for the block, /unless/ the block is from the future.
@@ -419,6 +419,8 @@ data AddBlockPromise m blk = AddBlockPromise
       -- doesn't match the added block, it doesn't necessarily mean the block
       -- wasn't adopted. We might have adopted a longer chain of which the
       -- added block is a part, but not the tip.
+      --
+      -- It returns 'Nothing' if the thread adding the block died.
       --
       -- NOTE: When the block is from the future, chain selection for the
       -- block won't be performed until the block is no longer in the future,
@@ -437,7 +439,7 @@ addBlockWaitWrittenToDisk chainDB punish blk = do
 
 -- | Add a block synchronously: wait until the block has been processed (see
 -- 'blockProcessed'). The new tip of the ChainDB is returned.
-addBlock :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m (Point blk)
+addBlock :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m (Maybe (Point blk))
 addBlock chainDB punish blk = do
     promise <- addBlockAsync chainDB punish blk
     atomically $ blockProcessed promise

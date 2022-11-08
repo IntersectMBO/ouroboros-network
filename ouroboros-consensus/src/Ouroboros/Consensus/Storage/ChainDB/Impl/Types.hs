@@ -44,6 +44,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   , BlockToAdd (..)
   , BlocksToAdd
   , addBlockToAdd
+  , closeBlocksToAdd
   , getBlockToAdd
   , newBlocksToAdd
     -- * Trace types
@@ -61,6 +62,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
   ) where
 
 import           Control.Tracer
+import           Data.Foldable (traverse_)
 import           Data.Map.Strict (Map)
 import           Data.Maybe.Strict (StrictMaybe (..))
 import           Data.Typeable
@@ -450,7 +452,7 @@ data BlockToAdd m blk = BlockToAdd
   , blockToAdd            :: !blk
   , varBlockWrittenToDisk :: !(StrictTMVar m Bool)
     -- ^ Used for the 'blockWrittenToDisk' field of 'AddBlockPromise'.
-  , varBlockProcessed     :: !(StrictTMVar m (Point blk))
+  , varBlockProcessed     :: !(StrictTMVar m (Maybe (Point blk)))
     -- ^ Used for the 'blockProcessed' field of 'AddBlockPromise'.
   }
 
@@ -491,6 +493,14 @@ addBlockToAdd tracer (BlocksToAdd queue) punish blk = do
 -- queue is empty.
 getBlockToAdd :: IOLike m => BlocksToAdd m blk -> m (BlockToAdd m blk)
 getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
+
+-- | Flush the 'BlocksToAdd' queue and notify the waiting threads.
+--
+closeBlocksToAdd :: IOLike m => BlocksToAdd m blk -> STM m ()
+closeBlocksToAdd (BlocksToAdd queue) = do
+  as <- flushTBQueue queue
+  traverse_ (\a -> tryPutTMVar (varBlockProcessed a) Nothing) as
+
 
 {-------------------------------------------------------------------------------
   Trace types

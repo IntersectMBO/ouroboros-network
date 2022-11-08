@@ -23,11 +23,11 @@ import           Data.Bifunctor (bimap, first)
 
 import           Cardano.Chain.Slotting (EpochSlots)
 
+import           Ouroboros.Consensus.Block (BlockForging (..))
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.ByronHFC (ByronBlockHFC)
 import           Ouroboros.Consensus.Cardano.Node
-import           Ouroboros.Consensus.Block (BlockForging (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
 import qualified Ouroboros.Consensus.Ledger.SupportsProtocol as Consensus
                      (LedgerSupportsProtocol)

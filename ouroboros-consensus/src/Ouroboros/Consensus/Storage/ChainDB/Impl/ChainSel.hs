@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE LambdaCase           #-}
@@ -342,8 +343,8 @@ addBlockSync cdb@CDB {..} BlockToAdd { blockToAdd = b, .. } = do
     -- | Fill in the 'TMVar' for the 'varBlockProcessed' of the block's
     -- 'AddBlockPromise' with the given tip.
     deliverProcessed :: Point blk -> m ()
-    deliverProcessed tip = atomically $
-        putTMVar varBlockProcessed tip
+    deliverProcessed !tip = atomically $
+        putTMVar varBlockProcessed (Just tip)
 
 -- | Return 'True' when the given header should be ignored when adding it
 -- because it is too old, i.e., we wouldn't be able to switch to a chain

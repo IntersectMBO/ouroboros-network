@@ -324,6 +324,10 @@ data TraceForgeEvent blk
     -- this warrants a warning.
   | TraceDidntAdoptBlock SlotNo blk
 
+    -- | We did not adopt the block we produced, because the adoption thread
+    -- died.  Most likely because of an async exception.
+  | TraceAdoptionThreadDied SlotNo blk
+
     -- | We forged a block that is invalid according to the ledger in the
     -- ChainDB. This means there is an inconsistency between the mempool
     -- validation and the ledger validation. This is a serious error!

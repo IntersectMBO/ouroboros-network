@@ -535,7 +535,13 @@ addBlockRunner
 addBlockRunner cdb@CDB{..} = forever $ do
     let trace = traceWith cdbTracer . TraceAddBlockEvent
     trace $ PoppedBlockFromQueue RisingEdge
-    blkToAdd <- getBlockToAdd cdbBlocksToAdd
-    trace $ PoppedBlockFromQueue $ FallingEdgeWith $
-      blockRealPoint $ blockToAdd blkToAdd
-    addBlockSync cdb blkToAdd
+    -- if the `addBlockSync` does not complete because it was killed by an async
+    -- exception (or it errored), notify the blocked thread
+    bracketOnError (getBlockToAdd cdbBlocksToAdd)
+                   (\blkToAdd -> atomically $ do
+                     _ <- tryPutTMVar (varBlockProcessed blkToAdd) Nothing
+                     closeBlocksToAdd cdbBlocksToAdd)
+                   (\blkToAdd -> do
+                     trace $ PoppedBlockFromQueue $ FallingEdgeWith $
+                             blockRealPoint $ blockToAdd blkToAdd
+                     addBlockSync cdb blkToAdd)
