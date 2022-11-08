@@ -174,10 +174,9 @@ runForge epochSize_ nextSlot opts chainDB blockForging cfg = do
         -- Add the block to the chain DB (synchronously) and verify adoption
         let noPunish = InvalidBlockPunishment.noPunishment
         result <- lift $ ChainDB.addBlockAsync chainDB noPunish newBlock
-        curTip <- lift $ atomically $ ChainDB.blockProcessed result
-
-        when (curTip /= blockPoint newBlock) $
-            exitEarly' "block not adopted"
+        mbCurTip <- lift $ atomically $ ChainDB.blockProcessed result
+        when (mbCurTip /= Just (blockPoint newBlock)) $
+             exitEarly' "block not adopted"
 
 -- | Context required to forge a block
 data BlockContext blk = BlockContext

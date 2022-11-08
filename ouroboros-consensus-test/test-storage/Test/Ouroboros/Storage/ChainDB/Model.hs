@@ -569,7 +569,7 @@ addBlockPromise cfg blk m = (result, m')
                 && Map.member    (blockHash blk) (blocks m')
     result = AddBlockPromise
       { blockWrittenToDisk = return blockWritten
-      , blockProcessed     = return $ tipPoint m'
+      , blockProcessed     = return $ Just $ tipPoint m'
       }
 
 {-------------------------------------------------------------------------------

@@ -35,7 +35,7 @@ import           Data.Functor.Identity (Identity)
 import           Data.List (sortOn)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromJust, fromMaybe)
 import           Data.Ord (Down (..))
 import           Data.Proxy
 import           Data.Sequence.Strict (StrictSeq)
@@ -379,7 +379,8 @@ run env@ChainDBEnv { varDB, .. } cmd =
     advanceAndAdd :: ChainDBState m blk -> SlotNo -> blk -> m (Point blk)
     advanceAndAdd ChainDBState { chainDB } newCurSlot blk = do
       atomically $ modifyTVar varCurSlot (max newCurSlot)
-      addBlock chainDB InvalidBlockPunishment.noPunishment blk
+      -- `blockProcessed` always returns 'Just'
+      fromJust <$> addBlock chainDB InvalidBlockPunishment.noPunishment blk
 
     wipeVolatileDB :: ChainDBState m blk -> m (Point blk)
     wipeVolatileDB st = do

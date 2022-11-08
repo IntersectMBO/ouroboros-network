@@ -19,7 +19,7 @@ module Cardano.Api.Protocol.Types (
   , ProtocolInfoArgs (..)
   ) where
 
-import           Data.Bifunctor (bimap, first)
+import           Data.Bifunctor (bimap)
 
 import           Cardano.Chain.Slotting (EpochSlots)
 
