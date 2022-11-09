@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -65,11 +64,11 @@ belowTarget actions
                              numGossipReqsPossible
       let numGossipReqs = Set.size selectedForGossip
       return $ \now -> Decision {
-        decisionTrace = TraceGossipRequests
-                          targetNumberOfKnownPeers
-                          numKnownPeers
-                          availableForGossip
-                          selectedForGossip,
+        decisionTrace = [TraceGossipRequests
+                           targetNumberOfKnownPeers
+                           numKnownPeers
+                           availableForGossip
+                           selectedForGossip],
         decisionState = st {
                           inProgressGossipReqs = inProgressGossipReqs
                                                + numGossipReqs,
@@ -112,7 +111,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
     handler peers e = return $
       Completion $ \st _ ->
       Decision {
-        decisionTrace = TraceGossipResults [ (p, Left e) | p <- peers ],
+        decisionTrace = [TraceGossipResults [ (p, Left e) | p <- peers ]],
         decisionState = st {
                           inProgressGossipReqs = inProgressGossipReqs st
                                                - length peers
@@ -137,7 +136,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
           let peerResults = zip peers totalResults
               newPeers    = [ p | Right ps <- totalResults, p <- ps ]
           return $ Completion $ \st _ -> Decision {
-            decisionTrace = TraceGossipResults peerResults,
+            decisionTrace = [TraceGossipResults peerResults],
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
@@ -166,7 +165,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                                  | (a, Nothing) <- zip gossips partialResults ]
 
           return $ Completion $ \st _ -> Decision {
-            decisionTrace = TraceGossipResults peerResults,
+            decisionTrace = [TraceGossipResults peerResults],
             decisionState = st {
                               --TODO: also update with the failures
                               knownPeers = KnownPeers.insert
@@ -211,7 +210,7 @@ jobGossip PeerSelectionActions{requestPeerGossip}
       mapM_ cancel gossipsIncomplete
 
       return $ Completion $ \st _ -> Decision {
-        decisionTrace = TraceGossipResults peerResults,
+        decisionTrace = [TraceGossipResults peerResults],
         decisionState = st {
                           --TODO: also update with the failures
                           knownPeers = KnownPeers.insert
@@ -304,10 +303,10 @@ aboveTarget PeerSelectionPolicy {
                     (KnownPeers.toSet knownPeers'))
 
               Decision {
-                decisionTrace = TraceForgetColdPeers
-                                  targetNumberOfKnownPeers
-                                  numKnownPeers
-                                  selectedToForget,
+                decisionTrace = [TraceForgetColdPeers
+                                   targetNumberOfKnownPeers
+                                   numKnownPeers
+                                   selectedToForget],
                 decisionState = st { knownPeers      = knownPeers',
                                      publicRootPeers = publicRootPeers' },
                 decisionJobs  = []

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
@@ -35,9 +36,9 @@ module Test.ThreadNet.Network (
   ) where
 
 import           Codec.CBOR.Read (DeserialiseFailure)
+import qualified Control.Concurrent.Class.MonadSTM as MonadSTM
 import qualified Control.Exception as Exn
 import           Control.Monad
-import qualified Control.Monad.Class.MonadSTM as MonadSTM
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
@@ -87,6 +88,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
+import           Ouroboros.Consensus.Node.ExitPolicy
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -1242,6 +1244,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
              String
              -- ^ protocol name
           -> (String -> a -> RestartCause)
+          -> (String -> b -> RestartCause)
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
              -> ControlMessageSTM m
@@ -1254,17 +1257,17 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
              -> NodeToNodeVersion
              -> NodeId
              -> Channel m msg
-             -> m (a, trailingBytes)
+             -> m (b, trailingBytes)
              )
              -- ^ server action to run on node2
           -> (msg -> m ())
           -> m (m RestartCause, m RestartCause)
-        miniProtocol proto ret client server middle = do
+        miniProtocol proto retClient retServer client server middle = do
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( (ret (proto <> ".client") . fst) <$> client app1 version (return Continue) (fromCoreNodeId node2) chan
-             , (ret (proto <> ".server") . fst) <$> server app2 version (fromCoreNodeId node1) dualChan
+             ( (retClient (proto <> ".client") . fst) <$> client app1 version (return Continue) (fromCoreNodeId node2) chan
+             , (retServer (proto <> ".server") . fst) <$> server app2 version (fromCoreNodeId node1) dualChan
              )
 
     (>>= withAsyncsWaitAny) $
@@ -1273,21 +1276,25 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
         pure (watcher vertexStatusVar1, watcher vertexStatusVar2)
         NE.:|
       [ miniProtocol "ChainSync"
+          (\_s _  -> RestartChainSyncTerminated)
           (\_s () -> RestartChainSyncTerminated)
           NTN.aChainSyncClient
           NTN.aChainSyncServer
           chainSyncMiddle
       , miniProtocol "BlockFetch"
           neverReturns
+          neverReturns
           NTN.aBlockFetchClient
           NTN.aBlockFetchServer
           (\_ -> pure ())
       , miniProtocol "TxSubmission"
           neverReturns
+          neverReturns
           NTN.aTxSubmission2Client
           NTN.aTxSubmission2Server
           (\_ -> pure ())
       , miniProtocol "KeepAlive"
+          neverReturns
           neverReturns
           NTN.aKeepAliveClient
           NTN.aKeepAliveServer
@@ -1301,8 +1308,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
     flattenPairs :: forall a. NE.NonEmpty (a, a) -> NE.NonEmpty a
     flattenPairs = uncurry (<>) . NE.unzip
 
-    neverReturns :: String -> () -> void
-    neverReturns s () = error $ s <> " never returns!"
+    neverReturns :: forall x void. String -> x -> void
+    neverReturns s !_ = error $ s <> " never returns!"
 
     -- terminates (by returning, not via exception) when the vertex starts
     -- 'VFalling'
@@ -1632,7 +1639,7 @@ type LimitedApp' m peer blk =
         Lazy.ByteString
         (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
         (AnyMessage KeepAlive)
-        ()
+        NodeToNodeInitiatorResult ()
 
 {-------------------------------------------------------------------------------
   Tracing

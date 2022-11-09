@@ -1,5 +1,4 @@
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -26,8 +25,8 @@ module Ouroboros.Network.InboundGovernor.State
   , MiniProtocolData (..)
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
 import           Data.ByteString.Lazy (ByteString)
@@ -46,7 +45,7 @@ import           Ouroboros.Network.Mux hiding (ControlMessage)
 
 -- | Currently only 'StdGen', but in the future this will be extended to
 -- a record which contains some useful statistics about peers to support more
--- advances prune strategies (see. 'PruneStrategy').
+-- advanced prune strategies (see. 'PruneStrategy').
 --
 newtype InboundGovernorObservableState = InboundGovernorObservableState {
       igosPrng :: StdGen

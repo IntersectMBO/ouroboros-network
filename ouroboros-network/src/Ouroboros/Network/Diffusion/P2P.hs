@@ -1,17 +1,11 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-
--- `withLocalSocket` has some constraints that are only required on Windows.
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 #if !defined(mingw32_HOST_OS)
 #define POSIX
@@ -35,11 +29,11 @@ module Ouroboros.Network.Diffusion.P2P
   ) where
 
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import qualified Control.Monad.Class.MonadAsync as Async
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -51,7 +45,6 @@ import           Data.IP (IP)
 import qualified Data.IP as IP
 import           Data.Kind (Type)
 import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map (Map)
 import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Set (Set)
@@ -76,12 +69,16 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version
+import           Ouroboros.Network.Socket (configureSocket,
+                     configureSystemdSocket)
 
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
+import           Ouroboros.Network.Diffusion.Utils
+import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
                      RemoteTransitionTrace)
@@ -100,7 +97,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      PeerSelectionCounters (..), TracePeerSelection (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), withPeerStateActions)
@@ -111,7 +108,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
 import           Ouroboros.Network.PeerSelection.Simple
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server2 (ServerArguments (..),
-                     ServerTrace (..))
+                     ServerControlChannel, ServerTrace (..))
 import qualified Ouroboros.Network.Server2 as Server
 
 -- | P2P DiffusionTracers Extras
@@ -130,22 +127,11 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
         :: Tracer m (TracePeerSelection ntnAddr)
 
     , dtDebugPeerSelectionInitiatorTracer
-        :: Tracer m (DebugPeerSelection
-                       ntnAddr
-                       (PeerConnectionHandle
-                         InitiatorMode
-                         ntnAddr
-                         ByteString
-                         m () Void))
+        :: Tracer m (DebugPeerSelection ntnAddr)
 
+      -- TODO: can be unified with the previous one
     , dtDebugPeerSelectionInitiatorResponderTracer
-        :: Tracer m (DebugPeerSelection
-                       ntnAddr
-                       (PeerConnectionHandle
-                         InitiatorResponderMode
-                         ntnAddr
-                         ByteString
-                         m () ()))
+        :: Tracer m (DebugPeerSelection ntnAddr)
 
     , dtTracePeerSelectionCounters
         :: Tracer m PeerSelectionCounters
@@ -247,6 +233,20 @@ data ArgumentsExtra m = ArgumentsExtra {
       -- is using @TIME_WAIT@.
       --
     , daTimeWaitTimeout :: DiffTime
+
+      -- | Churn interval between churn events in deadline mode.  A small fuzz
+      -- is added (max 10 minutes) so that not all nodes churn at the same time.
+      --
+      -- By default it is set to 3300 seconds.
+      --
+    , daDeadlineChurnInterval :: DiffTime
+
+      -- | Churn interval between churn events in bulk sync mode.  A small fuzz
+      -- is added (max 1 minute) so that not all nodes churn at the same time.
+      --
+      -- By default it is set to 300 seconds.
+      --
+    , daBulkChurnInterval :: DiffTime
     }
 
 --
@@ -273,14 +273,18 @@ socketAddressType addr                    =
 
 -- | P2P Applications Extras
 --
--- TODO: we need initiator only mode for Deadalus, there's no reason why it
+-- TODO: we need initiator only mode for Daedalus, there's no reason why it
 -- should run a node-to-node server side.
 --
-data ApplicationsExtra ntnAddr m =
+data ApplicationsExtra ntnAddr m a =
     ApplicationsExtra {
     -- | /node-to-node/ rethrow policy
     --
       daRethrowPolicy      :: RethrowPolicy
+
+    -- | /node-to-node/ return policy
+    --
+    , daReturnPolicy       :: ReturnPolicy a
 
     -- | /node-to-client/ rethrow policy
     --
@@ -318,17 +322,14 @@ data HasMuxMode (f :: MuxMode -> Type) where
 -- | Node-To-Node connection manager requires extra data when running in
 -- 'InitiatorResponderMode'.
 --
-data ConnectionManagerDataInMode peerAddr m (mode :: MuxMode) where
+data ConnectionManagerDataInMode peerAddr m a (mode :: MuxMode) where
     CMDInInitiatorMode
-      :: ConnectionManagerDataInMode peerAddr m InitiatorMode
+      :: ConnectionManagerDataInMode peerAddr m a InitiatorMode
 
     CMDInInitiatorResponderMode
-      :: Server.ControlChannel m
-          (Server.NewConnection
-            peerAddr
-            (Handle InitiatorResponderMode peerAddr ByteString m () ()))
+      :: ServerControlChannel InitiatorResponderMode peerAddr ByteString  m a ()
       -> StrictTVar m Server.InboundGovernorObservableState
-      -> ConnectionManagerDataInMode peerAddr m InitiatorResponderMode
+      -> ConnectionManagerDataInMode peerAddr m a InitiatorResponderMode
 
 
 --
@@ -384,42 +385,42 @@ type NodeToClientConnectionManager
 
 type NodeToNodeHandle
        (mode :: MuxMode)
-       ntnAddr m a =
-    Handle mode ntnAddr ByteString m () a
+       ntnAddr m a b =
+    Handle mode ntnAddr ByteString m a b
 
 type NodeToNodeConnectionHandler
        (mode :: MuxMode)
-       ntnFd ntnAddr ntnVersion ntnVersionData m a =
+       ntnFd ntnAddr ntnVersion ntnVersionData m a b =
     ConnectionHandler
       mode
       (ConnectionHandlerTrace ntnVersion ntnVersionData)
       ntnFd
       ntnAddr
-      (NodeToNodeHandle mode ntnAddr m a)
+      (NodeToNodeHandle mode ntnAddr m a b)
       (HandleError mode ntnVersion)
       (ntnVersion, ntnVersionData)
       m
 
 type NodeToNodeConnectionManagerArguments
        (mode :: MuxMode)
-       ntnFd ntnAddr ntnVersion ntnVersionData m a =
+       ntnFd ntnAddr ntnVersion ntnVersionData m a b =
     ConnectionManagerArguments
       (ConnectionHandlerTrace ntnVersion ntnVersionData)
       ntnFd
       ntnAddr
-      (NodeToNodeHandle mode ntnAddr m a)
+      (NodeToNodeHandle mode ntnAddr m a b)
       (HandleError mode ntnVersion)
       (ntnVersion, ntnVersionData)
       m
 
 type NodeToNodeConnectionManager
        (mode :: MuxMode)
-       ntnFd ntnAddr ntnVersion m a =
+       ntnFd ntnAddr ntnVersion m a b =
     ConnectionManager
       mode
       ntnFd
       ntnAddr
-      (NodeToNodeHandle mode ntnAddr m a)
+      (NodeToNodeHandle mode ntnAddr m a b)
       (HandleError mode ntnVersion)
       m
 
@@ -427,24 +428,25 @@ type NodeToNodeConnectionManager
 -- Governor type aliases
 --
 
-type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr m a =
+type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr m a b =
     PeerConnectionHandle
       mode
       ntnAddr
       ByteString
-      m () a
+      m a b
 
-type NodeToNodePeerStateActions (mode :: MuxMode) ntnAddr m a =
+type NodeToNodePeerStateActions (mode :: MuxMode) ntnAddr m a b =
     Governor.PeerStateActions
       ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr m a)
+      (NodeToNodePeerConnectionHandle mode ntnAddr m a b)
       m
 
-type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr m a =
+type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr m a b =
     Governor.PeerSelectionActions
       ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr m a)
+      (NodeToNodePeerConnectionHandle mode ntnAddr m a b)
       m
+
 
 data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
@@ -455,6 +457,16 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         --
         diNtnSnocket
           :: Snocket m ntnFd ntnAddr,
+
+        -- | node-to-node socket configuration
+        --
+        diNtnConfigureSocket
+          :: ntnFd -> Maybe ntnAddr -> m (),
+
+        -- | node-to-node systemd socket configuration
+        --
+        diNtnConfigureSystemdSocket
+          :: ntnFd -> ntnAddr -> m (),
 
         -- | node-to-node handshake configuration
         --
@@ -506,8 +518,8 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
 
         -- | callback which is used to register @SIGUSR1@ signal handler.
         diInstallSigUSR1Handler
-          :: forall mode x.
-             NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersion m x
+          :: forall mode x y.
+             NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersion m x y
           -> m (),
 
         -- | diffusion dns actions
@@ -519,7 +531,7 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
 runM
     :: forall m ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
-                resolver resolverError.
+                resolver resolverError a.
        ( MonadAsync       m
        , MonadEvaluate    m
        , MonadFix         m
@@ -565,12 +577,14 @@ runM
     -> -- | protocol handlers
        Applications ntnAddr ntnVersion ntnVersionData
                     ntcAddr ntcVersion ntcVersionData
-                    m
+                    m a
     -> -- | p2p protocol handlers
-       ApplicationsExtra ntnAddr m
+       ApplicationsExtra ntnAddr m a
     -> m Void
 runM Interfaces
        { diNtnSnocket
+       , diNtnConfigureSocket
+       , diNtnConfigureSystemdSocket
        , diNtnHandshakeArguments
        , diNtnAddressType
        , diNtnDataFlow
@@ -587,7 +601,7 @@ runM Interfaces
        { dtMuxTracer
        , dtLocalMuxTracer
        , dtLedgerPeersTracer
-       , dtDiffusionInitializationTracer = tracer
+       , dtDiffusionTracer = tracer
        }
      TracersExtra
        { dtTracePeerSelectionTracer
@@ -620,6 +634,8 @@ runM Interfaces
        , daReadUseLedgerAfter
        , daProtocolIdleTimeout
        , daTimeWaitTimeout
+       , daDeadlineChurnInterval
+       , daBulkChurnInterval
        }
      Applications
        { daApplicationInitiatorMode
@@ -630,6 +646,7 @@ runM Interfaces
      ApplicationsExtra
        { daRethrowPolicy
        , daLocalRethrowPolicy
+       , daReturnPolicy
        , daPeerMetrics
        , daBlockFetchMode
        }
@@ -657,57 +674,22 @@ runM Interfaces
                 -> throwIO (UnexpectedIPv6Address addr)
       Nothing   -> pure ()
 
-    lookupReqs <- case (cmIPv4Address, cmIPv6Address) of
-                         (Just _, Nothing) -> return LookupReqAOnly
-                         (Nothing, Just _) -> return LookupReqAAAAOnly
-                         (Just _, Just _)  -> return LookupReqAAndAAAA
-                         _                 ->
-                             throwIO (NoSocket :: Failure RemoteAddress)
-
-    -- control channel for the server; only required in
-    -- @'InitiatorResponderMode' :: 'MuxMode'@
-    cmdInMode
-      <- case diffusionMode of
-          InitiatorOnlyDiffusionMode ->
-            -- action which we pass to connection handler
-            pure (HasInitiator CMDInInitiatorMode)
-          InitiatorAndResponderDiffusionMode -> do
-            -- we pass 'Server.newOutboundConnection serverControlChannel' to
-            -- connection handler
-            HasInitiatorResponder <$>
-              (CMDInInitiatorResponderMode
-                <$> Server.newControlChannel
-                <*> Server.newObservableStateVar ntnInbgovRng)
-
-    localControlChannel <- Server.newControlChannel
-    localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
-
-    -- RNGs used for picking random peers from the ledger and for
-    -- demoting/promoting peers.
-    policyRngVar <- newTVarIO policyRng
-
-    churnModeVar <- newTVarIO ChurnModeNormal
-
-    peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
-        -- Start with a smaller number of active peers, the churn governor will increase
-        -- it to the configured value after a delay.
-        targetNumberOfActivePeers =
-          min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
-      }
-
-    let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
-
-        --
-        -- local connection manager
-        --
-        localThread :: Maybe (m Void)
+    --
+    -- local connection manager
+    --
+    let localThread :: Maybe (m Void)
         localThread =
           case daLocalAddress of
             Nothing -> Nothing
             Just localAddr ->
               Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
                        $ \localSocket -> do
-                let localConnectionHandler :: NodeToClientConnectionHandler
+                localControlChannel <- Server.newControlChannel
+                localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
+
+                let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
+
+                    localConnectionHandler :: NodeToClientConnectionHandler
                                                 ntcFd ntcAddr ntcVersion ntcVersionData m
                     localConnectionHandler =
                       makeConnectionHandler
@@ -715,7 +697,7 @@ runM Interfaces
                         SingResponderMode
                         diNtcHandshakeArguments
                         ( ( \ (OuroborosApplication apps)
-                           -> Bundle
+                           -> TemperatureBundle
                                 (WithHot apps)
                                 (WithWarm (\_ _ -> []))
                                 (WithEstablished (\_ _ -> []))
@@ -734,6 +716,7 @@ runM Interfaces
                           cmIPv6Address         = Nothing,
                           cmAddressType         = const Nothing,
                           cmSnocket             = diNtcSnocket,
+                          cmConfigureSocket     = \_ _ -> return (),
                           cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                           cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
                           connectionDataFlow    = uncurry localDataFlow,
@@ -752,34 +735,66 @@ runM Interfaces
                                                   ntcVersionData m)
                     -> do
 
-                  --
-                  -- run local server
-                  --
+                    --
+                    -- run local server
+                    --
 
-                  traceWith tracer . RunLocalServer
-                    =<< Snocket.getLocalAddr diNtcSnocket localSocket
+                    traceWith tracer . RunLocalServer
+                      =<< Snocket.getLocalAddr diNtcSnocket localSocket
 
-                  Async.withAsync
-                    (Server.run
-                      ServerArguments {
-                          serverSockets               = localSocket :| [],
-                          serverSnocket               = diNtcSnocket,
-                          serverTracer                = dtLocalServerTracer,
-                          serverTrTracer              = nullTracer, -- TODO: issue #3320
-                          serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
-                          serverInboundIdleTimeout    = local_PROTOCOL_IDLE_TIMEOUT,
-                          serverConnectionLimits      = localConnectionLimits,
-                          serverConnectionManager     = localConnectionManager,
-                          serverControlChannel        = localControlChannel,
-                          serverObservableStateVar    = localServerStateVar
-                        }) Async.wait
+                    Async.withAsync
+                      (Server.run
+                        ServerArguments {
+                            serverSockets               = localSocket :| [],
+                            serverSnocket               = diNtcSnocket,
+                            serverTracer                = dtLocalServerTracer,
+                            serverTrTracer              = nullTracer, -- TODO: issue #3320
+                            serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
+                            serverInboundIdleTimeout    = Nothing,
+                            serverConnectionLimits      = localConnectionLimits,
+                            serverConnectionManager     = localConnectionManager,
+                            serverControlChannel        = localControlChannel,
+                            serverObservableStateVar    = localServerStateVar
+                          }) Async.wait
 
-        --
-        -- remote connection manager
-        --
+    --
+    -- remote connection manager
+    --
+    let remoteThread :: m Void
+        remoteThread = do
+          lookupReqs <- case (cmIPv4Address, cmIPv6Address) of
+                               (Just _, Nothing) -> return LookupReqAOnly
+                               (Nothing, Just _) -> return LookupReqAAAAOnly
+                               (Just _, Just _)  -> return LookupReqAAndAAAA
+                               _                 ->
+                                   throwIO (NoSocket :: Failure RemoteAddress)
 
-        remoteThread :: m Void
-        remoteThread =
+          -- control channel for the server; only required in
+          -- @'InitiatorResponderMode' :: 'MuxMode'@
+          cmdInMode
+            <- case diffusionMode of
+                InitiatorOnlyDiffusionMode ->
+                  -- action which we pass to connection handler
+                  pure (HasInitiator CMDInInitiatorMode)
+                InitiatorAndResponderDiffusionMode ->
+                  HasInitiatorResponder <$>
+                    (CMDInInitiatorResponderMode
+                      <$> Server.newControlChannel
+                      <*> Server.newObservableStateVar ntnInbgovRng)
+
+          -- RNGs used for picking random peers from the ledger and for
+          -- demoting/promoting peers.
+          policyRngVar <- newTVarIO policyRng
+
+          churnModeVar <- newTVarIO ChurnModeNormal
+
+          peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
+              -- Start with a smaller number of active peers, the churn governor will increase
+              -- it to the configured value after a delay.
+              targetNumberOfActivePeers =
+                min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
+            }
+
           withLedgerPeers
             ledgerPeersRng
             diNtnToPeerAddr
@@ -797,7 +812,7 @@ runM Interfaces
                       :: NodeToNodeConnectionManagerArguments
                            InitiatorMode
                            ntnFd ntnAddr ntnVersion ntnVersionData
-                           m Void
+                           m a Void
                     connectionManagerArguments =
                       ConnectionManagerArguments {
                           cmTracer              = dtConnectionManagerTracer,
@@ -809,15 +824,13 @@ runM Interfaces
                           cmIPv6Address,
                           cmAddressType         = diNtnAddressType,
                           cmSnocket             = diNtnSnocket,
+                          cmConfigureSocket     = diNtnConfigureSocket,
                           connectionDataFlow    = uncurry diNtnDataFlow,
-                          cmPrunePolicy         =
-                            case cmdInMode of
-                              HasInitiator CMDInInitiatorMode ->
-                                -- Server is not running, it will not be able to
-                                -- advise which connections to prune.  It's also not
-                                -- expected that the governor targets will be larger
-                                -- than limits imposed by 'cmConnectionsLimits'.
-                                simplePrunePolicy,
+                          cmPrunePolicy         = simplePrunePolicy,
+                          -- Server is not running, it will not be able to
+                          -- advise which connections to prune.  It's also not
+                          -- expected that the governor targets will be larger
+                          -- than limits imposed by 'cmConnectionsLimits'.
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
                           cmOutboundIdleTimeout = daProtocolIdleTimeout
@@ -827,7 +840,7 @@ runM Interfaces
                       :: NodeToNodeConnectionHandler
                            InitiatorMode
                            ntnFd ntnAddr ntnVersion ntnVersionData
-                           m Void
+                           m a Void
                     connectionHandler =
                       makeConnectionHandler
                         dtMuxTracer
@@ -843,7 +856,7 @@ runM Interfaces
                   NotInResponderMode
                   $ \(connectionManager
                       :: NodeToNodeConnectionManager
-                           InitiatorMode ntnFd ntnAddr ntnVersion m Void)
+                           InitiatorMode ntnFd ntnAddr ntnVersion m a Void)
                     -> do
                   diInstallSigUSR1Handler connectionManager
 
@@ -860,10 +873,11 @@ runM Interfaces
                         spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
                         spsCloseConnectionTimeout =
                           Diffusion.Policies.closeConnectionTimeout,
-                        spsConnectionManager = connectionManager
+                        spsConnectionManager = connectionManager,
+                        spsExitPolicy = exitPolicy
                       }
                     $ \(peerStateActions
-                          :: NodeToNodePeerStateActions InitiatorMode ntnAddr m Void) ->
+                          :: NodeToNodePeerStateActions InitiatorMode ntnAddr m a Void) ->
                     --
                     -- Run peer selection (p2p governor)
                     --
@@ -878,40 +892,41 @@ runM Interfaces
                       daReadPublicRootPeers
                       peerStateActions
                       requestLedgerPeers
-                      $ \mbLocalPeerSelectionActionsThread
+                      $ \localPeerSelectionActionsThread
                         (peerSelectionActions
                            :: NodeToNodePeerSelectionActions
-                                InitiatorMode ntnAddr m Void) ->
+                                InitiatorMode ntnAddr m a Void) ->
 
-                      Async.withAsync
-                      (Governor.peerSelectionGovernor
-                      dtTracePeerSelectionTracer
-                      dtDebugPeerSelectionInitiatorTracer
-                      dtTracePeerSelectionCounters
-                      fuzzRng
-                      peerSelectionActions
-                      (Diffusion.Policies.simplePeerSelectionPolicy
-                      policyRngVar (readTVar churnModeVar) daPeerMetrics))
-                      $ \governorThread ->
                         Async.withAsync
-                        (Governor.peerChurnGovernor
-                        dtTracePeerSelectionTracer
-                        daPeerMetrics
-                        churnModeVar
-                        churnRng
-                        daBlockFetchMode
-                        daPeerSelectionTargets
-                        peerSelectionTargetsVar)
-                        $ \churnGovernorThread ->
-
-                              -- wait for any thread to fail
-                              snd <$> Async.waitAny
-                              (maybeToList mbLocalPeerSelectionActionsThread
-                              ++ [ governorThread
-                                 , ledgerPeerThread
-                                 , churnGovernorThread
-                                 ])
-
+                        (Governor.peerSelectionGovernor
+                          dtTracePeerSelectionTracer
+                          dtDebugPeerSelectionInitiatorTracer
+                          dtTracePeerSelectionCounters
+                          fuzzRng
+                          peerSelectionActions
+                          (Diffusion.Policies.simplePeerSelectionPolicy
+                             policyRngVar (readTVar churnModeVar)
+                             daPeerMetrics (epErrorDelay exitPolicy)))
+                        $ \governorThread ->
+                          Async.withAsync
+                          (Governor.peerChurnGovernor
+                            dtTracePeerSelectionTracer
+                            daDeadlineChurnInterval
+                            daBulkChurnInterval
+                            daPeerMetrics
+                            churnModeVar
+                            churnRng
+                            daBlockFetchMode
+                            daPeerSelectionTargets
+                            peerSelectionTargetsVar)
+                          $ \churnGovernorThread ->
+                                -- wait for any thread to fail
+                                snd <$> Async.waitAny
+                                   [ localPeerSelectionActionsThread
+                                   , governorThread
+                                   , ledgerPeerThread
+                                   , churnGovernorThread
+                                   ]
 
               -- InitiatorResponderMode
               --
@@ -923,7 +938,7 @@ runM Interfaces
                       :: NodeToNodeConnectionManagerArguments
                           InitiatorResponderMode
                           ntnFd ntnAddr ntnVersion ntnVersionData
-                          m ()
+                          m a ()
                     connectionManagerArguments =
                       ConnectionManagerArguments {
                           cmTracer              = dtConnectionManagerTracer,
@@ -935,11 +950,9 @@ runM Interfaces
                           cmIPv6Address,
                           cmAddressType         = diNtnAddressType,
                           cmSnocket             = diNtnSnocket,
+                          cmConfigureSocket     = diNtnConfigureSocket,
                           connectionDataFlow    = uncurry diNtnDataFlow,
-                          cmPrunePolicy         =
-                            case cmdInMode of
-                              HasInitiatorResponder (CMDInInitiatorResponderMode _ serverStateVar) ->
-                                Diffusion.Policies.prunePolicy serverStateVar,
+                          cmPrunePolicy         = Diffusion.Policies.prunePolicy observableStateVar,
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
                           cmOutboundIdleTimeout = daProtocolIdleTimeout
@@ -949,7 +962,7 @@ runM Interfaces
                       :: NodeToNodeConnectionHandler
                           InitiatorResponderMode
                           ntnFd ntnAddr ntnVersion ntnVersionData
-                          m ()
+                          m a ()
                     connectionHandler =
                       makeConnectionHandler
                          dtMuxTracer
@@ -965,9 +978,10 @@ runM Interfaces
                   (InResponderMode controlChannel)
                   $ \(connectionManager
                         :: NodeToNodeConnectionManager
-                             InitiatorResponderMode ntnFd ntnAddr ntnVersion m ()
+                             InitiatorResponderMode ntnFd ntnAddr ntnVersion m a ()
                      ) -> do
                   diInstallSigUSR1Handler connectionManager
+
                   --
                   -- peer state actions
                   --
@@ -981,11 +995,12 @@ runM Interfaces
                         spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
                         spsCloseConnectionTimeout =
                           Diffusion.Policies.closeConnectionTimeout,
-                        spsConnectionManager = connectionManager
+                        spsConnectionManager = connectionManager,
+                        spsExitPolicy = stdExitPolicy daReturnPolicy
                       }
                     $ \(peerStateActions
                           :: NodeToNodePeerStateActions
-                               InitiatorResponderMode ntnAddr m ()) ->
+                               InitiatorResponderMode ntnAddr m a ()) ->
 
                     --
                     -- Run peer selection (p2p governor)
@@ -1001,10 +1016,10 @@ runM Interfaces
                       daReadPublicRootPeers
                       peerStateActions
                       requestLedgerPeers
-                      $ \mbLocalPeerRootProviderThread
+                      $ \localPeerRootProviderThread
                         (peerSelectionActions
                            :: NodeToNodePeerSelectionActions
-                                InitiatorResponderMode ntnAddr m ()) ->
+                                InitiatorResponderMode ntnAddr m a ()) ->
 
                       Async.withAsync
                         (Governor.peerSelectionGovernor
@@ -1014,15 +1029,18 @@ runM Interfaces
                           fuzzRng
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
-                            policyRngVar (readTVar churnModeVar) daPeerMetrics))
+                             policyRngVar (readTVar churnModeVar)
+                             daPeerMetrics (epErrorDelay exitPolicy)))
                         $ \governorThread ->
-                        withSockets tracer diNtnSnocket
-                                    ( catMaybes
-                                        [ daIPv4Address
-                                        , daIPv6Address
-                                        ]
-                                    )
-                                    $ \sockets addresses -> do
+                          withSockets tracer diNtnSnocket
+                                      (\sock addr -> diNtnConfigureSocket sock (Just addr))
+                                      (\sock addr -> diNtnConfigureSystemdSocket sock addr)
+                                      ( catMaybes
+                                          [ daIPv4Address
+                                          , daIPv6Address
+                                          ]
+                                      )
+                                      $ \sockets addresses -> do
                           --
                           -- Run server
                           --
@@ -1037,7 +1055,7 @@ runM Interfaces
                                   serverInboundGovernorTracer = dtInboundGovernorTracer,
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,
-                                  serverInboundIdleTimeout    = daProtocolIdleTimeout,
+                                  serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
                                   serverControlChannel        = controlChannel,
                                   serverObservableStateVar    = observableStateVar
                                 })
@@ -1045,6 +1063,8 @@ runM Interfaces
                                   Async.withAsync
                                     (Governor.peerChurnGovernor
                                       dtTracePeerSelectionTracer
+                                      daDeadlineChurnInterval
+                                      daBulkChurnInterval
                                       daPeerMetrics
                                       churnModeVar
                                       churnRng
@@ -1055,12 +1075,12 @@ runM Interfaces
 
                                       -- wait for any thread to fail
                                       snd <$> Async.waitAny
-                                        (maybeToList mbLocalPeerRootProviderThread
-                                        ++ [ serverThread
+                                           [ localPeerRootProviderThread
+                                           , serverThread
                                            , governorThread
                                            , ledgerPeerThread
                                            , churnGovernorThread
-                                           ])
+                                           ]
 
     Async.runConcurrently
       $ asum
@@ -1085,6 +1105,9 @@ runM Interfaces
           Just (_ :: IOManagerError) -> ShutdownNode
           Nothing                    -> mempty
 
+    exitPolicy :: ExitPolicy a
+    exitPolicy = stdExitPolicy daReturnPolicy
+
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
@@ -1108,15 +1131,16 @@ run
     -> Applications
          RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress  NodeToClientVersion NodeToClientVersionData
-         IO
-    -> ApplicationsExtra RemoteAddress IO
+         IO a
+    -> ApplicationsExtra RemoteAddress IO a
     -> IO Void
 run tracers tracersExtra args argsExtra apps appsExtra = do
+    let tracer = dtDiffusionTracer tracers
     -- We run two services: for /node-to-node/ and /node-to-client/.  The
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
     -- socket / windows named pipe.
-    handle (\e -> traceWith (dtDiffusionInitializationTracer tracers) (DiffusionErrored e)
+    handle (\e -> traceWith tracer (DiffusionErrored e)
                >> throwIO e)
          $ withIOManager $ \iocp -> do
              let diNtnSnocket :: SocketSnocket
@@ -1147,8 +1171,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                      }
 
                  diInstallSigUSR1Handler
-                   :: forall mode x.
-                      NodeToNodeConnectionManager mode Socket RemoteAddress NodeToNodeVersion IO x
+                   :: forall mode x y.
+                      NodeToNodeConnectionManager mode Socket RemoteAddress NodeToNodeVersion IO x y
                    -> IO ()
 #ifdef POSIX
                  diInstallSigUSR1Handler = \connectionManager -> do
@@ -1178,6 +1202,10 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
              runM
                Interfaces {
                  diNtnSnocket,
+                 diNtnConfigureSocket = configureSocket,
+                 diNtnConfigureSystemdSocket =
+                   configureSystemdSocket
+                     (SystemdSocketConfiguration `contramap` tracer),
                  diNtnHandshakeArguments,
                  diNtnAddressType = socketAddressType,
                  diNtnDataFlow = nodeDataFlow,
@@ -1194,13 +1222,12 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                }
                tracers tracersExtra args argsExtra apps appsExtra
 
-
 --
 -- Data flow
 --
 
 -- | For Node-To-Node protocol, any connection which negotiated at least
--- 'NodeToNodeV_9' version and did not declared 'InitiatorOnlyDiffusionMode'
+-- 'NodeToNodeV_9' version and did not declare 'InitiatorOnlyDiffusionMode'
 -- will run in 'Duplex' mode.   All connections from lower versions or one that
 -- declared themselves as 'InitiatorOnly' will run in 'UnidirectionalMode'
 --
@@ -1219,104 +1246,3 @@ localDataFlow :: ntcVersion
               -> ntcVersionData
               -> DataFlow
 localDataFlow _ _ = Unidirectional
-
-
---
--- Socket utility functions
---
-
-withSockets :: forall m ntnFd ntnAddr ntcAddr a.
-               ( MonadThrow m
-               , Typeable ntnAddr
-               , Show     ntnAddr
-               )
-            => Tracer m (InitializationTracer ntnAddr ntcAddr)
-            -> Snocket m ntnFd ntnAddr
-            -> [Either ntnFd ntnAddr]
-            -> (NonEmpty ntnFd -> NonEmpty ntnAddr -> m a)
-            -> m a
-withSockets tracer sn addresses k = go [] addresses
-  where
-    go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
-    go []   []       = throwIO (NoSocket :: Failure ntnAddr)
-    go !acc []       =
-      let acc' = NonEmpty.fromList (reverse acc)
-      in (k $! (fst <$> acc')) $! (snd <$> acc')
-
-    withSocket :: Either ntnFd ntnAddr
-               -> ((ntnFd, ntnAddr) -> m a)
-               -> m a
-    withSocket (Left sock) f =
-      bracket
-        (pure sock)
-        (Snocket.close sn)
-        $ \_sock -> do
-          !addr <- Snocket.getLocalAddr sn sock
-          f (sock, addr)
-    withSocket (Right addr) f =
-      bracket
-        (do traceWith tracer (CreatingServerSocket addr)
-            Snocket.open sn (Snocket.addrFamily sn addr))
-        (Snocket.close sn)
-        $ \sock -> do
-          traceWith tracer $ ConfiguringServerSocket addr
-          Snocket.bind sn sock addr
-          traceWith tracer $ ListeningServerSocket addr
-          Snocket.listen sn sock
-          traceWith tracer $ ServerSocketUp addr
-          f (sock, addr)
-
-
-withLocalSocket :: forall ntnAddr ntcFd ntcAddr m a.
-                   ( MonadThrow m
-                     -- Win32 only constraints:
-                   , Typeable ntnAddr
-                   , Show     ntnAddr
-                   )
-                => Tracer m (InitializationTracer ntnAddr ntcAddr)
-                -> (ntcFd -> m FileDescriptor)
-                -> Snocket m ntcFd ntcAddr
-                -> Either ntcFd ntcAddr
-                -> (ntcFd -> m a)
-                -> m a
-withLocalSocket tracer getFileDescriptor sn localAddress k =
-  bracket
-    (
-      case localAddress of
-#if defined(mingw32_HOST_OS)
-         -- Windows uses named pipes so can't take advantage of existing sockets
-         Left _ -> traceWith tracer (UnsupportedReadySocketCase
-                                       :: InitializationTracer ntnAddr ntcAddr)
-                >> throwIO (UnsupportedReadySocket :: Failure ntnAddr)
-#else
-         Left sd -> do
-             addr <- Snocket.getLocalAddr sn sd
-             traceWith tracer (UsingSystemdSocket addr)
-             return (Left sd)
-#endif
-         Right addr -> do
-             traceWith tracer $ CreateSystemdSocketForSnocketPath addr
-             sd <- Snocket.open sn (Snocket.addrFamily sn addr)
-             traceWith tracer $ CreatedLocalSocket addr
-             return (Right (sd, addr))
-    )
-    -- We close the socket here, even if it was provided to us.
-    (\case
-      Right (sd, _) -> Snocket.close sn sd
-      Left   sd     -> Snocket.close sn sd
-    )
-    $ \case
-      -- unconfigured socket
-      Right (sd, addr) -> do
-        traceWith tracer . ConfiguringLocalSocket addr
-           =<< getFileDescriptor sd
-        Snocket.bind sn sd addr
-        traceWith tracer . ListeningLocalSocket addr
-           =<< getFileDescriptor sd
-        Snocket.listen sn sd
-        traceWith tracer . LocalSocketUp addr
-           =<< getFileDescriptor sd
-        k sd
-
-      -- pre-configured systemd socket
-      Left sd -> k sd

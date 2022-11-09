@@ -1,11 +1,9 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.BlockFetch.ClientRegistry
   ( -- * Registry of block fetch clients
-    FetchClientRegistry
+    FetchClientRegistry (..)
   , newFetchClientRegistry
   , bracketFetchClient
   , bracketKeepAliveClient
@@ -21,19 +19,17 @@ import           Data.Functor.Contravariant (contramap)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork (throwTo),
                      MonadThread (ThreadId, myThreadId))
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..),
-                     isPipeliningEnabled)
 
 
 
@@ -47,13 +43,22 @@ import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..),
 -- and shut down.
 --
 data FetchClientRegistry peer header block m =
-     FetchClientRegistry
-       (StrictTMVar m (Tracer m (TraceLabelPeer peer (TraceFetchClientState header)),
-                 WhetherReceivingTentativeBlocks -> STM m (FetchClientPolicy header block m)))
-       (StrictTVar  m (Map peer (FetchClientStateVars m header)))
-       (StrictTVar  m (Map peer (ThreadId m, StrictTMVar m ())))
-       (StrictTVar  m (Map peer PeerGSV))
-       (StrictTVar  m (Map peer (ThreadId m, StrictTMVar m ())))
+     FetchClientRegistry {
+       fcrCtxVar
+         :: StrictTMVar
+              m ( Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
+                , WhetherReceivingTentativeBlocks
+                    -> STM m (FetchClientPolicy header block m)
+                ),
+       fcrFetchRegistry
+         :: StrictTVar  m (Map peer (FetchClientStateVars m header)),
+       fcrSyncRegistry
+         :: StrictTVar  m (Map peer (ThreadId m, StrictTMVar m ())),
+       fcrDqRegistry
+         :: StrictTVar  m (Map peer PeerGSV),
+       fcrKeepRegistry
+         :: StrictTVar  m (Map peer (ThreadId m, StrictTMVar m ()))
+                         }
 
 newFetchClientRegistry :: MonadSTM m
                        => m (FetchClientRegistry peer header block m)
@@ -69,16 +74,19 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
 --
 -- It also manages synchronisation with the corresponding chain sync client.
 --
-bracketFetchClient :: forall m a peer header block.
+bracketFetchClient :: forall m a peer header block version.
                       (MonadThrow m, MonadSTM m, MonadFork m, MonadMask m,
                        Ord peer)
                    => FetchClientRegistry peer header block m
-                   -> NodeToNodeVersion
+                   -> version
+                   -> (version -> WhetherReceivingTentativeBlocks)
+                   -- ^ is pipelining enabled function
                    -> peer
                    -> (FetchClientContext header block m -> m a)
                    -> m a
 bracketFetchClient (FetchClientRegistry ctxVar
-                      fetchRegistry syncRegistry dqRegistry keepRegistry) version peer action = do
+                      fetchRegistry syncRegistry dqRegistry keepRegistry)
+                   version isPipeliningEnabled peer action = do
     ksVar <- newEmptyTMVarIO
     bracket (register ksVar) (uncurry (unregister ksVar)) (action . fst)
   where
@@ -100,9 +108,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
 
         -- allocate the policy specific for this peer's negotiated version
         policy <- do
-          let pipeliningEnabled
-                | isPipeliningEnabled version = ReceivingTentativeBlocks
-                | otherwise                   = NotReceivingTentativeBlocks
+          let pipeliningEnabled = isPipeliningEnabled version
           mkPolicy pipeliningEnabled
 
         stateVars <- newFetchClientStateVars
@@ -235,7 +241,6 @@ bracketKeepAliveClient(FetchClientRegistry _ctxVar
                modifyTVar dqRegistry $ \m ->
                  assert (peer `Map.member` m) $
                  Map.delete peer m
-
 
 setFetchClientContext :: MonadSTM m
                       => FetchClientRegistry peer header block m

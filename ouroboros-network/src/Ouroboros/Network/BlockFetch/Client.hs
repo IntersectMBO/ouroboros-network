@@ -20,9 +20,9 @@ module Ouroboros.Network.BlockFetch.Client
   , BlockFetchProtocolFailure
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (unless)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 
@@ -35,7 +35,6 @@ import           Ouroboros.Network.Block
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
 import           Ouroboros.Network.Mux (ControlMessageSTM)
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -74,11 +73,11 @@ type BlockFetchClient header block m a =
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
 --
-blockFetchClient :: forall header block m.
+blockFetchClient :: forall header block versionNumber m.
                     (MonadSTM m, MonadThrow m, MonadTime m,
                      HasHeader header, HasHeader block,
                      HeaderHash header ~ HeaderHash block)
-                 => NodeToNodeVersion
+                 => versionNumber
                  -> ControlMessageSTM m
                  -> FetchedMetricsTracer m
                  -> FetchClientContext header block m

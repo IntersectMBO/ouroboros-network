@@ -52,7 +52,7 @@ module Ouroboros.Consensus.Node (
   ) where
 
 import           Codec.Serialise (DeserialiseFailure)
-import           Control.Tracer (Tracer, contramap)
+import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
@@ -67,17 +67,18 @@ import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import qualified Ouroboros.Network.Diffusion as Diffusion
 import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
 import qualified Ouroboros.Network.Diffusion.P2P as P2P
+import qualified Ouroboros.Network.Diffusion.Policies as Diffusion
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient (ConnectionId, LocalAddress,
                      LocalSocket, NodeToClientVersionData (..), combineVersions,
                      simpleSingletonVersions)
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..),
-                     MiniProtocolParameters, NodeToNodeVersionData (..),
-                     RemoteAddress, Socket, blockFetchPipeliningMax,
-                     defaultMiniProtocolParameters)
+                     ExceptionInHandler (..), MiniProtocolParameters,
+                     NodeToNodeVersionData (..), RemoteAddress, Socket,
+                     blockFetchPipeliningMax, defaultMiniProtocolParameters)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics (..),
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
                      newPeerMetric, reportMetric)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 import           Ouroboros.Network.RethrowPolicy
@@ -95,6 +96,7 @@ import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Node.ErrorPolicy
+import           Ouroboros.Consensus.Node.ExitPolicy
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -226,8 +228,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
         -> Diffusion.Applications
              addrNTN NodeToNodeVersion   versionDataNTN
              addrNTC NodeToClientVersion versionDataNTC
-             m
-        -> Diffusion.ExtraApplications p2p addrNTN m
+             m NodeToNodeInitiatorResult
+        -> Diffusion.ExtraApplications p2p addrNTN m NodeToNodeInitiatorResult
         -> m ()
 
     , llrnVersionDataNTC :: versionDataNTC
@@ -275,7 +277,7 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      ( RunNode blk
      , IOLike m, MonadTime m, MonadTimer m
-     , Hashable addrNTN, Ord addrNTN, Typeable addrNTN
+     , Hashable addrNTN, Ord addrNTN, Show addrNTN, Typeable addrNTN
      )
   => RunNodeArgs m addrNTN addrNTC blk p2p
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
@@ -283,81 +285,94 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
 runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
 
     llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) continueWithCleanChainDB ->
-    withRegistry $ \registry -> do
-      let systemStart :: SystemStart
-          systemStart = getSystemStart (configBlock cfg)
+    withRegistry $ \registry ->
+      handleJust
+             -- ignore exception thrown in connection handlers and diffusion
+             -- initialisation failures; these errors are logged by the network
+             -- layer.
+             (\err -> case fromException err :: Maybe ExceptionInHandler of
+                Just _    -> Nothing
+                Nothing   ->
+                  case fromException err :: Maybe (Diffusion.Failure addrNTN) of
+                    Just _  -> Nothing
+                    Nothing -> Just err)
+              (\err -> traceWith (consensusStartupErrorTracer rnTraceConsensus) err
+                    >> throwIO err
+              ) $ do
+        let systemStart :: SystemStart
+            systemStart = getSystemStart (configBlock cfg)
 
-          systemTime :: SystemTime m
-          systemTime = defaultSystemTime
-                         systemStart
-                         (blockchainTimeTracer rnTraceConsensus)
+            systemTime :: SystemTime m
+            systemTime = defaultSystemTime
+                           systemStart
+                           (blockchainTimeTracer rnTraceConsensus)
 
-          inFuture :: CheckInFuture m blk
-          inFuture = InFuture.reference
-                       (configLedger cfg)
-                       llrnMaxClockSkew
-                       systemTime
+            inFuture :: CheckInFuture m blk
+            inFuture = InFuture.reference
+                         (configLedger cfg)
+                         llrnMaxClockSkew
+                         systemTime
 
-      let customiseChainDbArgs' args
-            | lastShutDownWasClean
-            = llrnCustomiseChainDbArgs args
-            | otherwise
-              -- When the last shutdown was not clean, validate the complete
-              -- ChainDB to detect and recover from any corruptions. This will
-              -- override the default value /and/ the user-customised value of
-              -- the 'ChainDB.cdbImmValidation' and the
-              -- 'ChainDB.cdbVolValidation' fields.
-            = (llrnCustomiseChainDbArgs args) {
-                  ChainDB.cdbImmutableDbValidation = ValidateAllChunks
-                , ChainDB.cdbVolatileDbValidation  = ValidateAll
-                }
+        let customiseChainDbArgs' args
+              | lastShutDownWasClean
+              = llrnCustomiseChainDbArgs args
+              | otherwise
+                -- When the last shutdown was not clean, validate the complete
+                -- ChainDB to detect and recover from any corruptions. This will
+                -- override the default value /and/ the user-customised value of
+                -- the 'ChainDB.cdbImmValidation' and the
+                -- 'ChainDB.cdbVolValidation' fields.
+              = (llrnCustomiseChainDbArgs args) {
+                    ChainDB.cdbImmutableDbValidation = ValidateAllChunks
+                  , ChainDB.cdbVolatileDbValidation  = ValidateAll
+                  }
 
-      chainDB <- openChainDB registry inFuture cfg initLedger
-                llrnChainDbArgsDefaults customiseChainDbArgs'
+        chainDB <- openChainDB registry inFuture cfg initLedger
+                  llrnChainDbArgsDefaults customiseChainDbArgs'
 
-      continueWithCleanChainDB chainDB $ do
-        btime <-
-          hardForkBlockchainTime $
-          llrnCustomiseHardForkBlockchainTimeArgs $
-          HardForkBlockchainTimeArgs
-            { hfbtBackoffDelay   = pure $ BackoffDelay 60
-            , hfbtGetLedgerState =
-                ledgerState <$> ChainDB.getCurrentLedger chainDB
-            , hfbtLedgerConfig   = configLedger cfg
-            , hfbtRegistry       = registry
-            , hfbtSystemTime     = systemTime
-            , hfbtTracer         =
-                contramap (fmap (fromRelativeTime systemStart))
-                  (blockchainTimeTracer rnTraceConsensus)
-            , hfbtMaxClockRewind = secondsToNominalDiffTime 20
-            }
+        continueWithCleanChainDB chainDB $ do
+          btime <-
+            hardForkBlockchainTime $
+            llrnCustomiseHardForkBlockchainTimeArgs $
+            HardForkBlockchainTimeArgs
+              { hfbtBackoffDelay   = pure $ BackoffDelay 60
+              , hfbtGetLedgerState =
+                  ledgerState <$> ChainDB.getCurrentLedger chainDB
+              , hfbtLedgerConfig   = configLedger cfg
+              , hfbtRegistry       = registry
+              , hfbtSystemTime     = systemTime
+              , hfbtTracer         =
+                  contramap (fmap (fromRelativeTime systemStart))
+                    (blockchainTimeTracer rnTraceConsensus)
+              , hfbtMaxClockRewind = secondsToNominalDiffTime 20
+              }
 
-        nodeKernelArgs <-
-            fmap (nodeKernelArgsEnforceInvariants . llrnCustomiseNodeKernelArgs) $
-            mkNodeKernelArgs
-              registry
-              llrnBfcSalt
-              llrnKeepAliveRng
-              cfg
-              blockForging
-              rnTraceConsensus
-              btime
-              chainDB
-        nodeKernel <- initNodeKernel nodeKernelArgs
-        rnNodeKernelHook registry nodeKernel
+          nodeKernelArgs <-
+              fmap (nodeKernelArgsEnforceInvariants . llrnCustomiseNodeKernelArgs) $
+              mkNodeKernelArgs
+                registry
+                llrnBfcSalt
+                llrnKeepAliveRng
+                cfg
+                blockForging
+                rnTraceConsensus
+                btime
+                chainDB
+          nodeKernel <- initNodeKernel nodeKernelArgs
+          rnNodeKernelHook registry nodeKernel
 
-        peerMetrics <- newPeerMetric
-        let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
-            ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
-            (apps, appsExtra) = mkDiffusionApplications
-                                      rnEnableP2P
-                                      (miniProtocolParameters nodeKernelArgs)
-                                      ntnApps
-                                      ntcApps
-                                      nodeKernel
-                                      peerMetrics
+          peerMetrics <- newPeerMetric Diffusion.peerMetricsConfiguration
+          let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
+              ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
+              (apps, appsExtra) = mkDiffusionApplications
+                                        rnEnableP2P
+                                        (miniProtocolParameters nodeKernelArgs)
+                                        ntnApps
+                                        ntcApps
+                                        nodeKernel
+                                        peerMetrics
 
-        llrnRunDataDiffusion registry apps appsExtra
+          llrnRunDataDiffusion registry apps appsExtra
   where
     ProtocolInfo
       { pInfoConfig       = cfg
@@ -379,6 +394,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           ByteString
           ByteString
           ByteString
+          NodeToNodeInitiatorResult
           ()
     mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics version =
         NTN.mkApps
@@ -387,7 +403,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           (NTN.defaultCodecs codecConfig version)
           NTN.byteLimits
           llrnChainSyncTimeout
-          (reportMetric peerMetrics)
+          (reportMetric Diffusion.peerMetricsConfiguration peerMetrics)
           (NTN.mkHandlers nodeKernelArgs nodeKernel)
 
     mkNodeToClientApps
@@ -414,6 +430,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                ByteString
                ByteString
                ByteString
+               NodeToNodeInitiatorResult
                ()
         )
       -> (   BlockNodeToClientVersion blk
@@ -426,8 +443,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       -> ( Diffusion.Applications
              addrNTN NodeToNodeVersion   versionDataNTN
              addrNTC NodeToClientVersion versionDataNTC
-             m
-         , Diffusion.ExtraApplications p2p addrNTN m
+             m NodeToNodeInitiatorResult
+         , Diffusion.ExtraApplications p2p addrNTN m NodeToNodeInitiatorResult
          )
     mkDiffusionApplications
       enP2P
@@ -442,6 +459,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           , Diffusion.P2PApplications
               P2P.ApplicationsExtra {
                 P2P.daRethrowPolicy          = consensusRethrowPolicy (Proxy @blk),
+                P2P.daReturnPolicy           = returnPolicy,
                 P2P.daLocalRethrowPolicy     = localRethrowPolicy,
                 P2P.daPeerMetrics            = peerMetrics,
                 P2P.daBlockFetchMode         = getFetchMode kernel
@@ -699,8 +717,8 @@ stdRunDataDiffusion ::
   -> Diffusion.Applications
        RemoteAddress  NodeToNodeVersion   NodeToNodeVersionData
        LocalAddress   NodeToClientVersion NodeToClientVersionData
-       IO
-  -> Diffusion.ExtraApplications p2p RemoteAddress IO
+       IO NodeToNodeInitiatorResult
+  -> Diffusion.ExtraApplications p2p RemoteAddress IO NodeToNodeInitiatorResult
   -> IO ()
 stdRunDataDiffusion = Diffusion.run
 

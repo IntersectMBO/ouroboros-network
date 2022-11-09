@@ -2,9 +2,8 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
+
 
 -- | Intended to be imported qualified.
 --
@@ -13,13 +12,12 @@ module Ouroboros.Network.InboundGovernor.ControlChannel
   , ControlChannel (..)
   , ServerControlChannel
   , newControlChannel
-  , newOutboundConnection
-  , newInboundConnection
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Data.Functor (($>))
+import           GHC.Natural (Natural)
 
 import           Network.Mux.Types (MuxMode)
 
@@ -28,7 +26,7 @@ import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Types
 
 
--- | Announcment message for a new connection.
+-- | Announcement message for a new connection.
 --
 data NewConnection peerAddr handle
 
@@ -55,70 +53,43 @@ instance Show peerAddr
 
 
 
--- | Server control channel.  It allows to pass 'STM' transactions which will
+-- | A Server control channel which instantiates 'handle'.
+--
+type ServerControlChannel (muxMode :: MuxMode) peerAddr bytes m a b =
+    ControlChannel peerAddr (Handle muxMode peerAddr bytes m a b) m
+
+-- | Control channel.  It allows to pass 'STM' transactions which will
 -- resolve to 'NewConnection'.   Server's monitoring thread is the consumer
--- of this messages; there are two produceres: accept loop and connection
+-- of these messages; there are two producers: accept loop and connection
 -- handler for outbound connections.
 --
-data ControlChannel m msg =
+data ControlChannel peerAddr handle m =
   ControlChannel {
-    -- | Read a single 'NewConnection' instructrion from the channel.
+    -- | Read a single 'NewConnection' instruction from the channel.
     --
-    readMessage  :: STM m msg,
+    readMessage  :: STM m (NewConnection peerAddr handle),
 
     -- | Write a 'NewConnection' to the channel.
     --
-    writeMessage :: msg -> STM m ()
+    writeMessage :: NewConnection peerAddr handle -> STM m ()
   }
 
 
-type ServerControlChannel (muxMode :: MuxMode) peerAddr bytes m a b =
-    ControlChannel m (NewConnection peerAddr (Handle muxMode peerAddr bytes m a b))
-
-
-newControlChannel :: forall m srvCntrlMsg.
+newControlChannel :: forall peerAddr handle m.
                      MonadLabelledSTM m
-                  => m (ControlChannel m srvCntrlMsg)
+                  => m (ControlChannel peerAddr handle m)
 newControlChannel = do
-    -- Queue size: events will come eihter from the accept loop or from the
-    -- connection manager (when it included an outbound duplex connection).
     channel <-
       atomically $
-        newTBQueue 10
+        newTBQueue cc_QUEUE_BOUND
         >>= \q -> labelTBQueue q "server-cc" $> q
     pure $ ControlChannel {
-        readMessage  = readMessage channel,
-        writeMessage = writeMessage channel
+        readMessage  = readTBQueue channel,
+        writeMessage = writeTBQueue channel
       }
-  where
-    readMessage
-      :: TBQueue m srvCntrlMsg
-      -> STM     m srvCntrlMsg
-    readMessage = readTBQueue
-
-    writeMessage
-      :: TBQueue m srvCntrlMsg
-      -> srvCntrlMsg
-      -> STM m ()
-    writeMessage q a = writeTBQueue q a
 
 
-newOutboundConnection
-    :: ControlChannel m (NewConnection peerAddr handle)
-    -> ConnectionId peerAddr
-    -> DataFlow
-    -> handle
-    -> STM m ()
-newOutboundConnection channel connId dataFlow handle =
-    writeMessage channel
-                (NewConnection Outbound connId dataFlow handle)
-
-newInboundConnection
-    :: ControlChannel m (NewConnection peerAddr handle)
-    -> ConnectionId peerAddr
-    -> DataFlow
-    -> handle
-    -> STM m ()
-newInboundConnection channel connId dataFlow handle =
-    writeMessage channel
-                 (NewConnection Inbound connId dataFlow handle)
+-- | The 'ControlChannel's 'TBQueue' depth.
+--
+cc_QUEUE_BOUND :: Natural
+cc_QUEUE_BOUND = 10

@@ -1,5 +1,6 @@
+cabal-version:       3.0
 name:                ouroboros-consensus
-version:             0.1.0.1
+version:             0.1.0.2
 synopsis:            Consensus layer for the Ouroboros blockchain protocol
 -- description:
 license:             Apache-2.0
@@ -11,7 +12,6 @@ author:              IOHK Engineering Team
 maintainer:          operations@iohk.io
 category:            Network
 build-type:          Simple
-cabal-version:       >=1.10
 
 source-repository head
   type:     git
@@ -141,6 +141,7 @@ library
                        Ouroboros.Consensus.Node.DbLock
                        Ouroboros.Consensus.Node.DbMarker
                        Ouroboros.Consensus.Node.ErrorPolicy
+                       Ouroboros.Consensus.Node.ExitPolicy
                        Ouroboros.Consensus.Node.RethrowPolicy
                        Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
@@ -327,12 +328,12 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
-                     , io-classes        >=0.2   && <0.3
+                     , io-classes       ^>=0.3
                      , typed-protocols
                      , network-mux
-                     , ouroboros-network-framework
-                     , ouroboros-network
-                     , strict-stm        >=0.1   && <0.2
+                     , ouroboros-network-framework ^>=0.2
+                     , ouroboros-network ^>=0.2
+                     , strict-stm       ^>=0.2
 
 
   if os(windows)

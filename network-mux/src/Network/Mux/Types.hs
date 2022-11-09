@@ -51,7 +51,7 @@ import           Quiet
 
 import           GHC.Generics (Generic)
 
-import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
+import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import           Control.Monad.Class.MonadTime
 
 import           Network.Mux.Channel (Channel (..))
@@ -80,14 +80,13 @@ newtype MiniProtocolNum = MiniProtocolNum Word16
   deriving (Eq, Ord, Enum, Ix, Show)
 
 -- | Per Miniprotocol limits
-data MiniProtocolLimits =
+newtype MiniProtocolLimits =
      MiniProtocolLimits {
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --
-       maximumIngressQueue :: !Int
+       maximumIngressQueue :: Int
      }
-
 
 -- $interface
 --

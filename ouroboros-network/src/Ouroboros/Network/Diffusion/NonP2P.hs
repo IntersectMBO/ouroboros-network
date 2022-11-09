@@ -19,7 +19,7 @@ module Ouroboros.Network.Diffusion.NonP2P
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception
-import           Control.Tracer (Tracer, nullTracer, traceWith)
+import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.Foldable (asum)
 import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
@@ -31,6 +31,8 @@ import qualified Network.Socket as Socket
 import           Ouroboros.Network.Snocket (LocalAddress, LocalSnocket,
                      LocalSocket (..), SocketSnocket, localSocketFileDescriptor)
 import qualified Ouroboros.Network.Snocket as Snocket
+import           Ouroboros.Network.Socket (configureSocket,
+                     configureSystemdSocket)
 
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import           Ouroboros.Network.ErrorPolicy
@@ -161,7 +163,7 @@ run
     -> Applications
          RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
          LocalAddress  NodeToClientVersion NodeToClientVersionData
-         IO
+         IO a
     -> ApplicationsExtra
     -> IO ()
 run Tracers
@@ -169,7 +171,7 @@ run Tracers
       , dtLocalMuxTracer
       , dtHandshakeTracer
       , dtLocalHandshakeTracer
-      , dtDiffusionInitializationTracer
+      , dtDiffusionTracer
       }
     TracersExtra
       { dtIpSubscriptionTracer
@@ -241,7 +243,7 @@ run Tracers
   where
     traceException :: IO a -> IO a
     traceException f = catch f $ \(e :: SomeException) -> do
-      traceWith dtDiffusionInitializationTracer (DiffusionErrored e)
+      traceWith dtDiffusionTracer (DiffusionErrored e)
       throwIO e
 
     --
@@ -332,22 +334,22 @@ run Tracers
 #if defined(mingw32_HOST_OS)
             -- Windows uses named pipes so can't take advantage of existing sockets
             Left _ -> do
-              traceWith dtDiffusionInitializationTracer UnsupportedReadySocketCase
+              traceWith dtDiffusionTracer UnsupportedReadySocketCase
               throwIO (UnsupportedReadySocket :: Failure RemoteAddress)
 #else
             Left sd -> do
               addr <- Snocket.getLocalAddr sn sd
-              traceWith dtDiffusionInitializationTracer
+              traceWith dtDiffusionTracer
                 $ UsingSystemdSocket addr
               return sd
 #endif
             Right addr -> do
-              traceWith dtDiffusionInitializationTracer
+              traceWith dtDiffusionTracer
                 $ CreateSystemdSocketForSnocketPath addr
               sd <- Snocket.open
                     sn
                     (Snocket.addrFamily sn addr)
-              traceWith dtDiffusionInitializationTracer
+              traceWith dtDiffusionTracer
                 $ CreatedLocalSocket addr
               return sd
 
@@ -361,23 +363,23 @@ run Tracers
                -- If a socket was provided it should be ready to accept
                Left _ -> pure ()
                Right addr -> do
-                 traceWith dtDiffusionInitializationTracer
+                 traceWith dtDiffusionTracer
                   . ConfiguringLocalSocket addr
                     =<< localSocketFileDescriptor sd
 
                  Snocket.bind sn sd addr
 
-                 traceWith dtDiffusionInitializationTracer
+                 traceWith dtDiffusionTracer
                   . ListeningLocalSocket addr
                     =<< localSocketFileDescriptor sd
 
                  Snocket.listen sn sd
 
-                 traceWith dtDiffusionInitializationTracer
+                 traceWith dtDiffusionTracer
                   . LocalSocketUp addr
                     =<< localSocketFileDescriptor sd
 
-          traceWith dtDiffusionInitializationTracer
+          traceWith dtDiffusionTracer
             . RunLocalServer =<< Snocket.getLocalAddr sn sd
 
           void $ NodeToClient.withServer
@@ -402,7 +404,7 @@ run Tracers
           case address of
                Left sd -> return sd
                Right addr -> do
-                 traceWith dtDiffusionInitializationTracer
+                 traceWith dtDiffusionTracer
                   $ CreatingServerSocket addr
                  Snocket.open sn (Snocket.addrFamily sn addr)
         )
@@ -411,19 +413,25 @@ run Tracers
 
           addr <- case address of
                -- If a socket was provided it should be ready to accept
-               Left _ -> Snocket.getLocalAddr sn sd
+               Left sock -> do
+                 addr <- Snocket.getLocalAddr sn sock
+                 configureSystemdSocket
+                   (SystemdSocketConfiguration `contramap` dtDiffusionTracer)
+                   sd addr
+                 Snocket.getLocalAddr sn sd
                Right addr -> do
-                 traceWith dtDiffusionInitializationTracer
+                 traceWith dtDiffusionTracer
                   $ ConfiguringServerSocket addr
+                 configureSocket sd (Just addr)
                  Snocket.bind sn sd addr
-                 traceWith dtDiffusionInitializationTracer
+                 traceWith dtDiffusionTracer
                   $ ListeningServerSocket addr
                  Snocket.listen sn sd
-                 traceWith dtDiffusionInitializationTracer
+                 traceWith dtDiffusionTracer
                   $ ServerSocketUp addr
                  return addr
 
-          traceWith dtDiffusionInitializationTracer $ RunServer (pure addr)
+          traceWith dtDiffusionTracer $ RunServer (pure addr)
 
           void $ NodeToNode.withServer
             sn

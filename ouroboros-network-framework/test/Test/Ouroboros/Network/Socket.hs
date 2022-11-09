@@ -30,11 +30,11 @@ import qualified Network.Socket.ByteString.Lazy as Socket (sendAll)
 #endif
 
 import           Control.Concurrent (ThreadId)
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (IOException)
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Tracer
@@ -142,7 +142,10 @@ prop_socket_send_recv_ipv4
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
     client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    prop_socket_send_recv (Socket.addrAddress client) (Socket.addrAddress server) f xs
+    prop_socket_send_recv (Socket.addrAddress client)
+                          (Socket.addrAddress server)
+                          configureSocket
+                          f xs
 
 
 #ifdef OUROBOROS_NETWORK_IPV6
@@ -154,7 +157,7 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
     client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
-    prop_socket_send_recv client server request response
+    prop_socket_send_recv client server configureSocket request response
 #endif
 
 #ifndef mingw32_HOST_OS
@@ -170,8 +173,9 @@ prop_socket_send_recv_unix request response = ioProperty $ do
                          (Socket.SockAddrUnix serverName) Nothing
         clientAddr = Socket.AddrInfo [] Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
                          (Socket.SockAddrUnix clientName) Nothing
-    r <- prop_socket_send_recv (Socket.addrAddress clientAddr) (Socket.addrAddress serverAddr)
-                               request response
+    r <- prop_socket_send_recv (Socket.addrAddress clientAddr)
+                               (Socket.addrAddress serverAddr)
+                               mempty request response
     cleanUp serverName
     cleanUp clientName
     return $ r
@@ -187,10 +191,12 @@ prop_socket_send_recv_unix request response = ioProperty $ do
 -- testcases will verify that they are correctly reassembled into the original message.
 prop_socket_send_recv :: Socket.SockAddr
                       -> Socket.SockAddr
+                      -> (Socket.Socket -> Maybe Socket.SockAddr -> IO ())
+                      -- ^ configure a socket
                       -> (Int -> Int -> (Int, Int))
                       -> [Int]
                       -> IO Bool
-prop_socket_send_recv initiatorAddr responderAddr f xs =
+prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
     withIOManager $ \iomgr -> do
 
     cv <- newEmptyTMVarIO
@@ -243,6 +249,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
     res <-
       withServerNode
         snocket
+        ((. Just) <$> configureSock)
         networkTracers
         networkState
         (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -256,6 +263,7 @@ prop_socket_send_recv initiatorAddr responderAddr f xs =
         $ \_ _ -> do
           connectToNode
             snocket
+            (flip configureSock Nothing)
             unversionedHandshakeCodec
             noTimeLimitsHandshake
             unversionedProtocolDataCodec
@@ -499,6 +507,7 @@ prop_socket_client_connect_error _ xs =
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
+        (flip configureSocket Nothing)
         unversionedHandshakeCodec
         noTimeLimitsHandshake
         unversionedProtocolDataCodec

@@ -63,6 +63,12 @@ https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 - The maximum major protocol version of the Cardano protocol is now correctly
   based off of Babbage instead of Alonzo.
 
+## Circa 2022-09-20
+
+### Added
+
+- `consensusStartupErrorTracer` to `Ouroboros.Consensus.Node.Tracers.Tracers'`: a tracer which logs consensus startup errors.
+
 ## Circa 2022-07-20
 
 ### Fixed

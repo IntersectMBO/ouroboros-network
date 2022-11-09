@@ -3,12 +3,9 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 -- 'runResponder' is using a redundant constraint.
@@ -34,16 +31,16 @@ module Ouroboros.Network.Server2
   , module ControlChannel
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
-import           Data.List (intercalate)
+import           Data.List (foldl1', intercalate)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Void (Void)
@@ -83,7 +80,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
       -- | Time for which all protocols need to be idle to trigger
       -- 'DemotedToCold' transition.
       --
-      serverInboundIdleTimeout    :: DiffTime,
+      serverInboundIdleTimeout    :: Maybe DiffTime,
 
       -- | Server control var is passed as an argument; this allows to use the
       -- server to run and manage responders which needs to be started on
@@ -96,6 +93,10 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionNumber bytes m
       serverObservableStateVar    :: StrictTVar m InboundGovernorObservableState
     }
 
+-- | Server pauses accepting connections after an 'CONNABORTED' error.
+--
+server_CONNABORTED_DELAY :: DiffTime
+server_CONNABORTED_DELAY = 0.5
 
 -- | Run the server, which consists of the following components:
 --
@@ -161,7 +162,8 @@ run ServerArguments {
                       | (localAddress, socket) <- localAddresses `zip` sockets
                       ]
 
-      raceAll threads
+      -- race all the threads
+      foldl1' (\as io -> either id id <$> as `race` io) threads
         `finally`
           traceWith tracer TrServerStopped
         `catch`
@@ -192,11 +194,6 @@ run ServerArguments {
 #endif
     iseCONNABORTED _ = False
 #endif
-
-    raceAll :: [m x] -> m x
-    raceAll []       = error "raceAll: invariant violation"
-    raceAll [t]      = t
-    raceAll (t : ts) = either id id <$> race t (raceAll ts)
 
     acceptLoop :: peerAddr
                -> Accept m socket peerAddr
@@ -239,7 +236,8 @@ run ServerArguments {
               case fromException err of
                  Just ioErr ->
                    if iseCONNABORTED ioErr
-                      then threadDelay 0.5 >> go unmask acceptNext
+                      then threadDelay server_CONNABORTED_DELAY
+                        >> go unmask acceptNext
                       else throwIO ioErr
                  Nothing -> throwIO err
 
@@ -278,3 +276,4 @@ data ServerTrace peerAddr
     -- ^ similar to 'TrAcceptConnection' but it is logged once the connection is
     -- handed to inbound connection manager, e.g. after handshake negotiation.
   deriving Show
+

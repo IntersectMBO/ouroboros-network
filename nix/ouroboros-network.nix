@@ -4,7 +4,7 @@
 { lib, stdenv, pkgs, haskell-nix, buildPackages, config ? { }
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
-, libsodium-vrf ? pkgs.libsodium-vrf }:
+, libsodium-vrf ? pkgs.libsodium-vrf, secp256k1 ? pkgs.secp256k1 }:
 let
   compiler-nix-name = pkgs.localConfig.ghcVersion;
   src = haskell-nix.haskellLib.cleanGit {
@@ -41,7 +41,7 @@ let
         packages.cardano-crypto-praos.components.library.pkgconfig =
           lib.mkForce [ [ libsodium-vrf ] ];
         packages.cardano-crypto-class.components.library.pkgconfig =
-          lib.mkForce [ [ libsodium-vrf ] ];
+          lib.mkForce [[ libsodium-vrf secp256k1 ]];
       }
 
       # Options specific to the windows cross-compiled build:
@@ -127,6 +127,11 @@ let
               ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
             '';
           packages.ouroboros-consensus-test.components.tests.test-storage.postInstall =
+            ''
+              ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
+              ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll
+            '';
+          packages.ouroboros-consensus-cardano-tools.components.tests.test.postInstall =
             ''
               ln -s ${libsodium-vrf}/bin/libsodium-23.dll $out/bin/libsodium-23.dll
               ln -s ${pkgs.secp256k1}/bin/libsecp256k1-0.dll $out/bin/libsecp256k1-0.dll

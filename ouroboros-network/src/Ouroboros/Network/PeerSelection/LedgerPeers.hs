@@ -22,11 +22,11 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   ) where
 
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.DeepSeq (NFData (..))
 import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.IP as IP
@@ -196,6 +196,17 @@ pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
                  traceWith tracer $ PickedPeer relay ackStake stake
                  go rng'' (n - 1) (relay : picked)
 
+-- | Peer list life time decides how often previous ledger peers should be
+-- reused.  If the ledger peer map is empty we use 'short_PEER_LIST_LIFE_TIME'
+-- otherwise we use 'long_PEER_LIST_LIFE_TIME'
+--
+short_PEER_LIST_LIFE_TIME :: DiffTime
+short_PEER_LIST_LIFE_TIME = 30
+
+-- | Long peer list lift time, close to 30minutes but not exactly
+--
+long_PEER_LIST_LIFE_TIME :: DiffTime
+long_PEER_LIST_LIFE_TIME = 1847 -- a prime number!
 
 -- | Run the LedgerPeers worker thread.
 --
@@ -211,6 +222,8 @@ ledgerPeersThread :: forall m peerAddr.
                   -> LedgerPeersConsensusInterface m
                   -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set peerAddr)))
                   -> STM m NumberOfPeers
+                  -- ^ a blocking action which receives next request for more
+                  -- ledger peers
                   -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
 ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
@@ -224,10 +237,11 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
         traceWith tracer (TraceUseLedgerAfter useLedgerAfter)
 
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerAfter
-                                  then 30
-                                  else 1847 -- Close to but not exactly 30min.
+                                  then short_PEER_LIST_LIFE_TIME
+                                  else long_PEER_LIST_LIFE_TIME
 
         traceWith tracer WaitingOnRequest
+        -- wait until next request of ledger peers
         numRequested <- atomically getReq
         traceWith tracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
@@ -260,7 +274,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
                (rng', !pickedPeers) <- pickPeers rng tracer peerMap' numRequested
                traceWith tracer $ PickedPeers numRequested pickedPeers
 
-               let (plainAddrs, domains) = foldl' splitPeers (Set.empty, []) pickedPeers
+               let (plainAddrs, domains) = foldl' partitionPeer (Set.empty, []) pickedPeers
 
                domainAddrs <- doResolve domains
 
@@ -284,16 +298,16 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
 
     -- Divide the picked peers form the ledger into addresses we can use directly and
     -- domain names that we need to resolve.
-    splitPeers :: (Set peerAddr, [DomainAccessPoint])
-               -> RelayAccessPoint
-               -> (Set peerAddr, [DomainAccessPoint])
-    splitPeers (addrs, domains) (RelayDomainAccessPoint domain) = (addrs, domain : domains)
-    splitPeers (addrs, domains) (RelayAccessAddress ip port) =
+    partitionPeer :: (Set peerAddr, [DomainAccessPoint])
+                  -> RelayAccessPoint
+                  -> (Set peerAddr, [DomainAccessPoint])
+    partitionPeer (addrs, domains) (RelayDomainAccessPoint domain) = (addrs, domain : domains)
+    partitionPeer (addrs, domains) (RelayAccessAddress ip port) =
         let !addr = toPeerAddr ip port in
         (Set.insert addr addrs, domains)
 
 
--- | For a LederPeers worker thread and submit request and receive responses.
+-- | For a LedgerPeers worker thread and submit request and receive responses.
 --
 withLedgerPeers :: forall peerAddr m a.
                    ( MonadAsync m

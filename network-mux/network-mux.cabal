@@ -1,6 +1,6 @@
 cabal-version:       2.2
 name:                network-mux
-version:             0.1.0.1
+version:             0.2.0.0
 synopsis:            Multiplexing library
 license:             Apache-2.0
 license-files:
@@ -43,8 +43,8 @@ common demo-deps
 
 library
   build-depends:       base            >=4.9 && <4.15,
-                       io-classes      >=0.1 && <0.3,
-                       strict-stm      >=0.1 && <0.2,
+                       io-classes     ^>=0.3,
+                       strict-stm     ^>=0.2,
                        contra-tracer   >=0.1 && <0.2,
                        monoidal-synchronisation
                                        >=0.1 && <0.2,
@@ -56,7 +56,7 @@ library
                        -- The Windows version of network-3.1.2 is missing
                        -- functions, see
                        -- https://github.com/haskell/network/issues/484
-                       network         >=3.1.2 && <3.2,
+                       network         >=3.1.2.2 && <3.2,
                        process         >=1.6 && <1.7,
                        statistics-linreg
                                        >=0.3 && <0.4,
@@ -124,7 +124,7 @@ test-suite test
   build-depends:       base,
                        io-classes,
                        strict-stm,
-                       io-sim            >=0.2 && < 0.3,
+                       io-sim           ^>=0.3,
                        contra-tracer,
                        network-mux,
                        Win32-network,
@@ -182,7 +182,6 @@ executable cardano-ping
   import:              demo-deps
   hs-source-dirs:      tools
   main-is:             cardano-ping.hs
-  other-modules:       Linger
   build-depends:       base,
                        aeson,
                        network-mux,

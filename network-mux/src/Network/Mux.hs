@@ -48,12 +48,12 @@ import           Data.Maybe (isNothing)
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
 
 import           Control.Applicative
+import           Control.Concurrent.Class.MonadSTM.Strict
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Exception (SomeAsyncException (..))
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
@@ -71,7 +71,7 @@ data Mux (mode :: MuxMode) m =
      Mux {
        muxMiniProtocols   :: !(Map (MiniProtocolNum, MiniProtocolDir)
                                    (MiniProtocolState mode m)),
-       muxControlCmdQueue :: !(TQueue m (ControlCmd mode m)),
+       muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
        muxStatus          :: StrictTVar m MuxStatus
      }
 
@@ -352,7 +352,7 @@ monitor :: forall mode m.
         -> TimeoutFn m
         -> JobPool.JobPool MuxGroup m MuxJobResult
         -> EgressQueue m
-        -> TQueue m (ControlCmd mode m)
+        -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m MuxStatus
         -> m ()
 monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
@@ -362,7 +362,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
     go !monitorCtx@MonitorCtx { mcOnDemandProtocols } = do
       result <- atomically $ runFirstToFinish $
             -- wait for a mini-protocol thread to terminate
-           (FirstToFinish $ EventJobResult <$> JobPool.collect jobpool)
+           (FirstToFinish $ EventJobResult <$> JobPool.waitForJob jobpool)
 
             -- wait for a new control command
         <> (FirstToFinish $ EventControlCmd <$> readTQueue cmdQueue)

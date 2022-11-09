@@ -10,6 +10,8 @@ module Ouroboros.Network.Testing.Data.Script
   , initScript
   , stepScript
   , stepScriptSTM
+  , stepScriptOrFinish
+  , stepScriptOrFinishSTM
   , initScript'
   , stepScript'
   , stepScriptSTM'
@@ -26,14 +28,15 @@ module Ouroboros.Network.Testing.Data.Script
   , interpretPickScript
   ) where
 
+import           Data.Functor (($>))
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
+import           Control.Concurrent.Class.MonadSTM
+import           Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
-import qualified Control.Monad.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer, traceWith)
 
@@ -76,6 +79,20 @@ stepScriptSTM scriptVar = do
       x':xs' -> LazySTM.writeTVar scriptVar (Script (x' :| xs'))
     return x
 
+-- | Return 'Left' if it was the last step, return 'Right' if the script can
+-- continue.
+--
+stepScriptOrFinish :: MonadSTM m => TVar m (Script a) -> m (Either a a)
+stepScriptOrFinish scriptVar = atomically (stepScriptOrFinishSTM scriptVar)
+
+stepScriptOrFinishSTM :: MonadSTM m => TVar m (Script a) -> STM m (Either a a)
+stepScriptOrFinishSTM scriptVar = do
+    Script (x :| xs) <- LazySTM.readTVar scriptVar
+    case xs of
+      []     -> return (Left x)
+      x':xs' -> writeTVar scriptVar (Script (x' :| xs'))
+             $> Right x
+
 initScript' :: MonadSTM m => Script a -> m (TVar m (Script a))
 initScript' = newTVarIO
 
@@ -110,7 +127,7 @@ instance Arbitrary a => Arbitrary (Script a) where
 
 type TimedScript a = Script (a, ScriptDelay)
 
-data ScriptDelay = NoDelay | ShortDelay | LongDelay
+data ScriptDelay = NoDelay | ShortDelay | LongDelay | Delay DiffTime
   deriving (Eq, Show)
 
 instance Arbitrary ScriptDelay where
@@ -121,6 +138,7 @@ instance Arbitrary ScriptDelay where
   shrink LongDelay  = [NoDelay, ShortDelay]
   shrink ShortDelay = [NoDelay]
   shrink NoDelay    = []
+  shrink (Delay _)  = []
 
 playTimedScript :: (MonadAsync m, MonadTimer m)
                 => Tracer m a -> TimedScript a -> m (TVar m a)
@@ -135,9 +153,10 @@ playTimedScript tracer (Script ((x0,d0) :| script)) = do
                      | (x,d) <- script ]
     return v
   where
-    interpretScriptDelay NoDelay    = 0
-    interpretScriptDelay ShortDelay = 1
-    interpretScriptDelay LongDelay  = 3600
+    interpretScriptDelay NoDelay       = 0
+    interpretScriptDelay ShortDelay    = 1
+    interpretScriptDelay LongDelay     = 3600
+    interpretScriptDelay (Delay delay) = delay
 
 
 --

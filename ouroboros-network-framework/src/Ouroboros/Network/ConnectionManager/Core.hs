@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -23,12 +23,12 @@ module Ouroboros.Network.ConnectionManager.Core
   , abstractState
   ) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork, ThreadId, throwTo)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -36,7 +36,7 @@ import           Control.Monad.Fix
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldMap', traverse_)
 import           Data.Function (on)
-import           Data.Functor (void, ($>))
+import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
@@ -57,7 +57,7 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
 import           Ouroboros.Network.InboundGovernor.ControlChannel
-                     (ControlChannel)
+                     (ControlChannel (..))
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Server.RateLimiting
@@ -75,7 +75,8 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 
         -- | Trace state transitions.
         --
-        cmTrTracer            :: Tracer m (TransitionTrace peerAddr (ConnectionState peerAddr handle handleError version m)),
+        cmTrTracer            :: Tracer m (TransitionTrace peerAddr
+                                            (ConnectionState peerAddr handle handleError version m)),
 
         -- | Mux trace.
         --
@@ -100,6 +101,10 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         -- | Snocket for the 'socket' type.
         --
         cmSnocket             :: Snocket m socket peerAddr,
+
+        -- | Socket configuration.
+        --
+        cmConfigureSocket     :: socket -> Maybe peerAddr -> m (),
 
         -- | @TCP@ will held connections in @TIME_WAIT@ state for up to two MSL
         -- (maximum segment time).  On Linux this is set to '60' seconds on
@@ -157,7 +162,7 @@ instance Eq (MutableConnState peerAddr handle handleError version m) where
 newtype FreshIdSupply m = FreshIdSupply { getFreshId :: STM m Int }
 
 
--- | Create a 'FreshIdSupply' inside and 'STM' monad.
+-- | Create a 'FreshIdSupply' inside an 'STM' monad.
 --
 newFreshIdSupply :: forall m. MonadSTM m
                  => Proxy m -> STM m (FreshIdSupply m)
@@ -184,7 +189,7 @@ newMutableConnState freshIdSupply connState = do
 
 
 -- | 'ConnectionManager' state: for each peer we keep a 'ConnectionState' in
--- a mutable variable, which reduce congestion on the 'TMVar' which keeps
+-- a mutable variable, which reduces congestion on the 'TMVar' which keeps
 -- 'ConnectionManagerState'.
 --
 -- It is important we can lookup by remote @peerAddr@; this way we can find if
@@ -330,13 +335,13 @@ instance ( Show peerAddr
              , show df
              ]
     show (InboundIdleState connId connThread _handle df) =
-      concat ([ "InboundIdleState "
-              , show connId
-              , " "
-              , show (asyncThreadId connThread)
-              , " "
-              , show df
-              ])
+      concat [ "InboundIdleState "
+             , show connId
+             , " "
+             , show (asyncThreadId connThread)
+             , " "
+             , show df
+             ]
     show (InboundState  connId connThread _handle df) =
       concat [ "InboundState "
              , show connId
@@ -357,10 +362,10 @@ instance ( Show peerAddr
               , " "
               , show (asyncThreadId connThread)
               ]
-              ++ maybeToList (((' ' :) . show) <$> handleError))
+              ++ maybeToList ((' ' :) . show <$> handleError))
     show (TerminatedState handleError) =
       concat (["TerminatedState"]
-              ++ maybeToList (((' ' :) . show) <$> handleError))
+              ++ maybeToList ((' ' :) . show <$> handleError))
 
 
 getConnThread :: ConnectionState peerAddr handle handleError version m
@@ -411,7 +416,7 @@ isInboundConn TerminatedState {}                         = False
 
 
 abstractState :: MaybeUnknown (ConnectionState muxMode peerAddr m a b) -> AbstractState
-abstractState = \s -> case s of
+abstractState = \case
     Unknown  -> UnknownConnectionSt
     Race s'  -> go s'
     Known s' -> go s'
@@ -541,7 +546,7 @@ withConnectionManager
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
-    -> InResponderMode muxMode (ControlChannel m (ControlChannel.NewConnection peerAddr handle))
+    -> InResponderMode muxMode (ControlChannel peerAddr handle m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
@@ -557,6 +562,7 @@ withConnectionManager ConnectionManagerArguments {
                           cmIPv6Address,
                           cmAddressType,
                           cmSnocket,
+                          cmConfigureSocket,
                           cmTimeWaitTimeout,
                           cmOutboundIdleTimeout,
                           connectionDataFlow,
@@ -854,7 +860,7 @@ withConnectionManager ConnectionManagerArguments {
                            unmask (threadDelay delay)
                              `catch` \e ->
                                 case fromException e
-                                of Just (AsyncCancelled) -> do
+                                of Just AsyncCancelled -> do
                                      t' <- getMonotonicTime
                                      forceThreadDelay (delay - t' `diffTime` t)
                                    _ -> throwIO e
@@ -1136,7 +1142,7 @@ withConnectionManager ConnectionManagerArguments {
                     --
                     -- Key was overwritten in the dictionary (stateVar),
                     -- so we do not trace anything as it was already traced upon
-                    -- overwritting.
+                    -- overwriting.
                      else return [ ]
 
                 traverse_ (traceWith trTracer . TransitionTrace peerAddr) transitions
@@ -1225,13 +1231,15 @@ withConnectionManager ConnectionManagerArguments {
                   Just {} -> do
                     case inboundGovernorControlChannel of
                       InResponderMode controlChannel ->
-                        atomically $ ControlChannel.newInboundConnection
-                                       controlChannel connId dataFlow handle
+                        atomically $ ControlChannel.writeMessage
+                                       controlChannel
+                                       (ControlChannel.NewConnection Inbound connId dataFlow handle)
                       NotInResponderMode -> return ()
                     return $ Connected connId dataFlow handle
 
-    -- Needs 'mask' in order to guarantee that the traces are logged if the an
-    -- Async exception lands between the successful STM action and the logging action.
+    -- We need 'mask' in order to guarantee that the traces are logged if an
+    -- async exception lands between the successful STM action and the logging
+    -- action.
     unregisterInboundConnectionImpl
         :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> peerAddr
@@ -1626,17 +1634,19 @@ withConnectionManager ConnectionManagerArguments {
                     )
                     $ \socket -> do
                       traceWith tracer (TrConnectionNotFound provenance peerAddr)
-                      addr <-
-                        case cmAddressType peerAddr of
-                          Nothing -> pure Nothing
-                          Just IPv4Address ->
-                               traverse_ (bind cmSnocket socket)
-                                         cmIPv4Address
-                            $> cmIPv4Address
-                          Just IPv6Address ->
-                               traverse_ (bind cmSnocket socket)
-                                         cmIPv6Address
-                            $> cmIPv6Address
+                      let addr = case cmAddressType peerAddr of
+                                   Nothing          -> Nothing
+                                   Just IPv4Address -> cmIPv4Address
+                                   Just IPv6Address -> cmIPv6Address
+                      cmConfigureSocket socket addr
+                      case cmAddressType peerAddr of
+                        Nothing -> pure ()
+                        Just IPv4Address ->
+                             traverse_ (bind cmSnocket socket)
+                                       cmIPv4Address
+                        Just IPv6Address ->
+                             traverse_ (bind cmSnocket socket)
+                                       cmIPv6Address
 
                       traceWith tracer (TrConnect addr peerAddr)
                       connect cmSnocket socket peerAddr
@@ -1792,8 +1802,9 @@ withConnectionManager ConnectionManagerArguments {
                           writeTVar connVar connState'
                           case inboundGovernorControlChannel of
                             InResponderMode controlChannel ->
-                              ControlChannel.newOutboundConnection
-                                               controlChannel connId dataFlow handle
+                              ControlChannel.writeMessage
+                                controlChannel
+                                (ControlChannel.NewConnection Outbound connId dataFlow handle)
                             NotInResponderMode -> return ()
                           return (Just $ mkTransition connState connState')
                     TerminatedState _ ->
@@ -1930,7 +1941,7 @@ withConnectionManager ConnectionManagerArguments {
               -- operation which returns only once the connection is
               -- negotiated.
               ReservedOutboundState ->
-                return $
+                return
                   ( DemoteToColdLocalError
                      (TrForbiddenOperation peerAddr st)
                      st
@@ -1938,7 +1949,7 @@ withConnectionManager ConnectionManagerArguments {
                   )
 
               UnnegotiatedState _ _ _ ->
-                return $
+                return
                   ( DemoteToColdLocalError
                      (TrForbiddenOperation peerAddr st)
                      st
@@ -2329,7 +2340,7 @@ withConnectionManager ConnectionManagerArguments {
       (result, mbAssertion) <- atomically $ do
         mbConnVar <- Map.lookup peerAddr <$> readTMVar stateVar
         case mbConnVar of
-          Nothing -> return (UnsupportedState UnknownConnectionSt
+          Nothing -> return ( UnsupportedState UnknownConnectionSt
                             , Nothing
                             )
           Just MutableConnState { connVar } -> do

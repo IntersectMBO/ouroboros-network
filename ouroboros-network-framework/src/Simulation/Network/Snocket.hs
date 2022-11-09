@@ -37,13 +37,14 @@ module Simulation.Network.Snocket
   , FD
   , GlobalAddressScheme (..)
   , AddressType (..)
+  , WithAddr (..)
   ) where
 
 import           Prelude hiding (read)
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -134,33 +135,36 @@ mkConnection :: ( MonadLabelledSTM   m
              -> BearerInfo
              -> ConnectionId (TestAddress addr)
              -> STM m (Connection m (TestAddress addr))
-mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } = do
-    (channelLocal, channelRemote)  <-
-      newConnectedAttenuatedChannelPair
-        ( ( WithAddr (Just localAddress) (Just remoteAddress)
-          . STAttenuatedChannelTrace connId
-          )
-          `contramap` tr)
-        ( ( WithAddr (Just remoteAddress) (Just localAddress)
-          . STAttenuatedChannelTrace ConnectionId
-              { localAddress  = remoteAddress
-              , remoteAddress = localAddress
-              }
-          )
-         `contramap` tr)
-        Attenuation
-          { aReadAttenuation  = biOutboundAttenuation  bearerInfo
-          , aWriteAttenuation = biOutboundWriteFailure bearerInfo
-          }
-        Attenuation
-          { aReadAttenuation  = biInboundAttenuation  bearerInfo
-          , aWriteAttenuation = biInboundWriteFailure bearerInfo
-          }
-    return $ Connection channelLocal
-                        channelRemote
-                        (biSDUSize bearerInfo)
-                        SYN_SENT
-                        localAddress
+mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } =
+    (\(connChannelLocal, connChannelRemote) ->
+      Connection {
+          connChannelLocal,
+          connChannelRemote,
+          connSDUSize  = biSDUSize bearerInfo,
+          connState    = SYN_SENT,
+          connProvider = localAddress
+        })
+  <$>
+    newConnectedAttenuatedChannelPair
+      ( ( WithAddr (Just localAddress) (Just remoteAddress)
+        . STAttenuatedChannelTrace connId
+        )
+        `contramap` tr)
+      ( ( WithAddr (Just remoteAddress) (Just localAddress)
+        . STAttenuatedChannelTrace ConnectionId
+            { localAddress  = remoteAddress
+            , remoteAddress = localAddress
+            }
+        )
+       `contramap` tr)
+      Attenuation
+        { aReadAttenuation  = biOutboundAttenuation  bearerInfo
+        , aWriteAttenuation = biOutboundWriteFailure bearerInfo
+        }
+      Attenuation
+        { aReadAttenuation  = biInboundAttenuation  bearerInfo
+        , aWriteAttenuation = biInboundWriteFailure bearerInfo
+        }
 
 
 -- | Connection id independent of who provisioned the connection. 'NormalisedId'
@@ -469,7 +473,7 @@ data FD_ m addr
         !addr
         -- ^ listening address
 
-        !(TBQueue m (ChannelWithInfo m addr))
+        !(StrictTBQueue m (ChannelWithInfo m addr))
         -- ^ listening queue; when 'connect' is called; dual 'AttenuatedChannel'
         -- of 'FDConnected' file descriptor is passed through the listening
         -- queue.
@@ -528,6 +532,7 @@ newtype FD m peerAddr = FD { fdVar :: (StrictTVar m (FD_ m peerAddr)) }
 -- Simulated snockets
 --
 
+-- TODO: use `Ouroboros.Network.ExitPolicy.WithAddr`
 data WithAddr addr event =
     WithAddr { waLocalAddr  :: Maybe addr
              , waRemoteAddr :: Maybe addr
@@ -733,14 +738,16 @@ mkSnocket state tr = Snocket { getLocalAddr
                   normalisedId = normaliseId connId
 
               bearerInfo <- case Map.lookup normalisedId (nsAttenuationMap state) of
-                Nothing     -> do
-                  return (nsDefaultBearerInfo state)
-
+                Nothing     -> return (nsDefaultBearerInfo state)
                 Just script -> stepScriptSTM script
 
               connMap <- readTVar (nsConnections state)
               case Map.lookup normalisedId connMap of
                 Just      Connection { connState = ESTABLISHED } ->
+                  throwSTM (connectedIOError fd_)
+
+                Just      Connection { connState = SYN_SENT, connProvider }
+                        | connProvider == localAddress ->
                   throwSTM (connectedIOError fd_)
 
                 -- simultaneous open
@@ -759,8 +766,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   conn <- mkConnection tr bearerInfo connId
                   writeTVar fdVarLocal (FDConnecting connId conn)
                   modifyTVar (nsConnections state)
-                             (Map.insert (normaliseId connId)
-                                         (dualConnection conn))
+                             (Map.insert (normaliseId connId) conn)
                   -- so far it looks like normal open, it still might turn up
                   -- a simultaneous open if the other side will open the
                   -- connection before it would be put on its accept loop
@@ -859,6 +865,9 @@ mkSnocket state tr = Snocket { getLocalAddr
                 atomically $ modifyTVar (nsConnections state)
                                         (Map.delete (normaliseId connId))
                 throwIO e
+
+              -- TODO: SimOpen and NormalOpen are irrelevant here
+              -- If 'o' is SimOpen then 'connState' is already 'ESTABLISHED'
               Right (fd_', o) -> do
                 -- successful open
 
@@ -1083,7 +1092,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   FDListening localAddress queue -> do
                     -- We should not accept nor fail the 'accept' call in the
                     -- presence of a connection that is __not__ in SYN_SENT
-                    -- state. So we take from the TBQueue until we have found
+                    -- state. So we take from the StrictTBQueue until we have found
                     -- one that is SYN_SENT state.
                     cwi <- readTBQueueUntil (synSent localAddress) queue
                     let connId = ConnectionId localAddress (cwiAddress cwi)
@@ -1338,7 +1347,7 @@ hush Left {}   = Nothing
 hush (Right a) = Just a
 {-# INLINE hush #-}
 
-drainTBQueue :: MonadSTM m => TBQueue m a -> STM m [a]
+drainTBQueue :: MonadSTM m => StrictTBQueue m a -> STM m [a]
 drainTBQueue q = do
   ma <- tryReadTBQueue q
   case ma of
@@ -1350,7 +1359,7 @@ drainTBQueue q = do
 --
 readTBQueueUntil :: MonadSTM m
                  => (a -> STM m Bool) -- ^ a monadic predicate
-                 -> TBQueue m a  -- ^ queue
+                 -> StrictTBQueue m a -- ^ queue
                  -> STM m a
 readTBQueueUntil p q = do
   a <- readTBQueue q

@@ -1,7 +1,13 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+
+#if defined(mingw32_HOST_OS)
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+#endif
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
@@ -12,8 +18,6 @@ import           Control.Monad.IOSim.Types (ThreadId)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 import           Data.Bifoldable (bifoldMap)
 
-import           Data.Dynamic (Typeable)
-import           Data.Functor (void)
 import           Data.List (intercalate)
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
@@ -23,6 +27,7 @@ import           Data.Monoid (Sum (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time (secondsToDiffTime)
+import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
 import           GHC.Exception.Type (SomeException)
@@ -31,44 +36,34 @@ import           System.Random (mkStdGen)
 import qualified Network.DNS.Types as DNS
 
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.P2P (TracersExtra (..))
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.InboundGovernor hiding
                      (TrUnexpectedlyFalseAssertion)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.Governor
-                     (DebugPeerSelection (..), TracePeerSelection (..))
+import           Ouroboros.Network.PeerSelection.Governor hiding
+                     (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerStateActions
-                     (PeerSelectionActionsTrace (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (TraceLocalRootPeers (..), TracePublicRootPeers (..),
-                     dapDomain)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSorIOError (DNSError))
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsBearerInfo (..), attenuation, delay, toSduSize)
+import           Ouroboros.Network.Testing.Data.Script (singletonScript)
 import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
-import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     ignoreTest, sayTracer, splitWithNameTrace, tracerWithName,
-                     tracerWithTime)
+import           Ouroboros.Network.Testing.Utils hiding (debugTracer)
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import           Test.Ouroboros.Network.Testnet.Simulation.Node
-                     (DiffusionScript (..), DiffusionSimulationTrace (..),
-                     diffusionSimulation,
-                     prop_diffusionScript_commandScript_valid,
-                     prop_diffusionScript_fixupCommands)
-import           Test.QuickCheck (Property, checkCoverage, classify, conjoin,
-                     counterexample, coverTable, property, tabulate)
+import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -88,55 +83,75 @@ import           TestLib.Utils (AllProperty (..), TestProperty (..),
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Testnet"
-  [ testGroup "multinodeSim"
+  [ testGroup "generators"
     [ testProperty "diffusionScript fixupCommands idempotent"
-                   prop_diffusionScript_fixupCommands
+                    prop_diffusionScript_fixupCommands
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
-    , testProperty "diffusion no livelock"
-                   prop_diffusion_nolivelock
-    , ignoreTest $
-      testProperty "diffusion dns can recover from fails"
-                   prop_diffusion_dns_can_recover
-    , testProperty "diffusion target established public"
-                   prop_diffusion_target_established_public
-    , testProperty "diffusion target active public"
-                   prop_diffusion_target_active_public
-    , testProperty "diffusion target established local"
-                   prop_diffusion_target_established_local
-    , testProperty "diffusion target active below"
-                   prop_diffusion_target_active_below
-    , testProperty "diffusion target active local above"
-                   prop_diffusion_target_active_local_above
-    , testProperty "diffusion connection manager valid transitions"
-                   prop_diffusion_cm_valid_transitions
-    , testProperty "diffusion connection manager valid transition order"
-                   prop_diffusion_cm_valid_transition_order
-    , testProperty "diffusion inbound governor valid transitions"
-                   prop_diffusion_ig_valid_transitions
-    , testProperty "diffusion inbound governor valid transition order"
-                   prop_diffusion_ig_valid_transition_order
-    , testProperty "diffusion cm & ig timeouts enforced"
-                   prop_diffusion_timeouts_enforced
     ]
+#if !defined(mingw32_HOST_OS)
+  , testProperty "no livelock"
+                 prop_diffusion_nolivelock
+  , testProperty "dns can recover from fails"
+                 prop_diffusion_dns_can_recover
+  , testProperty "target established public"
+                 prop_diffusion_target_established_public
+  , testProperty "target active public"
+                 prop_diffusion_target_active_public
+  , testProperty "target established local"
+                 prop_diffusion_target_established_local
+  , testProperty "target active local"
+                 prop_diffusion_target_active_local
+  , testProperty "target active root"
+                 prop_diffusion_target_active_root
+  , testProperty "target active below"
+                 prop_diffusion_target_active_below
+  , testProperty "target active local below"
+                 prop_diffusion_target_active_local_below
+  , testProperty "async demotion"
+                 prop_diffusion_async_demotions
+  , testProperty "async demotion (unit)"
+                 unit_diffusion_async_demotions
+  , testProperty "target active local above"
+                 prop_diffusion_target_active_local_above
+  , testProperty "connection manager valid transitions"
+                 prop_diffusion_cm_valid_transitions
+  , testProperty "connection manager valid transition order"
+                 prop_diffusion_cm_valid_transition_order
+  , testProperty "inbound governor valid transitions"
+                 prop_diffusion_ig_valid_transitions
+  , testProperty "inbound governor valid transition order"
+                 prop_diffusion_ig_valid_transition_order
+  , testProperty "cm & ig timeouts enforced"
+                 prop_diffusion_timeouts_enforced
+#endif
+#if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
-    [ testProperty "diffusion server trace coverage"
+    [ testProperty "server trace coverage"
                    prop_server_trace_coverage
-    , testProperty "diffusion peer selection actions trace coverage"
+    , testProperty "peer selection actions trace coverage"
                    prop_peer_selection_action_trace_coverage
-    , testProperty "diffusion peer selection trace coverage"
+    , testProperty "peer selection trace coverage"
                    prop_peer_selection_trace_coverage
-    , testProperty "diffusion connection manager trace coverage"
+    , testProperty "connection manager trace coverage"
                    prop_connection_manager_trace_coverage
-    , testProperty "diffusion connection manager transitions coverage"
+    , testProperty "connection manager transitions coverage"
                    prop_connection_manager_transitions_coverage
-    , testProperty "diffusion inbound governor trace coverage"
+    , testProperty "inbound governor trace coverage"
                    prop_inbound_governor_trace_coverage
-    , testProperty "diffusion inbound governor transitions coverage"
+    , testProperty "inbound governor transitions coverage"
                    prop_inbound_governor_transitions_coverage
     ]
+  , testGroup "hot diffusion script"
+    [ testProperty "target active public"
+                   prop_hot_diffusion_target_active_public
+    , testProperty "target active local"
+                   prop_hot_diffusion_target_active_local
+    , testProperty "target active root"
+                   prop_hot_diffusion_target_active_root
+    ]
+#endif
   ]
-
 
 -- Warning: be careful with writing properties that rely
 -- on trace events from multiple components environment.
@@ -150,7 +165,7 @@ data DiffusionTestTrace =
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionPeerSelectionTrace (TracePeerSelection NtNAddr)
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr)
-    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr ())
+    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
     | DiffusionConnectionManagerTrace
         (ConnectionManagerTrace NtNAddr
           (ConnectionHandlerTrace NtNVersion NtNVersionData))
@@ -161,7 +176,18 @@ data DiffusionTestTrace =
         (RemoteTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
     | DiffusionServerTrace (ServerTrace NtNAddr)
+    | DiffusionDebugTrace String
     deriving (Show)
+
+
+-- | A debug tracer which embeds events in DiffusionTestTrace.
+--
+debugTracer :: forall s. Tracer (IOSim s) (WithName NtNAddr String)
+debugTracer = tracerWithTime
+            $ fmap (fmap DiffusionDebugTrace) `contramap` tracer
+  where
+    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
+    tracer = Tracer traceM
 
 tracersExtraWithTimeName
   :: NtNAddr
@@ -187,7 +213,7 @@ tracersExtraWithTimeName ntnAddr =
                                           $ dynamicTracer
     , dtDebugPeerSelectionInitiatorTracer = contramap
                                              ( DiffusionDebugPeerSelectionTrace
-                                             . void
+                                             . voidDebugPeerSelection
                                              )
                                           . tracerWithName ntnAddr
                                           . tracerWithTime
@@ -195,7 +221,7 @@ tracersExtraWithTimeName ntnAddr =
     , dtDebugPeerSelectionInitiatorResponderTracer
         = contramap
            ( DiffusionDebugPeerSelectionTrace
-           . void
+           . voidDebugPeerSelection
            )
         . tracerWithName ntnAddr
         . tracerWithTime
@@ -234,13 +260,17 @@ tracersExtraWithTimeName ntnAddr =
     , dtLocalServerTracer                 = nullTracer
     , dtLocalInboundGovernorTracer        = nullTracer
   }
+  where
+    voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
+    voidDebugPeerSelection (TraceGovernorState btime wtime state) =
+                            TraceGovernorState btime wtime (const () <$> state)
 
-tracerDiffusionSimWithTimeName :: NtNAddr -> Tracer (IOSim s) DiffusionSimulationTrace
-tracerDiffusionSimWithTimeName ntnAddr =
-   contramap DiffusionDiffusionSimulationTrace
- . tracerWithName ntnAddr
- . tracerWithTime
- $ dynamicTracer
+
+tracerDiffusionSimWithTimeName :: Tracer (IOSim s) (WithName NtNAddr DiffusionSimulationTrace)
+tracerDiffusionSimWithTimeName = tracerWithTime tracer
+  where
+    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionSimulationTrace))
+    tracer = dynamicTracer
 
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
@@ -255,6 +285,7 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [ConnectionManagerTrace
                   NtNAddr
@@ -291,6 +322,7 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [AbstractTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionConnectionManagerTransitionTrace st ->
@@ -328,6 +360,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [InboundGovernorTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
@@ -361,6 +394,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
@@ -397,6 +431,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [ServerTrace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
@@ -430,6 +465,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [PeerSelectionActionsTrace NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
@@ -473,6 +509,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
                                 diffScript
                                 tracersExtraWithTimeName
                                 tracerDiffusionSimWithTimeName
+                                nullTracer
 
       events :: [TracePeerSelection NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
@@ -510,7 +547,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePromoteColdPeers"
       peerSelectionTraceMap (TracePromoteColdLocalPeers _ _ _)  =
         "TracePromoteColdLocalPeers"
-      peerSelectionTraceMap (TracePromoteColdFailed _ _ _ _ _) =
+      peerSelectionTraceMap (TracePromoteColdFailed _ _ _ _ _)  =
         "TracePromoteColdFailed"
       peerSelectionTraceMap (TracePromoteColdDone _ _ _)        =
         "TracePromoteColdDone"
@@ -518,7 +555,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePromoteWarmPeers"
       peerSelectionTraceMap (TracePromoteWarmLocalPeers _ _)    =
         "TracePromoteWarmLocalPeers"
-      peerSelectionTraceMap (TracePromoteWarmFailed _ _ _ _)   =
+      peerSelectionTraceMap (TracePromoteWarmFailed _ _ _ _)    =
         "TracePromoteWarmFailed"
       peerSelectionTraceMap (TracePromoteWarmDone _ _ _)        =
         "TracePromoteWarmDone"
@@ -526,7 +563,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TracePromoteWarmAborted"
       peerSelectionTraceMap (TraceDemoteWarmPeers _ _ _)        =
         "TraceDemoteWarmPeers"
-      peerSelectionTraceMap (TraceDemoteWarmFailed _ _ _ _)    =
+      peerSelectionTraceMap (TraceDemoteWarmFailed _ _ _ _)     =
         "TraceDemoteWarmFailed"
       peerSelectionTraceMap (TraceDemoteWarmDone _ _ _)         =
         "TraceDemoteWarmDone"
@@ -534,12 +571,14 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceDemoteHotPeers"
       peerSelectionTraceMap (TraceDemoteLocalHotPeers _ _)      =
         "TraceDemoteLocalHotPeers"
-      peerSelectionTraceMap (TraceDemoteHotFailed _ _ _ _)     =
+      peerSelectionTraceMap (TraceDemoteHotFailed _ _ _ _)      =
         "TraceDemoteHotFailed"
       peerSelectionTraceMap (TraceDemoteHotDone _ _ _)          =
         "TraceDemoteHotDone"
       peerSelectionTraceMap (TraceDemoteAsynchronous _)         =
         "TraceDemoteAsynchronous"
+      peerSelectionTraceMap (TraceDemoteLocalAsynchronous _)    =
+        "TraceDemoteLocalAsynchronous"
       peerSelectionTraceMap TraceGovernorWakeup                 =
         "TraceGovernorWakeup"
       peerSelectionTraceMap (TraceChurnWait _)                  =
@@ -564,12 +603,13 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 prop_diffusion_nolivelock :: AbsBearerInfo
                          -> DiffusionScript
                          -> Property
-prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript l) =
+prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         trace :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
         trace = take 125000
@@ -640,6 +680,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -649,8 +690,6 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
                . withTimeNameTraceEvents
@@ -752,6 +791,7 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -846,6 +886,7 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -913,6 +954,204 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
           $ tabulate "active public peers" valuesList
           $ True
 
+
+-- | This test checks the percentage of local root peers that, at some point,
+-- become active.
+--
+prop_diffusion_target_active_local :: AbsBearerInfo
+                                   -> DiffusionScript
+                                   -> Property
+prop_diffusion_target_active_local defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+                                  nullTracer
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_local ev
+        )
+      <$> events
+  where
+    verify_target_active_local :: Events DiffusionTestTrace -> Property
+    verify_target_active_local events =
+        let govLocalRootPeersSig :: Signal (Set NtNAddr)
+            govLocalRootPeersSig =
+              selectDiffusionPeerSelectionState
+                (LocalRootPeers.keysSet . Governor.localRootPeers) events
+
+            govActivePeersSig :: Signal (Set NtNAddr)
+            govActivePeersSig =
+              selectDiffusionPeerSelectionState Governor.activePeers events
+
+            localInActive :: Signal Bool
+            localInActive =
+              (\localPeers active ->
+                Set.size
+                (localPeers `Set.intersection` active)
+                  > 0
+              ) <$> govLocalRootPeersSig
+                <*> govActivePeersSig
+
+            meaning :: Bool -> String
+            meaning False = "No LocalPeers in Active Set"
+            meaning True  = "LocalPeers in Active Set"
+
+            valuesList :: [String]
+            valuesList = map (meaning . snd)
+                       . Signal.eventsToList
+                       . Signal.toChangeEvents
+                       $ localInActive
+
+         in checkCoverage
+          $ coverTable "active local peers"
+                       [("LocalPeers in Active Set", 1)]
+          $ tabulate "active local peers" valuesList
+          $ True
+
+-- | This test checks the percentage of root peers that, at some point,
+-- become active.
+--
+prop_diffusion_target_active_root :: AbsBearerInfo
+                                  -> DiffusionScript
+                                  -> Property
+prop_diffusion_target_active_root defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+                                  nullTracer
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_root ev
+        )
+      <$> events
+  where
+    verify_target_active_root :: Events DiffusionTestTrace -> Property
+    verify_target_active_root events =
+        let govLocalRootPeersSig :: Signal (Set NtNAddr)
+            govLocalRootPeersSig =
+              selectDiffusionPeerSelectionState
+                (LocalRootPeers.keysSet . Governor.localRootPeers) events
+
+            govPublicRootPeersSig :: Signal (Set NtNAddr)
+            govPublicRootPeersSig =
+              selectDiffusionPeerSelectionState Governor.publicRootPeers events
+
+            govRootPeersSig :: Signal (Set NtNAddr)
+            govRootPeersSig = Set.union <$> govLocalRootPeersSig
+                                        <*> govPublicRootPeersSig
+
+            govActivePeersSig :: Signal (Set NtNAddr)
+            govActivePeersSig =
+              selectDiffusionPeerSelectionState Governor.activePeers events
+
+            rootInActive :: Signal Bool
+            rootInActive =
+              (\rootPeers active ->
+                Set.size
+                (rootPeers `Set.intersection` active)
+                  > 0
+              ) <$> govRootPeersSig
+                <*> govActivePeersSig
+
+            meaning :: Bool -> String
+            meaning False = "No Root Peers in Active Set"
+            meaning True  = "Root Peers in Active Set"
+
+            valuesList :: [String]
+            valuesList = map (meaning . snd)
+                       . Signal.eventsToList
+                       . Signal.toChangeEvents
+                       $ rootInActive
+
+         in checkCoverage
+          $ coverTable "active root peers"
+                       [("Root Peers in Active Set", 1)]
+          $ tabulate "active root peers" valuesList
+          $ True
+
+-- | This test checks the percentage of public root peers that, at some point,
+-- become active, when using the 'HotDiffusionScript' generator.
+--
+prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
+                                        -> HotDiffusionScript
+                                        -> Property
+prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa hds) =
+  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+
+-- | This test checks the percentage of local root peers that, at some point,
+-- become active, when using the 'HotDiffusionScript' generator.
+--
+prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
+                                       -> HotDiffusionScript
+                                       -> Property
+prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa hds) =
+  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+
+-- | This test checks the percentage of root peers that, at some point,
+-- become active, when using the 'HotDiffusionScript' generator.
+--
+prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
+                                      -> HotDiffusionScript
+                                      -> Property
+prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa hds) =
+  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -931,6 +1170,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1003,7 +1243,13 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCold) status)
+                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                       TraceDemoteLocalAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           failures =
+                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                        TracePromoteWarmFailed _ _ peer _ ->
                          Just (Set.singleton peer)
                        _ -> Nothing
@@ -1090,6 +1336,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1099,8 +1346,6 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
                . withTimeNameTraceEvents
@@ -1158,7 +1403,12 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
-                           failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                           failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                       TraceDemoteLocalAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
@@ -1227,6 +1477,292 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
             (\toolong -> Set.null toolong)
             promotionOpportunitiesIgnoredTooLong
 
+
+prop_diffusion_target_active_local_below :: AbsBearerInfo
+                                         -> DiffusionScript
+                                         -> Property
+prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+                                  nullTracer
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_active_below ev
+        )
+      <$> events
+
+  where
+    verify_target_active_below :: Events DiffusionTestTrace -> Property
+    verify_target_active_below events =
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
+          govLocalRootPeersSig =
+            selectDiffusionPeerSelectionState Governor.localRootPeers events
+
+          govEstablishedPeersSig :: Signal (Set NtNAddr)
+          govEstablishedPeersSig =
+            selectDiffusionPeerSelectionState
+              (EstablishedPeers.toSet . Governor.establishedPeers)
+              events
+
+          govActivePeersSig :: Signal (Set NtNAddr)
+          govActivePeersSig =
+            selectDiffusionPeerSelectionState Governor.activePeers events
+
+          govActiveFailuresSig :: Signal (Set NtNAddr)
+          govActiveFailuresSig =
+              Signal.keyedLinger
+                180 -- 3 minutes  -- TODO: too eager to reconnect?
+                (fromMaybe Set.empty)
+            . Signal.fromEvents
+            . Signal.selectEvents
+                (\case TracePromoteWarmFailed _ _ peer _ ->
+                         --TODO: the simulation does not yet cause this to happen
+                         Just (Set.singleton peer)
+                       TraceDemoteAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           -- unlike in the governor case we take into account
+                           -- all asynchronous demotions
+                           failures = Map.keysSet status
+                       TraceDemoteLocalAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           -- unlike in the governor case we take into account
+                           -- all asynchronous demotions
+                           failures = Map.keysSet status
+                       _ -> Nothing
+                )
+            . selectDiffusionPeerSelectionEvents
+            $ events
+
+          promotionOpportunities :: Signal (Set NtNAddr)
+          promotionOpportunities =
+            (\local established active recentFailures ->
+                Set.unions
+                  [ -- There are no opportunities if we're at or above target
+                    if Set.size groupActive >= target
+                       then Set.empty
+                       else groupEstablished Set.\\ active
+                                             Set.\\ recentFailures
+                  | (target, group) <- LocalRootPeers.toGroupSets local
+                  , let groupActive      = group `Set.intersection` active
+                        groupEstablished = group `Set.intersection` established
+                  ]
+            ) <$> govLocalRootPeersSig
+              <*> govEstablishedPeersSig
+              <*> govActivePeersSig
+              <*> govActiveFailuresSig
+
+          promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
+          promotionOpportunitiesIgnoredTooLong =
+            Signal.keyedTimeout
+              10 -- seconds
+              id
+              promotionOpportunities
+
+       in counterexample
+            ("\nSignal key: (local, established peers, active peers, " ++
+             "recent failures, opportunities, ignored too long)") $
+
+          signalProperty 20 show
+            (\(_,_,_,_,_,toolong) -> Set.null toolong)
+            ((,,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                     <*> govEstablishedPeersSig
+                     <*> govActivePeersSig
+                     <*> govActiveFailuresSig
+                     <*> promotionOpportunities
+                     <*> promotionOpportunitiesIgnoredTooLong)
+
+
+-- | A testing scenario which reproduces issue #4046
+--
+async_demotion_network_script :: DiffusionScript
+async_demotion_network_script =
+    DiffusionScript
+      simArgs
+      [ ( common { naAddr                  = addr1,
+                   naLocalRootPeers        = localRoots1,
+                   naLocalSelectionTargets = Governor.PeerSelectionTargets 0 2 2 2 }
+        , [ JoinNetwork 0 (Just addr1)
+            -- reconfigure the peer to trigger the outbound governor log
+          , Reconfigure 240 localRoots1'
+          ]
+        )
+      , ( common { naAddr           = addr2,
+                   naLocalRootPeers = [(1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
+        , [JoinNetwork 0 (Just addr2), Kill 5, JoinNetwork 20 (Just addr2)]
+        )
+      , ( common { naAddr           = addr3,
+                   naLocalRootPeers = [(1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
+        , [JoinNetwork 0 (Just addr3)]
+        )
+      ]
+  where
+    addr1    = TestAddress (IPAddr (read "10.0.0.1") 3000)
+    ra_addr1 = RelayAccessAddress (read "10.0.0.1") 3000
+    localRoots1  = [(2, Map.fromList [(ra_addr2, DoNotAdvertisePeer)
+                                     ,(ra_addr3, DoNotAdvertisePeer)])]
+    localRoots1' = [(2, Map.fromList [(ra_addr2, DoAdvertisePeer)
+                                     ,(ra_addr3, DoAdvertisePeer)])]
+
+    addr2    = TestAddress (IPAddr (read "10.0.0.2") 3000)
+    ra_addr2 = RelayAccessAddress (read "10.0.0.2") 3000
+
+    addr3    = TestAddress (IPAddr (read "10.0.0.3") 3000)
+    ra_addr3 = RelayAccessAddress (read "10.0.0.3") 3000
+
+    simArgs = SimArgs {
+        saSlot             = secondsToDiffTime 1,
+        saQuota            = 5  -- 5% chance of producing a block
+      }
+    common = NodeArgs {
+        naSeed             = 10,
+        naMbTime           = Just 1,
+        naRelays           = [],
+        naDomainMap        = Map.empty,
+        naAddr             = undefined,
+        naLocalRootPeers   = undefined,
+        naLocalSelectionTargets
+                           = Governor.PeerSelectionTargets 0 1 1 1,
+        naDNSTimeoutScript = singletonScript (DNSTimeout 3),
+        naDNSLookupDelayScript
+                           = singletonScript (DNSLookupDelay 0.2)
+      }
+
+
+-- | Show that outbound governor reacts to asynchronous demotions
+--
+prop_diffusion_async_demotions :: AbsBearerInfo
+                               -> DiffusionScript
+                               -> Property
+prop_diffusion_async_demotions defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+                                  debugTracer
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . takeUntilEndofTurn 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_async_demotions ev
+        )
+      <$> events
+
+  where
+    verify_async_demotions :: Events DiffusionTestTrace -> Property
+    verify_async_demotions events =
+
+      let demotionOpportunities :: Signal (Set NtNAddr)
+          demotionOpportunities =
+              Signal.keyedUntil
+                (\case Right a -> a
+                       _       -> Set.empty)
+                (\case Left (Just a) -> a
+                       _             -> Set.empty)
+                (\case Left Nothing -> True
+                       _            -> False)
+            . Signal.fromEventsWith (Right Set.empty)
+            . Signal.selectEvents
+                (\case DiffusionPeerSelectionActionsTrace (PeerStatusChanged (HotToCold connId)) ->
+                           Just $ Right demotions
+                         where
+                           demotions = Set.singleton (remoteAddress connId)
+                       DiffusionPeerSelectionTrace (TraceDemoteAsynchronous status) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                       DiffusionPeerSelectionTrace (TraceDemoteLocalAsynchronous status) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                       DiffusionPeerSelectionTrace (TraceDemoteHotFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionConnectionManagerTrace TrShutdown ->
+                           Just $ Left Nothing
+                       _ -> Nothing
+                )
+            $ events
+
+          demotionOpportunitiesTooLong :: Signal (Set NtNAddr)
+          demotionOpportunitiesTooLong =
+              Signal.keyedTimeout 1 id demotionOpportunities
+
+       in signalProperty
+            20 show Set.null
+            demotionOpportunitiesTooLong
+
+
+unit_diffusion_async_demotions :: Property
+unit_diffusion_async_demotions =
+    prop_diffusion_async_demotions
+      absNoAttenuation
+      async_demotion_network_script
+
+
+
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_local_above'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -1242,6 +1778,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  debugTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1251,8 +1788,6 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
                . withTimeNameTraceEvents
@@ -1334,7 +1869,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              10 -- seconds
+              15 -- seconds
               id
               demotionOpportunities
 
@@ -1366,6 +1901,7 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -1373,8 +1909,6 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1469,6 +2003,7 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -1476,8 +2011,6 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1533,6 +2066,7 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -1540,8 +2074,6 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1605,6 +2137,7 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -1612,8 +2145,6 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1674,6 +2205,7 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
                                   diffScript
                                   tracersExtraWithTimeName
                                   tracerDiffusionSimWithTimeName
+                                  nullTracer
 
         events :: [Trace () (Time, DiffusionTestTrace)]
         events = fmap ( Trace.fromList ()
@@ -1682,8 +2214,6 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b))
                        -> (t, WithName name (WithTime t b)))
@@ -1773,17 +2303,16 @@ selectDiffusionSimulationTrace = Signal.selectEvents
                            _                                   -> Nothing)
 
 selectDiffusionPeerSelectionState :: Eq a
-                                  => (Governor.PeerSelectionState NtNAddr () -> a)
+                                  => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
                                   -> Events DiffusionTestTrace
                                   -> Signal a
 selectDiffusionPeerSelectionState f =
     Signal.nub
-  . fmap f
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (Governor.emptyPeerSelectionState $ mkStdGen 42)
+  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
   . Signal.selectEvents
       (\case
-        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just st
+        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
         _                                                            -> Nothing)
 
 selectDiffusionConnectionManagerEvents
@@ -1841,3 +2370,18 @@ toBearerInfo abi =
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 
+
+-- | Like 'take' but includes all the traces of the timestamp at the given
+-- index.
+--
+takeUntilEndofTurn :: Int
+                   -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+                   -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+takeUntilEndofTurn n as =
+    case splitAt n as of
+        ([],  _) -> []
+        (hs, ts) ->
+            hs ++ takeWhile (\(t,_,_,_) -> t <= tmax) ts
+          where
+            tmax :: Time
+            tmax = case last hs of (t,_,_,_) -> t

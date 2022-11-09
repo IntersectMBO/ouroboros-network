@@ -8,6 +8,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE NumericUnderscores         #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -40,7 +41,7 @@ import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
 import           Control.Exception (AssertionFailed (..), catch, evaluate)
-import           Control.Monad.Class.MonadSTM.Strict (STM)
+import           Control.Monad.Class.MonadSTM (STM)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim.Types hiding (STM)
 import           Control.Tracer (Tracer (..))
@@ -555,34 +556,35 @@ collectTraces trace =
     Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
 
 traceNum :: TracePeerSelection peeraddr -> Int
-traceNum TraceLocalRootPeersChanged{} = 00
-traceNum TraceTargetsChanged{}        = 01
-traceNum TracePublicRootsRequest{}    = 02
-traceNum TracePublicRootsResults{}    = 03
-traceNum TracePublicRootsFailure{}    = 04
-traceNum TraceGossipRequests{}        = 05
-traceNum TraceGossipResults{}         = 06
-traceNum TraceForgetColdPeers{}       = 07
-traceNum TracePromoteColdPeers{}      = 08
-traceNum TracePromoteColdLocalPeers{} = 09
-traceNum TracePromoteColdFailed{}     = 10
-traceNum TracePromoteColdDone{}       = 11
-traceNum TracePromoteWarmPeers{}      = 12
-traceNum TracePromoteWarmLocalPeers{} = 13
-traceNum TracePromoteWarmFailed{}     = 14
-traceNum TracePromoteWarmDone{}       = 15
-traceNum TraceDemoteWarmPeers{}       = 16
-traceNum TraceDemoteWarmFailed{}      = 17
-traceNum TraceDemoteWarmDone{}        = 18
-traceNum TraceDemoteHotPeers{}        = 19
-traceNum TraceDemoteLocalHotPeers{}   = 20
-traceNum TraceDemoteHotFailed{}       = 21
-traceNum TraceDemoteHotDone{}         = 22
-traceNum TraceDemoteAsynchronous{}    = 23
-traceNum TraceGovernorWakeup{}        = 24
-traceNum TraceChurnWait{}             = 25
-traceNum TraceChurnMode{}             = 26
-traceNum TracePromoteWarmAborted{}    = 27
+traceNum TraceLocalRootPeersChanged{}   = 00
+traceNum TraceTargetsChanged{}          = 01
+traceNum TracePublicRootsRequest{}      = 02
+traceNum TracePublicRootsResults{}      = 03
+traceNum TracePublicRootsFailure{}      = 04
+traceNum TraceGossipRequests{}          = 05
+traceNum TraceGossipResults{}           = 06
+traceNum TraceForgetColdPeers{}         = 07
+traceNum TracePromoteColdPeers{}        = 08
+traceNum TracePromoteColdLocalPeers{}   = 09
+traceNum TracePromoteColdFailed{}       = 10
+traceNum TracePromoteColdDone{}         = 11
+traceNum TracePromoteWarmPeers{}        = 12
+traceNum TracePromoteWarmLocalPeers{}   = 13
+traceNum TracePromoteWarmFailed{}       = 14
+traceNum TracePromoteWarmDone{}         = 15
+traceNum TraceDemoteWarmPeers{}         = 16
+traceNum TraceDemoteWarmFailed{}        = 17
+traceNum TraceDemoteWarmDone{}          = 18
+traceNum TraceDemoteHotPeers{}          = 19
+traceNum TraceDemoteLocalHotPeers{}     = 20
+traceNum TraceDemoteHotFailed{}         = 21
+traceNum TraceDemoteHotDone{}           = 22
+traceNum TraceDemoteAsynchronous{}      = 23
+traceNum TraceGovernorWakeup{}          = 24
+traceNum TraceChurnWait{}               = 25
+traceNum TraceChurnMode{}               = 26
+traceNum TracePromoteWarmAborted{}      = 27
+traceNum TraceDemoteLocalAsynchronous{} = 28
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -613,7 +615,9 @@ allTraceNames =
    , (23, "TraceDemoteAsynchronous")
    , (24, "TraceGovernorWakeup")
    , (25, "TraceChurnWait")
-   , (26, "TracePromoteWarmAborted")
+   , (26, "TraceChurnMode")
+   , (27, "TracePromoteWarmAborted")
+   , (28, "TraceDemoteAsynchronous")
    ]
 
 
@@ -1642,7 +1646,12 @@ prop_governor_target_established_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) status)
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing
@@ -1729,7 +1738,12 @@ prop_governor_target_active_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                      _ -> Nothing
               )
           . selectGovEvents
@@ -1949,7 +1963,12 @@ prop_governor_target_established_local env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) status)
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing
@@ -2038,7 +2057,12 @@ prop_governor_target_active_local_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) status)
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                      _ -> Nothing
               )
           . selectGovEvents
@@ -2148,16 +2172,15 @@ selectGovEvents = Signal.selectEvents
                            _               -> Nothing)
 
 selectGovState :: Eq a
-               => (Governor.PeerSelectionState PeerAddr () -> a)
+               => (forall peerconn. Governor.PeerSelectionState PeerAddr peerconn -> a)
                -> Events TestTraceEvent
                -> Signal a
 selectGovState f =
     Signal.nub
-  . fmap f
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (Governor.emptyPeerSelectionState $ mkStdGen 42)
+  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
   . Signal.selectEvents
-      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just st
+      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just (f st)
              _                                         -> Nothing)
 
 selectEnvTargets :: Eq a
@@ -2237,7 +2260,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains =
                 policyMaxInProgressGossipReqs = 0,
                 policyGossipRetryTime         = 0, -- seconds
                 policyGossipBatchWaitTime     = 0, -- seconds
-                policyGossipOverallTimeout    = 0  -- seconds
+                policyGossipOverallTimeout    = 0, -- seconds
+                policyErrorDelay              = 0  -- seconds
               }
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
     pickTrivially m n = pure . Set.take n $ m

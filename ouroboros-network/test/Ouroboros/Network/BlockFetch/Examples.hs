@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -23,12 +22,12 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -49,6 +48,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
+import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Type
@@ -86,6 +86,8 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                 <- runFetchClientAndServerAsync
                     (contramap (TraceLabelPeer peerno) clientMsgTracer)
                     (contramap (TraceLabelPeer peerno) serverMsgTracer)
+                    (maxBound :: NodeToNodeVersion)
+                    NodeToNode.isPipeliningEnabled
                     clientDelay serverDelay
                     registry peerno
                     (blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
@@ -192,6 +194,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                     [ runFetchClientAndServerAsync
                         (contramap (TraceLabelPeer peerno) clientMsgTracer)
                         (contramap (TraceLabelPeer peerno) serverMsgTracer)
+                        (maxBound :: NodeToNodeVersion)
+                        NodeToNode.isPipeliningEnabled
                         clientDelay serverDelay
                         registry peerno
                         (blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
@@ -317,14 +321,16 @@ runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    Ord peerid, Serialise block, Serialise point,
                    Typeable block, ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block point))
+                -> version
+                -> (version -> WhetherReceivingTentativeBlocks)
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
                    -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a)
                 -> m a
-runFetchClient tracer registry peerid channel client =
-    bracketFetchClient registry maxBound peerid $ \clientCtx ->
+runFetchClient tracer version isPipeliningEnabled registry peerid channel client =
+    bracketFetchClient registry version isPipeliningEnabled peerid $ \clientCtx ->
       fst <$>
         runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
           timeLimitsBlockFetch channel (client clientCtx)
@@ -348,7 +354,7 @@ runFetchServer tracer channel server =
     codec = codecBlockFetch encode decode encode decode
 
 runFetchClientAndServerAsync
-               :: forall peerid block header m a b.
+               :: forall peerid block header version m a b.
                   (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
                    Ord peerid, Show peerid,
@@ -358,6 +364,9 @@ runFetchClientAndServerAsync
                    ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block (Point block)))
                 -> Tracer m (TraceSendRecv (BlockFetch block (Point block)))
+                -> version
+                -> (version -> WhetherReceivingTentativeBlocks)
+                -- ^ is pipelining enabled function
                 -> Maybe DiffTime -- ^ client's channel delay
                 -> Maybe DiffTime -- ^ server's channel delay
                 -> FetchClientRegistry peerid header block m
@@ -367,6 +376,7 @@ runFetchClientAndServerAsync
                 -> BlockFetchServer block (Point block) m b
                 -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer
+                             version      isPipeliningEnabled
                              clientDelay  serverDelay
                              registry peerid client server = do
     (clientChannel, serverChannel) <- createConnectedChannels
@@ -376,6 +386,8 @@ runFetchClientAndServerAsync clientTracer serverTracer
       labelThread threadId ("block-fetch-client-" ++ show peerid)
       runFetchClient
         clientTracer
+        version
+        isPipeliningEnabled
         registry peerid
         (fromMaybe id (delayChannel <$> clientDelay) clientChannel)
         client

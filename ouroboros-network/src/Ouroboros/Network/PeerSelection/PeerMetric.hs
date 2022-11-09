@@ -5,15 +5,42 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-module Ouroboros.Network.PeerSelection.PeerMetric where
+module Ouroboros.Network.PeerSelection.PeerMetric
+  ( -- * Peer metrics
+    PeerMetrics
+  , PeerMetricsConfiguration (..)
+  , newPeerMetric
+    -- * Metric calculations
+  , joinedPeerMetricAt
+  , upstreamyness
+  , fetchynessBytes
+  , fetchynessBlocks
+    -- * Tracers
+  , headerMetricTracer
+  , fetchedMetricTracer
+    -- * Metrics reporters
+  , ReportPeerMetrics (..)
+  , nullMetric
+  , reportMetric
+    -- * Internals
+    -- only exported for testing purposes
+  , SlotMetric
+  , newPeerMetric'
+  ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.Monad (when)
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
+import           Data.Bifunctor (Bifunctor (..))
 import           Data.IntPSQ (IntPSQ)
-import qualified Data.IntPSQ as Pq
+import qualified Data.IntPSQ as IntPSQ
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
+import           Data.Monoid (Sum (..))
+import           Data.OrdPSQ (OrdPSQ)
+import qualified Data.OrdPSQ as OrdPSQ
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
@@ -21,28 +48,131 @@ import           Ouroboros.Network.NodeToNode (ConnectionId (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
 
 
--- The maximum numbers of slots we will store data for.
--- On some chains sometimes this corresponds to 1h
--- worth of metrics *sighs*.
-maxEntriesToTrack :: Int
-maxEntriesToTrack = 180
+newtype PeerMetricsConfiguration = PeerMetricsConfiguration {
+      -- | The maximum numbers of slots we will store data for.  On some chains
+      -- sometimes this corresponds to 1h worth of metrics *sighs*.
+      --
+      -- this number MUST correspond to number of headers / blocks which are
+      -- produced in one hour.
+      maxEntriesToTrack :: Int
+    }
 
 
+-- | Integer based metric ordered by 'SlotNo' which holds the peer and time.
+--
+-- The `p` parameter is truly polymorphic.  For `upstreamyness` and we use peer
+-- address, and for `fetchyness` it is a pair of peer id and bytes downloaded.
+--
 type SlotMetric p = IntPSQ SlotNo (p, Time)
 
-data PeerMetrics m p = PeerMetrics {
-    headerMetrics  :: StrictTVar m (SlotMetric p)
-  , fetchedMetrics :: StrictTVar m (SlotMetric (p, SizeInBytes))
+-- | Peer registry ordered by slot when a peer joined the peer metric.
+--
+type PeerRegistry p = OrdPSQ p SlotNo AverageMetrics
+
+-- | Peer registry ordered by slot when a peer was last seen.
+--
+type LastSeenRegistry p = OrdPSQ p SlotNo ()
+
+-- | Mutable peer metrics state accessible via 'STM'.
+--
+newtype PeerMetrics m p = PeerMetrics {
+    peerMetricsVar :: StrictTVar m (PeerMetricsState p)
   }
+
+-- | Internal state
+--
+data PeerMetricsState p = PeerMetricsState {
+
+    -- | Header metrics.
+    --
+    headerMetrics    :: SlotMetric p,
+
+    -- | Fetch metrics.
+    --
+    fetchedMetrics   :: SlotMetric (p, SizeInBytes),
+
+    -- | Registry recording when a peer joined the board of 'PeerMetrics'.  The
+    -- values are average header and fetched metrics.
+    --
+    peerRegistry     :: PeerRegistry p,
+
+    -- | A registry which indicates when the last time a peer was seen.
+    --
+    -- If a peer hasn't been seen since the oldest recorded slot number, it will
+    -- be removed.
+    --
+    lastSeenRegistry :: LastSeenRegistry p,
+
+    -- | Latest slot registered in the leader board.
+    --
+    lastSlotNo       :: SlotNo,
+
+    -- | Metrics configuration.  Its kept here just for convenience.
+    --
+    metricsConfig    :: PeerMetricsConfiguration
+  }
+
+
+-- | Average results at a given slot.
+--
+data AverageMetrics = AverageMetrics {
+    averageUpstreamyness    :: !Int,
+    averageFetchynessBlocks :: !Int,
+    averageFetchynessBytes  :: !Int
+  }
+  deriving Show
+
+
+newPeerMetric
+    :: MonadSTM m
+    => PeerMetricsConfiguration
+    -> m (PeerMetrics m p)
+newPeerMetric = newPeerMetric' IntPSQ.empty IntPSQ.empty
+
+
+newPeerMetric'
+    :: MonadSTM m
+    => SlotMetric p
+    -> SlotMetric (p, SizeInBytes)
+    -> PeerMetricsConfiguration
+    -> m (PeerMetrics m p)
+newPeerMetric' headerMetrics fetchedMetrics metricsConfig =
+  PeerMetrics <$> newTVarIO PeerMetricsState {
+                                headerMetrics,
+                                fetchedMetrics,
+                                peerRegistry = OrdPSQ.empty,
+                                lastSeenRegistry = OrdPSQ.empty,
+                                lastSlotNo = SlotNo 0,
+                                metricsConfig
+                              }
+
+updateLastSlot :: SlotNo -> PeerMetricsState p -> PeerMetricsState p
+updateLastSlot slotNo state@PeerMetricsState { lastSlotNo }
+  | slotNo > lastSlotNo = state { lastSlotNo = slotNo }
+  | otherwise           = state
+
+
+firstSlotNo :: PeerMetricsState p -> Maybe SlotNo
+firstSlotNo PeerMetricsState {headerMetrics, fetchedMetrics} =
+    (\a b -> min (f a) (f b))
+      <$> IntPSQ.minView headerMetrics
+      <*> IntPSQ.minView fetchedMetrics
+  where
+    f :: (a, SlotNo, b, c) -> SlotNo
+    f (_, slotNo, _, _) = slotNo
+
 
 reportMetric
     :: forall m p.
-       ( MonadSTM m )
-     => PeerMetrics m p
+       ( MonadSTM m
+       , Ord p
+       )
+     => PeerMetricsConfiguration
+     -> PeerMetrics m p
      -> ReportPeerMetrics m (ConnectionId p)
-reportMetric peerMetrics =
-  ReportPeerMetrics (headerMetricTracer peerMetrics)
-                    (fetchedMetricTracer peerMetrics)
+reportMetric config peerMetrics =
+  ReportPeerMetrics (headerMetricTracer  config peerMetrics)
+                    (fetchedMetricTracer config peerMetrics)
 
 nullMetric
     :: MonadSTM m
@@ -50,85 +180,257 @@ nullMetric
 nullMetric =
   ReportPeerMetrics nullTracer nullTracer
 
-slotMetricKey :: SlotNo -> Int
-slotMetricKey (SlotNo s) = fromIntegral s
 
+slotToInt :: SlotNo -> Int
+slotToInt = fromIntegral . unSlotNo
+
+
+-- | Tracer which updates header metrics (upstreameness) and inserts new peers
+-- into 'peerRegistry'.
+--
 headerMetricTracer
     :: forall m p.
-       ( MonadSTM m )
-    => PeerMetrics m p
+       ( MonadSTM m
+       , Ord p
+       )
+    => PeerMetricsConfiguration
+    -> PeerMetrics m p
     -> Tracer (STM m) (TraceLabelPeer (ConnectionId p) (SlotNo, Time))
-headerMetricTracer PeerMetrics{headerMetrics} =
-    (\(TraceLabelPeer con d) -> TraceLabelPeer (remoteAddress con) d)
+headerMetricTracer config peerMetrics@PeerMetrics{peerMetricsVar} =
+    bimap remoteAddress fst
     `contramap`
-    metricsTracer headerMetrics
+    peerRegistryTracer peerMetrics
+ <> first remoteAddress
+    `contramap`
+    metricsTracer
+      (headerMetrics <$> readTVar peerMetricsVar)
+      (\headerMetrics -> modifyTVar peerMetricsVar
+                                    (\metrics -> metrics { headerMetrics }))
+      config
 
+
+-- | Tracer which updates fetched metrics (fetchyness) and inserts new peers
+-- into 'peerRegistry'.
+--
 fetchedMetricTracer
     :: forall m p.
-       ( MonadSTM m )
-    => PeerMetrics m p
+       ( MonadSTM m
+       , Ord p
+       )
+    => PeerMetricsConfiguration
+    -> PeerMetrics m p
     -> Tracer (STM m) (TraceLabelPeer (ConnectionId p)
                                       ( SizeInBytes
                                       , SlotNo
                                       , Time
                                       ))
-fetchedMetricTracer PeerMetrics{fetchedMetrics} =
-    (\(TraceLabelPeer con (bytes, slot, time)) ->
+fetchedMetricTracer config peerMetrics@PeerMetrics{peerMetricsVar} =
+    bimap remoteAddress (\(_, slotNo, _) -> slotNo)
+    `contramap`
+    peerRegistryTracer peerMetrics
+ <> (\(TraceLabelPeer con (bytes, slot, time)) ->
        TraceLabelPeer (remoteAddress con, bytes) (slot, time))
     `contramap`
-     metricsTracer fetchedMetrics
+     metricsTracer
+       (fetchedMetrics <$> readTVar peerMetricsVar)
+       (\fetchedMetrics -> modifyTVar peerMetricsVar
+                                      (\metrics -> metrics { fetchedMetrics }))
+       config
 
 
-getHeaderMetrics
-    :: MonadSTM m
-    => PeerMetrics m p
-    -> STM m (SlotMetric p)
-getHeaderMetrics PeerMetrics{headerMetrics} = readTVar headerMetrics
+--
+--  peer registry tracer which maintains 'peerRegistry' and 'lastSeenRegistry'
+--
 
-getFetchedMetrics
-    :: MonadSTM m
-    => PeerMetrics m p
-    -> STM m (SlotMetric (p, SizeInBytes))
-getFetchedMetrics PeerMetrics{fetchedMetrics} = readTVar fetchedMetrics
+-- | Insert new peer into 'PeerMetricsState'.  If this peer hasn't been
+-- recorded before, we compute the current average score and record it in
+-- 'peerRegistry'.  Entries in `peerRegistry' are only kept if they are newer
+-- than the oldest slot in the 'headerMetrics' and 'fetchedMetrics'.
+--
+-- Implementation detail:
+-- We need first check 'lastSeenRegistry' which checks if a peer is part of the
+-- leader board.  If a peer has not contributed to 'PeerMetrics' in
+-- `maxEntriesToTrack` slots, we will consider it as a new peer.  Without using
+-- `lastSeenRegistry` we could consider a peer new while it exists in peer
+-- metrics for a very long time.  Just using `peerRegistry` does not guarantee
+-- that.
+--
+insertPeer :: forall p. Ord p
+           => p
+           -> SlotNo -- ^ current slot
+           -> PeerMetricsState p
+           -> PeerMetricsState p
+insertPeer p slotNo
+           peerMetricsState@PeerMetricsState { lastSeenRegistry, peerRegistry } =
+    if p `OrdPSQ.member` lastSeenRegistry
+    then peerMetricsState
+    else case OrdPSQ.alter f p peerRegistry of
+           (False,  peerRegistry') -> peerMetricsState { peerRegistry = peerRegistry' }
+           (True,  _peerRegistry') -> peerMetricsState
+  where
+    f :: Maybe (SlotNo, AverageMetrics) -> (Bool, Maybe (SlotNo, AverageMetrics))
+    f a@Just {} = (True,  a)
+    f Nothing   = (False, Just ( slotNo
+                               , AverageMetrics {
+                                     averageUpstreamyness    = avg upstreamenessResults,
+                                     averageFetchynessBytes  = avg fetchynessBytesResults,
+                                     averageFetchynessBlocks = avg fetchynessBlocksResults
+                                   }
+                               ))
+      where
+        upstreamenessResults    = upstreamynessImpl    peerMetricsState
+        fetchynessBytesResults  = fetchynessBytesImpl  peerMetricsState
+        fetchynessBlocksResults = fetchynessBlocksImpl peerMetricsState
 
+    avg :: Map p Int -> Int
+    avg m | Map.null m = 0
+    avg m =
+      -- division truncated towards the plus infinity, rather then the minus
+      -- infinity
+      case getSum (foldMap Sum m) `divMod` Map.size m of
+        (x, 0) -> x
+        (x, _) -> x + 1
+
+
+-- | A tracer which takes care about:
+--
+-- * inserting new peers to 'peerRegistry'
+-- * removing old entries of 'peerRegistry'
+--
+-- * inserting new peers to 'lastSeenRegistry'
+-- * removing old entries of 'lastSeenRegistry'
+--
+peerRegistryTracer :: forall p m.
+                      ( MonadSTM m
+                      , Ord p
+                      )
+                   => PeerMetrics m p
+                   -> Tracer (STM m) (TraceLabelPeer p SlotNo)
+peerRegistryTracer PeerMetrics { peerMetricsVar } =
+    Tracer $ \(TraceLabelPeer peer slotNo) -> do
+      -- order matters: 'insertPeer' must access the previous value of
+      -- lastSeenRegistry
+      modifyTVar peerMetricsVar $ updateLastSlot slotNo
+                                . witnessedPeer peer slotNo
+                                . insertPeer peer slotNo
+                                . afterSlot
+  where
+    snd_ (_, slotNo, _, _) = slotNo
+
+    -- remove all entries which are older than the oldest slot in the
+    -- 'PeerMetrics'
+    afterSlot :: PeerMetricsState p -> PeerMetricsState p
+    afterSlot peerMetrics@PeerMetricsState { headerMetrics,
+                                             fetchedMetrics,
+                                             peerRegistry,
+                                             lastSeenRegistry } =
+      let -- the oldest slot in the metrics leader board
+          slotNo :: SlotNo
+          slotNo = fromMaybe 0 $
+            (snd_ <$> IntPSQ.minView headerMetrics)
+            `min`
+            (snd_ <$> IntPSQ.minView fetchedMetrics)
+
+      in peerMetrics
+           { peerRegistry     = snd (OrdPSQ.atMostView slotNo peerRegistry),
+             lastSeenRegistry = snd (OrdPSQ.atMostView slotNo lastSeenRegistry)
+           }
+
+    witnessedPeer :: p -> SlotNo
+                  -> PeerMetricsState p -> PeerMetricsState p
+    witnessedPeer peer slotNo
+                  peerMetrics@PeerMetricsState { lastSeenRegistry } =
+                  peerMetrics { lastSeenRegistry =
+                                  OrdPSQ.insert peer slotNo () lastSeenRegistry
+                              }
+
+
+--
+-- Metrics tracer
+--
+
+-- | A metrics tracer which updates the metric.
+--
 metricsTracer
-    :: forall m p.  ( MonadSTM m )
-    => StrictTVar m (SlotMetric p)
+    :: forall m p.
+       MonadSTM m
+    => STM m (SlotMetric p)       -- ^ read metrics
+    -> (SlotMetric p -> STM m ()) -- ^ update metrics
+    -> PeerMetricsConfiguration
     -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
-metricsTracer metricsVar = Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
-    metrics <- readTVar metricsVar
-    case Pq.lookup (slotMetricKey slot) metrics of
-         Nothing -> do
-             let metrics' = Pq.insert (slotMetricKey slot) slot (peer, time) metrics
-             if Pq.size metrics' > maxEntriesToTrack
-                then
-                  case Pq.minView metrics' of
-                       Nothing -> error "impossible empty pq" -- We just inserted an element!
-                       Just (_, minSlotNo, _, metrics'') ->
-                            if minSlotNo == slot
-                               then return ()
-                               else writeTVar metricsVar metrics''
-             else writeTVar metricsVar metrics'
-         Just (_, (_, oldTime)) ->
-             if oldTime <= time
-                then return ()
-                else writeTVar metricsVar (Pq.insert (slotMetricKey slot) slot (peer, time) metrics)
+metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTrack } =
+    Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
+      metrics <- getMetrics
+      case IntPSQ.lookup (slotToInt slot) metrics of
+           Nothing -> do
+             let metrics' = IntPSQ.insert (slotToInt slot) slot (peer, time) metrics
+             if IntPSQ.size metrics' > maxEntriesToTrack
+             -- drop last element if the metric board is too large
+             then case IntPSQ.minView metrics' of
+                    Nothing -> error "impossible empty pq"
+                            -- We just inserted an element!
+                    Just (_, minSlotNo, _, metrics'') ->
+                         when (minSlotNo /= slot) $
+                              writeMetrics metrics''
+             else writeMetrics metrics'
+           Just (_, (_, oldTime)) ->
+               when (oldTime > time) $
+                    writeMetrics (IntPSQ.insert (slotToInt slot) slot
+                                                (peer, time) metrics)
 
-newPeerMetric
-    :: MonadSTM m
-    => m (PeerMetrics m p)
-newPeerMetric = do
-  hs <- newTVarIO Pq.empty
-  bs <- newTVarIO Pq.empty
-  return $ PeerMetrics hs bs
 
--- Returns a Map which counts the number of times a given peer
--- was the first to present us with a block/header.
+joinedPeerMetricAt
+    :: forall p m.
+       MonadSTM m
+    => Ord p
+    => PeerMetrics m p
+    -> STM m (Map p SlotNo)
+joinedPeerMetricAt PeerMetrics {peerMetricsVar} =
+    joinedPeerMetricAtImpl <$> readTVar peerMetricsVar
+
+
+joinedPeerMetricAtImpl
+    :: forall p.
+       Ord p
+    => PeerMetricsState p
+    -> Map p SlotNo
+joinedPeerMetricAtImpl PeerMetricsState { peerRegistry } =
+    OrdPSQ.fold' (\p slotNo _ m -> Map.insert p slotNo m) Map.empty peerRegistry
+
+--
+-- Metrics
+--
+-- * upstreameness
+-- * fetchyness by blocks
+-- * fetchyness by bytes
+--
+
+-- | Returns a Map which counts the number of times a given peer was the first
+-- to present us with a block/header.
+--
 upstreamyness
-    :: forall p.  ( Ord p )
-    => SlotMetric p
+    :: forall p m.
+       MonadSTM m
+    => Ord p
+    => PeerMetrics m p
+    -> STM m (Map p Int)
+upstreamyness PeerMetrics {peerMetricsVar} =
+    upstreamynessImpl <$> readTVar peerMetricsVar
+
+
+upstreamynessImpl
+    :: forall p.
+       Ord p
+    => PeerMetricsState p
     -> Map p Int
-upstreamyness = Pq.fold' count Map.empty
+upstreamynessImpl state@PeerMetricsState { headerMetrics,
+                                           peerRegistry,
+                                           lastSlotNo,
+                                           metricsConfig
+                                         } =
+    Map.unionWith (+) (IntPSQ.fold' count Map.empty headerMetrics)
+                      (OrdPSQ.fold' (countCorrection (firstSlotNo state))
+                                    Map.empty peerRegistry)
   where
     count :: Int
           -> SlotNo
@@ -142,14 +444,47 @@ upstreamyness = Pq.fold' count Map.empty
         fn Nothing  = Just 1
         fn (Just c) = Just $! c + 1
 
+    countCorrection :: Maybe SlotNo
+                    -> p
+                    -> SlotNo
+                    -> AverageMetrics
+                    -> Map p Int
+                    -> Map p Int
+    countCorrection minSlotNo peer joinedAt AverageMetrics { averageUpstreamyness } m =
+        Map.insert peer
+                   (adjustAvg metricsConfig
+                              minSlotNo
+                              joinedAt
+                              lastSlotNo
+                              averageUpstreamyness)
+                   m
 
--- Returns a Map which counts the number of bytes downloaded
--- for a given peer.
+
+-- | Returns a Map which counts the number of bytes downloaded for a given
+-- peer.
+--
 fetchynessBytes
-    :: forall p.  ( Ord p )
-    => SlotMetric (p, SizeInBytes)
+    :: forall p m.
+       MonadSTM m
+    => Ord p
+    => PeerMetrics m p
+    -> STM m (Map p Int)
+fetchynessBytes PeerMetrics {peerMetricsVar} =
+    fetchynessBytesImpl <$> readTVar peerMetricsVar
+
+fetchynessBytesImpl
+    :: forall p.
+       Ord p
+    => PeerMetricsState p
     -> Map p Int
-fetchynessBytes = Pq.fold' count Map.empty
+fetchynessBytesImpl state@PeerMetricsState { fetchedMetrics,
+                                             peerRegistry,
+                                             lastSlotNo,
+                                             metricsConfig
+                                           } =
+    Map.unionWith (+) (IntPSQ.fold' count Map.empty fetchedMetrics)
+                      (OrdPSQ.fold' (countCorrection (firstSlotNo state))
+                                     Map.empty peerRegistry)
   where
     count :: Int
           -> SlotNo
@@ -163,13 +498,47 @@ fetchynessBytes = Pq.fold' count Map.empty
         fn Nothing         = Just $ fromIntegral bytes
         fn (Just oldBytes) = Just $! oldBytes + fromIntegral bytes
 
--- Returns a Map which counts the number of times a given peer
--- was the first we downloaded a block from.
+    countCorrection :: Maybe SlotNo
+                    -> p
+                    -> SlotNo
+                    -> AverageMetrics
+                    -> Map p Int
+                    -> Map p Int
+    countCorrection minSlotNo peer joinedAt AverageMetrics { averageFetchynessBytes } m =
+        Map.insert peer
+                   (adjustAvg metricsConfig
+                              minSlotNo
+                              joinedAt
+                              lastSlotNo
+                              averageFetchynessBytes)
+                   m
+
+
+-- | Returns a Map which counts the number of times a given peer was the first
+-- we downloaded a block from.
+--
 fetchynessBlocks
-    :: forall p.  ( Ord p )
-    => SlotMetric (p, SizeInBytes)
+    :: forall p m.
+       MonadSTM m
+    => Ord p
+    => PeerMetrics m p
+    -> STM m (Map p Int)
+fetchynessBlocks PeerMetrics {peerMetricsVar} =
+    fetchynessBlocksImpl <$> readTVar peerMetricsVar
+
+fetchynessBlocksImpl
+    :: forall p.
+       Ord p
+    => PeerMetricsState p
     -> Map p Int
-fetchynessBlocks = Pq.fold' count Map.empty
+fetchynessBlocksImpl state@PeerMetricsState { fetchedMetrics,
+                                              peerRegistry,
+                                              lastSlotNo,
+                                              metricsConfig
+                                            } =
+    Map.unionWith (+) (IntPSQ.fold' count Map.empty fetchedMetrics)
+                      (OrdPSQ.fold' (countCorrection (firstSlotNo state))
+                                    Map.empty peerRegistry)
   where
     count :: Int
           -> SlotNo
@@ -183,4 +552,49 @@ fetchynessBlocks = Pq.fold' count Map.empty
         fn Nothing  = Just 1
         fn (Just c) = Just $! c + 1
 
+    countCorrection :: Maybe SlotNo
+                    -> p
+                    -> SlotNo
+                    -> AverageMetrics
+                    -> Map p Int
+                    -> Map p Int
+    countCorrection minSlotNo peer joinedAt AverageMetrics { averageFetchynessBlocks } m =
+        Map.insert peer
+                   (adjustAvg metricsConfig
+                              minSlotNo
+                              joinedAt
+                              lastSlotNo
+                              averageFetchynessBlocks)
+                   m
 
+
+--
+-- Utils
+--
+
+
+adjustAvg :: PeerMetricsConfiguration
+          -> Maybe SlotNo -- ^ smallest slot number
+          -> SlotNo       -- ^ slot when joined the leader board
+          -> SlotNo       -- ^ current slot
+          -> Int
+          -> Int
+adjustAvg PeerMetricsConfiguration { maxEntriesToTrack } minSlotNo joinedSlotNo lastSlotNo avg
+    -- when there are only a few results in the 'PeerMetricsState' we don't
+    -- take into account the average.  This allows the system to start, without
+    -- penalising the peers which we connected to early.
+    | lastSlot - minSlot + 1 < maxEntriesToTrack `div` 2
+    = 0
+
+    -- the peer is too old to take the correction into account.
+    | lastSlot - joinedSlot + 1 >= maxEntriesToTrack
+    = 0
+
+    | otherwise
+    = (maxEntriesToTrack + joinedSlot - lastSlot) * avg
+      `div` maxEntriesToTrack
+  where
+    minSlot, lastSlot, joinedSlot :: Int
+    minSlot    = maybe 1 slotToInt minSlotNo
+    lastSlot   = slotToInt lastSlotNo
+    joinedSlot = slotToInt joinedSlotNo

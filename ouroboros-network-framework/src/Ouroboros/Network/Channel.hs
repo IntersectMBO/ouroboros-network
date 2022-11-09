@@ -31,7 +31,7 @@ import           Numeric.Natural
 
 import qualified System.IO as IO (Handle, hFlush, hIsEOF)
 
-import           Control.Monad.Class.MonadSTM
+import           Control.Concurrent.Class.MonadSTM
 
 import qualified Network.Mux.Channel as Mx
 
@@ -121,7 +121,7 @@ hoistChannel nat channel = Channel
 --
 fixedInputChannel :: MonadSTM m => [a] -> m (Channel m a)
 fixedInputChannel xs0 = do
-    v <- atomically $ newTVar xs0
+    v <- newTVarIO xs0
     return Channel {send, recv = recv v}
   where
     recv v = atomically $ do
@@ -155,8 +155,8 @@ createConnectedChannels :: MonadSTM m => m (Channel m a, Channel m a)
 createConnectedChannels = do
     -- Create two TMVars to act as the channel buffer (one for each direction)
     -- and use them to make both ends of a bidirectional channel
-    bufferA <- atomically $ newEmptyTMVar
-    bufferB <- atomically $ newEmptyTMVar
+    bufferA <- newEmptyTMVarIO
+    bufferB <- newEmptyTMVarIO
 
     return (mvarsAsChannel bufferB bufferA,
             mvarsAsChannel bufferA bufferB)

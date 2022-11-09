@@ -33,7 +33,7 @@ module Ouroboros.Network.Subscription.Ip
  - RFC8305, https://tools.ietf.org/html/rfc8305 .
  -}
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer
@@ -203,6 +203,7 @@ subscriptionWorker snocket
            nmsConnectionTable
            nmsPeerStates
            snocket
+           ((. Just) <$> configureSocket)
            WorkerCallbacks
              { wcSocketStateChangeTx   = socketStateChangeTx
              , wcCompleteApplicationTx = completeApplicationTx errorPolicies

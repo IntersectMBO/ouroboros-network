@@ -4,12 +4,12 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE MultiWayIf          #-}
+
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
+
+
 {-# LANGUAGE TypeOperators       #-}
 
 -- 'runResponder' is using a redundant constraint.
@@ -35,11 +35,11 @@ module Ouroboros.Network.InboundGovernor
   , TransitionTrace' (..)
   ) where
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeAsyncException (..), assert)
 import           Control.Monad (foldM, when)
 import           Control.Monad.Class.MonadAsync
-import qualified Control.Monad.Class.MonadSTM as LazySTM
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -99,7 +99,7 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
                 -> ServerControlChannel muxMode peerAddr ByteString m a b
-                -> DiffTime -- protocol idle timeout
+                -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket peerAddr
                                         versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
@@ -107,13 +107,13 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
 inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                 connectionManager observableStateVar = do
     -- State needs to be a TVar, otherwise, when catching the exception inside
-    -- the loop we do not have access to the most recentversion of the state
+    -- the loop we do not have access to the most recent version of the state
     -- and might be truncating transitions.
-    st <- atomically $ newTVar emptyState
+    st <- newTVarIO emptyState
     inboundGovernorLoop st
      `catch`
        (\(e :: SomeException) -> do
-         state <- atomically $ readTVar st
+         state <- readTVarIO st
          _ <- Map.traverseWithKey
                (\connId _ -> do
                  -- Remove the connection from the state so
@@ -136,13 +136,13 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
           }
 
     -- The inbound protocol governor recursive loop.  The 'igsConnections' is
-    -- updated as we recurs.
+    -- updated as we recurse.
     --
     inboundGovernorLoop
       :: StrictTVar m (InboundGovernorState muxMode peerAddr m a b)
       -> m Void
     inboundGovernorLoop !st = do
-      state <- atomically $ readTVar st
+      state <- readTVarIO st
       mapTraceWithCache TrInboundGovernorCounters
                         tracer
                         (igsCountersCache state)
@@ -165,7 +165,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                    :: EventSignal muxMode peerAddr m a b
                  )
                  (igsConnections state)
-            <> (FirstToFinish $
+            <> FirstToFinish (
                  NewConnection <$> ControlChannel.readMessage serverControlChannel)
       (mbConnId, state') <- case event of
         NewConnection
@@ -188,19 +188,19 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                                 [ ( miniProtocolNum mpH
                                   , MiniProtocolData mpH Hot
                                   )
-                                | mpH <- projectBundle TokHot muxBundle
+                                | mpH <- projectBundle SingHot muxBundle
                                 ]
                               csMPMWarm =
                                 [ ( miniProtocolNum mpW
                                   , MiniProtocolData mpW Warm
                                   )
-                                | mpW <- projectBundle TokWarm muxBundle
+                                | mpW <- projectBundle SingWarm muxBundle
                                 ]
                               csMPMEstablished =
                                 [ ( miniProtocolNum mpE
                                   , MiniProtocolData mpE Established
                                   )
-                                | mpE <- projectBundle TokEstablished muxBundle
+                                | mpE <- projectBundle SingEstablished muxBundle
                                 ]
                               csMiniProtocolMap =
                                   Map.fromList
@@ -242,11 +242,13 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                             Nothing -> return Nothing
 
                             Just csCompletionMap -> do
-                              v <- registerDelay inboundIdleTimeout
+                              mv <- traverse registerDelay inboundIdleTimeout
                               let -- initial state is 'RemoteIdle', if the remote end will not
                                   -- start any responders this will unregister the inbound side.
                                   csRemoteState :: RemoteState m
-                                  csRemoteState = RemoteIdle (LazySTM.readTVar v >>= check)
+                                  csRemoteState = RemoteIdle (case mv of
+                                                                Nothing -> retry
+                                                                Just v  -> LazySTM.readTVar v >>= check)
 
                                   connState = ConnectionState {
                                       csMux,
@@ -310,8 +312,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
               case result of
                 Right completionAction -> do
                   traceWith tracer (TrResponderRestarted tConnId num)
-                  let state' = updateMiniProtocol tConnId num completionAction
-                             $ state
+                  let state' = updateMiniProtocol tConnId num completionAction state
                   return (Nothing, state')
 
                 Left err -> do
@@ -339,9 +340,11 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
               let state' = unregisterConnection connId state
               return (Just connId, state')
             OperationSuccess {}  -> do
-              v <- registerDelay inboundIdleTimeout
+              mv <- traverse registerDelay inboundIdleTimeout
               let timeoutSTM :: STM m ()
-                  !timeoutSTM = LazySTM.readTVar v >>= check
+                  !timeoutSTM = case mv of
+                    Nothing -> retry
+                    Just v  -> LazySTM.readTVar v >>= check
 
               let state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
 
@@ -566,5 +569,5 @@ data InboundGovernorTrace peerAddr
     | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
-    | TrInboundGovernorError  !SomeException
+    | TrInboundGovernorError         !SomeException
   deriving Show

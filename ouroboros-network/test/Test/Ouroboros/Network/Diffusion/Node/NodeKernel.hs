@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -21,20 +22,22 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , newNodeKernel
   , registerClientChains
   , unregisterClientChains
-  , registerClientKeepAlive
-  , unregisterClientKeepAlive
   , withNodeKernelThread
   , NodeKernelError (..)
   ) where
 
+import           GHC.Generics (Generic)
+
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Coerce (coerce)
+import           Data.Hashable (Hashable)
+import           Data.IP (IP (..), toIPv4, toIPv6)
 import qualified Data.IP as IP
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -51,7 +54,7 @@ import           Network.Socket (PortNumber)
 import           Ouroboros.Network.AnchoredFragment (Anchor (..))
 import           Ouroboros.Network.Block (HasHeader, SlotNo)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.DeltaQ
+import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.MockChain.Chain (Chain)
 import qualified Ouroboros.Network.MockChain.Chain as Chain
 import           Ouroboros.Network.MockChain.ProducerState
@@ -65,7 +68,8 @@ import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
 import           Simulation.Network.Snocket (AddressType (..),
                      GlobalAddressScheme (..))
 
-import           Data.IP (IP (..), toIPv4, toIPv6)
+import           Test.Ouroboros.Network.Orphans ()
+
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
                      oneof)
 
@@ -76,7 +80,7 @@ data NtNAddr_
   = EphemeralIPv4Addr Natural
   | EphemeralIPv6Addr Natural
   | IPAddr IP.IP PortNumber
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic)
 
 instance Arbitrary NtNAddr_ where
   arbitrary = do
@@ -91,9 +95,9 @@ instance Arbitrary NtNAddr_ where
       ]
 
 instance Show NtNAddr_ where
-    show (EphemeralIPv4Addr n) = "ephemeral:" ++ show n
-    show (EphemeralIPv6Addr n) = "ephemeral6:" ++ show n
-    show (IPAddr ip port)      = show ip ++ ":" ++ show port
+    show (EphemeralIPv4Addr n) = "EphemeralIPv4Addr " ++ show n
+    show (EphemeralIPv6Addr n) = "EphemeralIPv6Addr " ++ show n
+    show (IPAddr ip port)      = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
 
 instance GlobalAddressScheme NtNAddr_ where
     getAddressType (TestAddress addr) =
@@ -104,6 +108,8 @@ instance GlobalAddressScheme NtNAddr_ where
         IPAddr (IP.IPv6 {}) _ -> IPv6Address
     ephemeralAddress IPv4Address = TestAddress . EphemeralIPv4Addr
     ephemeralAddress IPv6Address = TestAddress . EphemeralIPv6Addr
+
+instance Hashable NtNAddr_
 
 type NtNAddr        = TestAddress NtNAddr_
 type NtNVersion     = UnversionedProtocol
@@ -160,7 +166,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
     , bgaSeed
     }
 
-data NodeKernel block m = NodeKernel {
+data NodeKernel header block m = NodeKernel {
       -- | upstream chains
       nkClientChains
         :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain block))),
@@ -169,21 +175,19 @@ data NodeKernel block m = NodeKernel {
       nkChainProducerState
         :: StrictTVar m (ChainProducerState block),
 
-      -- | keep alive state
-      nkKeepAliveCtx
-        :: StrictTVar m (Map NtNAddr PeerGSV)
+      nkFetchClientRegistry :: FetchClientRegistry NtNAddr header block m
     }
 
-newNodeKernel :: MonadSTM m => m (NodeKernel block m)
+newNodeKernel :: MonadSTM m => m (NodeKernel header block m)
 newNodeKernel = NodeKernel
             <$> newTVarIO Map.empty
             <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
-            <*> newTVarIO Map.empty
+            <*> newFetchClientRegistry
 
 -- | Register a new upstream chain-sync client.
 --
 registerClientChains :: MonadSTM m
-                     => NodeKernel block m
+                     => NodeKernel header block m
                      -> NtNAddr
                      -> m (StrictTVar m (Chain block))
 registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
@@ -195,32 +199,11 @@ registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
 -- | Unregister an upstream chain-sync client.
 --
 unregisterClientChains :: MonadSTM m
-                       => NodeKernel block m
+                       => NodeKernel header block m
                        -> NtNAddr
                        -> m ()
 unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
     modifyTVar nkClientChains (Map.delete peerAddr)
-
--- | Register a new keep alive state.
---
-registerClientKeepAlive :: MonadSTM m
-                        => NodeKernel block m
-                        -> NtNAddr
-                        -> m (StrictTVar m (Map NtNAddr PeerGSV))
-registerClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $ do
-    modifyTVar nkKeepAliveCtx (Map.insert peerAddr defaultGSV)
-    return nkKeepAliveCtx
-
-
--- | Unregister a keep alive state
---
-unregisterClientKeepAlive :: MonadSTM m
-                          => NodeKernel block m
-                          -> NtNAddr
-                          -> m ()
-unregisterClientKeepAlive NodeKernel { nkKeepAliveCtx } peerAddr = atomically $
-    modifyTVar nkKeepAliveCtx (Map.delete peerAddr)
-
 
 withSlotTime :: forall m a.
                 ( MonadAsync         m
@@ -283,7 +266,7 @@ instance Exception NodeKernelError where
 -- | Run chain selection \/ block production thread.
 --
 withNodeKernelThread
-  :: forall block m seed a.
+  :: forall block header m seed a.
      ( MonadAsync         m
      , MonadMonotonicTime m
      , MonadTimer         m
@@ -292,7 +275,7 @@ withNodeKernelThread
      , HasHeader block
      )
   => BlockGeneratorArgs block seed
-  -> (NodeKernel block m -> Async m Void -> m a)
+  -> (NodeKernel header block m -> Async m Void -> m a)
   -- ^ The continuation which has a handle to the chain selection \/ block
   -- production thread.  The thread might throw an exception.
   -> m a
@@ -302,7 +285,9 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
-    blockProducerThread :: NodeKernel block m -> (SlotNo -> STM m SlotNo) -> m Void
+    blockProducerThread :: NodeKernel header block m
+                        -> (SlotNo -> STM m SlotNo)
+                        -> m Void
     blockProducerThread NodeKernel { nkClientChains, nkChainProducerState }
                         waitForSlot
                       = loop (Block.SlotNo 1) bgaSeed

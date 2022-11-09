@@ -9,7 +9,7 @@
 module Ouroboros.Network.PeerSelection.RootPeersDNS
   ( -- * DNS based actions for local and public root providers
     DNSActions (..)
-    -- * DNS resolver IO auxiliar functions
+    -- * DNS resolver IO auxiliary functions
   , constantResource
     -- ** DNSActions IO
   , ioDNSActions
@@ -46,9 +46,9 @@ import           Data.Void (Void, absurd)
 import           Data.Word (Word32)
 
 import           Control.Applicative ((<|>))
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -118,8 +118,8 @@ localRootPeersProvider tracer
       traceWith tracer (TraceLocalRootDomains domainsGroups)
       rr <- dnsAsyncResolverResource resolvConf
       let
-          -- Flatten the local root peers groups and associate its index to
-          -- each DomainAddress to be monitorized.
+          -- Flatten the local root peers groups and associate its index to each
+          -- DomainAddress to be monitored.
           -- NOTE: We need to pair the index because the resulting list can be
           -- sparse.
           domains :: [(Int, DomainAccessPoint, PeerAdvertise)]
@@ -168,7 +168,7 @@ localRootPeersProvider tracer
                     -- the monitoring thread cannot return, it can only error
                     <$> waitAnyCatchSTM as)
               <|>
-                  -- wait for configuraiton changes
+                  -- wait for configuration changes
                   (do a <- readDomainsGroups
                       -- wait until the input domains groups changes
                       check (a /= domainsGroups)
@@ -248,7 +248,7 @@ localRootPeersProvider tracer
                     -- Since the 'loop' function always receives the groups read
                     -- from the source stm transaction 'readDomainGroups', we
                     -- need to merge against it (because it has the statically
-                    -- configurated IPs) and not what is read from the TVar
+                    -- configured IPs) and not what is read from the TVar
                     -- 'rootPeersGroupsVar'.
                     entry'           = resultsMap <> entry
                     rootPeersGroups' =

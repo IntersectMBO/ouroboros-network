@@ -1,6 +1,6 @@
 status = [
   "ci/hydra:Cardano:ouroboros-network:required",
-  "build (8.10.7, ubuntu-20.04)",
+  "build (8.10.7, ubuntu-latest)",
   "build (8.10.7, windows-latest)",
 ]
 timeout_sec = 7200

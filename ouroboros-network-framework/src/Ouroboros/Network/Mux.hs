@@ -17,13 +17,13 @@ module Ouroboros.Network.Mux
   , OuroborosApplication (..)
   , MuxProtocolBundle
   , ProtocolTemperature (..)
-  , TokProtocolTemperature (..)
+  , SingProtocolTemperature (..)
   , SomeTokProtocolTemperature (..)
   , WithProtocolTemperature (..)
   , withoutProtocolTemperature
   , WithSomeProtocolTemperature (..)
   , withoutSomeProtocolTemperature
-  , Bundle (..)
+  , TemperatureBundle (..)
   , projectBundle
   , OuroborosBundle
   , MuxBundle
@@ -133,27 +133,25 @@ newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
 
 
 -- |  There are three kinds of applications: warm, hot and established (ones
--- that run in for both warm and hot peers).
+-- that run in both warm and hot peers).
 --
 data ProtocolTemperature = Established | Warm | Hot
   deriving (Eq, Ord, Show)
 
-
--- | Singletons for 'AppKind'
+-- | Singletons for 'ProtocolTemperature'.
 --
-data TokProtocolTemperature (pt :: ProtocolTemperature) where
-    TokHot         :: TokProtocolTemperature Hot
-    TokWarm        :: TokProtocolTemperature Warm
-    TokEstablished :: TokProtocolTemperature Established
-
+data SingProtocolTemperature (pt :: ProtocolTemperature) where
+    SingHot         :: SingProtocolTemperature Hot
+    SingWarm        :: SingProtocolTemperature Warm
+    SingEstablished :: SingProtocolTemperature Established
 
 data SomeTokProtocolTemperature where
-    SomeTokProtocolTemperature :: TokProtocolTemperature pt
+    SomeTokProtocolTemperature :: SingProtocolTemperature pt
                                -> SomeTokProtocolTemperature
 
 
 -- | We keep hot, warm and established application (or their context) distinct.
--- It's only needed for a handly 'projectBundle' map.
+-- It's only needed for a handy 'projectBundle' map.
 --
 data WithProtocolTemperature (pt :: ProtocolTemperature) a where
     WithHot         :: !a -> WithProtocolTemperature Hot  a
@@ -176,9 +174,11 @@ instance Applicative (WithProtocolTemperature Established) where
     pure = WithEstablished
     (<*>) (WithEstablished f) = fmap f
 
-instance Semigroup a => Semigroup (WithProtocolTemperature pt a) where
+instance Semigroup a => Semigroup (WithProtocolTemperature Hot a) where
     WithHot a <> WithHot b                 = WithHot (a <> b)
+instance Semigroup a => Semigroup (WithProtocolTemperature Warm a) where
     WithWarm a <> WithWarm b               = WithWarm (a <> b)
+instance Semigroup a => Semigroup (WithProtocolTemperature Established a) where
     WithEstablished a <> WithEstablished b = WithEstablished (a <> b)
 
 instance Monoid a => Monoid (WithProtocolTemperature Hot a) where
@@ -206,11 +206,11 @@ deriving instance Functor WithSomeProtocolTemperature
 withoutSomeProtocolTemperature :: WithSomeProtocolTemperature a -> a
 withoutSomeProtocolTemperature (WithSomeProtocolTemperature a) = withoutProtocolTemperature a
 
-
 -- | A bundle of 'HotApp', 'WarmApp' and 'EstablishedApp'.
 --
-data Bundle a =
-      Bundle {
+
+data TemperatureBundle a =
+      TemperatureBundle {
           -- | hot mini-protocols
           --
           withHot
@@ -228,32 +228,32 @@ data Bundle a =
         }
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance Semigroup a => Semigroup (Bundle a) where
-    Bundle hot warm established <> Bundle hot' warm' established' =
-      Bundle (hot <> hot')
-             (warm <> warm')
-             (established <> established')
+instance Semigroup a => Semigroup (TemperatureBundle a) where
+    TemperatureBundle hot warm established <> TemperatureBundle hot' warm' established' =
+      TemperatureBundle (hot <> hot')
+                        (warm <> warm')
+                        (established <> established')
 
-instance Monoid a => Monoid (Bundle a) where
-    mempty = Bundle mempty mempty mempty
+instance Monoid a => Monoid (TemperatureBundle a) where
+    mempty = TemperatureBundle mempty mempty mempty
 
-projectBundle :: TokProtocolTemperature pt -> Bundle a -> a
-projectBundle TokHot         = withoutProtocolTemperature . withHot
-projectBundle TokWarm        = withoutProtocolTemperature . withWarm
-projectBundle TokEstablished = withoutProtocolTemperature . withEstablished
+projectBundle :: SingProtocolTemperature pt -> TemperatureBundle a -> a
+projectBundle SingHot         = withoutProtocolTemperature . withHot
+projectBundle SingWarm        = withoutProtocolTemperature . withWarm
+projectBundle SingEstablished = withoutProtocolTemperature . withEstablished
 
 
-instance Applicative Bundle where
-    pure a = Bundle (WithHot a) (WithWarm a) (WithEstablished a)
-    Bundle hotFn
-           warmFn
-           establishedFn
-      <*> Bundle hot
-                 warm
-                 established =
-          Bundle (hotFn <*> hot)
-                 (warmFn <*> warm)
-                 (establishedFn <*> established)
+instance Applicative TemperatureBundle where
+    pure a = TemperatureBundle (WithHot a) (WithWarm a) (WithEstablished a)
+    TemperatureBundle hotFn
+                      warmFn
+                      establishedFn
+      <*> TemperatureBundle hot
+                            warm
+                            established =
+          TemperatureBundle (hotFn <*> hot)
+                            (warmFn <*> warm)
+                            (establishedFn <*> established)
 
 --
 -- Useful type synonyms
@@ -265,7 +265,7 @@ type MuxProtocolBundle (mode :: MuxMode) addr bytes m a b
       -> [MiniProtocol mode bytes m a b]
 
 type OuroborosBundle (mode :: MuxMode) addr bytes m a b =
-    Bundle (MuxProtocolBundle mode addr bytes m a b)
+    TemperatureBundle (MuxProtocolBundle mode addr bytes m a b)
 
 data MiniProtocol (mode :: MuxMode) bytes m a b =
      MiniProtocol {
@@ -275,7 +275,7 @@ data MiniProtocol (mode :: MuxMode) bytes m a b =
      }
 
 type MuxBundle (mode :: MuxMode) bytes m a b =
-    Bundle [MiniProtocol mode bytes m a b]
+    TemperatureBundle [MiniProtocol mode bytes m a b]
 
 
 data RunMiniProtocol (mode :: MuxMode) bytes m a b where
@@ -338,7 +338,7 @@ toApplication connectionId controlMessageSTM (OuroborosApplication ptcls) =
 mkMuxApplicationBundle
     :: forall mode addr bytes m a b.
        ConnectionId addr
-    -> Bundle (ControlMessageSTM m)
+    -> TemperatureBundle (ControlMessageSTM m)
     -> OuroborosBundle mode addr bytes m a b
     -> MuxBundle       mode      bytes m a b
 mkMuxApplicationBundle connectionId controlMessageBundle appBundle =

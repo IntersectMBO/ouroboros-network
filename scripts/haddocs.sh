@@ -8,7 +8,7 @@
 # $1 - where to put the generated pages, this directory contents will be wiped
 #      out (so don't pass `/` or `./` - the latter will delete your 'dist-newstyle')
 #      (the default is './haddocks')
-# $2 - weahter to re-build haddocjs with `cabal haddock` command or a component name
+# $2 - whether to re-build haddocks with `cabal haddock` command or a component name
 #      (the default is true)
 # $3 - cabal build directory
 #      (the default is "dist-newstyle")

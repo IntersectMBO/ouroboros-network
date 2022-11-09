@@ -48,7 +48,7 @@
 --
 -- The calls 'requestOutboundConnection' and 'includeInboundConnection' return
 -- once a connection has been negotiated.  The returned 'handle' contains all
--- the information that is need to start and monitor mini-protocols through
+-- the information that is needed to start and monitor mini-protocols through
 -- the mux interface.
 --
 -- For inbound connections, the connection manager will pass handle (also after
@@ -56,11 +56,11 @@
 --
 -- >
 -- > ┌────────────────────────┐
--- > │                        │        ┏━━━━━━━━━━━━━━━━┓     ┌──────────────────┐
--- > │   ConnectionHandler    │        ┃                ┃     │                  │
--- > │                        ┝━━━━━━━▶┃     handle     ┣━━━━▶│ PeerStateActions ├───▶ P2P Governor
--- > │  inbound / outbound    │        ┃                ┃     │                  │
--- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛     └──────────────────┘
+-- > │                        │        ┏━━━━━━━━━━━━━━━━┓
+-- > │   ConnectionHandler    │        ┃                ┃
+-- > │                        ┝━━━━━━━▶┃     handle     ┃
+-- > │  inbound / outbound    │        ┃                ┃
+-- > │         ┃              │        ┗━━┳━━━━━━━━━━━━━┛
 -- > └─────────╂──────────────┘           ┃
 -- >           ┃                          ┃
 -- >           ▼                          ┃
@@ -79,6 +79,10 @@
 -- Termination procedure as well as connection state machine is not described in
 -- this haddock, see associated specification.
 --
+-- The 'handle' is used in `ouroboros-network` package to construct
+-- `PeerStateActions` which allow for the outbound governor to
+--
+
 module Ouroboros.Network.ConnectionManager.Types
   ( -- * Connection manager core types
     -- ** Connection Types
@@ -151,8 +155,8 @@ module Ouroboros.Network.ConnectionManager.Types
   , AbstractTransitionTrace
   ) where
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (unless)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime (DiffTime)
 import           Control.Tracer (Tracer)
@@ -348,13 +352,13 @@ type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by
 -- @muxMode@.
 --
-data ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
+newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version m =
     ConnectionHandler {
         -- | Connection handler.
         --
         connectionHandler ::
-          (WithMuxTuple muxMode
-            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m))
+          WithMuxTuple muxMode
+            (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m)
       }
 
 
@@ -366,22 +370,23 @@ data Inactive =
   deriving (Eq, Show)
 
 
--- | Exception which where caught in the connection thread and were re-thrown
--- in the main thread by the 'rethrowPolicy'.
+-- | Exception which where caught in the connection thread and were re-thrown in
+-- the main thread by the 'rethrowPolicy'.
 --
-data ExceptionInHandler peerAddr where
-    ExceptionInHandler :: !peerAddr
+data ExceptionInHandler where
+    ExceptionInHandler :: forall peerAddr.
+                          (Typeable peerAddr, Show peerAddr)
+                       => !peerAddr
                        -> !SomeException
-                       -> ExceptionInHandler peerAddr
+                       -> ExceptionInHandler
   deriving Typeable
 
-instance   Show peerAddr => Show (ExceptionInHandler peerAddr) where
+instance Show ExceptionInHandler where
     show (ExceptionInHandler peerAddr e) = "ExceptionInHandler "
                                         ++ show peerAddr
                                         ++ " "
                                         ++ show e
-instance ( Show peerAddr
-         , Typeable peerAddr ) => Exception (ExceptionInHandler peerAddr)
+instance Exception ExceptionInHandler
 
 
 -- | Data type used to classify 'handleErrors'.
@@ -607,7 +612,7 @@ includeInboundConnection
 includeInboundConnection =
     icmIncludeConnection . withResponderMode . getConnectionManager
 
--- | Unregister outbound connection. Returns if the operation was successul.
+-- | Unregister outbound connection. Returns if the operation was successful.
 --
 -- This executes:
 --
@@ -637,8 +642,10 @@ numberOfConnections =
 
 -- | Useful for tracing and error messages.
 --
-data AbstractState
-    = UnknownConnectionSt
+data AbstractState =
+    -- | Unknown connection.  This state indicates the connection manager
+    -- removed this connection from its state.
+      UnknownConnectionSt
     | ReservedOutboundSt
     | UnnegotiatedSt !Provenance
     | InboundIdleSt  !DataFlow
@@ -834,8 +841,8 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrConnectionFailure            (ConnectionId peerAddr)
   | TrConnectionNotFound           Provenance peerAddr
   | TrForbiddenOperation           peerAddr                AbstractState
-  | TrPruneConnections             (Set peerAddr) -- ^ prunning set
-                                   Int            -- ^ number connections that must be prunned
+  | TrPruneConnections             (Set peerAddr) -- ^ pruning set
+                                   Int            -- ^ number connections that must be pruned
                                    (Set peerAddr) -- ^ choice set
   | TrConnectionCleanup            (ConnectionId peerAddr)
   | TrConnectionTimeWait           (ConnectionId peerAddr)

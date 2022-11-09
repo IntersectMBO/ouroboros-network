@@ -109,10 +109,10 @@ belowTargetLocal actions
                              availableToPromote
                              numPeersToPromote
       return $ \_now -> Decision {
-        decisionTrace = TracePromoteColdLocalPeers
-                          targetNumberOfLocalPeers
-                          numLocalEstablishedPeers
-                          selectedToPromote,
+        decisionTrace = [TracePromoteColdLocalPeers
+                           targetNumberOfLocalPeers
+                           numLocalEstablishedPeers
+                           selectedToPromote],
         decisionState = st {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
@@ -192,10 +192,10 @@ belowTargetOther actions
                              availableToPromote
                              numPeersToPromote
       return $ \_now -> Decision {
-        decisionTrace = TracePromoteColdPeers
-                          targetNumberOfEstablishedPeers
-                          numEstablishedPeers
-                          selectedToPromote,
+        decisionTrace = [TracePromoteColdPeers
+                           targetNumberOfEstablishedPeers
+                           numEstablishedPeers
+                           selectedToPromote],
         decisionState = st {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
@@ -262,13 +262,14 @@ jobPromoteColdPeer PeerSelectionActions {
                       )
         in
           Decision {
-            decisionTrace = TracePromoteColdFailed targetNumberOfEstablishedPeers
-                                                   (EstablishedPeers.size establishedPeers)
-                                                   peeraddr delay e,
+            decisionTrace = [TracePromoteColdFailed targetNumberOfEstablishedPeers
+                                                    (EstablishedPeers.size establishedPeers)
+                                                    peeraddr delay e],
             decisionState = st {
-                              knownPeers            = KnownPeers.setConnectTime
-                                                        (Set.singleton peeraddr)
-                                                        (delay `addTime` now)
+                              knownPeers            = KnownPeers.setConnectTimes
+                                                        (Map.singleton
+                                                          peeraddr
+                                                          (delay `addTime` now))
                                                         knownPeers',
                               inProgressPromoteCold = Set.delete peeraddr
                                                         (inProgressPromoteCold st),
@@ -298,9 +299,9 @@ jobPromoteColdPeer PeerSelectionActions {
                                         knownPeers
 
         in Decision {
-             decisionTrace = TracePromoteColdDone targetNumberOfEstablishedPeers
-                                                  (EstablishedPeers.size establishedPeers')
-                                                  peeraddr,
+             decisionTrace = [TracePromoteColdDone targetNumberOfEstablishedPeers
+                                                   (EstablishedPeers.size establishedPeers')
+                                                   peeraddr],
              decisionState = st {
                                establishedPeers      = establishedPeers',
                                inProgressPromoteCold = Set.delete peeraddr
@@ -325,7 +326,7 @@ aboveTarget :: forall peeraddr peerconn m.
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
 aboveTarget actions
-            PeerSelectionPolicy {
+            policy@PeerSelectionPolicy {
               policyPickWarmPeersToDemote
             }
             st@PeerSelectionState {
@@ -381,15 +382,15 @@ aboveTarget actions
                                 `Map.restrictKeys` selectedToDemote
 
       return $ \_now -> Decision {
-        decisionTrace = TraceDemoteWarmPeers
-                          targetNumberOfEstablishedPeers
-                          numEstablishedPeers
-                          selectedToDemote,
+        decisionTrace = [TraceDemoteWarmPeers
+                           targetNumberOfEstablishedPeers
+                           numEstablishedPeers
+                           selectedToDemote],
         decisionState = st {
                           inProgressDemoteWarm = inProgressDemoteWarm
                                               <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteEstablishedPeer actions peeraddr peerconn
+        decisionJobs  = [ jobDemoteEstablishedPeer actions policy peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
@@ -397,19 +398,15 @@ aboveTarget actions
   = GuardedSkip Nothing
 
 
--- | Reconnect delay for peers which asynchronously transitioned to cold state.
---
-reconnectDelay :: DiffTime
-reconnectDelay = 10
---TODO: make this a policy param
-
 jobDemoteEstablishedPeer :: forall peeraddr peerconn m.
                             (Monad m, Ord peeraddr)
                          => PeerSelectionActions peeraddr peerconn m
+                         -> PeerSelectionPolicy peeraddr m
                          -> peeraddr
                          -> peerconn
                          -> Job () m (Completion m peeraddr peerconn)
 jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateActions {closePeerConnection}}
+                         PeerSelectionPolicy { policyErrorDelay }
                          peeraddr peerconn =
     Job job handler () "demoteEstablishedPeer"
   where
@@ -430,21 +427,22 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
         let (rFuzz, fuzzRng')     = randomR (-2, 2 :: Double) fuzzRng
             peerSet               = Set.singleton peeraddr
             inProgressDemoteWarm' = Set.delete peeraddr inProgressDemoteWarm
-            knownPeers'           = KnownPeers.setConnectTime
-                                     peerSet
-                                     ((realToFrac rFuzz + reconnectDelay)
-                                      `addTime` now)
-                                   . Set.foldr'
-                                     ((snd .) . KnownPeers.incrementFailCount)
-                                     knownPeers
-                                   $ peerSet
+            knownPeers'           = KnownPeers.setConnectTimes
+                                      (Map.singleton
+                                        peeraddr
+                                        ((realToFrac rFuzz + policyErrorDelay)
+                                         `addTime` now))
+                                  . Set.foldr'
+                                      ((snd .) . KnownPeers.incrementFailCount)
+                                      knownPeers
+                                  $ peerSet
             establishedPeers'     = EstablishedPeers.deletePeers
                                      peerSet
                                      establishedPeers in
         Decision {
-        decisionTrace = TraceDemoteWarmFailed targetNumberOfEstablishedPeers
-                                              (EstablishedPeers.size establishedPeers)
-                                              peeraddr e,
+        decisionTrace = [TraceDemoteWarmFailed targetNumberOfEstablishedPeers
+                                               (EstablishedPeers.size establishedPeers)
+                                               peeraddr e],
         decisionState = st {
                           inProgressDemoteWarm = inProgressDemoteWarm',
                           fuzzRng = fuzzRng',
@@ -467,9 +465,9 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
         let establishedPeers' = EstablishedPeers.delete peeraddr
                                                         establishedPeers
         in Decision {
-             decisionTrace = TraceDemoteWarmDone targetNumberOfEstablishedPeers
-                                                 (EstablishedPeers.size establishedPeers')
-                                                 peeraddr,
+             decisionTrace = [TraceDemoteWarmDone targetNumberOfEstablishedPeers
+                                                  (EstablishedPeers.size establishedPeers')
+                                                  peeraddr],
              decisionState = st {
                                establishedPeers     = establishedPeers',
                                inProgressDemoteWarm = Set.delete peeraddr

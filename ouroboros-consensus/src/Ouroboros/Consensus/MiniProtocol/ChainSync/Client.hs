@@ -55,6 +55,8 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
+import           Ouroboros.Network.BlockFetch.ClientState
+                     (WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
@@ -735,10 +737,10 @@ chainSyncClient mkPipelineDecision0 tracer cfg
               whenJust (isInvalidBlock hash) $ \reason ->
                 disconnect $ InvalidBlock hdrPoint hash reason
       disconnectWhenInvalid $
-        if isPipeliningEnabled version
-        -- Disconnect if the parent block of `hdr` is known to be invalid.
-        then headerPrevHash hdr
-        else BlockHash (headerHash hdr)
+        case isPipeliningEnabled version of
+          -- Disconnect if the parent block of `hdr` is known to be invalid.
+          ReceivingTentativeBlocks    -> headerPrevHash hdr
+          NotReceivingTentativeBlocks -> BlockHash (headerHash hdr)
 
       -- Get the ledger view required to validate the header
       -- NOTE: This will block if we are too far behind.
@@ -1020,7 +1022,9 @@ invalidBlockRejector tracer version getIsInvalidBlock getCandidate =
       -- it's explicit, only skip it if it's annotated as tentative
       mapM_ (uncurry disconnect) $ firstJust
         (\hdr -> (hdr,) <$> isInvalidBlock (headerHash hdr))
-        (  (if isPipeliningEnabled version then drop 1 else id)
+        (  (case isPipeliningEnabled version of
+              ReceivingTentativeBlocks    -> drop 1
+              NotReceivingTentativeBlocks -> id)
          $ AF.toNewestFirst theirFrag
         )
 

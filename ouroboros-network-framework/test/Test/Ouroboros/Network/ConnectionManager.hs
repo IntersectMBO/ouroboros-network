@@ -21,11 +21,11 @@ module Test.Ouroboros.Network.ConnectionManager (tests) where
 
 import           Prelude hiding (read)
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forever, unless, when, (>=>))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
@@ -376,7 +376,7 @@ instance Exception TestError
 -- which the kernel would forbid, e.g. the two connections with the same
 -- four-tuples.
 --
--- Note: we don't track all the connection in the system, but rather relay on
+-- Note: we don't track all the connection in the system, but rather rely on
 -- the event schedule.  If the execution environment (test runtime) is in sync
 -- with the snocket, it will pass the right 'ScheduleEntry' to the test
 -- runtime, both for outbound ('connect' call) and inbound ('accept' call).
@@ -754,6 +754,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
               cmIPv6Address = Nothing,
               cmAddressType = \_ -> Just IPv4Address,
               cmSnocket = snocket,
+              cmConfigureSocket = \_ _ -> return (),
               connectionDataFlow = \(Version df) -> df,
               cmPrunePolicy = simplePrunePolicy,
               cmConnectionsLimits = AcceptedConnectionsLimit {

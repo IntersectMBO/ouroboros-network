@@ -2,7 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 
 module Ouroboros.Network.Diffusion.Common
-  ( InitializationTracer (..)
+  ( DiffusionTracer (..)
   , Failure (..)
   , Tracers (..)
   , nullTracers
@@ -29,10 +29,14 @@ import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface, TraceLedgerPeers)
 import           Ouroboros.Network.Snocket (FileDescriptor)
+import           Ouroboros.Network.Socket (SystemdSocketTracer)
 
--- TODO: use LocalAddress where appropriate rather than 'path'.
+-- | The 'DiffusionTracer' logs
 --
-data InitializationTracer ntnAddr ntcAddr
+-- * diffusion initialisation messages
+-- * terminal errors thrown by diffusion
+--
+data DiffusionTracer ntnAddr ntcAddr
   = RunServer (NonEmpty ntnAddr)
   | RunLocalServer ntcAddr
   | UsingSystemdSocket ntcAddr
@@ -52,6 +56,7 @@ data InitializationTracer ntnAddr ntcAddr
   -- Remove (this is impossible case), there's no systemd on Windows
   | UnsupportedReadySocketCase
   | DiffusionErrored SomeException
+  | SystemdSocketConfiguration SystemdSocketTracer
     deriving Show
 
 -- TODO: add a tracer for these misconfiguration
@@ -87,8 +92,8 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
         :: Tracer m (NodeToClient.HandshakeTr ntcAddr ntcVersion)
 
       -- | Diffusion initialisation tracer
-    , dtDiffusionInitializationTracer
-        :: Tracer m (InitializationTracer ntnAddr ntcAddr)
+    , dtDiffusionTracer
+        :: Tracer m (DiffusionTracer ntnAddr ntcAddr)
 
       -- | Ledger Peers tracer
     , dtLedgerPeersTracer
@@ -101,12 +106,12 @@ nullTracers :: Applicative m
                        ntcAddr ntcVersion
                        m
 nullTracers = Tracers {
-    dtMuxTracer                     = nullTracer
-  , dtHandshakeTracer               = nullTracer
-  , dtLocalMuxTracer                = nullTracer
-  , dtLocalHandshakeTracer          = nullTracer
-  , dtDiffusionInitializationTracer = nullTracer
-  , dtLedgerPeersTracer             = nullTracer
+    dtMuxTracer            = nullTracer
+  , dtHandshakeTracer      = nullTracer
+  , dtLocalMuxTracer       = nullTracer
+  , dtLocalHandshakeTracer = nullTracer
+  , dtDiffusionTracer      = nullTracer
+  , dtLedgerPeersTracer    = nullTracer
   }
 
 -- | Common DiffusionArguments interface between P2P and NonP2P
@@ -133,15 +138,12 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
     , daMode                     :: DiffusionMode
   }
 
--- | Common DiffusionArguments interface between P2P and NonP2P
---
--- TODO: we need initiator only mode for blockchain explorer or a similar
--- application, there's no reason why one should run a node-to-node server for
--- it.
+
+-- | Versioned mini-protocol bundles run on a negotiated connection.
 --
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
-                  m =
+                  m a =
   Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
@@ -153,7 +155,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorMode ntnAddr
-                      ByteString m () Void)
+                      ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
@@ -162,7 +164,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorResponderMode ntnAddr
-                      ByteString m () ())
+                      ByteString m a ())
 
       -- | NodeToClient responder application (server role)
       --

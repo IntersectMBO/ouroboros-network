@@ -5,6 +5,18 @@ team.  See [consensus
 CHANGELOG](../ouroboros-consensus/docs/interface-CHANGELOG.md) file for how
 this changelog is supposed to be used.
 
+## Circa 2022-10-11
+
+- `PeerSelectionCounters` includes local peers information.
+- `ReconnectDelay` added `Fractional` instance, semigroup instance is based on
+  `Max` and monoid instance was removed.
+
+## Circa 2022-09-20
+
+- 'InitializationTracer' type renamed as 'DiffusionTracer'.
+- The 'dtDiffusionInitializationTracer' record field of
+  'Ouoroboros.Network.Diffusion.Tracers' record renamed as 'dtDiffusionTracer'.
+
 ## Circa 2022-05-19
 
 - removed `node-to-client` versions `1` to `8`.  The lowest supported version is

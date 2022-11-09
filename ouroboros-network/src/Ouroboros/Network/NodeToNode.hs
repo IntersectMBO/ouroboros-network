@@ -70,6 +70,8 @@ module Ouroboros.Network.NodeToNode
   , LocalAddresses (..)
   , Socket
   , isPipeliningEnabled
+    -- ** Exceptions
+  , ExceptionInHandler (..)
     -- ** Error Policies and Peer state
   , ErrorPolicies (..)
   , remoteNetworkErrorPolicy
@@ -113,6 +115,8 @@ import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import           Ouroboros.Network.ConnectionManager.Types
+                     (ExceptionInHandler (..))
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)
@@ -233,7 +237,7 @@ nodeToNodeProtocols
   -> NodeToNodeVersion
   -> OuroborosBundle muxMode addr bytes m a b
 nodeToNodeProtocols miniProtocolParameters protocols _version =
-    Bundle
+    TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
       (WithHot $ \connectionId controlMessageSTM ->
         case protocols connectionId controlMessageSTM of
@@ -408,7 +412,7 @@ connectTo
   -> Socket.SockAddr
   -> IO ()
 connectTo sn tr =
-    connectToNode sn nodeToNodeHandshakeCodec timeLimitsHandshake
+    connectToNode sn configureOutboundSocket nodeToNodeHandshakeCodec timeLimitsHandshake
                   (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
                   tr acceptableVersion
 
@@ -427,6 +431,9 @@ withServer
   -> NetworkMutableState Socket.SockAddr
   -> AcceptedConnectionsLimit
   -> Socket.Socket
+  -- ^ a configured socket to be used be the server.  The server will call
+  -- `bind` and `listen` methods but it will not set any socket or tcp options
+  -- on it.
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
               (OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO a b)

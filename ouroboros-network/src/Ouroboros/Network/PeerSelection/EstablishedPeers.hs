@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveFunctor  #-}
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Ouroboros.Network.PeerSelection.EstablishedPeers
   ( EstablishedPeers
@@ -17,7 +19,7 @@ module Ouroboros.Network.PeerSelection.EstablishedPeers
   , deletePeers
   , setCurrentTime
   , minActivateTime
-  , setActivateTime
+  , setActivateTimes
   , invariant
   ) where
 
@@ -162,17 +164,24 @@ minActivateTime EstablishedPeers { nextActivateTimes }
   = Nothing
 
 
-setActivateTime :: Ord peeraddr
-                => Set peeraddr
-                -> Time
-                -> EstablishedPeers peeraddr peerconn
-                -> EstablishedPeers peeraddr peerconn
-setActivateTime peeraddrs _time ep | Set.null peeraddrs = ep
-setActivateTime peeraddrs time  ep@EstablishedPeers { nextActivateTimes } =
-    let ep' = ep { nextActivateTimes = foldl' (\psq peeraddr -> PSQ.insert peeraddr time () psq)
-                                              nextActivateTimes
-                                              peeraddrs
+setActivateTimes :: Ord peeraddr
+                 => Map peeraddr Time
+                 -> EstablishedPeers peeraddr peerconn
+                 -> EstablishedPeers peeraddr peerconn
+setActivateTimes times ep | Map.null times = ep
+setActivateTimes times ep@EstablishedPeers { nextActivateTimes } =
+    let ep' = ep { nextActivateTimes =
+                     Map.foldlWithKey'
+                       (\psq peeraddr time ->
+                             snd $
+                             PSQ.alter (\case
+                                           Nothing         -> ((), Just (time, ()))
+                                           Just (time', _) -> ((), Just (time `max` time', ()))
+                                       )
+                                       peeraddr psq)
+                       nextActivateTimes
+                       times
                  }
-    in   assert (all (not . (`Set.member` readyPeers ep')) peeraddrs)
+    in   assert (all (not . (`Set.member` readyPeers ep')) (Map.keys times))
        . assert (invariant ep')
        $ ep'

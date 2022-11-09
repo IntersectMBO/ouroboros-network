@@ -16,10 +16,10 @@ import           Data.Void (Void)
 import qualified Network.Socket as Socket
 
 import           Control.Concurrent (ThreadId)
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
@@ -152,6 +152,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
 
     withServerNode
       (socketSnocket iocp)
+      ((. Just) <$> configureSocket)
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -171,6 +172,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       withAsync
         (connectToNode
           (socketSnocket iocp)
+          (flip configureSocket Nothing)
           nodeToNodeHandshakeCodec
           noTimeLimitsHandshake
           (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)

@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
@@ -155,6 +154,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
       threadDelay (50000 * index)
       connectToNode
         (localSnocket iocp)
+        mempty
         unversionedHandshakeCodec
         noTimeLimitsHandshake
         unversionedProtocolDataCodec
@@ -185,6 +185,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       (localSnocket iocp)
+      mempty
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -293,7 +294,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
           -- TODO: this currently needs MuxPeerRaw because of the resource
           -- bracket
           MuxPeerRaw $ \channel ->
-          bracketFetchClient registry maxBound connectionId $ \clientCtx ->
+          bracketFetchClient registry maxBound isPipeliningEnabled connectionId $ \clientCtx ->
             runPipelinedPeer
               nullTracer -- (contramap (show . TraceLabelPeer connectionId) stdoutTracer)
               codecBlockFetch
@@ -370,6 +371,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                     [ async $
                         connectToNode
                           (localSnocket iocp)
+                          mempty
                           unversionedHandshakeCodec
                           noTimeLimitsHandshake
                           unversionedProtocolDataCodec
@@ -422,6 +424,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       (localSnocket iocp)
+      mempty
       nullNetworkServerTracers
       networkState
       (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -503,7 +506,7 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     handleNext =
       ChainSync.ClientStNext {
-        recvMsgRollForward  = \header _pHead ->
+        ChainSync.recvMsgRollForward  = \header _pHead ->
           ChainSync.ChainSyncClient $ do
             addBlock header
             --FIXME: the notTooFarAhead bit is not working
@@ -511,7 +514,7 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
 --            notTooFarAhead
             return requestNext
 
-      , recvMsgRollBackward = \pIntersect _pHead ->
+      , ChainSync.recvMsgRollBackward = \pIntersect _pHead ->
           ChainSync.ChainSyncClient $ do
             rollback pIntersect
             return requestNext
@@ -554,10 +557,10 @@ chainSyncServer seed =
                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     idleState blocks =
       ChainSync.ServerStIdle {
-        recvMsgRequestNext   = do threadDelay 500000
-                                  return (Left (nextState blocks)),
-        recvMsgFindIntersect = \_ -> return (intersectState blocks),
-        recvMsgDoneClient    = return ()
+        ChainSync.recvMsgRequestNext   = do threadDelay 500000
+                                            return (Left (nextState blocks)),
+        ChainSync.recvMsgFindIntersect = \_ -> return (intersectState blocks),
+        ChainSync.recvMsgDoneClient    = return ()
       }
 
     nextState :: [Block]

@@ -12,8 +12,8 @@ module Ouroboros.Network.PeerSelection.Simple
   ) where
 
 
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -53,11 +53,11 @@ withPeerSelectionActions
   -- ^ public root peers
   -> PeerStateActions peeraddr peerconn m
   -> (NumberOfPeers -> m (Maybe (Set peeraddr, DiffTime)))
-  -> (Maybe (Async m Void)
+  -> (   Async m Void
       -> PeerSelectionActions peeraddr peerconn m
       -> m a)
-  -- ^ continuation, recieves a handle to the local roots peer provider thread
-  -- (only if local root peers where non-empty).
+  -- ^ continuation, receives a handle to the local roots peer provider thread
+  -- (only if local root peers were non-empty).
   -> m a
 withPeerSelectionActions
   localRootTracer
@@ -86,9 +86,9 @@ withPeerSelectionActions
         dnsActions
         readLocalRootPeers
         localRootsVar)
-      (\thread -> k (Just thread) peerSelectionActions)
+      (\thread -> k thread peerSelectionActions)
   where
-    -- We first try to get poublic root peers from the ledger, but if it fails
+    -- We first try to get public root peers from the ledger, but if it fails
     -- (for example because the node hasn't synced far enough) we fall back
     -- to using the manually configured bootstrap root peers.
     requestPublicRootPeers :: Int -> m (Set peeraddr, DiffTime)

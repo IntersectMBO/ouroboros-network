@@ -5,13 +5,13 @@
 This site contains Haskell documentation of
 
 * __Ouroboros-Network__  - networking component of the Haskell implementation of Ouroboros protocols
-* __Ouroboros-Consensus__ - Ouroboros Consensus family of protocol which integrate with `Ouroboros-Network`
+* __Ouroboros-Consensus__ - Ouroboros Consensus family of protocols which integrate with `Ouroboros-Network`
 
 == Module Structure And Network Components
 
 * __IOSim & Monad Classes__
 
-    * __[io-sim](io-sim/Control-Monad-IOSim.html)__ - `IOSim` moand which
+    * __[io-sim](io-sim/Control-Monad-IOSim.html)__ - `IOSim` monad which
       allows us to test networking code in simulation.
     * __[io-classes](#n.2.1.1)__ - abstract classes under 'Control.Monad.Class' which
       allow to use real `IO` or the `SimIO` monad in a polymorphic way.
@@ -33,7 +33,7 @@ This site contains Haskell documentation of
     * __ouroboros-network__ - networking library which supports /Ouroboros family
         of protocols/. It includes:
 
-          * /Implementations, type level specifications, and api of all the protocols:/
+          * /Implementations, type level specifications, and APIs of all the protocols:/
 
               * __[ChainSync](ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html)__
               * __[BlockFetch](ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html)__

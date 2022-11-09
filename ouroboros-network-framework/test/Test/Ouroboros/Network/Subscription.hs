@@ -14,14 +14,15 @@
 module Test.Ouroboros.Network.Subscription (tests) where
 
 import           Control.Concurrent hiding (threadDelay)
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, unless, when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimStrictShutdown)
 import           Control.Tracer
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
 import qualified Data.IP as IP
@@ -120,8 +121,8 @@ tests =
         -- the above tests takes about 10 minutes to run due to delays in
         -- realtime.
         , testProperty "Resolve Subscribe (IO)" prop_sub_io
-        , testProperty "Send Recive with Dns worker (IO)" prop_send_recv
-        , testProperty "Send Recieve with IP worker, Initiator and responder (IO)"
+        , testProperty "Send Receive with Dns worker (IO)" prop_send_recv
+        , testProperty "Send Receive with IP worker, Initiator and responder (IO)"
                prop_send_recv_init_and_rsp
         -- , testProperty "subscription demo" _demo
         ]
@@ -291,8 +292,8 @@ instance Arbitrary LookupResultIO where
             return $ take k lx
 
 -- | Return true if  `a` is a permutation of `b`.
-permCheck :: Ord o => [o] -> [o] -> Bool
-permCheck a b = L.sort a == L.sort b
+permCheck :: (Ord o, Show o) => [o] -> [o] -> Property
+permCheck a b = L.sort a === L.sort b
 
 --
 -- Properties
@@ -331,11 +332,11 @@ prop_resolv lr =  do
 
             (Right ea, Left _) ->
                 -- Expect a permutation of the result of the A lookup.
-                property $ permCheck addrs ea
+                permCheck addrs ea
 
             (Left _, Right ea) ->
                 -- Expect a permutation of the result of the AAAA lookup.
-                property $ permCheck addrs ea
+                permCheck addrs ea
 
             (Right sa4s, Right sa6s) ->
                 let (cntA, cntB, headFamily) =
@@ -343,8 +344,8 @@ prop_resolv lr =  do
                                         || null sa6s)
                             then (length sa4s, length sa6s, Socket.AF_INET)
                             else (length sa6s, length sa4s, Socket.AF_INET6) in
-                property $ permCheck addrs (sa4s ++ sa6s) &&
-                        sockAddrFamily (head addrs) == headFamily &&
+                permCheck addrs (sa4s ++ sa6s) .&&.
+                        sockAddrFamily (head addrs) === headFamily .&&.
                         alternateFamily addrs (sockAddrFamily (head addrs)) True
                             cntA cntB
 
@@ -473,18 +474,18 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
 
     verifyOrder
         :: [(Socket.Family, Word16)]
-        -> Bool
+        -> Property
     verifyOrder observerdConnectionOrder =
         case (lrioIpv4Result lr, lrioIpv6Result lr) of
-             (Left _, Left _)     -> null observerdConnectionOrder
-             (Right [], Right []) -> null observerdConnectionOrder
-             (Left _, Right a)    -> a == map snd observerdConnectionOrder
-             (Right a, Left _)    -> a == map snd observerdConnectionOrder
-             (Right a, Right [])  -> a == map snd observerdConnectionOrder
-             (Right [], Right a)  -> a == map snd observerdConnectionOrder
+             (Left _, Left _)     -> counterexample "null" $ null observerdConnectionOrder
+             (Right [], Right []) -> counterexample "null" $ null observerdConnectionOrder
+             (Left _, Right a)    -> a === map snd observerdConnectionOrder
+             (Right a, Left _)    -> a === map snd observerdConnectionOrder
+             (Right a, Right [])  -> a === map snd observerdConnectionOrder
+             (Right [], Right a)  -> a === map snd observerdConnectionOrder
              (Right r4, Right r6) ->
-                 not (null observerdConnectionOrder) &&
-                 (lrioFirst lr == fst (head observerdConnectionOrder)) &&
+                 not (null observerdConnectionOrder) .&&.
+                 (lrioFirst lr === fst (head observerdConnectionOrder)) .&&.
                  permCheck (r4 ++ r6) (map snd observerdConnectionOrder)
 
     initiatorCallback
@@ -590,6 +591,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     withDummyServer faultyAddress $
       withServerNode
         sn
+        ((. Just) <$> configureSocket)
         nullNetworkServerTracers
         (NetworkMutableState tbl peerStatesVar)
         (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -736,6 +738,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
     startPassiveServer iocp tbl stVar responderAddr localAddrVar rrcfg = withServerNode
         (socketSnocket iocp)
+        ((. Just) <$> configureSocket)
         nullNetworkServerTracers
         (NetworkMutableState tbl stVar)
         (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -757,6 +760,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
       let sn = socketSnocket iocp
       in withServerNode
           sn
+          ((. Just) <$> configureSocket)
           nullNetworkServerTracers
           (NetworkMutableState tbl stVar)
           (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -879,6 +883,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
     spawnServer iocp tbl stVar addr delay =
         void $ async $ withServerNode
             (socketSnocket iocp)
+            ((. Just) <$> configureSocket)
             nullNetworkServerTracers
             (NetworkMutableState tbl stVar)
             (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -913,7 +918,7 @@ instance (Show a) => Show (WithThreadAndTime a) where
         printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 _verboseTracer :: Show a => Tracer IO a
-_verboseTracer = threadAndTimeTracer $ showTracing stdoutTracer
+_verboseTracer = threadAndTimeTracer $ Tracer (BSC.putStrLn . BSC.pack . show)
 
 threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
 threadAndTimeTracer tr = Tracer $ \s -> do

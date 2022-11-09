@@ -6,7 +6,7 @@ module Network.Mux.Bearer.Queues (queuesAsMuxBearer) where
 
 import qualified Data.ByteString.Lazy as BL
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer
@@ -26,8 +26,8 @@ queuesAsMuxBearer
      , MonadThrow m
      )
   => Tracer m Mx.MuxTrace
-  -> TBQueue m BL.ByteString
-  -> TBQueue m BL.ByteString
+  -> StrictTBQueue m BL.ByteString
+  -> StrictTBQueue m BL.ByteString
   -> SDUSize
   -> MuxBearer m
 queuesAsMuxBearer tracer writeQueue readQueue sduSize = do

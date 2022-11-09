@@ -1,9 +1,12 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
@@ -18,7 +21,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerStateActions (..)
   , PeerSelectionActions (..)
   , ChurnMode (..)
-    -- * P2P govnernor internals
+    -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
   , assertPeerSelectionState
@@ -51,6 +54,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           System.Random (StdGen)
 
+import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.EstablishedPeers
                      (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -94,7 +98,11 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyMaxInProgressGossipReqs :: !Int,
        policyGossipRetryTime         :: !DiffTime,
        policyGossipBatchWaitTime     :: !DiffTime,
-       policyGossipOverallTimeout    :: !DiffTime
+       policyGossipOverallTimeout    :: !DiffTime,
+
+       -- | Reconnection delay, passed from `ExitPolicy`.
+       --
+       policyErrorDelay              :: !DiffTime
      }
 
 
@@ -201,15 +209,14 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        peerStateActions         :: PeerStateActions peeraddr peerconn m
      }
 
-
 -- | Callbacks which are performed to change peer state.
 --
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
-    -- | Monitor peer state.
+    -- | Monitor peer state.  Must be non-blocking.
     --
-    monitorPeerConnection    :: peerconn -> STM m PeerStatus,
+    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe ReconnectDelay),
 
-    -- | Establish new connection.
+    -- | Establish new connection: cold to warm.
     --
     establishPeerConnection  :: peeraddr -> m peerconn,
 
@@ -295,27 +302,35 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     network disconnect to cause us to flush our full known peer set by
 --     considering them all to have bad connectivity.
 --     Should also take account of DNS failures for root peer set.
---     lastSucessfulNetworkEvent :: Time
+--     lastSuccessfulNetworkEvent :: Time
      }
   deriving (Show, Functor)
 
 data PeerSelectionCounters = PeerSelectionCounters {
-      coldPeers :: Int,
-      warmPeers :: Int,
-      hotPeers  :: Int
+      coldPeers  :: Int,
+      warmPeers  :: Int,
+      hotPeers   :: Int,
+      localRoots :: [(Int, Int)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
-peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers }
+peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers, localRoots }
   where
     knownPeersSet = KnownPeers.toSet (knownPeers st)
     establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
-    coldPeers = Set.size $ knownPeersSet Set.\\ establishedPeersSet
-    warmPeers = Set.size $ establishedPeersSet Set.\\ activePeers st
-    hotPeers  = Set.size $ activePeers st
+    coldPeers  = Set.size $ knownPeersSet Set.\\ establishedPeersSet
+    warmPeers  = Set.size $ establishedPeersSet Set.\\ activePeers st
+    hotPeers   = Set.size $ activePeers st
+    localRoots =
+      [ (target, active)
+      | (target, members) <- LocalRootPeers.toGroupSets (localRootPeers st)
+      , let active = Set.size (members `Set.intersection` activePeers st)
+      ]
 
-emptyPeerSelectionState :: StdGen -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng =
+emptyPeerSelectionState :: StdGen
+                        -> [(Int, Int)]
+                        -> PeerSelectionState peeraddr peerconn
+emptyPeerSelectionState rng localRoots =
     PeerSelectionState {
       targets              = nullPeerSelectionTargets,
       localRootPeers       = LocalRootPeers.empty,
@@ -332,7 +347,7 @@ emptyPeerSelectionState rng =
       inProgressDemoteWarm     = Set.empty,
       inProgressDemoteHot      = Set.empty,
       fuzzRng                  = rng,
-      countersCache            = Cache (PeerSelectionCounters 0 0 0)
+      countersCache            = Cache (PeerSelectionCounters 0 0 0 localRoots)
     }
 
 
@@ -532,7 +547,7 @@ instance Alternative m => Semigroup (Guarded m a) where
 
 data Decision m peeraddr peerconn = Decision {
          -- | A trace event to classify the decision and action
-       decisionTrace :: TracePeerSelection peeraddr,
+       decisionTrace :: [TracePeerSelection peeraddr],
 
          -- | An updated state to use immediately
        decisionState :: PeerSelectionState peeraddr peerconn,
@@ -586,8 +601,11 @@ data TracePeerSelection peeraddr =
      | TracePromoteColdDone    Int Int peeraddr
      -- | target active, actual active, selected peers
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
-     -- | local per-group (target active, actual active), selected peers
-     | TracePromoteWarmLocalPeers [(Int, Int)] (Set peeraddr)
+     -- | Promote local peers to warm
+     | TracePromoteWarmLocalPeers
+         [(Int, Int)]   -- ^ local per-group `(target active, actual active)`,
+                        -- only limited to groups which are below their target.
+         (Set peeraddr) -- ^ selected peers
      -- | target active, actual active, peer, reason
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
      -- | target active, actual active, peer
@@ -600,7 +618,7 @@ data TracePeerSelection peeraddr =
      -- | target established, actual established, selected peers
      | TraceDemoteWarmPeers    Int Int (Set peeraddr)
      -- | target established, actual established, peer, reason
-     | TraceDemoteWarmFailed   Int Int  peeraddr SomeException
+     | TraceDemoteWarmFailed   Int Int peeraddr SomeException
      -- | target established, actual established, peer
      | TraceDemoteWarmDone     Int Int peeraddr
      -- | target active, actual active, selected peers
@@ -611,17 +629,23 @@ data TracePeerSelection peeraddr =
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer
      | TraceDemoteHotDone      Int Int peeraddr
-     | TraceDemoteAsynchronous (Map peeraddr PeerStatus)
+     | TraceDemoteAsynchronous      (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
+     | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
   deriving Show
 
-data DebugPeerSelection peeraddr peerconn =
-       TraceGovernorState Time              -- blocked time
-                          (Maybe DiffTime)  -- wait time
-                          (PeerSelectionState peeraddr peerconn)
-  deriving (Show, Functor)
+data DebugPeerSelection peeraddr where
+  TraceGovernorState :: forall peeraddr peerconn.
+                        Show peerconn
+                     => Time            -- blocked time
+                     -> Maybe DiffTime  -- wait time
+                     -> PeerSelectionState peeraddr peerconn
+                     -> DebugPeerSelection peeraddr
+
+deriving instance (Ord peeraddr, Show peeraddr)
+               => Show (DebugPeerSelection peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal deriving Show

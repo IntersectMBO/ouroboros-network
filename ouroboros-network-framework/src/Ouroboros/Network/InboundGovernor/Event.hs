@@ -23,7 +23,7 @@ module Ouroboros.Network.InboundGovernor.Event
   , firstPeerCommitRemote
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
 import           Data.ByteString.Lazy (ByteString)
@@ -265,8 +265,7 @@ firstPeerDemotedToWarm
     connId connState@ConnectionState { csRemoteState }
     = case csRemoteState of
         RemoteHot ->
-              const (RemoteDemotedToWarm connId)
-          <$> foldMap fn (hotMiniProtocolStateMap connState)
+              RemoteDemotedToWarm connId <$ foldMap fn (hotMiniProtocolStateMap connState)
 
         _  -> mempty
   where
@@ -325,7 +324,7 @@ firstPeerDemotedToCold
         RemoteEstablished ->
               fmap (const $ WaitIdleRemote connId)
             . lastToFirstM
-            $ (Map.foldMapWithKey
+            $ Map.foldMapWithKey
                 (\(_, miniProtocolDir) miniProtocolStatus ->
                   case miniProtocolDir of
                     InitiatorDir -> mempty
@@ -338,7 +337,6 @@ firstPeerDemotedToCold
                           StatusRunning       -> retry
                 )
                 (Mux.miniProtocolStateMap csMux)
-              )
 
         RemoteIdle {} -> mempty
 

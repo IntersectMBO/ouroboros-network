@@ -1,5 +1,7 @@
 max-backjumps: 5000
 reorder-goals: True
+ignore-project: False
+tests: True
 
 package Win32-network
   ghc-options: -Werror
@@ -9,13 +11,13 @@ package ntp-client
   ghc-options: -Werror
   flags: +demo
 
-package io-sim-classes
-  ghc-options: -Werror
-  flags: +asserts
-
 package io-sim
   ghc-options: -Werror
   flags: +asserts
+
+-- Add strcittvar check
+package io-classes
+  flags: +checktvarinvariant
 
 package monoidal-synchronisation
   ghc-options: -Werror
@@ -43,3 +45,6 @@ package ouroboros-network
 
 package cardano-client
   ghc-options: -Werror
+
+package cardano-crypto-praos
+  flags: -external-libsodium-vrf

@@ -17,6 +17,8 @@ import           Data.Typeable (Typeable)
 
 import qualified Codec.CBOR.Term as CBOR
 
+import           Ouroboros.Network.BlockFetch.ClientState
+                     (WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
@@ -43,9 +45,6 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable full duplex connections.
-    --   NOTE: This is an experimental protocol version, which is not yet
-    --   released.  Until initial P2P version it must be kept as the last
-    --   version, which allows us to keep it as an experimental version.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -134,5 +133,7 @@ data ConnectionMode = UnidirectionalMode | DuplexMode
 
 -- | Check whether a version enabling diffusion pipelining has been
 -- negotiated.
-isPipeliningEnabled :: NodeToNodeVersion -> Bool
-isPipeliningEnabled v = v >= NodeToNodeV_8
+isPipeliningEnabled :: NodeToNodeVersion -> WhetherReceivingTentativeBlocks
+isPipeliningEnabled v
+  | v >= NodeToNodeV_8 = ReceivingTentativeBlocks
+  | otherwise          = NotReceivingTentativeBlocks

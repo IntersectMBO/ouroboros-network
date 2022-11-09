@@ -37,10 +37,10 @@ import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           System.Random (mkStdGen)
 
+import           Control.Concurrent.Class.MonadSTM
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
@@ -50,6 +50,7 @@ import qualified Control.Monad.Fail as Fail
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
+import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
@@ -356,6 +357,7 @@ mockPeerSelectionActions' tracer
               let interpretScriptDelay NoDelay    = 1
                   interpretScriptDelay ShortDelay = 60
                   interpretScriptDelay LongDelay  = 600
+                  interpretScriptDelay (Delay a)  = a -- not used by the generator
               done <-
                 case demotion of
                   Noop   -> return True
@@ -432,8 +434,9 @@ mockPeerSelectionActions' tracer
         let !conns' = Map.delete peeraddr conns
         writeTVar connsVar conns'
 
-    monitorPeerConnection :: PeerConn m -> STM m PeerStatus
-    monitorPeerConnection (PeerConn _peeraddr conn) = readTVar conn
+    monitorPeerConnection :: PeerConn m -> STM m (PeerStatus, Maybe ReconnectDelay)
+    monitorPeerConnection (PeerConn _peeraddr conn) = (,) <$> readTVar conn
+                                                          <*> pure Nothing
 
 
 snapshotPeersStatus :: MonadInspectSTM m
@@ -471,7 +474,8 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyMaxInProgressGossipReqs = 2,
       policyGossipRetryTime         = 3600, -- seconds
       policyGossipBatchWaitTime     = 3,    -- seconds
-      policyGossipOverallTimeout    = 10    -- seconds
+      policyGossipOverallTimeout    = 10,   -- seconds
+      policyErrorDelay              = 10    -- seconds
     }
 
 
@@ -479,7 +483,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 -- Utils for properties
 --
 
-data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr ())
+data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr)
                     | GovernorEvent    (TracePeerSelection PeerAddr)
                     | GovernorCounters PeerSelectionCounters
                     | MockEnvEvent     TraceMockEnv
@@ -495,9 +499,13 @@ data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr ())
 tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
 tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 
-tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr peerconn)
-tracerDebugPeerSelection = contramap (GovernorDebug . fmap (const ()))
+tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
+tracerDebugPeerSelection = contramap (GovernorDebug . voidDebugPeerSelection)
                                      tracerTestTraceEvent
+  where
+    voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
+    voidDebugPeerSelection (TraceGovernorState btime wtime state) =
+                            TraceGovernorState btime wtime (const () <$> state)
 
 tracerTracePeerSelectionCounters :: Tracer (IOSim s) PeerSelectionCounters
 tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent

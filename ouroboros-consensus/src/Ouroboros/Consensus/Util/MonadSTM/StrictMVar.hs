@@ -5,6 +5,8 @@
 {-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE TypeFamilies      #-}
 
+-- TODO: this module ought to use 'MonadMVar'
+-- See https://github.com/input-output-hk/io-sim/issues/34
 module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
     castStrictMVar
   , isEmptyMVar
@@ -28,10 +30,10 @@ module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
   , StrictMVar (..)
   ) where
 
+import           Control.Concurrent.Class.MonadSTM
+import qualified Control.Concurrent.Class.MonadSTM as Lazy
+import           Control.Concurrent.Class.MonadSTM.Strict.TVar (checkInvariant)
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM (MonadSTM (..))
-import qualified Control.Monad.Class.MonadSTM as Lazy
-import           Control.Monad.Class.MonadSTM.Strict (checkInvariant)
 import           Control.Monad.Class.MonadThrow (ExitCase (..), MonadCatch,
                      generalBracket)
 import           GHC.Stack

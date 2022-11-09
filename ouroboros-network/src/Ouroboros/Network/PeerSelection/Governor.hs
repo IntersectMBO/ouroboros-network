@@ -1,10 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
@@ -35,14 +32,15 @@ module Ouroboros.Network.PeerSelection.Governor
   ) where
 
 import           Data.Cache
+import           Data.Foldable (traverse_)
 import           Data.Semigroup (Min (..))
 import           Data.Void (Void)
 
 import           Control.Applicative (Alternative ((<|>)))
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -284,7 +282,7 @@ We classify (potential or actual) upstream peers in three nested categories:
 
 We define the terms /known/, /established/ and /active/ to be nested sets.
 We define the terms /cold/, /warm/ and /hot/ to be disjoint sets. Both
-collections of terms are useful. For example there is information wish to
+collections of terms are useful. For example there is information we wish to
 track for all known peers, irrespective of whether they are cold, warm or hot.
 
 So we have six transitions to consider:
@@ -295,6 +293,9 @@ So we have six transitions to consider:
  * demote a hot peer to warm
  * demote a warm peer to cold
  * forget a cold peer
+
+(Excluding the transitions in which any peer determined to be adversarial is
+forgotten.)
 
 We want a design that separates the policy from the mechanism. We must
 consider what kinds of policy we might like to express and make sure that
@@ -432,16 +433,19 @@ base our decision on include:
 -- |
 --
 peerSelectionGovernor :: (MonadAsync m, MonadLabelledSTM m, MonadMask m,
-                          MonadTime m, MonadTimer m, Ord peeraddr)
+                          MonadTime m, MonadTimer m, Ord peeraddr,
+                          Show peerconn)
                       => Tracer m (TracePeerSelection peeraddr)
-                      -> Tracer m (DebugPeerSelection peeraddr peerconn)
+                      -> Tracer m (DebugPeerSelection peeraddr)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
-    JobPool.withJobPool $ \jobPool ->
+    JobPool.withJobPool $ \jobPool -> do
+      localPeers <- map (\(target, _) -> (target, 0))
+                <$> atomically (readLocalRootPeers actions)
       peerSelectionGovernorLoop
         tracer
         debugTracer
@@ -449,7 +453,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
         actions
         policy
         jobPool
-        (emptyPeerSelectionState fuzzRng)
+        (emptyPeerSelectionState fuzzRng localPeers)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -469,9 +473,9 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
 peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              (MonadAsync m, MonadMask m,
                               MonadTime m, MonadTimer m,
-                              Ord peeraddr)
+                              Ord peeraddr, Show peerconn)
                           => Tracer m (TracePeerSelection peeraddr)
-                          -> Tracer m (DebugPeerSelection peeraddr peerconn)
+                          -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
@@ -502,7 +506,7 @@ peerSelectionGovernorLoop tracer
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
           newCounters = peerStateToCounters decisionState
-      traceWith tracer decisionTrace
+      traverse_ (traceWith tracer) decisionTrace
       traceWithCache countersTracer
                      (countersCache decisionState)
                      newCounters
@@ -540,7 +544,7 @@ peerSelectionGovernorLoop tracer
          Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
       <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions st
+      <> Monitor.localRoots           actions policy st
 
       -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget        actions blockedAt  st
@@ -566,7 +570,7 @@ wakeupDecision :: PeerSelectionState peeraddr peerconn
                -> TimedDecision m peeraddr peerconn
 wakeupDecision st _now =
   Decision {
-    decisionTrace = TraceGovernorWakeup,
+    decisionTrace = [TraceGovernorWakeup],
     decisionState = st,
     decisionJobs  = []
   }
@@ -588,6 +592,10 @@ peerChurnGovernor :: forall m peeraddr.
                      , MonadDelay m
                      )
                   => Tracer m (TracePeerSelection peeraddr)
+                  -> DiffTime
+                  -- ^ the base for churn interval in the deadline mode.
+                  -> DiffTime
+                  -- ^ the base for churn interval in the bulk sync mode.
                   -> PeerMetrics m peeraddr
                   -> StrictTVar m ChurnMode
                   -> StdGen
@@ -595,7 +603,8 @@ peerChurnGovernor :: forall m peeraddr.
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
                   -> m Void
-peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
+peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
+                  _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -656,8 +665,7 @@ peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelec
       -- Short delay, we may have no active peers right now
       threadDelay 1
 
-      -- Pick new active peer(s) based on the best performing established
-      -- peers.
+      -- Pick new active peer(s).
       atomically $ increaseActivePeers churnMode
 
       -- Give the promotion process time to start
@@ -702,18 +710,11 @@ peerChurnGovernor tracer _metrics churnModeVar inRng getFetchMode base peerSelec
 
 
     longDelay :: StdGen -> DiffTime -> m StdGen
-    longDelay = fuzzyDelay' churnInterval 600
+    longDelay = fuzzyDelay' deadlineChurnInterval 600
 
 
     shortDelay :: StdGen -> DiffTime -> m StdGen
-    shortDelay = fuzzyDelay' churnIntervalBulk 60
-
-    -- The min time between running the churn governor.
-    churnInterval :: DiffTime
-    churnInterval = 3300
-
-    churnIntervalBulk :: DiffTime
-    churnIntervalBulk = 300
+    shortDelay = fuzzyDelay' bulkChurnInterval 60
 
     -- Replace 20% or at least on peer every churnInterval.
     decrease :: Int -> Int

@@ -9,7 +9,7 @@
 
 module Test.Ouroboros.Network.Diffusion.Policies where
 
-import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim (runSimOrThrow)
 import qualified Data.IntPSQ as Pq
@@ -25,6 +25,7 @@ import           System.Random
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Network.Diffusion.Policies
+import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.PeerSelection.Types (PeerSource (..))
@@ -152,15 +153,14 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     let rng = mkStdGen seed
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
-    hVar <- newTVarIO apaHeaderMetric
-    fVar <- newTVarIO apaFetchedMetric
-
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     let policies = simplePeerSelectionPolicy
                         rngVar
                         (readTVar cmVar)
                         metrics
-        metrics = PeerMetrics hVar fVar
+                        (ReconnectDelay 10)
     picked <- atomically $ policyPickHotPeersToDemote policies
                   (const PeerSourceLocalRoot)
                   peerConnectFailCount
@@ -183,11 +183,11 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
     noneWorse metrics pickedSet = do
         scores <- atomically $ case apaChurnMode of
                       ChurnModeNormal -> do
-                          hup <- upstreamyness <$> getHeaderMetrics metrics
-                          bup <- fetchynessBlocks <$> getFetchedMetrics metrics
+                          hup <- upstreamyness metrics
+                          bup <- fetchynessBlocks metrics
                           return $ Map.unionWith (+) hup bup
-                      ChurnModeBulkSync -> fetchynessBytes <$>
-                          getFetchedMetrics metrics
+                      ChurnModeBulkSync ->
+                          fetchynessBytes metrics
         let (picked, notPicked) = Map.partitionWithKey fn scores
             maxPicked = maximum $ Map.elems picked
             minNotPicked = minimum $ Map.elems notPicked
@@ -207,7 +207,7 @@ prop_randomDemotion :: ArbitraryPolicyArguments
 prop_randomDemotion args seed = runSimOrThrow $ prop_randomDemotionM args seed
 
 
--- Verifies that Tepid (formely hot) or failing peers are more likely to get
+-- Verifies that Tepid (formerly hot) or failing peers are more likely to get
 -- demoted/forgotten.
 prop_randomDemotionM :: forall m.
                         ( MonadSTM m
@@ -220,15 +220,14 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
     let rng = mkStdGen seed
     rngVar <- newTVarIO rng
     cmVar <- newTVarIO apaChurnMode
-    hVar <- newTVarIO apaHeaderMetric
-    fVar <- newTVarIO apaFetchedMetric
-
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     let policies = simplePeerSelectionPolicy
                         rngVar
                         (readTVar cmVar)
                         metrics
-        metrics = PeerMetrics hVar fVar
+                        (ReconnectDelay 10)
     doDemotion numberOfTries policies Map.empty
 
 

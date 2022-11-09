@@ -1,6 +1,6 @@
 cabal-version:       3.0
 name:                ouroboros-network
-version:             0.1.0.1
+version:             0.2.0.0
 synopsis:            A networking layer for the Ouroboros blockchain protocol
 -- description:
 license:             Apache-2.0
@@ -65,6 +65,7 @@ library
                        Ouroboros.Network.Diffusion.P2P
                        Ouroboros.Network.Diffusion.NonP2P
                        Ouroboros.Network.Diffusion.Policies
+                       Ouroboros.Network.ExitPolicy
                        Ouroboros.Network.KeepAlive
                        Ouroboros.Network.Magic
                        Ouroboros.Network.NodeToNode
@@ -130,6 +131,7 @@ library
                        Ouroboros.Network.PeerSelection.Governor.Monitor
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types
+                       Ouroboros.Network.Diffusion.Utils
 
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
@@ -166,6 +168,7 @@ library
                        dns,
                        fingertree        >=0.1.4.2 && <0.2,
                        iproute,
+                       mtl,
                        nothunks,
                        network           >=3.1.2 && <3.2,
                        pretty-simple,
@@ -180,12 +183,12 @@ library
                        contra-tracer,
                        monoidal-synchronisation,
 
-                       io-classes        >=0.1 && <0.3,
+                       io-classes       ^>=0.3,
                        network-mux       >=0.1 && <1.0,
                        ouroboros-network-framework
                                          >=0.1 && <1.0,
-                       strict-stm        >=0.1 && <0.2,
-                       typed-protocols   >=0.1 && <1.0,
+                       strict-stm       ^>=0.2,
+                       typed-protocols   >=0.1.0.1 && <1.0,
                        typed-protocols-cborg
                                          >=0.1 && <1.0
   if !os(windows)
@@ -296,8 +299,10 @@ test-suite test
                        Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
+                       Test.Ouroboros.Network.PeerSelection.PeerMetric
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
+                       Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.ShrinkCarefully
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node
