@@ -439,6 +439,8 @@ addBlockWaitWrittenToDisk chainDB punish blk = do
 
 -- | Add a block synchronously: wait until the block has been processed (see
 -- 'blockProcessed'). The new tip of the ChainDB is returned.
+--
+-- Note: this is a partial function, only to support tests.
 addBlock :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m (Maybe (Point blk))
 addBlock chainDB punish blk = do
     promise <- addBlockAsync chainDB punish blk
@@ -446,6 +448,8 @@ addBlock chainDB punish blk = do
 
 -- | Add a block synchronously. Variant of 'addBlock' that doesn't return the
 -- new tip of the ChainDB.
+--
+-- Note: this is a partial function, only to support tests.
 addBlock_ :: IOLike m => ChainDB m blk -> InvalidBlockPunishment m -> blk -> m ()
 addBlock_  = void ..: addBlock
 
