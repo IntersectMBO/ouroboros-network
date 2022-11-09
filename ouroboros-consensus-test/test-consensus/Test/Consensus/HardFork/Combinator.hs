@@ -21,7 +21,7 @@
 
 module Test.Consensus.HardFork.Combinator (tests) where
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict hiding (shape)
 import           Data.Word
 import           GHC.Generics (Generic)

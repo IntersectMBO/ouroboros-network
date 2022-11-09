@@ -71,7 +71,7 @@ import           Data.Hashable
 import           Data.Int (Int64)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
 import           Data.Typeable (Typeable)
 import           Data.Word

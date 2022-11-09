@@ -11,8 +11,8 @@ module Test.ThreadNet.TxGen.Cardano (CardanoTxGenExtra (..)) where
 
 import           Control.Exception (assert)
 
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
 import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set

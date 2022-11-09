@@ -9,7 +9,7 @@ module Test.ThreadNet.DualByron (tests) where
 
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import qualified Data.Set as Set
 import           Test.QuickCheck

@@ -25,7 +25,7 @@ import           Data.Functor.Classes
 import           Data.Functor.Identity (Identity)
 import           Data.Kind (Type)
 import qualified Data.List.NonEmpty as NE
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set

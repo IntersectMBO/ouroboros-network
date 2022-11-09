@@ -17,7 +17,7 @@
 module Test.ThreadNet.ShelleyAllegra (tests) where
 
 import           Control.Monad (replicateM)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
