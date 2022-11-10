@@ -50,7 +50,7 @@ runControlClient1 :: forall c
                   => VersionedProtocol (KESProtocol c)
                   => Proxy c
                   -> ControlClientOptions
-                  -> SignKeyKES (KES c)
+                  -> SignKeyWithPeriodKES (KES c)
                   -> OCert c
                   -> Tracer IO ControlClientTrace
                   -> IO ()

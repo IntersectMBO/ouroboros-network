@@ -69,7 +69,7 @@ testOneKeyThroughChain :: forall c
                        => DirectDeserialise (SignKeyKES (KES c))
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => ContextDSIGN (DSIGN c) ~ ()
-                       => Show (SignKeyKES (KES c))
+                       => Show (SignKeyWithPeriodKES (KES c))
                        => Proxy c
                        -> Lock
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
@@ -83,11 +83,12 @@ testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay 
     let seedP = mkSeedFromBytes . psbToByteString $ seedPSB
     hSetBuffering stdout LineBuffering
     expectedSK <- genKeyKES @IO @(KES c) seed
+    let expectedSKP = SignKeyWithPeriodKES expectedSK 0
     vkHot <- deriveVerKeyKES expectedSK
     let skCold = genKeyDSIGN @(DSIGN c) seedP
         kesPeriod = KESPeriod kesPeriodRaw
         expectedOC = makeOCert vkHot certN kesPeriod skCold
-    resultVar <- newEmptyMVar :: IO (MVar (SignKeyKES (KES c), OCert c))
+    resultVar <- newEmptyMVar :: IO (MVar (SignKeyWithPeriodKES (KES c), OCert c))
     let tracer :: forall a. Show a => Tracer IO a
         -- Change tracer to Tracer print for debugging
         -- tracer = Tracer print
@@ -100,7 +101,7 @@ testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay 
             -- run these to "completion"
             (agent tracer `concurrently_`
               node tracer resultVar `concurrently_`
-              controlServer tracer (expectedSK, expectedOC))
+              controlServer tracer (expectedSKP, expectedOC))
             -- ...until this one finished
             (watch resultVar)
           )
@@ -108,15 +109,15 @@ testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay 
     case output of
         Left err -> error (show err)
         Right (Left err) -> error (show err)
-        Right (Right (resultSK, resultOC)) -> do
+        Right (Right (resultSKP, resultOC)) -> do
           -- Serialize keys so that we can forget them immediately, and only close over
           -- their (non-mlocked) serializations when returning the property.
           -- Serializing KES sign keys like this is normally unsafe, as it violates
           -- mlocking guarantees, but for testing purposes, this is fine.
           expectedSKBS <- rawSerialiseSignKeyKES expectedSK
-          resultSKBS <- rawSerialiseSignKeyKES resultSK
+          resultSKBS <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
           forgetSignKeyKES expectedSK
-          forgetSignKeyKES resultSK
+          forgetSignKeyKES (skWithoutPeriodKES resultSKP)
           return (expectedSKBS === resultSKBS)
 
   where

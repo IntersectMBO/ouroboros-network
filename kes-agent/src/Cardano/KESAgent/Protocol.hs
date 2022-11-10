@@ -89,7 +89,7 @@ instance VersionedProtocol (KESProtocol StandardCrypto) where
 instance Protocol (KESProtocol c) where
   data Message (KESProtocol c) st st' where
           VersionMessage :: Message (KESProtocol c) InitialState IdleState
-          KeyMessage :: SignKeyKES (KES c)
+          KeyMessage :: SignKeyWithPeriodKES (KES c)
                      -> OCert c
                      -> Message (KESProtocol c) IdleState IdleState
           EndMessage :: Message (KESProtocol c) IdleState EndState

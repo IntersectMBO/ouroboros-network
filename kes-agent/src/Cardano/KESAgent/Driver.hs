@@ -63,12 +63,13 @@ driver s tracer = Driver
         let VersionIdentifier v = versionIdentifier (Proxy @(KESProtocol c))
         traceWith tracer (DriverSendingVersionID $ VersionIdentifier v)
         void $ send s v msgNoSignal
-      (ServerAgency TokIdle, KeyMessage sk oc) -> do
+      (ServerAgency TokIdle, KeyMessage (SignKeyWithPeriodKES sk t) oc) -> do
         traceWith tracer DriverSendingKey
-        directSerialise (\buf bufSize -> void $ unsafeSend s buf bufSize (msgNoSignal <> msgWaitAll)) sk
+        directSerialise (\buf bufSize -> void $ unsafeSend s buf bufSize opt) sk
         let serializedOC = serialize' oc
-        send s (LBS.toStrict $ encode @Word32 (fromIntegral $ BS.length serializedOC)) (msgNoSignal <> msgWaitAll)
-        send s serializedOC (msgNoSignal <> msgWaitAll)
+        sendWord32 s (fromIntegral $ t) opt
+        sendWord32 s (fromIntegral $ BS.length serializedOC) opt
+        send s serializedOC opt
         traceWith tracer DriverSentKey
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
@@ -87,19 +88,22 @@ driver s tracer = Driver
         traceWith tracer DriverReceivingKey
         noReadVar <- newEmptyMVar
         sk <- directDeserialise
-                (\buf bufSize -> unsafeReceive s buf bufSize (msgNoSignal <> msgWaitAll) >>= \case
+                (\buf bufSize -> unsafeReceive s buf bufSize opt >>= \case
                     0 -> putMVar noReadVar ()
                     _ -> return ()
                 )
-        l <- receive s 4 (msgNoSignal <> msgWaitAll) >>= \case
-              "" -> putMVar noReadVar () >> return 0
-              xs -> (return . fromIntegral) (decode @Word32 $ LBS.fromStrict xs)
-        oc <- unsafeDeserialize' <$> receive s l (msgNoSignal <> msgWaitAll)
+        t <- fromIntegral <$> (
+              maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s opt
+             )
+        l <- fromIntegral <$> (
+              maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s opt
+             )
+        oc <- unsafeDeserialize' <$> receive s l opt
 
         succeeded <- isEmptyMVar noReadVar
         if succeeded then do
           traceWith tracer DriverReceivedKey
-          return (SomeMessage (KeyMessage sk oc), ())
+          return (SomeMessage (KeyMessage (SignKeyWithPeriodKES sk t) oc), ())
         else do
           -- We're not actually returning the key, because it hasn't been
           -- loaded properly, however it has been allocated nonetheless,
@@ -110,3 +114,15 @@ driver s tracer = Driver
 
   , startDState = ()
   }
+  where
+    opt = msgNoSignal <> msgWaitAll
+
+receiveWord32 :: Socket f t p -> MessageFlags -> IO (Maybe Word32)
+receiveWord32 s opt =
+  receive s 4 opt >>= \case
+    "" -> return Nothing
+    xs -> (return . Just . fromIntegral) (decode @Word32 $ LBS.fromStrict xs)
+
+sendWord32 :: Socket f t p -> Word32 -> MessageFlags -> IO ()
+sendWord32 s val opt =
+  void $ send s (LBS.toStrict $ encode val) opt

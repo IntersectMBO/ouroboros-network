@@ -48,7 +48,7 @@ runServiceClient :: forall c
                  => VersionedProtocol (KESProtocol c)
                  => Proxy c
                  -> ServiceClientOptions
-                 -> (SignKeyKES (KES c) -> OCert c -> IO ())
+                 -> (SignKeyWithPeriodKES (KES c) -> OCert c -> IO ())
                  -> Tracer IO ServiceClientTrace
                  -> IO ()
 runServiceClient proxy options handleKey tracer = do

@@ -78,7 +78,7 @@ runAgent proxy options tracer = do
   currentKeyVar <- newEmptyMVar
   nextKeyChan <- newChan
 
-  let pushKey :: SignKeyKES (KES c) -> OCert c -> IO ()
+  let pushKey :: SignKeyWithPeriodKES (KES c) -> OCert c -> IO ()
       pushKey key oc = do
         -- Empty the var in case there's anything there already
         oldKeyOcMay <- tryTakeMVar currentKeyVar
@@ -94,7 +94,7 @@ runAgent proxy options tracer = do
         -- Consumers have been notified, put the key to un-block them.
         putMVar currentKeyVar (key, oc)
         case oldKeyOcMay of
-          Just (key, _) -> forgetSignKeyKES @IO @(KES c) key
+          Just (key, _) -> forgetSignKeyKES @IO @(KES c) (skWithoutPeriodKES key)
           Nothing -> return ()
 
       currentKey =
