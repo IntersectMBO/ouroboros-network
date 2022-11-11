@@ -1,5 +1,6 @@
+cabal-version:       3.0
 name:                ouroboros-network-testing
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            Common modules used for testing in ouroboros-network and ouroboros-consensus
 license:             Apache-2.0
 license-files:
@@ -11,7 +12,6 @@ maintainer:
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md
-cabal-version:       >=1.10
 
 source-repository head
   type:     git
@@ -61,7 +61,7 @@ library
                        containers,
                        contra-tracer,
                        deque,
-                       io-classes,
+                       io-classes       ^>=0.3,
                        io-sim,
                        psqueues          >=0.2.3 && <0.3,
                        tasty,

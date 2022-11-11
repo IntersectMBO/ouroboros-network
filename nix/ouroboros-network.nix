@@ -5,6 +5,7 @@
   # Enable profiling
 , profiling ? config.haskellNix.profiling or false
 , libsodium-vrf ? pkgs.libsodium-vrf
+, secp256k1 ? pkgs.secp256k1
   # Enable strict TVar invariant check flag in strict-stm
 , checkTVarInvariant ? false }:
 let
@@ -65,7 +66,7 @@ let
         packages.cardano-crypto-praos.components.library.pkgconfig =
           lib.mkForce [ [ libsodium-vrf ] ];
         packages.cardano-crypto-class.components.library.pkgconfig =
-          lib.mkForce [ [ libsodium-vrf ] ];
+          lib.mkForce [ [ libsodium-vrf secp256k1 ] ];
       }
 
       # Options specific to the windows cross-compiled build:

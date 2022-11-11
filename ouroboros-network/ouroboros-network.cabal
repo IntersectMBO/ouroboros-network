@@ -1,6 +1,6 @@
 cabal-version:       3.0
 name:                ouroboros-network
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            A networking layer for the Ouroboros blockchain protocol
 -- description:
 license:             Apache-2.0
@@ -175,7 +175,7 @@ library
                        psqueues          >=0.2.3 && <0.3,
                        serialise         >=0.2   && <0.3,
                        random,
-                       strict-containers,
+                       cardano-strict-containers,
 
                        cardano-binary,
                        cardano-prelude,
@@ -254,7 +254,7 @@ library protocol-tests
                        QuickCheck,
                        quickcheck-instances,
                        serialise,
-                       strict-containers,
+                       cardano-strict-containers,
                        tasty,
                        tasty-quickcheck,
                        text,
