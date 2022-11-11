@@ -117,8 +117,9 @@ import           QuickCheck.GenT (Arbitrary (arbitrary), Gen, MonadGen (..),
 import           Test.Tasty.Bench (Benchmark, bcompare, bcompareWithin, bench,
                      bgroup, env, nf)
 import           Test.Tasty.QuickCheck (Positive (getPositive), Property,
-                     Small (getSmall), conjoin, counterexample, forAll,
-                     generate, once, testProperty, (.&&.), (===))
+                     Small (getSmall), arbitraryBoundedIntegral, conjoin,
+                     counterexample, forAll, generate, once, testProperty,
+                     (.&&.), (===))
 
 import           Ouroboros.Consensus.Block (SlotNo (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
@@ -553,12 +554,12 @@ newtype Value = Value ShortByteString
 
 -- | UTxO keys are expected to be 32 byte cryptographic hashes.
 instance Arbitrary Key where
-  arbitrary = Key . B.pack <$> replicateM 32 arbitrary
+  arbitrary = Key . B.pack <$> replicateM 32 arbitraryBoundedIntegral
 
 -- | UTxO entries, i.e., key-value pairs, are expected to be around 100-128 bytes
 -- in size. (@32 + 64 ~= 100@)
 instance Arbitrary Value where
-  arbitrary = Value . B.pack <$> replicateM 64 arbitrary
+  arbitrary = Value . B.pack <$> replicateM 64 arbitraryBoundedIntegral
 
 {-------------------------------------------------------------------------------
   Command generator: Monad transformer stack
