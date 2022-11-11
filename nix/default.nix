@@ -4,16 +4,7 @@ let
   sources = import ./sources.nix { pkgs = import nixpkgs { }; }
     // sourcesOverride;
   iohkNixMain = import sources.iohk-nix { };
-  patchedHaskellNixSrc = let
-    pkgs = import (import sources."haskell.nix" {
-      inherit system;
-    }).sources.nixpkgs-unstable { };
-  in pkgs.applyPatches {
-    name = "haskell.nix-patched";
-    src = sources."haskell.nix";
-    patches = [ ./haskell.nix-cp-sync.patch ];
-  };
-  haskellNix = import patchedHaskellNixSrc { inherit system sourcesOverride; };
+  haskellNix = import sources."haskell.nix" { inherit system sourcesOverride; };
   haskellNixArgs = haskellNix.nixpkgsArgs;
   nixpkgs = if (sources ? nixpkgs) then
     (builtins.trace ''
