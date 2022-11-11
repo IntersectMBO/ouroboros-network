@@ -12,7 +12,7 @@ module Test.Util.Schedule (
   ) where
 
 import           Data.List (intercalate, unfoldr)
-import           Data.Map (Map)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 

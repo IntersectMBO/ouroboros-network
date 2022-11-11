@@ -16,7 +16,7 @@ import           Control.Monad (guard)
 import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           Data.Functor.Identity
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set

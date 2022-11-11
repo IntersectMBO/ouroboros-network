@@ -6,8 +6,8 @@
 module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
 import           Control.Tracer (nullTracer)
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import           Control.Monad.IOSim (runSimOrThrow)
 

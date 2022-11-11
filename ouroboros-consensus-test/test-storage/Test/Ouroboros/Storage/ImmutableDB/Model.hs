@@ -41,8 +41,8 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import           Data.Word (Word64)
 

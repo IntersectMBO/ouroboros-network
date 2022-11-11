@@ -13,7 +13,7 @@ import qualified Data.ByteString as BS.Strict
 import qualified Data.ByteString.Lazy as BS.Lazy
 import           Data.Int
 import           Data.List (intercalate)
-import           Data.Map (Map)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.Set (Set)

@@ -28,8 +28,8 @@ import           Control.Applicative ((<|>))
 import           Control.Arrow ((&&&))
 import           Control.Monad (guard)
 import           Data.Foldable (foldl', toList)
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Set (Set)

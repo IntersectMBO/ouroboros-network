@@ -33,8 +33,8 @@ import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity)
 import           Data.List (delete, partition, sortBy)
 import qualified Data.List.NonEmpty as NE
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe)
 import           Data.TreeDiff (Expr (App), defaultExprViaShow)
 import           Data.Typeable (Typeable)

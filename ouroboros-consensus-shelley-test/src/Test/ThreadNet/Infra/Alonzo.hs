@@ -1,6 +1,6 @@
 module Test.ThreadNet.Infra.Alonzo (degenerateAlonzoGenesis) where
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 
 import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis (..))
 import           Cardano.Ledger.Alonzo.Scripts (CostModels (..), Prices (..))

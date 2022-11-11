@@ -10,7 +10,7 @@ module Test.ThreadNet.Infra.Byron.ProtocolInfo (
   ) where
 
 import           Data.Foldable (find)
-import           Data.Map (Map)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           GHC.Stack (HasCallStack)

@@ -17,8 +17,8 @@ module Test.Util.InvertedMap (
 
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Type.Coercion
 
 -- | An inverted 'Map'
