@@ -19,6 +19,7 @@ library
     exposed-modules: Cardano.KESAgent.Protocol
                    , Cardano.KESAgent.OCert
                    , Cardano.KESAgent.Driver
+                   , Cardano.KESAgent.Evolution
                    , Cardano.KESAgent.Peers
                    , Cardano.KESAgent.Agent
                    , Cardano.KESAgent.ServiceClient
@@ -34,6 +35,7 @@ library
                  , bytestring >=0.11
                  , cardano-crypto-class
                  , cardano-binary
+                 , time >=1.11.1.1
                  , typed-protocols
                  , socket >= 0.8.3 && <0.9
                  , socket-unix >=0.2.0.0
