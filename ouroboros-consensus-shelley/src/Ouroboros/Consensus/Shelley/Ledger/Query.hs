@@ -17,6 +17,7 @@
 
 module Ouroboros.Consensus.Shelley.Ledger.Query (
     BlockQuery (.., GetUTxO, GetFilteredUTxO)
+  , KESConfig (..)
   , NonMyopicMemberRewards (..)
   , StakeSnapshot (..)
   , StakeSnapshots (..)
@@ -39,13 +40,16 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Time (UTCTime)
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
 import           Data.UMap (View (..), domRestrictedView)
 import           GHC.Generics (Generic)
+import           GHC.Word (Word64)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), encodeListLen,
                      enforceSize)
+import           Cardano.Slotting.Time (getSystemStart)
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      encodePoint, mkSerialised)
@@ -54,7 +58,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.Query hiding (getSystemStart)
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import           Cardano.Ledger.Compactible (Compactible (fromCompact))
@@ -68,6 +72,8 @@ import qualified Cardano.Ledger.Shelley.RewardProvenance as SL
 import qualified Data.VMap as VMap
 
 import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Ledger.Serialization (decodeRecordNamed,
+                     utcTimeFromCBOR, utcTimeToCBOR)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -96,6 +102,30 @@ type Delegations c =
 instance Crypto c => Serialise (NonMyopicMemberRewards c) where
   encode = toCBOR . unNonMyopicMemberRewards
   decode = NonMyopicMemberRewards <$> fromCBOR
+
+data KESConfig = KESConfig {
+    kcSlotsPerKESPeriod :: Word64
+  , kcMaxKESEvolutions  :: Word64
+  , kcSystemStart       :: UTCTime
+  } deriving (Eq, Show)
+
+instance FromCBOR KESConfig where
+  fromCBOR = do
+    decodeRecordNamed "KESConfig" (const 3) $ do
+      kcSlotsPerKESPeriod <- fromCBOR
+      kcMaxKESEvolutions <- fromCBOR
+      kcSystemStart <- utcTimeFromCBOR
+      pure $ KESConfig
+        kcSlotsPerKESPeriod
+        kcMaxKESEvolutions
+        kcSystemStart
+
+instance ToCBOR KESConfig where
+  toCBOR KESConfig { kcSlotsPerKESPeriod, kcMaxKESEvolutions, kcSystemStart } =
+    encodeListLen 3
+      <> toCBOR kcSlotsPerKESPeriod
+      <> toCBOR kcMaxKESEvolutions
+      <> utcTimeToCBOR kcSystemStart
 
 data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
   GetLedgerTip :: BlockQuery (ShelleyBlock proto era) (Point (ShelleyBlock proto era))
@@ -160,6 +190,9 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
     :: Set (SL.Credential 'SL.Staking (EraCrypto era))
     -> BlockQuery (ShelleyBlock proto era)
              (Delegations (EraCrypto era), SL.RewardAccounts (EraCrypto era))
+
+  GetKESConfig
+    :: BlockQuery (ShelleyBlock proto era) KESConfig
 
   GetGenesisConfig
     :: BlockQuery (ShelleyBlock proto era) (CompactGenesis era)
@@ -467,6 +500,10 @@ instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
     = Nothing
   sameDepIndex (GetPoolDistr _) _
     = Nothing
+  sameDepIndex GetKESConfig GetKESConfig
+    = Just Refl
+  sameDepIndex GetKESConfig _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock proto era) result)
 deriving instance Show (BlockQuery (ShelleyBlock proto era) result)
@@ -495,6 +532,7 @@ instance ShelleyCompatible proto era => ShowQuery (BlockQuery (ShelleyBlock prot
       GetPoolState {}                            -> show
       GetStakeSnapshots {}                       -> show
       GetPoolDistr {}                            -> show
+      GetKESConfig                               -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) result -> ShelleyNodeToClientVersion -> Bool
@@ -521,6 +559,7 @@ querySupportedVersion = \case
     GetPoolState {}                            -> (>= v6)
     GetStakeSnapshots {}                       -> (>= v6)
     GetPoolDistr {}                            -> (>= v6)
+    GetKESConfig                               -> undefined -- TODO
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -534,6 +573,15 @@ querySupportedVersion = \case
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
+
+getKESConfig :: ExtLedgerCfg (ShelleyBlock proto era) -> KESConfig
+getKESConfig (ExtLedgerCfg extLedgerCfg) =
+  let blockCfg = topLevelConfigBlock extLedgerCfg
+  in KESConfig {
+    kcSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod $ shelleyGenesis blockCfg
+  , kcMaxKESEvolutions = SL.sgMaxKESEvolutions $ shelleyGenesis blockCfg
+  , kcSystemStart = getSystemStart $ shelleySystemStart blockCfg
+  }
 
 getProposedPPUpdates ::
      ShelleyBasedEra era
@@ -612,6 +660,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 20 <> toCBOR poolId
     GetPoolDistr poolids ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 21 <> toCBOR poolids
+    GetKESConfig ->
+      CBOR.encodeListLen 1 <> CBOR.encodeWord8 22
 
 decodeShelleyQuery ::
      ShelleyBasedEra era
@@ -672,6 +722,7 @@ encodeShelleyResult query = case query of
     GetPoolState {}                            -> toCBOR
     GetStakeSnapshots {}                       -> toCBOR
     GetPoolDistr {}                            -> toCBOR
+    GetKESConfig                               -> toCBOR
 
 decodeShelleyResult ::
      ShelleyCompatible proto era
@@ -700,6 +751,7 @@ decodeShelleyResult query = case query of
     GetPoolState {}                            -> fromCBOR
     GetStakeSnapshots {}                       -> fromCBOR
     GetPoolDistr {}                            -> fromCBOR
+    GetKESConfig                               -> fromCBOR
 
 -- | The stake snapshot returns information about the mark, set, go ledger snapshots for a pool,
 -- plus the total active stake for each snapshot that can be used in a 'sigma' calculation.

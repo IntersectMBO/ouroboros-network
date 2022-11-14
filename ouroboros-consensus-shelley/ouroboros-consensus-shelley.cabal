@@ -75,6 +75,7 @@ library
                      , serialise         >=0.2   && <0.3
                      , strict-containers
                      , text              >=1.2   && <1.3
+                     , time
                      , transformers
                      , vector-map
 
