@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol () where
 
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.API as SL
+import           Control.Exception (assert)
 import           Control.Monad.Except (MonadError (throwError))
 import           Data.Coerce (coerce)
 import           GHC.Records (getField)
@@ -59,10 +60,12 @@ instance
     if
         | NotOrigin for == at ->
           return $ TPraos.TickedPraosLedgerView $ SL.currentLedgerView shelleyLedgerState
-        | for < maxFor ->
-          return $ futureLedgerView for
+        | Right forecastedLedgerView <-
+            SL.futureLedgerView globals shelleyLedgerState for ->
+          return $ TPraos.TickedPraosLedgerView forecastedLedgerView
         | otherwise ->
           throwError $
+            assert (for >= maxFor)
             OutsideForecastRange
               { outsideForecastAt = at,
                 outsideForecastMaxFor = maxFor,
@@ -73,13 +76,6 @@ instance
       globals = shelleyLedgerGlobals cfg
       swindow = SL.stabilityWindow globals
       at = ledgerTipSlot ledgerState
-
-      futureLedgerView :: SlotNo -> Ticked (SL.LedgerView (EraCrypto era))
-      futureLedgerView =
-        either
-          (\e -> error ("futureLedgerView failed: " <> show e))
-          TPraos.TickedPraosLedgerView
-          . SL.futureLedgerView globals shelleyLedgerState
 
       -- Exclusive upper bound
       maxFor :: SlotNo
