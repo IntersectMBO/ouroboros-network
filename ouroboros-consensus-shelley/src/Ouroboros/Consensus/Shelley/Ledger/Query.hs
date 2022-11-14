@@ -270,7 +270,7 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
         GetFilteredDelegationsAndRewardAccounts creds ->
           getFilteredDelegationsAndRewardAccounts st creds
         GetGenesisConfig ->
-          shelleyLedgerCompactGenesis lcfg
+          compactGenesis $ shelleyGenesis $ topLevelConfigBlock $ getExtLedgerCfg cfg
         DebugNewEpochState ->
           st
         DebugChainDepState ->

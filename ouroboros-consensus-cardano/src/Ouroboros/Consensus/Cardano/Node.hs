@@ -94,6 +94,7 @@ import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..),
 
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
 
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..))
 import qualified Ouroboros.Consensus.Protocol.TPraos as Shelley
@@ -608,8 +609,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       , conwayMaxTxCapacityOverrides = maxTxCapacityOverridesConway
                       }
                     ProtocolTransitionParamsShelleyBased {
-                        transitionTranslationContext = ()
-                      , transitionTrigger            = triggerHardForkShelley
+                        transitionTrigger            = triggerHardForkShelley
                       }
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
@@ -711,7 +711,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
           genesisShelley
-          ()  -- trivial translation context
+          SL.emptyFromByronTranslationContext
           maxMajorProtVer
           triggerHardForkAllegra
 

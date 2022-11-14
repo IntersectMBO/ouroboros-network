@@ -52,6 +52,7 @@ data instance BlockConfig (ShelleyBlock proto era) = ShelleyConfig {
       -- block producing nodes, this can be set to the empty map.
     , shelleyBlockIssuerVKeys :: !(Map (SL.KeyHash 'SL.BlockIssuer (EraCrypto era))
                                        (SL.VKey 'SL.BlockIssuer (EraCrypto era)))
+    , shelleyGenesis          :: SL.ShelleyGenesis era
     }
   deriving stock (Generic)
 
@@ -72,6 +73,7 @@ mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
         [ (SL.hashKey k, k)
         | k <- blockIssuerVKeys
         ]
+    , shelleyGenesis          = genesis
     }
 
 {-------------------------------------------------------------------------------

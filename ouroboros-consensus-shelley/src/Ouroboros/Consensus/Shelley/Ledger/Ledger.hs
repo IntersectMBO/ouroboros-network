@@ -10,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -32,7 +33,6 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , mkShelleyLedgerConfig
   , shelleyEraParams
   , shelleyEraParamsNeverHardForks
-  , shelleyLedgerGenesis
     -- * Auxiliary
   , ShelleyLedgerEvent (..)
   , ShelleyReapplyException (..)
@@ -91,7 +91,6 @@ import           Ouroboros.Consensus.Protocol.TPraos (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
-import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (EnvelopeCheckError, envelopeChecks, mkHeaderView)
@@ -113,16 +112,21 @@ instance ShelleyBasedEra era => NoThunks (ShelleyLedgerError era)
 -------------------------------------------------------------------------------}
 
 data ShelleyLedgerConfig era = ShelleyLedgerConfig {
-      shelleyLedgerCompactGenesis     :: !(CompactGenesis era)
-      -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
-      -- because it used very often.
-    , shelleyLedgerGlobals            :: !SL.Globals
-    , shelleyLedgerTranslationContext :: !(Core.TranslationContext era)
+      -- | Derived from 'shelleyLedgerGenesis' but we store a cached version because it used very
+      -- often. This holds multi-era information for all Shelley-based era's.
+        shelleyLedgerGlobals            :: !SL.Globals
+      -- | The ledger context that is needed to translate ledger data from a previous era to the
+      -- next. This is also true in the case of the translation from Byron to Shelley. There the
+      -- mechanics are a slightly different, since there we make no use of the EraTranslation class.
+      , shelleyLedgerTranslationContext :: !(Core.TranslationContext era)
+      -- | Minimal set of data from `ShelleyGenesis` that is not in `Globals` directly but that we
+      -- need for the `NoHardForks` and `HasHardForkHistory` instances for the (single era) block.
+      , shelleyLedgerEpochSize          :: !EpochSize
+      , shelleyLedgerSlotLength         :: !SlotLength
     }
-  deriving (Generic, NoThunks)
+  deriving (Generic)
 
-shelleyLedgerGenesis :: ShelleyLedgerConfig era -> SL.ShelleyGenesis era
-shelleyLedgerGenesis = getCompactGenesis . shelleyLedgerCompactGenesis
+deriving instance ShelleyBasedEra era => NoThunks (ShelleyLedgerConfig era)
 
 shelleyEraParams ::
      SL.ShelleyGenesis era
@@ -139,10 +143,10 @@ shelleyEraParams genesis = HardFork.EraParams {
           (SL.sgActiveSlotCoeff genesis)
 
 -- | Separate variant of 'shelleyEraParams' to be used for a Shelley-only chain.
-shelleyEraParamsNeverHardForks :: SL.ShelleyGenesis era -> HardFork.EraParams
-shelleyEraParamsNeverHardForks genesis = HardFork.EraParams {
-      eraEpochSize  = SL.sgEpochLength genesis
-    , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
+shelleyEraParamsNeverHardForks :: EpochSize -> SlotLength -> HardFork.EraParams
+shelleyEraParamsNeverHardForks epochSize slotLength = HardFork.EraParams {
+      eraEpochSize  = epochSize
+    , eraSlotLength = slotLength
     , eraSafeZone   = HardFork.UnsafeIndefiniteSafeZone
     }
 
@@ -154,13 +158,14 @@ mkShelleyLedgerConfig
   -> ShelleyLedgerConfig era
 mkShelleyLedgerConfig genesis transCtxt epochInfo mmpv =
     ShelleyLedgerConfig {
-        shelleyLedgerCompactGenesis     = compactGenesis genesis
-      , shelleyLedgerGlobals            =
+        shelleyLedgerGlobals                 =
           SL.mkShelleyGlobals
             genesis
             (hoistEpochInfo (left (Text.pack . show) . runExcept) epochInfo)
             maxMajorPV
       , shelleyLedgerTranslationContext = transCtxt
+      , shelleyLedgerEpochSize = SL.sgEpochLength genesis
+      , shelleyLedgerSlotLength = mkSlotLength $ SL.sgSlotLength genesis
       }
   where
     MaxMajorProtVer maxMajorPV = mmpv
@@ -451,8 +456,8 @@ applyHelper f cfg blk TickedShelleyLedgerState{
 
 instance HasHardForkHistory (ShelleyBlock proto era) where
   type HardForkIndices (ShelleyBlock proto era) = '[ShelleyBlock proto era]
-  hardForkSummary = neverForksHardForkSummary $
-      shelleyEraParamsNeverHardForks . shelleyLedgerGenesis
+  hardForkSummary ShelleyLedgerConfig { shelleyLedgerEpochSize, shelleyLedgerSlotLength } _st =
+    HardFork.neverForksSummary shelleyLedgerEpochSize shelleyLedgerSlotLength
 
 instance ShelleyCompatible proto era
       => CommonProtocolParams (ShelleyBlock proto era) where

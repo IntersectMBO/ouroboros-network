@@ -428,7 +428,7 @@ translateLedgerStateByronToShelleyWrapper =
             (byronLedgerTipBlockNo ledgerByron)
       , shelleyLedgerState =
           SL.translateToShelleyLedgerState
-            (shelleyLedgerGenesis cfgShelley)
+            (shelleyLedgerTranslationContext cfgShelley)
             epochNo
             (byronLedgerState ledgerByron)
       , shelleyLedgerTransition =
@@ -509,7 +509,7 @@ translateLedgerViewByronToShelleyWrapper =
         = return $
             WrapTickedLedgerView $ TickedPraosLedgerView $
               SL.mkInitialShelleyLedgerView
-                (shelleyLedgerGenesis cfgShelley)
+                (shelleyLedgerTranslationContext cfgShelley)
         | otherwise
         = throwError $ OutsideForecastRange {
               outsideForecastAt     = ledgerTipSlot currentByronState

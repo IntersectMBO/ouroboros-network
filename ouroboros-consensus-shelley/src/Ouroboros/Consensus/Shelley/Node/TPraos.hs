@@ -69,6 +69,8 @@ import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.LedgerState as SL
                      (incrementalStakeDistr, updateStakeDistribution)
+import           Cardano.Ledger.Shelley.Translation
+                     (emptyFromByronTranslationContext)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
@@ -231,7 +233,7 @@ protocolInfoShelley protocolParamsShelleyBased
                       } =
     protocolInfoTPraosShelleyBased
       protocolParamsShelleyBased
-      ((), ())  -- trivial additional genesis config and translation context
+      ((), emptyFromByronTranslationContext)
       protVer
       maxTxCapacityOverrides
 
