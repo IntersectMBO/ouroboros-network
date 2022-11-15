@@ -74,7 +74,7 @@ class ( MonadAsync              m
       , MonadMask               m
       , MonadMonotonicTime      m
       , MonadEvaluate           m
-      , MonadThrow         (STM m)
+      , MonadCatch         (STM m)
       , forall a. NoThunks (m a)
       , forall a. NoThunks a => NoThunks (StrictTVar m a)
       , forall a. NoThunks a => NoThunks (StrictMVar m a)

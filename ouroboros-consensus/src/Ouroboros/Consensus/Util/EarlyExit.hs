@@ -263,6 +263,6 @@ instance ( IOLike m
            -- missing @MonadCatch@ instance is added, @IOLike@ should require
            -- @MonadCatch (STM m)@ intsead of @MonadThrow (STM m)@.
            -- <https://github.com/input-output-hk/ouroboros-network/issues/1461>
-         , MonadCatch (STM m)
+         -- , MonadCatch (STM m)
          ) => IOLike (WithEarlyExit m) where
   forgetSignKeyKES = lift . forgetSignKeyKES
