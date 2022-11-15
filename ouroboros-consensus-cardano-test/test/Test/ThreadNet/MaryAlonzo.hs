@@ -269,6 +269,7 @@ prop_simple_allegraAlonzo_convergence TestSetup
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
+                    ()
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = alonzoGenesis
                       , transitionTrigger            =

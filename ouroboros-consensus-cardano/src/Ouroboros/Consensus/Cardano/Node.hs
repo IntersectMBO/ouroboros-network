@@ -711,7 +711,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
           genesisShelley
-          SL.emptyFromByronTranslationContext
+          (SL.toFromByronTranslationContext genesisShelley)
           maxMajorProtVer
           triggerHardForkAllegra
 

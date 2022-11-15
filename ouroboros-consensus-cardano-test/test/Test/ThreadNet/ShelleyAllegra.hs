@@ -44,6 +44,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 
 import qualified Cardano.Ledger.BaseTypes as SL
 import qualified Cardano.Ledger.Shelley.PParams as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
 import qualified Cardano.Protocol.TPraos.OCert as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -277,6 +278,7 @@ prop_simple_shelleyAllegra_convergence TestSetup
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
+                    (SL.toFromByronTranslationContext genesisShelley)
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
                       , transitionTrigger            =
