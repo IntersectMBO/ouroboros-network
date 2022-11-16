@@ -57,7 +57,8 @@ import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
 import           Ouroboros.Network.BlockFetch.ClientState
                      (WhetherReceivingTentativeBlocks (..))
-import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
+import           Ouroboros.Network.NodeToNode (ControlMessage (..),
+                     ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (HeaderMetricsTracer)

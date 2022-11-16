@@ -36,6 +36,7 @@ packages: ./ouroboros-network-testing
           ./ouroboros-consensus-shelley-test
           ./ouroboros-consensus-test
           ./ouroboros-consensus-cardano-tools
+          ./ouroboros-consensus-diffusion
           ./cardano-client
 
 tests: True

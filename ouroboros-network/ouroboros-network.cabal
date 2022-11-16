@@ -118,6 +118,7 @@ library
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
+  reexported-modules:  Ouroboros.Network.Util.ShowProxy
   other-modules:       Ouroboros.Network.Diffusion.Common
                        Ouroboros.Network.PeerSelection.Governor.ActivePeers
                        Ouroboros.Network.PeerSelection.Governor.EstablishedPeers

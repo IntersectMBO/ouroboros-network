@@ -22,9 +22,9 @@ library
                        bytestring        >=0.10 && <0.12,
                        containers,
                        io-classes,
-                       ouroboros-consensus,
                        ouroboros-network,
                        ouroboros-network-framework,
+                       ouroboros-consensus-diffusion,
                        network-mux
 
   ghc-options:         -Wall

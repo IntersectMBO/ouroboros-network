@@ -136,24 +136,12 @@ library
                        Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
                        Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
                        Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server
-                       Ouroboros.Consensus.Network.NodeToClient
-                       Ouroboros.Consensus.Network.NodeToNode
-                       Ouroboros.Consensus.Node
-                       Ouroboros.Consensus.Node.DbLock
-                       Ouroboros.Consensus.Node.DbMarker
-                       Ouroboros.Consensus.Node.ErrorPolicy
-                       Ouroboros.Consensus.Node.ExitPolicy
-                       Ouroboros.Consensus.Node.RethrowPolicy
-                       Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
-                       Ouroboros.Consensus.NodeKernel
                        Ouroboros.Consensus.Node.InitStorage
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
-                       Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Serialisation
-                       Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.LeaderSchedule
@@ -331,8 +319,6 @@ library
 
                      , io-classes       ^>=0.3
                      , typed-protocols
-                     , network-mux
-                     , ouroboros-network-framework ^>=0.2
                      , ouroboros-network ^>=0.2
                      , strict-stm       ^>=0.2
 

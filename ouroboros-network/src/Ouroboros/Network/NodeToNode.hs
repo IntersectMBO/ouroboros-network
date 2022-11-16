@@ -63,6 +63,8 @@ module Ouroboros.Network.NodeToNode
   , nodeToNodeCodecCBORTerm
     -- * Re-exports
   , ConnectionId (..)
+  , ControlMessage (..)
+  , ControlMessageSTM
   , RemoteAddress
   , RemoteConnectionId
   , ProtocolLimitFailure
