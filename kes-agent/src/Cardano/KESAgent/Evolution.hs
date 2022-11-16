@@ -21,22 +21,22 @@ getCurrentKESPeriod genesisTimestamp =
     . nominalDiffTimeToSeconds
     <$> getPOSIXTime
 
-updateKESToCurrent :: KESSignAlgorithm IO v
+updateKESToCurrent :: KESSignAlgorithm IO (KES v)
                    => Integer
-                   -> ContextKES v
+                   -> ContextKES (KES v)
                    -> OCert v
-                   -> SignKeyWithPeriodKES v
-                   -> IO (Maybe (SignKeyWithPeriodKES v))
+                   -> SignKeyWithPeriodKES (KES v)
+                   -> IO (Maybe (SignKeyWithPeriodKES (KES v)))
 updateKESToCurrent genesisTimestamp context cert skp = do
   currentPeriod <- getCurrentKESPeriod genesisTimestamp
   updateKESTo context currentPeriod cert skp
 
-updateKESTo :: KESSignAlgorithm IO v
-            => ContextKES v
+updateKESTo :: KESSignAlgorithm IO (KES v)
+            => ContextKES (KES v)
             -> KESPeriod
             -> OCert v
-            -> SignKeyWithPeriodKES v
-            -> IO (Maybe (SignKeyWithPeriodKES v))
+            -> SignKeyWithPeriodKES (KES v)
+            -> IO (Maybe (SignKeyWithPeriodKES (KES v)))
 updateKESTo context currentPeriod cert skp = do
   let targetEvolution =
         unKESPeriod currentPeriod -

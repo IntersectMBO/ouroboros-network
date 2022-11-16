@@ -1,6 +1,8 @@
 {-#LANGUAGE TypeApplications #-}
 {-#LANGUAGE FlexibleContexts #-}
 {-#LANGUAGE ScopedTypeVariables #-}
+{-#LANGUAGE TypeFamilies #-}
+{-#LANGUAGE NumericUnderscores #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -17,15 +19,17 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.Evolution
 
 import Cardano.Crypto.DirectSerialise
 import Cardano.Binary
 import Cardano.Crypto.KES.Class
 
 import Data.ByteString (ByteString)
-import Control.Concurrent.MVar (MVar, newEmptyMVar, tryTakeMVar, putMVar, readMVar)
+import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, tryTakeMVar, putMVar, readMVar, withMVar)
 import Control.Concurrent.Chan (Chan, newChan, dupChan, writeChan, readChan)
 import Control.Concurrent.Async (concurrently)
+import Control.Concurrent (threadDelay)
 import Control.Monad (forever, void)
 import Control.Exception (bracket, catch)
 import System.Socket (socket, SocketException, close, bind, listen, accept)
@@ -51,6 +55,15 @@ data AgentTrace
   | AgentControlClientConnected (SocketAddress Unix)
   | AgentControlClientDisconnected (SocketAddress Unix)
   | AgentControlSocketError SocketException
+  | AgentCheckEvolution KESPeriod
+  | AgentUpdateKESPeriod KESPeriod KESPeriod
+  | AgentKeyNotEvolved KESPeriod KESPeriod
+  | AgentNoKeyToEvolve
+  | AgentKeyEvolved
+  | AgentKeyExpired
+  | AgentLockRequest String
+  | AgentLockAcquired String
+  | AgentLockReleased String
   deriving (Show)
 
 data AgentOptions =
@@ -61,12 +74,16 @@ data AgentOptions =
 
       -- | Socket on which the agent will send KES keys to any connected nodes.
     , agentServiceSocketAddress :: SocketAddress Unix
+
+      -- | The genesis Unix timestamp; used to determine current KES period.
+    , agentGenesisTimestamp :: Integer
     }
 
 runAgent :: forall c
           . Crypto c
          => Typeable c
          => KESSignAlgorithm IO (KES c)
+         => ContextKES (KES c) ~ ()
          => VersionedProtocol (KESProtocol c)
          => DirectSerialise (SignKeyKES (KES c))
          => DirectDeserialise (SignKeyKES (KES c))
@@ -75,34 +92,110 @@ runAgent :: forall c
          -> Tracer IO AgentTrace
          -> IO ()
 runAgent proxy options tracer = do
-  currentKeyVar <- newEmptyMVar
+  currentKeyVar :: MVar (SignKeyWithPeriodKES (KES c), OCert c) <- newEmptyMVar
   nextKeyChan <- newChan
+
+  -- The key update lock is required because we need to distinguish between two
+  -- different situations in which the currentKey MVar may be empty:
+  -- - No key has been pushed yet (or the previous key has expired).
+  -- - The key is currently being updated.
+  -- In both cases, we want consumers to block until a key is present, but
+  -- producers need to distinguish these cases:
+  -- - If no key has been pushed yet, or the previous key has expired, the
+  --   key pusher is allowed to install a new key; the key evolver can't do
+  --   anything useful, so it will just sleep and try again later (it cannot
+  --   block, because that would make it impossible for the pusher to install
+  --   a key, resulting in a deadlock).
+  -- - If a key has been pushed, but it is currently being evolved, then the
+  --   pusher must wait until the evolution has finished, and then install the
+  --   new key.
+  -- - If the evolver is about to run, but the key is currently being
+  --   overwritten, then the evolver should wait for the overwriting to finish,
+  --   and then attempt to evolve the new key.
+  -- The keyUpdateLock setup achieves this, by allowing only one producer at a
+  -- time to manipulate the currentKeyVar, regardless of whether it is
+  -- currently empty or not, while consumers are free to perform blocking reads
+  -- on it without touching the keyUpdateLock.
+  --
+  -- Concretely, the rules for accessing currentKeyVar are:
+  --
+  -- - readMVar is allowed, and should be done without acquiring the
+  --   keyUpdateLock.
+  -- - tryReadMVar is always allowed, but may not be useful.
+  -- - takeMVar is not allowed, since it would 1) block, and 2) require
+  --   acquisition of keyUpdateLock, resulting in a deadlock.
+  -- - tryTakeMVar is allowed, but only while holding the keyUpdateLock.
+  keyUpdateLock :: MVar () <- newMVar ()
+  let withKeyUpdateLock :: forall a. String -> IO a -> IO a
+      withKeyUpdateLock context a = do
+        traceWith tracer $ AgentLockRequest context
+        withMVar keyUpdateLock $ \() -> do
+          traceWith tracer (AgentLockAcquired context)
+          result <- a
+          traceWith tracer (AgentLockReleased context)
+          return result
+
+  let checkEvolution = withKeyUpdateLock "checkEvolution" $ do
+        p' <- getCurrentKESPeriod (agentGenesisTimestamp options)
+        traceWith tracer $ AgentCheckEvolution p'
+        keyOcMay <- tryTakeMVar currentKeyVar
+        case keyOcMay of
+          Nothing -> do
+            traceWith tracer AgentNoKeyToEvolve
+            return ()
+          Just (key, oc) -> do
+            let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
+            if p /= p' then do
+              keyMay' <- updateKESTo
+                        ()
+                        p'
+                        oc
+                        key
+              case keyMay' of
+                Nothing -> do
+                  traceWith tracer AgentKeyExpired
+                Just key' -> do
+                  traceWith tracer AgentKeyEvolved
+                  void $ putMVar currentKeyVar (key', oc)
+            else do
+              traceWith tracer $ AgentKeyNotEvolved p p'
+              void $ putMVar currentKeyVar (key, oc)
 
   let pushKey :: SignKeyWithPeriodKES (KES c) -> OCert c -> IO ()
       pushKey key oc = do
-        -- Empty the var in case there's anything there already
-        oldKeyOcMay <- tryTakeMVar currentKeyVar
-        case oldKeyOcMay of
-          Just _ -> traceWith tracer AgentReplacingPreviousKey
-          Nothing -> traceWith tracer AgentInstallingNewKey
-        -- The MVar is now empty; we write to the next key signal channel
-        -- /before/ putting the new key in the MVar, because we want to make it
-        -- such that when the consumer picks up the signal, the next update
-        -- will be the correct one. Since the MVar is empty at this point, the
-        -- consumers will block until we put the key back in.
-        writeChan nextKeyChan ()
-        -- Consumers have been notified, put the key to un-block them.
-        putMVar currentKeyVar (key, oc)
+        oldKeyOcMay <- withKeyUpdateLock "pushKey" $ do
+          -- Empty the var in case there's anything there already
+          oldKeyOcMay <- tryTakeMVar currentKeyVar
+          case oldKeyOcMay of
+            Just _ -> traceWith tracer AgentReplacingPreviousKey
+            Nothing -> traceWith tracer AgentInstallingNewKey
+          -- The MVar is now empty; we write to the next key signal channel
+          -- /before/ putting the new key in the MVar, because we want to make it
+          -- such that when the consumer picks up the signal, the next update
+          -- will be the correct one. Since the MVar is empty at this point, the
+          -- consumers will block until we put the key back in.
+          writeChan nextKeyChan ()
+          -- Consumers have been notified, put the key to un-block them.
+          putMVar currentKeyVar (key, oc)
+          return oldKeyOcMay
+        checkEvolution
         case oldKeyOcMay of
           Just (key, _) -> forgetSignKeyKES @IO @(KES c) (skWithoutPeriodKES key)
           Nothing -> return ()
 
-      currentKey =
+      currentKey = do
         readMVar currentKeyVar
 
       nextKey = do
         () <- readChan nextKeyChan
         readMVar currentKeyVar
+
+  let runEvolution = do
+        forever $ do
+          -- Check time every 100 milliseconds, update key when period flips
+          -- over.
+          threadDelay 100_0000
+          checkEvolution
 
   let runService =
         void $ bracket
@@ -163,4 +256,4 @@ runAgent proxy options tracer = do
               traceWith tracer $ AgentControlSocketError e
           )
 
-  void $ concurrently runService runControl
+  void $ runService `concurrently` runControl `concurrently` runEvolution

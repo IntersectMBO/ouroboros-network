@@ -36,6 +36,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Proxy
 import GHC.TypeLits (KnownNat, natVal)
+import GHC.Stack (HasCallStack)
 import System.Socket.Family.Unix
 import System.IO
 import System.IO.Unsafe
@@ -52,6 +53,7 @@ import Cardano.KESAgent.OCert
 import Cardano.KESAgent.ServiceClient
 import Cardano.KESAgent.ControlClient
 import Cardano.KESAgent.Logging
+import Cardano.KESAgent.Evolution
 import Cardano.KESAgent.Tests.Util
 
 tests :: Lock -> TestTree
@@ -65,6 +67,7 @@ testOneKeyThroughChain :: forall c
                        => Typeable c
                        => VersionedProtocol (KESProtocol c)
                        => KESSignAlgorithm IO (KES c)
+                       => ContextKES (KES c) ~ ()
                        => DirectSerialise (SignKeyKES (KES c))
                        => DirectDeserialise (SignKeyKES (KES c))
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
@@ -76,27 +79,26 @@ testOneKeyThroughChain :: forall c
                        -> Word64
                        -> Word
                        -> Word
-                       -> Word
                        -> Property
-testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay =
+testOneKeyThroughChain p lock seedPSB certN nodeDelay controlDelay =
   ioProperty . withLock lock . withMLSBFromPSB seedPSB $ \seed -> do
     let seedP = mkSeedFromBytes . psbToByteString $ seedPSB
     hSetBuffering stdout LineBuffering
     expectedSK <- genKeyKES @IO @(KES c) seed
     let expectedSKP = SignKeyWithPeriodKES expectedSK 0
     vkHot <- deriveVerKeyKES expectedSK
+    kesPeriod <- getCurrentKESPeriod (genesisTimestamp + 1)
     let skCold = genKeyDSIGN @(DSIGN c) seedP
-        kesPeriod = KESPeriod kesPeriodRaw
         expectedOC = makeOCert vkHot certN kesPeriod skCold
     resultVar <- newEmptyMVar :: IO (MVar (SignKeyWithPeriodKES (KES c), OCert c))
     let tracer :: forall a. Show a => Tracer IO a
         -- Change tracer to Tracer print for debugging
-        -- tracer = Tracer print
-        tracer = nullTracer
+        tracer = Tracer $ \msg -> print msg >> hFlush stdout
+        -- tracer = nullTracer
 
     output <- race
-          -- abort 1 second after both clients have started
-          (threadDelay $ 1000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
+          -- abort 5 seconds after both clients have started
+          (threadDelay $ 5000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
           (race
             -- run these to "completion"
             (agent tracer `concurrently_`
@@ -121,13 +123,23 @@ testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay 
           return (expectedSKBS === resultSKBS)
 
   where
+    genesisTimestamp = 1506203091
+
     Just serviceSocketAddr = socketAddressUnixAbstract "KESAgent/service"
     Just controlSocketAddr = socketAddressUnixAbstract "KESAgent/control"
+
+    agent :: HasCallStack => Tracer IO AgentTrace -> IO ()
     agent tracer = runAgent p
               AgentOptions { agentServiceSocketAddress = serviceSocketAddr
                            , agentControlSocketAddress = controlSocketAddr
+                           , agentGenesisTimestamp = genesisTimestamp
                            }
               tracer
+
+    node :: HasCallStack
+         => Tracer IO ServiceClientTrace
+         -> MVar (SignKeyWithPeriodKES (KES c), OCert c)
+         -> IO ()
     node tracer mvar = do
       threadDelay (500 + fromIntegral nodeDelay)
       (runServiceClient p
@@ -138,6 +150,11 @@ testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay 
         tracer
         `catch` (\(e :: AsyncCancelled) -> return ())
         `catch` (\(e :: SomeException) -> putStrLn $ "NODE: " ++ show e)
+
+    controlServer :: HasCallStack
+                  => Tracer IO ControlClientTrace
+                  -> (SignKeyWithPeriodKES (KES c), OCert c)
+                  -> IO ()
     controlServer tracer (sk, oc) = do
       threadDelay (500 + fromIntegral controlDelay)
       (runControlClient1 p
@@ -146,6 +163,8 @@ testOneKeyThroughChain p lock seedPSB certN kesPeriodRaw nodeDelay controlDelay 
         tracer
         `catch` (\(e :: AsyncCancelled) -> return ())
         `catch` (\(e :: SomeException) -> putStrLn $ "CONTROL: " ++ show e)
+
+    watch :: HasCallStack => MVar a -> IO a
     watch mvar = do
       takeMVar mvar
 
