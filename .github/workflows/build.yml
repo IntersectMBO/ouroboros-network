@@ -91,33 +91,11 @@ jobs:
     - name: Set cache version
       run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
 
-    - name: "LINUX: Install build environment (apt-get)"
-      if: runner.os == 'Linux'
+    - name: build old-time and network
       run: |
-        sudo apt-get update
-        sudo apt-get -y install libsodium23 libsodium-dev
-        sudo apt-get -y install libsystemd0 libsystemd-dev
-        sudo apt-get -y remove --purge software-properties-common
-        sudo apt-get -y autoremove
-
-    - name: "LINUX: Install build environment (for secp256k1)"
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get -y install autoconf automake libtool
-        echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
-        echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
-
-    - name: "Install secp256k1"
-      run: |
-        git clone https://github.com/bitcoin-core/secp256k1
-        ( cd secp256k1
-          git switch $SECP256K1_REF --detach
-          ./autogen.sh
-          ./configure $CI_SECP_FLAGS --enable-module-schnorrsig --enable-experimental
-          make
-          make check
-          $CI_SECP_INSTALL_CMD make install
-        )
+        cabal update
+        cabal install --lib old-time-1.1.0.3 -j
+        cabal install --lib network-3.1.2.7 -j
 
     - uses: actions/checkout@v3
 
