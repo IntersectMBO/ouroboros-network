@@ -102,18 +102,15 @@ module Ouroboros.Network.BlockFetch
   ) where
 
 import           Data.Hashable (Hashable)
-import           Data.Map.Strict (Map)
 import           Data.Void
-import           GHC.Stack (HasCallStack)
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer (Tracer)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.DeltaQ (SizeInBytes)
+import           Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 import           Ouroboros.Network.BlockFetch.ClientRegistry
                      (FetchClientPolicy (..), FetchClientRegistry,
@@ -121,119 +118,12 @@ import           Ouroboros.Network.BlockFetch.ClientRegistry
                      bracketSyncWithFetchClient, newFetchClientRegistry,
                      readFetchClientsStateVars, readFetchClientsStatus,
                      readPeerGSVs, setFetchClientContext)
-import           Ouroboros.Network.BlockFetch.ClientState (FromConsensus (..),
+import           Ouroboros.Network.BlockFetch.ConsensusInterface
+                     (BlockFetchConsensusInterface (..), FromConsensus (..),
                      WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.BlockFetch.State
 
 
--- | The consensus layer functionality that the block fetch logic requires.
---
--- These are provided as input to the block fetch by the consensus layer.
---
-data BlockFetchConsensusInterface peer header block m =
-     BlockFetchConsensusInterface {
-
-       -- | Read the K-suffixes of the candidate chains.
-       --
-       -- Assumptions:
-       -- * They must be already validated.
-       -- * They may contain /fewer/ than @K@ blocks.
-       -- * Their anchor does not have to intersect with the current chain.
-       readCandidateChains    :: STM m (Map peer (AnchoredFragment header)),
-
-       -- | Read the K-suffix of the current chain.
-       --
-       -- This must contain info on the last @K@ blocks (unless we're near
-       -- the chain genesis of course).
-       --
-       readCurrentChain       :: STM m (AnchoredFragment header),
-
-       -- | Read the current fetch mode that the block fetch logic should use.
-       --
-       -- The fetch mode is a dynamic part of the block fetch policy. In
-       -- 'FetchModeBulkSync' it follows a policy that optimises for expected
-       -- bandwidth over latency to fetch any particular block, whereas in
-       -- 'FetchModeDeadline' it follows a policy optimises for the latency
-       -- to fetch blocks, at the expense of wasting bandwidth.
-       --
-       -- This mode should be set so that when the node's current chain is near
-       -- to \"now\" it uses the deadline mode, and when it is far away it uses
-       -- the bulk sync mode.
-       --
-       readFetchMode          :: STM m FetchMode,
-
-       -- | Recent, only within last K
-       readFetchedBlocks      :: STM m (Point block -> Bool),
-
-       -- | This method allocates an @addFetchedBlock@ function per client.
-       -- That function and 'readFetchedBlocks' are required to be linked. Upon
-       -- successful completion of @addFetchedBlock@ it must be the case that
-       -- 'readFetchedBlocks' reports the block.
-       mkAddFetchedBlock      :: WhetherReceivingTentativeBlocks
-                              -> STM m (Point block -> block -> m ()),
-
-       -- | The highest stored/downloaded slot number.
-       --
-       -- This is used to optimise the filtering of fragments in the block
-       -- fetch logic: when removing already downloaded blocks from a
-       -- fragment, the filtering (with a linear cost) is stopped as soon as a
-       -- block has a slot number higher than this slot number, as it cannot
-       -- have been downloaded anyway.
-       readFetchedMaxSlotNo    :: STM m MaxSlotNo,
-
-       -- | Given the current chain, is the given chain plausible as a
-       -- candidate chain. Classically for Ouroboros this would simply
-       -- check if the candidate is strictly longer, but for Ouroboros
-       -- with operational key certificates there are also cases where
-       -- we would consider a chain of equal length to the current chain.
-       --
-       plausibleCandidateChain :: HasCallStack
-                               => AnchoredFragment header
-                               -> AnchoredFragment header -> Bool,
-
-       -- | Compare two candidate chains and return a preference ordering.
-       -- This is used as part of selecting which chains to prioritise for
-       -- downloading block bodies.
-       --
-       compareCandidateChains  :: HasCallStack
-                               => AnchoredFragment header
-                               -> AnchoredFragment header
-                               -> Ordering,
-
-       -- | Much of the logic for deciding which blocks to download from which
-       -- peer depends on making estimates based on recent performance metrics.
-       -- These estimates of course depend on the amount of data we will be
-       -- downloading.
-       --
-       blockFetchSize          :: header -> SizeInBytes,
-
-       -- | Given a block header, validate the supposed corresponding block
-       -- body.
-       --
-       blockMatchesHeader      :: header -> block -> Bool,
-
-       -- | Calculate when a header's block was forged.
-       --
-       -- PRECONDITION: This function will succeed and give a _correct_ result
-       -- when applied to headers obtained via this interface (ie via
-       -- Consensus, ie via 'readCurrentChain' or 'readCandidateChains').
-       --
-       -- WARNING: This function may fail or, worse, __give an incorrect result
-       -- (!!)__ if applied to headers obtained from sources outside of this
-       -- interface. The 'FromConsensus' newtype wrapper is intended to make it
-       -- difficult to make that mistake, so please pay that syntactic price
-       -- and consider its meaning at each call to this function. Relatedly,
-       -- preserve that argument wrapper as much as possible when deriving
-       -- ancillary functions\/interfaces from this function.
-       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime,
-
-       -- | Calculate when a block was forged.
-       --
-       -- PRECONDITION: Same as 'headerForgeUTCTime'.
-       --
-       -- WARNING: Same as 'headerForgeUTCTime'.
-       blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
-     }
 
 -- | Configuration for FetchDecisionPolicy.
 -- Should be determined by external local node config.

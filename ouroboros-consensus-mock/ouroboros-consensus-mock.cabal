@@ -62,7 +62,8 @@ library
                      , serialise         >=0.2   && <0.3
                      , time
 
-                     , ouroboros-network
+                     , ouroboros-network-api
+                     , ouroboros-network-mock
                      , ouroboros-network-protocols
                      , ouroboros-consensus
 

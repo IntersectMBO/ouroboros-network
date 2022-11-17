@@ -51,7 +51,7 @@ import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Crypto.Hashing as CC
 
-import           Ouroboros.Network.DeltaQ (SizeInBytes)
+import           Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (ShowProxy (..))

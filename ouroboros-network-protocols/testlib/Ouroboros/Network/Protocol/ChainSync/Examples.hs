@@ -19,13 +19,14 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Tip (..),
                      castPoint, castTip, genesisPoint)
-import           Ouroboros.Network.MockChain.Chain (Chain (..),
-                     ChainUpdate (..), Point (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
+import           Ouroboros.Network.Mock.Chain (Chain (..), ChainUpdate (..),
+                     Point (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ProducerState (ChainProducerState,
                      FollowerId)
-import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
-import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
+import qualified Ouroboros.Network.Mock.ProducerState as ChainProducerState
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Server
 

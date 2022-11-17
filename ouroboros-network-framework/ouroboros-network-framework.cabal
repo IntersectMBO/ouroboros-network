@@ -28,19 +28,14 @@ Flag ipv6
 library
   exposed-modules:     Data.Cache
                        Data.Wedge
-                       Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
                        Ouroboros.Network.Driver.Limits
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.IOManager
-                       Ouroboros.Network.Magic
                        Ouroboros.Network.Mux
                        Ouroboros.Network.MuxMode
-                       Ouroboros.Network.NodeToClient.Version
-                       Ouroboros.Network.NodeToNode.Version
-                       Ouroboros.Network.Util.ShowProxy
 
                        Ouroboros.Network.Protocol.Handshake
                        Ouroboros.Network.Protocol.Handshake.Type
@@ -102,6 +97,7 @@ library
                                        >=0.1   && < 0.2
                      , network         >=3.1.2.2 && < 3.2
                      , network-mux    ^>=0.2
+                     , ouroboros-network-api
                      , ouroboros-network-testing
                      , strict-stm     ^>=0.2
                      , typed-protocols >=0.1   && < 0.2
@@ -196,6 +192,7 @@ test-suite test
                      , strict-stm
                      , network-mux
                      , monoidal-synchronisation
+                     , ouroboros-network-api
                      , ouroboros-network-framework
                      , ouroboros-network-framework:testlib
                      , ouroboros-network-testing
@@ -235,6 +232,7 @@ executable demo-ping-pong
 
                        io-classes,
                        network-mux,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
                        typed-protocols,
                        typed-protocols-examples
@@ -269,6 +267,7 @@ executable demo-connection-manager
 
                        io-classes,
                        network-mux,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
                        strict-stm,
                        typed-protocols,

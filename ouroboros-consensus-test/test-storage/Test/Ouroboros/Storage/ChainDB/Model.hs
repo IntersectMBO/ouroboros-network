@@ -98,9 +98,9 @@ import           GHC.Generics (Generic)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as Fragment
 import           Ouroboros.Network.Block (MaxSlotNo (..))
-import           Ouroboros.Network.MockChain.Chain (Chain (..), ChainUpdate)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Network.Mock.Chain (Chain (..), ChainUpdate)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import qualified Ouroboros.Network.Mock.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

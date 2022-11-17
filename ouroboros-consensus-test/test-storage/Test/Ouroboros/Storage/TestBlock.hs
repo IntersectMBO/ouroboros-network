@@ -84,7 +84,7 @@ import           Control.Monad.Class.MonadThrow
 
 import           Cardano.Crypto.DSIGN
 
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

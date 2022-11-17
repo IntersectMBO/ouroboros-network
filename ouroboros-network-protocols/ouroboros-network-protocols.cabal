@@ -67,16 +67,6 @@ library
                        Ouroboros.Network.Protocol.KeepAlive.Server
                        Ouroboros.Network.Protocol.KeepAlive.Codec
 
-                       Ouroboros.Network.AnchoredFragment
-                       Ouroboros.Network.AnchoredSeq
-                       Ouroboros.Network.Block
-                       Ouroboros.Network.Point
-                       -- Still in the lib for now as they're used in ouroboros-consensus.
-                       -- They should be moved to the separate test lib if they're still needed.
-                       Ouroboros.Network.MockChain.Chain
-                       Ouroboros.Network.MockChain.ProducerState
-                       Ouroboros.Network.Testing.ConcreteBlock
-
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
                        DataKinds,
@@ -102,21 +92,16 @@ library
                        TypeInType
 
   build-depends:       base              >=4.9 && <4.17,
-                       base16-bytestring,
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
                        containers,
                        hashable,
-                       serialise,
                        time              >=1.9.1 && <1.14,
 
-                       cardano-binary,
                        cardano-slotting,
-                       cardano-strict-containers,
-                       contra-tracer,
-                       nothunks,
 
                        io-classes       ^>=0.3,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
                        typed-protocols   >=0.1 && <1.0,
                        typed-protocols-cborg
@@ -185,7 +170,9 @@ library testlib
                        io-classes,
                        io-sim,
                        network-mux,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
+                       ouroboros-network-mock,
                        ouroboros-network-protocols,
                        strict-stm,
                        typed-protocols
@@ -207,9 +194,10 @@ test-suite test
                        tasty,
                        tasty-quickcheck,
 
-                       ouroboros-network-testing,
-                       ouroboros-network-protocols,
-                       ouroboros-network-protocols:testlib
+                       ouroboros-network-api,
+                       ouroboros-network-mock,
+                       ouroboros-network-protocols:testlib,
+                       ouroboros-network-testing
 
   ghc-options:         -Wall
                        -Wunused-packages
@@ -242,7 +230,9 @@ test-suite cddl
                        tasty-quickcheck,
 
                        typed-protocols,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
+                       ouroboros-network-mock,
                        ouroboros-network-protocols,
                        ouroboros-network-protocols:testlib
 

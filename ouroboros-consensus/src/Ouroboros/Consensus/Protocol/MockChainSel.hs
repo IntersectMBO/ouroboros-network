@@ -10,8 +10,8 @@ import           Data.List (sortOn)
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Ord (Down (..))
 
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain)
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 import           Ouroboros.Consensus.Protocol.Abstract
 

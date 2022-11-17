@@ -388,7 +388,7 @@ data FollowerState m blk b
     -- ^ The 'Follower' is reading from the in-memory current chain fragment.
   deriving (Generic, NoThunks)
 
--- | Similar to 'Ouroboros.Network.MockChain.ProducerState.FollowerState'.
+-- | Similar to 'Ouroboros.Network.Mock.ProducerState.FollowerState'.
 data FollowerRollState blk
   = RollBackTo      !(Point blk)
     -- ^ We don't know at which point the user is, but the next message we'll

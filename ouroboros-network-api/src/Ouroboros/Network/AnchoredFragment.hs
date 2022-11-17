@@ -219,7 +219,7 @@ anchorToTip (Anchor s h b) = Tip s h b
 -- anchor, acting as an exclusive bound.
 --
 -- An 'AnchoredFragment' anchored at Genesis can thus be converted to a
--- 'Ouroboros.Network.MockChain.Chain' ('fromAnchoredFragment'), containing all
+-- 'Ouroboros.Network.Mock.Chain' ('fromAnchoredFragment'), containing all
 -- blocks starting from Genesis.
 --
 -- Without an anchor point, an empty fragment wouldn't give us much more

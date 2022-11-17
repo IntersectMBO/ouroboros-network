@@ -12,8 +12,8 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.MockChain.Chain (Chain, HasHeader, Point)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain, HasHeader, Point)
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 import           Ouroboros.Network.Protocol.BlockFetch.Client
 import           Ouroboros.Network.Protocol.BlockFetch.Server

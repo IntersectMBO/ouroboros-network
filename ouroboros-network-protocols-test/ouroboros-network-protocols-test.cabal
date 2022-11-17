@@ -27,11 +27,13 @@ library
                        Ouroboros.Network.Protocol.BlockFetch.Test
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.DirectPipelined
+                       Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
                        Ouroboros.Network.Protocol.Handshake.Direct
                        Ouroboros.Network.Protocol.Handshake.Test
                        Ouroboros.Network.Protocol.LocalStateQuery.Direct
+                       Ouroboros.Network.Protocol.LocalStateQuery.Examples
                        Ouroboros.Network.Protocol.LocalStateQuery.Test
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
@@ -53,7 +55,6 @@ library
                        bytestring,
                        cborg,
                        containers,
-                       hashable,
                        pipes,
                        QuickCheck,
                        quickcheck-instances,
@@ -69,9 +70,10 @@ library
                        io-classes,
                        io-sim,
                        network-mux,
-                       ouroboros-network-protocols,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
-                       ouroboros-network-testing,
+                       ouroboros-network-mock,
+                       ouroboros-network-protocols,
                        strict-stm,
                        typed-protocols
 
@@ -89,6 +91,7 @@ test-suite test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
+  -- TODO: these two tests should be moved to `ouroboros-network-mock`
   other-modules:       Test.AnchoredFragment
                        Test.Chain
   default-language:    Haskell2010
@@ -97,8 +100,9 @@ test-suite test
                        tasty,
                        tasty-quickcheck,
 
+                       ouroboros-network-api,
+                       ouroboros-network-mock,
                        ouroboros-network-testing,
-                       ouroboros-network-protocols,
                        ouroboros-network-protocols-test
                        
 test-suite cddl
@@ -129,7 +133,9 @@ test-suite cddl
                        tasty-quickcheck,
 
                        typed-protocols,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
+                       ouroboros-network-mock,
                        ouroboros-network-protocols,
                        ouroboros-network-protocols-test
 

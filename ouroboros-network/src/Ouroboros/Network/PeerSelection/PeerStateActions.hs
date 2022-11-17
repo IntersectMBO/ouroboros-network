@@ -49,6 +49,7 @@ import qualified Network.Mux as Mux
 
 import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.PeerSelection.Governor

@@ -55,6 +55,7 @@ library
                      , cardano-protocol-tpraos
                      , small-steps
 
+                     , ouroboros-network-api
                      , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol

@@ -61,11 +61,11 @@ import           Test.Util.ChainDB
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState (ChainProducerState,
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ProducerState (ChainProducerState,
                      FollowerNext, FollowerState)
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import qualified Ouroboros.Network.Mock.ProducerState as CPS
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

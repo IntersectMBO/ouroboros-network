@@ -8,7 +8,7 @@
 
 -- | Reference implementation of a representation of a block chain
 --
-module Ouroboros.Network.MockChain.Chain
+module Ouroboros.Network.Mock.Chain
   ( -- * Chain type and fundamental operations
     Chain (..)
   , valid

@@ -19,11 +19,11 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Network.Block (HasHeader, genesisPoint, pointSlot)
-import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate (..),
+import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate (..),
                      Point (..), headPoint, pointOnChain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock (Block)
+import           Ouroboros.Network.Mock.ProducerState
 
 import           Test.ChainGenerators (TestBlockChain (..),
                      TestBlockChainAndUpdates (..), TestChainFork (..),

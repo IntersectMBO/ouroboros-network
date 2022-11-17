@@ -11,7 +11,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.MockChain.Chain (foldChain)
+import           Ouroboros.Network.Mock.Chain (foldChain)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

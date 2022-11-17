@@ -28,9 +28,10 @@ import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
 import           Ouroboros.Network.Block (Serialised (..), castPoint,
                      genesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
-import           Ouroboros.Network.MockChain.Chain (Chain, Point)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+
+import           Ouroboros.Network.Mock.Chain (Chain, Point)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock (Block)
 
 import           Ouroboros.Network.Protocol.BlockFetch.Client
 import           Ouroboros.Network.Protocol.BlockFetch.Codec

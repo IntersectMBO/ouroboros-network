@@ -38,12 +38,12 @@ import           Data.Maybe (catMaybes, listToMaybe)
 import           Ouroboros.Network.AnchoredFragment (Anchor (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock
 import           Ouroboros.Network.Point (WithOrigin (..), block,
                      blockPointHash, blockPointSlot, fromWithOrigin, origin)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
-import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Test.QuickCheck
 import           Test.QuickCheck.Instances.ByteString ()

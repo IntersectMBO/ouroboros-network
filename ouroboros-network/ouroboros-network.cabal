@@ -53,9 +53,7 @@ library
                        Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.LocalRootPeers
                        Ouroboros.Network.PeerSelection.PeerMetric
-                       Ouroboros.Network.PeerSelection.PeerMetric.Type
                        Ouroboros.Network.PeerSelection.PeerStateActions
-                       Ouroboros.Network.PeerSelection.RelayAccessPoint
                        Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
@@ -75,8 +73,7 @@ library
                        Ouroboros.Network.AnchoredSeq,
                        Ouroboros.Network.Magic,
                        Ouroboros.Network.NodeToClient.Version,
-                       Ouroboros.Network.NodeToNode.Version,
-                       Ouroboros.Network.Util.ShowProxy
+                       Ouroboros.Network.NodeToNode.Version
 
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
@@ -130,6 +127,7 @@ library
 
                        io-classes       ^>=0.3,
                        network-mux       >=0.1 && <1.0,
+                       ouroboros-network-api,
                        ouroboros-network-framework
                                          >=0.1 && <1.0,
                        ouroboros-network-protocols
@@ -227,7 +225,9 @@ test-suite test
                        monoidal-synchronisation,
                        network-mux,
                        ouroboros-network,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
+                       ouroboros-network-mock,
                        ouroboros-network-protocols,
                        ouroboros-network-protocols:testlib,
                        ouroboros-network-framework:testlib,
@@ -265,7 +265,9 @@ executable demo-chain-sync
 
                        typed-protocols,
                        network-mux,
+                       ouroboros-network-api,
                        ouroboros-network-framework,
+                       ouroboros-network-mock,
                        ouroboros-network-protocols,
                        ouroboros-network
 

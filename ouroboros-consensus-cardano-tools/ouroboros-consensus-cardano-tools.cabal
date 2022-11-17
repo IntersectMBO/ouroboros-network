@@ -76,6 +76,7 @@ library
                      , ouroboros-consensus-cardano
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-shelley
+                     , ouroboros-network-api
                      , ouroboros-network-protocols
                      , ouroboros-consensus-diffusion
 

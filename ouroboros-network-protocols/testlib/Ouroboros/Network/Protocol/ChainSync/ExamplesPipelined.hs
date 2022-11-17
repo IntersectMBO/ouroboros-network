@@ -21,8 +21,8 @@ import           Network.TypedProtocol.Pipelined
 
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..),
                      blockNo, getTipBlockNo)
-import           Ouroboros.Network.MockChain.Chain (Chain (..), Point (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain (..), Point (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Point (WithOrigin (..))
 
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined

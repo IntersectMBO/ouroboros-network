@@ -43,6 +43,8 @@ import           Ouroboros.Network.Point (withOriginToMaybe)
 
 import           Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
                      PeerFetchInFlight (..), PeerFetchStatus (..))
+import           Ouroboros.Network.BlockFetch.ConsensusInterface
+                     (FetchMode (..))
 import           Ouroboros.Network.BlockFetch.DeltaQ
                      (PeerFetchInFlightLimits (..), PeerGSV (..), SizeInBytes,
                      calculatePeerFetchInFlightLimits, comparePeerGSV,
@@ -69,30 +71,6 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
 
        blockFetchSize          :: header -> SizeInBytes
      }
-
-
-data FetchMode =
-       -- | Use this mode when we are catching up on the chain but are stil
-       -- well behind. In this mode the fetch logic will optimise for
-       -- throughput rather than latency.
-       --
-       FetchModeBulkSync
-
-       -- | Use this mode for block-producing nodes that have a known deadline
-       -- to produce a block and need to get the best chain before that. In
-       -- this mode the fetch logic will optimise for picking the best chain
-       -- within the given deadline.
-     | FetchModeDeadline
-
-       -- TODO: add an additional mode for in-between: when we are a core node
-       -- following the chain but do not have an imminent deadline, or are a
-       -- relay forwarding chains within the network.
-       --
-       -- This is a mixed mode because we have to combine the distribution of
-       -- time to next block under praos, with the distribution of latency of
-       -- our peers, and also the consensus preference.
-
-  deriving (Eq, Show)
 
 
 type PeerInfo header peer extra =

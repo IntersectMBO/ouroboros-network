@@ -90,6 +90,7 @@ import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.TypedProtocol (Peer)
 import           Network.TypedProtocol.Codec
 
+import           Ouroboros.Network.ControlMessage (ControlMessage)
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)

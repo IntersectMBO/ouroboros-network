@@ -23,7 +23,10 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo)
-import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.BlockFetch.ConsensusInterface
+                     (BlockFetchConsensusInterface (..), FetchMode (..),
+                     FromConsensus (..), WhetherReceivingTentativeBlocks (..))
+import           Ouroboros.Network.SizeInBytes
 
 import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
 import qualified Ouroboros.Consensus.Block as Block

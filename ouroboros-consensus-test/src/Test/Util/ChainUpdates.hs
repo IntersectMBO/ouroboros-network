@@ -16,8 +16,8 @@ import           Control.Monad.State.Strict
 
 import           Test.QuickCheck
 
-import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

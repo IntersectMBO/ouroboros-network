@@ -1,0 +1,57 @@
+cabal-version:       3.0
+name:                ouroboros-network-mock
+version:             0.1.0.0
+synopsis:            Ouroboros Network Chain for testing purposes
+-- description:
+license:             Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+copyright:           2019-2022 Input Output (Hong Kong) Ltd.
+author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+maintainer:
+category:            Network
+build-type:          Simple
+extra-source-files:
+  ChangeLog.md
+
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+
+library
+  hs-source-dirs:      src
+
+  exposed-modules:     Ouroboros.Network.Mock.ConcreteBlock
+                       Ouroboros.Network.Mock.Chain
+                       Ouroboros.Network.Mock.ProducerState
+
+  default-language:    Haskell2010
+
+  build-depends:       base              >=4.9 && <4.17,
+                       bytestring,
+                       containers,
+                       cborg,
+                       serialise,
+                       hashable,
+                       time,
+
+                       nothunks,
+
+                       ouroboros-network-api
+
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+  if flag(asserts)
+    ghc-options:       -fno-ignore-asserts

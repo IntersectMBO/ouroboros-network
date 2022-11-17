@@ -56,6 +56,12 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.DNS (Domain, TTL)
 
+import           Ouroboros.Network.Mock.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
+                     BlockHeader (..),
+                     convertSlotToTimeForTestsAssumingNoHardFork)
+import           Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
+
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (MaxSlotNo (..), Point,
                      maxSlotNoFromWithOrigin, pointSlot)
@@ -63,9 +69,6 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
-import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
-import           Ouroboros.Network.MockChain.ProducerState
-                     (ChainProducerState (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
@@ -92,9 +95,6 @@ import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
                      TestAddress (..))
 
-import           Ouroboros.Network.Testing.ConcreteBlock (Block (..),
-                     BlockHeader (..),
-                     convertSlotToTimeForTestsAssumingNoHardFork)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)

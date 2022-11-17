@@ -34,6 +34,8 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     continueForever)
 import           Ouroboros.Network.DeltaQ
 --TODO: could re-export some of the trace types from more convenient places:
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -45,11 +47,10 @@ import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.BlockFetch.DeltaQ
 import           Ouroboros.Network.BlockFetch.Examples
 import           Ouroboros.Network.Driver (TraceSendRecv)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.Mux (ControlMessage (..), continueForever)
-import           Ouroboros.Network.NodeToNode (isPipeliningEnabled)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock
+import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
-import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Ouroboros.Network.Testing.Utils
 

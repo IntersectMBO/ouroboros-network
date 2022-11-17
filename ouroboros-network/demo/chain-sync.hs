@@ -42,15 +42,17 @@ import           Network.TypedProtocol.Codec
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
+import           Ouroboros.Network.ControlMessage (continueForever)
 import           Ouroboros.Network.IOManager
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient (LocalConnectionId)
 import           Ouroboros.Network.NodeToNode
+import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Snocket
 import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Testing.ConcreteBlock
 
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Protocol.Handshake.Codec

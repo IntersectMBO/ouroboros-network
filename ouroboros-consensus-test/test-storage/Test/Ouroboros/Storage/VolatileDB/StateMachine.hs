@@ -368,7 +368,7 @@ generatorCmdImpl Model {..} = frequency
       return (minSlot, maxSlot)
 
     -- Blocks don't have to be valid, i.e., they don't have to satisfy the
-    -- invariants checked in MockChain and AnchoredFragment, etc. EBBs don't have
+    -- invariants checked in Mock.Chain and AnchoredFragment, etc. EBBs don't have
     -- to have a particular slot number, etc.
     genTestBlock :: Gen Block
     genTestBlock = frequency

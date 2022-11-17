@@ -64,7 +64,7 @@ library
                      , nothunks
                      , text              >=1.2   && <1.3
 
-                     , ouroboros-network
+                     , ouroboros-network-api
                      , ouroboros-network-protocols
                      , ouroboros-consensus
 

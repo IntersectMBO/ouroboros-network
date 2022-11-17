@@ -6,29 +6,19 @@ module Ouroboros.Network.NodeToClient.Version
   , NodeToClientVersionData (..)
   , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
-  , nodeToClientHandshakeCodec
   ) where
 
-import           Control.Monad.Class.MonadST
-
 import           Data.Bits (clearBit, setBit, testBit)
-import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 
-import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
-import           Network.TypedProtocol.Codec
-
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-
 import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
+import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
+import           Ouroboros.Network.Magic
 
 
 -- | Enumeration of node to client protocol versions.
@@ -110,9 +100,3 @@ nodeToClientCodecCBORTerm _ = CodecCBORTerm {encodeTerm, decodeTerm}
       decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
                                | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
       decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
-
-
-nodeToClientHandshakeCodec :: MonadST m
-                           => Codec (Handshake NodeToClientVersion CBOR.Term)
-                                    CBOR.DeserialiseFailure m BL.ByteString
-nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec

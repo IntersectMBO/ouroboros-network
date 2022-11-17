@@ -48,12 +48,12 @@ import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
                      newFetchClientRegistry)
 import           Ouroboros.Network.BlockFetch.Client (blockFetchClient)
 import           Ouroboros.Network.Channel (createConnectedChannels)
+import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import qualified Ouroboros.Network.Driver.Simple as Driver
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import qualified Ouroboros.Network.Mux as Mux
-import           Ouroboros.Network.NodeToNode (isPipeliningEnabled)
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import           Ouroboros.Network.Mock.Chain (Chain)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion,
+                     isPipeliningEnabled)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetchId)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (SendMsgNoBlocks, SendMsgStartBatch),
@@ -128,7 +128,7 @@ runBlockFetchTest ::
   -> m BlockFetchClientOutcome
 runBlockFetchTest BlockFetchClientTestSetup{..} = withRegistry \registry -> do
     varChains           <- uncheckedNewTVarM Map.empty
-    varControlMessage   <- uncheckedNewTVarM Mux.Continue
+    varControlMessage   <- uncheckedNewTVarM Continue
     varFetchedBlocks    <- uncheckedNewTVarM (0 <$ peerUpdates)
 
     fetchClientRegistry <- newFetchClientRegistry
@@ -222,7 +222,7 @@ runBlockFetchTest BlockFetchClientTestSetup{..} = withRegistry \registry -> do
           try $ runBlockFetchClient peerId
 
     LogicalClock.waitUntilDone clock
-    atomically $ writeTVar varControlMessage Mux.Terminate
+    atomically $ writeTVar varControlMessage Terminate
 
     bfcoBlockFetchResults <- traverse waitThread blockFetchThreads
     bfcoFetchedBlocks     <- readTVarIO varFetchedBlocks

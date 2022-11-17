@@ -22,9 +22,9 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (Empty), anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock
 import           Ouroboros.Network.Point (WithOrigin (..))
-import           Ouroboros.Network.Testing.ConcreteBlock
 import           Test.ChainGenerators (TestBlockChain (..),
                      TestChainAndRange (..), addSlotGap, genChainAnchor,
                      genNonNegative, genSlotGap)

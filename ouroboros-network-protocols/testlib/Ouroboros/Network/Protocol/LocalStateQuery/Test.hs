@@ -37,8 +37,8 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.MockChain.Chain (Point)
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+import           Ouroboros.Network.Mock.Chain (Point)
+import           Ouroboros.Network.Mock.ConcreteBlock (Block)
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
 import           Ouroboros.Network.Protocol.LocalStateQuery.Codec

@@ -11,20 +11,23 @@
 module Ouroboros.Network.Protocol.Handshake.Version
   ( Versions (..)
   , Version (..)
-  , Accept (..)
-  , Acceptable (..)
   , VersionMismatch (..)
     -- * Simple or no versioning
   , simpleSingletonVersions
   , foldMapVersions
   , combineVersions
+    -- * Re-exports
+  , Accept (..)
+  , Acceptable (..)
   ) where
 
 import           Data.Foldable (toList)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Text (Text)
 import           GHC.Stack (HasCallStack)
+
+import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
+                     Acceptable (..))
 
 
 -- | The version map supported by the local agent keyed on the version
@@ -72,20 +75,6 @@ combineVersions :: (Ord vNum, Foldable f, HasCallStack)
                 => f (Versions vNum extra r)
                 -> Versions vNum extra r
 combineVersions = foldMapVersions id
-
--- |
--- A @'Maybe'@ like type which better explains its purpose.
---
-data Accept vData
-  = Accept vData
-  | Refuse !Text
-  deriving (Eq, Show)
-
-
-class Acceptable v where
-  -- | The 'acceptableVersion' function ought to be symmetric, this guarantees
-  -- that local and remote sides will agree on the same data.
-  acceptableVersion :: v -> v -> Accept v
 
 
 data Version vData r = Version

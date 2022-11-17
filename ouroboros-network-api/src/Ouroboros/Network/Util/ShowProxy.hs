@@ -1,9 +1,5 @@
-{-# LANGUAGE DefaultSignatures     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE PolyKinds         #-}
 
 module Ouroboros.Network.Util.ShowProxy
   ( ShowProxy (..)

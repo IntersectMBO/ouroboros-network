@@ -25,10 +25,11 @@ import           System.Random
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.KeepAlive
-import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.KeepAlive.Server

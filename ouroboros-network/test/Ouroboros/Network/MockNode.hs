@@ -7,7 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A mock (and naive) node implentation.  It only implements the @chain-sync@
--- protocol using the 'Ouroboros.Network.MockChain.Chain' module.  The module
+-- protocol using the 'Ouroboros.Network.Mock.Chain' module.  The module
 -- is used to build tests on randomly generated graphs of nodes, see
 -- 'Test.Ouroboros.Network.MockNoder'.
 --
@@ -40,21 +40,19 @@ import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy
 
 -- TODO Should this be imported here
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState
-                     (ChainProducerState (..), initChainProducerState,
-                     producerChain, switchFork)
 import           Ouroboros.Network.Point (WithOrigin (At))
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
 import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
--- FIXME bad module name below. They're examples, sure, but they're also
--- legit useful.
-import           Ouroboros.Network.Testing.ConcreteBlock hiding (fixupBlock)
-import qualified Ouroboros.Network.Testing.ConcreteBlock as Concrete
+
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock hiding (fixupBlock)
+import qualified Ouroboros.Network.Mock.ConcreteBlock as Concrete
+import           Ouroboros.Network.Mock.ProducerState (ChainProducerState (..),
+                     initChainProducerState, producerChain, switchFork)
 
 data NodeId = CoreId Int
             | RelayId Int

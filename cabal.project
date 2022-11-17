@@ -20,10 +20,12 @@ index-state: cardano-haskell-packages 2022-11-15T00:00:00Z
 packages: ./ouroboros-network-testing
           ./monoidal-synchronisation
           ./network-mux
-          ./ouroboros-network-testing
-          ./ouroboros-network-framework
-          ./ouroboros-network-protocols
           ./ouroboros-network
+          ./ouroboros-network-api
+          ./ouroboros-network-framework
+          ./ouroboros-network-mock
+          ./ouroboros-network-protocols
+          ./ouroboros-network-testing
           ./ouroboros-consensus
           ./ouroboros-consensus-byron
           ./ouroboros-consensus-byron-test

@@ -46,6 +46,7 @@ import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
+import           Ouroboros.Network.ControlMessage
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager

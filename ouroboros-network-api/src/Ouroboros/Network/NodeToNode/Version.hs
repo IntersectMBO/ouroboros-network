@@ -7,28 +7,21 @@ module Ouroboros.Network.NodeToNode.Version
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
-  , nodeToNodeHandshakeCodec
+  , isPipeliningEnabled
   ) where
 
-import           Control.Monad.Class.MonadST
-
-import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 
-import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
-import           Network.TypedProtocol.Codec
-
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-
+import           Ouroboros.Network.BlockFetch.ConsensusInterface
+                     (WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
+import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
+import           Ouroboros.Network.Magic
 
 
 -- | Enumeration of node to node protocol versions.
@@ -152,9 +145,12 @@ nodeToNodeCodecCBORTerm _version
 data ConnectionMode = UnidirectionalMode | DuplexMode
 
 
--- | 'Handshake' codec for the @node-to-node@ protocol suite.
+-- | Check whether a version enabling diffusion pipelining has been
+-- negotiated.
 --
-nodeToNodeHandshakeCodec :: MonadST m
-                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
-                                  CBOR.DeserialiseFailure m BL.ByteString
-nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec
+-- TODO: this ought to be defined in `ouroboros-consensus` or
+-- `ouroboros-consensus-diffusion`
+isPipeliningEnabled :: NodeToNodeVersion -> WhetherReceivingTentativeBlocks
+isPipeliningEnabled v
+  | v >= NodeToNodeV_8 = ReceivingTentativeBlocks
+  | otherwise          = NotReceivingTentativeBlocks

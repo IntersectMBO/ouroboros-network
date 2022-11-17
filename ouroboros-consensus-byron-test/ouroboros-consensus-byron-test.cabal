@@ -49,6 +49,8 @@ library
 
                      , byron-spec-ledger
 
+                     , ouroboros-network-api
+                     , ouroboros-network-mock
                      , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-test
@@ -100,7 +102,7 @@ test-suite test
                      , small-steps
                      , small-steps-test
 
-                     , ouroboros-network-protocols
+                     , ouroboros-network-mock
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron

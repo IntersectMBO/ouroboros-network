@@ -98,6 +98,7 @@ import           Network.Mux.DeltaQ.TraceTransformer
 import           Network.TypedProtocol.Codec hiding (decode, encode)
 
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.ControlMessage
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager (IOManager)

@@ -36,9 +36,10 @@ import           Ouroboros.Network.Block (BlockNo, Serialised (..),
                      StandardHash, Tip (..), castPoint, decodeTip, encodeTip,
                      pattern BlockPoint, pattern GenesisPoint, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
-import           Ouroboros.Network.MockChain.Chain (Chain, Point)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import qualified Ouroboros.Network.MockChain.ProducerState as ChainProducerState
+import           Ouroboros.Network.Mock.Chain (Chain, Point)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock (Block, BlockHeader (..))
+import qualified Ouroboros.Network.Mock.ProducerState as ChainProducerState
 
 import           Ouroboros.Network.Protocol.ChainSync.Client
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
@@ -51,8 +52,6 @@ import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as Chain
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
 
-import           Ouroboros.Network.Testing.ConcreteBlock (Block,
-                     BlockHeader (..))
 import           Test.ChainGenerators ()
 import           Test.ChainProducerState (ChainProducerStateForkTest (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,

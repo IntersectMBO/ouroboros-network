@@ -85,7 +85,7 @@ library
                      , cardano-ledger-shelley-ma
                      , small-steps
 
-                     , ouroboros-network
+                     , ouroboros-network-api
                      , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol

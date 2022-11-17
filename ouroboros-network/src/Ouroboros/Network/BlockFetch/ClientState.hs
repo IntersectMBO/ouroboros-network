@@ -48,10 +48,12 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point,
                      blockPoint)
+import           Ouroboros.Network.BlockFetch.ConsensusInterface
+                     (FromConsensus (..), WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.BlockFetch.DeltaQ
                      (PeerFetchInFlightLimits (..), PeerGSV, SizeInBytes,
                      calculatePeerFetchInFlightLimits)
-import           Ouroboros.Network.Mux (ControlMessageSTM,
+import           Ouroboros.Network.ControlMessage (ControlMessageSTM,
                      timeoutWithControlMessage)
 import           Ouroboros.Network.Point (withOriginToMaybe)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
@@ -77,12 +79,6 @@ data FetchClientPolicy header block m =
        addFetchedBlock    :: Point block -> block -> m (),
        blockForgeUTCTime  :: FromConsensus block -> STM m UTCTime
      }
-
--- | Whether the block fetch peer is sending tentative blocks, which are
--- understood to possibly be invalid
-data WhetherReceivingTentativeBlocks
-  = ReceivingTentativeBlocks
-  | NotReceivingTentativeBlocks
 
 -- | A set of variables shared between the block fetch logic thread and each
 -- thread executing the client side of the block fetch protocol. That is, these
@@ -784,27 +780,3 @@ tryReadTMergeVar :: MonadSTM m
                  => TMergeVar m a
                  -> STM m (Maybe a)
 tryReadTMergeVar (TMergeVar v) = tryReadTMVar v
-
-{-------------------------------------------------------------------------------
-  Syntactic indicator of key precondition about Consensus time conversions
--------------------------------------------------------------------------------}
-
--- | A new type used to emphasize the precondition of
--- 'Ouroboros.Network.BlockFetch.headerForgeUTCTime' and
--- 'Ouroboros.Network.BlockFetch.blockForgeUTCTime' at each call site.
---
--- At time of writing, the @a@ is either a header or a block. The headers are
--- literally from Consensus (ie provided by ChainSync). Blocks, on the other
--- hand, are indirectly from Consensus: they were fetched only because we
--- favored the corresponding header that Consensus provided.
---
--- NOTE: We define it here so that it can be used consistently throughout the
--- implementation; definiting it only in
--- 'Ouroboros.Network.BlockFetch.BlockFetchConsensusInterface' would be too
--- late.
-newtype FromConsensus a = FromConsensus {unFromConsensus :: a}
-  deriving (Functor)
-
-instance Applicative FromConsensus where
-  pure = FromConsensus
-  FromConsensus f <*> FromConsensus a = FromConsensus (f a)

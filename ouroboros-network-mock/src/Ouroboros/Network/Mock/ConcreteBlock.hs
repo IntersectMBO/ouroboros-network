@@ -17,7 +17,7 @@
 -- it is used; eventually it should be simplified and then moved to the
 -- network layer tests; the more sophiscated block abstraction (abstracted over
 -- an Ouroboros protocol) will live in the consensus layer.
-module Ouroboros.Network.Testing.ConcreteBlock
+module Ouroboros.Network.Mock.ConcreteBlock
   ( Block (..)
   , BlockHeader (..)
   , BlockBody (..)
@@ -62,8 +62,8 @@ import           Ouroboros.Network.AnchoredFragment (Anchor (..),
                      AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as C
+import           Ouroboros.Network.Mock.Chain (Chain)
+import qualified Ouroboros.Network.Mock.Chain as C
 import           Ouroboros.Network.Point (withOrigin)
 import           Ouroboros.Network.Util.ShowProxy
 

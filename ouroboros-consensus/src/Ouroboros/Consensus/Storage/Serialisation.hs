@@ -71,7 +71,7 @@ import           Cardano.Binary (enforceSize)
 
 import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
                      mkSerialised)
-import           Ouroboros.Network.BlockFetch (SizeInBytes)
+import           Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
