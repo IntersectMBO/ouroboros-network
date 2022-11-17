@@ -69,6 +69,8 @@ package cardano-crypto-class
 package cardano-crypto-praos
   extra-include-dirs: D:/a/_temp/msys64/mingw64/include
                       C:/cabal/store/ghc-8.10.7/old-time-1.1.0.3-44a2c565592e84ec665bc760a4c1a4c07fd31787
+                      C:/cabal/store/ghc-8.10.7/old-time-1.1.0.3-44a2c565592e84ec665bc760a4c1a4c07fd31787/lib
+                      C:/cabal/store/ghc-8.10.7/old-time-1.1.0.3-44a2c565592e84ec665bc760a4c1a4c07fd31787/lib/include
   extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
 
 package old-time
