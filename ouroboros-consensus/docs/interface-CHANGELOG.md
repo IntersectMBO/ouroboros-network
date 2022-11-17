@@ -257,3 +257,10 @@ https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
   A new feature could later be added eg to the Cardano CLI so that the client
   can submit txs with the flag set in the negative, eg for QA to use when
   testing non-nominal scenarios etc.
+
+## 2022-11-17
+
+### Added
+
+- A new query `GetKESConfig` that is set up to replace `GetGenesisConfig`
+  eventually. The aim is to expose less of the internals to clients.
