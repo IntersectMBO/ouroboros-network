@@ -69,7 +69,3 @@ package cardano-crypto-class
 package cardano-crypto-praos
   extra-include-dirs: D:/a/_temp/msys64/mingw64/include
   extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
-
-package old-time
-  extra-include-dirs: D:/a/_temp/msys64/mingw64/include
-  extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
