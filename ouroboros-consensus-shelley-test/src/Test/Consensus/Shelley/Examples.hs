@@ -23,7 +23,7 @@ module Test.Consensus.Shelley.Examples (
 import           Data.Foldable (toList)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import           GHC.Records (HasField (getField))
+import           Lens.Micro
 
 import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Era (Crypto, getAllTxInputs)
@@ -80,9 +80,6 @@ import           Test.Cardano.Ledger.Shelley.Examples.Consensus
                      ledgerExamplesShelley, testShelleyGenesis)
 import           Test.Cardano.Ledger.Shelley.Orphans ()
 import           Test.Util.Orphans.Arbitrary ()
-import qualified Test.Util.Serialisation.Golden as Golden
-import           Test.Util.Serialisation.Golden (labelled, unlabelled)
-import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 {-------------------------------------------------------------------------------
   Examples
@@ -170,7 +167,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
       where
         exampleTxIns :: [TxIn (Cardano.Ledger.Era.Crypto era)]
         exampleTxIns  =
-          case toList $ getAllTxInputs $ getField @"body" sleTx of
+          case toList $ getAllTxInputs (sleTx ^. LC.bodyTxL) of
             [] -> error "No transaction inputs were provided to construct the ledger tables"
                   -- We require at least one transaction input (and one
                   -- transaction output) in the example provided by
@@ -180,7 +177,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
 
         exampleTxOuts :: [LC.TxOut era]
         exampleTxOuts =
-          case toList $ getField @"outputs" $ getField @"body" sleTx of
+          case toList (sleTx ^. LC.bodyTxL ^. LC.outputsTxBodyL) of
             [] -> error "No transaction outputs were provided to construct the ledger tables"
             xs -> xs
 
@@ -287,7 +284,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
       where
         exampleTxIns :: [TxIn (Cardano.Ledger.Era.Crypto era)]
         exampleTxIns  =
-          case toList $ getAllTxInputs $ getField @"body" sleTx of
+          case toList $ getAllTxInputs (sleTx ^. LC.bodyTxL) of
             [] -> error "No transaction inputs were provided to construct the ledger tables"
                   -- We require at least one transaction input (and one
                   -- transaction output) in the example provided by
@@ -297,7 +294,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
 
         exampleTxOuts :: [LC.TxOut era]
         exampleTxOuts =
-          case toList $ getField @"outputs" $ getField @"body" sleTx of
+          case toList (sleTx ^. LC.bodyTxL ^. LC.outputsTxBodyL) of
             [] -> error "No transaction outputs were provided to construct the ledger tables"
             xs -> xs
 

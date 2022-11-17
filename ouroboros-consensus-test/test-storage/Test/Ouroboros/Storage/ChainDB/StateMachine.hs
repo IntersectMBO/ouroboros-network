@@ -94,9 +94,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB,
                      ReadsKeySets, ledgerDbFlush)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
@@ -1520,7 +1517,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
       varCurSlot         <- uncheckedNewTVarM 0
       varNextId          <- uncheckedNewTVarM 0
       nodeDBs            <- emptyNodeDBs
-      let args = mkArgs testCfg chunkInfo testInitExtLedger threadRegistry nodeDBs tracer
+      let args = mkArgs testCfg chunkInfo (testInitExtLedger `withLedgerTables` polyEmptyLedgerTables) threadRegistry nodeDBs tracer
                    maxClockSkew varCurSlot
 
       (hist, model, res, trace) <- bracket
@@ -1659,7 +1656,7 @@ traceEventName = \case
 mkArgs :: IOLike m
        => TopLevelConfig Blk
        -> ImmutableDB.ChunkInfo
-       -> ExtLedgerState Blk
+       -> ExtLedgerState Blk ValuesMK
        -> ResourceRegistry m
        -> NodeDBs (StrictTVar m MockFS)
        -> Tracer m (TraceEvent Blk)

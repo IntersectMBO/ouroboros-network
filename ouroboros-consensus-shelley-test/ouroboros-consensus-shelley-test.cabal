@@ -64,6 +64,8 @@ library
                      , ouroboros-consensus-test
                      , ouroboros-consensus-shelley
 
+                     , microlens
+
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat

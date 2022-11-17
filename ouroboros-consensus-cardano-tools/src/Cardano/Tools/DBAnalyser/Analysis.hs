@@ -11,7 +11,6 @@ module Cardano.Tools.DBAnalyser.Analysis (
     AnalysisEnv (..)
   , AnalysisName (..)
   , AnalysisResult (..)
-  , Limit (..)
   , runAnalysis
   ) where
 
@@ -275,7 +274,7 @@ showSlotBlockNo env = do
 
 countTxOutputs :: forall blk. HasAnalysis blk => Analysis blk
 countTxOutputs env = do
-  doProcess env 0 process GetBlock
+  void $ doProcess env 0 process GetBlock
   pure Nothing
   where
     process :: blk -> Int ->  IO Int
@@ -494,7 +493,7 @@ checkNoThunksEvery ::
   -> Analysis blk
 checkNoThunksEvery
   nBlocks
-  AnalysisEnv {db, initLedger, cfg, ledgerDbFS, limit, backing} = void $ do
+  AnalysisEnv {db, initLedger, cfg, ledgerDbFS, limit, backing} = do
     putStrLn $
       "Checking for thunks in each block where blockNo === 0 (mod " <> show nBlocks <> ")."
     doCheck <- onlyCheckNumBlocks limit
@@ -505,7 +504,7 @@ checkNoThunksEvery
                                                                 Left s -> Left (initLedger', s)
                                                                 Right v -> Right v
 
-    runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0, 0) (push configLedgerDb f bs))
+    void $ runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0, 0) (push configLedgerDb f bs))
     pure Nothing
   where
     configLedgerDb = LedgerDbCfg {
@@ -513,7 +512,7 @@ checkNoThunksEvery
       , ledgerDbCfg         = ExtLedgerCfg cfg
       }
 
-    f blk _ newLedger = when (unBlockNo (blockNo blk) `mod` nBlocks == 0 ) $ IOLike.evaluate (ledgerState newLedger) >>= checkNoThunks (blockNo blk)
+    f blk _ newLedger = when (unBlockNo (blockNo blk) `mod` nBlocks == 0 ) $ IOLike.evaluate newLedger >>= checkNoThunks (blockNo blk)
 
     checkNoThunks :: BlockNo -> ExtLedgerState blk EmptyMK -> IO ()
     checkNoThunks bn ls =
@@ -533,7 +532,7 @@ traceLedgerProcessing ::
   HasAnalysis blk =>
   Analysis blk
 traceLedgerProcessing
-  AnalysisEnv {db, initLedger, cfg, limit, backing, ledgerDbFS} = void $ do
+  AnalysisEnv {db, initLedger, cfg, limit, backing, ledgerDbFS} = do
     doCheck <- onlyCheckNumBlocks limit
 
     initLedger' <- initialiseLedger ledgerDbFS cfg initLedger
@@ -541,7 +540,7 @@ traceLedgerProcessing
                                                                 Left s -> Left (initLedger', s)
                                                                 Right v -> Right v
 
-    runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0, 0) (push configLedgerDb f bs))
+    void $ runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0, 0) (push configLedgerDb f bs))
     pure Nothing
   where
     configLedgerDb = LedgerDbCfg {

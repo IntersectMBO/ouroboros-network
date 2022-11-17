@@ -38,6 +38,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Network.AnchoredFragment as AF (Anchor (..),
                      AnchoredFragment, AnchoredSeq (..), headPoint)
+import Ouroboros.Consensus.Ticked
 
 import           Cardano.Tools.DBSynthesizer.Types (ForgeLimit (..),
                      ForgeResult (..))
@@ -119,7 +120,7 @@ runForge epochSize_ nextSlot opts chainDB blockForging cfg = do
         unticked <- do
           mExtLedger <- lift $ atomically $ ChainDB.getPastLedger chainDB bcPrevPoint
           case mExtLedger of
-            Just l  -> return l
+            Just (l, _)  -> return l
             Nothing -> exitEarly' "no ledger state"
 
         ledgerView <-
@@ -151,12 +152,12 @@ runForge epochSize_ nextSlot opts chainDB blockForging cfg = do
           _   -> exitEarly' "NoLeader"
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: Ticked (LedgerState blk)
+        let tickedLedgerState :: TickedLedgerState blk EmptyMK
             tickedLedgerState =
               applyChainTick
                 (configLedger cfg)
                 currentSlot
-                (ledgerState unticked)
+                (ledgerState unticked) `withLedgerTablesTicked` polyEmptyLedgerTables
 
         -- Block won't contain any transactions
         let txs = []

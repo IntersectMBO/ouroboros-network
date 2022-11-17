@@ -41,6 +41,30 @@ parseCmdLine = DBAnalyserConfig
     <*> blockTypeParser
     <*> parseAnalysis
     <*> parseLimit
+    <*> parseSelector
+
+parseSelector :: Parser BackingStore
+parseSelector = maybe MEM id <$> parseMaybe (asum [
+      MEM <$ parseMEM
+    , LMDB <$ parseLMDB <*> parseMapSize
+    ])
+  where
+    parseMEM :: Parser ()
+    parseMEM = flag' () $ mconcat [
+        long "inmem-backingstore"
+      , help "Choose the in-memory backing store for the LedgerDB."
+      ]
+    parseLMDB :: Parser ()
+    parseLMDB = flag' () $ mconcat [
+        long "lmdb-backingstore"
+      , help "Choose the LMDB backing store for the LedgerDB."
+      ]
+    parseMapSize :: Parser (Maybe Int)
+    parseMapSize = optional $ read <$> strOption (mconcat [
+        long "mapsize"
+      , metavar "NR_BYTES"
+      , help "The maximum database size defined in nr. of bytes NR_BYTES. NR_BYTES must be a multiple of the OS page size."
+      ])
 
 parseSelectDB :: Parser SelectDB
 parseSelectDB = asum [
@@ -130,14 +154,14 @@ checkNoThunksParser = CheckNoThunksEvery <$> option auto
   <> metavar "BLOCK_COUNT"
   <> help "Check the ledger state for thunks every n blocks" )
 
-parseLimit :: Parser Limit
+parseLimit :: Parser (Maybe Int)
 parseLimit = asum [
-    Limit <$> option auto (mconcat [
+    read <$> strOption (mconcat [
         long "num-blocks-to-process"
       , help "Maximum number of blocks we want to process"
       , metavar "INT"
       ])
-  , pure Unlimited
+  , pure Nothing
   ]
 
 benchmarkLedgerOpsParser :: Parser AnalysisName
