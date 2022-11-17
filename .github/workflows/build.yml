@@ -64,6 +64,16 @@ jobs:
         ghc --version
         cabal --version
 
+    - name: "Configure cabal.project.local"
+      if: runner.os != 'Windows'
+      run: |
+        cp .github/workflows/cabal.project.local.Linux cabal.project.local
+
+    - name: "Configure cabal.project.local Windows"
+      if: runner.os == 'Windows'
+      run: |
+        cp .github/workflows/cabal.project.local.Windows cabal.project.local
+
 
     - name: build old-time and network
       run: |
@@ -77,16 +87,6 @@ jobs:
         find 'C:/cabal/store/ghc-8.10.7/old-time-1.1.0.3-44a2c565592e84ec665bc760a4c1a4c07fd31787'
 
     - uses: actions/checkout@v3
-
-    - name: "Configure cabal.project.local"
-      if: runner.os != 'Windows'
-      run: |
-        cp .github/workflows/cabal.project.local.Linux cabal.project.local
-
-    - name: "Configure cabal.project.local Windows"
-      if: runner.os == 'Windows'
-      run: |
-        cp .github/workflows/cabal.project.local.Windows cabal.project.local
 
     - name: Update Hackage and CHaP
       run: cabal update
