@@ -43,7 +43,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
 import           Data.UMap (View (..), domRestrictedView)
 import           GHC.Generics (Generic)
@@ -219,11 +218,13 @@ data instance BlockQuery (ShelleyBlock proto era) :: FootprintL -> Type -> Type 
   GetStakeSnapshots
     :: Maybe (Set (SL.KeyHash 'SL.StakePool (EraCrypto era)))
     -> BlockQuery (ShelleyBlock proto era)
+                  SmallL
                   (StakeSnapshots (EraCrypto era))
 
   GetPoolDistr
     :: Maybe (Set (SL.KeyHash 'SL.StakePool (EraCrypto era)))
     -> BlockQuery (ShelleyBlock proto era)
+                  SmallL
                   (SL.PoolDistr (EraCrypto era))
 
   -- WARNING: please add new queries to the end of the list and stick to this
@@ -496,6 +497,20 @@ instance EqQuery (BlockQuery (ShelleyBlock proto era)) where
      = Nothing
    eqQuery (GetPoolState _) _
      = Nothing
+   eqQuery (GetStakeSnapshots s) (GetStakeSnapshots s')
+     | s == s'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetStakeSnapshots _) _
+     = Nothing
+   eqQuery (GetPoolDistr s) (GetPoolDistr s')
+     | s == s'
+     = Just Refl
+     | otherwise
+     = Nothing
+   eqQuery (GetPoolDistr _) _
+     = Nothing
 
 
 instance SameDepIndex (BlockQuery (ShelleyBlock proto era) fp) where
@@ -663,6 +678,8 @@ instance (ShelleyCompatible proto era, EqQuery (BlockQuery (ShelleyBlock proto e
       GetStakePoolParams {}                      -> SmallQ
       GetRewardInfoPools {}                      -> SmallQ
       GetPoolState {}                            -> SmallQ
+      GetStakeSnapshots {}                       -> SmallQ
+      GetPoolDistr {}                            -> SmallQ
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) fp result -> ShelleyNodeToClientVersion -> Bool

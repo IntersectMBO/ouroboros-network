@@ -172,22 +172,7 @@ class ( Core.EraSegWits era
       , DSignable (EraCrypto era) (Hash (EraCrypto era) EraIndependentTxBody)
       , NoThunks (PredicateFailure (Core.EraRule "BBODY" era))
       , NoThunks (Core.TranslationContext era)
-
-      , FromCBOR (Annotator (Core.Witnesses era))
-      , ToCBOR (Core.Witnesses era)
-
-      , Eq (TxSeq era)
-      , Show (TxSeq era)
-      , FromCBOR (Annotator (TxSeq era))
-      , Eq       (Core.TxOut era)
-      , NoThunks (Core.TxOut era)
-      , Show     (Core.TxOut era)
-
-        -- for snapshotting the in-memory backing store
-      , FromCBOR (SL.TxIn (EraCrypto era))
-      , ToCBOR   (SL.TxIn (EraCrypto era))
-      , FromCBOR (Core.TxOut era)
-      , ToCBOR   (Core.TxOut era)
+      , NoThunks (Core.Value era)
 
       ) => ShelleyBasedEra era where
 

@@ -34,7 +34,6 @@ import           Cardano.Ledger.Alonzo.Scripts (CostModels (..), ExUnits (..),
 import           Cardano.Ledger.BaseTypes (Network (Testnet), TxIx (..))
 import           Cardano.Ledger.Coin (Coin (..))
 import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Era as Core
 import           Cardano.Ledger.Shelley.API
                      (NewEpochState (stashedAVVMAddresses), ShelleyGenesis (..),
                      ShelleyGenesisStaking (..), TxIn (..),

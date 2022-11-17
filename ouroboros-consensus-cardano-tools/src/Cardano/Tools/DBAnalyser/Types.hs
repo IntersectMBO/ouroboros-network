@@ -7,7 +7,7 @@ module Cardano.Tools.DBAnalyser.Types (
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot)
 
 import           Cardano.Tools.DBAnalyser.Analysis as AnalysisTypes
-                     (AnalysisName (..), AnalysisResult (..), Limit (..))
+                     (AnalysisName (..), AnalysisResult (..))
 import           Cardano.Tools.DBAnalyser.Block.Byron (ByronBlockArgs)
 import           Cardano.Tools.DBAnalyser.Block.Cardano (CardanoBlockArgs)
 import           Cardano.Tools.DBAnalyser.Block.Shelley (ShelleyBlockArgs)
@@ -17,6 +17,9 @@ data SelectDB =
     SelectChainDB
   | SelectImmutableDB (Maybe DiskSnapshot)
 
+data BackingStore = LMDB (Maybe Int) | MEM
+  deriving Eq
+
 data DBAnalyserConfig = DBAnalyserConfig {
     dbDir      :: FilePath
   , verbose    :: Bool
@@ -24,7 +27,8 @@ data DBAnalyserConfig = DBAnalyserConfig {
   , validation :: Maybe ValidateBlocks
   , blockType  :: BlockType
   , analysis   :: AnalysisName
-  , confLimit  :: Limit
+  , cfgLimit   :: Maybe Int
+  , bsSelector :: BackingStore
   }
 
 data ValidateBlocks = ValidateAllBlocks | MinimumBlockValidation

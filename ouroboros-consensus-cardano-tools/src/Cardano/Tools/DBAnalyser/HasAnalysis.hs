@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies     #-}
-module HasAnalysis (
+module Cardano.Tools.DBAnalyser.HasAnalysis (
     HasAnalysis (..)
   , HasProtocolInfo (..)
   , SizeInBytes
