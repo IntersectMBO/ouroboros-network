@@ -25,6 +25,7 @@ library
                    , Cardano.KESAgent.ServiceClient
                    , Cardano.KESAgent.ControlClient
                    , Cardano.KESAgent.Logging
+                   , Cardano.KESAgent.RetrySocket
 
     -- other-modules:
 

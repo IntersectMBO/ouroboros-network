@@ -11,6 +11,7 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.RetrySocket
 
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
@@ -25,7 +26,7 @@ import Data.Proxy (Proxy (..))
 import Data.Typeable
 
 import Control.Monad (forever, void)
-import Control.Exception (bracket, catch)
+import Control.Exception (bracket)
 
 data ServiceClientOptions =
   ServiceClientOptions
@@ -36,6 +37,7 @@ data ServiceClientTrace
   = ServiceClientDriverTrace DriverTrace
   | ServiceClientSocketClosed
   | ServiceClientConnected (SocketAddress Unix)
+  | ServiceClientAttemptReconnect Int
   | ServiceClientReceivedKey
   deriving (Show)
 
@@ -59,7 +61,8 @@ runServiceClient proxy options handleKey tracer = do
       traceWith tracer ServiceClientSocketClosed
     )
     (\s -> do
-      connect s (serviceClientSocketAddress options)
+      retrySocket (\e n i -> traceWith tracer $ ServiceClientAttemptReconnect n) $
+        connect s (serviceClientSocketAddress options)
       traceWith tracer $ ServiceClientConnected (serviceClientSocketAddress options)
       void $ runPeerWithDriver
         (driver s $ ServiceClientDriverTrace >$< tracer)

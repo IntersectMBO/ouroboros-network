@@ -184,7 +184,7 @@ testOneKeyThroughChain p lock seedPSB certN nodeDelay controlDelay =
          -> MVar (SignKeyWithPeriodKES (KES c), OCert c)
          -> IO ()
     node tracer mvar = do
-      threadDelay (1000 + fromIntegral nodeDelay)
+      threadDelay (fromIntegral nodeDelay)
       (runServiceClient p
         ServiceClientOptions { serviceClientSocketAddress = serviceSocketAddr }
         (\sk oc -> do
@@ -199,7 +199,7 @@ testOneKeyThroughChain p lock seedPSB certN nodeDelay controlDelay =
                   -> (SignKeyWithPeriodKES (KES c), OCert c)
                   -> IO ()
     controlServer tracer (sk, oc) = do
-      threadDelay (1000 + fromIntegral controlDelay)
+      threadDelay (fromIntegral controlDelay)
       (runControlClient1 p
         ControlClientOptions { controlClientSocketAddress = controlSocketAddr }
         sk oc)
