@@ -42,19 +42,6 @@ jobs:
           mingw-w64-x86_64-libsodium
           mingw-w64-x86_64-jq
 
-    - name: "WIN: Setup pkg-config"
-      if: runner.os == 'Windows'
-      run: |
-        pacman --noconfirm -S mingw-w64-x86_64-pkg-config
-
-    - name: "LINUX: Setup haskell"
-      if: runner.os != 'Windows'
-      uses: haskell/actions/setup@v2
-      id: setup-haskell
-      with:
-        ghc-version: ${{ matrix.ghc }}
-        cabal-version: 3.6.2.0
-
     - name: "WIN: Setup Haskell"
       id: win-setup-haskell
       if: runner.os == 'Windows'
@@ -74,22 +61,8 @@ jobs:
 
         source ~/.bashrc
 
-        # There is an issue with crt libraries, fixed by prepending the ghc
-        # mingw32 libraries directory to every other library directory.
-        echo "# Original cabal config extra-lib-dirs"
-        grep extra-lib-dirs /c/cabal/config
-
-        sed -i 's/C:\\msys64\\mingw64\\lib/C:\\ghcup\\ghc\\8.10.7\\mingw\\x86_64-w64-mingw32\\lib, C:\\msys64\\mingw64\\lib/g' /c/cabal/config
-
-        echo "# Modified cabal config extra-lib-dirs"
-        grep extra-lib-dirs /c/cabal/config
-
         ghc --version
         cabal --version
-        echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT
-
-    - name: Set cache version
-      run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
 
 
     - name: build old-time and network
