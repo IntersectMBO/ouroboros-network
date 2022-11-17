@@ -233,7 +233,7 @@ protocolInfoShelley protocolParamsShelleyBased
                       } =
     protocolInfoTPraosShelleyBased
       protocolParamsShelleyBased
-      ((), emptyFromByronTranslationContext)
+      ((), emptyFromByronTranslationContext) -- trivial additional Genesis config
       protVer
       maxTxCapacityOverrides
 

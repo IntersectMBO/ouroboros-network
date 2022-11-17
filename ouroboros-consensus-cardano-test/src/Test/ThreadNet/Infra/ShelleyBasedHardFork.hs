@@ -256,7 +256,6 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
       , shelleyBasedInitialNonce
       , shelleyBasedLeaderCredentials
       } = protocolParamsShelleyBased
-
     -- Era 1
 
     genesis1 :: SL.ShelleyGenesis era1
@@ -266,7 +265,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     protocolInfo1 =
         protocolInfoTPraosShelleyBased
           protocolParamsShelleyBased
-          ((), translationContext)  -- trivial additional Genesis config and translation context
+          ((), translationContext)  -- trivial additional Genesis config
           protVer1
           (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
 
