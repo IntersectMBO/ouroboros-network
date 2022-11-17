@@ -68,8 +68,7 @@ import           Cardano.Ledger.Alonzo.Tx (totExUnits)
 import           Cardano.Ledger.Babbage.PParams
 import qualified Cardano.Ledger.Block as SL (txid)
 import           Cardano.Ledger.Core (Tx, TxSeq, bodyTxL, fromTxSeq, sizeTxF)
-import qualified Cardano.Ledger.Core as Core (Tx)
-import qualified Cardano.Ledger.Era as SL (TxSeq, fromTxSeq, getAllTxInputs)
+import qualified Cardano.Ledger.Era as SL (getAllTxInputs)
 import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Cardano.Ledger.Crypto (Crypto)
@@ -155,19 +154,14 @@ instance ShelleyCompatible proto era
 
   txForgetValidated (ShelleyValidatedTx txid vtx) = ShelleyTx txid (SL.extractTx vtx)
 
-<<<<<<< HEAD
-mkShelleyTx :: forall era proto. ShelleyBasedEra era => Tx era -> GenTx (ShelleyBlock proto era)
-mkShelleyTx tx = ShelleyTx (SL.txid @era (tx ^. bodyTxL)) tx
-=======
   getTransactionKeySets (ShelleyTx _ tx) =
         ShelleyLedger.ShelleyLedgerTables
       $ ApplyKeysMK
       $ DS.Keys
-      $ SL.getAllTxInputs (getField @"body"  tx)
+      $ SL.getAllTxInputs (tx ^. bodyTxL)
 
-mkShelleyTx :: forall era proto. ShelleyBasedEra era => Core.Tx era -> GenTx (ShelleyBlock proto era)
-mkShelleyTx tx = ShelleyTx (SL.txid @era (getField @"body" tx)) tx
->>>>>>> 106ee892b (Integrate UTxO-HD)
+mkShelleyTx :: forall era proto. ShelleyBasedEra era => Tx era -> GenTx (ShelleyBlock proto era)
+mkShelleyTx tx = ShelleyTx (SL.txid @era (tx ^. bodyTxL)) tx
 
 mkShelleyValidatedTx :: forall era proto.
      ShelleyBasedEra era

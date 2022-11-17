@@ -23,7 +23,7 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.History.EraParams (EraParams,
                      eraEpochSize)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB hiding
@@ -33,6 +33,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (simpleChunkInfo)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.IOLike hiding (invariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -65,13 +66,14 @@ data MinimalChainDbArgs m blk = MinimalChainDbArgs {
     mcdbTopLevelConfig :: TopLevelConfig blk
   , mcdbChunkInfo      :: ImmutableDB.ChunkInfo
   -- ^ Specifies the layout of the ImmutableDB on disk.
-  , mcdbInitLedger     :: ExtLedgerState blk
+  , mcdbInitLedger     :: ExtLedgerState blk ValuesMK
   -- ^ The initial ledger state.
   , mcdbRegistry       :: ResourceRegistry m
   -- ^ Keeps track of non-lexically scoped resources.
   , mcdbNodeDBs        :: NodeDBs (StrictTVar m MockFS)
   -- ^ File systems underlying the immutable, volatile and ledger databases.
   -- Would be useful to default this to StrictTVar's containing empty MockFS's.
+  , mcdbBackingStoreSelector :: LedgerDB.BackingStoreSelector m
   }
 
 -- | Utility function to get a default chunk info in case we have EraParams available.
@@ -113,4 +115,5 @@ fromMinimalChainDbArgs MinimalChainDbArgs {..} = ChainDbArgs {
   , cdbGcDelay                = 1
   , cdbGcInterval             = 1
   , cdbBlocksToAddSize        = 1
+  , cdbBackingStoreSelector   = mcdbBackingStoreSelector
   }

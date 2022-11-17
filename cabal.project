@@ -132,3 +132,15 @@ constraints:
   , small-steps == 0.1.1.1
   , small-steps-test == 0.1.1.1
   , vector-map == 0.1.1.1
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/haskell-lmdb
+  tag: 5aef2ccc8b7e5e91aa609dc531df392c46eaae09
+  --sha256: 09sxgxylf9m78qmf1sh82ydvq3ihkgfh829yy9cd526kp75wiy86
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/lmdb-simple
+  tag: 5b2c622c1cf43deca081139b2d1d1eb9fc991064
+  --sha256: 0n96rzj4901y0q2l1fb6ffjp1kvgqchliig9id6jaq05xn4v386s

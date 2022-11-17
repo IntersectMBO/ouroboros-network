@@ -29,7 +29,7 @@ module Ouroboros.Consensus.Mempool.Impl (
   , openMempoolWithoutSyncThread
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict (newTMVarIO)
+import           Control.Concurrent.Class.MonadSTM.Strict.TMVar (newTMVarIO)
 import           Control.Monad.Except
 import           Data.Foldable (foldl')
 import qualified Data.List.NonEmpty as NE

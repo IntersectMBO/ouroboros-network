@@ -5,9 +5,6 @@
 
 module Cardano.Tools.DBAnalyser.Run (analyse) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.Serialise (Serialise (decode))
-import           Control.Monad.Except (runExceptT)
 import qualified Debug.Trace as Debug
 import           System.IO
 
@@ -16,13 +13,9 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
-                     (HasTxs)
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
-import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -30,9 +23,10 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (readSnapshot)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (BackingStoreSelector(..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import           Cardano.Tools.DBAnalyser.Analysis
@@ -44,18 +38,27 @@ import           Cardano.Tools.DBAnalyser.Types
   Analyse
 -------------------------------------------------------------------------------}
 
+defaultLMDBLimits :: LMDBLimits
+defaultLMDBLimits = LMDBLimits
+  { -- 16 Gib
+    lmdbMapSize = 16 * 1024 * 1024 * 1024
+    -- 4 internal databases: 1 for the settings, 1 for the state, 2 for the
+    -- ledger tables.
+  , lmdbMaxDatabases = 4
+  , lmdbMaxReaders = 16
+  }
+
 analyse ::
      forall blk .
      ( Node.RunNode blk
      , Show (Header blk)
      , HasAnalysis blk
      , HasProtocolInfo blk
-     , LedgerSupportsMempool.HasTxs blk
      )
   => DBAnalyserConfig
   -> Args blk
   -> IO (Maybe AnalysisResult)
-analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbose} args =
+analyse DBAnalyserConfig{analysis, cfgLimit, dbDir, selectDB, validation, verbose, bsSelector} args =
     withRegistry $ \registry -> do
 
       chainDBTracer  <- mkTracer verbose
@@ -68,7 +71,7 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
           args' =
             Node.mkChainDbArgs
               registry InFuture.dontCheck cfg genesisLedger chunkInfo $
-            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy
+            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy InMemoryBackingStore
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy
@@ -79,10 +82,17 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
 
       case selectDB of
         SelectImmutableDB initializeFrom -> do
-          initLedgerErr <- runExceptT $ case initializeFrom of
-            Nothing       -> pure genesisLedger
-            Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
-          initLedger <- either (error . show) pure initLedgerErr
+          let initLedger = case initializeFrom of
+                                Nothing       -> Right genesisLedger
+                                Just snapshot -> Left snapshot
+
+          let bs = case bsSelector of
+                MEM          -> InMemoryBackingStore
+                LMDB mapsize ->
+                  maybe
+                    (LMDBBackingStore defaultLMDBLimits)
+                    (\n -> LMDBBackingStore (defaultLMDBLimits { lmdbMapSize = n }))
+                    mapsize
           -- This marker divides the "loading" phase of the program, where the
           -- system is principally occupied with reading snapshot data from
           -- disk, from the "processing" phase, where we are streaming blocks
@@ -93,10 +103,10 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
                 cfg
               , initLedger
               , db = Left immutableDB
-              , registry
               , ledgerDbFS = ledgerDbFS
-              , limit = confLimit
+              , limit = cfgLimit
               , tracer = analysisTracer
+              , backing = bs
               }
             tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
             putStrLn $ "ImmutableDB tip: " ++ show tipPoint
@@ -105,12 +115,18 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
           ChainDB.withDB chainDbArgs $ \chainDB -> do
             result <- runAnalysis analysis $ AnalysisEnv {
                 cfg
-              , initLedger = genesisLedger
+              , initLedger = Right genesisLedger
               , db = Right chainDB
-              , registry
               , ledgerDbFS = ledgerDbFS
-              , limit = confLimit
+              , limit = cfgLimit
               , tracer = analysisTracer
+              , backing = case bsSelector of
+                            MEM          -> InMemoryBackingStore
+                            LMDB mapsize ->
+                              maybe
+                                (LMDBBackingStore defaultLMDBLimits)
+                                (\n -> LMDBBackingStore (defaultLMDBLimits { lmdbMapSize = n }))
+                                mapsize
               }
             tipPoint <- atomically $ ChainDB.getTipPoint chainDB
             putStrLn $ "ChainDB tip: " ++ show tipPoint
@@ -136,11 +152,3 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
       (_, Just MinimumBlockValidation) -> VolatileDB.NoValidation
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
-
-    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk)
-    decodeExtLedgerState' cfg =
-      let ccfg = configCodec cfg
-      in decodeExtLedgerState
-           (decodeDisk ccfg)
-           (decodeDisk ccfg)
-           (decodeDisk ccfg)

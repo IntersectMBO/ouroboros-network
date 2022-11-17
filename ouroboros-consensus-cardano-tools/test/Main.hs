@@ -55,7 +55,8 @@ testAnalyserConfig =
     , validation  = Just ValidateAllBlocks
     , blockType   = CardanoBlock (Cardano.CardanoBlockArgs nodeConfig Nothing)
     , analysis    = CountBlocks
-    , confLimit   = Unlimited
+    , cfgLimit    = Nothing
+    , bsSelector  = MEM
     }
 
 -- | A multi-step test including synthesis and analaysis 'SomeConsensusProtocol' using the Cardano instance.
