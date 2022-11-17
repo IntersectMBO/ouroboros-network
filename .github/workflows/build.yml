@@ -71,6 +71,11 @@ jobs:
         cabal install --lib old-time-1.1.0.3 -j1 -v3
         cabal install --lib network-3.1.2.7 -j1 -v3
 
+    - name: Diagnostics
+      if: always()
+      run: |
+        find 'C:/cabal/store/ghc-8.10.7/old-time-1.1.0.3-44a2c565592e84ec665bc760a4c1a4c07fd31787'
+
     - uses: actions/checkout@v3
 
     - name: "Configure cabal.project.local"
