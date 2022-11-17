@@ -46,7 +46,6 @@ import           Data.Typeable (eqT, (:~:) (..))
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 
@@ -110,8 +109,6 @@ data PeerState m
   -- ^ peer with no opened connections in either direction
 
 instance ( MonadAsync m
-         , Show (ThreadId m)
-         , Ord (ThreadId m)
          )  => Show (PeerState m) where
     show (HotPeer producers consumers)
        = "HotPeer"
@@ -256,9 +253,7 @@ newPeerStatesVar = atomically newPeerStatesVarSTM
 -- | Periodically clean 'PeerState'.  It will stop when 'PeerState' becomes
 -- 'ThrowException'.
 --
-cleanPeerStates :: ( MonadSTM   m
-                   , MonadAsync m
-                   , MonadTime  m
+cleanPeerStates :: ( MonadTime  m
                    , MonadTimer m
                    )
                 => DiffTime

@@ -379,8 +379,7 @@ instance GlobalAddressScheme Int where
 --
 withSnocket
     :: forall m peerAddr a.
-       ( MonadCatch       m
-       , MonadLabelledSTM m
+       ( MonadLabelledSTM m
        , MonadMask        m
        , MonadTime        m
        , MonadTimer       m

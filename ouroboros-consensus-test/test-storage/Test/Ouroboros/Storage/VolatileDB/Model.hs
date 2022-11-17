@@ -96,7 +96,7 @@ blockHashes :: HasHeader blk => DBModel blk -> [HeaderHash blk]
 blockHashes = concatMap fileHashes . fileIndex
 
 getBlockToPredecessor ::
-     (HasHeader blk, GetPrevHash blk)
+     GetPrevHash blk
   => DBModel blk
   -> Map (HeaderHash blk) (ChainHash blk)
 getBlockToPredecessor DBModel { fileIndex } =
@@ -187,7 +187,7 @@ fileHashes :: HasHeader blk => BlocksInFile blk -> [HeaderHash blk]
 fileHashes = map blockHash . getBlocksInFile
 
 fileBlockToPredecessor ::
-     (HasHeader blk, GetPrevHash blk)
+    GetPrevHash blk
   => BlocksInFile blk
   -> Map (HeaderHash blk) (ChainHash blk)
 fileBlockToPredecessor (BlocksInFile blks) = Map.fromList
@@ -322,7 +322,7 @@ garbageCollectModel slot dbm = whenOpen dbm $
       fileMaxSlotNo file < MaxSlotNo slot
 
 filterByPredecessorModel ::
-     forall blk. (HasHeader blk, GetPrevHash blk)
+     forall blk. GetPrevHash blk
   => DBModel blk
   -> Either (VolatileDBError blk) (ChainHash blk -> Set (HeaderHash blk))
 filterByPredecessorModel dbm = whenOpen dbm $ \predecessor ->
@@ -336,7 +336,7 @@ filterByPredecessorModel dbm = whenOpen dbm $ \predecessor ->
       (getBlockToPredecessor dbm)
 
 getBlockInfoModel ::
-     (HasHeader blk, GetPrevHash blk, HasBinaryBlockInfo blk)
+     (GetPrevHash blk, HasBinaryBlockInfo blk)
   => DBModel blk
   -> Either (VolatileDBError blk) (HeaderHash blk -> Maybe (BlockInfo blk))
 getBlockInfoModel dbm = whenOpen dbm $ \hash ->

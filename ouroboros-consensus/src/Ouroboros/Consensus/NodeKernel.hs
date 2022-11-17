@@ -188,7 +188,6 @@ data InternalState m remotePeer localPeer blk = IS {
 initInternalState
     :: forall m remotePeer localPeer blk.
        ( IOLike m
-       , LedgerSupportsProtocol blk
        , Ord remotePeer
        , NoThunks remotePeer
        , RunNode blk

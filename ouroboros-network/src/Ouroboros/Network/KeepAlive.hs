@@ -39,8 +39,7 @@ instance Show peer => Show (TraceKeepAliveClient peer) where
 
 keepAliveClient
     :: forall m peer.
-       ( MonadSTM   m
-       , MonadMonotonicTime m
+       ( MonadMonotonicTime m
        , MonadTimer m
        , Ord peer
        )

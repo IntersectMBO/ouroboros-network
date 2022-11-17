@@ -258,7 +258,6 @@ addBlockAsync CDB { cdbTracer, cdbBlocksToAdd } =
 addBlockSync
   :: forall m blk.
      ( IOLike m
-     , GetPrevHash blk
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk
@@ -443,7 +442,6 @@ chainSelectionForFutureBlocks cdb@CDB{..} blockCache = do
 chainSelectionForBlock
   :: forall m blk.
      ( IOLike m
-     , HasHeader blk
      , LedgerSupportsProtocol blk
      , InspectLedger blk
      , HasHardForkHistory blk

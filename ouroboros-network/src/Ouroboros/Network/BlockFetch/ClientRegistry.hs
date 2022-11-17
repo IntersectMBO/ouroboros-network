@@ -75,8 +75,7 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
 -- It also manages synchronisation with the corresponding chain sync client.
 --
 bracketFetchClient :: forall m a peer header block version.
-                      (MonadThrow m, MonadSTM m, MonadFork m, MonadMask m,
-                       Ord peer)
+                      (MonadSTM m, MonadFork m, MonadMask m, Ord peer)
                    => FetchClientRegistry peer header block m
                    -> version
                    -> (version -> WhetherReceivingTentativeBlocks)
@@ -198,8 +197,7 @@ bracketSyncWithFetchClient (FetchClientRegistry _ctxVar
           Map.delete peer m
 
 bracketKeepAliveClient :: forall m a peer header block.
-                              (MonadThrow m, MonadSTM m, MonadFork m,
-                               MonadMask m, Ord peer)
+                              (MonadSTM m, MonadFork m, MonadMask m, Ord peer)
                        => FetchClientRegistry peer header block m
                        -> peer
                        -> ((StrictTVar  m (Map peer PeerGSV)) -> m a)

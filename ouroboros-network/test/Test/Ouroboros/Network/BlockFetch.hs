@@ -4,6 +4,8 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+
 module Test.Ouroboros.Network.BlockFetch (tests) where
 
 import           Test.ChainGenerators (TestChainFork (..))

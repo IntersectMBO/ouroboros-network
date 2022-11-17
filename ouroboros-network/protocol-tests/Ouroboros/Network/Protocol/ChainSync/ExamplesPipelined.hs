@@ -5,6 +5,8 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+
 module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
   ( Client (..)
   , chainSyncClientPipelinedMax

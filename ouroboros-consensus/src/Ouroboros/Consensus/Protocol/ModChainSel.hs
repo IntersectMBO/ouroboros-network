@@ -24,7 +24,6 @@ newtype instance ConsensusConfig (ModChainSel p s) = McsConsensusConfig {
 instance ( ConsensusProtocol p
          , Ord  s
          , Show s
-         , Typeable p
          , Typeable s
          , NoThunks s
          ) => ConsensusProtocol (ModChainSel p s) where

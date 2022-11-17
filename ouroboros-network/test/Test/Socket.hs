@@ -7,7 +7,8 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-{-# OPTIONS_GHC -Wno-orphans     #-}
+{-# OPTIONS_GHC -Wno-orphans                 #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Socket (tests) where
 
 import qualified Data.ByteString.Lazy as BL

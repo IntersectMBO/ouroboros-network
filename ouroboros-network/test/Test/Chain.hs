@@ -4,6 +4,8 @@
 {-# LANGUAGE PatternSynonyms  #-}
 {-# LANGUAGE TypeOperators    #-}
 
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+
 module Test.Chain (tests) where
 
 import qualified Data.List as L

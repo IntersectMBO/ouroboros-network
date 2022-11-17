@@ -196,7 +196,6 @@ data MuxGroup = MuxJob
 --
 runMux :: forall m mode.
           ( MonadAsync m
-          , MonadCatch m
           , MonadFork m
           , MonadLabelledSTM m
           , MonadThrow (STM m)
@@ -343,8 +342,7 @@ newtype MonitorCtx m mode = MonitorCtx {
 --     incoming message arrives.
 --
 monitor :: forall mode m.
-           ( MonadSTM m
-           , MonadAsync m
+           ( MonadAsync m
            , MonadMask m
            , MonadThrow (STM m)
            )

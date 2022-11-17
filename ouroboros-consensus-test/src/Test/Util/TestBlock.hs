@@ -500,17 +500,17 @@ instance PayloadSemantics ptype => UpdateLedger (TestBlockWith ptype)
 instance InspectLedger (TestBlockWith ptype) where
   -- Defaults are fine
 
-instance (Typeable ptype, PayloadSemantics ptype) => HasAnnTip (TestBlockWith ptype) where
+instance (PayloadSemantics ptype) => HasAnnTip (TestBlockWith ptype) where
   -- Use defaults
 
-instance (Typeable ptype, PayloadSemantics ptype) => BasicEnvelopeValidation (TestBlockWith ptype) where
+instance (PayloadSemantics ptype) => BasicEnvelopeValidation (TestBlockWith ptype) where
   -- The block number of a test block is derived from the length of the hash
   expectedFirstBlockNo _ = BlockNo 1
 
-instance (Typeable ptype, PayloadSemantics ptype) => ValidateEnvelope (TestBlockWith ptype) where
+instance (PayloadSemantics ptype) => ValidateEnvelope (TestBlockWith ptype) where
   -- Use defaults
 
-instance (Typeable ptype, PayloadSemantics ptype) => LedgerSupportsProtocol (TestBlockWith ptype) where
+instance (PayloadSemantics ptype) => LedgerSupportsProtocol (TestBlockWith ptype) where
   protocolLedgerView   _ _  = TickedTrivial
   ledgerViewForecastAt _    = trivialForecast
 

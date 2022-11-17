@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns        #-}
 
 module Main where
 

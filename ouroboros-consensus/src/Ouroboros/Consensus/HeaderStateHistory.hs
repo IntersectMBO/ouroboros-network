@@ -107,7 +107,7 @@ cast (HeaderStateHistory history) =
 -- rewinding that header state again by @j@ where @i + j > k@ is not possible
 -- and will yield 'Nothing'.
 rewind ::
-     forall blk. (BlockSupportsProtocol blk, HasAnnTip blk)
+     forall blk. (HasAnnTip blk)
   => Point blk
   -> HeaderStateHistory blk -> Maybe (HeaderStateHistory blk)
 rewind p (HeaderStateHistory history) = HeaderStateHistory <$>

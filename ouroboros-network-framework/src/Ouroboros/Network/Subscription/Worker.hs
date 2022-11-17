@@ -148,8 +148,7 @@ instance Semigroup (LocalAddresses addr) where
 -- | Allocate a socket and connect to a peer, execute the continuation with
 -- async exceptions masked.  The continuation receives the 'unmask' callback.
 --
-safeConnect :: ( MonadThrow m
-               , MonadMask m
+safeConnect :: ( MonadMask m
                )
             => Snocket m sock addr
             -> (sock -> addr -> m ()) -- ^ configure the socket

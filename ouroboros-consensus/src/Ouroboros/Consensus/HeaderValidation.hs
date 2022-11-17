@@ -62,7 +62,6 @@ import           Control.Monad.Except
 import           Data.Coerce
 import           Data.Kind (Type)
 import           Data.Proxy
-import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
@@ -236,7 +235,7 @@ data HeaderEnvelopeError blk =
 
 deriving instance (ValidateEnvelope blk) => Eq   (HeaderEnvelopeError blk)
 deriving instance (ValidateEnvelope blk) => Show (HeaderEnvelopeError blk)
-deriving instance (ValidateEnvelope blk, Typeable blk)
+deriving instance (ValidateEnvelope blk)
                => NoThunks (HeaderEnvelopeError blk)
 
 castHeaderEnvelopeError :: ( HeaderHash blk ~ HeaderHash blk'
@@ -364,7 +363,7 @@ deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => Eq                 (HeaderError blk)
 deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => Show               (HeaderError blk)
-deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk, Typeable blk)
+deriving instance (BlockSupportsProtocol blk, ValidateEnvelope blk)
                => NoThunks (HeaderError blk)
 
 castHeaderError :: (   ValidationErr (BlockProtocol blk )

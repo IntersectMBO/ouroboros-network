@@ -220,9 +220,11 @@ instance Protocol (LocalTxMonitor txid tx slot) where
   data NobodyHasAgency st where
     TokDone  :: NobodyHasAgency StDone
 
-  exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
+  exclusionLemma_ClientAndServerHaveAgency TokIdle     tok = case tok of {}
 
-  exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
+  exclusionLemma_ClientAndServerHaveAgency TokAcquired tok = case tok of {}
+
+  exclusionLemma_NobodyAndClientHaveAgency TokDone     tok = case tok of {}
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 

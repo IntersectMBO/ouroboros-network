@@ -118,7 +118,6 @@ newtype Our   a = Our   { unOur   :: a }
 bracketChainSyncClient
     :: ( IOLike m
        , Ord peer
-       , BlockSupportsProtocol blk
        , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
@@ -991,7 +990,6 @@ attemptRollback rollBackPoint (frag, state) = do
 invalidBlockRejector
     :: forall m blk.
        ( IOLike m
-       , BlockSupportsProtocol blk
        , LedgerSupportsProtocol blk
        )
     => Tracer m (TraceChainSyncClientEvent blk)
@@ -1276,7 +1274,6 @@ data TraceChainSyncClientEvent blk
     -- ^ The client has terminated.
 
 deriving instance ( BlockSupportsProtocol blk
-                  , Eq (ValidationErr (BlockProtocol blk))
                   , Eq (Header blk)
                   )
                => Eq   (TraceChainSyncClientEvent blk)

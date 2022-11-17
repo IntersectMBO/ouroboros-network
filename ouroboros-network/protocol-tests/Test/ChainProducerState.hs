@@ -3,6 +3,8 @@
 {-# LANGUAGE TypeFamilies   #-}
 {-# LANGUAGE TypeOperators  #-}
 
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+
 module Test.ChainProducerState
   ( ChainProducerStateTest (..)
   , ChainProducerStateForkTest (..)

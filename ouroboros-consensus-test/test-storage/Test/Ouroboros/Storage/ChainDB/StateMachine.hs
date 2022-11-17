@@ -562,6 +562,9 @@ instance (TestConstraints blk, Eq it, Eq flr) => Eq (Resp blk it flr) where
   Resp (Right a) == Resp (Right a') = a == a'
   _              == _               = False
 
+
+type DBModel blk = Model.Model blk
+
 -- We can't reuse 'run' because the 'ChainDB' API uses 'STM'. Instead, we call
 -- the model directly.
 runPure :: forall blk.
@@ -658,6 +661,22 @@ flrs :: Bitraversable t => t it flr -> [flr]
 flrs = bifoldMap (const []) (:[])
 
 {-------------------------------------------------------------------------------
+  Bitraversable instances
+-------------------------------------------------------------------------------}
+
+TH.deriveBifunctor     ''Cmd
+TH.deriveBifoldable    ''Cmd
+TH.deriveBitraversable ''Cmd
+
+TH.deriveBifunctor     ''Success
+TH.deriveBifoldable    ''Success
+TH.deriveBitraversable ''Success
+
+TH.deriveBifunctor     ''Resp
+TH.deriveBifoldable    ''Resp
+TH.deriveBitraversable ''Resp
+
+{-------------------------------------------------------------------------------
   Model
 -------------------------------------------------------------------------------}
 
@@ -672,8 +691,6 @@ type FollowerRef blk m r = Reference (Opaque (TestFollower m blk)) r
 
 -- | Mapping between iterator references and mocked followers
 type KnownFollowers blk m r = RefEnv (Opaque (TestFollower m blk)) FollowerId r
-
-type DBModel blk = Model.Model blk
 
 -- | Execution model
 data Model blk m r = Model
@@ -1134,22 +1151,6 @@ sm env genBlock cfg initLedger maxClockSkew = StateMachine
   , invariant     = Just $ invariant cfg
   , cleanup       = noCleanup
   }
-
-{-------------------------------------------------------------------------------
-  Bitraversable instances
--------------------------------------------------------------------------------}
-
-TH.deriveBifunctor     ''Cmd
-TH.deriveBifoldable    ''Cmd
-TH.deriveBitraversable ''Cmd
-
-TH.deriveBifunctor     ''Success
-TH.deriveBifoldable    ''Success
-TH.deriveBitraversable ''Success
-
-TH.deriveBifunctor     ''Resp
-TH.deriveBifoldable    ''Resp
-TH.deriveBitraversable ''Resp
 
 {-------------------------------------------------------------------------------
   Required instances

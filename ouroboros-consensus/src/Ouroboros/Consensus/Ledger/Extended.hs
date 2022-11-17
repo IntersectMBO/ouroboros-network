@@ -75,7 +75,6 @@ instance LedgerSupportsProtocol blk => NoThunks (ExtLedgerState blk) where
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
 
 deriving instance ( LedgerSupportsProtocol blk
-                  , Eq (ChainDepState (BlockProtocol blk))
                   ) => Eq (ExtLedgerState blk)
 
 {-------------------------------------------------------------------------------
@@ -114,8 +113,7 @@ instance IsLedger (LedgerState blk) => GetTip (ExtLedgerState blk) where
 instance IsLedger (LedgerState blk) => GetTip (Ticked (ExtLedgerState blk)) where
   getTip = castPoint . getTip . tickedLedgerState
 
-instance ( IsLedger (LedgerState  blk)
-         , LedgerSupportsProtocol blk
+instance ( LedgerSupportsProtocol blk
          )
       => IsLedger (ExtLedgerState blk) where
   type LedgerErr (ExtLedgerState blk) = ExtValidationError blk

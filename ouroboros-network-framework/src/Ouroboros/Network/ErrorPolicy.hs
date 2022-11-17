@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -248,9 +249,14 @@ completeApplicationTx ErrorPolicies {epConErrorPolicies} (ConnectionError t addr
               carState =
                 case ps of
                   PeerStates peerStates -> PeerStates $ Map.update fn addr peerStates
-                  ThrowException{}      -> ps,
-              carThreads = Set.empty,
-              carTrace   = Just $
+#if __GLASGOW_HASKELL__ < 900
+                  -- GHC 9 is certain this pattern is
+                  -- not used. GHC 8 apparently can't
+                  -- agree. m(
+                  ThrowException{}      -> ps
+#endif
+              , carThreads = Set.empty
+              , carTrace   = Just $
                             WithAddr addr
                              (ErrorPolicyUnhandledConnectionException
                                (SomeException e))

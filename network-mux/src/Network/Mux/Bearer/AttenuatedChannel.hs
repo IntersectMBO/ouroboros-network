@@ -101,8 +101,7 @@ writeQueueChannel QueueChannel { qcWrite, qcRead } msg =
           return True
 
 
-newConnectedQueueChannelPair :: ( MonadSTM         m
-                                , MonadLabelledSTM m
+newConnectedQueueChannelPair :: ( MonadLabelledSTM m
                                 )
                              => STM m ( QueueChannel m
                                       , QueueChannel m )
@@ -157,8 +156,7 @@ data Attenuation = Attenuation {
 -- | Make a 'AttenuatedChannel' from a 'QueueChannel'.
 --
 newAttenuatedChannel :: forall m.
-                        ( MonadSTM        m
-                        , MonadTime       m
+                        ( MonadTime       m
                         , MonadTimer      m
                         , MonadThrow      m
                         , MonadThrow (STM m)

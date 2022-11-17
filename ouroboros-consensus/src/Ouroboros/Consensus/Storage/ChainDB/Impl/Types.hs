@@ -512,14 +512,12 @@ data TraceEvent blk
   deriving (Generic)
 
 deriving instance
-  ( HasHeader blk
-  , Eq (Header blk)
+  ( Eq (Header blk)
   , LedgerSupportsProtocol blk
   , InspectLedger blk
   ) => Eq (TraceEvent blk)
 deriving instance
-  ( HasHeader blk
-  , Show (Header blk)
+  ( Show (Header blk)
   , LedgerSupportsProtocol blk
   , InspectLedger blk
   ) => Show (TraceEvent blk)
@@ -661,14 +659,12 @@ data TraceAddBlockEvent blk =
   deriving (Generic)
 
 deriving instance
-  ( HasHeader blk
-  , Eq (Header blk)
+  ( Eq (Header blk)
   , LedgerSupportsProtocol blk
   , InspectLedger blk
   ) => Eq (TraceAddBlockEvent blk)
 deriving instance
-  ( HasHeader blk
-  , Show (Header blk)
+  ( Show (Header blk)
   , LedgerSupportsProtocol blk
   , InspectLedger blk
   ) => Show (TraceAddBlockEvent blk)
@@ -701,8 +697,7 @@ data TraceValidationEvent blk =
   deriving (Generic)
 
 deriving instance
-  ( HasHeader              blk
-  , Eq (Header             blk)
+  ( Eq (Header             blk)
   , LedgerSupportsProtocol blk
   ) => Eq (TraceValidationEvent blk)
 deriving instance
@@ -734,8 +729,7 @@ data TraceInitChainSelEvent blk =
   deriving (Generic)
 
 deriving instance
-  ( HasHeader              blk
-  , Eq (Header             blk)
+  ( Eq (Header             blk)
   , LedgerSupportsProtocol blk
   ) => Eq (TraceInitChainSelEvent blk)
 deriving instance

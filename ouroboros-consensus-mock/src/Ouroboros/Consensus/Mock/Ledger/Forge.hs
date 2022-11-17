@@ -40,7 +40,6 @@ newtype ForgeExt c ext = ForgeExt {
 
 forgeSimple :: forall c ext.
                ( SimpleCrypto c
-               , MockProtocolSpecific c ext
                )
             => ForgeExt c ext
             -> TopLevelConfig (SimpleBlock c ext)
