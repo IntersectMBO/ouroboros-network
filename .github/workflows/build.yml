@@ -68,8 +68,8 @@ jobs:
     - name: build old-time and network
       run: |
         cabal update
-        cabal install --lib old-time-1.1.0.3 -j
-        cabal install --lib network-3.1.2.7 -j
+        cabal install --lib old-time-1.1.0.3 -j1 -v3
+        cabal install --lib network-3.1.2.7 -j1 -v3
 
     - uses: actions/checkout@v3
 

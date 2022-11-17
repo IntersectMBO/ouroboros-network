@@ -38,6 +38,7 @@ packages: ./ouroboros-network-testing
           ./ouroboros-consensus-cardano-tools
           ./ntp-client
           ./cardano-client
+          ./old-time-1.1.0.3
 
 tests: True
 
