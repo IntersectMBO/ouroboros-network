@@ -64,17 +64,6 @@ jobs:
         ghc --version
         cabal --version
 
-    - name: "Configure cabal.project.local"
-      if: runner.os != 'Windows'
-      run: |
-        cp .github/workflows/cabal.project.local.Linux cabal.project.local
-
-    - name: "Configure cabal.project.local Windows"
-      if: runner.os == 'Windows'
-      run: |
-        cp .github/workflows/cabal.project.local.Windows cabal.project.local
-
-
     - name: build old-time and network
       run: |
         cabal update
