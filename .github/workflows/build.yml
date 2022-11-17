@@ -52,7 +52,7 @@ jobs:
           BOOTSTRAP_HASKELL_ADJUST_CABAL_CONFIG=1 \
           BOOTSTRAP_HASKELL_ADJUST_BASHRC=1 \
           BOOTSTRAP_HASKELL_GHC_VERSION="${{ matrix.ghc }}" \
-          BOOTSTRAP_HASKELL_CABAL_VERSION="3.8.0.0" \
+          BOOTSTRAP_HASKELL_CABAL_VERSION="3.8.1.0" \
           sh
 
         # MSYS2 doesn't inherit $GITHUB_PATH so this is needed
