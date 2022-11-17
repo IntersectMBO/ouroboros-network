@@ -130,11 +130,9 @@ type ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 =
   , SL.PreviousEra era2 ~ era1
 
   , SL.TranslateEra       era2 SL.NewEpochState
-  , SL.TranslateEra       era2 SL.ShelleyGenesis
   , SL.TranslateEra       era2 WrapTx
 
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
-  , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
 
   , SL.AdditionalGenesisConfig era1 ~ ()
   , SL.AdditionalGenesisConfig era2 ~ SL.TranslationContext era2
@@ -291,7 +289,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     -- Era 2
 
     genesis2 :: SL.ShelleyGenesis era2
-    genesis2 = SL.translateEra' transCtxt2 genesis1
+    genesis2 = SL.translateShelleyGenesis genesis1
 
     protocolInfo2 :: ProtocolInfo m (ShelleyBlock proto2 era2)
     protocolInfo2 =
