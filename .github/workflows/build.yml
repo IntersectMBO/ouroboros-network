@@ -157,9 +157,12 @@ jobs:
         key: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.record-deps.outputs.weeknum }}
         restore-keys: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
 
     - name: Build dependencies
       run: cabal build --only-dependencies all
+
 
     - name: Build projects [build]
       run: cabal build all
