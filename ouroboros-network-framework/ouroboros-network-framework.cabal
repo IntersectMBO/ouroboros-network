@@ -35,8 +35,11 @@ library
                        Ouroboros.Network.Driver.Limits
                        Ouroboros.Network.ErrorPolicy
                        Ouroboros.Network.IOManager
+                       Ouroboros.Network.Magic
                        Ouroboros.Network.Mux
                        Ouroboros.Network.MuxMode
+                       Ouroboros.Network.NodeToClient.Version
+                       Ouroboros.Network.NodeToNode.Version
                        Ouroboros.Network.Util.ShowProxy
 
                        Ouroboros.Network.Protocol.Handshake

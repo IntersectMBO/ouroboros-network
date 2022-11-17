@@ -10,9 +10,6 @@ import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests)
 import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
 import qualified Ouroboros.Network.Protocol.TxSubmission2.Test (tests)
-import qualified Test.AnchoredFragment (tests)
-import qualified Test.Chain (tests)
-import qualified Test.ChainGenerators (tests)
 import qualified Test.ChainProducerState (tests)
 import qualified Test.LedgerPeers (tests)
 import qualified Test.Ouroboros.Network.BlockFetch (tests)
@@ -42,10 +39,7 @@ tests =
   testGroup "ouroboros-network"
 
     -- data structures
-  [ Test.ChainGenerators.tests
-  , Test.Chain.tests
-  , Test.AnchoredFragment.tests
-  , Test.ChainProducerState.tests
+  [ Test.ChainProducerState.tests
 
     -- protocols
   , Ouroboros.Network.Protocol.ChainSync.Test.tests

@@ -86,6 +86,7 @@ library
                      , small-steps
 
                      , ouroboros-network
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-diffusion

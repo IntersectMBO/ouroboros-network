@@ -76,7 +76,7 @@ library
                      , ouroboros-consensus-cardano
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-shelley
-                     , ouroboros-network
+                     , ouroboros-network-protocols
                      , ouroboros-consensus-diffusion
 
   other-modules:       Cardano.Api.Key

@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE PatternGuards     #-}
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}

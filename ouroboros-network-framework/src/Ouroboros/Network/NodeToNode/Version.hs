@@ -7,18 +7,24 @@ module Ouroboros.Network.NodeToNode.Version
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
-    -- * Feature checks
-  , isPipeliningEnabled
+  , nodeToNodeHandshakeCodec
   ) where
 
+import           Control.Monad.Class.MonadST
+
+import qualified Data.ByteString.Lazy as BL
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 
+import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
-import           Ouroboros.Network.BlockFetch.ClientState
-                     (WhetherReceivingTentativeBlocks (..))
+import           Network.TypedProtocol.Codec
+
+import           Ouroboros.Network.Protocol.Handshake.Codec
+import           Ouroboros.Network.Protocol.Handshake.Type
+
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.Protocol.Handshake.Version (Accept (..),
@@ -145,9 +151,10 @@ nodeToNodeCodecCBORTerm _version
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
 
--- | Check whether a version enabling diffusion pipelining has been
--- negotiated.
-isPipeliningEnabled :: NodeToNodeVersion -> WhetherReceivingTentativeBlocks
-isPipeliningEnabled v
-  | v >= NodeToNodeV_8 = ReceivingTentativeBlocks
-  | otherwise          = NotReceivingTentativeBlocks
+
+-- | 'Handshake' codec for the @node-to-node@ protocol suite.
+--
+nodeToNodeHandshakeCodec :: MonadST m
+                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
+                                  CBOR.DeserialiseFailure m BL.ByteString
+nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec

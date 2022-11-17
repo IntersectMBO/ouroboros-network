@@ -90,5 +90,6 @@ library
                      , io-classes       ^>=0.3
                      , typed-protocols
                      , ouroboros-network-framework ^>=0.2
+                     , ouroboros-network-protocols ^>=0.2
                      , ouroboros-network ^>=0.2
                      , ouroboros-consensus ^>=0.1

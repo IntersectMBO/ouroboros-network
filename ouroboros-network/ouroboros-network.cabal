@@ -14,26 +14,11 @@ category:            Network
 build-type:          Simple
 extra-source-files:
   ChangeLog.md
-data-files:
-  test-cddl/specs/handshake-node-to-node.cddl
-  test-cddl/specs/handshake-node-to-client.cddl
-  test-cddl/specs/chain-sync.cddl
-  test-cddl/specs/block-fetch.cddl
-  test-cddl/specs/tx-submission2.cddl
-  test-cddl/specs/keep-alive.cddl
-  test-cddl/specs/local-tx-submission.cddl
-  test-cddl/specs/local-state-query.cddl
 
 flag asserts
   description: Enable assertions
   manual:      False
   default:     False
-
-flag cddl
-  Description: Enable CDDL based tests of the CBOR encoding
-  Manual: True
-  -- These tests need the cddl and the cbor-diag Ruby-package
-  Default: True
 
 source-repository head
   type:     git
@@ -44,9 +29,7 @@ library
 
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
-  exposed-modules:     Ouroboros.Network.AnchoredFragment
-                       Ouroboros.Network.AnchoredSeq
-                       Ouroboros.Network.Block
+  exposed-modules:     
                        Ouroboros.Network.BlockFetch
                        Ouroboros.Network.BlockFetch.Client
                        Ouroboros.Network.BlockFetch.ClientRegistry
@@ -61,13 +44,9 @@ library
                        Ouroboros.Network.Diffusion.Policies
                        Ouroboros.Network.ExitPolicy
                        Ouroboros.Network.KeepAlive
-                       Ouroboros.Network.Magic
                        Ouroboros.Network.NodeToNode
-                       Ouroboros.Network.NodeToNode.Version
                        Ouroboros.Network.NodeToClient
-                       Ouroboros.Network.NodeToClient.Version
                        Ouroboros.Network.Tracers
-                       Ouroboros.Network.Point
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.EstablishedPeers
                        Ouroboros.Network.PeerSelection.KnownPeers
@@ -81,44 +60,9 @@ library
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.PeerSelection.Simple
-                       Ouroboros.Network.Protocol.ChainSync.Client
-                       Ouroboros.Network.Protocol.ChainSync.ClientPipelined
-                       Ouroboros.Network.Protocol.ChainSync.Codec
-                       Ouroboros.Network.Protocol.ChainSync.Server
-                       Ouroboros.Network.Protocol.ChainSync.Type
-                       Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-                       -- ChainSync.Examples module is needed by test-consensus
-                       Ouroboros.Network.Protocol.ChainSync.Examples
-                       Ouroboros.Network.Protocol.BlockFetch.Type
-                       Ouroboros.Network.Protocol.BlockFetch.Client
-                       Ouroboros.Network.Protocol.BlockFetch.Server
-                       Ouroboros.Network.Protocol.BlockFetch.Codec
-                       Ouroboros.Network.Protocol.LocalStateQuery.Client
-                       Ouroboros.Network.Protocol.LocalStateQuery.Codec
-                       -- LocalStateQuery.Examples module is needed by test-consensus
-                       Ouroboros.Network.Protocol.LocalStateQuery.Examples
-                       Ouroboros.Network.Protocol.LocalStateQuery.Server
-                       Ouroboros.Network.Protocol.LocalStateQuery.Type
-                       Ouroboros.Network.Protocol.LocalTxMonitor.Type
-                       Ouroboros.Network.Protocol.LocalTxMonitor.Client
-                       Ouroboros.Network.Protocol.LocalTxMonitor.Server
-                       Ouroboros.Network.Protocol.LocalTxMonitor.Codec
-                       Ouroboros.Network.Protocol.TxSubmission2.Type
-                       Ouroboros.Network.Protocol.TxSubmission2.Codec
-                       Ouroboros.Network.Protocol.TxSubmission2.Client
-                       Ouroboros.Network.Protocol.TxSubmission2.Server
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Type
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Client
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Server
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Codec
-                       Ouroboros.Network.Protocol.KeepAlive.Type
-                       Ouroboros.Network.Protocol.KeepAlive.Client
-                       Ouroboros.Network.Protocol.KeepAlive.Server
-                       Ouroboros.Network.Protocol.KeepAlive.Codec
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
-  reexported-modules:  Ouroboros.Network.Util.ShowProxy
   other-modules:       Ouroboros.Network.Diffusion.Common
                        Ouroboros.Network.PeerSelection.Governor.ActivePeers
                        Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
@@ -127,6 +71,12 @@ library
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types
                        Ouroboros.Network.Diffusion.Utils
+  reexported-modules:  Ouroboros.Network.AnchoredFragment,
+                       Ouroboros.Network.AnchoredSeq,
+                       Ouroboros.Network.Magic,
+                       Ouroboros.Network.NodeToClient.Version,
+                       Ouroboros.Network.NodeToNode.Version,
+                       Ouroboros.Network.Util.ShowProxy
 
   default-language:    Haskell2010
   other-extensions:    BangPatterns,
@@ -182,6 +132,8 @@ library
                        network-mux       >=0.1 && <1.0,
                        ouroboros-network-framework
                                          >=0.1 && <1.0,
+                       ouroboros-network-protocols
+                                        ^>=0.2,
                        strict-stm       ^>=0.2,
                        typed-protocols   >=0.1 && <1.0,
                        typed-protocols-cborg
@@ -199,75 +151,9 @@ library
                        -Wredundant-constraints
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
-
-
-  -- Still in the lib for now as they're used in ouroboros-consensus.
-  -- They should be moved to the separate test lib if they're still needed.
-  exposed-modules:     Ouroboros.Network.MockChain.Chain
-                       Ouroboros.Network.MockChain.ProducerState
-                       Ouroboros.Network.Testing.ConcreteBlock
   build-depends:       hashable,
                        text              >=1.2 && <1.3,
                        time              >=1.9.1 && <1.14
-
-library protocol-tests
-  hs-source-dirs:      protocol-tests
-  default-language:    Haskell2010
-  exposed-modules:     Ouroboros.Network.Protocol.BlockFetch.Direct
-                       Ouroboros.Network.Protocol.BlockFetch.Examples
-                       Ouroboros.Network.Protocol.BlockFetch.Test
-                       Ouroboros.Network.Protocol.ChainSync.Direct
-                       Ouroboros.Network.Protocol.ChainSync.DirectPipelined
-                       Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
-                       Ouroboros.Network.Protocol.ChainSync.Test
-                       Ouroboros.Network.Protocol.Handshake.Direct
-                       Ouroboros.Network.Protocol.Handshake.Test
-                       Ouroboros.Network.Protocol.LocalStateQuery.Direct
-                       Ouroboros.Network.Protocol.LocalStateQuery.Test
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Direct
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Examples
-                       Ouroboros.Network.Protocol.LocalTxSubmission.Test
-                       Ouroboros.Network.Protocol.LocalTxMonitor.Direct
-                       Ouroboros.Network.Protocol.LocalTxMonitor.Examples
-                       Ouroboros.Network.Protocol.LocalTxMonitor.Test
-                       Ouroboros.Network.Protocol.TxSubmission2.Direct
-                       Ouroboros.Network.Protocol.TxSubmission2.Test
-                       Ouroboros.Network.Protocol.TxSubmission2.Examples
-                       Ouroboros.Network.Protocol.KeepAlive.Direct
-                       Ouroboros.Network.Protocol.KeepAlive.Examples
-                       Ouroboros.Network.Protocol.KeepAlive.Test
-
-                       Test.ChainGenerators
-                       Test.ChainProducerState
-                       Test.Ouroboros.Network.Testing.Utils
-  build-depends:       base,
-                       bytestring,
-                       cborg,
-                       containers,
-                       hashable,
-                       pipes,
-                       QuickCheck,
-                       quickcheck-instances,
-                       serialise,
-                       cardano-strict-containers,
-                       tasty,
-                       tasty-quickcheck,
-                       text,
-
-                       cardano-slotting,
-                       contra-tracer,
-
-                       io-classes,
-                       io-sim,
-                       network-mux,
-                       ouroboros-network,
-                       ouroboros-network-framework,
-                       ouroboros-network-testing,
-                       strict-stm,
-                       typed-protocols
-
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
 
 test-suite test
   type:                exitcode-stdio-1.0
@@ -276,8 +162,6 @@ test-suite test
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
 
-                       Test.AnchoredFragment
-                       Test.Chain
                        Test.LedgerPeers
                        Test.Ouroboros.Network.Diffusion.Node
                        Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -344,9 +228,10 @@ test-suite test
                        network-mux,
                        ouroboros-network,
                        ouroboros-network-framework,
+                       ouroboros-network-protocols,
+                       ouroboros-network-protocols:testlib,
                        ouroboros-network-framework:testlib,
                        ouroboros-network-testing,
-                       protocol-tests,
                        strict-stm,
                        typed-protocols,
                        typed-protocols-examples
@@ -363,41 +248,6 @@ test-suite test
                        +RTS -T -RTS
 
 
-test-suite cddl
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test-cddl
-  main-is:             Main.hs
-  if flag(cddl)
-    buildable: True
-  else
-    buildable: False
-  default-language:    Haskell2010
-  build-depends:       base,
-                       bytestring,
-                       cborg,
-                       containers,
-                       directory,
-                       filepath,
-                       mtl,
-                       process-extras,
-                       serialise,
-                       text,
-                       temporary,
-
-                       QuickCheck,
-                       quickcheck-instances,
-                       tasty,
-                       tasty-hunit,
-                       tasty-quickcheck,
-
-                       typed-protocols,
-                       ouroboros-network-framework,
-                       ouroboros-network,
-                       protocol-tests
-
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
 
 executable demo-chain-sync
   hs-source-dirs:      demo
@@ -416,6 +266,7 @@ executable demo-chain-sync
                        typed-protocols,
                        network-mux,
                        ouroboros-network-framework,
+                       ouroboros-network-protocols,
                        ouroboros-network
 
   default-language:    Haskell2010

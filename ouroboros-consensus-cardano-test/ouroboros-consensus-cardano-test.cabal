@@ -53,7 +53,7 @@ library
                      , cardano-ledger-shelley-test
                      , cardano-protocol-tpraos
 
-                     , ouroboros-network
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron
@@ -107,7 +107,7 @@ test-suite test
                      , cardano-ledger-shelley
                      , cardano-protocol-tpraos
 
-                     , ouroboros-network
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron

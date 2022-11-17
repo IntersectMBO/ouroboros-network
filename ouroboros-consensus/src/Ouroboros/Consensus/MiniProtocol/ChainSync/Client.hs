@@ -58,8 +58,7 @@ import           Ouroboros.Network.Block (Tip, getTipBlockNo)
 import           Ouroboros.Network.BlockFetch.ClientState
                      (WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.NodeToNode (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
+                     ControlMessageSTM, isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (HeaderMetricsTracer)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined

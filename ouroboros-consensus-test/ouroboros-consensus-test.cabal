@@ -1,3 +1,4 @@
+cabal-version:         3.0
 name:                  ouroboros-consensus-test
 version:               0.1.0.0
 synopsis:              Tests of the consensus layer
@@ -11,7 +12,6 @@ author:                IOHK Engineering Team
 maintainer:            operations@iohk.io
 category:              Network
 build-type:            Simple
-cabal-version:         >=1.10
 
 source-repository head
   type:     git
@@ -120,6 +120,7 @@ library
 
                      , ouroboros-network
                      , ouroboros-network-framework
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-diffusion
 
@@ -188,6 +189,8 @@ test-suite test-consensus
                      , typed-protocols
                      , ouroboros-network
                      , ouroboros-network-framework
+                     , ouroboros-network-protocols
+                     , ouroboros-network-protocols:testlib
                      , ouroboros-consensus
                      , ouroboros-consensus-mock
                      , ouroboros-consensus-test
@@ -272,6 +275,7 @@ test-suite test-storage
                      , io-classes
                      , io-sim
                      , ouroboros-network
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-test
 

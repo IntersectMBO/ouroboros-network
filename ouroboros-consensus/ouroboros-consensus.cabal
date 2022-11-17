@@ -320,6 +320,7 @@ library
                      , io-classes       ^>=0.3
                      , typed-protocols
                      , ouroboros-network ^>=0.2
+                     , ouroboros-network-protocols ^>=0.2
                      , strict-stm       ^>=0.2
 
 

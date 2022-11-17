@@ -71,7 +71,7 @@ test-suite test
                      , tasty
                      , tasty-quickcheck
 
-                     , ouroboros-network
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-mock
                      , ouroboros-consensus-mock-test

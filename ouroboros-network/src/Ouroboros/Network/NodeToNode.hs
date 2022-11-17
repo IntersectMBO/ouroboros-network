@@ -100,7 +100,6 @@ module Ouroboros.Network.NodeToNode
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime (DiffTime)
 
@@ -114,9 +113,9 @@ import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import           Network.TypedProtocol.Codec.CBOR
-
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import           Ouroboros.Network.BlockFetch.ClientState
+                     (WhetherReceivingTentativeBlocks (..))
 import           Ouroboros.Network.ConnectionManager.Types
                      (ExceptionInHandler (..))
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
@@ -155,13 +154,6 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 type HandshakeTr ntnAddr ntnVersion =
     WithMuxBearer (ConnectionId ntnAddr)
                   (TraceSendRecv (Handshake ntnVersion CBOR.Term))
-
--- | 'Handshake' codec for the @node-to-node@ protocol suite.
---
-nodeToNodeHandshakeCodec :: MonadST m
-                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
-                                  CBOR.DeserialiseFailure m BL.ByteString
-nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec
 
 
 data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
@@ -690,3 +682,14 @@ localNetworkErrorPolicy = ErrorPolicies {
 
 type RemoteAddress      = Socket.SockAddr
 type RemoteConnectionId = ConnectionId RemoteAddress
+
+
+-- | Check whether a version enabling diffusion pipelining has been
+-- negotiated.
+--
+-- TODO: this ought to be defined in `ouroboros-consensus` or
+-- `ouroboros-consensus-diffusion`
+isPipeliningEnabled :: NodeToNodeVersion -> WhetherReceivingTentativeBlocks
+isPipeliningEnabled v
+  | v >= NodeToNodeV_8 = ReceivingTentativeBlocks
+  | otherwise          = NotReceivingTentativeBlocks

@@ -179,6 +179,13 @@ jobs:
     - name: ourobors-network-framework [test]
       run: cabal run ouroboros-network-framework:test
 
+    - name: ouroboros-network-protocols [test]
+      run: cabal run ouroboros-network-protocols:test
+
+    # We don't run cddl in GitHub actions (only on Hydra).
+    # - name: ouroboros-network-protocols [cddl]
+    #   run: cabal run ouroboros-network-protocols-test:cddl
+
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test
 
