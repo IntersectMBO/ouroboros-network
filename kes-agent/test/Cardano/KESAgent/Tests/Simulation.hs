@@ -46,12 +46,14 @@ import Test.Tasty.QuickCheck
 import Text.Printf (printf)
 import Data.Word
 import Data.Typeable
+import Data.Time.Clock.POSIX (getPOSIXTime)
 
 import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.ServiceClient
 import Cardano.KESAgent.ControlClient
+import Cardano.KESAgent.Driver (DriverTrace (..))
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.Evolution
 import Cardano.KESAgent.Tests.Util
@@ -61,6 +63,46 @@ tests lock =
   testGroup "Simulation"
   [ testProperty "One key through chain" (testOneKeyThroughChain @StandardCrypto Proxy lock)
   ]
+
+elaborateTracerLock :: MVar ()
+elaborateTracerLock = unsafePerformIO $ newMVar ()
+{-#NOINLINE elaborateTracerLock #-}
+
+elaborateTracer :: TracePretty a => Tracer IO a
+elaborateTracer = Tracer $ \x -> withMVar elaborateTracerLock $ \() -> do
+  t <- getPOSIXTime
+  hPutStrLn stdout $ printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
+  hFlush stdout
+
+class TracePretty a where
+  tracePretty :: a -> String
+
+strLength :: String -> Int
+strLength = length
+
+instance TracePretty AgentTrace where
+  tracePretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ tracePretty d
+  tracePretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ tracePretty d
+  tracePretty (AgentServiceClientConnected addr) = "Agent: ServiceClientConnected"
+  tracePretty (AgentServiceClientDisconnected addr) = "Agent: ServiceClientDisconnected"
+  tracePretty (AgentServiceSocketError err) = "Agent: ServiceSocketError " ++ (unwords . lines . show $ err)
+  tracePretty (AgentControlClientConnected addr) = "Agent: ControlClientConnected"
+  tracePretty (AgentControlClientDisconnected addr) = "Agent: ControlClientDisconnected"
+  tracePretty (AgentControlSocketError err) = "Agent: ControlSocketError " ++ (unwords . lines . show $ err)
+  tracePretty x = "Agent: " ++ (drop (strLength "Agent") (show x))
+
+instance TracePretty ControlClientTrace where
+  tracePretty (ControlClientDriverTrace d) = "Control: Driver: " ++ tracePretty d
+  tracePretty (ControlClientConnected addr) = "Control: Connected"
+  tracePretty x = "Control: " ++ (drop (strLength "ControlClient") (show x))
+
+instance TracePretty ServiceClientTrace where
+  tracePretty (ServiceClientDriverTrace d) = "Service: Driver: " ++ tracePretty d
+  tracePretty (ServiceClientConnected addr) = "Service: Connected"
+  tracePretty x = "Service: " ++ (drop (strLength "ServiceClient") (show x))
+
+instance TracePretty DriverTrace where
+  tracePretty x = drop (strLength "Driver") (show x)
 
 testOneKeyThroughChain :: forall c
                         . Crypto c
@@ -91,26 +133,27 @@ testOneKeyThroughChain p lock seedPSB certN nodeDelay controlDelay =
     let skCold = genKeyDSIGN @(DSIGN c) seedP
         expectedOC = makeOCert vkHot certN kesPeriod skCold
     resultVar <- newEmptyMVar :: IO (MVar (SignKeyWithPeriodKES (KES c), OCert c))
+    -- Change tracer to elaborateTracer for debugging
     let tracer :: forall a. Show a => Tracer IO a
-        -- Change tracer to Tracer print for debugging
-        tracer = Tracer $ \msg -> print msg >> hFlush stdout
-        -- tracer = nullTracer
+        tracer = nullTracer
+    -- let tracer :: forall a. TracePretty a => Tracer IO a
+    --     tracer = elaborateTracer
 
     output <- race
-          -- abort 5 seconds after both clients have started
-          (threadDelay $ 5000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
+          -- abort 1 second after both clients have started
+          (threadDelay $ 1000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
           (race
             -- run these to "completion"
             (agent tracer `concurrently_`
               node tracer resultVar `concurrently_`
               controlServer tracer (expectedSKP, expectedOC))
-            -- ...until this one finished
+            -- ...until this one finishes
             (watch resultVar)
           )
 
     case output of
-        Left err -> error (show err)
-        Right (Left err) -> error (show err)
+        Left () -> error "TIMEOUT"
+        Right (Left err) -> error ("EXCEPTION\n" ++ show err)
         Right (Right (resultSKP, resultOC)) -> do
           -- Serialize keys so that we can forget them immediately, and only close over
           -- their (non-mlocked) serializations when returning the property.
@@ -141,7 +184,7 @@ testOneKeyThroughChain p lock seedPSB certN nodeDelay controlDelay =
          -> MVar (SignKeyWithPeriodKES (KES c), OCert c)
          -> IO ()
     node tracer mvar = do
-      threadDelay (500 + fromIntegral nodeDelay)
+      threadDelay (1000 + fromIntegral nodeDelay)
       (runServiceClient p
         ServiceClientOptions { serviceClientSocketAddress = serviceSocketAddr }
         (\sk oc -> do
@@ -156,7 +199,7 @@ testOneKeyThroughChain p lock seedPSB certN nodeDelay controlDelay =
                   -> (SignKeyWithPeriodKES (KES c), OCert c)
                   -> IO ()
     controlServer tracer (sk, oc) = do
-      threadDelay (500 + fromIntegral controlDelay)
+      threadDelay (1000 + fromIntegral controlDelay)
       (runControlClient1 p
         ControlClientOptions { controlClientSocketAddress = controlSocketAddr }
         sk oc)

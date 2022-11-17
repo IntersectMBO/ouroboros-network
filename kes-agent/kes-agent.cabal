@@ -62,3 +62,4 @@ test-suite kes-agent-tests
                  , tasty
                  , tasty-hunit
                  , tasty-quickcheck
+                 , time >=1.11.1.1
