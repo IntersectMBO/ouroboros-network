@@ -67,6 +67,7 @@ jobs:
         echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
 
     - name: "Install secp256k1"
+      shell: bash
       run: |
         git clone https://github.com/bitcoin-core/secp256k1
         ( cd secp256k1
