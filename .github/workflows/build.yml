@@ -80,7 +80,7 @@ jobs:
 
     # TODO: this really should come from a pre-built location
     - name: "Install secp256k1"
-      shell: C:\msys64\usr\bin\bash.exe {0}
+      shell: msys2 {0}
       run: |
         git clone https://github.com/bitcoin-core/secp256k1
         ( cd secp256k1
