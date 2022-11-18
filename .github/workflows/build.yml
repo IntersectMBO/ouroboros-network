@@ -152,10 +152,10 @@ jobs:
         restore-keys: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - name: Build dependencies
-      run: cabal build --only-dependencies all
+      run: cabal build --only-dependencies all -j
 
     - name: Build projects [build]
-      run: cabal build all
+      run: cabal build all -j
 
     # Test network packages
 
@@ -170,7 +170,7 @@ jobs:
 
     # issue: #1818
     - name: ourobors-network-framework [test]
-      run: cabal run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
+      run: cabal run ouroboros-network-framework:test '--' -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
 
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test
