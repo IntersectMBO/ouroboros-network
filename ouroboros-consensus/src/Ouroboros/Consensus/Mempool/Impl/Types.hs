@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -21,20 +20,17 @@ module Ouroboros.Consensus.Mempool.Impl.Types (
   , isMempoolSize
     -- * Snapshot
   , MempoolSnapshot (..)
+  , implSnapshotFromIS
     -- * Validation result
   , ValidationResult (..)
   , extendVRNew
   , extendVRPrevApplied
-  , revalidateTxsFor
-    --  , validateStateFor
     -- * Tick ledger state
   , ForgeLedgerState (..)
   , tickLedgerState
     -- * Conversions
   , internalStateFromVR
   , validationResultFromIS
-    -- * Mempool Changelog
-  , MempoolChangelog (..)
     -- * Mempool size
   , MempoolCapacityBytes (..)
   , MempoolCapacityBytesOverride (..)
@@ -42,8 +38,6 @@ module Ouroboros.Consensus.Mempool.Impl.Types (
   , computeMempoolCapacity
     -- * Tx addition
   , MempoolAddTxResult (..)
-  , isMempoolTxAdded
-  , isMempoolTxRejected
   , mempoolTxAddedToMaybe
     -- * Tracing
   , TraceEventMempool (..)
@@ -63,11 +57,10 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxSeq (..),
-                     TxTicket (..))
+import           Ouroboros.Consensus.Mempool.TxSeq (MempoolSize, TicketNo,
+                     TxSeq (..), TxTicket (..), zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (applyDiff)
-import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
@@ -97,7 +90,7 @@ data ForgeLedgerState blk =
     -- When we are validating transactions before we know in which block they
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
-    -- they will end up in the slot after the slot at the tip of the ledger.
+    -- they will end up in the slot after the slot at the tip of the ledger. -- TODO @js See comment in 'tickLedgerState'
   | ForgeInUnknownSlot (LedgerState blk EmptyMK)
 
 -- | Tick the 'LedgerState' using the given 'BlockSlot' or the next slot after
@@ -107,7 +100,7 @@ tickLedgerState
   => LedgerConfig     blk
   -> ForgeLedgerState blk
   -> (SlotNo, TickedLedgerState blk DiffMK)
-tickLedgerState _   (ForgeInKnownSlot s st) = (s, st)
+tickLedgerState _   (ForgeInKnownSlot slot st) = (slot, st)
 tickLedgerState cfg (ForgeInUnknownSlot st) =
   let
       slot =
@@ -117,25 +110,13 @@ tickLedgerState cfg (ForgeInUnknownSlot st) =
           -- TODO: We should use time here instead
           -- <https://github.com/input-output-hk/ouroboros-network/issues/1298>
           -- Once we do, the ValidateEnvelope constraint can go.
-          case ledgerTipSlot st of
-             Origin      -> minimumPossibleSlotNo (Proxy @blk)
-             NotOrigin s -> succ s
+          withOrigin (minimumPossibleSlotNo (Proxy @blk)) succ $ ledgerTipSlot st
   in
     (slot, applyChainTick cfg slot st)
 
 {-------------------------------------------------------------------------------
   Internal State
 -------------------------------------------------------------------------------}
-
--- | A minimal version of the @DbChangelog@ with just the data needed by the
--- mempool
-data MempoolChangelog blk = MempoolChangelog {
-    mcAnchor      :: !(WithOrigin SlotNo)
-  , mcDifferences :: !(LedgerTables (LedgerState blk) SeqDiffMK)
-  } deriving (Generic)
-
-deriving instance ( NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
-                  ) => NoThunks (MempoolChangelog blk)
 
 -- | Internal state in the mempool
 data InternalState blk = IS {
@@ -168,15 +149,16 @@ data InternalState blk = IS {
       -- after ticking it to 'isSlotNo'.
     , isLedgerState  :: !(TickedLedgerState blk DiffMK)
 
-      -- | The changelog as captured on the last sync with the ledger. While the
-      -- anchor of the backing store doesn't change, this changelog can be used
-      -- to forward values up to the 'isLedgerState'.
-    , isDbChangelog  :: !(MempoolChangelog blk)
-
       -- | The tip of the chain that 'isTxs' was validated against
-    , isTip          :: !(ChainHash blk)
+    , isTip          :: !(Point blk)
 
       -- | The most recent 'SlotNo' that 'isTxs' was validated against
+      --
+      -- Note in particular that if the mempool is revalidated against a state S
+      -- at slot s, then the state will be ticked (for now to the successor
+      -- slot, see 'tickLedgerState') and 'isSlotNo' will be set to @succ s@,
+      -- which is different from the slot of the original ledger state, which
+      -- will remain in 'isTip'.
     , isSlotNo       :: !SlotNo
 
       -- | The mempool 'TicketNo' counter.
@@ -206,7 +188,6 @@ deriving instance ( NoThunks (Validated (GenTx blk))
                   , NoThunks (TickedLedgerState blk DiffMK)
                   , NoThunks (LedgerTables (LedgerState blk) SeqDiffMK)
                   , NoThunks (LedgerTables (LedgerState blk) KeysMK)
-                  , NoThunks (MempoolChangelog blk)
                   , StandardHash blk
                   , Typeable blk
                   ) => NoThunks (InternalState blk)
@@ -222,14 +203,12 @@ initInternalState
   -> TicketNo  -- ^ Used for 'isLastTicketNo'
   -> SlotNo
   -> TickedLedgerState blk DiffMK
-  -> MempoolChangelog blk
   -> InternalState blk
-initInternalState capacityOverride lastTicketNo slot st mc = IS {
+initInternalState capacityOverride lastTicketNo slot st = IS {
       isTxs          = TxSeq.Empty
     , isTxIds        = Set.empty
     , isLedgerState  = st
-    , isDbChangelog  = mc
-    , isTip          = castHash (getTipHash st)
+    , isTip          = castPoint (getTip st)
     , isSlotNo       = slot
     , isLastTicketNo = lastTicketNo
     , isCapacity     = computeMempoolCapacity st capacityOverride
@@ -246,7 +225,7 @@ initInternalState capacityOverride lastTicketNo slot st mc = IS {
 -- end.
 data ValidationResult invalidTx blk = ValidationResult {
       -- | The tip of the chain before applying these transactions
-      vrBeforeTip      :: ChainHash blk
+      vrBeforeTip      :: Point blk
 
       -- | The slot number of the (imaginary) block the txs will be placed in
     , vrSlotNo         :: SlotNo
@@ -276,10 +255,6 @@ data ValidationResult invalidTx blk = ValidationResult {
       -- created, as well as the values for the new transactions remaining to be
       -- validated.
     , vrAfter          :: TickedLedgerState blk TrackingMK
-
-      -- | The db changelog captured on the last sync with the ledger. Doesn't
-      -- change while validating transactions.
-    , vrDbChangelog    :: MempoolChangelog blk
 
       -- | The transactions that were invalid, along with their errors
       --
@@ -364,33 +339,6 @@ extendVRNew cfg txSize wti tx vr = assert (isNothing vrNewValid) $
 
     nextTicketNo = succ vrLastTicketNo
 
--- | Revalidate the given transactions (@['TxTicket' ('GenTx' blk)]@), against
--- the given ticked ledger state.
---
--- Note that this function will perform revalidation so it is expected that the
--- transactions given to it were previously applied, for example if we are
--- revalidating the whole set of transactions onto a new state, or if we remove
--- some transactions and revalidate the remaining ones.
-revalidateTxsFor
-  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
-  => MempoolCapacityBytesOverride
-  -> LedgerConfig blk
-  -> SlotNo
-  -> TickedLedgerState blk DiffMK
-  -> LedgerTables (LedgerState blk) ValuesMK
-  -> MempoolChangelog blk
-  -> TicketNo -- ^ 'isLastTicketNo' & 'vrLastTicketNo'
-  -> [TxTicket (Validated (GenTx blk))]
-  -> ValidationResult (Validated (GenTx blk)) blk
-revalidateTxsFor capacityOverride cfg slot st values mc lastTicketNo txTickets =
-    repeatedly
-      (extendVRPrevApplied cfg)
-      txTickets
-      vr
-  where
-    vr = validationResultFromIS values
-       $ initInternalState capacityOverride lastTicketNo slot st mc
-
 {-------------------------------------------------------------------------------
   Conversions
 -------------------------------------------------------------------------------}
@@ -405,7 +353,6 @@ internalStateFromVR vr = IS {
       isTxs          = vrValid
     , isTxIds        = vrValidTxIds
     , isLedgerState  = forgetLedgerTablesValuesTicked vrAfter
-    , isDbChangelog  = vrDbChangelog
     , isTip          = vrBeforeTip
     , isSlotNo       = vrSlotNo
     , isLastTicketNo = vrLastTicketNo
@@ -419,7 +366,6 @@ internalStateFromVR vr = IS {
       , vrValid
       , vrValidTxIds
       , vrAfter
-      , vrDbChangelog
       , vrLastTicketNo
       } = vr
 
@@ -436,7 +382,6 @@ validationResultFromIS values is = ValidationResult {
     , vrValidTxIds     = isTxIds
     , vrNewValid       = Nothing
     , vrAfter          = zipOverLedgerTablesTicked f isLedgerState values
-    , vrDbChangelog    = isDbChangelog
     , vrInvalid        = []
     , vrLastTicketNo   = isLastTicketNo
     }
@@ -449,7 +394,6 @@ validationResultFromIS values is = ValidationResult {
         isTxs
       , isTxIds
       , isLedgerState
-      , isDbChangelog
       , isTip
       , isSlotNo
       , isLastTicketNo
@@ -508,14 +452,6 @@ deriving instance (Show (GenTx blk), Show (Validated (GenTx blk)), Show (ApplyTx
 mempoolTxAddedToMaybe :: MempoolAddTxResult blk -> Maybe (Validated (GenTx blk))
 mempoolTxAddedToMaybe (MempoolTxAdded vtx) = Just vtx
 mempoolTxAddedToMaybe _                    = Nothing
-
-isMempoolTxAdded :: MempoolAddTxResult blk -> Bool
-isMempoolTxAdded MempoolTxAdded{} = True
-isMempoolTxAdded _                = False
-
-isMempoolTxRejected :: MempoolAddTxResult blk -> Bool
-isMempoolTxRejected MempoolTxRejected{} = True
-isMempoolTxRejected _                   = False
 
 {-------------------------------------------------------------------------------
   Tracing support for the mempool operations
@@ -588,19 +524,19 @@ deriving instance ( Show (GenTx blk)
 -- even for tx sequence numbers returned in previous snapshots. This happens
 -- when the transaction has been removed from the mempool between snapshots.
 --
-data MempoolSnapshot blk idx = MempoolSnapshot {
+data MempoolSnapshot blk = MempoolSnapshot {
     -- | Get all transactions (oldest to newest) in the mempool snapshot along
     -- with their ticket number.
-    snapshotTxs         :: [(Validated (GenTx blk), idx)]
+    snapshotTxs         :: [(Validated (GenTx blk), TicketNo)]
 
     -- | Get all transactions (oldest to newest) in the mempool snapshot,
     -- along with their ticket number, which are associated with a ticket
     -- number greater than the one provided.
-  , snapshotTxsAfter    :: idx -> [(Validated (GenTx blk), idx)]
+  , snapshotTxsAfter    :: TicketNo -> [(Validated (GenTx blk), TicketNo)]
 
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
-  , snapshotLookupTx    :: idx -> Maybe (Validated (GenTx blk))
+  , snapshotLookupTx    :: TicketNo -> Maybe (Validated (GenTx blk))
 
     -- | Determine whether a specific transaction exists within the mempool
     -- snapshot.
@@ -614,3 +550,43 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
 
   , snapshotTipHash     :: ChainHash blk
   }
+
+-- | Create a 'MempoolSnapshot' from a given 'InternalState' of the mempool.
+implSnapshotFromIS ::
+     HasTxId (GenTx blk)
+  => InternalState blk
+  -> MempoolSnapshot blk
+implSnapshotFromIS is = MempoolSnapshot {
+      snapshotTxs         = implSnapshotGetTxs         is
+    , snapshotTxsAfter    = implSnapshotGetTxsAfter    is
+    , snapshotLookupTx    = implSnapshotGetTx          is
+    , snapshotHasTx       = implSnapshotHasTx          is
+    , snapshotMempoolSize = implSnapshotGetMempoolSize is
+    , snapshotSlotNo      = isSlotNo                   is
+    , snapshotTipHash     = pointHash (isTip                      is)
+    }
+ where
+  implSnapshotGetTxs :: InternalState blk
+                     -> [(Validated (GenTx blk), TicketNo)]
+  implSnapshotGetTxs = flip implSnapshotGetTxsAfter zeroTicketNo
+
+  implSnapshotGetTxsAfter :: InternalState blk
+                          -> TicketNo
+                          -> [(Validated (GenTx blk), TicketNo)]
+  implSnapshotGetTxsAfter IS{isTxs} =
+    TxSeq.toTuples . snd . TxSeq.splitAfterTicketNo isTxs
+
+  implSnapshotGetTx :: InternalState blk
+                    -> TicketNo
+                    -> Maybe (Validated (GenTx blk))
+  implSnapshotGetTx IS{isTxs} = (isTxs `TxSeq.lookupByTicketNo`)
+
+  implSnapshotHasTx :: Ord (GenTxId blk)
+                    => InternalState blk
+                    -> GenTxId blk
+                    -> Bool
+  implSnapshotHasTx IS{isTxIds} = flip Set.member isTxIds
+
+  implSnapshotGetMempoolSize :: InternalState blk
+                             -> MempoolSize
+  implSnapshotGetMempoolSize = TxSeq.toMempoolSize . isTxs

@@ -1,18 +1,9 @@
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Mempool.API (
     -- * Mempool
     Mempool (..)
   , MempoolAddTxResult (..)
-  , isMempoolTxAdded
-  , isMempoolTxRejected
   , mempoolTxAddedToMaybe
     -- * Mempool Snapshot
   , MempoolSnapshot (..)
@@ -33,7 +24,7 @@ import qualified Data.List.NonEmpty as NE
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
-import           Ouroboros.Consensus.Block (SlotNo)
+import           Ouroboros.Consensus.Block (Point, SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.Impl.Types
@@ -44,10 +35,12 @@ import           Ouroboros.Consensus.Util.IOLike
 -------------------------------------------------------------------------------}
 
 -- | The mempool is the set of transactions that should be included in the next
--- block. In principle this is a /set/ of all the transactions that we receive
--- from our peers. In order to avoid flooding the network with invalid
--- transactions, however, we only want to keep /valid/ transactions in the
--- mempool. That raises the question: valid with respect to which ledger state?
+-- block.
+--
+-- In principle this is a /set/ of all the transactions that we receive from our
+-- peers. In order to avoid flooding the network with invalid transactions,
+-- however, we only want to keep /valid/ transactions in the mempool. That
+-- raises the question: valid with respect to which ledger state?
 --
 -- We opt for a very simple answer to this: the mempool will be interpreted as a
 -- /list/ of transactions; which are validated strictly in order, starting from the
@@ -92,30 +85,25 @@ import           Ouroboros.Consensus.Util.IOLike
 --
 -- This shows that @'tryAddTxs' wti@ is an homomorphism from '++' and '>>',
 -- which informally makes these operations "distributive".
-data Mempool m blk idx = Mempool {
+data Mempool m blk = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
-      -- As long as we keep the mempool entirely in-memory this could live in
-      -- @STM m@; we keep it in @m@ instead to leave open the possibility of
-      -- persistence.
-      --
       -- The new transactions provided will be validated, /in order/, against
-      -- the ledger state obtained by applying all the transactions already in
-      -- the Mempool to it. Transactions which are found to be invalid, with
-      -- respect to the ledger state, are dropped, whereas valid transactions
-      -- are added to the mempool.
+      -- the Mempool intermediate ledger state. Transactions which are found to
+      -- be invalid, with respect to that ledger state, are dropped, whereas
+      -- valid transactions are added to the mempool.
       --
       -- Note that transactions that are invalid, with respect to the ledger
       -- state, will /never/ be added to the mempool. However, it is possible
-      -- that, at a given point in time, transactions which were once valid
-      -- but are now invalid, with respect to the current ledger state, could
-      -- exist within the mempool until they are revalidated and dropped from
-      -- the mempool via a call to 'syncWithLedger' or by the background
-      -- thread that watches the ledger for changes.
+      -- that, at a given point in time, transactions which were once valid but
+      -- are now invalid, with respect to the current ledger state, could
+      -- /remain/ within the mempool until they are revalidated and dropped from
+      -- the mempool via a call to 'syncWithLedger' or by the background thread
+      -- that watches the ledger for changes.
       --
       -- This function will return two lists
       --
-      -- 1. A list containing the following transactions:
+      -- 1. A list containing the following data:
       --
       --    * Those transactions provided which were found to be valid, as a
       --      'MempoolTxAdded' value. These transactions are now in the Mempool.
@@ -159,7 +147,6 @@ data Mempool m blk idx = Mempool {
       -- two cases can be done in theory, but it is expensive unless we have
       -- an index of transaction hashes that have been included on the
       -- blockchain.
-      --
       tryAddTxs      :: WhetherToIntervene
                      -> [GenTx blk]
                      -> m ( [MempoolAddTxResult blk]
@@ -184,14 +171,14 @@ data Mempool m blk idx = Mempool {
       -- n.b. in our current implementation, when one opens a mempool, we
       -- spawn a thread which performs this action whenever the 'ChainDB' tip
       -- point changes.
-    , syncWithLedger :: m (MempoolSnapshot blk idx)
+    , syncWithLedger :: m (MempoolSnapshot blk)
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
       --
       -- This doesn't look at the ledger state at all, i.e. it produces a
       -- snapshot from the current InternalState of the mempool.
-    , getSnapshot    :: STM m (MempoolSnapshot blk idx)
+    , getSnapshot    :: STM m (MempoolSnapshot blk)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
       -- the given ticked ledger state.
@@ -199,10 +186,10 @@ data Mempool m blk idx = Mempool {
       -- This does not update the internal state of the mempool.
       --
     , getSnapshotFor ::
-           SlotNo
+           Point blk
+        -> SlotNo
         -> TickedLedgerState blk DiffMK
-        -> MempoolChangelog blk
-        -> m (MempoolSnapshot blk idx)
+        -> m (Maybe (MempoolSnapshot blk))
 
       -- | Get the mempool's capacity in bytes.
       --
@@ -230,8 +217,8 @@ data Mempool m blk idx = Mempool {
 --
 -- See the necessary invariants on the Haddock for 'tryAddTxs'.
 addTxs
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: forall m blk. MonadSTM m
+  => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
 addTxs mempool = addTxsHelper mempool DoNotIntervene
@@ -240,16 +227,16 @@ addTxs mempool = addTxsHelper mempool DoNotIntervene
 --
 -- See 'Intervene'.
 addLocalTxs
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: forall m blk. MonadSTM m
+  => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
 addLocalTxs mempool = addTxsHelper mempool Intervene
 
 -- | See 'addTxs'
 addTxsHelper
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: forall m blk. MonadSTM m
+  => Mempool m blk
   -> WhetherToIntervene
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]

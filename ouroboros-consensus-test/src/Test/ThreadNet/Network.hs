@@ -111,15 +111,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
-import qualified Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy as LgrDB
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery (RangeQuery))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector (..), LedgerBackingStoreValueHandle,
                      LedgerDB', mkDiskLedgerView)
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 
 import           Test.ThreadNet.TxGen
@@ -601,7 +598,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> (SlotNo -> STM m ())
       -> LedgerConfig blk
       -> STM m (LedgerState blk EmptyMK)
-      -> Mempool m blk TicketNo
+      -> Mempool m blk
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
@@ -636,8 +633,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
                 -- a new ledger state might render a crucial transaction valid
                 ldgrChanged = do
-                  let prj = ledgerTipPoint (Proxy @blk)
-                  (ledger', _) <- atomically $ blockUntilChanged prj (prj ledger) getLdgr
+                  (ledger', _) <- atomically $ blockUntilChanged ledgerTipPoint (ledgerTipPoint ledger) getLdgr
                   pure (slot, ledger', mempFp)
 
               -- wake up when any of those change
@@ -665,7 +661,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> Seed
                    -> DiskLedgerView m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
-                   -> Mempool m blk TicketNo
+                   -> Mempool m blk
                    -> m ()
     forkTxProducer coreNodeId registry clock cfg nodeSeed dlv mempool =
         void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do

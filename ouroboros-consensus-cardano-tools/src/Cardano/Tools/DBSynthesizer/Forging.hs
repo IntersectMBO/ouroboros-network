@@ -120,8 +120,8 @@ runForge epochSize_ nextSlot opts chainDB blockForging cfg = do
         unticked <- do
           mExtLedger <- lift $ atomically $ ChainDB.getPastLedger chainDB bcPrevPoint
           case mExtLedger of
-            Just (l, _) -> return l
-            Nothing     -> exitEarly' "no ledger state"
+            Just l  -> return l
+            Nothing -> exitEarly' "no ledger state"
 
         ledgerView <-
           case runExcept $ forecastFor
