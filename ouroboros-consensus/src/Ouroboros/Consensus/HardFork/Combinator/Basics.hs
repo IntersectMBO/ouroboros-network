@@ -57,8 +57,8 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
-import           Ouroboros.Consensus.Util.SOP (fn_5)
 import           Ouroboros.Consensus.Util.Singletons (SingI)
+import           Ouroboros.Consensus.Util.SOP (fn_5)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras

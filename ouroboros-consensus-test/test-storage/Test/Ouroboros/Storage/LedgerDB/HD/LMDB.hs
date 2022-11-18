@@ -20,8 +20,8 @@ import           Data.Text (Text)
 import qualified System.Directory as Dir
 import           System.IO.Temp
 
-import           Test.Tasty (TestTree, testGroup)
 import qualified Test.Tasty as Tasty
+import           Test.Tasty (TestTree, testGroup)
 import qualified Test.Tasty.HUnit as Tasty
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))

@@ -56,8 +56,8 @@ import           Data.TreeDiff.Expr (Expr (App))
 import           Data.Word
 import           GHC.Generics (Generic)
 import qualified System.Directory as Dir
-import qualified System.IO.Temp as Temp
 import           System.Info (os)
+import qualified System.IO.Temp as Temp
 import           System.Random (getStdRandom, randomR)
 
 import qualified Test.QuickCheck as QC

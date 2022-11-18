@@ -63,14 +63,14 @@ emptyNodeDBs = NodeDBs
 
 -- | Minimal set of arguments for creating a ChainDB instance for testing purposes.
 data MinimalChainDbArgs m blk = MinimalChainDbArgs {
-    mcdbTopLevelConfig :: TopLevelConfig blk
-  , mcdbChunkInfo      :: ImmutableDB.ChunkInfo
+    mcdbTopLevelConfig       :: TopLevelConfig blk
+  , mcdbChunkInfo            :: ImmutableDB.ChunkInfo
   -- ^ Specifies the layout of the ImmutableDB on disk.
-  , mcdbInitLedger     :: ExtLedgerState blk ValuesMK
+  , mcdbInitLedger           :: ExtLedgerState blk ValuesMK
   -- ^ The initial ledger state.
-  , mcdbRegistry       :: ResourceRegistry m
+  , mcdbRegistry             :: ResourceRegistry m
   -- ^ Keeps track of non-lexically scoped resources.
-  , mcdbNodeDBs        :: NodeDBs (StrictTVar m MockFS)
+  , mcdbNodeDBs              :: NodeDBs (StrictTVar m MockFS)
   -- ^ File systems underlying the immutable, volatile and ledger databases.
   -- Would be useful to default this to StrictTVar's containing empty MockFS's.
   , mcdbBackingStoreSelector :: LedgerDB.BackingStoreSelector m
