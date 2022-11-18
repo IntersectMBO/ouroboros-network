@@ -34,8 +34,6 @@ jobs:
       run: |
         # ghcup should be installed on current GHA Windows runners.
 
-        cabal --help
-
         # do we really need pkg-config? 
         ghcup run -- pacman --noconfirm -S `
            mingw-w64-x86_64-pkg-config `
@@ -54,8 +52,12 @@ jobs:
 
         ghc --version
         cabal --version
-        
-        cabal --help
+
+        # make sure cabal knows about msys64, and mingw64 tools.
+        cabal user-config -a "extra-prog-path: C:/msys64/mingw64/bin, C:/msys64/usr/bin" `
+                          -a "extra-include-dirs: C:/msys64/mingw64/include" `
+                          -a "extra-lib-dirs: C:/msys64/mingw64/lib" `
+                          -f init
 
     - name: Find pkg-config
       if: runner.os == 'Windows'
