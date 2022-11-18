@@ -352,16 +352,17 @@ handshakeDec = do
         version <- CBOR.decodeWord
         case ( version `clearBit` nodeToClientVersionBit
              , version `testBit`  nodeToClientVersionBit ) of
-             (7, False) -> decodeWithMode NodeToNodeVersionV7
-             (8, False) -> decodeWithMode NodeToNodeVersionV8
-             (9, False) -> decodeWithMode NodeToNodeVersionV9
-             (9, True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
-             (10, True) -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
-             (11, True) -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
-             (12, True) -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
-             (13, True) -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
-             (14, True) -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
-             _          -> return $ Left $ UnknownVersionInRsp version
+             (7,  False) -> decodeWithMode NodeToNodeVersionV7
+             (8,  False) -> decodeWithMode NodeToNodeVersionV8
+             (9,  False) -> decodeWithMode NodeToNodeVersionV9
+             (10, False) -> decodeWithMode NodeToNodeVersionV10
+             (9,  True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
+             (10, True)  -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
+             (11, True)  -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
+             (12, True)  -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
+             (13, True)  -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
+             (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
+             _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> Bool -> NodeVersion)
                    -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
