@@ -1,4 +1,7 @@
 #!/bin/bash
+echo ========
+echo $PATH
+echo ========
 git clone https://github.com/bitcoin-core/secp256k1
 cd secp256k1
 git switch $SECP256K1_REF --detach
