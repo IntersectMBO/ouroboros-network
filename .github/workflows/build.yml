@@ -54,7 +54,10 @@ jobs:
         ghc --version
         cabal --version
 
-        echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT
+    - name: "OUTPUT Record cabal-store"
+      shell: bash
+      if: runner.os == 'Windows'
+      run: echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT     
 
     - name: Set cache version
       run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
@@ -109,7 +112,10 @@ jobs:
       run: |
         cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
-        echo "weeknum=$(/usr/bin/date -u "+%W")" >> $GITHUB_OUTPUT
+
+    - name: "OUTPUT Record weeknum"
+      shell: bash
+      run: echo "weeknum=$(/usr/bin/date -u "+%W")" >> $GITHUB_OUTPUT
 
     - uses: actions/cache@v3
       name: "Cache `cabal store`"
