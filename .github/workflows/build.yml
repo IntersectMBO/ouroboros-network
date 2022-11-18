@@ -32,6 +32,7 @@ jobs:
     - name: "WIN: Setup Haskell"
       id: win-setup-haskell
       if: runner.os == 'Windows'
+      shell: bash
       run: |
         # ghcup should be installed on current GHA Windows runners.
         ghcup upgrade
