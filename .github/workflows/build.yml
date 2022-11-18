@@ -73,10 +73,7 @@ jobs:
 
     - name: "LINUX: Install build environment (for secp256k1)"
       if: runner.os == 'Linux'
-      run: |
-        sudo apt-get -y install autoconf automake libtool
-        echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
-        echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
+      run: sudo apt-get -y install autoconf automake libtool
 
     - uses: actions/checkout@v3
 
@@ -88,10 +85,16 @@ jobs:
         MSYS2_PATH_TYPE: inherit
         MSYSTEM: MINGW64
         CHERE_INVOKING: 1
+        # install secp into /mingw64 prefix, which is where pkg-config will look
+        # by default.
+        CI_SECP_FLAGS: "--prefix=/mingw64"
       run: C:\\msys64\\usr\\bin\\bash.exe .github/workflows/build-secp256k1.bash
 
     - name: "LINUX: Install secp256k1"
       if: runner.os != 'Windows'
+      env:
+        CI_SECP_FLAGS: "--prefix=/usr"
+        CI_SECP_INSTALL_CMD: sudo
       run: bash .github/workflows/build-secp256k1.bash 
 
     - name: "Configure cabal.project.local"
