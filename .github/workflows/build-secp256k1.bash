@@ -1,4 +1,7 @@
 #!/bin/bash
+# I don't understand why this just vanishes.
+export PATH=/usr/bin:$PATH
+
 echo ========
 echo $PATH
 echo ========
