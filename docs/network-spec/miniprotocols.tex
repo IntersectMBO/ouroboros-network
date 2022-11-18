@@ -547,9 +547,9 @@ messages.  First one is used by the node to node protocol the other by node to
 client protocol.
 
 \subsubsection{Node to node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/handshake-node-to-node.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-node.cddl}
 \subsubsection{Node to client handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/handshake-node-to-client.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-client.cddl}
 
 \section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
@@ -832,7 +832,7 @@ Here are some cases to consider:
 \end{description}
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/chain-sync.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/chain-sync.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Block-Fetch mini-protocol}
@@ -920,7 +920,7 @@ Transition table is shown in table~\ref{table:block-fetch}.
 \end{table}
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/block-fetch.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/block-fetch.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Tx-Submission mini-protocol}
@@ -1023,7 +1023,7 @@ The version 2 is used by version 6 an higher of node-to-node protocol.
   \caption{Tx-Submission mini-protocol (version 2) messages.}
 \end{table}
 \subsubsection{CDDL encoding specification}\label{tx-submission2-cddl}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/tx-submission2.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/tx-submission2.cddl}
 See version 1 of the mini-protocol in section~\ref{tx-submission-cddl} and
 appendix \ref{cddl-common} for common definitions.
 
@@ -1121,7 +1121,7 @@ measurements.
 \end{description}
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/keep-alive.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/keep-alive.cddl}
 
 \section{Local Tx-Submission mini-protocol}
 \haddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type\#t:LocalTxSubmission}
@@ -1260,7 +1260,7 @@ where $AcquireFailure$ is either $AcquireFailurePointTooOld$ or
 $AcquireFailurePointNotOnChain$.
 
 \subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network/test-cddl/specs/local-state-query.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/local-state-query.cddl}
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Pipelining of Mini Protocols}

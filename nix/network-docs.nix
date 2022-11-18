@@ -2,11 +2,11 @@
 with pkgs;
 let
   src = haskell-nix.haskellLib.cleanGit {
-    name = "ouroboros-network-docs-src";
+    name = "ouroboros-network-protocols-docs-src";
     src = ../.;
     subDir = "docs";
   };
-  cddl-specs = ../ouroboros-network/test-cddl/specs;
+  cddl-specs = ../ouroboros-network-protocols/test-cddl/specs;
 in pkgs.runCommand "ouroboros-network-docs" {
   meta.platforms = with pkgs.lib.platforms; [ linux darwin ];
   nativeBuildInputs = [ imagemagick ];
@@ -28,8 +28,8 @@ in pkgs.runCommand "ouroboros-network-docs" {
     ln -s ${src}/$d/* docs/$d/
   done
 
-  mkdir -p ouroboros-network/test-cddl/specs
-  cp ${cddl-specs}/*.cddl ouroboros-network/test-cddl/specs
+  mkdir -p ouroboros-network-protocols/test-cddl/specs
+  cp ${cddl-specs}/*.cddl ouroboros-network-protocols/test-cddl/specs
 
   mkdir -p $out
 
