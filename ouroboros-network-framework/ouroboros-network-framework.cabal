@@ -19,6 +19,12 @@ maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotul
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
+Flag ipv6
+  Description: Enable IPv6 test cases
+  Manual: True
+  -- Default to False since travis lacks IPv6 support
+  Default: False
+
 library
   exposed-modules:     Data.Cache
                        Data.Wedge
@@ -209,6 +215,9 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+
+  if flag(ipv6)
+    cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
 executable demo-ping-pong
   hs-source-dirs:      demo test

@@ -29,12 +29,6 @@ flag asserts
   manual:      False
   default:     False
 
-Flag ipv6
-  Description: Enable IPv6 test cases
-  Manual: True
-  -- Default to False since travis lacks IPv6 support
-  Default: False
-
 flag cddl
   Description: Enable CDDL based tests of the CBOR encoding
   Manual: True
@@ -366,8 +360,6 @@ test-suite test
                        -threaded
                        -rtsopts
                        +RTS -T -RTS
-  if flag(ipv6)
-    cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
 
 test-suite cddl
