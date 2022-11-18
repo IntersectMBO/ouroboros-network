@@ -547,7 +547,7 @@ instance SmallQuery (BlockQuery (SimpleBlock c ext)) where
 instance MockProtocolSpecific c ext => QueryLedger (SimpleBlock c ext) where
   answerBlockQuery _cfg QueryLedgerTip =
         castPoint
-      . ledgerTipPoint (Proxy @(SimpleBlock c ext))
+      . ledgerTipPoint
       . ledgerState
 
 instance EqQuery (BlockQuery (SimpleBlock c ext)) where

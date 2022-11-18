@@ -223,7 +223,7 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
 instance NodeInitStorage DualByronBlock where
   -- Just like Byron, we need to start with an EBB
   nodeInitChainDB cfg InitChainDB { getCurrentLedger, addBlock } = do
-      tip <- ledgerTipPoint (Proxy @DualByronBlock) <$> getCurrentLedger
+      tip <- ledgerTipPoint <$> getCurrentLedger
       case tip of
         BlockPoint {} -> return ()
         GenesisPoint  -> addBlock genesisEBB

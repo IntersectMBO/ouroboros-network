@@ -10,18 +10,18 @@ import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Mempool (TicketNo)
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Local transaction monitoring server, for inspecting the mempool.
 --
 localTxMonitorServer ::
-     forall blk idx m.
+     forall blk m.
      ( MonadSTM m
      , LedgerSupportsMempool blk
-     , Eq idx
      )
-  => Mempool m blk idx
+  => Mempool m blk
   -> LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
 localTxMonitorServer mempool =
     LocalTxMonitorServer (pure serverStIdle)
@@ -38,14 +38,14 @@ localTxMonitorServer mempool =
       }
 
     serverStAcquiring
-      :: (MempoolCapacityBytes, MempoolSnapshot blk idx)
+      :: (MempoolCapacityBytes, MempoolSnapshot blk)
       -> ServerStAcquiring (GenTxId blk) (GenTx blk) SlotNo m ()
     serverStAcquiring s@(_, snapshot) =
       SendMsgAcquired (snapshotSlotNo snapshot) (serverStAcquired s (snapshotTxs snapshot))
 
     serverStAcquired
-      :: (MempoolCapacityBytes, MempoolSnapshot blk idx)
-      -> [(Validated (GenTx blk), idx)]
+      :: (MempoolCapacityBytes, MempoolSnapshot blk)
+      -> [(Validated (GenTx blk), TicketNo)]
       -> ServerStAcquired (GenTxId blk) (GenTx blk) SlotNo m ()
     serverStAcquired s@(capacity, snapshot) txs =
       ServerStAcquired
@@ -76,8 +76,8 @@ localTxMonitorServer mempool =
 
     -- Are two snapshots equal? (from the perspective of this protocol)
     isSameSnapshot
-      :: MempoolSnapshot blk idx
-      -> MempoolSnapshot blk idx
+      :: MempoolSnapshot blk
+      -> MempoolSnapshot blk
       -> Bool
     isSameSnapshot a b =
       (snd <$> snapshotTxs a) == (snd <$> snapshotTxs b)
