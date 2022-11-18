@@ -27,10 +27,10 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toStrictByteString)
 import qualified Codec.Serialise as S (Serialise (..))
+import qualified Control.Concurrent.Class.MonadSTM.TVar as IOLike
 import           Control.Exception (assert)
 import           Control.Monad (unless, void, when, (>=>))
 import qualified Control.Monad.Class.MonadSTM as IOLike
-import qualified Control.Concurrent.Class.MonadSTM.TVar as IOLike
 import           Control.Monad.IO.Class (MonadIO (liftIO))
 import qualified Control.Tracer as Trace
 import qualified Data.ByteString as BS

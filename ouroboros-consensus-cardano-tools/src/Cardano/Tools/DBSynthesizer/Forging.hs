@@ -35,10 +35,10 @@ import           Ouroboros.Consensus.Storage.ChainDB.API as ChainDB (ChainDB,
                      getPastLedger)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
                      (noPunishment)
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Network.AnchoredFragment as AF (Anchor (..),
                      AnchoredFragment, AnchoredSeq (..), headPoint)
-import Ouroboros.Consensus.Ticked
 
 import           Cardano.Tools.DBSynthesizer.Types (ForgeLimit (..),
                      ForgeResult (..))
@@ -120,8 +120,8 @@ runForge epochSize_ nextSlot opts chainDB blockForging cfg = do
         unticked <- do
           mExtLedger <- lift $ atomically $ ChainDB.getPastLedger chainDB bcPrevPoint
           case mExtLedger of
-            Just (l, _)  -> return l
-            Nothing -> exitEarly' "no ledger state"
+            Just (l, _) -> return l
+            Nothing     -> exitEarly' "no ledger state"
 
         ledgerView <-
           case runExcept $ forecastFor
