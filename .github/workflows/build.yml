@@ -21,6 +21,10 @@ jobs:
       SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
 
     steps:
+    - name: Setup tmate session
+      if: ${{ failure() }}
+      uses: mxschmitt/action-tmate@v3
+
     - name: "LINUX: Setup haskell"
       if: runner.os != 'Windows'
       uses: haskell/actions/setup@v2
@@ -72,6 +76,7 @@ jobs:
         sudo apt-get -y install autoconf automake libtool
         echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
         echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
+
 
     # TODO: this really should come from a pre-built location
     - name: "Install secp256k1"
