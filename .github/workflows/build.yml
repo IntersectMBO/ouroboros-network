@@ -51,6 +51,7 @@ jobs:
         ghcup set cabal 3.6.2.0
 
         ghc --version
+        ghc --print-libdir
         cabal --version
 
         # make sure cabal knows about msys64, and mingw64 tools. Not clear why C:/cabal/config is empty
@@ -62,10 +63,10 @@ jobs:
         # https://github.com/msys2/MINGW-packages/issues/10837#issuecomment-1047105402
         # https://gitlab.haskell.org/ghc/ghc/-/issues/21111
         # if we _do_ want them, this would be the lines to add below
-        #                  -a "extra-include-dirs: C:/msys64/mingw64/include" `
-        #                  -a "extra-lib-dirs: C:/msys64/mingw64/lib" `
         
         cabal user-config -a "extra-prog-path: C:/msys64/mingw64/bin, C:/msys64/usr/bin" `
+                          -a "extra-include-dirs: C:/msys64/mingw64/include" `
+                          -a "extra-lib-dirs: C:/msys64/mingw64/lib" `
                           -f init
 
     - name: Find pkg-config
