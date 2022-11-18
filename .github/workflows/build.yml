@@ -39,7 +39,9 @@ jobs:
         ghcup install cabal 3.8.1.0
 
         # do we really need this?
-        ghcup run -- pacman --noconfirm -S mingw-w64-x86_64-pkg-config
+        ghcup run -- pacman --noconfirm -S \
+          mingw-w64-x86_64-pkg-config \
+          mingw-w64-x86_64-libsodium
 
         ghc --version
         cabal --version
