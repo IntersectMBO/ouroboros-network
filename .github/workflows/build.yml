@@ -21,14 +21,6 @@ jobs:
       SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
 
     steps:
-    - name: "[DEBUG] Setup tmate session"
-      uses: mxschmitt/action-tmate@v3
-
-    - name: "WIN: Setup pkg-config"
-      if: runner.os == 'Windows'
-      run: |
-        pacman --noconfirm -S mingw-w64-x86_64-pkg-config
-
     - name: "LINUX: Setup haskell"
       if: runner.os != 'Windows'
       uses: haskell/actions/setup@v2
@@ -45,6 +37,9 @@ jobs:
         ghcup upgrade
         ghcup install ghc ${{ matrix.ghc }}
         ghcup install cabal 3.8.1.0
+
+        # do we really need this?
+        ghcup run -- pacman --noconfirm -S mingw-w64-x86_64-pkg-config
 
         ghc --version
         cabal --version
