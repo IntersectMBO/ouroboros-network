@@ -73,8 +73,9 @@ jobs:
         echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
         echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
 
+    # TODO: this really should come from a pre-built location
     - name: "Install secp256k1"
-      shell: bash
+      shell: C:\msys64\usr\bin\bash.exe {0}
       run: |
         git clone https://github.com/bitcoin-core/secp256k1
         ( cd secp256k1
