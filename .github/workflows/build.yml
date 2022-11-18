@@ -35,9 +35,6 @@ jobs:
       run: |
         # ghcup should be installed on current GHA Windows runners.
 
-        ghcup install ghc ${{ matrix.ghc }}
-        ghcup install cabal 3.8.1.0
-
         # do we really need pkg-config? 
         ghcup run -- pacman --noconfirm -S `
            mingw-w64-x86_64-pkg-config `
@@ -48,6 +45,9 @@ jobs:
            automake `
            libtool `
            make
+
+        ghcup install ghc ${{ matrix.ghc }}
+        ghcup install cabal 3.8.1.0
 
         ghc --version
         cabal --version
@@ -76,7 +76,7 @@ jobs:
 
     # TODO: this really should come from a pre-built location
     - name: "Install secp256k1"
-      shell: C:\\msys64\\msys2.exe {0}
+      shell: "C:\\msys64\\msys2.exe {0}"
       run: |  
         git clone https://github.com/bitcoin-core/secp256k1
         ( cd secp256k1
@@ -152,7 +152,7 @@ jobs:
       run: cabal run ouroboros-network:test
 
     # Consensus tests take too long on GitHub's Azure machines
-    - name: Setup tmate session
-      if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
+#     - name: Setup tmate session
+#       if: ${{ failure() }}
+#       uses: mxschmitt/action-tmate@v3
 
