@@ -32,9 +32,8 @@ jobs:
     - name: "WIN: Setup Haskell"
       if: runner.os == 'Windows'
       run: |
-        # ghcup should be installed on current GHA Windows runners.
-
-        # do we really need pkg-config? 
+        # ghcup should be installed on current GHA Windows runners. Let's use ghcup to run
+        # pacman, to install the necessary dependencies, ...
         ghcup run -- pacman --noconfirm -S `
            mingw-w64-x86_64-pkg-config `
            mingw-w64-x86_64-libsodium `
@@ -45,6 +44,7 @@ jobs:
            libtool `
            make
 
+        # ... and also the ghc and cabal combination we want.
         ghcup install ghc ${{ matrix.ghc }}
         ghcup set ghc ${{ matrix.ghc }}
         ghcup install cabal 3.6.2.0
@@ -53,7 +53,10 @@ jobs:
         ghc --version
         cabal --version
 
-        # make sure cabal knows about msys64, and mingw64 tools.
+        # make sure cabal knows about msys64, and mingw64 tools. Not clear why C:/cabal/config is empty
+        # and C:/cabal doesn't even exist.  The ghcup bootstrap file should have create it in the image:
+        # See https://github.com/haskell/ghcup-hs/blob/787edc17af4907dbc51c85e25c490edd8d68b80b/scripts/bootstrap/bootstrap-haskell#L591
+        # So we'll do it by hand here for now.
         cabal user-config -a "extra-prog-path: C:/msys64/mingw64/bin, C:/msys64/usr/bin" `
                           -a "extra-include-dirs: C:/msys64/mingw64/include" `
                           -a "extra-lib-dirs: C:/msys64/mingw64/lib" `
