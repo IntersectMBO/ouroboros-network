@@ -53,6 +53,10 @@ jobs:
         ghc --version
         cabal --version
 
+    - name: Find pkg-config
+      if: runner.os == 'Windows'
+      run: where.exe pkg-config
+
     - name: "OUTPUT Record cabal-store"
       id: win-setup-haskell
       shell: bash
@@ -135,7 +139,6 @@ jobs:
           !dist-newstyle/**/.git
         key: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.record-deps.outputs.weeknum }}
         restore-keys: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
-
 
     - name: Build dependencies
       run: cabal build --only-dependencies all
