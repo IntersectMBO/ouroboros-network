@@ -55,7 +55,9 @@ jobs:
 
     - name: Find pkg-config
       if: runner.os == 'Windows'
-      run: where.exe pkg-config
+      run: |
+        where.exe pkg-config
+        ghcup run -- where.exe pkg-config
 
     - name: "OUTPUT Record cabal-store"
       id: win-setup-haskell
