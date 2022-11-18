@@ -30,7 +30,6 @@ jobs:
         cabal-version: 3.6.2.0
 
     - name: "WIN: Setup Haskell"
-      id: win-setup-haskell
       if: runner.os == 'Windows'
       run: |
         # ghcup should be installed on current GHA Windows runners.
@@ -55,6 +54,7 @@ jobs:
         cabal --version
 
     - name: "OUTPUT Record cabal-store"
+      id: win-setup-haskell
       shell: bash
       if: runner.os == 'Windows'
       run: echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT     
