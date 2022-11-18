@@ -77,15 +77,7 @@ jobs:
     # TODO: this really should come from a pre-built location
     - name: "Install secp256k1"
       shell: C:\\msys64\\msys2.exe {0}
-      run: |
-        pacman --noconfirm -S mingw-w64-x86_64-pkg-config \
-           mingw-w64-x86_64-libsodium \
-           base-devel \
-           autoconf-wrapper \
-           autoconf \
-           automake \
-           libtool \
-           make      
+      run: |  
         git clone https://github.com/bitcoin-core/secp256k1
         ( cd secp256k1
           git switch $SECP256K1_REF --detach
