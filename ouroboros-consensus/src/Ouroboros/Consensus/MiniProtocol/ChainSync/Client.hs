@@ -101,10 +101,10 @@ defaultChainDbView ::
      (IOLike m, LedgerSupportsProtocol blk)
   => ChainDB m blk -> ChainDbView m blk
 defaultChainDbView chainDB = ChainDbView {
-      getCurrentChain       =                   ChainDB.getCurrentChain       chainDB
-    , getHeaderStateHistory =                   ChainDB.getHeaderStateHistory chainDB
-    , getPastLedger         = fmap (fmap fst) . ChainDB.getPastLedger         chainDB
-    , getIsInvalidBlock     =                   ChainDB.getIsInvalidBlock     chainDB
+      getCurrentChain       = ChainDB.getCurrentChain       chainDB
+    , getHeaderStateHistory = ChainDB.getHeaderStateHistory chainDB
+    , getPastLedger         = ChainDB.getPastLedger         chainDB
+    , getIsInvalidBlock     = ChainDB.getIsInvalidBlock     chainDB
     }
 
 -- newtype wrappers to avoid confusing our tip with their tip.

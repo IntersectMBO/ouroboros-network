@@ -44,6 +44,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , decodeSnapshotBackwardsCompatible
   , encodeSnapshot
     -- ** Queries
+  , getLedgerTablesFor
   , ledgerDbAnchor
   , ledgerDbChangelog
   , ledgerDbCurrent
@@ -342,6 +343,18 @@ applyBlock cfg ap db = case ap of
           f
       .   withLedgerTables (ledgerDbCurrent db)
       <$> forwardTableKeySets (ledgerDbChangelog db) urs
+
+-- | Read and forward the values up to the tip of the given ledger db. Returns
+-- Left if the anchor moved.
+getLedgerTablesFor ::
+     (Monad m, ReadsKeySets m l, TableStuff l)
+  => LedgerDB l
+  -> LedgerTables l KeysMK
+  -> m (Either (WithOrigin SlotNo, WithOrigin SlotNo) (LedgerTables l ValuesMK))
+getLedgerTablesFor db keys = do
+  let aks = rewindTableKeySets (ledgerDbChangelog db) keys
+  urs <- readDb aks
+  pure $ forwardTableKeySets (ledgerDbChangelog db) urs
 
 {-------------------------------------------------------------------------------
   HD Interface that I need (Could be moved to  Ouroboros.Consensus.Ledger.Basics )

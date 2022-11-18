@@ -52,6 +52,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Exported for testing purposes
   , mkLgrDB
     -- * Temporarily exported
+  , getLedgerTablesAtFor
   , lgrBackingStore
   , streamAPI
   , streamAPI'
@@ -92,7 +93,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
-                     ExceededRollback (..), LedgerDbCfg (..))
+                     ExceededRollback (..), LedgerDbCfg (..),
+                     getLedgerTablesFor, ledgerDbPrefix)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      BackingStoreSelector (..), DiskSnapshot,
@@ -100,7 +102,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
                      StreamAPI (..), TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..),
+                     PointNotFound (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
@@ -377,6 +380,29 @@ flush LgrDB { varDB, lgrBackingStore } = do
       writeTVar varDB db'
       pure toFlush
     LedgerDB.flush lgrBackingStore toFlush
+
+-- | Read and forward the values up to the given point on the chain.
+getLedgerTablesAtFor ::
+  ( IOLike m
+  , LedgerSupportsProtocol blk
+  )
+  => Point blk
+  -> LedgerTables (ExtLedgerState blk) KeysMK
+  -> LgrDB m blk
+  -> m (Either
+        (PointNotFound blk)
+        (LedgerTables (ExtLedgerState blk) ValuesMK))
+getLedgerTablesAtFor pt keys lgr@LgrDB{ varDB, lgrBackingStore } = do
+  lgrDb <- atomically $ readTVar varDB
+  case ledgerDbPrefix pt lgrDb of
+    Nothing -> pure $ Left $ PointNotFound pt
+    Just l  -> do
+      eValues <- LedgerDB.defaultReadKeySets
+        (LedgerDB.readKeySets lgrBackingStore)
+        (getLedgerTablesFor l keys)
+      case eValues of
+        Right v -> pure $ Right v
+        Left _  -> getLedgerTablesAtFor pt keys lgr
 
 {-------------------------------------------------------------------------------
   Validation

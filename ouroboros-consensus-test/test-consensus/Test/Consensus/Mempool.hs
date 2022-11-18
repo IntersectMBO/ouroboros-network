@@ -51,9 +51,6 @@ import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-                     (LedgerBackingStore (LedgerBackingStore))
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
                      safeMaximumOn, (.:))
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -736,7 +733,7 @@ data TestMempool m = TestMempool
   { -- | A mempool with random contents.
     --
     -- Starts out synced with the ledger.
-    mempool          :: Mempool m TestBlock TicketNo
+    mempool          :: Mempool m TestBlock
 
     -- | When called, obtains all events traced after opening the mempool at
     -- the given state from oldest-to-newest.
@@ -785,11 +782,9 @@ withTestMempool setup@TestSetup {..} prop =
 
       -- Set up the LedgerInterface
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
-      trivialLedgerBackingStore <- trivialBackingStore polyEmptyLedgerTables
       let ledgerInterface = LedgerInterface
-            { getCurrentLedgerAndChangelog = (, MempoolChangelog Origin polyEmptyLedgerTables) <$> readTVar varCurrentLedgerState
-            , getBackingStore  = pure $ LedgerBackingStore trivialLedgerBackingStore
-            , withReadLock     = id
+            { getCurrentLedgerState = readTVar varCurrentLedgerState
+            , getLedgerTablesAtFor = \_ _ -> pure $ Right polyEmptyLedgerTables
             }
 
       -- Set up the Tracer
@@ -852,7 +847,7 @@ withTestMempool setup@TestSetup {..} prop =
     -- | Check whether the transactions in the 'MempoolSnapshot' are valid
     -- w.r.t. the current ledger state.
     checkMempoolValidity :: LedgerState TestBlock EmptyMK
-                         -> MempoolSnapshot TestBlock TicketNo
+                         -> MempoolSnapshot TestBlock
                          -> Property
     checkMempoolValidity ledgerState
                          MempoolSnapshot {
@@ -1173,7 +1168,7 @@ executeAction testMempool action = case action of
       return $ mapMaybe extractor evs
 
 currentTicketAssignment :: IOLike m
-                        => Mempool m TestBlock TicketNo -> m TicketAssignment
+                        => Mempool m TestBlock -> m TicketAssignment
 currentTicketAssignment Mempool { syncWithLedger } = do
     MempoolSnapshot { snapshotTxs } <- syncWithLedger
     return $ Map.fromList

@@ -1,13 +1,6 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 -- | Monadic side of the Mempool implementation.
 --
@@ -35,7 +28,6 @@ import           Data.Foldable (foldl')
 import qualified Data.List.NonEmpty as NE
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
-import           Data.Typeable
 
 import           Control.Tracer
 
@@ -52,12 +44,10 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
-import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo,
-                     TxTicket (txTicketTx), zeroTicketNo)
+import           Ouroboros.Consensus.Mempool.TxSeq (TxTicket (txTicketTx),
+                     zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-                     (LedgerBackingStore, readKeySets)
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -67,9 +57,8 @@ import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
   Top-level API
 -------------------------------------------------------------------------------}
 
--- | Create a @Mempool m blk TicketNo@ in @m@ to manipulate the mempool. It
--- will also fork a thread that syncs the mempool and the ledger when the ledger
--- changes.
+-- | Create a @Mempool m blk@ in @m@ to manipulate the mempool. It will also
+-- fork a thread that syncs the mempool and the ledger when the ledger changes.
 openMempool
   :: ( IOLike m
      , LedgerSupportsMempool blk
@@ -82,7 +71,7 @@ openMempool
   -> MempoolCapacityBytesOverride
   -> Tracer m (TraceEventMempool blk)
   -> (GenTx blk -> TxSizeInBytes)
-  -> m (Mempool m blk TicketNo)
+  -> m (Mempool m blk)
 openMempool registry ledger cfg capacityOverride tracer txSize = do
     env <- initMempoolEnv ledger cfg capacityOverride tracer txSize
     forkSyncStateOnTipPointChange registry env
@@ -103,7 +92,7 @@ openMempoolWithoutSyncThread
   -> MempoolCapacityBytesOverride
   -> Tracer m (TraceEventMempool blk)
   -> (GenTx blk -> TxSizeInBytes)
-  -> m (Mempool m blk TicketNo)
+  -> m (Mempool m blk)
 openMempoolWithoutSyncThread ledger cfg capacityOverride tracer txSize =
     mkMempool <$> initMempoolEnv ledger cfg capacityOverride tracer txSize
 
@@ -113,7 +102,7 @@ mkMempool ::
      , LedgerSupportsProtocol blk
      , HasTxId (GenTx blk)
      )
-  => MempoolEnv m blk -> Mempool m blk TicketNo
+  => MempoolEnv m blk -> Mempool m blk
 mkMempool mpEnv = Mempool
     { tryAddTxs      = implTryAddTxs mpEnv
     , removeTxs      = implRemoveTxs mpEnv
@@ -136,17 +125,16 @@ mkMempool mpEnv = Mempool
 
 -- | Abstract interface needed to run a Mempool.
 data LedgerInterface m blk = LedgerInterface
-    { -- | Get the current tip of the LedgerDB and the current changelog that
-      -- allows us to forward values to that state.
-      getCurrentLedgerAndChangelog :: STM m (LedgerState blk EmptyMK, MempoolChangelog blk)
-    , -- | Retrieve the reference to the backing store from the ChainDB. This is
-      -- monadic only because the @LgrDB@ is on the @ChainDBEnv@ and we need to
-      -- get it using monad @m@.
-      getBackingStore  ::     m (LedgerBackingStore m (ExtLedgerState blk))
-    , -- | Wrapper for the DbChangelog flushing lock.
-      --
-      -- See 'Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB.withReadLock'
-      withReadLock     :: forall a. m a -> m a
+    { -- | Get the current tip of the LedgerDB.
+      getCurrentLedgerState :: STM m (LedgerState blk EmptyMK)
+      -- | Get values at the given point on the chain. Returns Nothing if the
+      -- anchor moved or if the state is not found on the ledger db.
+    , getLedgerTablesAtFor
+        :: Point blk
+        -> [GenTx blk]
+        -> m (Either
+              (ChainDB.PointNotFound blk)
+              (LedgerTables (LedgerState blk) ValuesMK))
     }
 
 -- | Create a 'LedgerInterface' from a 'ChainDB'.
@@ -156,16 +144,13 @@ chainDbLedgerInterface ::
      )
   => ChainDB m blk -> LedgerInterface m blk
 chainDbLedgerInterface chainDB = LedgerInterface
-    { getCurrentLedgerAndChangelog = do
-        ldb <- ChainDB.getLedgerDB chainDB
-        pure ( ledgerState $ ledgerDbCurrent   ldb
-             , (\dbch -> MempoolChangelog
-                 (changelogDiffAnchor dbch)
-                 (unExtLedgerStateTables $ changelogDiffs dbch))
-               $ ledgerDbChangelog ldb
-             )
-    , getBackingStore = ChainDB.getBackingStore chainDB
-    , withReadLock = ChainDB.withLgrReadLock chainDB
+    { getCurrentLedgerState =
+        ledgerState . ledgerDbCurrent <$> ChainDB.getLedgerDB chainDB
+    , getLedgerTablesAtFor = \pt txs -> do
+        let keys = ExtLedgerStateTables
+                 $ foldl' (zipLedgerTables (<>)) polyEmptyLedgerTables
+                 $ map getTransactionKeySets txs
+        fmap unExtLedgerStateTables <$> ChainDB.getLedgerTablesAtFor chainDB pt keys
     }
 
 {-------------------------------------------------------------------------------
@@ -195,17 +180,18 @@ initMempoolEnv :: ( IOLike m
                -> (GenTx blk -> TxSizeInBytes)
                -> m (MempoolEnv m blk)
 initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
-    (st, dbch) <- atomically $ getCurrentLedgerAndChangelog ledgerInterface
+    st <- atomically $ getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg $ ForgeInUnknownSlot st
-    isVar <- newTMVarIO $ initInternalState capacityOverride zeroTicketNo slot st' dbch
+    isVar <- newTMVarIO
+             $ initInternalState capacityOverride zeroTicketNo slot st'
     return MempoolEnv
-      { mpEnvLedger           = ledgerInterface
-      , mpEnvLedgerCfg        = cfg
-      , mpEnvStateVar         = isVar
-      , mpEnvTracer           = tracer
-      , mpEnvTxSize           = txSize
-      , mpEnvCapacityOverride = capacityOverride
-      }
+        { mpEnvLedger           = ledgerInterface
+        , mpEnvLedgerCfg        = cfg
+        , mpEnvStateVar         = isVar
+        , mpEnvTracer           = tracer
+        , mpEnvTxSize           = txSize
+        , mpEnvCapacityOverride = capacityOverride
+        }
 
 -- | Spawn a thread which syncs the 'Mempool' state whenever the 'LedgerState'
 -- changes.
@@ -236,12 +222,14 @@ forkSyncStateOnTipPointChange registry menv =
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip :: STM m (Point blk)
     getCurrentTip =
-          ledgerTipPoint (Proxy @blk)
-        . fst
-      <$> getCurrentLedgerAndChangelog (mpEnvLedger menv)
+          ledgerTipPoint
+      <$> getCurrentLedgerState (mpEnvLedger menv)
 
--- | Add a list of transactions (oldest to newest) by interpreting a 'TryAddTxs'
--- from 'pureTryAddTxs'.
+{-------------------------------------------------------------------------------
+  Implementing the mempool API
+-------------------------------------------------------------------------------}
+
+-- | Add a list of transactions (oldest to newest).
 --
 -- This function returns two lists: the transactions that were added or
 -- rejected, and the transactions that could not yet be added, because the
@@ -253,8 +241,14 @@ forkSyncStateOnTipPointChange registry menv =
 --
 -- See the necessary invariants on the Haddock for 'API.tryAddTxs'.
 --
--- This function does not sync the Mempool contents with the ledger state in
--- case the latter changes, it relies on the background thread to do that.
+-- This function syncs the Mempool contents with the ledger state in case the
+-- ledger state in the Mempool is no longer accessible for the LedgerDB and
+-- therefore we wouldn't be able to apply transactions to it. This function must
+-- apply the transaction on /some/ ledger state and if the one in the mempool
+-- goes missing, necessarily the background thread that syncs the mempool will
+-- fire soon. By performing the sync here we just make sure the ledger state is
+-- updated before we retry to add the transaction, and the subsequent call to
+-- 'implSyncWithLedger' by the background thread will be cheap.
 --
 -- INVARIANT: The code needs that read and writes on the state are coupled
 -- together or inconsistencies will arise. To ensure that STM transactions are
@@ -275,6 +269,7 @@ implTryAddTxs mpEnv wti =
   where
     MempoolEnv {
         mpEnvLedgerCfg = cfg
+      , mpEnvLedger    = ldgrInterface
       , mpEnvStateVar  = istate
       , mpEnvTracer    = trcr
       , mpEnvTxSize    = txSize
@@ -285,28 +280,25 @@ implTryAddTxs mpEnv wti =
        -> [GenTx blk]
        -> m ([MempoolAddTxResult blk], [GenTx blk])
     go acc = \case
-      []         -> pure (reverse acc, [])
+      []            -> pure (reverse acc, [])
       txs@(tx:next) -> do
         is <- atomically $ takeTMVar istate
-
-        let err :: m ([MempoolAddTxResult blk], [GenTx blk])
-            err = do
-              -- forwarding failed because the changelog anchor changed compared
-              -- to the one in the internal state.
+        mTbs <- getLedgerTablesAtFor ldgrInterface (isTip is) [tx]
+        case mTbs of
+          Right tbs -> case pureTryAddTx cfg txSize wti tx is tbs of
+            NoSpaceLeft -> do
               atomically $ putTMVar istate is
-              void $ implSyncWithLedger mpEnv
-              go acc txs
-            ok :: LedgerTables (LedgerState blk) ValuesMK -> m ([MempoolAddTxResult blk], [GenTx blk])
-            ok = \values ->
-              case pureTryAddTxs cfg txSize wti tx is values of
-                NoSpaceLeft             -> do
-                  atomically $ putTMVar istate is
-                  pure (reverse acc, txs)
-                TryAddTxs is' result ev -> do
-                  atomically $ putTMVar istate $ fromMaybe is is'
-                  traceWith trcr ev
-                  go (result:acc) next
-        fullForward mpEnv (isDbChangelog is) [tx] err ok
+              pure (reverse acc, txs)
+            TransactionProcessed is' result ev -> do
+              atomically $ putTMVar istate $ fromMaybe is is'
+              traceWith trcr ev
+              go (result:acc) next
+          Left ChainDB.PointNotFound{} -> do
+            -- We couldn't retrieve the values because the state is no longer on
+            -- the db. We need to resync.
+            atomically $ putTMVar istate is
+            void $ implSyncWithLedger mpEnv
+            go acc txs
 
 implSyncWithLedger ::
      forall m blk. (
@@ -316,43 +308,44 @@ implSyncWithLedger ::
      , HasTxId (GenTx blk)
      )
   => MempoolEnv m blk
-  -> m (MempoolSnapshot blk TicketNo)
-implSyncWithLedger mpEnv = withReadLock ldgrInterface $ do
-  res <- atomically $ do
+  -> m (MempoolSnapshot blk)
+implSyncWithLedger mpEnv = do
+  (is, ls) <- atomically $ do
     is <- takeTMVar istate
-    (ls, dbch) <- getCurrentLedgerAndChangelog ldgrInterface
+    ls <- getCurrentLedgerState ldgrInterface
+    pure (is, ls)
 
-    let (slot, ls') = tickLedgerState cfg $ ForgeInUnknownSlot ls
+  let (slot, ls') = tickLedgerState cfg $ ForgeInUnknownSlot ls
 
-    case ( isTip    is == castHash (getTipHash ls)
-         , isSlotNo is == slot
-         , mcAnchor (isDbChangelog is) == mcAnchor dbch) of
-      (True, True, True) -> do
-        -- The tip and the changelog didn't change, put the same state.
-        putTMVar istate is
-        return . Left . implSnapshotFromIS $ is
-      (True, True, False) -> do
-        -- The tip didn't change but the changelog did, just update the
-        -- changelog in the state.
-        let is' = is { isDbChangelog = dbch }
-        putTMVar istate is'
-        return . Left . implSnapshotFromIS $ is'
-      _ -> do
-        -- The tip changed so we have to revalidate the transactions and we will
-        -- also use the updated changelog
-        return $ Right (is { isDbChangelog = dbch }, slot, ls')
-  case res of
-    -- Left means that we are already synced
-    Left snapshot -> pure snapshot
-    -- Right means we have to revalidate
-    Right (is, slot, ls) -> do
-      let ok = \values -> do
-            let NewSyncedState is' snapshot mTrace = pureSyncWithLedger is slot ls values cfg capacityOverride
-            atomically $ putTMVar istate is'
-            whenJust mTrace (traceWith trcr)
-            return snapshot
-      forward_ mpEnv (isDbChangelog is) (TxSeq.toList $ isTxs is) ok
-
+  if pointHash (isTip is) == castHash (getTipHash ls) &&
+     isSlotNo is == slot
+    then do
+    -- The tip didn't change, put the same state.
+    atomically $ putTMVar istate is
+    pure $ implSnapshotFromIS is
+    else do
+    -- We need to revalidate
+    let pt = castPoint (getTip ls)
+        txs = [ txForgetValidated . TxSeq.txTicketTx $ tx
+              | tx <- TxSeq.toList $ isTxs is
+              ]
+    mTbs <- getLedgerTablesAtFor ldgrInterface pt txs
+    case mTbs of
+      Right tbs -> do
+        let (is', mTrace) = pureSyncWithLedger
+                              capacityOverride
+                              cfg
+                              slot
+                              ls'
+                              tbs
+                              is
+        atomically $ putTMVar istate is'
+        whenJust mTrace (traceWith trcr)
+        return $ implSnapshotFromIS is'
+      Left ChainDB.PointNotFound{} -> do
+        -- If the point is gone, resync
+        atomically $ putTMVar istate is
+        implSyncWithLedger mpEnv
   where
     MempoolEnv { mpEnvStateVar         = istate
                , mpEnvLedger           = ldgrInterface
@@ -371,26 +364,37 @@ implRemoveTxs ::
    => MempoolEnv m blk
    -> NE.NonEmpty (GenTxId blk)
    -> m ()
-implRemoveTxs mpEnv txs = withReadLock ldgrInterface $ do
+implRemoveTxs mpEnv toRemove = do
     (is, ls) <- atomically $ do
-      is         <- takeTMVar istate
-      (ls, dbch) <- getCurrentLedgerAndChangelog ldgrInterface
-      pure (is { isDbChangelog = dbch }, ls)
-    let toRemove       = Set.fromList $ NE.toList txs
-        txs'           = filter
-                         (   (`notElem` toRemove)
-                           . txId
-                           . txForgetValidated
-                           . txTicketTx
-                         )
-                         (TxSeq.toList $ isTxs is)
+      is <- takeTMVar istate
+      ls <- getCurrentLedgerState ldgrInterface
+      pure (is, ls)
+    let toKeep = filter
+                 (   (`notElem` Set.fromList (NE.toList toRemove))
+                     . txId
+                     . txForgetValidated
+                     . txTicketTx
+                 )
+                 (TxSeq.toList $ isTxs is)
         (slot, ticked) = tickLedgerState cfg (ForgeInUnknownSlot ls)
-
-    forward_ mpEnv (isDbChangelog is) txs'
-      (\values -> do
-          let WriteRemoveTxs is' t = pureRemoveTxs cfg capacityOverride txs' txs is slot ticked values
-          atomically $ putTMVar istate is'
-          traceWith trcr t)
+        toKeep' = [ txForgetValidated . TxSeq.txTicketTx $ tx | tx <- toKeep ]
+    mTbs <- getLedgerTablesAtFor ldgrInterface (castPoint (getTip ls)) toKeep'
+    case mTbs of
+      Left ChainDB.PointNotFound{} -> do
+        atomically $ putTMVar istate is
+        implRemoveTxs mpEnv toRemove
+      Right tbs -> do
+        let (is', t) = pureRemoveTxs
+                         capacityOverride
+                         cfg
+                         slot
+                         ticked
+                         tbs
+                         (isLastTicketNo is)
+                         toKeep
+                         toRemove
+        atomically $ putTMVar istate is'
+        traceWith trcr t
   where
     MempoolEnv { mpEnvStateVar         = istate
                , mpEnvLedger           = ldgrInterface
@@ -406,77 +410,39 @@ implGetSnapshotFor ::
      , HasTxId (GenTx blk)
      )
   => MempoolEnv m blk
-  -> SlotNo
-  -> TickedLedgerState blk DiffMK
-  -> MempoolChangelog blk
-  -> m (MempoolSnapshot blk TicketNo)
-implGetSnapshotFor mpEnv slot ticked mempoolCh = do
-  res <- atomically $ do
-    is <- readTMVar istate
-    if   isTip    is == castHash (getTipHash ticked)
-      && isSlotNo is == slot
-      then
-        -- We are looking for a snapshot exactly for the ledger state we already
-        -- have cached, then just return it.
-        pure . Left . implSnapshotFromIS $ is
-      else
-        -- We need to revalidate the transactions.
-        pure $ Right is
-  case res of
-    Left snap -> pure snap
-    Right is ->
-      forward_ mpEnv mempoolCh (TxSeq.toList $ isTxs is)
-               ( pure
-               . pureGetSnapshotFor cfg capacityOverride is (ForgeInKnownSlot slot ticked)
-               )
+  -> Point blk -- ^ The point on the ledger database where we want to acquire a
+               -- snapshot on
+  -> SlotNo -- ^ Get snapshot for this slot number (usually the current slot)
+  -> TickedLedgerState blk DiffMK -- ^ The ledger state at 'pt' ticked to 'slot'
+  -> m (Maybe (MempoolSnapshot blk))
+implGetSnapshotFor mpEnv pt slot ticked = do
+  is <- atomically $ readTMVar istate
+  if pointHash (isTip is) == castHash (getTipHash ticked) &&
+     isSlotNo is == slot
+    then
+      -- We are looking for a snapshot exactly for the ledger state we already
+      -- have cached, then just return it.
+      pure . Just . implSnapshotFromIS $ is
+    else do
+      -- We need to revalidate the transactions.
+      let txs = [ txForgetValidated . TxSeq.txTicketTx $ tx
+                | tx <- TxSeq.toList $ isTxs is
+                ]
+          go = do
+            mTbs <- getLedgerTablesAtFor ldgrInterface pt txs
+            case mTbs of
+              Right tbs                    -> pure $ Just $ getSnap is tbs
+              Left ChainDB.PointNotFound{} -> pure Nothing
+      go
   where
+    getSnap is tbs = pureGetSnapshotFor
+                       capacityOverride
+                       cfg
+                       tbs
+                       is
+                       (ForgeInKnownSlot slot ticked)
     MempoolEnv { mpEnvStateVar         = istate
                , mpEnvLedgerCfg        = cfg
+               , mpEnvLedger           = ldgrInterface
                , mpEnvCapacityOverride = capacityOverride
                } = mpEnv
-
-{-------------------------------------------------------------------------------
-  Helpers
--------------------------------------------------------------------------------}
-
--- | Run the continuation with the ledger tables after forwarding, calling error
--- if forwarding fails.
-forward_ :: ( IOLike m
-            , LedgerSupportsMempool blk
-            )
-         => MempoolEnv m blk
-         -> MempoolChangelog blk
-         -> [TxTicket (Validated (GenTx blk))] -- ^ Txs to retrieve values for
-         -> (LedgerTables (LedgerState blk) ValuesMK -> m a)
-         -> m a
-forward_ env ch txs = fullForward
-                        env
-                        ch
-                        (map (txForgetValidated. txTicketTx) txs)
-                        (error "This must not happen: the read lock should be held!")
-
--- | Run one of the continuations with the forwarded ledger tables.
-fullForward :: ( IOLike m
-               , LedgerSupportsMempool blk
-               )
-            => MempoolEnv m blk
-            -> MempoolChangelog blk
-            -> [GenTx blk]
-            -> m a
-            -> (LedgerTables (LedgerState blk) ValuesMK -> m a)
-            -> m a
-fullForward mpEnv dbch txs err ok = do
-  bkst <- getBackingStore (mpEnvLedger mpEnv)
-  let rew = RewoundTableKeySets (mcAnchor dbch) (ExtLedgerStateTables $ getKeysForTxList txs)
-  UnforwardedReadSets s vals keys <- defaultReadKeySets (readKeySets bkst) (readDb rew)
-  let ufs = UnforwardedReadSets s (unExtLedgerStateTables vals) (unExtLedgerStateTables keys)
-  case forwardTableKeySets' (mcAnchor dbch) (mcDifferences dbch) ufs of
-    Left _         -> err
-    Right fwValues -> ok fwValues
-
-getKeysForTxList :: LedgerSupportsMempool blk
-                 => [GenTx blk]
-                 -> LedgerTables (LedgerState blk) KeysMK
-getKeysForTxList =
-    foldl' (zipLedgerTables (<>)) polyEmptyLedgerTables
-  . map getTransactionKeySets

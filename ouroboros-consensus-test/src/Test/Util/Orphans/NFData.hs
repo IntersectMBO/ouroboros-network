@@ -15,7 +15,6 @@ import           Data.Foldable
 import           Data.Sequence (Seq)
 import           Data.Sequence.NonEmpty (NESeq)
 
-import           Data.FingerTree.RootMeasured.Strict as RMFT
 import qualified Data.FingerTree.Strict as FT
 import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
                      DiffHistory (..), Keys (..), NEDiffHistory (..),
@@ -24,9 +23,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      SudElement (..), SudMeasure (..), UtxoDiff (..),
                      UtxoEntryDiff (..), UtxoEntryDiffState (..), UtxoKeys (..),
                      UtxoValues (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq (..),
-                     Element (..), InternalMeasure (..), Length (..),
-                     RootMeasure (..), SlotNoLB (..), SlotNoUB (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (Element (..),
+                     InternalMeasure (..), Length (..), RootMeasure (..),
+                     SlotNoLB (..), SlotNoUB (..))
 
 {------------------------------------------------------------------------------
   StrictFingerTree
