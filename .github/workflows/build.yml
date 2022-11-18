@@ -33,10 +33,8 @@ jobs:
       id: win-setup-haskell
       if: runner.os == 'Windows'
       env:
-        MSYS2_PATH_TYPE: inherit
-        CHERE_INVOKING: 1
         MSYSTEM: MINGW64
-      shell: C:\\msys64\\usr\\bin\\bash.exe {0}
+      shell: msys2 {0}
       run: |
         # ghcup should be installed on current GHA Windows runners.
         ghcup upgrade
