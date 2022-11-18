@@ -78,6 +78,11 @@ jobs:
     # TODO: this really should come from a pre-built location
     - name: "WIN: Install secp256k1"
       if: runner.os == 'Windows'
+      # Same env as tmate action
+      env:
+        MSYS2_PATH_TYPE: inherit
+        MSYSTEM: MINGW64
+        CHERE_INVOKING: 1
       run: |
          ghcup run -- env
          ghcup run -- C:\\msys64\\usr\\bin\\bash.exe .github/workflows/build-secp256k1.bash
