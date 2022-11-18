@@ -146,7 +146,7 @@ jobs:
       run: cabal run ouroboros-network:test
 
     # Consensus tests take too long on GitHub's Azure machines
-#     - name: Setup tmate session
-#       if: ${{ failure() }}
-#       uses: mxschmitt/action-tmate@v3
+    - name: Setup tmate session
+      if: ${{ failure() }}
+      uses: mxschmitt/action-tmate@v3
 
