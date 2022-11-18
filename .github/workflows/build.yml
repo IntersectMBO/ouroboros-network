@@ -39,14 +39,14 @@ jobs:
         ghcup install cabal 3.8.1.0
 
         # do we really need pkg-config? 
-        ghcup run -- pacman --noconfirm -S \
-           mingw-w64-x86_64-pkg-config \
-           mingw-w64-x86_64-libsodium \
-           base-devel \
-           autoconf-wrapper \
-           autoconf \
-           automake \
-           libtool \
+        ghcup run -- pacman --noconfirm -S `
+           mingw-w64-x86_64-pkg-config `
+           mingw-w64-x86_64-libsodium `
+           base-devel `
+           autoconf-wrapper `
+           autoconf `
+           automake `
+           libtool `
            make
 
         ghc --version
