@@ -32,17 +32,15 @@ jobs:
     - name: "WIN: Setup Haskell"
       id: win-setup-haskell
       if: runner.os == 'Windows'
-      env:
-        MSYSTEM: MINGW64
-      shell: msys2 {0}
       run: |
         # ghcup should be installed on current GHA Windows runners.
+        # do we really need this?
+        ghcup run -- pacman --noconfirm -S mingw-w64-x86_64-pkg-config mingw-w64-x86_64-libsodium
+
         ghcup upgrade
         ghcup install ghc ${{ matrix.ghc }}
         ghcup install cabal 3.8.1.0
 
-        # do we really need this?
-        ghcup run -- pacman --noconfirm -S mingw-w64-x86_64-pkg-config mingw-w64-x86_64-libsodium
 
         ghc --version
         cabal --version
