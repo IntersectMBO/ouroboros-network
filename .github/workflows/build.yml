@@ -57,9 +57,15 @@ jobs:
         # and C:/cabal doesn't even exist.  The ghcup bootstrap file should have create it in the image:
         # See https://github.com/haskell/ghcup-hs/blob/787edc17af4907dbc51c85e25c490edd8d68b80b/scripts/bootstrap/bootstrap-haskell#L591
         # So we'll do it by hand here for now.
+        #
+        # We'll _not_ add extra-include-dirs, or extra-lib-dirs, and rely on what's shipped with GHC.
+        # https://github.com/msys2/MINGW-packages/issues/10837#issuecomment-1047105402
+        # https://gitlab.haskell.org/ghc/ghc/-/issues/21111
+        # if we _do_ want them, this would be the lines to add below
+        #                  -a "extra-include-dirs: C:/msys64/mingw64/include" `
+        #                  -a "extra-lib-dirs: C:/msys64/mingw64/lib" `
+        
         cabal user-config -a "extra-prog-path: C:/msys64/mingw64/bin, C:/msys64/usr/bin" `
-                          -a "extra-include-dirs: C:/msys64/mingw64/include" `
-                          -a "extra-lib-dirs: C:/msys64/mingw64/lib" `
                           -f init
 
     - name: Find pkg-config
@@ -168,9 +174,8 @@ jobs:
     - name: ourobors-network-testing [test]
       run: cabal run ouroboros-network-testing:test
 
-    # issue: #1818
     - name: ourobors-network-framework [test]
-      run: cabal run ouroboros-network-framework:test '--' -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
+      run: cabal run ouroboros-network-framework:test
 
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test
