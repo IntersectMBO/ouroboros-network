@@ -18,7 +18,6 @@ import           Control.Monad.Class.MonadTime
 
 import           Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.Limits
 

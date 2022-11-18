@@ -27,7 +27,6 @@ import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Limits
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 

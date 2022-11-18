@@ -26,7 +26,6 @@ import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Protocol.Limits
 

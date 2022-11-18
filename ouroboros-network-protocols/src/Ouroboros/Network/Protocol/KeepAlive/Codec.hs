@@ -28,7 +28,6 @@ import qualified Codec.CBOR.Read as CBOR
 import           Network.TypedProtocol.Codec.CBOR
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits
 

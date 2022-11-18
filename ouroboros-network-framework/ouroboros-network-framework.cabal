@@ -44,7 +44,6 @@ library
                        Ouroboros.Network.Protocol.Handshake.Server
                        Ouroboros.Network.Protocol.Handshake.Version
                        Ouroboros.Network.Protocol.Handshake.Unversioned
-                       Ouroboros.Network.Protocol.Limits
 
                        Ouroboros.Network.ConnectionId
                        Ouroboros.Network.ConnectionHandler

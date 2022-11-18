@@ -39,6 +39,8 @@ library
                        Ouroboros.Network.SizeInBytes
                        Ouroboros.Network.Util.ShowProxy
 
+                       Ouroboros.Network.Protocol.Limits
+
                        Ouroboros.Network.PeerSelection.LedgerPeers.Type
                        Ouroboros.Network.PeerSelection.PeerMetric.Type
                        Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -67,6 +69,7 @@ library
                        io-classes       ^>=0.3,
                        network-mux       >=0.1 && <1.0,
                        strict-stm       ^>=0.2,
+                       typed-protocols  ^>=0.1,
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

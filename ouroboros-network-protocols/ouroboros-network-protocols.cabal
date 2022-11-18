@@ -102,7 +102,6 @@ library
 
                        io-classes       ^>=0.3,
                        ouroboros-network-api,
-                       ouroboros-network-framework,
                        typed-protocols   >=0.1 && <1.0,
                        typed-protocols-cborg
                                          >=0.1 && <1.0
