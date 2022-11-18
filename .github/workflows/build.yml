@@ -73,17 +73,16 @@ jobs:
         echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
         echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
 
+    - uses: actions/checkout@v3
 
     # TODO: this really should come from a pre-built location
     - name: "WIN: Install secp256k1"
       if: runner.os == 'Windows'
-      run: ghcup run -- bash ./build-secp256k1.bash 
+      run: ghcup run -- bash .github/workflows/build-secp256k1.bash 
 
     - name: "LINUX: Install secp256k1"
       if: runner.os != 'Windows'
-      run: bash ./build-secp256k1.bash 
-
-    - uses: actions/checkout@v3
+      run: bash .github/workflows/build-secp256k1.bash 
 
     - name: "Configure cabal.project.local"
       if: runner.os != 'Windows'
