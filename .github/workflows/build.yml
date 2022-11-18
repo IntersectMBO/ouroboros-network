@@ -76,7 +76,7 @@ jobs:
 
     # TODO: this really should come from a pre-built location
     - name: "Install secp256k1"
-      shell: C:\msys64\usr\bin\msys2 {0}
+      shell: C:\\msys64\\msys2.exe {0}
       run: |
         pacman --noconfirm -S mingw-w64-x86_64-pkg-config \
            mingw-w64-x86_64-libsodium \
