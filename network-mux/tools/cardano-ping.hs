@@ -20,9 +20,10 @@ import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson hiding (Options, json)
 import           Data.Bits (clearBit, setBit, testBit)
+import qualified Data.ByteString.Char8 as BS.Char
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as BSC (pack, putStr)
+import qualified Data.ByteString.Lazy.Char8 as BL.Char (pack, putStr)
 import           Data.List (foldl')
 import           Data.Maybe (fromMaybe, isNothing)
 import           Data.TDigest
@@ -33,7 +34,7 @@ import qualified Network.Socket as Socket
 import           System.Console.GetOpt
 import           System.Environment (getArgs, getProgName)
 import           System.Exit
-import           System.IO (hFlush, hPrint, hPutStr, stderr, stdout)
+import           System.IO (hFlush, hPrint, stderr, stdout)
 import           Text.Printf
 
 import           Network.Mux.Bearer.Socket
@@ -111,12 +112,12 @@ logger msgQueue json = go True
         case msg of
              LogMsg bs -> do
                  let bs' = case (json, first) of
-                                (True, False)  -> BSC.pack ",\n" <> bs
-                                (True, True)   -> BSC.pack "{ \"pongs\": [ " <> bs
-                                (False, True)  -> BSC.pack "   timestamp,                         host,                          cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
+                                (True, False)  -> BL.Char.pack ",\n" <> bs
+                                (True, True)   -> BL.Char.pack "{ \"pongs\": [ " <> bs
+                                (False, True)  -> BL.Char.pack "   timestamp,                         host,                          cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
                                 (False, False) -> bs
 
-                 BSC.putStr bs'
+                 BL.Char.putStr bs'
                  go False
              LogEnd ->
                  when json $ putStrLn "] }"
@@ -492,7 +493,7 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
     toSample t_e t_s = realToFrac $ diffTime t_e t_s
 
     eprint :: String -> IO ()
-    eprint = hPutStr stderr
+    eprint = BS.Char.hPutStr stderr . BS.Char.pack
 
     nextMsg ::  MuxBearer IO -> TimeoutFn IO -> MiniProtocolNum -> IO (BL.ByteString, Time)
     nextMsg bearer timeoutfn ptclNum = do
@@ -526,7 +527,7 @@ pingClient tracer Options{quiet, json, maxCount} versions peer = bracket
                  let point = toStatPoint now peerStr cookie16 rtt td'
                  if json
                     then traceWith tracer $ LogMsg (encode point)
-                    else traceWith tracer $ LogMsg $ BSC.pack $ show point <> "\n"
+                    else traceWith tracer $ LogMsg $ BL.Char.pack $ show point <> "\n"
                  hFlush stdout
                  threadDelay 1
                  keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
