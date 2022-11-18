@@ -52,6 +52,8 @@ jobs:
 
         ghc --version
         cabal --version
+        
+        cabal user-config
 
     - name: Find pkg-config
       if: runner.os == 'Windows'
