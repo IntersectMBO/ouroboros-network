@@ -47,7 +47,7 @@ jobs:
            make
 
         ghcup install ghc ${{ matrix.ghc }}
-        ghcup install cabal 3.8.1.0
+        ghcup install cabal 3.6.2.0
 
         ghc --version
         cabal --version
@@ -83,9 +83,7 @@ jobs:
         MSYS2_PATH_TYPE: inherit
         MSYSTEM: MINGW64
         CHERE_INVOKING: 1
-      run: |
-         ghcup run -- env
-         ghcup run -- C:\\msys64\\usr\\bin\\bash.exe .github/workflows/build-secp256k1.bash
+      run: C:\\msys64\\usr\\bin\\bash.exe .github/workflows/build-secp256k1.bash
 
     - name: "LINUX: Install secp256k1"
       if: runner.os != 'Windows'
