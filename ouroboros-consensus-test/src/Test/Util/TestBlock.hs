@@ -43,8 +43,12 @@ module Test.Util.TestBlock (
   , successorBlock
     -- ** Payload semantics
   , PayloadSemantics (..)
+  , applyDirectlyToPayloadDependentState
     -- * LedgerState
+  , LedgerState (TestLedger)
+  , Ticked (TickedTestLedger)
   , lastAppliedPoint
+  , payloadDependentState
     -- * Chain
   , BlockChain (..)
   , blockChain
@@ -346,6 +350,17 @@ instance PayloadSemantics () where
   type PayloadDependentError () = ()
 
   applyPayload _ _ = Right ()
+-- | Apply the payload to a ticked state directly to the payload dependent state
+-- portion of it, leaving the rest of the input ticked state unaltered.
+applyDirectlyToPayloadDependentState ::
+     PayloadSemantics ptype
+  => Ticked (LedgerState (TestBlockWith ptype))
+  -> ptype
+  -> Either (PayloadDependentError ptype)
+            (Ticked (LedgerState (TestBlockWith ptype)))
+applyDirectlyToPayloadDependentState (TickedTestLedger st) tx = do
+  payloadDepSt' <-  applyPayload (payloadDependentState st) tx
+  pure $ TickedTestLedger $ st { payloadDependentState = payloadDepSt' }
 
 {-------------------------------------------------------------------------------
   NestedCtxt
@@ -464,6 +479,8 @@ testInitLedgerWithState = TestLedger GenesisPoint
 newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
       getTickedTestLedger :: LedgerState (TestBlockWith ptype)
     }
+  deriving stock (Generic)
+  deriving newtype (NoThunks)
 
 testInitExtLedgerWithState :: PayloadDependentState ptype -> ExtLedgerState (TestBlockWith ptype)
 testInitExtLedgerWithState st = ExtLedgerState {
