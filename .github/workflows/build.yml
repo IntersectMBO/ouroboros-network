@@ -49,7 +49,6 @@ jobs:
         ghcup install cabal --set 3.6.2.0
 
         ghc --version
-        ghc --print-libdir
         cabal --version
 
         # make sure cabal knows about msys64, and mingw64 tools. Not clear why C:/cabal/config is empty
@@ -70,12 +69,6 @@ jobs:
                           -a "extra-include-dirs: C:/msys64/mingw64/include" `
                           -a ("extra-lib-dirs: {0}, C:/msys64/mingw64/lib" -f $ghcMingwDir) `
                           -f init
-
-    - name: Find pkg-config
-      if: runner.os == 'Windows'
-      run: |
-        where.exe pkg-config
-        ghcup run -- where.exe pkg-config
 
     - name: "OUTPUT Record cabal-store"
       id: win-setup-haskell
@@ -184,7 +177,13 @@ jobs:
       run: cabal run ouroboros-network:test
 
     # Consensus tests take too long on GitHub's Azure machines
-    - name: Setup tmate session
-      if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
+
+    # comment this back in for debugging. Remember to launch a
+    # `pwsh` from the tmux session to debug `pwsh` issues. And
+    # be reminded that the /msys2 and /msys2/mingw64 paths are
+    # not in PATH by default for the workflow, but tmate will
+    # put them in.
+#    - name: Setup tmate session
+#      if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
 
