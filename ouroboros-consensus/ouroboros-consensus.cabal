@@ -281,7 +281,6 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.17
-                     , base-deriving-via
                      , base16-bytestring
                      , bimap             >=0.4   && <0.5
                      , binary            >=0.8   && <0.11
@@ -303,12 +302,10 @@ library
                      , mtl               >=2.2   && <2.3
                      , nothunks          >=0.1.2 && <0.2
                      , psqueues          >=0.2.3 && <0.3
-                     , random
                      , quiet             >=0.2   && <0.3
                      , semialign         >=1.1
                      , serialise         >=0.2   && <0.3
                      , sop-core          >=0.5   && <0.6
-                     , stm               >=2.5   && <2.6
                      , streaming
                      , cardano-strict-containers
                      , text              >=1.2   && <1.3

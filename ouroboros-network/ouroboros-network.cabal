@@ -101,27 +101,21 @@ library
   build-depends:       base              >=4.9 && <4.17,
                        aeson,
                        async             >=2.2 && <2.3,
-                       base16-bytestring,
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
                        containers,
-                       deepseq,
-                       directory,
                        dns,
-                       fingertree        >=0.1.4.2 && <0.2,
+                       hashable,
                        iproute,
                        mtl,
-                       nothunks,
                        network           >=3.1.2 && <3.2,
-                       pretty-simple,
+                       nothunks,
                        psqueues          >=0.2.3 && <0.3,
-                       serialise         >=0.2   && <0.3,
                        random,
-                       cardano-strict-containers,
 
-                       cardano-binary,
                        cardano-prelude,
                        cardano-slotting,
+                       cardano-strict-containers,
                        contra-tracer,
                        monoidal-synchronisation,
 
@@ -134,10 +128,9 @@ library
                                         ^>=0.2,
                        strict-stm       ^>=0.2,
                        typed-protocols   >=0.1 && <1.0,
-                       typed-protocols-cborg
-                                         >=0.1 && <1.0
   if !os(windows)
-    build-depends:     unix
+    build-depends:     directory,
+                       unix
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -149,9 +142,6 @@ library
                        -Wredundant-constraints
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
-  build-depends:       hashable,
-                       text              >=1.2 && <1.3,
-                       time              >=1.9.1 && <1.14
 
 test-suite test
   type:                exitcode-stdio-1.0
@@ -190,22 +180,19 @@ test-suite test
                        Test.Version
   default-language:    Haskell2010
   build-depends:       base,
+                       bytestring,
                        QuickCheck,
                        aeson,
                        array,
-                       async,
-                       bytestring,
                        cborg,
                        containers,
                        dns,
-                       deque,
                        hashable,
                        iproute,
                        mtl,
                        network,
                        pipes,
                        pretty-simple,
-                       process,
                        psqueues,
                        random,
                        serialise,
@@ -234,11 +221,13 @@ test-suite test
                        ouroboros-network-testing,
                        strict-stm,
                        typed-protocols,
-                       typed-protocols-examples
+                       typed-protocols-examples,
 
   if os(windows)
     build-depends:     Win32-network                 <0.2.0.0,
                        Win32           >= 2.5.4.1 && <3.0
+  else
+    build-depends:     process
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -264,7 +253,6 @@ executable demo-chain-sync
                        contra-tracer,
 
                        typed-protocols,
-                       network-mux,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,

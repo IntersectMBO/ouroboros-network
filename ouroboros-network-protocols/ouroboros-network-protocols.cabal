@@ -94,11 +94,6 @@ library
   build-depends:       base              >=4.9 && <4.17,
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
-                       containers,
-                       hashable,
-                       time              >=1.9.1 && <1.14,
-
-                       cardano-slotting,
 
                        io-classes       ^>=0.3,
                        ouroboros-network-api,

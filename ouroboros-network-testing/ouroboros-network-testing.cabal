@@ -110,3 +110,4 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+                       -Wunused-packages

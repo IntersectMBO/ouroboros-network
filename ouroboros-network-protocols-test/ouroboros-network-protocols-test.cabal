@@ -83,9 +83,6 @@ library
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
-                       -threaded
-                       -rtsopts
-                       +RTS -T -RTS
 
 test-suite test
   type:                exitcode-stdio-1.0

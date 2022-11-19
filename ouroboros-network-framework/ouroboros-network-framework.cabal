@@ -85,7 +85,6 @@ library
                      , random
                      , stm
                      , text
-                     , time
                      , quiet
 
                      , cardano-prelude
@@ -129,7 +128,6 @@ library testlib
     other-modules:
 
     build-depends:   base
-                   , bytestring
                    , containers
 
                    , QuickCheck
@@ -141,7 +139,6 @@ library testlib
 
   default-language:  Haskell2010
   ghc-options:       -rtsopts
-                     -threaded
                      -Wall
                      -Wcompat
                      -Wincomplete-uni-patterns
@@ -167,7 +164,6 @@ test-suite test
                      , bytestring
                      , cborg
                      , containers
-                     , directory
                      , dns
                      , iproute
                      , network
@@ -181,9 +177,7 @@ test-suite test
                      , quickcheck-instances
                      , tasty
                      , tasty-quickcheck
-                     , these
 
-                     , cardano-prelude
                      , contra-tracer
 
                      , io-sim
@@ -200,8 +194,9 @@ test-suite test
                      , typed-protocols-examples
 
   if os(windows)
-    build-depends:     Win32-network                <0.2,
-                       Win32           >=2.5.4.1 && <3.0
+    build-depends:     Win32-network <0.2
+  else
+    build-depends:     directory
 
   default-language:    Haskell2010
   ghc-options:         -rtsopts
@@ -224,21 +219,14 @@ executable demo-ping-pong
   build-depends:       base,
                        async,
                        bytestring,
-                       cborg,
                        directory,
 
                        contra-tracer,
 
-                       io-classes,
-                       network-mux,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        typed-protocols,
                        typed-protocols-examples
-
-  if os(windows)
-    build-depends:     Win32-network                <0.2,
-                       Win32           >=2.5.4.1 && <3.0
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -256,11 +244,9 @@ executable demo-connection-manager
   main-is:             connection-manager.hs
   build-depends:       base,
                        bytestring,
-                       cborg,
                        network,
                        optparse-applicative,
                        random,
-                       serialise,
 
                        contra-tracer,
 

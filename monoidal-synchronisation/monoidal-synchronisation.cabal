@@ -29,9 +29,7 @@ library
   build-depends:    base >=4.9 && <4.17
   hs-source-dirs:   src
   default-language: Haskell2010
-  ghc-options:     -rtsopts
-                   -threaded
-                   -Wall
+  ghc-options:     -Wall
                    -Wcompat
                    -Wincomplete-uni-patterns
                    -Wincomplete-record-updates

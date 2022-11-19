@@ -30,3 +30,10 @@ library
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wunused-packages

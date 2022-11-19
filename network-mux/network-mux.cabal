@@ -134,16 +134,16 @@ test-suite test
                        cborg,
                        containers,
                        network,
-                       process,
                        QuickCheck,
                        splitmix,
                        serialise,
                        tasty,
                        tasty-quickcheck,
-                       time
 
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <3.0,
+  else
+    build-depends:     process
   ghc-options:         -threaded
                        -Wall
                        -fno-ignore-asserts
@@ -163,7 +163,6 @@ executable mux-demo
   main-is:             mux-demo.hs
   other-modules:       Test.Mux.ReqResp
   build-depends:       base,
-                       directory,
                        network-mux,
                        io-classes,
                        contra-tracer,
@@ -176,7 +175,8 @@ executable mux-demo
     build-depends:     Win32,
                        Win32-network
   else
-    build-depends:     network
+    build-depends:     directory,
+                       network
 
 executable cardano-ping
   import:              demo-deps
