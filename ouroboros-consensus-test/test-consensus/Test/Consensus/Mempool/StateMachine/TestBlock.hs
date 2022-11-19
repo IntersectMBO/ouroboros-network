@@ -14,6 +14,7 @@
 module Test.Consensus.Mempool.StateMachine.TestBlock (tests) where
 
 import           Codec.Serialise (Serialise)
+import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
 import           Control.Monad.Trans.Except (except)
 import           Data.Set (Set, (\\))
 import qualified Data.Set as Set
@@ -22,13 +23,15 @@ import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Test.QuickCheck (Arbitrary, arbitrary, shrink)
+import           Test.QuickCheck (Arbitrary, arbitrary, frequency, shrink)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
+import           Cardano.Slotting.Slot (SlotNo (SlotNo))
 import           Cardano.Slotting.Time (slotLengthFromSec)
+
 
 import           Ouroboros.Consensus.Block.Abstract (CodecConfig, StorageConfig)
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -37,9 +40,13 @@ import           Ouroboros.Consensus.HardFork.History (defaultEraParams)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Util.IOLike (newTVarIO, readTVar)
 
-import           Ouroboros.Network.Block (pattern GenesisPoint)
+import           Ouroboros.Network.Block (Point (Point), pattern BlockPoint,
+                     pattern GenesisPoint)
 
-import           Test.Consensus.Mempool.StateMachine (prop_sequential)
+import           Test.Util.Orphans.Arbitrary ()
+
+import           Test.Consensus.Mempool.StateMachine
+                     (openMempoolWithMockedLedgerItf, prop_sequential)
 
 import           Test.Util.TestBlock (LedgerState (TestLedger),
                      PayloadSemantics (PayloadDependentError, PayloadDependentState, applyPayload),
@@ -51,14 +58,12 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 
-
 tests :: TestTree
 tests = testGroup "Mempool State Machine" [
-      testProperty "Sequential" (prop_sequential mkMempool)
+      testProperty "Sequential" (prop_sequential mOpenMempool)
     ]
   where
-    mkMempool :: IO (Mempool IO TestBlock TicketNo)
-    mkMempool =
+    mOpenMempool =
       let
         -- Fixme: see how and whether this is used.
         cfg :: LedgerConfig TestBlock
@@ -69,17 +74,7 @@ tests = testGroup "Mempool State Machine" [
 
         tracer :: Tracer IO (TraceEventMempool TestBlock)
         tracer = nullTracer
-      in do
-        currentLedgerStateTVar <- newTVarIO initialLedgerState
-
-        let ledgerItf :: LedgerInterface IO TestBlock
-            ledgerItf = LedgerInterface {
-              getCurrentLedgerState = readTVar currentLedgerStateTVar
-            }
-
-        -- TODO: we need to link the mempool LedgerInterface and the ledger
-        -- state update action in the SUT through currentLedgerStateTVar
-        openMempoolWithoutSyncThread ledgerItf cfg capacityOverride tracer txSize
+      in openMempoolWithMockedLedgerItf cfg capacityOverride tracer txSize
 
 -- TODO: consider removing this level of indirection
 type TestBlock = TestBlockWith Tx
@@ -87,7 +82,6 @@ type TestBlock = TestBlockWith Tx
 newtype instance GenTx TestBlock = TestBlockGenTx Tx
   deriving stock (Generic)
   deriving newtype (Show, Arbitrary, Ord, Eq, NoThunks)
-
 
 -- For the mempool tests it is not imporant that we calculate the actual size of the transaction in bytes
 txSize :: GenTx TestBlock -> TxSizeInBytes
@@ -120,6 +114,26 @@ data TestLedgerState = TestLedgerState {
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (NoThunks, ToExpr, Serialise)
+
+instance Arbitrary TestLedgerState where
+  arbitrary = TestLedgerState <$> arbitrary
+  shrink    = fmap TestLedgerState . shrink . availableTokens
+
+instance Arbitrary (LedgerState TestBlock) where
+  arbitrary = TestLedger <$> arbitrary <*> arbitrary
+
+instance Arbitrary (Point TestBlock) where
+  arbitrary = frequency [ (1, pure GenesisPoint)
+                        , (9, BlockPoint <$> arbitrary <*> arbitrary)
+                        ]
+
+  shrink GenesisPoint           = []
+  shrink (BlockPoint slot hash) = fmap (uncurry BlockPoint) $ shrink (slot, hash)
+
+-- FIXME: I'm sure somebody already defined this
+instance Arbitrary SlotNo where
+  arbitrary = SlotNo <$> arbitrary
+  shrink (SlotNo s) = fmap SlotNo $ shrink s
 
 initialLedgerState :: LedgerState (TestBlockWith Tx)
 initialLedgerState = TestLedger {

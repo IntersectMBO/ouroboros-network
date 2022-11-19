@@ -170,6 +170,7 @@ test-suite test-consensus
                      , quiet
                      , serialise
                      , sop-core
+                     , strict-stm
                      , transformers
                      , tasty
                      , tasty-hunit

@@ -176,6 +176,17 @@ pattern TestHash :: NonEmpty Word64 -> TestHash
 pattern TestHash path <- UnsafeTestHash path where
   TestHash path = UnsafeTestHash (force path)
 
+-- FIXME: we should make sure that we don't break any invariants and that this
+-- instance makes sense. We might want to reduce the range of the data we
+-- generate.
+instance Arbitrary TestHash where
+  arbitrary = fmap UnsafeTestHash ((:|) <$> arbitrary <*> arbitrary)
+
+  shrink (UnsafeTestHash xs) = fmap UnsafeTestHash $ shrinkNE xs
+    where
+      shrinkNE (_ :| []) = []
+      shrinkNE (x :| ys) = fmap (uncurry (:|)) $ shrink (x, ys)
+
 {-# COMPLETE TestHash #-}
 
 testHashFromList :: [Word64] -> TestHash
