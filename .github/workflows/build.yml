@@ -10,10 +10,6 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
 
-    defaults:
-      run:
-        shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
-
     strategy:
       fail-fast: false
       matrix:
@@ -25,28 +21,6 @@ jobs:
       SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
 
     steps:
-    - name: "WIN: Setup MSYS2 and libraries"
-      if: runner.os == 'Windows'
-      uses: msys2/setup-msys2@v2
-      with:
-        update: true
-        install: >-
-          base-devel
-          autoconf-wrapper
-          autoconf
-          automake
-          libtool
-          make
-          git
-          mingw-w64-x86_64-toolchain
-          mingw-w64-x86_64-libsodium
-          mingw-w64-x86_64-jq
-
-    - name: "WIN: Setup pkg-config"
-      if: runner.os == 'Windows'
-      run: |
-        pacman --noconfirm -S mingw-w64-x86_64-pkg-config
-
     - name: "LINUX: Setup haskell"
       if: runner.os != 'Windows'
       uses: haskell/actions/setup@v2
@@ -56,37 +30,51 @@ jobs:
         cabal-version: 3.6.2.0
 
     - name: "WIN: Setup Haskell"
-      id: win-setup-haskell
       if: runner.os == 'Windows'
       run: |
-        # see https://gitlab.haskell.org/haskell/ghcup-hs/-/blob/master/scripts/bootstrap/bootstrap-haskell
-        curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | \
-          BOOTSTRAP_HASKELL_NONINTERACTIVE=1 \
-          BOOTSTRAP_HASKELL_ADJUST_CABAL_CONFIG=1 \
-          BOOTSTRAP_HASKELL_ADJUST_BASHRC=1 \
-          BOOTSTRAP_HASKELL_GHC_VERSION="${{ matrix.ghc }}" \
-          BOOTSTRAP_HASKELL_CABAL_VERSION="3.6.2.0" \
-          sh
+        # ghcup should be installed on current GHA Windows runners. Let's use ghcup to run
+        # pacman, to install the necessary dependencies, ...
+        ghcup run -- pacman --noconfirm -S `
+           mingw-w64-x86_64-pkg-config `
+           mingw-w64-x86_64-libsodium `
+           base-devel `
+           autoconf-wrapper `
+           autoconf `
+           automake `
+           libtool `
+           make
 
-        # MSYS2 doesn't inherit $GITHUB_PATH so this is needed
-        cat <(echo "source /c/ghcup/env") ~/.bashrc > ~/.bashrc.new
-        mv ~/.bashrc.new ~/.bashrc
-
-        source ~/.bashrc
-
-        # There is an issue with crt libraries, fixed by prepending the ghc
-        # mingw32 libraries directory to every other library directory.
-        echo "# Original cabal config extra-lib-dirs"
-        grep extra-lib-dirs /c/cabal/config
-
-        sed -i 's/C:\\msys64\\mingw64\\lib/C:\\ghcup\\ghc\\8.10.7\\mingw\\x86_64-w64-mingw32\\lib, C:\\msys64\\mingw64\\lib/g' /c/cabal/config
-
-        echo "# Modified cabal config extra-lib-dirs"
-        grep extra-lib-dirs /c/cabal/config
+        # ... and also the ghc and cabal combination we want.
+        ghcup install ghc --set ${{ matrix.ghc }}
+        ghcup install cabal --set 3.6.2.0
 
         ghc --version
         cabal --version
-        echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT
+
+        # make sure cabal knows about msys64, and mingw64 tools. Not clear why C:/cabal/config is empty
+        # and C:/cabal doesn't even exist.  The ghcup bootstrap file should have create it in the image:
+        # See https://github.com/haskell/ghcup-hs/blob/787edc17af4907dbc51c85e25c490edd8d68b80b/scripts/bootstrap/bootstrap-haskell#L591
+        # So we'll do it by hand here for now.
+        #
+        # We'll _not_ add extra-include-dirs, or extra-lib-dirs, and rely on what's shipped with GHC.
+        # https://github.com/msys2/MINGW-packages/issues/10837#issuecomment-1047105402
+        # https://gitlab.haskell.org/ghc/ghc/-/issues/21111
+        # if we _do_ want them, this would be the lines to add below
+        
+        $ghcMingwDir = Join-Path -Path $(ghc --print-libdir) `
+                                 -ChildPath ../mingw/x86_64-*-mingw32/lib/ `
+                                 -Resolve
+        
+        cabal user-config -a "extra-prog-path: C:/msys64/mingw64/bin, C:/msys64/usr/bin" `
+                          -a "extra-include-dirs: C:/msys64/mingw64/include" `
+                          -a ("extra-lib-dirs: {0}, C:/msys64/mingw64/lib" -f $ghcMingwDir) `
+                          -f init
+
+    - name: "OUTPUT Record cabal-store"
+      id: win-setup-haskell
+      shell: bash
+      if: runner.os == 'Windows'
+      run: echo "cabal-store=$(dirname $(cabal --help | tail -1 | tr -d ' '))\\store" >> $GITHUB_OUTPUT     
 
     - name: Set cache version
       run: echo "CACHE_VERSION=20220919" >> $GITHUB_ENV
@@ -102,24 +90,29 @@ jobs:
 
     - name: "LINUX: Install build environment (for secp256k1)"
       if: runner.os == 'Linux'
-      run: |
-        sudo apt-get -y install autoconf automake libtool
-        echo "CI_SECP_FLAGS=--prefix=/usr" >> $GITHUB_ENV
-        echo "CI_SECP_INSTALL_CMD=sudo" >> $GITHUB_ENV
-
-    - name: "Install secp256k1"
-      run: |
-        git clone https://github.com/bitcoin-core/secp256k1
-        ( cd secp256k1
-          git switch $SECP256K1_REF --detach
-          ./autogen.sh
-          ./configure $CI_SECP_FLAGS --enable-module-schnorrsig --enable-experimental
-          make
-          make check
-          $CI_SECP_INSTALL_CMD make install
-        )
+      run: sudo apt-get -y install autoconf automake libtool
 
     - uses: actions/checkout@v3
+
+    # TODO: this really should come from a pre-built location
+    - name: "WIN: Install secp256k1"
+      if: runner.os == 'Windows'
+      # Same env as tmate action
+      env:
+        MSYS2_PATH_TYPE: inherit
+        MSYSTEM: MINGW64
+        CHERE_INVOKING: 1
+        # install secp into /mingw64 prefix, which is where pkg-config will look
+        # by default.
+        CI_SECP_FLAGS: "--prefix=/mingw64"
+      run: C:\\msys64\\usr\\bin\\bash.exe .github/workflows/build-secp256k1.bash
+
+    - name: "LINUX: Install secp256k1"
+      if: runner.os != 'Windows'
+      env:
+        CI_SECP_FLAGS: "--prefix=/usr"
+        CI_SECP_INSTALL_CMD: sudo
+      run: bash .github/workflows/build-secp256k1.bash 
 
     - name: "Configure cabal.project.local"
       if: runner.os != 'Windows'
@@ -139,7 +132,10 @@ jobs:
       run: |
         cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
-        echo "weeknum=$(/bin/date -u "+%W")" >> $GITHUB_OUTPUT
+
+    - name: "OUTPUT Record weeknum"
+      shell: bash
+      run: echo "weeknum=$(/usr/bin/date -u "+%W")" >> $GITHUB_OUTPUT
 
     - uses: actions/cache@v3
       name: "Cache `cabal store`"
@@ -157,12 +153,11 @@ jobs:
         key: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.record-deps.outputs.weeknum }}
         restore-keys: cache-dist-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
-
     - name: Build dependencies
-      run: cabal build --only-dependencies all
+      run: cabal build --only-dependencies all -j
 
     - name: Build projects [build]
-      run: cabal build all
+      run: cabal build all -j
 
     # Test network packages
 
@@ -175,11 +170,20 @@ jobs:
     - name: ourobors-network-testing [test]
       run: cabal run ouroboros-network-testing:test
 
-    # issue: #1818
     - name: ourobors-network-framework [test]
-      run: cabal run ouroboros-network-framework:test -- -p '$0 != "typed-protocols.Socket.socket send receive IPv4"'
+      run: cabal run ouroboros-network-framework:test
 
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test
 
     # Consensus tests take too long on GitHub's Azure machines
+
+    # comment this back in for debugging. Remember to launch a
+    # `pwsh` from the tmux session to debug `pwsh` issues. And
+    # be reminded that the /msys2 and /msys2/mingw64 paths are
+    # not in PATH by default for the workflow, but tmate will
+    # put them in.
+#    - name: Setup tmate session
+#      if: ${{ failure() }}
+#      uses: mxschmitt/action-tmate@v3
+
