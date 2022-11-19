@@ -45,10 +45,8 @@ jobs:
            make
 
         # ... and also the ghc and cabal combination we want.
-        ghcup install ghc ${{ matrix.ghc }}
-        ghcup set ghc ${{ matrix.ghc }}
-        ghcup install cabal 3.6.2.0
-        ghcup set cabal 3.6.2.0
+        ghcup install ghc --set ${{ matrix.ghc }}
+        ghcup install cabal --set 3.6.2.0
 
         ghc --version
         ghc --print-libdir
