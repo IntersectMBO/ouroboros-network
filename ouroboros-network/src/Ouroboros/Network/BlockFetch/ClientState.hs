@@ -383,6 +383,7 @@ data TraceFetchClientState header =
        -- over the wire.
      | SendFetchRequest
          (AnchoredFragment header)
+         PeerGSV
 
        -- | Mark the start of receiving a streaming batch of blocks. This will
        -- be followed by one or more 'CompletedBlockFetch' and a final
