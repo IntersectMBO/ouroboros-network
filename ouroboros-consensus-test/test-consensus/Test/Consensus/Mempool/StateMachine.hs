@@ -30,7 +30,8 @@ import           NoThunks.Class (NoThunks)
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Gen (Gen)
 import qualified Test.QuickCheck.Monadic as QCM
-import           Test.StateMachine (Reference, StateMachine (StateMachine))
+import           Test.StateMachine (Reference, StateMachine (StateMachine),
+                     showLabelledExamples)
 import           Test.StateMachine.ConstructorName
                      (CommandNames (cmdName, cmdNames))
 import           Test.StateMachine.Logic (Logic (Top), (.==))
@@ -46,9 +47,11 @@ import           Ouroboros.Consensus.HeaderValidation (ValidateEnvelope)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerCfg, LedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (DoNotIntervene))
-import           Ouroboros.Consensus.Util.IOLike (newTVarIO, readTVar)
+import           Ouroboros.Consensus.Util.IOLike (newTVarIO, readTVar,
+                     readTVarIO)
 
 -- SUT
+import           Data.Maybe (fromMaybe)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl
@@ -62,11 +65,17 @@ import           Text.Read (Lexeme (Char))
 -- | A model of the mempool.
 --
 -- Mock functions operate on this model.
-data Model (r :: Type -> Type) = Model
-    deriving (Eq, Show, Generic)
+data Model blk (r :: Type -> Type) = Model {
+      currentLedgerDBState :: LedgerState blk
+    }
+  deriving stock (Generic)
 
-initModel :: Model r
-initModel = Model
+deriving stock instance (Eq   (LedgerState blk)) => Eq   (Model blk r)
+deriving stock instance (Show (LedgerState blk)) => Show (Model blk r)
+
+initModel :: LedgerState blk -> Model blk r
+
+initModel initialState = Model initialState
 
 {-------------------------------------------------------------------------------
   Commands
@@ -78,15 +87,20 @@ initModel = Model
 --
 -- The mempool is generalized over blocks, so there is not much we can do about
 -- it.
-data Event blk (r :: Type -> Type) = TryAddTxs [GenTx blk]
+data Cmd blk (r :: Type -> Type) =
+      TryAddTxs [GenTx blk]
+    | SetLedgerState (LedgerState blk)
+    -- ^ Set the ledger state returned by the ledger interface mock to the given
+    -- state.
   deriving stock (Generic1)
   deriving anyclass (Rank2.Functor, Rank2.Foldable, Rank2.Traversable, CommandNames)
 
-deriving stock instance Show (GenTx blk) => Show (Event blk r)
+deriving stock instance (Show (GenTx blk), Show (LedgerState blk)) => Show (Cmd blk r)
 
 -- | Successful command responses
 data SuccessfulResponse blk (ref :: Type -> Type) =
-    TryAddTxsSuccess (TryAddTxsResult blk)
+      TryAddTxsSuccess (TryAddTxsResult blk)
+    | RespOk
   deriving stock Generic1
   deriving anyclass Rank2.Foldable
 
@@ -100,13 +114,11 @@ data TryAddTxsResult blk = TryAddTxsResult {
 
 deriving stock instance Show (GenTx blk) => Show (TryAddTxsResult blk)
 
-
 newtype Response blk ref = Response (SuccessfulResponse blk ref)
   deriving stock Generic1
   deriving anyclass Rank2.Foldable
 
 deriving stock instance (Show (GenTx blk), Show (SuccessfulResponse blk ref)) => Show (Response blk ref)
-
 
 -- | TODO: for now we use a mock reference as a placeholder for mock references
 -- that might be used in the tests.
@@ -122,25 +134,36 @@ data ActualRef = ActualRef
 -------------------------------------------------------------------------------}
 
 generator ::
-     QC.Arbitrary (GenTx blk)
-  => Model Symbolic -> Maybe (Gen (Event blk Symbolic))
-generator _ = Just $ fmap TryAddTxs QC.arbitrary
+     (QC.Arbitrary (GenTx blk), QC.Arbitrary (LedgerState blk))
+  => Model blk Symbolic -> Maybe (Gen (Cmd blk Symbolic))
+generator (Model _      ) = Just
+                          $ QC.frequency [ (100, fmap TryAddTxs QC.arbitrary)
+                                         , (10,  genLedgerState)
+                                           -- TODO: if the model is bootstrapped with an "empty"
+                                           -- ledger state we will generate a lot of transactions
+                                           -- that will simply be rejected. Maybe we can force
+                                           -- the generator to always generate a 'SetLedgerState'
+                                           -- action if this is uninitialized.
+                                         ]
 
-shrinker :: Model Symbolic -> Event blk Symbolic -> [Event blk Symbolic]
+genLedgerState :: QC.Arbitrary (LedgerState blk) => Gen (Cmd blk Symbolic)
+genLedgerState = fmap SetLedgerState QC.arbitrary
+
+shrinker :: Model blk Symbolic -> Cmd blk Symbolic -> [Cmd blk Symbolic]
 shrinker _model _event = [] -- TODO
 
 {-------------------------------------------------------------------------------
   State machine
 -------------------------------------------------------------------------------}
 
-transition :: Model r -> Event blk r -> (Response blk) r -> Model r
-transition _model _event _response = Model
+transition :: Model blk r -> Cmd blk r -> (Response blk) r -> Model blk r
+transition model _event _response = model -- TODO
 
 -- | TODO Here is where we call the actual mempool commands
 semantics :: forall blk idx.
      LedgerSupportsMempool blk
   => MempoolWithMockedLedgerItf IO blk idx
-  -> Event blk Concrete
+  -> Cmd blk Concrete
   -> IO ((Response blk) Concrete)
 semantics mempoolWithMockedLedgerItf (TryAddTxs txs) = do
     (processed, toProcess) <- tryAddTxs (getMempool mempoolWithMockedLedgerItf)
@@ -157,17 +180,17 @@ semantics mempoolWithMockedLedgerItf (TryAddTxs txs) = do
   where
     getTx (MempoolTxAdded vtx) = txForgetValidated vtx
 
-precondition :: Model Symbolic -> Event blk Symbolic -> Logic
+precondition :: Model blk Symbolic -> Cmd blk Symbolic -> Logic
 precondition _model _event = Top
 
 postcondition ::
-     Model        Concrete
-  -> Event    blk Concrete
+     Model    blk Concrete
+  -> Cmd      blk Concrete
   -> Response tx  Concrete
   -> Logic
 postcondition _model _event _response = Top
 
-mock  :: forall blk tx . Model Symbolic -> Event blk Symbolic -> GenSym (Response tx Symbolic)
+mock  :: forall blk tx . Model blk Symbolic -> Cmd blk Symbolic -> GenSym (Response tx Symbolic)
 mock _model _event = pure
                      $ Response
                      $ TryAddTxsSuccess
@@ -177,13 +200,25 @@ mock _model _event = pure
                        , unprocessed = [] -- TODO
                        }
 
-stateMachine ::
+stateMachineIO ::
      ( QC.Arbitrary (GenTx blk)
+     , QC.Arbitrary (LedgerState blk)
      , LedgerSupportsMempool blk
      )
-  => MempoolWithMockedLedgerItf IO blk idx -> StateMachine Model (Event blk) IO (Response blk)
-stateMachine mempool = StateMachine
-  { SMT.initModel     = initModel
+  => MempoolWithMockedLedgerItf IO blk idx
+  -> IO (StateMachine (Model blk) (Cmd blk) IO (Response blk))
+stateMachineIO mempool = do
+  initialState <- readTVarIO (getLedgerStateTVar mempool)
+  pure $ stateMachine initialState mempool
+
+-- | State machine for which we do not have a mempool, and therefore we cannot
+-- use the SUT.
+stateMachineWithoutSemantics initialState = stateMachine initialState err
+  where err = error $  "The SUT should not be used in this state machine:"
+                    <> " there is no semantics defined for this state machine."
+
+stateMachine initialState mempool = StateMachine
+  { SMT.initModel     = initModel initialState
   , SMT.transition    = transition
   , SMT.precondition  = precondition
   , SMT.postcondition = postcondition
@@ -197,23 +232,51 @@ stateMachine mempool = StateMachine
 
 -- To run the property we require both a mempool, and a @TVar@ that can be used
 -- to modifi
-prop_sequential ::
+prop_sequential :: forall blk idx.
      ( QC.Arbitrary (GenTx blk)
+     , QC.Arbitrary (LedgerState blk)
+     , ToExpr (LedgerState blk)
      , LedgerSupportsMempool blk
      )
-  => (LedgerState blk -> IO (MempoolWithMockedLedgerItf IO blk idx))
-  ->  LedgerState blk
+  => (LedgerState blk ->  IO (MempoolWithMockedLedgerItf IO blk idx))
+  -> LedgerState blk
   -> QC.Property
-prop_sequential mempoolWithMockedLedgerItfAct initialState =
-    forAllCommands (stateMachine err) Nothing $ \cmds ->
-      QCM.monadicIO $ do
-        mempool <- QCM.run $ mempoolWithMockedLedgerItfAct initialState
-        (hist, _model, res) <- runCommands (stateMachine mempool) cmds
-        prettyCommands (stateMachine mempool) hist -- TODO: check if we need the mempool in 'prettyCommands'
+prop_sequential mempoolWithMockedLedgerItfAct initialState = do
+  -- TODO: even though the mocked LedgerDB interface has an initial state, we
+  -- generate the commands in such a way that the first action is _always_ set
+  -- an intial state. This seems to make the code more brittle than it ought to
+  -- be. However it is not possible to
+  --
+    forAllCommands (stateMachineWithoutSemantics initialState) Nothing $ \cmds -> QCM.monadicIO $ do
+        modelWithSUT <- QCM.run $ do
+          mempool <- mempoolWithMockedLedgerItfAct initialState
+          stateMachineIO mempool
+        (hist, _model, res) <- runCommands modelWithSUT cmds
+        prettyCommands modelWithSUT hist -- TODO: check if we need the mempool in 'prettyCommands'
           $ checkCommandNames cmds
           $ res QC.=== Ok
   where
     err = error "The actual mempool should not needed when generating commands."
+
+{-------------------------------------------------------------------------------
+  Labelling
+-------------------------------------------------------------------------------}
+
+-- Show the labelled examples. In particular:
+--
+-- Mempool with at least N accepted transactions
+-- Mempool with at least N rejected transactions
+--
+-- https://hackage.haskell.org/package/quickcheck-state-machine-0.7.1/docs/Test-StateMachine-Labelling.html#t:Event
+-- https://hackage.haskell.org/package/quickcheck-state-machine-0.7.1/docs/Test-StateMachine.html#v:showLabelledExamples-39-
+--
+-- showLabelledExamples
+--   :: (Show tag, Show (model Symbolic))
+--   => (Show (cmd Symbolic), Show (resp Symbolic))
+--   => (Traversable cmd, Foldable resp)
+--   => StateMachine model cmd m resp -> ([Event model cmd resp Symbolic] -> [tag]) -> IO ()
+-- showMempoolTestScenarios :: IO ()
+-- .... Here we don't use the actual mempool, BUT we do need a initial ledger state!
 
 {------------------------------------------------------------------------------
   Mempool with a mocked ledger interface
@@ -221,12 +284,10 @@ prop_sequential mempoolWithMockedLedgerItfAct initialState =
 
 -- The idea of this data structure is that we make sure that the ledger
 -- interface used by the mempool gets mocked in the right way.
+--
 data MempoolWithMockedLedgerItf m blk idx = MempoolWithMockedLedgerItf {
       getLedgerInterface :: LedgerInterface m blk
-      -- | TVar that should be used to change the current ledger state that the
-      -- mempool will see if it asks the ledger interface for the current ledger
-      -- state.
-    , getLedgerStateTVar :: StrictTVar m (LedgerState blk)
+    , getLedgerStateTVar :: StrictTVar m (LedgerState blk) -- TODO: define setters and getters for this
     , getMempool         :: Mempool m blk idx
     }
 
@@ -240,15 +301,13 @@ openMempoolWithMockedLedgerItf::
   -> Tracer IO (TraceEventMempool blk)
   -> (GenTx blk -> TxSizeInBytes)
   -> LedgerState blk
-     -- ^ Initial ledger state
+    -- ^ Initial ledger state for the mocked Ledger DB interface.
   -> IO (MempoolWithMockedLedgerItf IO blk TicketNo)
-openMempoolWithMockedLedgerItf cfg capacityOverride tracer txSize initialLedgerState = do
-    currentLedgerStateTVar <- newTVarIO initialLedgerState
-
+openMempoolWithMockedLedgerItf cfg capacityOverride tracer txSize initialState = do
+    currentLedgerStateTVar <- newTVarIO initialState
     let ledgerItf = LedgerInterface {
             getCurrentLedgerState = readTVar currentLedgerStateTVar
         }
-
     mempool <- openMempoolWithoutSyncThread ledgerItf cfg capacityOverride tracer txSize
     pure MempoolWithMockedLedgerItf {
         getLedgerInterface = ledgerItf
@@ -260,4 +319,4 @@ openMempoolWithMockedLedgerItf cfg capacityOverride tracer txSize initialLedgerS
   Instances required to run the state machine
 -------------------------------------------------------------------------------}
 
-instance ToExpr (Model Concrete)
+deriving anyclass instance ToExpr (LedgerState blk) => ToExpr (Model blk Concrete)
