@@ -49,6 +49,7 @@ import           Ouroboros.Consensus.Byron.Node
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff)
 import qualified Cardano.Ledger.Conway.Genesis as SL
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node
@@ -268,7 +269,7 @@ prop_simple_cardano_convergence TestSetup
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
                   ProtocolTransitionParamsShelleyBased {
-                      transitionTranslationContext = ()
+                      transitionTranslationContext = SL.toFromByronTranslationContext genesisShelley
                     , transitionTrigger            =
                         TriggerHardForkAtVersion shelleyMajorVersion
                     }

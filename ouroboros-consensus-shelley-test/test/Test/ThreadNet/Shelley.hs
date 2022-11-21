@@ -31,6 +31,7 @@ import           Test.ThreadNet.Network (TestNodeInitialization (..),
 import qualified Cardano.Ledger.BaseTypes as SL (UnitInterval,
                      mkNonceFromNumber, unboundRational)
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
@@ -369,6 +370,6 @@ prop_simple_real_tpraos_convergence TestSetup
         ledgerConfig :: LedgerConfig (ShelleyBlock Proto Era)
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
-            ()  -- trivial translation context
+            SL.emptyFromByronTranslationContext
             (fixedEpochInfo epochSize tpraosSlotLength)
             (MaxMajorProtVer 1000) -- TODO

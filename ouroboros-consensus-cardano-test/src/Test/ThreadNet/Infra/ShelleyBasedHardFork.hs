@@ -130,14 +130,11 @@ type ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 =
   , SL.PreviousEra era2 ~ era1
 
   , SL.TranslateEra       era2 SL.NewEpochState
-  , SL.TranslateEra       era2 SL.ShelleyGenesis
   , SL.TranslateEra       era2 WrapTx
 
   , SL.TranslationError   era2 SL.NewEpochState  ~ Void
-  , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
 
   , SL.AdditionalGenesisConfig era1 ~ ()
-  , SL.TranslationContext      era1 ~ ()
   , SL.AdditionalGenesisConfig era2 ~ SL.TranslationContext era2
     -- At the moment, fix the protocols together
   , EraCrypto era1 ~ EraCrypto era2
@@ -234,11 +231,13 @@ protocolInfoShelleyBasedHardFork ::
   => ProtocolParamsShelleyBased era1
   -> SL.ProtVer
   -> SL.ProtVer
+  -> SL.TranslationContext era1
   -> ProtocolTransitionParamsShelleyBased era2
   -> ProtocolInfo m (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)
 protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
                                  protVer1
                                  protVer2
+                                 translationContext
                                  protocolTransitionParams =
     protocolInfoBinary
       -- Era 1
@@ -257,7 +256,6 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
       , shelleyBasedInitialNonce
       , shelleyBasedLeaderCredentials
       } = protocolParamsShelleyBased
-
     -- Era 1
 
     genesis1 :: SL.ShelleyGenesis era1
@@ -267,7 +265,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     protocolInfo1 =
         protocolInfoTPraosShelleyBased
           protocolParamsShelleyBased
-          ((), ())  -- trivial additional Genesis config and translation context
+          ((), translationContext)  -- trivial additional Genesis config
           protVer1
           (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
 
@@ -290,7 +288,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
     -- Era 2
 
     genesis2 :: SL.ShelleyGenesis era2
-    genesis2 = SL.translateEra' transCtxt2 genesis1
+    genesis2 = SL.translateShelleyGenesis genesis1
 
     protocolInfo2 :: ProtocolInfo m (ShelleyBlock proto2 era2)
     protocolInfo2 =

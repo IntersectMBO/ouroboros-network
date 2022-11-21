@@ -266,6 +266,7 @@ prop_simple_allegraMary_convergence TestSetup
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
+                    ()
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
                       , transitionTrigger            =

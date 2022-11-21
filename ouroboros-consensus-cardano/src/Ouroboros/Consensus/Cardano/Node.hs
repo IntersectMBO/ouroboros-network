@@ -94,6 +94,7 @@ import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..),
 
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
 
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..))
 import qualified Ouroboros.Consensus.Protocol.TPraos as Shelley
@@ -608,8 +609,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       , conwayMaxTxCapacityOverrides = maxTxCapacityOverridesConway
                       }
                     ProtocolTransitionParamsShelleyBased {
-                        transitionTranslationContext = ()
-                      , transitionTrigger            = triggerHardForkShelley
+                        transitionTrigger            = triggerHardForkShelley
                       }
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
@@ -711,7 +711,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
           genesisShelley
-          ()  -- trivial translation context
+          (SL.toFromByronTranslationContext genesisShelley)
           maxMajorProtVer
           triggerHardForkAllegra
 
@@ -721,7 +721,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Allegra
 
     genesisAllegra :: ShelleyGenesis (AllegraEra c)
-    genesisAllegra = Core.translateEra' () genesisShelley
+    genesisAllegra = SL.translateShelleyGenesis genesisShelley
 
     blockConfigAllegra :: BlockConfig (ShelleyBlock (TPraos c) (AllegraEra c))
     blockConfigAllegra =
@@ -745,7 +745,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Mary
 
     genesisMary :: ShelleyGenesis (MaryEra c)
-    genesisMary = Core.translateEra' () genesisAllegra
+    genesisMary = SL.translateShelleyGenesis genesisShelley
 
     blockConfigMary :: BlockConfig (ShelleyBlock (TPraos c) (MaryEra c))
     blockConfigMary =
@@ -769,7 +769,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Alonzo
 
     genesisAlonzo :: ShelleyGenesis (AlonzoEra c)
-    genesisAlonzo = Core.translateEra' transCtxtAlonzo genesisMary
+    genesisAlonzo = SL.translateShelleyGenesis genesisShelley
 
     blockConfigAlonzo :: BlockConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
     blockConfigAlonzo =
@@ -793,7 +793,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Babbage
 
     genesisBabbage :: ShelleyGenesis (BabbageEra c)
-    genesisBabbage = Core.translateEra' transCtxtBabbage genesisAlonzo
+    genesisBabbage = SL.translateShelleyGenesis genesisShelley
 
     blockConfigBabbage :: BlockConfig (ShelleyBlock (Praos c) (BabbageEra c))
     blockConfigBabbage =
@@ -817,7 +817,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     -- Conway
 
     genesisConway :: ShelleyGenesis (ConwayEra c)
-    genesisConway = Core.translateEra' transCtxtConway genesisBabbage
+    genesisConway = SL.translateShelleyGenesis genesisShelley
 
     blockConfigConway :: BlockConfig (ShelleyBlock (Praos c) (ConwayEra c))
     blockConfigConway =

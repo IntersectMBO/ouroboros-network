@@ -105,10 +105,10 @@ data UpdateState c = UpdateState {
 
 protocolUpdates ::
        forall era proto. ShelleyBasedEra era
-    => SL.ShelleyGenesis era
+    => ShelleyLedgerConfig era
     -> LedgerState (ShelleyBlock proto era)
     -> [ProtocolUpdate era]
-protocolUpdates genesis st = [
+protocolUpdates cfg st = [
       ProtocolUpdate {
           protocolUpdateProposal = UpdateProposal {
               proposalParams  = proposal
@@ -145,7 +145,7 @@ protocolUpdates genesis st = [
     -- than the quorum. The quorum itself must be strictly greater than half
     -- the number of genesis keys, but we do not rely on that property here.
     quorum :: Word64
-    quorum = SL.sgUpdateQuorum genesis
+    quorum = SL.quorum $ shelleyLedgerGlobals cfg
 
     -- The proposals in 'SL.proposals' are for the upcoming epoch
     -- (we ignore 'futureProposals')
@@ -173,9 +173,9 @@ instance ShelleyBasedEra era => InspectLedger (ShelleyBlock proto era) where
       guard $ updatesBefore /= updatesAfter
       return $ LedgerUpdate $ ShelleyUpdatedProtocolUpdates updatesAfter
     where
-      genesis :: SL.ShelleyGenesis era
-      genesis = shelleyLedgerGenesis (configLedger tlc)
+      cfg :: ShelleyLedgerConfig era
+      cfg = configLedger tlc
 
       updatesBefore, updatesAfter :: [ProtocolUpdate era]
-      updatesBefore = protocolUpdates genesis before
-      updatesAfter  = protocolUpdates genesis after
+      updatesBefore = protocolUpdates cfg before
+      updatesAfter  = protocolUpdates cfg after
