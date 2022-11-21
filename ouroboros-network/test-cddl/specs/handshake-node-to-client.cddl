@@ -15,7 +15,7 @@ versionTable = { * versionNumber => nodeToClientVersionData }
 
 ; as of version 2 (which is no longer supported) we set 15th bit to 1
 ;               9     / 10    / 11    / 12    / 13    / 14    / 15
-versionNumber = 32777 / 32778 / 32779 / 32780 / 32781 / 32782 / 32783
+versionNumber = 32777 / 32778 / 32779 / 32780 / 32781 / 32782 / 32783 / 32784
 
 nodeToClientVersionData = networkMagic
 
