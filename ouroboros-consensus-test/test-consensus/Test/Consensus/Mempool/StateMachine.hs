@@ -15,6 +15,7 @@
 module Test.Consensus.Mempool.StateMachine (
     openMempoolWithMockedLedgerItf
   , prop_sequential
+  , showMempoolTestScenarios
   , stateMachine
   ) where
 
@@ -34,6 +35,7 @@ import           Test.StateMachine (Reference, StateMachine (StateMachine),
                      showLabelledExamples)
 import           Test.StateMachine.ConstructorName
                      (CommandNames (cmdName, cmdNames))
+import           Test.StateMachine.Labelling (Event, eventResp)
 import           Test.StateMachine.Logic (Logic (Top), (.==))
 import           Test.StateMachine.Sequential (checkCommandNames,
                      forAllCommands, prettyCommands, runCommands)
@@ -213,7 +215,7 @@ stateMachineIO mempool = do
 
 -- | State machine for which we do not have a mempool, and therefore we cannot
 -- use the SUT.
-stateMachineWithoutSemantics initialState = stateMachine initialState err
+stateMachineWithoutSUT initialState = stateMachine initialState err
   where err = error $  "The SUT should not be used in this state machine:"
                     <> " there is no semantics defined for this state machine."
 
@@ -247,7 +249,7 @@ prop_sequential mempoolWithMockedLedgerItfAct initialState = do
   -- an intial state. This seems to make the code more brittle than it ought to
   -- be. However it is not possible to
   --
-    forAllCommands (stateMachineWithoutSemantics initialState) Nothing $ \cmds -> QCM.monadicIO $ do
+    forAllCommands (stateMachineWithoutSUT initialState) Nothing $ \cmds -> QCM.monadicIO $ do
         modelWithSUT <- QCM.run $ do
           mempool <- mempoolWithMockedLedgerItfAct initialState
           stateMachineIO mempool
@@ -275,7 +277,32 @@ prop_sequential mempoolWithMockedLedgerItfAct initialState = do
 --   => (Show (cmd Symbolic), Show (resp Symbolic))
 --   => (Traversable cmd, Foldable resp)
 --   => StateMachine model cmd m resp -> ([Event model cmd resp Symbolic] -> [tag]) -> IO ()
--- showMempoolTestScenarios :: IO ()
+showMempoolTestScenarios :: forall blk.
+     ( QC.Arbitrary (GenTx blk)
+     , QC.Arbitrary (LedgerState blk)
+     , Show (LedgerState blk)
+     , LedgerSupportsMempool blk
+     )
+   => LedgerState blk -> IO ()
+showMempoolTestScenarios initialState =
+  showLabelledExamples (stateMachineWithoutSUT initialState) tagEventSeq
+  where
+    tagEventSeq :: [Event (Model blk) (Cmd blk) (Response blk) Symbolic] -> [Tag]
+    tagEventSeq events = validTransactions events
+      where
+        -- Produce a AcceptedTransactions if one of the event contain a response with an accepted transaction
+        validTransactions [] = [] --
+        validTransactions (ev : evs) =
+          case validTransactionsInResponse (eventResp ev) of
+            [] -> validTransactions evs   -- We keep on looking
+            _  -> [AcceptedTransactions] -- The list of events (trace) contained a valid transaction
+
+validTransactionsInResponse :: Response blk ref -> [GenTx blk]
+validTransactionsInResponse (Response (TryAddTxsSuccess res)) = valid res
+validTransactionsInResponse _                                 = []
+
+data Tag = AcceptedTransactions
+  deriving (Show)
 -- .... Here we don't use the actual mempool, BUT we do need a initial ledger state!
 
 {------------------------------------------------------------------------------

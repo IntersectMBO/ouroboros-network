@@ -11,7 +11,12 @@
 {-# LANGUAGE TypeSynonymInstances       #-}
 -- |
 
-module Test.Consensus.Mempool.StateMachine.TestBlock (tests) where
+-- TODO: explain how to use showMempoolTestScenarios in combination with
+-- initialLedgerState in the REPL.
+module Test.Consensus.Mempool.StateMachine.TestBlock (
+    initialLedgerState
+  , tests
+  ) where
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
