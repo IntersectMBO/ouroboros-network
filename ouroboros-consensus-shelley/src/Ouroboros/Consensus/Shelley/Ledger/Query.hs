@@ -559,7 +559,7 @@ querySupportedVersion = \case
     GetPoolState {}                            -> (>= v6)
     GetStakeSnapshots {}                       -> (>= v6)
     GetPoolDistr {}                            -> (>= v6)
-    GetKESConfig                               -> undefined -- TODO
+    GetKESConfig                               -> (>= v7) -- TODO
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -569,6 +569,7 @@ querySupportedVersion = \case
     v4 = ShelleyNodeToClientVersion4
     v5 = ShelleyNodeToClientVersion5
     v6 = ShelleyNodeToClientVersion6
+    v7 = ShelleyNodeToClientVersion7
 
 {-------------------------------------------------------------------------------
   Auxiliary
