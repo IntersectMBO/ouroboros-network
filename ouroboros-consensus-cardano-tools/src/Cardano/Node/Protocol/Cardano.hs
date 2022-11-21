@@ -37,6 +37,8 @@ import qualified Cardano.Node.Protocol.Shelley as Shelley
 import           Cardano.Node.Protocol.Types
 import           Cardano.Node.Types
 
+import           Cardano.Ledger.Shelley.Translation as SL
+
 
 ------------------------------------------------------------------------------
 -- Real Cardano protocol
@@ -237,7 +239,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
         --
         -- Byron to Shelley hard fork parameters
         Consensus.ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = (),
+          transitionTranslationContext = SL.toFromByronTranslationContext shelleyGenesis,
           transitionTrigger =
             -- What will trigger the Byron -> Shelley hard fork?
             case npcTestShelleyHardForkAtEpoch of

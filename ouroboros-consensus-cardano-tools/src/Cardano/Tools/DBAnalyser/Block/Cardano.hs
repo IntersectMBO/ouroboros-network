@@ -43,6 +43,7 @@ import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
 import qualified Cardano.Ledger.Conway.Genesis as SL (ConwayGenesis)
 import           Cardano.Ledger.Crypto
 import qualified Cardano.Ledger.Era as Core
+import qualified Cardano.Ledger.Shelley.Translation as SL
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
@@ -243,7 +244,7 @@ instance Aeson.FromJSON CardanoConfig where
               Aeson..!= (TriggerHardForkAtVersion majProtVer)
 
       stas <- hsequence' $
-        f "TestShelleyHardForkAtEpoch" 2 (\_ -> ()) :*
+        f "TestShelleyHardForkAtEpoch" 2 (\_ -> SL.emptyFromByronTranslationContext) :*
         f "TestAllegraHardForkAtEpoch" 3 (\_ -> ()) :*
         f "TestMaryHardForkAtEpoch"    4 (\_ -> ()) :*
         f "TestAlonzoHardForkAtEpoch"  5 fst        :*
