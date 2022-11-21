@@ -631,7 +631,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
       -> remotePeer
       -> Channel m bKA
       -> m (NodeToNodeInitiatorResult, Maybe bKA)
-    aKeepAliveClient version _controlMessageSTM them channel = do
+    aKeepAliveClient version controlMessageSTM them channel = do
       labelThisThread "KeepAliveClient"
       let kacApp = \dqCtx ->
                        runPeerWithLimits
@@ -641,7 +641,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
                          timeLimitsKeepAlive
                          channel
                          $ keepAliveClientPeer
-                         $ hKeepAliveClient version (continueForever (Proxy :: Proxy m)) them dqCtx
+                         $ hKeepAliveClient version controlMessageSTM them dqCtx
                              (KeepAliveInterval 10)
 
       ((), trailing) <- bracketKeepAliveClient (getFetchClientRegistry kernel) them kacApp
