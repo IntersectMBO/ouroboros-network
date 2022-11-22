@@ -90,6 +90,7 @@ jobs:
       run: |
         echo "weeknum=$(/usr/bin/date -u "+%W")" >> $GITHUB_OUTPUT
         echo "CACHE_VERSION=20220919" >> $GITHUB_OUTPUT
+        echo "DIST_CACHE_VERSION=20221122" >> $GITHUB_OUTPUT
 
     - name: "LINUX: Install build environment (apt-get)"
       if: runner.os == 'Linux'
@@ -159,8 +160,8 @@ jobs:
         path: |
           dist-newstyle
           !dist-newstyle/**/.git
-        key: cache-dist-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
-        restore-keys: cache-dist-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+        key: cache-dist-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
+        restore-keys: cache-dist-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - name: Build dependencies
       run: cabal build --only-dependencies all -j
