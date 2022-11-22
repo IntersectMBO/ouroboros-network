@@ -192,5 +192,6 @@ jobs:
     - name: Run tests
       run: cabal test all
 
-    - name: Run benchmarks
-      run: cabal bench all
+    # No benchmarks yet
+    # - name: Run benchmarks
+    #   run: cabal bench all
