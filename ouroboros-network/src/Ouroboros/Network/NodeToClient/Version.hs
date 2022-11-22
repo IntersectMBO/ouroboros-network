@@ -35,7 +35,7 @@ data NodeToClientVersion
     | NodeToClientV_13
     -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
     | NodeToClientV_14
-    -- ^ added @GetPoolDistr, @GetPoolState, @GetSnapshots
+    -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
