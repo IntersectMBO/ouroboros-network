@@ -289,7 +289,7 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
 
           selectedToDemote  = activePeers `Set.intersection` removedSet
           selectedToDemote' = EstablishedPeers.toMap establishedPeers
-                               `Map.restrictKeys` selectedToDemote
+                               `Map.restrictKeys` (selectedToDemote Set.\\ inProgressDemoteHot)
       return $ \_now ->
 
           assert (Set.isSubsetOf
