@@ -178,3 +178,32 @@ executable mux-demo
   else
     build-depends:     directory,
                        network
+
+executable cardano-ping
+  import:              demo-deps
+  hs-source-dirs:      tools
+  main-is:             cardano-ping.hs
+  build-depends:       base,
+                       aeson,
+                       network-mux,
+                       io-classes,
+                       strict-stm,
+                       contra-tracer,
+
+                       bytestring,
+                       cborg,
+                       network,
+                       tdigest,
+                       text
+
+  ghc-options:         -threaded
+                       -Wall
+                       -fno-ignore-asserts
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wno-unticked-promoted-constructors
+                       -Wunused-packages
