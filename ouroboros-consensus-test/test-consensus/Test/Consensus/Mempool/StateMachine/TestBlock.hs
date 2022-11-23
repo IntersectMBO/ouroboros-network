@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -13,8 +14,15 @@
 
 -- TODO: explain how to use showMempoolTestScenarios in combination with
 -- initialLedgerState in the REPL.
+--
+-- >>> import Test.Consensus.Mempool.StateMachine.TestBlock
+-- >>> import Test.Consensus.Mempool.StateMachine
+-- >>> showMempoolTestScenarios initialParams
+--
+
 module Test.Consensus.Mempool.StateMachine.TestBlock (
     initialLedgerState
+  , sampleMempoolAndModelParams
   , tests
   ) where
 
@@ -23,7 +31,8 @@ import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
 import           Control.Monad.Trans.Except (except)
 import           Data.Set (Set, (\\))
 import qualified Data.Set as Set
-import           Data.TreeDiff.Class (ToExpr)
+import           Data.TreeDiff.Class (ToExpr, defaultExprViaShow, genericToExpr,
+                     toExpr)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -34,15 +43,16 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
-import           Cardano.Slotting.Slot (SlotNo (SlotNo))
-import           Cardano.Slotting.Time (slotLengthFromSec)
-
+import           Cardano.Slotting.Slot (EpochSize, SlotNo (SlotNo))
+import           Cardano.Slotting.Time (SlotLength, slotLengthFromSec)
+import           Data.Time.Clock (NominalDiffTime)
 
 import           Ouroboros.Consensus.Block.Abstract (CodecConfig, StorageConfig)
 import           Ouroboros.Consensus.Config.SecurityParam
                      (SecurityParam (SecurityParam))
 import           Ouroboros.Consensus.HardFork.History (defaultEraParams)
-import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
+import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.Ledger.Basics (LedgerCfg, LedgerConfig)
 import           Ouroboros.Consensus.Util.IOLike (newTVarIO, readTVar)
 
 import           Ouroboros.Network.Block (Point (Point), pattern BlockPoint,
@@ -51,7 +61,8 @@ import           Ouroboros.Network.Block (Point (Point), pattern BlockPoint,
 import           Test.Util.Orphans.Arbitrary ()
 
 import           Test.Consensus.Mempool.StateMachine
-                     (openMempoolWithMockedLedgerItf, prop_sequential)
+                     (InitialMempoolAndModelParams (MempoolAndModelParams, immpInitialState, immpLedgerConfig),
+                     openMempoolWithMockedLedgerItf, prop_sequential)
 
 import           Test.Util.TestBlock (LedgerState (TestLedger),
                      PayloadSemantics (PayloadDependentError, PayloadDependentState, applyPayload),
@@ -70,16 +81,25 @@ tests = testGroup "Mempool State Machine" [
   where
     mOpenMempool =
       let
-        -- Fixme: see how and whether this is used.
-        cfg :: LedgerConfig TestBlock
-        cfg = defaultEraParams (SecurityParam 10) (slotLengthFromSec 2)
-
         capacityOverride :: MempoolCapacityBytesOverride
         capacityOverride = NoMempoolCapacityBytesOverride -- TODO we might want to generate this
 
         tracer :: Tracer IO (TraceEventMempool TestBlock)
         tracer = nullTracer
-      in openMempoolWithMockedLedgerItf cfg capacityOverride tracer txSize
+      in openMempoolWithMockedLedgerItf capacityOverride tracer txSize
+
+instance Arbitrary HardFork.EraParams where
+  arbitrary = pure $ defaultEraParams (SecurityParam 10) (slotLengthFromSec 2) -- TODO
+  shrink _ = [] -- TODO
+
+deriving instance ToExpr HardFork.EraParams
+--  toExpr = App "EraParams" []
+deriving instance ToExpr HardFork.SafeZone
+deriving instance ToExpr EpochSize
+deriving instance ToExpr SlotLength
+instance ToExpr NominalDiffTime where
+  toExpr = defaultExprViaShow -- TODO define this properly
+
 
 -- TODO: consider removing this level of indirection
 type TestBlock = TestBlockWith Tx
@@ -146,6 +166,15 @@ initialLedgerState = TestLedger {
     , payloadDependentState = TestLedgerState {
           availableTokens = Set.empty :: Set Token
         }
+    }
+
+sampleLedgerConfig :: LedgerConfig TestBlock
+sampleLedgerConfig = defaultEraParams (SecurityParam 10) (slotLengthFromSec 2)
+
+sampleMempoolAndModelParams :: InitialMempoolAndModelParams TestBlock
+sampleMempoolAndModelParams = MempoolAndModelParams {
+      immpInitialState = initialLedgerState
+    , immpLedgerConfig = sampleLedgerConfig
     }
 
 data TxApplicationError =
