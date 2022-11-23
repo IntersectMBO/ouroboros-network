@@ -27,6 +27,7 @@ import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.BFT
@@ -112,13 +113,25 @@ instance Arbitrary (SomeSecond (NestedCtxt Header) (SimpleBlock c ext)) where
 instance Arbitrary (SomeQuery (BlockQuery (SimpleBlock c ext))) where
   arbitrary = return $ SomeQuery QueryLedgerTip
 
-instance (SimpleCrypto c, Typeable ext) => Arbitrary (SomeResult (SimpleBlock c ext)) where
+instance (SimpleCrypto c, Typeable ext)
+         => Arbitrary (SomeResult (SimpleBlock c ext)) where
   arbitrary = SomeResult QueryLedgerTip <$> arbitrary
 
-instance Arbitrary (LedgerState (SimpleBlock c ext) mk) where
-  arbitrary = SimpleLedgerState <$> arbitrary
+instance (SimpleCrypto c, Typeable ext)
+         => Arbitrary (LedgerState (SimpleBlock c ext) EmptyMK) where
+  arbitrary =
+        forgetLedgerTables
+    <$> arbitrary @(LedgerState (SimpleBlock c ext) ValuesMK)
 
-instance HashAlgorithm (SimpleHash c) => Arbitrary (AnnTip (SimpleBlock c ext)) where
+instance (SimpleCrypto c, Typeable ext)
+         => Arbitrary (LedgerState (SimpleBlock c ext) ValuesMK) where
+  arbitrary =
+        unstowLedgerTables
+    .   flip SimpleLedgerState polyEmptyLedgerTables
+    <$> arbitrary
+
+instance HashAlgorithm (SimpleHash c)
+      => Arbitrary (AnnTip (SimpleBlock c ext)) where
   arbitrary = do
       annTipSlotNo  <- SlotNo  <$> arbitrary
       annTipBlockNo <- BlockNo <$> arbitrary
