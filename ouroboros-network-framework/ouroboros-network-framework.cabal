@@ -116,6 +116,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+                       -Wunused-packages
 
 library testlib
     visibility: public
@@ -146,6 +147,7 @@ library testlib
                      -Wpartial-fields
                      -Widentities
                      -Wredundant-constraints
+                     -Wunused-packages
 
 test-suite test
   type:                exitcode-stdio-1.0
@@ -209,6 +211,7 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+                       -Wunused-packages
 
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
@@ -238,6 +241,7 @@ executable demo-ping-pong
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+                       -Wunused-packages
 
 executable demo-connection-manager
   hs-source-dirs:      demo test
@@ -268,3 +272,4 @@ executable demo-connection-manager
                        -Widentities
                        -Wredundant-constraints
                        -Wno-unticked-promoted-constructors
+                       -Wunused-packages

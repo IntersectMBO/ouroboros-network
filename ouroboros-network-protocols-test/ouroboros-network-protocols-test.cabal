@@ -79,10 +79,7 @@ library
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
-
-  ghc-options:         -Wall
-                       -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
+                       -Wunused-packages
 
 test-suite test
   type:                exitcode-stdio-1.0
@@ -101,6 +98,9 @@ test-suite test
                        ouroboros-network-mock,
                        ouroboros-network-testing,
                        ouroboros-network-protocols-test
+
+  ghc-options:         -Wall
+                       -Wunused-packages
                        
 test-suite cddl
   type:                exitcode-stdio-1.0
@@ -138,5 +138,6 @@ test-suite cddl
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
+                       -Wcompat
+                       -Wunused-packages
 

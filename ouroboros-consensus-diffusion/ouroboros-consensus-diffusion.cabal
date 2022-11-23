@@ -93,3 +93,13 @@ library
                      , ouroboros-network-protocols ^>=0.2
                      , ouroboros-network ^>=0.2
                      , ouroboros-consensus ^>=0.1
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wunused-packages

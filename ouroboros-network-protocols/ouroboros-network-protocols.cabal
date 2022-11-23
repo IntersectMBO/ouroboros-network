@@ -109,6 +109,7 @@ library
                        -Wpartial-fields
                        -Widentities
                        -Wredundant-constraints
+                       -Wunused-packages
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
