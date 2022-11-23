@@ -19,6 +19,7 @@ import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 import           Data.Bifoldable (bifoldMap)
 
 import           Data.List (intercalate)
+import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -125,6 +126,7 @@ tests =
                  prop_diffusion_ig_valid_transition_order
   , testProperty "cm & ig timeouts enforced"
                  prop_diffusion_timeouts_enforced
+  , testProperty "unit #4177" unit_4177
 #endif
 #if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
@@ -419,6 +421,45 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
    -- TODO: Add checkCoverage here
    in tabulate "inbound governor transitions" transitionsSeenNames
       True
+
+-- | Unit test which covers issue #4177
+--
+-- Reconfiguration of local root peers should not remove peers which are being
+-- demoted.
+unit_4177 :: Property
+unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
+  where
+    script :: DiffusionScript
+    script =
+      DiffusionScript (SimArgs 1 10)
+        [ ( NodeArgs (-6) (Just 180)
+              [RelayAccessDomain "test2" 65535]
+              (Map.fromList [("test2", [read "9022:64c9:4e9b:9281:913f:3fb4:a447:28e", read "d412:ff8f:ce57:932d:b74c:989:48af:73f4", read "0:6:0:3:0:6:0:5"])])
+              (TestAddress (IPAddr (read "0:7:0:7::") 65533))
+              [(1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
+              PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 2, targetNumberOfEstablishedPeers = 2, targetNumberOfActivePeers = 1}
+              (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
+              (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
+          , [JoinNetwork 1.742857142857 Nothing
+            ,Reconfigure 6.33333333333 [(1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)])
+                                        ,(1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)])]
+            ,Reconfigure 23.88888888888 [(1,Map.fromList []),(1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)])]
+            ,Reconfigure 4.870967741935 [(1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)])]
+            ]
+          )
+        , ( NodeArgs (1) (Just 135)
+             [RelayAccessAddress "0:7:0:7::" 65533]
+             (Map.fromList [("test2", [read "0:7:0:7::"])])
+             (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
+             []
+             PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 1, targetNumberOfActivePeers = 1}
+             (Script (DNSTimeout {getDNSTimeout = 0.28} :| [DNSTimeout {getDNSTimeout = 0.204},DNSTimeout {getDNSTimeout = 0.213}]))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0.066} :| [DNSLookupDelay {getDNSLookupDelay = 0.102},DNSLookupDelay {getDNSLookupDelay = 0.031}]))
+          , [JoinNetwork 0.183783783783 Nothing
+            ,Reconfigure 4.533333333333 [(1,Map.fromList [])]
+            ]
+          )
+        ]
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
 --
