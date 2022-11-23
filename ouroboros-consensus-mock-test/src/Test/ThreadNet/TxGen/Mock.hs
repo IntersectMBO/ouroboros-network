@@ -1,15 +1,19 @@
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.ThreadNet.TxGen.Mock () where
 
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import           Data.Typeable
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger
+import           Ouroboros.Consensus.Ledger.Basics
 
 import           Test.QuickCheck hiding (elements)
 
@@ -20,7 +24,7 @@ import           Test.Util.QuickCheck
   TxGen SimpleBlock
 -------------------------------------------------------------------------------}
 
-instance TxGen (SimpleBlock SimpleMockCrypto ext) where
+instance Typeable ext => TxGen (SimpleBlock SimpleMockCrypto ext) where
   testGenTxs _coreNodeId numCoreNodes curSlotNo _cfg () ledgerState = do
       n <- choose (0, 20)
       -- We don't update the UTxO after each transaction, so some of the
@@ -32,7 +36,7 @@ instance TxGen (SimpleBlock SimpleMockCrypto ext) where
       addrs = Map.keys $ mkAddrDist numCoreNodes
 
       utxo :: Utxo
-      utxo = mockUtxo $ simpleLedgerState ledgerState
+      utxo = mockUtxo $ simpleLedgerState $ stowLedgerTables ledgerState
 
 genSimpleTx :: SlotNo -> [Addr] -> Utxo -> Gen Tx
 genSimpleTx curSlotNo addrs u = do
