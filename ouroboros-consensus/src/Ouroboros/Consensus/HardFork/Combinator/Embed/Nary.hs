@@ -105,6 +105,7 @@ injectHardForkState startBounds idx x =
         TS (K State.Past { pastStart = start, pastEnd = nextStart })
            (go startBounds' idx')
     go (ExactlyCons _ ExactlyNil) (IS idx') = case idx' of {}
+    go ExactlyNil idx' = case idx' of {}
 
 {-------------------------------------------------------------------------------
   Instances

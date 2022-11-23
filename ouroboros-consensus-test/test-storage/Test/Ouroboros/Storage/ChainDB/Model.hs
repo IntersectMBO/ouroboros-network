@@ -107,7 +107,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.MockChainSel
 import           Ouroboros.Consensus.Util (repeatedly)
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
@@ -146,12 +145,7 @@ data Model blk = Model {
     }
   deriving (Generic)
 
-deriving instance
-  ( ConsensusProtocol (BlockProtocol blk)
-  , LedgerSupportsProtocol           blk
-  , StandardHash                     blk
-  , Show                             blk
-  ) => Show (Model blk)
+deriving instance (LedgerSupportsProtocol blk, Show blk) => Show (Model blk)
 
 {-------------------------------------------------------------------------------
   Queries
