@@ -377,7 +377,7 @@ data UnforwardedReadSets l = UnforwardedReadSets {
     ursSeqNo  :: !(WithOrigin SlotNo)
     -- | The values that were found in the 'BackingStore'.
   , ursValues :: !(LedgerTables l ValuesMK)
-    -- | The values that were not present in the 'BackingStore'.
+    -- | All the requested keys, being or not present in the 'BackingStore'.
   , ursKeys   :: !(LedgerTables l KeysMK)
   }
 

@@ -60,6 +60,7 @@ library
                      , mtl               >=2.2   && <2.3
                      , nothunks
                      , serialise         >=0.2   && <0.3
+                     , text
                      , time
 
                      , ouroboros-network
