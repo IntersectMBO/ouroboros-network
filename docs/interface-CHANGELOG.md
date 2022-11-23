@@ -5,6 +5,16 @@ team.  See [consensus
 CHANGELOG](../ouroboros-consensus/docs/interface-CHANGELOG.md) file for how
 this changelog is supposed to be used.
 
+## Circa 2022-11-23
+
+- Packages where reorganised:
+    * `ouroboros-network-api`: a common api for `network` & `consensus` packages
+    * `ouroboros-network-mock`: a mock chain which is used for testing purposes
+    * `ouroboros-network-protocols`: implementation & tests of all mini-protocols.
+       It contains two public libraries:
+          * `ouroboros-network-protocols`
+          * `ouroboros-network-protocols:testlib`
+
 ## Circa 2022-11-07
 
 - Improved `outbound-governor`'s `FailureType`: now includes handshake error.
