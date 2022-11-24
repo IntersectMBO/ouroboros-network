@@ -34,6 +34,7 @@ import Cardano.Binary
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.RefCounting
 
 -- | Logging messages that the Driver may send
 data DriverTrace
@@ -63,17 +64,18 @@ driver s tracer = Driver
         let VersionIdentifier v = versionIdentifier (Proxy @(KESProtocol c))
         traceWith tracer (DriverSendingVersionID $ VersionIdentifier v)
         void $ send s v msgNoSignal
-      (ServerAgency TokIdle, KeyMessage (SignKeyWithPeriodKES sk t) oc) -> do
+      (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
         traceWith tracer DriverSendingKey
-        directSerialise (\buf bufSize -> do
-              n <- unsafeSend s buf bufSize opt
-              when (fromIntegral n /= bufSize) (error "AAAAA")
-            ) sk
-        let serializedOC = serialize' oc
-        sendWord32 s (fromIntegral $ t) opt
-        sendWord32 s (fromIntegral $ BS.length serializedOC) opt
-        send s serializedOC opt
-        traceWith tracer DriverSentKey
+        withCRefValue skpRef $ \(SignKeyWithPeriodKES sk t) -> do
+          directSerialise (\buf bufSize -> do
+                n <- unsafeSend s buf bufSize opt
+                when (fromIntegral n /= bufSize) (error "AAAAA")
+              ) sk
+          let serializedOC = serialize' oc
+          sendWord32 s (fromIntegral $ t) opt
+          sendWord32 s (fromIntegral $ BS.length serializedOC) opt
+          send s serializedOC opt
+          traceWith tracer DriverSentKey
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
 
@@ -103,15 +105,15 @@ driver s tracer = Driver
              )
         oc <- unsafeDeserialize' <$> receive s l opt
 
+        skpVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) (SignKeyWithPeriodKES sk t)
         succeeded <- isEmptyMVar noReadVar
         if succeeded then do
           traceWith tracer DriverReceivedKey
-          return (SomeMessage (KeyMessage (SignKeyWithPeriodKES sk t) oc), ())
+          return (SomeMessage (KeyMessage skpVar oc), ())
         else do
-          -- We're not actually returning the key, because it hasn't been
-          -- loaded properly, however it has been allocated nonetheless,
-          -- so we must forget it, otherwise we will leak mlocked memory.
-          forgetSignKeyKES sk
+          -- We're not actually returning the key, so we must release it
+          -- before exiting.
+          releaseCRef skpVar
           traceWith tracer DriverConnectionClosed
           return (SomeMessage EndMessage, ())
 

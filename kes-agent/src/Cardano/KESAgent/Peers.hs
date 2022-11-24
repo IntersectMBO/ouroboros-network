@@ -10,6 +10,7 @@ where
 
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.RefCounting
 
 import Cardano.Crypto.KES.Class
 
@@ -17,7 +18,7 @@ import Network.TypedProtocol.Core
 
 kesReceiver :: forall (c :: *)
              . KESAlgorithm (KES c)
-            => (SignKeyWithPeriodKES (KES c) -> OCert c -> IO ())
+            => (CRef (SignKeyWithPeriodKES (KES c)) -> OCert c -> IO ())
             -> Peer (KESProtocol c) AsClient InitialState IO ()
 kesReceiver receiveKey =
   Effect $ do
@@ -36,8 +37,8 @@ kesReceiver receiveKey =
 
 kesPusher :: forall (c :: *)
            . KESAlgorithm (KES c)
-          => (IO (SignKeyWithPeriodKES (KES c), OCert c))
-          -> (IO (Maybe (SignKeyWithPeriodKES (KES c), OCert c)))
+          => (IO (CRef (SignKeyWithPeriodKES (KES c)), OCert c))
+          -> (IO (Maybe (CRef (SignKeyWithPeriodKES (KES c)), OCert c)))
           -> Peer (KESProtocol c) AsServer InitialState IO ()
 kesPusher currentKey nextKey =
   Yield (ServerAgency TokInitial) VersionMessage $

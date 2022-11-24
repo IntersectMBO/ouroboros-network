@@ -65,6 +65,7 @@ import Cardano.KESAgent.ControlClient
 import Cardano.KESAgent.Driver (DriverTrace (..))
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.Evolution
+import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.Tests.Util
 
 tests :: Lock -> TestTree
@@ -143,7 +144,7 @@ instance TracePretty DriverTrace where
 
 data Simulator c =
   Simulator
-    { sendKey :: (SignKeyWithPeriodKES (KES c), OCert c) -> IO ()
+    { sendKey :: (CRef (SignKeyWithPeriodKES (KES c)), OCert c) -> IO ()
     , delay :: Int -> IO ()
     , setTime :: NominalDiffTime -> IO ()
     }
@@ -176,7 +177,7 @@ runTestNetwork :: forall c
                   (Simulator c -> IO ())
                -> -- | A \"receiver\" job, which will receive keys as they
                   -- arrive at the Node.
-                  ((SignKeyWithPeriodKES (KES c), OCert c) -> (Property -> IO ()) -> IO ())
+                  ((CRef (SignKeyWithPeriodKES (KES c)), OCert c) -> (Property -> IO ()) -> IO ())
                -> IO Property
 runTestNetwork p tracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay senderScript receiverScript = do
     propertyVar <- newEmptyMVar :: IO (MVar Property)
@@ -232,8 +233,8 @@ runTestNetwork p tracer controlAddress serviceAddress genesisTimestamp nodeDelay
           takeMVar mvar
 
     output <- race
-          -- abort 1 second after both clients have started
-          (threadDelay $ 1000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
+          -- abort 5 seconds after both clients have started
+          (threadDelay $ 5000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
           (race
             -- run these to "completion"
             (agent tracer `concurrently_`
@@ -287,25 +288,24 @@ testOneKeyThroughChain p
     hSetBuffering stdout LineBuffering
     expectedSK <- genKeyKES @IO @(KES c) seedKES
     let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
-    vkHot <- deriveVerKeyKES expectedSK
-    let kesPeriod = KESPeriod 0
-    let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
-        expectedOC = makeOCert vkHot certN kesPeriod skCold
+    withNewCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP $ \expectedSKPVar -> do
+      vkHot <- deriveVerKeyKES expectedSK
+      let kesPeriod = KESPeriod 0
+      let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+          expectedOC = makeOCert vkHot certN kesPeriod skCold
 
-    controlAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-control:" ++ show controlAddressStr)
-    serviceAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-service:" ++ show serviceAddressStr)
+      controlAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-control:" ++ show controlAddressStr)
+      serviceAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-service:" ++ show serviceAddressStr)
 
-    prop <- runTestNetwork p nullTracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay
-      (\sim -> sendKey sim (expectedSKP, expectedOC))
-      (\(resultSKP, resultOC) finish -> do
-          expectedSKBS <- rawSerialiseSignKeyKES expectedSK
-          resultSKBS <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
-          forgetSignKeyKES (skWithoutPeriodKES resultSKP)
-          finish ((PrettyBS expectedSKBS, expectedPeriod) === (PrettyBS resultSKBS, periodKES resultSKP))
-      )
-
-    forgetSignKeyKES expectedSK
-    return prop
+      runTestNetwork p nullTracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay
+        (\sim -> sendKey sim (expectedSKPVar, expectedOC))
+        (\(resultSKPVar, resultOC) finish -> do
+            expectedSKBS <- rawSerialiseSignKeyKES expectedSK
+            (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
+                            skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
+                            return (skp, periodKES resultSKP)
+            finish ((PrettyBS expectedSKBS, expectedPeriod) === (PrettyBS resultSKBS, resultPeriod))
+        )
 
 testConcurrentPushes :: forall c n
                       . KnownNat n
@@ -351,10 +351,16 @@ testConcurrentPushes proxyCrypto proxyN
         withMLSBFromPSB seedKESPSB $ \seedKES -> do
           expectedSK <- genKeyKES @IO @(KES c) seedKES
           let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
+          expectedSKPVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP
           vkHot <- deriveVerKeyKES expectedSK
           let kesPeriod = KESPeriod 0
               expectedOC = makeOCert vkHot certN kesPeriod skCold
-          return (expectedSKP, expectedOC)
+          return (expectedSKPVar, expectedOC)
+
+    expectedSerialized <- forM expectedSKOs $ \(skpVar, oc) -> do
+        withCRefValue skpVar $ \skp -> do
+            serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
+            return (ocertN oc, (PrettyBS serialized, periodKES skp))
 
     controlAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-control:" ++ show controlAddressStr)
     serviceAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-service:" ++ show serviceAddressStr)
@@ -363,15 +369,15 @@ testConcurrentPushes proxyCrypto proxyN
       (\sim -> mapConcurrently_
                 (sendKey sim)
                 expectedSKOs)
-      (\(resultSKP, resultOC) finish -> do
-          -- expectedSKBS <- rawSerialiseSignKeyKES expectedSK
-          -- resultSKBS <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
-          -- forgetSignKeyKES (skWithoutPeriodKES resultSKP)
-          -- finish ((PrettyBS expectedSKBS, expectedPeriod) === (PrettyBS resultSKBS, periodKES resultSKP))
-          return ()
+      (\(resultSKPVar, resultOC) finish -> do
+          received <- withCRefValue resultSKPVar $ \resultSKP -> do
+                          skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
+                          return $ Just (PrettyBS skp, periodKES resultSKP)
+          let sent = lookup (ocertN resultOC) expectedSerialized
+          finish (sent === received)
       )
 
-    mapM_ (forgetSignKeyKES . skWithoutPeriodKES . fst) expectedSKOs
+    mapM_ (releaseCRef . fst) expectedSKOs
     return prop
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing

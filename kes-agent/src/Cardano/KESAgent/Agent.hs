@@ -20,6 +20,7 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.Evolution
 
 import Cardano.Crypto.DirectSerialise
@@ -109,7 +110,7 @@ runAgent :: forall c
          -> Tracer IO AgentTrace
          -> IO ()
 runAgent proxy options tracer = do
-  currentKeyVar :: MVar (SignKeyWithPeriodKES (KES c), OCert c) <- newEmptyMVar
+  currentKeyVar :: MVar (CRef (SignKeyWithPeriodKES (KES c)), OCert c) <- newEmptyMVar
   nextKeyChan <- newChan
 
   -- The key update lock is required because we need to distinguish between two
@@ -129,24 +130,24 @@ runAgent proxy options tracer = do
   -- - If the evolver is about to run, but the key is currently being
   --   overwritten, then the evolver should wait for the overwriting to finish,
   --   and then attempt to evolve the new key.
-  -- The keyUpdateLock setup achieves this, by allowing only one producer at a
+  -- The keyLock setup achieves this, by allowing only one producer at a
   -- time to manipulate the currentKeyVar, regardless of whether it is
   -- currently empty or not, while consumers are free to perform blocking reads
-  -- on it without touching the keyUpdateLock.
+  -- on it without touching the keyLock.
   --
   -- Concretely, the rules for accessing currentKeyVar are:
   --
   -- - readMVar is allowed, and should be done without acquiring the
-  --   keyUpdateLock.
+  --   keyLock.
   -- - tryReadMVar is always allowed, but may not be useful.
   -- - takeMVar is not allowed, since it would 1) block, and 2) require
-  --   acquisition of keyUpdateLock, resulting in a deadlock.
-  -- - tryTakeMVar is allowed, but only while holding the keyUpdateLock.
-  keyUpdateLock :: MVar () <- newMVar ()
+  --   acquisition of keyLock, resulting in a deadlock.
+  -- - tryTakeMVar is allowed, but only while holding the keyLock.
+  keyLock :: MVar () <- newMVar ()
   let withKeyUpdateLock :: forall a. String -> IO a -> IO a
       withKeyUpdateLock context a = do
         traceWith tracer $ AgentLockRequest context
-        withMVar keyUpdateLock $ \() -> do
+        withMVar keyLock $ \() -> do
           traceWith tracer (AgentLockAcquired context)
           result <- a
           traceWith tracer (AgentLockReleased context)
@@ -160,32 +161,38 @@ runAgent proxy options tracer = do
           Nothing -> do
             traceWith tracer AgentNoKeyToEvolve
             return ()
-          Just (key, oc) -> do
+          Just (keyVar, oc) -> withCRefValue keyVar $ \key -> do
             let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
             if p /= p' then do
               keyMay' <- updateKESTo
-                        ()
-                        p'
-                        oc
-                        key
+                            ()
+                            p'
+                            oc
+                            key
               case keyMay' of
                 Nothing -> do
                   traceWith tracer AgentKeyExpired
                 Just key' -> do
                   traceWith tracer AgentKeyEvolved
-                  void $ putMVar currentKeyVar (key', oc)
+                  keyVar' <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) key'
+                  void $ putMVar currentKeyVar (keyVar', oc)
+              releaseCRef keyVar
             else do
               traceWith tracer $ AgentKeyNotEvolved p p'
-              void $ putMVar currentKeyVar (key, oc)
+              void $ putMVar currentKeyVar (keyVar, oc)
 
-  let pushKey :: SignKeyWithPeriodKES (KES c) -> OCert c -> IO ()
-      pushKey key oc = do
-        oldKeyOcMay <- withKeyUpdateLock "pushKey" $ do
+  let pushKey :: CRef (SignKeyWithPeriodKES (KES c)) -> OCert c -> IO ()
+      pushKey keyVar oc = do
+        withKeyUpdateLock "pushKey" $ do
+          acquireCRef keyVar
           -- Empty the var in case there's anything there already
           oldKeyOcMay <- tryTakeMVar currentKeyVar
           case oldKeyOcMay of
-            Just _ -> traceWith tracer AgentReplacingPreviousKey
-            Nothing -> traceWith tracer AgentInstallingNewKey
+            Just (oldKeyVar, oldOC) -> do
+              releaseCRef oldKeyVar
+              traceWith tracer AgentReplacingPreviousKey
+            Nothing ->
+              traceWith tracer AgentInstallingNewKey
           -- The MVar is now empty; we write to the next key signal channel
           -- /before/ putting the new key in the MVar, because we want to make it
           -- such that when the consumer picks up the signal, the next update
@@ -193,12 +200,9 @@ runAgent proxy options tracer = do
           -- consumers will block until we put the key back in.
           writeChan nextKeyChan ()
           -- Consumers have been notified, put the key to un-block them.
-          putMVar currentKeyVar (key, oc)
-          return oldKeyOcMay
+          putMVar currentKeyVar (keyVar, oc)
+
         checkEvolution
-        case oldKeyOcMay of
-          Just (key, _) -> forgetSignKeyKES @IO @(KES c) (skWithoutPeriodKES key)
-          Nothing -> return ()
 
       currentKey = do
         readMVar currentKeyVar

@@ -18,6 +18,7 @@ module Cardano.KESAgent.Protocol
 where
 
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.RefCounting
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Sum
@@ -100,7 +101,7 @@ instance VersionedProtocol (KESProtocol MockCrypto) where
 instance Protocol (KESProtocol c) where
   data Message (KESProtocol c) st st' where
           VersionMessage :: Message (KESProtocol c) InitialState IdleState
-          KeyMessage :: SignKeyWithPeriodKES (KES c)
+          KeyMessage :: CRef (SignKeyWithPeriodKES (KES c))
                      -> OCert c
                      -> Message (KESProtocol c) IdleState IdleState
           EndMessage :: Message (KESProtocol c) IdleState EndState

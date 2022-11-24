@@ -12,6 +12,7 @@ import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RetrySocket
+import Cardano.KESAgent.RefCounting
 
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
@@ -50,7 +51,7 @@ runServiceClient :: forall c
                  => VersionedProtocol (KESProtocol c)
                  => Proxy c
                  -> ServiceClientOptions
-                 -> (SignKeyWithPeriodKES (KES c) -> OCert c -> IO ())
+                 -> (CRef (SignKeyWithPeriodKES (KES c)) -> OCert c -> IO ())
                  -> Tracer IO ServiceClientTrace
                  -> IO ()
 runServiceClient proxy options handleKey tracer = do
