@@ -213,20 +213,21 @@ semantics :: forall blk idx.
   -> IO ((Response blk) Concrete)
 semantics mempoolWithMockedLedgerItf (TryAddTxs txs) = do
     (processed, toProcess) <- tryAddTxs (getMempool mempoolWithMockedLedgerItf)
-                                        DoNotIntervene
-                                        txs -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
+                                        DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
+                                        txs
     let (added, rejected) = partition isMempoolTxAdded processed
+    -- TODO hmmm, I'd need to take this from the internal mempool state. The
+    -- alternative is to calculate this state by applying the transactions in
+    -- the model, but we'll have to calculate this twice.
+    newTickedSt <-   fmap snapshotLedgerState
+                   $ atomically
+                   $ getSnapshot (getMempool mempoolWithMockedLedgerItf)
     pure $! Response
          $! TryAddTxsResult
               { valid       = fmap getTx added
               , invalid     = fmap getTx rejected
-              , unprocessed = [] -- TODO
-              , newTickedSt = undefined -- TODO hmmm, I'd need to take this from
-                                        -- the internal mempool state. The
-                                        -- alternative is to calculate this
-                                        -- state by applying the transactions in
-                                        -- the model, but we'll have to
-                                        -- calculate this twice.
+              , unprocessed = toProcess
+              , newTickedSt = newTickedSt
               }
   where
     getTx (MempoolTxAdded vtx) = txForgetValidated vtx
