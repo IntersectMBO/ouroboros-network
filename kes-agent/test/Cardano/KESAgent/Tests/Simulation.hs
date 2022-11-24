@@ -11,6 +11,9 @@
 {-#LANGUAGE RankNTypes #-}
 {-#LANGUAGE DerivingStrategies #-}
 {-#LANGUAGE GeneralizedNewtypeDeriving #-}
+{-#LANGUAGE NoStarIsType #-}
+{-#LANGUAGE TypeOperators #-}
+{-#LANGUAGE DataKinds #-}
 module Cardano.KESAgent.Tests.Simulation
 ( tests )
 where
@@ -34,11 +37,11 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
 import Control.Exception (bracket, catch, SomeException)
-import Control.Monad (forever, void)
+import Control.Monad (forever, void, forM)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Proxy
-import GHC.TypeLits (KnownNat, natVal)
+import GHC.TypeLits (KnownNat, natVal, type (*))
 import GHC.Stack (HasCallStack)
 import System.Socket.Family.Unix
 import System.IO
@@ -51,7 +54,7 @@ import Data.Word
 import Data.Typeable
 import Data.Time (NominalDiffTime)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import qualified Data.Text as Text
 
 import Cardano.KESAgent.Agent
@@ -67,9 +70,36 @@ import Cardano.KESAgent.Tests.Util
 tests :: Lock -> TestTree
 tests lock =
   testGroup "Simulation"
-  [ testProperty "Mock" (testOneKeyThroughChain @MockCrypto Proxy lock)
-  , testProperty "Standard" (testOneKeyThroughChain @StandardCrypto Proxy lock)
+  [ testCrypto @MockCrypto Proxy lock
+  , testCrypto @StandardCrypto Proxy lock
   ]
+
+testCrypto :: forall c n
+            . Crypto c
+           => Typeable c
+           => VersionedProtocol (KESProtocol c)
+           => KESSignAlgorithm IO (KES c)
+           => ContextKES (KES c) ~ ()
+           => DirectSerialise (SignKeyKES (KES c))
+           => DirectDeserialise (SignKeyKES (KES c))
+           => DSIGN.Signable (DSIGN c) (OCertSignable c)
+           => ContextDSIGN (DSIGN c) ~ ()
+           => n ~ 1
+           => KnownNat (SeedSizeKES (KES c) * n)
+           => Show (SignKeyWithPeriodKES (KES c))
+           => Proxy c
+           -> Lock
+           -> TestTree
+testCrypto proxy lock =
+  testGroup name
+  [ testProperty "one key through chain" (testOneKeyThroughChain proxy lock)
+  , testProperty "concurrent pushes" (testConcurrentPushes proxy (Proxy @n) lock)
+  ]
+  where
+    name = Text.unpack .
+           decodeUtf8 .
+           unVersionIdentifier .
+           versionIdentifier $ (Proxy @(KESProtocol c))
 
 elaborateTracerLock :: MVar ()
 elaborateTracerLock = unsafePerformIO $ newMVar ()
@@ -277,6 +307,73 @@ testOneKeyThroughChain p
     forgetSignKeyKES expectedSK
     return prop
 
+testConcurrentPushes :: forall c n
+                      . KnownNat n
+                     => Crypto c
+                     => Typeable c
+                     => VersionedProtocol (KESProtocol c)
+                     => KESSignAlgorithm IO (KES c)
+                     => ContextKES (KES c) ~ ()
+                     => DirectSerialise (SignKeyKES (KES c))
+                     => DirectDeserialise (SignKeyKES (KES c))
+                     => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                     => ContextDSIGN (DSIGN c) ~ ()
+                     => Show (SignKeyWithPeriodKES (KES c))
+                     => Proxy c
+                     -> Proxy n
+                     -> Lock
+                     -> Word64
+                     -> Word64
+                     -> PinnedSizedBytes (SeedSizeKES (KES c) * n)
+                     -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                     -> Integer
+                     -> Word
+                     -> Word
+                     -> Property
+testConcurrentPushes proxyCrypto proxyN
+    lock
+    controlAddressStr
+    serviceAddressStr
+    seedsKESPSB
+    seedDSIGNPSB
+    genesisTimestamp
+    nodeDelay
+    controlDelay =
+  ioProperty . withLock lock $ do
+    let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
+        expectedPeriod = 0
+    hSetBuffering stdout LineBuffering
+    let seedsKESBS = psbToByteString seedsKESPSB
+        seedsKESRaw = map psbFromByteString $ chunksOfBS (fromIntegral $ natVal @(SeedSizeKES (KES c)) Proxy) seedsKESBS
+    let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+
+    expectedSKOs <- forM (zip [0..] seedsKESRaw) $ \(certN, seedKESPSB) ->
+        withMLSBFromPSB seedKESPSB $ \seedKES -> do
+          expectedSK <- genKeyKES @IO @(KES c) seedKES
+          let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
+          vkHot <- deriveVerKeyKES expectedSK
+          let kesPeriod = KESPeriod 0
+              expectedOC = makeOCert vkHot certN kesPeriod skCold
+          return (expectedSKP, expectedOC)
+
+    controlAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-control:" ++ show controlAddressStr)
+    serviceAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-service:" ++ show serviceAddressStr)
+
+    prop <- runTestNetwork proxyCrypto nullTracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay
+      (\sim -> mapConcurrently_
+                (sendKey sim)
+                expectedSKOs)
+      (\(resultSKP, resultOC) finish -> do
+          -- expectedSKBS <- rawSerialiseSignKeyKES expectedSK
+          -- resultSKBS <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
+          -- forgetSignKeyKES (skWithoutPeriodKES resultSKP)
+          -- finish ((PrettyBS expectedSKBS, expectedPeriod) === (PrettyBS resultSKBS, periodKES resultSKP))
+          return ()
+      )
+
+    mapM_ (forgetSignKeyKES . skWithoutPeriodKES . fst) expectedSKOs
+    return prop
+
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.
 --
@@ -338,3 +435,7 @@ hexShowBS = concatMap (printf "%02x") . BS.unpack
 justOrError :: Maybe a -> IO a
 justOrError Nothing = error "Nothing"
 justOrError (Just a) = return a
+
+chunksOfBS :: Int -> ByteString -> [ByteString]
+chunksOfBS _ "" = []
+chunksOfBS n bs = BS.take n bs : chunksOfBS n (BS.drop n bs)

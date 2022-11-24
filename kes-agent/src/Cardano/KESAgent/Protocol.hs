@@ -47,9 +47,9 @@ data KESProtocol (k :: *) where
 class VersionedProtocol (p :: *) where
   versionIdentifier :: Proxy p -> VersionIdentifier
 
-data VersionIdentifier =
-  VersionIdentifier ByteString
-  deriving (Show, Eq)
+newtype VersionIdentifier =
+  VersionIdentifier { unVersionIdentifier :: ByteString }
+  deriving newtype (Show, Eq)
 
 data StandardCrypto
 
