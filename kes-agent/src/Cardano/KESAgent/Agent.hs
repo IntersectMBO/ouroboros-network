@@ -110,6 +110,10 @@ runAgent :: forall c
          -> Tracer IO AgentTrace
          -> IO ()
 runAgent proxy options tracer = do
+  -- The key itself is stored as a 'CRef', rather than directly, which
+  -- allows us to pass keys around and forget them exactly when the last
+  -- reference is dropped. The downside to this is that we need to be explicit
+  -- about those references, which is what the 'CRef' type achieves.
   currentKeyVar :: MVar (CRef (SignKeyWithPeriodKES (KES c)), OCert c) <- newEmptyMVar
   nextKeyChan <- newChan
 

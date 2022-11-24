@@ -61,10 +61,11 @@ releaseCRef cref = do
 -- | Read a 'CRef' without acquiring it. The caller is responsible for making
 -- sure the 'CRef' has been acquired appropriately for the duration of the
 -- call, and while using the wrapped resource.
+-- It is generally preferable to use 'withCRefValue' instead.
 readCRef :: CRef a -> IO a
 readCRef cref = bracket
-  (takeMVar (cCount cref))
-  (putMVar (cCount cref))
+  (readMVar (cCount cref))
+  (const $ return ())
   (\count -> do
     when (count <= 0) (throw ReferenceCountUnderflow)
     return (cDeref cref)
