@@ -3,6 +3,7 @@
 {-#LANGUAGE ScopedTypeVariables #-}
 {-#LANGUAGE TypeFamilies #-}
 {-#LANGUAGE NumericUnderscores #-}
+{-#LANGUAGE OverloadedStrings #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -39,6 +40,9 @@ import System.Socket.Protocol.Default
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Data.Proxy (Proxy (..))
 import Data.Typeable
+import Data.Time (NominalDiffTime)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Maybe (fromJust)
 
 data AgentTrace
   = AgentServiceDriverTrace DriverTrace
@@ -77,7 +81,20 @@ data AgentOptions =
 
       -- | The genesis Unix timestamp; used to determine current KES period.
     , agentGenesisTimestamp :: Integer
+
+      -- | Return the current POSIX time. Should normally be set to
+      -- 'getPOSIXTime', but overriding this may be desirable for testing
+      -- purposes.
+    , agentGetCurrentTime :: IO NominalDiffTime
     }
+
+defAgentOptions :: AgentOptions
+defAgentOptions = AgentOptions
+  { agentControlSocketAddress = fromJust $ socketAddressUnixAbstract "kes-agent-control.socket"
+  , agentServiceSocketAddress = fromJust $ socketAddressUnixAbstract "kes-agent-service.socket"
+  , agentGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
+  , agentGetCurrentTime = getPOSIXTime
+  }
 
 runAgent :: forall c
           . Crypto c
@@ -136,7 +153,7 @@ runAgent proxy options tracer = do
           return result
 
   let checkEvolution = withKeyUpdateLock "checkEvolution" $ do
-        p' <- getCurrentKESPeriod (agentGenesisTimestamp options)
+        p' <- getCurrentKESPeriodWith (agentGetCurrentTime options) (agentGenesisTimestamp options)
         traceWith tracer $ AgentCheckEvolution p'
         keyOcMay <- tryTakeMVar currentKeyVar
         case keyOcMay of

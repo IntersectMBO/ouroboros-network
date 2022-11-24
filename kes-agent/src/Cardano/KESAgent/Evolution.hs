@@ -10,16 +10,19 @@ import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.KESAgent.OCert
 
 import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
-import Data.Time (nominalDiffTimeToSeconds)
+import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
 
 getCurrentKESPeriod :: Integer -> IO KESPeriod
-getCurrentKESPeriod genesisTimestamp =
+getCurrentKESPeriod = getCurrentKESPeriodWith getPOSIXTime
+
+getCurrentKESPeriodWith :: IO NominalDiffTime -> Integer -> IO KESPeriod
+getCurrentKESPeriodWith now genesisTimestamp =
   KESPeriod
     . floor
     .  (/ (36 * 3600))
     . (subtract (realToFrac genesisTimestamp))
     . nominalDiffTimeToSeconds
-    <$> getPOSIXTime
+    <$> now
 
 updateKESToCurrent :: KESSignAlgorithm IO (KES v)
                    => Integer

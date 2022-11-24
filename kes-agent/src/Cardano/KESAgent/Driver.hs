@@ -11,13 +11,13 @@
 module Cardano.KESAgent.Driver
 where
 
-import Foreign (Ptr)
+import Foreign (Ptr, plusPtr)
 import Foreign.C.Types (CSize)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import System.Socket
 import System.Socket.Unsafe
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Data.Proxy
 import Text.Printf
 import Control.Concurrent.MVar
@@ -65,7 +65,10 @@ driver s tracer = Driver
         void $ send s v msgNoSignal
       (ServerAgency TokIdle, KeyMessage (SignKeyWithPeriodKES sk t) oc) -> do
         traceWith tracer DriverSendingKey
-        directSerialise (\buf bufSize -> void $ unsafeSend s buf bufSize opt) sk
+        directSerialise (\buf bufSize -> do
+              n <- unsafeSend s buf bufSize opt
+              when (fromIntegral n /= bufSize) (error "AAAAA")
+            ) sk
         let serializedOC = serialize' oc
         sendWord32 s (fromIntegral $ t) opt
         sendWord32 s (fromIntegral $ BS.length serializedOC) opt
@@ -88,9 +91,9 @@ driver s tracer = Driver
         traceWith tracer DriverReceivingKey
         noReadVar <- newEmptyMVar
         sk <- directDeserialise
-                (\buf bufSize -> unsafeReceive s buf bufSize opt >>= \case
+                (\buf bufSize -> unsafeReceiveN s buf bufSize opt >>= \case
                     0 -> putMVar noReadVar ()
-                    _ -> return ()
+                    n -> when (fromIntegral n /= bufSize) (error "BBBBBB")
                 )
         t <- fromIntegral <$> (
               maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s opt
@@ -126,3 +129,16 @@ receiveWord32 s opt =
 sendWord32 :: Socket f t p -> Word32 -> MessageFlags -> IO ()
 sendWord32 s val opt =
   void $ send s (LBS.toStrict $ encode val) opt
+
+unsafeReceiveN s buf bufSize opt = do
+  n <- unsafeReceive s buf bufSize opt
+  if fromIntegral n == bufSize then
+    return bufSize
+  else if n == 0 then
+    return 0
+  else do
+    n' <- unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n) opt
+    if n' == 0 then
+      return 0
+    else
+      return bufSize

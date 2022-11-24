@@ -4,6 +4,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 module Cardano.KESAgent.Peers
 where
 
@@ -25,10 +26,13 @@ kesReceiver receiveKey =
         Effect $ return go
   where
     go :: Peer (KESProtocol c) AsClient IdleState IO ()
-    go = Await (ServerAgency TokIdle) $ \(KeyMessage sk oc) ->
+    go = Await (ServerAgency TokIdle) $ \case
+          KeyMessage sk oc ->
             Effect $ do
               receiveKey sk oc
               return go
+          EndMessage ->
+            Done TokEnd ()
 
 kesPusher :: forall (c :: *)
            . KESAlgorithm (KES c)

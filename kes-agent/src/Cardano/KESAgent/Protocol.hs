@@ -21,6 +21,7 @@ import Cardano.KESAgent.OCert
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.KES.Mock
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DSIGN.Ed25519ML
 import Cardano.Crypto.DSIGN.Ed25519
@@ -52,9 +53,15 @@ data VersionIdentifier =
 
 data StandardCrypto
 
+data MockCrypto
+
 instance Crypto StandardCrypto where
   type KES StandardCrypto = Sum6KES Ed25519DSIGNM Blake2b_256
   type DSIGN StandardCrypto = Ed25519DSIGN
+
+instance Crypto MockCrypto where
+  type KES MockCrypto = MockKES 128
+  type DSIGN MockCrypto = Ed25519DSIGN
 
 versionIdentifierLength :: Num a => a
 versionIdentifierLength = 32
@@ -66,6 +73,10 @@ mkVersionIdentifier raw =
 instance VersionedProtocol (KESProtocol StandardCrypto) where
   versionIdentifier _ =
     mkVersionIdentifier "StandardCrypto:0.1"
+
+instance VersionedProtocol (KESProtocol MockCrypto) where
+  versionIdentifier _ =
+    mkVersionIdentifier "MockCrypto:0.1"
 
 -- | The protocol for pushing KES keys.
 --
