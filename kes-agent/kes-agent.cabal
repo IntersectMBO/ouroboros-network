@@ -26,6 +26,7 @@ library
                    , Cardano.KESAgent.ControlClient
                    , Cardano.KESAgent.Logging
                    , Cardano.KESAgent.RetrySocket
+                   , Cardano.KESAgent.RefCounting
 
     -- other-modules:
 
@@ -51,6 +52,7 @@ test-suite kes-agent-tests
     hs-source-dirs: test
     main-is: Main.hs
     other-modules: Cardano.KESAgent.Tests.Simulation
+                 , Cardano.KESAgent.Tests.RefCounting
                  , Cardano.KESAgent.Tests.Util
     build-depends: base ^>=4.14.0.0
                  , kes-agent

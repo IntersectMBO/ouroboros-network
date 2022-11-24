@@ -2,6 +2,7 @@ module Main where
 
 import Test.Tasty (defaultMain, TestTree, testGroup)
 import qualified Cardano.KESAgent.Tests.Simulation as Simulation
+import qualified Cardano.KESAgent.Tests.RefCounting as RefCounting
 import Cardano.KESAgent.Tests.Util (Lock, newLock)
 import Cardano.Crypto.Libsodium
 
@@ -13,5 +14,6 @@ main = do
 
 tests :: Lock -> TestTree
 tests lock = testGroup "KES Agent"
-  [ Simulation.tests lock
+  [ RefCounting.tests
+  , Simulation.tests lock
   ]
