@@ -235,6 +235,9 @@ semantics mempoolWithMockedLedgerItf (TryAddTxs txs) = do
               }
   where
     getTx (MempoolTxAdded vtx) = txForgetValidated vtx
+semantics mempoolWithMockedLedgerItf (SetLedgerState newSt) = do
+  setLedgerState mempoolWithMockedLedgerItf newSt
+  pure $ Response RespOk
 
 precondition :: Model blk Symbolic -> Cmd blk Symbolic -> Logic
 precondition _model _event = Top
@@ -506,7 +509,12 @@ openMempoolWithMockedLedgerItf capacityOverride tracer txSize params = do
       , getLedgerStateTVar = currentLedgerStateTVar
       , getMempool         = mempool
     }
-
+setLedgerState ::
+     MempoolWithMockedLedgerItf IO blk idx
+  -> LedgerState blk
+  -> IO ()
+setLedgerState MempoolWithMockedLedgerItf {getLedgerStateTVar} newSt =
+  atomically $ writeTVar getLedgerStateTVar newSt
 {-------------------------------------------------------------------------------
   Instances required to run the state machine
 -------------------------------------------------------------------------------}
@@ -514,5 +522,6 @@ openMempoolWithMockedLedgerItf capacityOverride tracer txSize params = do
 deriving anyclass instance ( ToExpr (LedgerState blk)
                            , ToExpr (TickedLedgerState blk)
                            , ToExpr (LedgerConfig blk)
+                           , ToExpr (GenTx blk)
                            ) => ToExpr (Model blk Concrete)
 deriving instance ToExpr SlotNo
