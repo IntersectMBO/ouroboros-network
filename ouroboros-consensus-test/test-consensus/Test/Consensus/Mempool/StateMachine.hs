@@ -29,7 +29,7 @@ module Test.Consensus.Mempool.StateMachine (
   ) where
 
 import           Control.Monad.Class.MonadSTM.Strict (MonadSTM (atomically),
-                     StrictTVar)
+                     StrictTVar, writeTVar)
 import           Control.Monad.Trans.Except (runExcept)
 import           Control.Tracer (Tracer)
 import           Data.Functor.Classes (Eq1, Show1)
@@ -93,16 +93,19 @@ data Model blk (r :: Type -> Type) = Model {
     , forgingFor              :: !SlotNo
     , intermediateLedgerState :: !(TickedLedgerState blk)
     , modelConfig             :: !(LedgerConfig blk)
+    , validatedTransactions   :: ![GenTx blk]
     }
   deriving stock (Generic)
 
 deriving stock instance ( Eq (LedgerState blk)
                         , Eq (TickedLedgerState blk)
                         , Eq (LedgerCfg (LedgerState blk))
+                        , Eq (GenTx blk)
                         ) => Eq   (Model blk r)
 deriving stock instance ( Show (LedgerState blk)
                         , Show (TickedLedgerState blk)
                         , Show (LedgerCfg (LedgerState blk))
+                        , Show (GenTx blk)
                         ) => Show (Model blk r)
 
 initModel :: forall blk r.
@@ -116,6 +119,7 @@ initModel params = Model {
      , forgingFor              = initialStateSlot
      , intermediateLedgerState = applyChainTick cfg initialStateSlot initialState
      , modelConfig             = cfg
+     , validatedTransactions   = []
      }
   where
     initialState = immpInitialState params
@@ -147,8 +151,7 @@ deriving stock instance (Show (GenTx blk), Show (LedgerState blk)) => Show (Cmd 
 
 -- | Successful command responses
 data SuccessfulResponse blk (ref :: Type -> Type) =
---      TryAddTxsSuccess (TryAddTxsResult blk)
-      TryAddTxsResult {
+      TryAddTxsResult{
         valid       :: ![GenTx blk]
       , invalid     :: ![GenTx blk]
       , unprocessed :: ![GenTx blk]
@@ -160,6 +163,7 @@ data SuccessfulResponse blk (ref :: Type -> Type) =
 
 deriving stock instance (Show (GenTx blk), Show (TickedLedgerState blk)) => Show (SuccessfulResponse blk ref)
 
+-- TODO: why not merge this with SuccessfulResponse?
 newtype Response blk ref = Response (SuccessfulResponse blk ref)
   deriving stock Generic1
   deriving anyclass Rank2.Foldable
@@ -291,18 +295,28 @@ mockApplyTx cfg st tx =
     -- we initialize the mempool?
     At slot = getTipSlot st
 
-transition :: Model blk r -> Cmd blk r -> (Response blk) r -> Model blk r
-transition model (TryAddTxs _) (Response TryAddTxsResult {newTickedSt}) =
-  model { intermediateLedgerState = newTickedSt }
+transition ::
+  ( Show (GenTx blk)
+  , Show (LedgerState blk)
+  , Show (TickedLedgerState blk)
+  ) => Model blk r -> Cmd blk r -> (Response blk) r -> Model blk r
+transition model (TryAddTxs _) (Response TryAddTxsResult {valid, newTickedSt}) =
+  model { intermediateLedgerState = newTickedSt
+        , validatedTransactions = validatedTransactions model <> valid
+        }
 transition model (SetLedgerState newSt) (Response RespOk) =
   -- TODO
   model { currentLedgerDBState = newSt }
+transition _ cmd resp = error $  "Unexpected command response combination."
+                              <> " Command: " <> show cmd
+                              <> " Response: " <> show resp -- TODO: using pretty printing
 
 -- | State machine for which we do not have a mempool, and therefore we cannot
 -- use the SUT.
 stateMachineWithoutSUT ::
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
+     , Show (TickedLedgerState blk)
      , LedgerSupportsMempool blk
      , BasicEnvelopeValidation blk)
   => InitialMempoolAndModelParams blk
@@ -314,6 +328,7 @@ stateMachineWithoutSUT initialParams = stateMachine initialParams err
 stateMachine ::
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
+     , Show (TickedLedgerState blk)
      , LedgerSupportsMempool blk
      , BasicEnvelopeValidation blk)
   => InitialMempoolAndModelParams blk
@@ -340,6 +355,7 @@ prop_sequential :: forall blk idx.
      , ToExpr (LedgerState blk)
      , ToExpr (TickedLedgerState blk)
      , ToExpr (LedgerConfig blk)
+     , ToExpr (GenTx blk)
      , Show (TickedLedgerState blk)
      , Show (LedgerConfig blk)
      , LedgerSupportsMempool blk
@@ -450,6 +466,8 @@ data ValidityTag tag = ValidTag tag | InvalidTag tag
 
 {------------------------------------------------------------------------------
   Mempool with a mocked ledger interface
+
+  TODO: we might want to put this in a different module
 ------------------------------------------------------------------------------}
 
 -- The idea of this data structure is that we make sure that the ledger

@@ -10,8 +10,9 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
--- |
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+-- |
 -- TODO: explain how to use showMempoolTestScenarios in combination with
 -- initialLedgerState in the REPL.
 --
@@ -19,7 +20,6 @@
 -- >>> import Test.Consensus.Mempool.StateMachine
 -- >>> showMempoolTestScenarios initialParams
 --
-
 module Test.Consensus.Mempool.StateMachine.TestBlock (
     initialLedgerState
   , sampleMempoolAndModelParams
@@ -103,7 +103,8 @@ deriving instance ToExpr EpochSize
 deriving instance ToExpr SlotLength
 instance ToExpr NominalDiffTime where
   toExpr = defaultExprViaShow -- TODO define this properly
-
+deriving instance ToExpr (GenTx TestBlock)
+deriving instance ToExpr Tx
 
 -- TODO: consider removing this level of indirection
 type TestBlock = TestBlockWith Tx
