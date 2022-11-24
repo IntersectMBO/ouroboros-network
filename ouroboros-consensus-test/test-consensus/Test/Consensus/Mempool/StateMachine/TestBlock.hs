@@ -24,6 +24,10 @@ module Test.Consensus.Mempool.StateMachine.TestBlock (
     initialLedgerState
   , sampleMempoolAndModelParams
   , tests
+    -- * Test transaction
+  , Tx (produced, consumed)
+    -- * Labelling
+  , tagConsumedTx
   ) where
 
 import           Codec.Serialise (Serialise)
@@ -238,3 +242,19 @@ newtype instance Validated (GenTx TestBlock) = ValidatedGenTx (GenTx TestBlock)
   deriving newtype (Show, NoThunks)
 
 type instance ApplyTxErr TestBlock = TxApplicationError
+
+{------------------------------------------------------------------------------
+  Labelling
+-------------------------------------------------------------------------------}
+
+tagConsumedTx :: GenTx TestBlock-> Consumed
+tagConsumedTx (TestBlockGenTx Tx{consumed}) =
+  case Set.size consumed of
+    0 -> ConsumedZero
+    1 -> ConsumedOne
+    _ -> ConsumedMultiple
+
+data Consumed = ConsumedZero
+              | ConsumedOne
+              | ConsumedMultiple
+  deriving Show

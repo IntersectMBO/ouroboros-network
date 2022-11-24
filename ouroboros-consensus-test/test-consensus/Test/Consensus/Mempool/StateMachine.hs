@@ -20,13 +20,16 @@
 module Test.Consensus.Mempool.StateMachine (
     openMempoolWithMockedLedgerItf
   , prop_sequential
-  , showMempoolTestScenarios
   , stateMachine
     -- * Model and SUT parameters
   , InitialMempoolAndModelParams (MempoolAndModelParams, immpInitialState, immpLedgerConfig)
+    -- * Labelling
+  , showMempoolTestScenarios
+  , tagTransactions
   ) where
 
-import           Control.Monad.Class.MonadSTM.Strict (StrictTVar)
+import           Control.Monad.Class.MonadSTM.Strict (MonadSTM (atomically),
+                     StrictTVar)
 import           Control.Monad.Trans.Except (runExcept)
 import           Control.Tracer (Tracer)
 import           Data.Functor.Classes (Eq1, Show1)
@@ -377,14 +380,6 @@ instance ( QC.Arbitrary (LedgerState blk)
 -- Mempool with at least N accepted transactions
 -- Mempool with at least N rejected transactions
 --
--- https://hackage.haskell.org/package/quickcheck-state-machine-0.7.1/docs/Test-StateMachine-Labelling.html#t:Event
--- https://hackage.haskell.org/package/quickcheck-state-machine-0.7.1/docs/Test-StateMachine.html#v:showLabelledExamples-39-
---
--- showLabelledExamples
---   :: (Show tag, Show (model Symbolic))
---   => (Show (cmd Symbolic), Show (resp Symbolic))
---   => (Traversable cmd, Foldable resp)
---   => StateMachine model cmd m resp -> ([Event model cmd resp Symbolic] -> [tag]) -> IO ()
 showMempoolTestScenarios :: forall blk.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
@@ -399,7 +394,8 @@ showMempoolTestScenarios params =
   showLabelledExamples (stateMachineWithoutSUT params) tagEventSeq
   where
     tagEventSeq :: [Event (Model blk) (Cmd blk) (Response blk) Symbolic] -> [Tag]
-    tagEventSeq events = validTransactions events
+    tagEventSeq events =  validTransactions events
+                       <> invalidTransactions events
       where
         -- Produce a AcceptedTransactions if one of the event contain a response with an accepted transaction
         validTransactions [] = [] --
@@ -408,13 +404,48 @@ showMempoolTestScenarios params =
             [] -> validTransactions evs   -- We keep on looking
             _  -> [AcceptedTransactions] -- The list of events (trace) contained a valid transaction
 
+        -- TODO: factor out duplication in logic
+        invalidTransactions [] = [] --
+        invalidTransactions (ev : evs) =
+          case invalidTransactionsInResponse (eventResp ev) of
+            [] -> validTransactions evs   -- We keep on looking
+            _  -> [RejectedTransactions]
+
 validTransactionsInResponse :: Response blk ref -> [GenTx blk]
 validTransactionsInResponse (Response TryAddTxsResult {valid}) = valid
 validTransactionsInResponse _                                  = []
 
-data Tag = AcceptedTransactions
+invalidTransactionsInResponse :: Response blk ref -> [GenTx blk]
+invalidTransactionsInResponse (Response TryAddTxsResult {invalid}) = invalid
+invalidTransactionsInResponse _                                    = []
+
+data Tag = AcceptedTransactions | RejectedTransactions
   deriving (Show)
--- .... Here we don't use the actual mempool, BUT we do need a initial ledger state!
+
+
+
+tagTransactions :: forall blk tag.
+     ( QC.Arbitrary (GenTx blk)
+     , QC.Arbitrary (LedgerState blk)
+     , Show tag
+     , Show (LedgerConfig blk)
+     , Show (TickedLedgerState blk)
+     , LedgerSupportsMempool blk
+     , BasicEnvelopeValidation blk
+     )
+   => InitialMempoolAndModelParams blk
+   -> (GenTx blk -> tag)
+   -> IO ()
+tagTransactions params txTag =
+  showLabelledExamples
+      (stateMachineWithoutSUT params)
+      (concatMap (mTxTag . eventResp))
+  where mTxTag (Response TryAddTxsResult {valid, invalid}) =  fmap (ValidTag   . txTag) valid
+                                                           <> fmap (InvalidTag   . txTag) invalid
+        mTxTag _                                           = []
+
+data ValidityTag tag = ValidTag tag | InvalidTag tag
+  deriving Show
 
 {------------------------------------------------------------------------------
   Mempool with a mocked ledger interface
