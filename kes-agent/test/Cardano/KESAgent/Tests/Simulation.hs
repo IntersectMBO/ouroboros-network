@@ -236,11 +236,21 @@ testOneKeyThroughChain :: forall c
                        -> Word64
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                       -> Integer
                        -> Word64
                        -> Word
                        -> Word
                        -> Property
-testOneKeyThroughChain p lock controlAddressStr serviceAddressStr seedKESPSB seedDSIGNPSB certN nodeDelay controlDelay =
+testOneKeyThroughChain p
+    lock
+    controlAddressStr
+    serviceAddressStr
+    seedKESPSB
+    seedDSIGNPSB
+    genesisTimestamp
+    certN
+    nodeDelay
+    controlDelay =
   ioProperty . withLock lock . withMLSBFromPSB seedKESPSB $ \seedKES -> do
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
@@ -266,9 +276,6 @@ testOneKeyThroughChain p lock controlAddressStr serviceAddressStr seedKESPSB see
 
     forgetSignKeyKES expectedSK
     return prop
-
-  where
-    genesisTimestamp = 1506203091
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.
