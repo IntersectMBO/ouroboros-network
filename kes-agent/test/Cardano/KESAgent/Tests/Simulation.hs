@@ -85,7 +85,7 @@ testCrypto :: forall c n
            => DirectDeserialise (SignKeyKES (KES c))
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
-           => n ~ 1
+           => n ~ 10
            => KnownNat (SeedSizeKES (KES c) * n)
            => Show (SignKeyWithPeriodKES (KES c))
            => Proxy c
