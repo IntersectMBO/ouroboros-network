@@ -44,7 +44,9 @@ getCRefCount = readMVar . cCount
 -- 'releaseCRef' it again.
 acquireCRef :: CRef a -> IO a
 acquireCRef cref = do
-  modifyMVar_ (cCount cref) (return . succ)
+  count <- takeMVar (cCount cref)
+  when (count <= 0) (throw ReferenceCountUnderflow)
+  putMVar (cCount cref) (succ count)
   return (cDeref cref)
 
 -- | Release a 'CRef' by decrementing its counter. When the counter reaches

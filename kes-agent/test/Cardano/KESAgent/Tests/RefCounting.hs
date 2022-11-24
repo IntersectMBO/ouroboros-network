@@ -24,6 +24,7 @@ tests = testGroup "RefCounting"
   , testProperty "finalizer does not fire when references remain" $ p_noFinalizerBeforeLastRelease
   , testProperty "throw on excessive release" $ p_throwOnExcessiveRelease
   , testProperty "throw on read after free" $ p_throwOnReadAfterFree
+  , testProperty "throw on acquire after free" $ p_throwOnReacquire
   ]
 
 p_counterIs1OnFresh :: Property
@@ -102,15 +103,23 @@ p_throwOnExcessiveRelease n' = ioProperty $ do
       replicateM_ n (acquireCRef ref)
       replicateM_ (n + 2) (releaseCRef ref)
 
-p_throwOnReadAfterFree :: Int -> Property
-p_throwOnReadAfterFree n' = ioProperty $ do
+p_throwOnReadAfterFree :: Property
+p_throwOnReadAfterFree = ioProperty $ do
   try go >>= \e -> return (e === Left ReferenceCountUnderflow)
   where
-    n = abs n'
     go = do
       ref <- newCRef nullFinalizer ()
       releaseCRef ref
       readCRef ref
+
+p_throwOnReacquire :: Property
+p_throwOnReacquire = ioProperty $ do
+  try go >>= \e -> return (e === Left ReferenceCountUnderflow)
+  where
+    go = do
+      ref <- newCRef nullFinalizer ()
+      releaseCRef ref
+      withCRef ref doNothingWith
 
 nullFinalizer :: a -> IO ()
 nullFinalizer _ = return ()
