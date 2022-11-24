@@ -293,9 +293,9 @@ mockApplyTx cfg st tx =
 transition :: Model blk r -> Cmd blk r -> (Response blk) r -> Model blk r
 transition model (TryAddTxs _) (Response TryAddTxsResult {newTickedSt}) =
   model { intermediateLedgerState = newTickedSt }
-transition model (SetLedgerState {}) (Response RespOk) =
+transition model (SetLedgerState newSt) (Response RespOk) =
   -- TODO
-  model
+  model { currentLedgerDBState = newSt }
 
 -- | State machine for which we do not have a mempool, and therefore we cannot
 -- use the SUT.
