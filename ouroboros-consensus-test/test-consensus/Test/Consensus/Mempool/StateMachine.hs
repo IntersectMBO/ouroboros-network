@@ -247,7 +247,7 @@ postcondition ::
   -> Cmd      blk Concrete
   -> Response blk  Concrete
   -> Logic
-postcondition _model _event _response = Top
+postcondition _model _cmd _response = Top
 
 mock :: forall blk.
      (LedgerSupportsMempool blk)

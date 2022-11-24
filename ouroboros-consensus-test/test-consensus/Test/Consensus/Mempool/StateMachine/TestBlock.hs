@@ -115,7 +115,7 @@ newtype instance GenTx TestBlock = TestBlockGenTx Tx
 
 -- For the mempool tests it is not imporant that we calculate the actual size of the transaction in bytes
 txSize :: GenTx TestBlock -> TxSizeInBytes
-txSize (TestBlockGenTx tx) = fromIntegral $ 1 + length (produced tx)
+txSize (TestBlockGenTx tx) = fromIntegral $ length (consumed tx) + length (produced tx)
 
 data Tx = Tx
   { consumed :: Set Token
@@ -221,10 +221,9 @@ instance LedgerSupportsMempool TestBlock where
     fst <$> applyTx cfg DoNotIntervene slot genTx tickedSt
     -- FIXME: it is ok to use 'DoNotIntervene' here?
 
-  -- FIXME: determine a suitable value for this. In particular, if the mempool
-  -- capacity depends on this, we might have to tweak it to make sure we
-  -- exercise the code-path that deals with a full mempool.
-  txsMaxBytes _ = 200
+  -- We tweaked this in such a way that we test the case in which we exceed the
+  -- maximum mempool capacity. The value used here depends on 'txInBlockSize'.
+  txsMaxBytes _ = 10
 
   txInBlockSize = txSize
 
