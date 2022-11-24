@@ -19,13 +19,13 @@ library
   other-modules:        Network.NTP.Client.Packet
                         Network.NTP.Client.Query
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.15
+                      , base            >=4.9 && <4.17
                       , binary          >=0.8 && <0.11
-                      , bytestring      >=0.10 && <0.11
+                      , bytestring      >=0.10 && <0.12
                       , contra-tracer   >=0.1 && <0.2
                       , network         >= 3.1.2 && <3.2
                       , stm             >=2.4 && <2.6
-                      , time            >=1.9.1 && <1.11
+                      , time            >=1.9.1 && <1.14
                       , Win32-network   >=0.1 && <0.2
 
   hs-source-dirs:       src
@@ -44,9 +44,9 @@ test-suite test
   main-is:            Test.hs
   other-modules:        Network.NTP.Client.Packet
   type:               exitcode-stdio-1.0
-  build-depends:        base            >=4.9 && <4.15
+  build-depends:        base            >=4.9 && <4.17
                       , binary          >=0.8 && <0.11
-                      , time            >=1.9.1 && <1.11
+                      , time            >=1.9.1 && <1.14
                       , QuickCheck
                       , tasty
                       , tasty-quickcheck
@@ -61,7 +61,7 @@ executable demo-ntp-client
   else
      buildable: False
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.15
+                      , base            >=4.9 && <4.17
                       , contra-tracer   >=0.1 && <0.2
                       , Win32-network   >=0.1 && <0.2
                       , ntp-client

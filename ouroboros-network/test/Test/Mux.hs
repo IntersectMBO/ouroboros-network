@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Mux (tests) where
 
 import           Codec.Serialise (Serialise (..))

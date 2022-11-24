@@ -33,8 +33,8 @@ library
                        Test.ThreadNet.Infra.Byron.TrackUpdates
                        Test.ThreadNet.TxGen.Byron
 
-  build-depends:       base              >=4.9   && <4.15
-                     , bytestring        >=0.10  && <0.11
+  build-depends:       base              >=4.9   && <4.17
+                     , bytestring        >=0.10  && <0.12
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-test

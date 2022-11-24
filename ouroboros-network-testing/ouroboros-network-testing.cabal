@@ -57,7 +57,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base              >=4.9 && <4.15,
+  build-depends:       base              >=4.9 && <4.17,
                        containers,
                        contra-tracer,
                        deque,

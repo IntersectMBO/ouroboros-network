@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Test.Ouroboros.Network.PeerSelection.PeerGraph
   ( PeerGraph (..)

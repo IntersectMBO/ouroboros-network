@@ -824,5 +824,5 @@ deriving newtype instance Hashable BlockNo
 instance Hashable IsEBB
   -- use generic instance
 
-instance Hashable (HeaderHash b) => Hashable (ChainHash b)
+instance (StandardHash b, Hashable (HeaderHash b)) => Hashable (ChainHash b)
   -- use generic instance

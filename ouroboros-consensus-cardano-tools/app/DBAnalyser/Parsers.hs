@@ -1,8 +1,12 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE CPP           #-}
 
 module DBAnalyser.Parsers (parseCmdLine) where
 
+#if __GLASGOW_HASKELL__ < 900
+-- GHC 8.10 needs this, GHC 9.2 considers it a redundant import.
 import           Data.Foldable (asum)
+#endif
 import           Options.Applicative
 
 import           Cardano.Crypto (RequiresNetworkMagic (..))

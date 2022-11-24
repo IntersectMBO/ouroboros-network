@@ -432,13 +432,9 @@ data instance LedgerState (DualBlock m a) = DualLedgerState {
 
 instance Bridge m a => UpdateLedger (DualBlock m a)
 
-deriving instance ( Show (LedgerState m)
-                  , Show (LedgerState a)
-                  , Bridge m a
+deriving instance ( Bridge m a
                   ) => Show (LedgerState (DualBlock m a))
-deriving instance ( Eq (LedgerState m)
-                  , Eq (LedgerState a)
-                  , Bridge m a
+deriving instance ( Bridge m a
                   ) => Eq (LedgerState (DualBlock m a))
 
 {-------------------------------------------------------------------------------

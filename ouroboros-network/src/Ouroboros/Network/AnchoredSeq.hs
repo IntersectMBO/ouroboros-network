@@ -564,8 +564,6 @@ splitAfterMeasure k p s@(AnchoredSeq a ft)
       -- @l@ contains elements with a measure <= the given mesaure. There could
       -- be multiple with the given measure, so try them one by one.
     = go l r
-    | otherwise
-    = Nothing
   where
     go l r = case FT.viewr l of
       l' FT.:> m@(MeasuredWith b)
@@ -604,8 +602,6 @@ splitBeforeMeasure k p (AnchoredSeq a ft)
       -- @r@ contains elements with a measure >= the given mesaure. There could
       -- be multiple with the given measure, so try them one by one.
     = go l r
-    | otherwise
-    = Nothing
   where
     go l r = case FT.viewl r of
       m@(MeasuredWith b) FT.:< r'

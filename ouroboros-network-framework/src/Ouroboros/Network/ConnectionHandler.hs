@@ -171,7 +171,6 @@ type MuxConnectionManager muxMode socket peerAddr versionNumber bytes m a b =
 makeConnectionHandler
     :: forall peerAddr muxMode socket versionNumber versionData m a b.
        ( MonadAsync m
-       , MonadCatch m
        , MonadFork  m
        , MonadLabelledSTM m
        , MonadThrow (STM m)

@@ -28,8 +28,8 @@ library
                        Test.ThreadNet.Infra.Shelley
                        Test.ThreadNet.TxGen.Shelley
 
-  build-depends:       base              >=4.9   && <4.15
-                     , bytestring        >=0.10  && <0.11
+  build-depends:       base              >=4.9   && <4.17
+                     , bytestring        >=0.10  && <0.12
                      , cardano-crypto-class
                      , cardano-data
                      , cardano-ledger-core

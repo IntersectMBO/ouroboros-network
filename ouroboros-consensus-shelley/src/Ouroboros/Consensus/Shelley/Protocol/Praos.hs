@@ -124,7 +124,7 @@ instance PraosCrypto c => ProtocolHeaderSupportsKES (Praos c) where
             }
 
 instance PraosCrypto c => ProtocolHeaderSupportsProtocol (Praos c) where
-  type CannotForgeError _ = PraosCannotForge c
+  type CannotForgeError (Praos c) = PraosCannotForge c
   protocolHeaderView Header {headerBody, headerSig} =
     HeaderView
       { hvPrevHash = hbPrev headerBody,

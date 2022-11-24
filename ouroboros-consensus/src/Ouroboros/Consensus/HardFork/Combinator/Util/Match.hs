@@ -106,6 +106,7 @@ instance HAp (Mismatch f) where
       go (_ :* fs) (MS m)     = MS (go fs m)
       go (_ :* fs) (ML fx gy) = ML fx (hap fs gy)
       go (f :* _)  (MR fy gx) = MR fy (apFn f gx)
+      go Nil       m          = case m of {}
 
 {-------------------------------------------------------------------------------
   Utilities

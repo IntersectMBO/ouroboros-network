@@ -60,13 +60,15 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShe
       -- TODO Temporarily disable the transaction generator until we fix the
       -- failing assertion in TxSubmission.Inbound, see #2680.
       --
-      -- When fixed, remove the line below to re-enable the transaction
-      -- generator.
-      | otherwise               = pure []
+      -- When fixed, remove the True case keepig the else case below to re-enable
+      -- the transaction generator.
 
-      | otherwise               = do
-      n <- choose (0, 20)
-      go [] n $ applyChainTick lcfg curSlotNo lst
+      | otherwise               =
+      if True
+        then pure []
+        else do
+          n <- choose (0, 20)
+          go [] n $ applyChainTick lcfg curSlotNo lst
     where
       ShelleyTxGenExtra
         { stgeGenEnv

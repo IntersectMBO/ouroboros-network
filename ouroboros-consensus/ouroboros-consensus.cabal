@@ -292,12 +292,12 @@ library
                        UndecidableSuperClasses
                        ViewPatterns
 
-  build-depends:       base              >=4.9 && <4.15
+  build-depends:       base              >=4.9 && <4.17
                      , base-deriving-via
                      , base16-bytestring
                      , bimap             >=0.4   && <0.5
                      , binary            >=0.8   && <0.11
-                     , bytestring        >=0.10  && <0.11
+                     , bytestring        >=0.10  && <0.12
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-prelude

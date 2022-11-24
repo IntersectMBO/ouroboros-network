@@ -42,7 +42,6 @@ import           Ouroboros.Network.Util.ShowProxy
 import           Ouroboros.Network.Channel
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
@@ -226,8 +225,7 @@ data Role = Client | Server
 -- The first argument is expected to create two channels that are connected,
 -- for example 'createConnectedChannels'.
 --
-runConnectedPeers :: ( MonadSTM m
-                     , MonadAsync m
+runConnectedPeers :: ( MonadAsync m
                      , MonadCatch m
                      , Show failure
                      , forall (st' :: ps). Show (ClientHasAgency st')
@@ -255,8 +253,7 @@ runConnectedPeers createChannels tracer codec client server =
 -- 'Handshake' protocol which knows how to decode different versions.
 --
 runConnectedPeersAsymmetric
-    :: ( MonadSTM m
-       , MonadAsync m
+    :: ( MonadAsync m
        , MonadCatch m
        , Show failure
        , forall (st' :: ps). Show (ClientHasAgency st')
@@ -281,8 +278,7 @@ runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
     tracerServer = contramap ((,) Server) tracer
 
 
-runConnectedPeersPipelined :: ( MonadSTM m
-                              , MonadAsync m
+runConnectedPeersPipelined :: ( MonadAsync m
                               , MonadCatch m
                               , Show failure
                               , forall (st' :: ps). Show (ClientHasAgency st')

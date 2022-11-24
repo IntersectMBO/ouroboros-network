@@ -28,7 +28,7 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when, (>=>))
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork, ThreadId, throwTo)
+import           Control.Monad.Class.MonadFork (MonadFork, throwTo)
 import           Control.Monad.Class.MonadThrow hiding (handle)
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
@@ -299,7 +299,6 @@ connectionStateToCounters state =
 
 instance ( Show peerAddr
          , Show handleError
-         , Show (ThreadId m)
          , MonadAsync m
          )
       => Show (ConnectionState peerAddr handle handleError version m) where
@@ -524,8 +523,7 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 --
 withConnectionManager
     :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version m a.
-       ( Monad              m
-       , MonadLabelledSTM   m
+       ( MonadLabelledSTM   m
        , MonadTraceSTM      m
        -- 'MonadFork' is only to get access to 'throwTo'
        , MonadFork          m

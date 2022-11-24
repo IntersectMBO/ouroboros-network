@@ -41,12 +41,10 @@ instance Bitraversable Wedge where
     bitraverse _ g (There b) = There <$> g b
 
 instance Applicative (Wedge a) where
-    pure  = return
+    pure  = There
     (<*>) = ap
 
 instance Monad (Wedge a) where
-    return = There
-
     Nowhere >>= _ = Nowhere
     Here a  >>= _ = Here a
     There a >>= f = f a

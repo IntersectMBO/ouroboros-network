@@ -18,7 +18,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 
 import           Cardano.Binary
-import           Cardano.Prelude (cborError)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC

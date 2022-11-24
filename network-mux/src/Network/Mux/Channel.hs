@@ -209,8 +209,7 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
 -- This is intended for testing, as a crude approximation of network delays.
 -- More accurate models along these lines are of course possible.
 --
-delayChannel :: ( MonadSTM m
-                , MonadTimer m
+delayChannel :: ( MonadTimer m
                 )
              => DiffTime
              -> Channel m

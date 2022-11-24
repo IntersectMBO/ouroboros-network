@@ -42,7 +42,7 @@ common demo-deps
                        -Wredundant-constraints
 
 library
-  build-depends:       base            >=4.9 && <4.15,
+  build-depends:       base            >=4.9 && <4.17,
                        io-classes     ^>=0.3,
                        strict-stm     ^>=0.2,
                        contra-tracer   >=0.1 && <0.2,
@@ -51,7 +51,7 @@ library
 
                        array           >=0.5 && <0.6,
                        binary          >=0.8 && <0.11,
-                       bytestring      >=0.10 && <0.11,
+                       bytestring      >=0.10 && <0.12,
                        containers      >=0.5 && <0.7,
                        -- The Windows version of network-3.1.2 is missing
                        -- functions, see
@@ -61,7 +61,7 @@ library
                        statistics-linreg
                                        >=0.3 && <0.4,
                        vector          >=0.12 && <0.13,
-                       time            >=1.9.1 && <1.11,
+                       time            >=1.9.1 && <1.14,
                        quiet
 
   if os(windows)

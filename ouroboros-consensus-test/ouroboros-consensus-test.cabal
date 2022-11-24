@@ -77,10 +77,10 @@ library
                        Test.Util.Tracer
                        Test.Util.WithEq
 
-  build-depends:       base              >=4.9 && <4.15
+  build-depends:       base              >=4.9 && <4.17
                      , base16-bytestring
                      , binary
-                     , bytestring        >=0.10  && <0.11
+                     , bytestring        >=0.10  && <0.12
                      , cardano-crypto-class
                      , cardano-prelude
                      , cardano-slotting

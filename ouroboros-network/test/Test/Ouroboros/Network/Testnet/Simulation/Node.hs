@@ -8,6 +8,8 @@
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
 
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+
 module Test.Ouroboros.Network.Testnet.Simulation.Node
   ( SimArgs (..)
   , NodeArgs (..)

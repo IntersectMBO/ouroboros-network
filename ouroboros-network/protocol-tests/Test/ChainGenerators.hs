@@ -3,6 +3,7 @@
 {-# LANGUAGE PatternSynonyms   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 -- | Arbitrary generators for chains, headers and blocks
 --
