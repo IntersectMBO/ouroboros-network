@@ -146,44 +146,44 @@ jobs:
         cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
 
 
-    - uses: actions/cache@v3
-      name: "Cache `cabal store`"
-      with:
-        path: ${{ runner.os == 'Windows' && steps.win-setup-haskell.outputs.cabal-store || steps.lin-setup-haskell.outputs.cabal-store }}
-        key: cache-dependencies-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
-        restore-keys: cache-dependencies-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+#     - uses: actions/cache@v3
+#       name: "Cache `cabal store`"
+#       with:
+#         path: ${{ runner.os == 'Windows' && steps.win-setup-haskell.outputs.cabal-store || steps.lin-setup-haskell.outputs.cabal-store }}
+#         key: cache-dependencies-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+#         restore-keys: cache-dependencies-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
-    - uses: actions/cache@v3
-      name: "Cache `dist-newstyle`"
-      with:
-        path: |
-          dist-newstyle
-          !dist-newstyle/**/.git
-        key: cache-dist-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
-        restore-keys: cache-dist-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+#     - uses: actions/cache@v3
+#       name: "Cache `dist-newstyle`"
+#       with:
+#         path: |
+#           dist-newstyle
+#           !dist-newstyle/**/.git
+#         key: cache-dist-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
+#         restore-keys: cache-dist-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - name: Build dependencies
-      run: cabal build --only-dependencies all -j
+      run: time cabal build --only-dependencies all -j
 
     - name: Build projects [build]
-      run: cabal build all -j
+      run: time cabal build all -j
 
     # Test network packages
 
     - name: ntp-client [test]
-      run: cabal run ntp-client:test
+      run: time cabal run ntp-client:test
 
     - name: network-mux [test]
-      run: cabal run network-mux:test
+      run: time cabal run network-mux:test
 
     - name: ourobors-network-testing [test]
-      run: cabal run ouroboros-network-testing:test
+      run: time cabal run ouroboros-network-testing:test
 
     - name: ourobors-network-framework [test]
-      run: cabal run ouroboros-network-framework:test
+      run: time cabal run ouroboros-network-framework:test
 
     - name: ouroboros-network [test]
-      run: cabal run ouroboros-network:test
+      run: time cabal run ouroboros-network:test
 
     # Consensus tests take too long on GitHub's Azure machines
 
