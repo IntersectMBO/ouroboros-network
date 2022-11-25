@@ -44,6 +44,30 @@ Build logs are written to stdout and artifacts written to the current directory.
 When new versions of the packages are released, they should be included in [CHaP](https://github.com/input-output-hk/cardano-haskell-packages).
 See the CHaP README for [instructions](https://github.com/input-output-hk/cardano-haskell-packages#-from-github).
 
+## Release Branches
+
+When needed we use release branches: `release/cardano-node-*`, e.g.
+`release/cardano-node-1.35.x` (which ought to be simply named as
+`release/cardano-node-1.35`).
+
+Note that `CHaP` allows us to make releases of packages independently of each
+other (especially non breaking changes), so there might be other release
+branches, e.g.  `release/network-mux-*`.  They MUST follow the following
+naming convention: `release/${package-name}-${version}`.
+
+All commits in the release branch MUST be cherry-picked from `master`.  Each
+time one wants to add new commits from `master`, one SHOULD:
+
+* cherry-pick them to a new branch
+* create a PR which targets the right release branch
+* mention in the PR's description from which original PR(s) (to the `master`
+  branch) the commits are coming from ([example](https://github.com/input-output-hk/ouroboros-network/pull/4120))
+
+This forces the changes to go through the normal pull request review process
+& let CI validate the release patch set.
+
+Note that we never merge release branches back to `master`.
+
 ## Updating dependencies
 
 Our Haskell packages come from two package repositories:
