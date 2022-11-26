@@ -62,7 +62,7 @@ library
                      , ouroboros-consensus-shelley-test
                      , ouroboros-consensus-cardano
                      , ouroboros-consensus-protocol
-                     , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test
+                     , ouroboros-consensus-protocol-test
 
   default-language:    Haskell2010
   ghc-options:         -Wall
