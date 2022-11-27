@@ -58,6 +58,7 @@ import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux

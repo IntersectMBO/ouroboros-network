@@ -21,8 +21,9 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust)
 import           System.Random (StdGen, random)
 
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
 import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Type

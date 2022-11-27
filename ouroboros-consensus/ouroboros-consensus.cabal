@@ -136,24 +136,12 @@ library
                        Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
                        Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
                        Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server
-                       Ouroboros.Consensus.Network.NodeToClient
-                       Ouroboros.Consensus.Network.NodeToNode
-                       Ouroboros.Consensus.Node
-                       Ouroboros.Consensus.Node.DbLock
-                       Ouroboros.Consensus.Node.DbMarker
-                       Ouroboros.Consensus.Node.ErrorPolicy
-                       Ouroboros.Consensus.Node.ExitPolicy
-                       Ouroboros.Consensus.Node.RethrowPolicy
-                       Ouroboros.Consensus.Node.Exit
                        Ouroboros.Consensus.NodeId
-                       Ouroboros.Consensus.NodeKernel
                        Ouroboros.Consensus.Node.InitStorage
                        Ouroboros.Consensus.Node.NetworkProtocolVersion
                        Ouroboros.Consensus.Node.ProtocolInfo
-                       Ouroboros.Consensus.Node.Recovery
                        Ouroboros.Consensus.Node.Run
                        Ouroboros.Consensus.Node.Serialisation
-                       Ouroboros.Consensus.Node.Tracers
                        Ouroboros.Consensus.Protocol.Abstract
                        Ouroboros.Consensus.Protocol.BFT
                        Ouroboros.Consensus.Protocol.LeaderSchedule
@@ -293,7 +281,6 @@ library
                        ViewPatterns
 
   build-depends:       base              >=4.9 && <4.17
-                     , base-deriving-via
                      , base16-bytestring
                      , bimap             >=0.4   && <0.5
                      , binary            >=0.8   && <0.11
@@ -315,12 +302,10 @@ library
                      , mtl               >=2.2   && <2.3
                      , nothunks          >=0.1.2 && <0.2
                      , psqueues          >=0.2.3 && <0.3
-                     , random
                      , quiet             >=0.2   && <0.3
                      , semialign         >=1.1
                      , serialise         >=0.2   && <0.3
                      , sop-core          >=0.5   && <0.6
-                     , stm               >=2.5   && <2.6
                      , streaming
                      , cardano-strict-containers
                      , text              >=1.2   && <1.3
@@ -331,9 +316,9 @@ library
 
                      , io-classes       ^>=0.3
                      , typed-protocols
-                     , network-mux
-                     , ouroboros-network-framework ^>=0.2
-                     , ouroboros-network ^>=0.2
+                     , ouroboros-network-api
+                     , ouroboros-network-mock
+                     , ouroboros-network-protocols ^>=0.2
                      , strict-stm       ^>=0.2
 
 

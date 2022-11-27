@@ -54,7 +54,7 @@ import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.InboundGovernor
 import           Ouroboros.Network.InboundGovernor.ControlChannel
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
-import           Ouroboros.Network.Mux hiding (ControlMessage)
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket
 

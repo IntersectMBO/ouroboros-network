@@ -42,7 +42,7 @@ import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.InboundGovernor.State
-import           Ouroboros.Network.Mux hiding (ControlMessage)
+import           Ouroboros.Network.Mux
 
 
 -- | Edge triggered events to which the /inbound protocol governor/ reacts.

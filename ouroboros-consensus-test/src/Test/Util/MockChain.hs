@@ -13,7 +13,7 @@ module Test.Util.MockChain (
 import           Data.Foldable (foldl')
 import           Data.Sequence.Strict (StrictSeq (..))
 
-import           Ouroboros.Network.MockChain.Chain
+import           Ouroboros.Network.Mock.Chain
 
 import           Ouroboros.Consensus.Block
 

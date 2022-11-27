@@ -23,8 +23,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.Mux (ControlMessage, ControlMessageSTM,
-                     timeoutWithControlMessage)
+import           Ouroboros.Network.ControlMessage (ControlMessage,
+                     ControlMessageSTM, timeoutWithControlMessage)
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.TxSubmission.Mempool.Reader

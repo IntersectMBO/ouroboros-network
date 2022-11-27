@@ -43,7 +43,7 @@ import           NoThunks.Class (InspectHeap (..), NoThunks)
 import           Cardano.Binary (ToCBOR (..))
 import           Cardano.Crypto.Hash
 
-import           Ouroboros.Network.MockChain.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.Mock.Chain (Chain, toOldestFirst)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (repeatedlyM)

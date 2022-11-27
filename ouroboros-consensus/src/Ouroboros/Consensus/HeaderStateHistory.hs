@@ -40,8 +40,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain)
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 -- | Maintain a history of 'HeaderState's.
 newtype HeaderStateHistory blk = HeaderStateHistory {

@@ -17,6 +17,9 @@ module Ouroboros.Network.Protocol.Handshake.Codec
     -- ** Version data codec
   , VersionDataCodec (..)
   , cborTermVersionDataCodec
+    -- * NodeToNode & NodeToClient Codecs
+  , nodeToNodeHandshakeCodec
+  , nodeToClientHandshakeCodec
   ) where
 
 import           Control.Monad (replicateM, unless)
@@ -43,6 +46,11 @@ import           Ouroboros.Network.Driver.Limits
 
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Limits
+
+import           Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
+                     nodeToClientVersionCodec)
+import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion,
+                     nodeToNodeVersionCodec)
 
 -- | Codec for version data ('vData' in code) exchanged by the handshake
 -- protocol.
@@ -278,3 +286,19 @@ decodeRefuseReason versionNumberCodec = do
           Left e        -> fail $ "decode Refused: unknonwn version: " ++ show e
           Right vNumber -> Refused vNumber <$> CBOR.decodeString
       _ -> fail $ "decode RefuseReason: unknown tag " ++ show tag
+
+
+-- | 'Handshake' codec for the @node-to-node@ protocol suite.
+--
+nodeToNodeHandshakeCodec :: MonadST m
+                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
+                                  CBOR.DeserialiseFailure m BL.ByteString
+nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec
+
+
+-- | 'Handshake' codec for the @node-to-client@ protocol suite.
+--
+nodeToClientHandshakeCodec :: MonadST m
+                           => Codec (Handshake NodeToClientVersion CBOR.Term)
+                                    CBOR.DeserialiseFailure m BL.ByteString
+nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec

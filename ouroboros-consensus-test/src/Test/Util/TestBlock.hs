@@ -100,8 +100,8 @@ import           Test.QuickCheck hiding (Result)
 import           Cardano.Crypto.DSIGN
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

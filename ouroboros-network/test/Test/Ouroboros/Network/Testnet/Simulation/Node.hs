@@ -87,7 +87,7 @@ import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
+import           Ouroboros.Network.Mock.ConcreteBlock (Block)
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (WithName (..),
                      genDelayWithPrecision, tracerWithName)

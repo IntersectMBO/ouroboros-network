@@ -63,13 +63,14 @@ module Ouroboros.Network.NodeToNode
   , nodeToNodeCodecCBORTerm
     -- * Re-exports
   , ConnectionId (..)
+  , ControlMessage (..)
+  , ControlMessageSTM
   , RemoteAddress
   , RemoteConnectionId
   , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
   , Socket
-  , isPipeliningEnabled
     -- ** Exceptions
   , ExceptionInHandler (..)
     -- ** Error Policies and Peer state
@@ -98,7 +99,6 @@ module Ouroboros.Network.NodeToNode
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime (DiffTime)
 
@@ -112,11 +112,11 @@ import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
-import           Network.TypedProtocol.Codec.CBOR
-
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
 import           Ouroboros.Network.ConnectionManager.Types
                      (ExceptionInHandler (..))
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)
@@ -153,13 +153,6 @@ import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 type HandshakeTr ntnAddr ntnVersion =
     WithMuxBearer (ConnectionId ntnAddr)
                   (TraceSendRecv (Handshake ntnVersion CBOR.Term))
-
--- | 'Handshake' codec for the @node-to-node@ protocol suite.
---
-nodeToNodeHandshakeCodec :: MonadST m
-                         => Codec (Handshake NodeToNodeVersion CBOR.Term)
-                                  CBOR.DeserialiseFailure m BL.ByteString
-nodeToNodeHandshakeCodec = codecHandshake nodeToNodeVersionCodec
 
 
 data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {

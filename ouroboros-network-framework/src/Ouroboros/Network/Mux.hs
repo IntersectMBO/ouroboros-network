@@ -36,10 +36,6 @@ module Ouroboros.Network.Mux
   , toApplication
   , mkMuxApplicationBundle
   , mkMiniProtocolBundle
-  , ControlMessage (..)
-  , ControlMessageSTM
-  , continueForever
-  , timeoutWithControlMessage
     -- * Re-exports
     -- | from "Network.Mux"
   , MuxError (..)
@@ -49,7 +45,6 @@ module Ouroboros.Network.Mux
   ) where
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer)
 
@@ -69,59 +64,11 @@ import qualified Network.Mux.Types as Mux
 
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.ControlMessage
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
--- | Control signal sent to a mini-protocol.  expected to exit, on 'Continue' it
--- should continue its operation
---
-data ControlMessage =
-    -- | Continue operation.
-      Continue
-
-    -- | Hold on, e.g. do not sent messages until resumed.  This is not used for
-    -- any hot protocol.
-    --
-    | Quiesce
-
-    -- | The client is expected to terminate as soon as possible.
-    --
-    | Terminate
-  deriving (Eq, Show)
-
--- |  'ControlMessageSTM' should depend on `muxMode` (we only need to shedule
--- stop for intiator side).  This is not done only because this would break
--- tests, but once the old api is removed it should be possible.
---
-type ControlMessageSTM m = STM m ControlMessage
-
-continueForever :: Applicative (STM m)
-                => proxy m
-                -> ControlMessageSTM m
-continueForever _ = pure Continue
-
-
--- | First to finish synchronisation between 'Terminate' state of
--- 'ControlMessage' and an stm action.
---
--- This should return @STM m (Maybe a)@ but 'STM' is a non-injective type
--- family, and we would need to pass @Proxy m@ to fix an ambiuous type (or use
--- 'AllowAmbiguousTypes' extension).
---
-timeoutWithControlMessage :: MonadSTM m
-                          => ControlMessageSTM m
-                          -> STM m a
-                          -> m (Maybe a)
-timeoutWithControlMessage controlMessageSTM stm =
-    atomically $
-      do
-        cntrlMsg <- controlMessageSTM
-        case cntrlMsg of
-          Terminate -> return Nothing
-          Continue  -> retry
-          Quiesce   -> retry
-      `orElse` (Just <$> stm)
 
 
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw

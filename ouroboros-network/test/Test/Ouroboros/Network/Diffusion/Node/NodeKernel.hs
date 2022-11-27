@@ -55,15 +55,15 @@ import           Ouroboros.Network.AnchoredFragment (Anchor (..))
 import           Ouroboros.Network.Block (HasHeader, SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.MockChain.Chain (Chain)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import           Ouroboros.Network.MockChain.ProducerState
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Snocket (TestAddress (..))
 
-import           Ouroboros.Network.Testing.ConcreteBlock (Block)
-import qualified Ouroboros.Network.Testing.ConcreteBlock as ConcreteBlock
+import           Ouroboros.Network.Mock.Chain (Chain)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ConcreteBlock (Block)
+import qualified Ouroboros.Network.Mock.ConcreteBlock as ConcreteBlock
+import           Ouroboros.Network.Mock.ProducerState
 
 import           Simulation.Network.Snocket (AddressType (..),
                      GlobalAddressScheme (..))

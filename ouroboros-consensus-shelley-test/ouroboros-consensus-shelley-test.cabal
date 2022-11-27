@@ -55,7 +55,8 @@ library
                      , cardano-protocol-tpraos
                      , small-steps
 
-                     , ouroboros-network
+                     , ouroboros-network-api
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test
@@ -101,7 +102,7 @@ test-suite test
                      , cardano-ledger-shelley
                      , cardano-protocol-tpraos
 
-                     , ouroboros-network
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-test

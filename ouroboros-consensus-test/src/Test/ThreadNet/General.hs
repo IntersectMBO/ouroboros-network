@@ -44,7 +44,7 @@ import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 
-import qualified Ouroboros.Network.MockChain.Chain as MockChain
+import qualified Ouroboros.Network.Mock.Chain as MockChain
 
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Block.Abstract as BA

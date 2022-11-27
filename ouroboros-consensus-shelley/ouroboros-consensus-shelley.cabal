@@ -85,9 +85,11 @@ library
                      , cardano-ledger-shelley-ma
                      , small-steps
 
-                     , ouroboros-network
+                     , ouroboros-network-api
+                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol
+                     , ouroboros-consensus-diffusion
 
   default-language:    Haskell2010
   ghc-options:         -Wall

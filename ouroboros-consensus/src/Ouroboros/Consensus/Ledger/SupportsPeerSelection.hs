@@ -13,9 +13,11 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
 import           Control.DeepSeq (NFData (..))
 import           Data.List.NonEmpty (NonEmpty)
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (DomainAccessPoint (..), IP (..), PoolStake (..),
-                     PortNumber, RelayAccessPoint (..))
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (PoolStake (..))
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (DomainAccessPoint (..), IP (..), PortNumber,
+                     RelayAccessPoint (..))
 
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 

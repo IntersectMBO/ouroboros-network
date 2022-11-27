@@ -44,8 +44,9 @@ import           GHC.Generics (Generic)
 import           Network.TypedProtocol.Codec
 
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
 import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec

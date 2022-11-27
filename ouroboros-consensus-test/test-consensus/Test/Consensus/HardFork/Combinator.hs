@@ -32,7 +32,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Time (dawnOfTime)
 
-import qualified Ouroboros.Network.MockChain.Chain as Mock
+import qualified Ouroboros.Network.Mock.Chain as Mock
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime

@@ -75,11 +75,9 @@ import           Cardano.Prelude (FatalError)
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (ErrorCall, IOException)
 import           Control.Monad (forever)
-import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTimer
 
-import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Contravariant (contramap)
@@ -92,6 +90,7 @@ import           Network.Mux.Types (MuxRuntimeError (..))
 import           Network.TypedProtocol (Peer)
 import           Network.TypedProtocol.Codec
 
+import           Ouroboros.Network.ControlMessage (ControlMessage)
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)
@@ -206,12 +205,6 @@ maximumMiniProtocolLimits =
     MiniProtocolLimits {
       maximumIngressQueue = 0xffffffff
     }
-
-
-nodeToClientHandshakeCodec :: MonadST m
-                           => Codec (Handshake NodeToClientVersion CBOR.Term)
-                                    CBOR.DeserialiseFailure m BL.ByteString
-nodeToClientHandshakeCodec = codecHandshake nodeToClientVersionCodec
 
 
 -- | 'Versions' containing a single version of 'nodeToClientProtocols'.

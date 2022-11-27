@@ -56,6 +56,11 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-11-23
+
+- Added `ouroboros-consensus-diffusion`, a top level integration package of
+  `ouroboros-network` & `ouroboros-consensus`
+
 ## Circa 2022-09-30
 
 ### Fixed

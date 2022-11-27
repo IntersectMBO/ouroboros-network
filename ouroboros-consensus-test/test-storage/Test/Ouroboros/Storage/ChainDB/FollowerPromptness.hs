@@ -33,7 +33,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

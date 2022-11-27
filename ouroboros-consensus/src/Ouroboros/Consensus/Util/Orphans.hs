@@ -35,7 +35,7 @@ import           Cardano.Crypto.Hash (Hash)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
+import           Ouroboros.Network.Mock.Chain (Chain (..))
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense

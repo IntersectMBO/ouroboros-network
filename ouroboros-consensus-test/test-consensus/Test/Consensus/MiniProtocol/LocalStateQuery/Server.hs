@@ -14,8 +14,8 @@ import           Control.Monad.IOSim (runSimOrThrow)
 import           Cardano.Crypto.DSIGN.Mock
 
 import           Network.TypedProtocol.Proofs (connect)
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
 import           Ouroboros.Network.Protocol.LocalStateQuery.Examples
                      (localStateQueryClient)

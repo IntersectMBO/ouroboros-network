@@ -81,6 +81,7 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
+import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import qualified Ouroboros.Network.InboundGovernor as IG

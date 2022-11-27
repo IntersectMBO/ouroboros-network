@@ -96,8 +96,8 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
-import           Ouroboros.Network.MockChain.Chain (Chain (..))
-import qualified Ouroboros.Network.MockChain.Chain as Chain
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
 
 -- | The chain database
 --

@@ -55,9 +55,10 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block (Tip, getTipBlockNo)
-import           Ouroboros.Network.BlockFetch.ClientState
+import           Ouroboros.Network.BlockFetch.ConsensusInterface
                      (WhetherReceivingTentativeBlocks (..))
-import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (HeaderMetricsTracer)

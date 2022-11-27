@@ -66,11 +66,12 @@ import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
                      TraceLabelPeer (..))
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.MockChain.Chain (Chain (Genesis))
+import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 
-import           Ouroboros.Network.Mux (ControlMessage (..), ControlMessageSTM)
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
 import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
 import           Ouroboros.Network.Protocol.KeepAlive.Type

@@ -73,7 +73,7 @@ let
       ({ pkgs, ... }:
         lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
           # ruby/perl dependencies cannot be cross-built for cddl tests:
-          packages.ouroboros-network.flags.cddl = false;
+          packages.ouroboros-network-protocols.flags.cddl = false;
 
           # Make sure we use a buildPackages version of happy
           packages.pretty-show.components.library.build-tools =
@@ -88,10 +88,10 @@ let
       # Options for when not compiling to windows:
       ({ pkgs, ... }:
         lib.mkIf (!pkgs.stdenv.hostPlatform.isWindows) {
-          packages.ouroboros-network.flags.cddl = true;
-          packages.ouroboros-network.components.tests.cddl.build-tools =
+          packages.ouroboros-network-protocols.flags.cddl = true;
+          packages.ouroboros-network-protocols.components.tests.cddl.build-tools =
             [ pkgs.cddl pkgs.cbor-diag ];
-          packages.ouroboros-network.components.tests.cddl.preCheck =
+          packages.ouroboros-network-protocols.components.tests.cddl.preCheck =
             "export HOME=`pwd`";
         })
       # Fix for Plutus compilation with profiling

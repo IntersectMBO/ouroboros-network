@@ -34,7 +34,7 @@ import           Ouroboros.Network.Block
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Pipelined
-import           Ouroboros.Network.Mux (ControlMessageSTM)
+import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)

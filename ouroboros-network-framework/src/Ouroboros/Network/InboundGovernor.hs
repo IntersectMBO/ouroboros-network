@@ -64,7 +64,7 @@ import           Ouroboros.Network.InboundGovernor.ControlChannel
 import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.InboundGovernor.Event
 import           Ouroboros.Network.InboundGovernor.State
-import           Ouroboros.Network.Mux hiding (ControlMessage)
+import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
 
 

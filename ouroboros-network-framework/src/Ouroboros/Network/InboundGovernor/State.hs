@@ -40,7 +40,7 @@ import qualified Network.Mux as Mux
 
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Mux hiding (ControlMessage)
+import           Ouroboros.Network.Mux
 
 
 -- | Currently only 'StdGen', but in the future this will be extended to

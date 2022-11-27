@@ -43,9 +43,10 @@ import           System.Process (createPipe)
 
 import           Ouroboros.Network.Block (decodeTip, encodeTip)
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.MockChain.Chain (Chain, ChainUpdate, Point)
-import qualified Ouroboros.Network.MockChain.Chain as Chain
-import qualified Ouroboros.Network.MockChain.ProducerState as CPS
+import           Ouroboros.Network.ControlMessage (continueForever)
+import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import qualified Ouroboros.Network.Mock.ProducerState as CPS
 import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync

@@ -22,10 +22,18 @@ library
                        bytestring        >=0.10 && <0.12,
                        containers,
                        io-classes,
-                       ouroboros-consensus,
+                       ouroboros-network-api,
                        ouroboros-network,
                        ouroboros-network-framework,
+                       ouroboros-consensus-diffusion,
                        network-mux
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wunused-packages
