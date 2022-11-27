@@ -491,7 +491,7 @@ newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
       getTickedTestLedger :: LedgerState (TestBlockWith ptype)
     }
   deriving stock (Generic, Show)
-  deriving newtype (NoThunks, ToExpr)
+  deriving newtype (NoThunks, ToExpr, Eq)
 
 testInitExtLedgerWithState :: PayloadDependentState ptype -> ExtLedgerState (TestBlockWith ptype)
 testInitExtLedgerWithState st = ExtLedgerState {
