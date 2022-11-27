@@ -47,7 +47,8 @@ import           Test.StateMachine (Reference, StateMachine (StateMachine),
 import           Test.StateMachine.ConstructorName
                      (CommandNames (cmdName, cmdNames))
 import           Test.StateMachine.Labelling (Event, eventResp)
-import           Test.StateMachine.Logic (Logic (Top), (.==))
+import           Test.StateMachine.Logic
+                     (Logic (Boolean, Not, Top, (:&&), (:=>)), (.==))
 import           Test.StateMachine.Sequential (checkCommandNames,
                      forAllCommands, prettyCommands, runCommands)
 import           Test.StateMachine.Types (GenSym, Reason (Ok), Symbolic,
@@ -75,6 +76,7 @@ import           Ouroboros.Consensus.Util.IOLike (newTVarIO, readTVar,
 
 -- SUT
 import           Data.Maybe (fromMaybe)
+import qualified Data.Set as Set
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl
@@ -130,7 +132,7 @@ initModel params = Model {
       NotOrigin s -> succ s
 
 {-------------------------------------------------------------------------------
-  Commands
+  Commands and responses
 -------------------------------------------------------------------------------}
 
 -- We call the commands or actions of the state machine "events": this captures
@@ -144,6 +146,8 @@ data Cmd blk (r :: Type -> Type) =
     | SetLedgerState (LedgerState blk)
     -- ^ Set the ledger state returned by the ledger interface mock to the given
     -- state.
+    | GetSnapshot
+    -- ^ Get a snapshot of the current memopool state
   deriving stock (Generic1)
   deriving anyclass (Rank2.Functor, Rank2.Foldable, Rank2.Traversable, CommandNames)
 
@@ -151,13 +155,23 @@ deriving stock instance (Show (GenTx blk), Show (LedgerState blk)) => Show (Cmd 
 
 -- | Successful command responses
 data SuccessfulResponse blk (ref :: Type -> Type) =
-      TryAddTxsResult{
+      TryAddTxsResult {
         valid       :: ![GenTx blk]
       , invalid     :: ![GenTx blk]
       , unprocessed :: ![GenTx blk]
+        -- | We need the new ticked state to avoid re-calculating transaction
+        -- application in the model 'transition' function.
       , newTickedSt :: !(TickedLedgerState blk)
       }
     | RespOk
+    | Snap {
+        -- | Transactions that have been sucessfully validated
+        --
+        -- TODO: do we need to include the ticket logic here?
+        snapTxs         :: ![GenTx blk]
+        -- | State of the mempool after applying all the transactions in 'snapTxs'
+      , snapLedgerState :: !(TickedLedgerState blk)
+    }
   deriving stock Generic1
   deriving anyclass Rank2.Foldable
 
@@ -187,8 +201,9 @@ generator ::
      (QC.Arbitrary (GenTx blk), QC.Arbitrary (LedgerState blk))
   => Model blk Symbolic -> Maybe (Gen (Cmd blk Symbolic))
 generator (Model {}      ) = Just
-                          $ QC.frequency [ (100, fmap TryAddTxs QC.arbitrary)
-                                         , (10,  genLedgerState)
+                          $ QC.frequency [ (60, fmap TryAddTxs QC.arbitrary)
+                                         , (30, pure GetSnapshot)
+                                         , (5,  genLedgerState)
                                            -- TODO: if the model is bootstrapped with an "empty"
                                            -- ledger state we will generate a lot of transactions
                                            -- that will simply be rejected. Maybe we can force
@@ -204,6 +219,7 @@ shrinker ::
   => Model blk Symbolic -> Cmd blk Symbolic -> [Cmd blk Symbolic]
 shrinker _model (TryAddTxs txs)     = fmap TryAddTxs      $ QC.shrink txs
 shrinker _model (SetLedgerState st) = fmap SetLedgerState $ QC.shrink st
+shrinker _model GetSnapshot         = []
 
 {-------------------------------------------------------------------------------
   State machine
@@ -234,19 +250,43 @@ semantics mempoolWithMockedLedgerItf (TryAddTxs txs) = do
               , newTickedSt = newTickedSt
               }
   where
-    getTx (MempoolTxAdded vtx) = txForgetValidated vtx
+    getTx (MempoolTxAdded vtx)     = txForgetValidated vtx
+    getTx (MempoolTxRejected tx _) = tx
 semantics mempoolWithMockedLedgerItf (SetLedgerState newSt) = do
   setLedgerState mempoolWithMockedLedgerItf newSt
   pure $ Response RespOk
+semantics mempoolWithMockedLedgerItf GetSnapshot = do
+  -- TODO: Maybe mempoolWithMockedLedgerItf should implement the mempool API
+  snap <- atomically $ getSnapshot $ getMempool mempoolWithMockedLedgerItf
+  pure $ Response $ Snap {
+      snapTxs         = fmap (txForgetValidated . fst) $ snapshotTxs snap
+    , snapLedgerState = snapshotLedgerState snap
+    }
 
 precondition :: Model blk Symbolic -> Cmd blk Symbolic -> Logic
 precondition _model _event = Top
 
-postcondition ::
-     Model    blk Concrete
+postcondition :: forall blk.
+     ( Ord (GenTx blk)
+     , Eq (TickedLedgerState blk)
+     , Show (GenTx blk)
+     , Show (LedgerState blk)
+     , Show (TickedLedgerState blk)
+     )
+  => Model    blk Concrete
   -> Cmd      blk Concrete
   -> Response blk  Concrete
   -> Logic
+postcondition model
+              cmd@(TryAddTxs {})
+              rsp@(Response TryAddTxsResult {valid, invalid}) = Top
+  -- TODO: is this correct? We could assert that the first invalid transaction
+  -- is indeed invalid, however this can also be tested in pure property tests.
+postcondition model GetSnapshot (Response Snap { snapTxs, snapLedgerState }) =
+      (intermediateLedgerState model .== snapLedgerState)
+  :&& (validatedTransactions   model .== snapTxs)
+  -- :&& ([] .== snapTxs)
+  -- :&& (validatedTransactions   model .== [])
 postcondition _model _cmd _response = Top
 
 mock :: forall blk.
@@ -277,7 +317,11 @@ mock Model {modelConfig, intermediateLedgerState} (TryAddTxs txs) =
       case mockApplyTx modelConfig st tx of
         Valid st'   -> go st' tys (tx:val) inv      unp
         Invalid st' -> go st' tys val      (tx:inv) unp
-mock _ (SetLedgerState _) = pure $! Response RespOk
+mock _model (SetLedgerState _) = pure $! Response RespOk
+mock model  GetSnapshot        = pure $! Response $! Snap {
+      snapTxs         = validatedTransactions model
+    , snapLedgerState = intermediateLedgerState model
+  }
 
 data TxApplyResult st = Valid st | Invalid st
 
@@ -310,6 +354,7 @@ transition model (TryAddTxs _) (Response TryAddTxsResult {valid, newTickedSt}) =
 transition model (SetLedgerState newSt) (Response RespOk) =
   -- TODO
   model { currentLedgerDBState = newSt }
+transition model GetSnapshot _ = model
 transition _ cmd resp = error $  "Unexpected command response combination."
                               <> " Command: " <> show cmd
                               <> " Response: " <> show resp -- TODO: using pretty printing
@@ -319,6 +364,8 @@ transition _ cmd resp = error $  "Unexpected command response combination."
 stateMachineWithoutSUT ::
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
+     , Ord (GenTx blk)
+     , Eq (TickedLedgerState blk)
      , Show (TickedLedgerState blk)
      , LedgerSupportsMempool blk
      , BasicEnvelopeValidation blk)
@@ -331,7 +378,9 @@ stateMachineWithoutSUT initialParams = stateMachine initialParams err
 stateMachine ::
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
+     , Ord (GenTx blk)
      , Show (TickedLedgerState blk)
+     , Eq (TickedLedgerState blk)
      , LedgerSupportsMempool blk
      , BasicEnvelopeValidation blk)
   => InitialMempoolAndModelParams blk
@@ -359,6 +408,8 @@ prop_sequential :: forall blk idx.
      , ToExpr (TickedLedgerState blk)
      , ToExpr (LedgerConfig blk)
      , ToExpr (GenTx blk)
+     , Ord (GenTx blk)
+     , Eq (TickedLedgerState blk)
      , Show (TickedLedgerState blk)
      , Show (LedgerConfig blk)
      , LedgerSupportsMempool blk
@@ -403,7 +454,9 @@ instance ( QC.Arbitrary (LedgerState blk)
 showMempoolTestScenarios :: forall blk.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
---      , Show (LedgerState blk)
+     , Ord (GenTx blk)
+     , Eq (TickedLedgerState blk)
+     , Show (LedgerState blk)
      , Show (LedgerConfig blk)
      , Show (TickedLedgerState blk)
      , LedgerSupportsMempool blk
@@ -447,8 +500,10 @@ data Tag = AcceptedTransactions | RejectedTransactions
 tagTransactions :: forall blk tag.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
+     , Ord (GenTx blk)
      , Show tag
      , Show (LedgerConfig blk)
+     , Eq (TickedLedgerState blk)
      , Show (TickedLedgerState blk)
      , LedgerSupportsMempool blk
      , BasicEnvelopeValidation blk

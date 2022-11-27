@@ -25,7 +25,8 @@ module Test.Consensus.Mempool.StateMachine.TestBlock (
   , sampleMempoolAndModelParams
   , tests
     -- * Test transaction
-  , Tx (produced, consumed)
+  , GenTx (TestBlockGenTx)
+  , Tx (Tx, produced, consumed)
     -- * Labelling
   , tagConsumedTx
   ) where
@@ -111,7 +112,7 @@ type TestBlock = TestBlockWith Tx
 
 newtype instance GenTx TestBlock = TestBlockGenTx Tx
   deriving stock (Generic)
-  deriving newtype (Show, Arbitrary, Ord, Eq, NoThunks)
+  deriving newtype (Show, Arbitrary, NoThunks, Eq, Ord)
 
 -- For the mempool tests it is not imporant that we calculate the actual size of the transaction in bytes
 txSize :: GenTx TestBlock -> TxSizeInBytes
@@ -223,7 +224,7 @@ instance LedgerSupportsMempool TestBlock where
 
   -- We tweaked this in such a way that we test the case in which we exceed the
   -- maximum mempool capacity. The value used here depends on 'txInBlockSize'.
-  txsMaxBytes _ = 10
+  txsMaxBytes _ = 0
 
   txInBlockSize = txSize
 
