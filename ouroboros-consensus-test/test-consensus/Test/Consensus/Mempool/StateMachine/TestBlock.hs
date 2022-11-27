@@ -116,7 +116,7 @@ newtype instance GenTx TestBlock = TestBlockGenTx Tx
 
 -- For the mempool tests it is not imporant that we calculate the actual size of the transaction in bytes
 txSize :: GenTx TestBlock -> TxSizeInBytes
-txSize (TestBlockGenTx tx) = fromIntegral $ length (consumed tx) + length (produced tx)
+txSize (TestBlockGenTx tx) = fromIntegral $ 1 + length (consumed tx) + length (produced tx)
 
 data Tx = Tx
   { consumed :: Set Token
@@ -224,7 +224,7 @@ instance LedgerSupportsMempool TestBlock where
 
   -- We tweaked this in such a way that we test the case in which we exceed the
   -- maximum mempool capacity. The value used here depends on 'txInBlockSize'.
-  txsMaxBytes _ = 0
+  txsMaxBytes _ = 10
 
   txInBlockSize = txSize
 

@@ -35,9 +35,12 @@ import           Control.Tracer (Tracer)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Kind (Type)
 import           Data.List (partition)
+import           Data.Monoid (Sum (Sum, getSum))
 import           Data.TreeDiff.Class (ToExpr)
 import           GHC.Generics (Generic, Generic1)
 import           NoThunks.Class (NoThunks)
+
+import qualified Debug.Trace as Debug
 
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Gen (Gen)
@@ -96,6 +99,9 @@ data Model blk (r :: Type -> Type) = Model {
     , intermediateLedgerState :: !(TickedLedgerState blk)
     , modelConfig             :: !(LedgerConfig blk)
     , validatedTransactions   :: ![GenTx blk]
+      -- | We use an integer for the maximum capacity because we want to detect
+      -- if the SUT ever exceeds it.
+    , remainingCapacity       :: !Int
     }
   deriving stock (Generic)
 
@@ -113,15 +119,17 @@ deriving stock instance ( Show (LedgerState blk)
 initModel :: forall blk r.
      ( UpdateLedger blk
      , BasicEnvelopeValidation blk
+     , LedgerSupportsMempool blk -- We need this to calculate the mempool's remainig capacity
      )
   => InitialMempoolAndModelParams blk
   -> Model blk r
 initModel params = Model {
        currentLedgerDBState    = initialState
      , forgingFor              = initialStateSlot
-     , intermediateLedgerState = applyChainTick cfg initialStateSlot initialState
+     , intermediateLedgerState = initialIntermediateLedgerState
      , modelConfig             = cfg
      , validatedTransactions   = []
+     , remainingCapacity       = fromIntegral $ 2 * txsMaxBytes initialIntermediateLedgerState
      }
   where
     initialState = immpInitialState params
@@ -130,6 +138,7 @@ initModel params = Model {
     initialStateSlot = case ledgerTipSlot initialState of
       Origin      -> minimumPossibleSlotNo (Proxy @blk)
       NotOrigin s -> succ s
+    initialIntermediateLedgerState = applyChainTick cfg initialStateSlot initialState
 
 {-------------------------------------------------------------------------------
   Commands and responses
@@ -267,7 +276,8 @@ precondition :: Model blk Symbolic -> Cmd blk Symbolic -> Logic
 precondition _model _event = Top
 
 postcondition :: forall blk.
-     ( Ord (GenTx blk)
+     ( LedgerSupportsMempool blk
+     , Ord (GenTx blk)
      , Eq (TickedLedgerState blk)
      , Show (GenTx blk)
      , Show (LedgerState blk)
@@ -277,11 +287,10 @@ postcondition :: forall blk.
   -> Cmd      blk Concrete
   -> Response blk  Concrete
   -> Logic
-postcondition model
+postcondition Model {remainingCapacity}
               cmd@(TryAddTxs {})
-              rsp@(Response TryAddTxsResult {valid, invalid}) = Top
-  -- TODO: is this correct? We could assert that the first invalid transaction
-  -- is indeed invalid, however this can also be tested in pure property tests.
+              rsp@(Response TryAddTxsResult {valid}) =
+      Boolean $ 0 <= remainingCapacity - txsSize valid
 postcondition model GetSnapshot (Response Snap { snapTxs, snapLedgerState }) =
       (intermediateLedgerState model .== snapLedgerState)
   :&& (validatedTransactions   model .== snapTxs)
@@ -297,6 +306,8 @@ mock :: forall blk.
 -- Here we should use the LedgerSupports mempool instace for blk. Why? Because
 -- we want to compare the model against the SUT using __the same impl__
 mock Model {modelConfig, intermediateLedgerState} (TryAddTxs txs) =
+  -- TODO: maybe we should take the mempool capacity into account. If we use
+  -- this only to generate commands then this might not be necessary.
   pure $! Response
        $! go intermediateLedgerState txs [] [] []
   where
@@ -346,10 +357,12 @@ transition ::
   ( Show (GenTx blk)
   , Show (LedgerState blk)
   , Show (TickedLedgerState blk)
+  , LedgerSupportsMempool blk
   ) => Model blk r -> Cmd blk r -> (Response blk) r -> Model blk r
 transition model (TryAddTxs _) (Response TryAddTxsResult {valid, newTickedSt}) =
   model { intermediateLedgerState = newTickedSt
-        , validatedTransactions = validatedTransactions model <> valid
+        , validatedTransactions   = validatedTransactions model <> valid
+        , remainingCapacity       = remainingCapacity model - txsSize valid
         }
 transition model (SetLedgerState newSt) (Response RespOk) =
   -- TODO
@@ -358,6 +371,9 @@ transition model GetSnapshot _ = model
 transition _ cmd resp = error $  "Unexpected command response combination."
                               <> " Command: " <> show cmd
                               <> " Response: " <> show resp -- TODO: using pretty printing
+
+txsSize:: LedgerSupportsMempool blk => [GenTx blk] -> Int
+txsSize = fromIntegral . getSum . foldMap (Sum . txInBlockSize)
 
 -- | State machine for which we do not have a mempool, and therefore we cannot
 -- use the SUT.
