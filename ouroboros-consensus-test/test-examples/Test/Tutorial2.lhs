@@ -46,14 +46,15 @@ Setup
 
 As before, we require a few language extensions:
 
+> {-# OPTIONS_GHC -Wno-unused-top-binds   #-}
 > {-# LANGUAGE TypeFamilies               #-}
 > {-# LANGUAGE DerivingVia                #-}
 > {-# LANGUAGE DataKinds                  #-}
 > {-# LANGUAGE DeriveGeneric              #-}
 > {-# LANGUAGE FlexibleInstances          #-}
-> {-# LANGUAGE DeriveAnyClass             #-}
 > {-# LANGUAGE MultiParamTypeClasses      #-}
 > {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+> {-# LANGUAGE DeriveAnyClass #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
 
 > module Test.Tutorial2() where
@@ -338,7 +339,8 @@ is still very simple:
 >   TickedLedgerStateD {
 >     unTickedLedgerStateD :: LedgerState BlockD
 >   }
->   deriving (Show, Eq, Generic, Serialise, NoThunks)
+>   deriving stock (Show, Eq, Generic)
+>   deriving newtype (NoThunks, Serialise)
 
 Because the ledger now needs to track the snapshots in `lsbd_snapshot1`
 and `lsbd_snapshot2` we
@@ -483,12 +485,14 @@ for `PrtclD` will simply be the snapshot (though we could have
 just as easily used a `Bool` representing the parity):
 
 > newtype LedgerViewD = LVD Word64
->   deriving (Show, Eq, Generic, Serialise, NoThunks)
+>   deriving stock (Show, Eq, Generic)
+>   deriving newtype (Serialise, NoThunks)
 
 We also define a trivial `Ticked LedgerViewD` instance:
 
 > newtype instance Ticked LedgerViewD = TickedLedgerViewD LedgerViewD
->   deriving (Show, Eq, Generic, Serialise, NoThunks)
+>   deriving stock (Show, Eq, Generic)
+>   deriving newtype (Serialise, NoThunks)
 
 The parity of the epoch snapshot and the slot are together _sufficient_
 to determine the leadership schedule.  As such, we do not need
