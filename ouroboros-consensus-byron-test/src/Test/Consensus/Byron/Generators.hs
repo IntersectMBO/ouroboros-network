@@ -36,6 +36,8 @@ import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
 
+import           Ouroboros.Network.SizeInBytes
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation (AnnTip (..))
@@ -110,7 +112,7 @@ instance Arbitrary (Header ByronBlock) where
     where
       genHeader :: Gen (Header ByronBlock)
       genHeader = do
-        blockSize <- arbitrary
+        blockSize <- SizeInBytes <$> arbitrary
         flip (mkByronHeader epochSlots) blockSize . ABOBBlockHdr .
           API.reAnnotateUsing
             (CC.Block.toCBORHeader epochSlots)
@@ -119,7 +121,7 @@ instance Arbitrary (Header ByronBlock) where
 
       genBoundaryHeader :: Gen (Header ByronBlock)
       genBoundaryHeader = do
-        blockSize <- arbitrary
+        blockSize <- SizeInBytes <$> arbitrary
         flip (mkByronHeader epochSlots) blockSize . ABOBBoundaryHdr .
           API.reAnnotateUsing
             (CC.Block.toCBORABoundaryHeader protocolMagicId)
@@ -310,7 +312,7 @@ instance Arbitrary (WithVersion ByronNodeToNodeVersion (SomeSecond (NestedCtxt H
       version <- arbitrary
       size    <- case version of
                    ByronNodeToNodeVersion1 -> return fakeByronBlockSizeHint
-                   ByronNodeToNodeVersion2 -> arbitrary
+                   ByronNodeToNodeVersion2 -> SizeInBytes <$> arbitrary
       ctxt    <- elements [
                      SomeSecond . NestedCtxt $ CtxtByronRegular  size
                    , SomeSecond . NestedCtxt $ CtxtByronBoundary size

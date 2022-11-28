@@ -25,8 +25,8 @@ import qualified Data.Set as Set
 import           Network.Mux.Trace (TraceLabelPeer (..))
 
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Network.PeerSelection.PeerMetric
+import           Ouroboros.Network.SizeInBytes
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 
@@ -77,12 +77,12 @@ instance Arbitrary Event where
                                       <*> (SlotNo . getSmall . getPositive <$> arbitrary)
                       , FetchedBlock  <$> arbitrary
                                       <*> (SlotNo . getSmall . getPositive <$> arbitrary)
-                                      <*> (arbitrary `suchThat` \sizeInBytes -> 0 < sizeInBytes && sizeInBytes <= 2_000_000)
+                                      <*> (SizeInBytes <$> (arbitrary `suchThat` \sizeInBytes -> 0 < sizeInBytes && sizeInBytes <= 2_000_000))
                       ]
     shrink  FetchedHeader {} = []
     shrink (FetchedBlock peer slotNo size) =
-      [ FetchedBlock peer slotNo size'
-      | size' <- shrink size
+      [ FetchedBlock peer slotNo (SizeInBytes size')
+      | size' <- shrink (getSizeInBytes size)
       , size' > 0
       ]
 

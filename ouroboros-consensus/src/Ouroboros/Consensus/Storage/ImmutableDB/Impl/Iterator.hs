@@ -28,6 +28,8 @@ import           Cardano.Prelude (forceElemsToWHNF)
 
 import           GHC.Stack (HasCallStack)
 
+import           Ouroboros.Network.SizeInBytes
+
 import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
@@ -654,7 +656,7 @@ extractBlockComponent hasFS chunkInfo chunk ccfg checkIntegrity eHnd
     readNestedCtxt = do
         bytes <- Short.toShort . Lazy.toStrict <$>
                    hGetExactlyAt hasFS eHnd size offset
-        return $ reconstructNestedCtxt p bytes blockSize
+        return $ reconstructNestedCtxt p bytes (SizeInBytes blockSize)
       where
         p :: Proxy (Header blk)
         p = Proxy
