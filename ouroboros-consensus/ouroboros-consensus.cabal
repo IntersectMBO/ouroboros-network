@@ -340,3 +340,30 @@ library
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
     cpp-options:       -DENABLE_ASSERTIONS
+
+
+test-suite src-docs
+  hs-source-dirs:      src-docs
+  main-is:             Main.hs
+  other-modules:       Test.Tutorial
+                     , Test.Tutorial2
+
+  build-depends:       base
+                     , containers
+                     , hashable
+                     , mtl
+                     , nothunks
+                     , serialise
+                     , ouroboros-consensus
+                     , ouroboros-network
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -fno-ignore-asserts
