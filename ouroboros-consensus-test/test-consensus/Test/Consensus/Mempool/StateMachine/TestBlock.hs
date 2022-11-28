@@ -70,7 +70,8 @@ import           Test.Util.Orphans.Arbitrary ()
 
 import           Test.Consensus.Mempool.StateMachine
                      (InitialMempoolAndModelParams (MempoolAndModelParams, immpInitialState, immpLedgerConfig),
-                     openMempoolWithMockedLedgerItf, prop_sequential)
+                     openMempoolWithMockedLedgerItf, prop_parallel,
+                     prop_sequential)
 
 import           Test.Util.TestBlock (LedgerState (TestLedger),
                      PayloadSemantics (PayloadDependentError, PayloadDependentState, applyPayload),
@@ -85,6 +86,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 tests :: TestTree
 tests = testGroup "Mempool State Machine" [
       testProperty "Sequential" (prop_sequential mOpenMempool)
+    , testProperty "Parallel"   (prop_parallel mOpenMempool)
     ]
   where
     mOpenMempool =

@@ -19,6 +19,7 @@
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 module Test.Consensus.Mempool.StateMachine (
     openMempoolWithMockedLedgerItf
+  , prop_parallel
   , prop_sequential
   , stateMachine
     -- * Model and SUT parameters
@@ -46,12 +47,15 @@ import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Gen (Gen)
 import qualified Test.QuickCheck.Monadic as QCM
 import           Test.StateMachine (Reference, StateMachine (StateMachine),
+                     runParallelCommands, runParallelCommandsNTimes,
                      showLabelledExamples)
 import           Test.StateMachine.ConstructorName
                      (CommandNames (cmdName, cmdNames))
 import           Test.StateMachine.Labelling (Event, eventResp)
 import           Test.StateMachine.Logic
                      (Logic (Boolean, Not, Top, (:&&), (:=>)), (.==))
+import           Test.StateMachine.Parallel (forAllParallelCommands,
+                     prettyParallelCommands, runParallelCommands)
 import           Test.StateMachine.Sequential (checkCommandNames,
                      forAllCommands, prettyCommands, runCommands)
 import           Test.StateMachine.Types (GenSym, Reason (Ok), Symbolic,
@@ -464,11 +468,12 @@ stateMachine initialParams mempool = StateMachine
   , SMT.semantics     = semantics mempool
   , SMT.mock          = mock
   , SMT.invariant     = Nothing
-  , SMT.cleanup       = noCleanup
+  , SMT.cleanup       = \_m -> setLedgerState mempool (immpInitialState initialParams)
+                      -- FIXME we should investigate if a cleanup action is
+                      -- necessary, and if so write a proper cleanup action that
+                      -- initializes the whole mempool.
   }
 
--- To run the property we require both a mempool, and a @TVar@ that can be used
--- to modifi
 prop_sequential :: forall blk idx.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
@@ -495,6 +500,32 @@ prop_sequential mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 
         prettyCommands modelWithSUT hist -- TODO: check if we need the mempool in 'prettyCommands'
           $ checkCommandNames cmds
           $ res QC.=== Ok
+
+prop_parallel :: forall blk idx.
+     ( QC.Arbitrary (GenTx blk)
+     , QC.Arbitrary (LedgerState blk)
+     , ToExpr (LedgerState blk)
+     , ToExpr (TickedLedgerState blk)
+     , ToExpr (LedgerConfig blk)
+     , ToExpr (GenTx blk)
+     , Ord (GenTx blk)
+     , Eq (TickedLedgerState blk)
+     , Show (TickedLedgerState blk)
+     , Show (LedgerConfig blk)
+     , LedgerSupportsMempool blk
+     , BasicEnvelopeValidation blk
+     , StandardHash (LedgerState blk)
+     )
+  => (InitialMempoolAndModelParams blk ->  IO (MempoolWithMockedLedgerItf IO blk idx))
+  -> InitialMempoolAndModelParams blk
+  -> QC.Property
+prop_parallel mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 1000 $ do
+  forAllParallelCommands (stateMachineWithoutSUT initialParams) Nothing $ \cmds -> QCM.monadicIO $ do
+        mempool <- QCM.run $ mempoolWithMockedLedgerItfAct initialParams
+        let modelWithSUT = stateMachine initialParams mempool
+        -- (hist, _model, res) <- runParallelCommands  modelWithSUT cmds
+        res <- runParallelCommandsNTimes 1 modelWithSUT cmds
+        prettyParallelCommands cmds res -- TODO: check if we need the mempool in 'prettyCommands'
 
 -- Parameters common to the constructor functions for mempool and model
 data InitialMempoolAndModelParams blk = MempoolAndModelParams {
