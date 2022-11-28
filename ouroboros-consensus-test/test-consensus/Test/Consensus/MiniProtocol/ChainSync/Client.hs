@@ -499,9 +499,9 @@ computeHeaderStateHistory cfg =
 data ChainSyncClientSetup = ChainSyncClientSetup
   { securityParam :: SecurityParam
   , clientUpdates :: ClientUpdates
-    -- ^ Depends on 'securityParam' and 'clientUpdates'
+    -- ^ Depends on 'securityParam' and 'serverUpdates'
   , serverUpdates :: ServerUpdates
-    -- ^ Depends on 'securityParam' and 'clientUpdates'
+    -- ^ Depends on 'securityParam'.
   , startTick     :: Tick
     -- ^ Depends on 'clientUpdates' and 'serverUpdates'
   , invalidBlocks :: InvalidBlocks
