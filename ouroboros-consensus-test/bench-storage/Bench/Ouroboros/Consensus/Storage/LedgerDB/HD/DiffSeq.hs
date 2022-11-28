@@ -553,6 +553,20 @@ newtype Value = Value ShortByteString
   deriving newtype NFData
 
 -- | UTxO keys are expected to be 32 byte cryptographic hashes.
+--
+-- == Note [Use of arbitraryBoundedIntegral]
+--
+-- We try to simulate a consensus workload as best as possible. In this case, we
+-- are simulating operations on a sequence of UTxO (i.e., key-value pairs)
+-- differences. UTxO keys are 32-byte cryptographic hashes, where each hash is
+-- equally likely to occur, and so if we generate random UTxO-like keys, we
+-- should ensure that we pick the keys uniformly random from the whole range of
+-- possible 32-byte keys. Previously, we were using
+-- @'arbitrarySizedBoundedIntegral'@ to generate the keys: though this picks
+-- from the full range of 32-byte keys, it does not pick from a uniform
+-- distribution because smaller keys are more likely to be picked.
+-- @'arbitraryBoundedIntegral'@ does pick from a uniform distribution, so we use
+-- that here.
 instance Arbitrary Key where
   arbitrary = Key . B.pack <$> replicateM 32 arbitraryBoundedIntegral
 
