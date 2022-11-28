@@ -342,9 +342,8 @@ library
     cpp-options:       -DENABLE_ASSERTIONS
 
 
-test-suite src-docs
+library src-docs
   hs-source-dirs:      src-docs
-  main-is:             Main.hs
   other-modules:       Test.Tutorial
                      , Test.Tutorial2
 
