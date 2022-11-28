@@ -3,8 +3,8 @@
 Generating Documentation From This File
 =======================================
 
-This file is written in a `markdown+lhs` style understood by `pandoc`.
-To generate a document from this file - it is as simple as:
+This file is written in a `markdown+lhs` style understood by `pandoc`.  To
+generate a document from this file - it is as simple as:
 
 ```
  pandoc -s -f markdown+lhs Tutorial.lhs -o <output file>
@@ -16,12 +16,13 @@ Which will work for many of the the output types supported by `pandoc`.
 Introduction and Motivation
 ===========================
 
-This example is a compilable Literate Haskell (`.lhs`) file that
-instantiates the `ConsensusProtocol` typeclass to serve as an
-example of some of the high-level concepts in `ouroboros-consensus`
+This example is a compilable Literate Haskell (`.lhs`) file that instantiates
+the `ConsensusProtocol` typeclass to serve as an example of some of the
+high-level concepts in `ouroboros-consensus`
 
 This example uses several extensions:
 
+> {-# OPTIONS_GHC -Wno-unused-top-binds   #-}
 > {-# LANGUAGE TypeFamilies               #-}
 > {-# LANGUAGE DerivingVia                #-}
 > {-# LANGUAGE DataKinds                  #-}
@@ -31,7 +32,7 @@ This example uses several extensions:
 > {-# LANGUAGE MultiParamTypeClasses      #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
 
-> module Test.Tutorial() where
+> module Test.Tutorial () where
 
 First, some imports we'll need:
 
@@ -46,7 +47,7 @@ First, some imports we'll need:
 >   (blockNo, blockPoint, castHeaderFields, castPoint, BlockNo, SlotNo,
 >    BlockConfig, BlockProtocol, CodecConfig, GetHeader(..), GetPrevHash(..),
 >    Header, StorageConfig, ChainHash, HasHeader(..), HeaderFields(..),
->    HeaderHash,Point, StandardHash)
+>    HeaderHash, Point, StandardHash)
 > import Ouroboros.Consensus.Protocol.Abstract
 >   (SecurityParam(..), ConsensusConfig, ConsensusProtocol(..) )
 > import Ouroboros.Consensus.Ticked ( Ticked(TickedTrivial) )
@@ -67,58 +68,59 @@ Conceptual Overview and Definitions of Key Terms
 
 The object of interest to consensus is the **blockchain**.
 
-Within the context of this discussion a blockchain is linked-list-style
-chain of **blocks**, but its behavior is also subject to an integer-valued
-logical clock whose value is known as a **slot**.  The event that
-increments this clock is called a **tick**.
+Within the context of this discussion a blockchain is linked-list-style chain
+of **blocks**, but its behavior is also subject to an integer-valued logical
+clock whose value is known as a **slot**.  The event that increments this clock
+is called a **tick**.
 
-Each block is associated single slot, though not every slot is associated with a block.
-No two blocks have the same slot.  With that in mind, another way to consider the structure
-of a chain is to think of it as as a list of blocks each of which is separated by one or
-more ticks.
+Each block is associated with a single slot, though not every slot is
+associated with a block.  No two blocks have the same slot.  With that in mind,
+another way to consider the structure of a chain is to think of it as as a list
+of blocks each of which is separated by one or more ticks.
 
 We can then think of folding over this blockchain structure to compute some
-value that summarizes the entire history of the chain (blocks and ticks) in some way.
-This same value might also be used to determine if a subsequent block is valid.
-Computing this value is the responsibility of the **ledger** and the **ledger state**
-is the computed value.
+value that summarizes the entire history of the chain (blocks and ticks) in
+some way.  This same value might also be used to determine if a subsequent
+block is valid.  Computing this value is the responsibility of the **ledger**
+and the **ledger state** is the computed value.
 
 `ouroborus-consensus` combines features of much of this infrastructure taking
 (possibly simplified) views of blocks and the ledger and using them to decide
-between different proposed chains to implement eventual consistency across
-the nodes.
+between different proposed chains to implement eventual consistency across the
+nodes.
 
 The `Ticked` Family - Modeling the Passage of Time
 --------------------------------------------------
 
-Instances of the `Ticked` type family represents things that can evolve with respect
-to ticks - `Ticked a` is the type representing an `a` at some number of slots
-in the future.
+Instances of the `Ticked` type family represents things that can evolve with
+respect to ticks - `Ticked a` is the type representing an `a` at some number of
+slots in the future.
 
 In this tutorial none of the implementations of `Ticked` will be especially
 interesting and will more or less be isomorphic to the `Identity` functor.
-Even if this is the case, `Ticked` helps us maintain some invariants -
-such as it being important that at least one tick happens between blocks.
+Even if this is the case, `Ticked` helps us maintain some invariants - such as
+it being important that at least one tick happens between blocks.
 
 
 The `ConsensusProtocol` typeclass
 =================================
 
 The central abstraction of `ouroborus-consensus` is the `ConsensusProtocol`
-typeclass.  This class captures the relationship between consensus and the
-rest of the system (in particular the ledger) as a set of type families.
+typeclass.  This class captures the relationship between consensus and the rest
+of the system (in particular the ledger) as a set of type families.
 
-To demonstrate these relationships, we will begin by defining a simple
-protocol creatively named `SP`.
+To demonstrate these relationships, we will begin by defining a simple protocol
+creatively named `SP`.
 
-First, we define the type of the protocol itself.  This is a type-level "tag", this does not exist
-at the value level.
+First, we define the type of the protocol itself.  This is a type-level "tag",
+this does not exist at the value level.
 
 > data SP
 
 The static configuration for `SP` is defined by defining an instance for the
-`ConsensusConfig` type family.  Some of the methods in `ConsensusProtocol` class such as
-`checkIsLeader` require an associated `ConsensusConfig p` so we define a simple one here:
+`ConsensusConfig` type family.  Some of the methods in `ConsensusProtocol`
+class such as `checkIsLeader` require an associated `ConsensusConfig p` so we
+define a simple one here:
 
 > data instance ConsensusConfig SP =
 >   SP_Config  { cfgsp_slotsLedByMe :: Set SlotNo
@@ -165,12 +167,12 @@ Chain Selection: `SelectView`
 -----------------------------
 
 One of the major decisions when implementing a consensus protocol is encoding a
-policy for chain selection.  The `SelectView SP` type represents the information
-necessary from a block header to help make this decision.
+policy for chain selection.  The `SelectView SP` type represents the
+information necessary from a block header to help make this decision.
 
-The other half of this - which explains how a `SelectView` is derived from
-a particular block - is expressed by the block's implementation of the
- `BlockSupportsProtocol` typeclass.
+The other half of this - which explains how a `SelectView` is derived from a
+particular block - is expressed by the block's implementation of the
+`BlockSupportsProtocol` typeclass.
 
 The `preferCandidate` function in `Ouroboros.Consensus.Protocol.Abstract`
 demonstrates how this is used.
@@ -178,18 +180,18 @@ demonstrates how this is used.
 Note that instantiations of `ConsensusProtocol` for some protocol `p`
 consequently requires `Ord (SelectView p)`.
 
-For `SP` we will use only `BlockNo` - to implement the simplest
-rule of preferring longer chains to shorter chains.
+For `SP` we will use only `BlockNo` - to implement the simplest rule of
+preferring longer chains to shorter chains.
 
 
 Ledger Integration: `LedgerView`
 --------------------------------
 
-Some decisions that a consensus protocol needs to make will depend
-on the ledger's state, `LedgerState blk`.  The data required from the ledger
-is of type `LedgerView p` (i.e., the protocol determines what is needed).
-Similar to `SelectView` the projection of `LedgerState blk` into `LedgerView p` exists
-in a typeclass, namely `LedgerSupportsProtocol`.
+Some decisions that a consensus protocol needs to make will depend on the
+ledger's state, `LedgerState blk`.  The data required from the ledger is of
+type `LedgerView p` (i.e., the protocol determines what is needed).  Similar to
+`SelectView` the projection of `LedgerState blk` into `LedgerView p` exists in
+a typeclass, namely `LedgerSupportsProtocol`.
 
 For `SP` we do not require any information from the ledger to make
 decisions of any kind.  In the Praos protocol, the `LedgerView`
@@ -239,13 +241,14 @@ it could, that would mean there is some failure that is inevitable given
 the passage of time and if that is the case there would have been no reason
 not to throw such an error immediately.
 
-`updateChainDepState` (a better name would be "applyHeader") computes a new `ChainDepState` from a prior state and
-the needed view of the header, `ValidateView p`.  This could fail, producing a
-`ValidationErr p` instead of a `ChainDepState p`
+`updateChainDepState` (a better name would be "applyHeader") computes a new
+`ChainDepState` from a prior state and the needed view of the header,
+`ValidateView p`.  This could fail, producing a `ValidationErr p` instead of a
+`ChainDepState p`
 
-`reupdateChainDepState` is an optimization of `updateChainDepState` which
-is called when the header is known to be good (e.g., from a previous call to `updateChainDepState`)
-and the header check is unneeded.
+`reupdateChainDepState` is an optimization of `updateChainDepState` which is
+called when the header is known to be good (e.g., from a previous call to
+`updateChainDepState`) and the header check is unneeded.
 
 In the case of `SP` since the `chainDepState` is `()` these functions are
 not very interesting.  In the case of `tickChainDepState`, `TickedTrivial`
@@ -254,11 +257,13 @@ is simply the `Ticked` instance for `()`.
 Leader Selection: `IsLeader`, `CanBeLeader`, `checkIsLeader`
 ------------------------------------------------------------
 
-The type family `CanBeLeader` represents the ability for a particular node
-in the protocol to be a leader for a slot.  Put another way, a value of `CanBeLeader p` for a particular `p`
-witnesses the potential for a consensus participant to be a leader for a particular slot.
+The type family `CanBeLeader` represents the ability for a particular node in
+the protocol to be a leader for a slot.  Put another way, a value of
+`CanBeLeader p` for a particular `p` witnesses the potential for a consensus
+participant to be a leader for a particular slot.
 
-In the same way, a value `IsLeader` witnesses the fact that a particular node is a leader for a slot.
+In the same way, a value `IsLeader` witnesses the fact that a particular node
+is a leader for a slot.
 
 This notion of leadership is used to validate whether blocks are correct with
 respect to having been provably created by the leader of the slot the block
@@ -267,17 +272,18 @@ to a particular blockchain, which is why it is dealt with abstractly
 in `ConsensusProtocol`.  Generally values of `CanBeLeader p` and `IsLeader p`
 are some sort of cryptographic evidence substantiating a claim to leadership.
 
-However, since we are less concerned about security in `SP`, we will use two simple singleton types -
-nothing cryptographic is happening at all.
+However, since we are less concerned about security in `SP`, we will use two
+simple singleton types - nothing cryptographic is happening at all.
 
-The `checkIsLeader` function uses these types in its determination of whether or not a node is a leader
-for a slot - returning `Nothing` if the node is not a slot leader or `Just (IsLeader p)`
-if it is.
+The `checkIsLeader` function uses these types in its determination of whether
+or not a node is a leader for a slot - returning `Nothing` if the node is not a
+slot leader or `Just (IsLeader p)` if it is.
 
-`SP` implements leadership by specifying, in the static `ProtocolConfig` for `SP`,
-a set of slots for which the particular node running the protocol is the leader.  `checkIsLeader`
-then looks up the slot number in this set and returns `Just SP_IsLeader` (aka `IsLeader SP`) if
-the node is configured to be a leader in this slot.
+`SP` implements leadership by specifying, in the static `ProtocolConfig` for
+`SP`, a set of slots for which the particular node running the protocol is the
+leader.  `checkIsLeader` then looks up the slot number in this set and returns
+`Just SP_IsLeader` (aka `IsLeader SP`) if the node is configured to be a leader
+in this slot.
 
 
 The Security Parameter `k`: `protocolSecurityParam`
@@ -292,9 +298,10 @@ For all known/current protocols, the security parameter is fixed for each
 blockchain (a protocol could be instantiated with different k's, but it should
 be configured the same for each node in that blockchain).
 
-The `maxRollbacks` field on the `SecurityParam` record (often referred to as `k`)
-describes how many blocks can be rolled back - any number of blocks greater than
-this should be considered permanently part of the chain with respect to the protocol.
+The `maxRollbacks` field on the `SecurityParam` record (often referred to as
+`k`) describes how many blocks can be rolled back - any number of blocks
+greater than this should be considered permanently part of the chain with
+respect to the protocol.
 
 In the case of `SP` we allow 1 rollback.
 
@@ -413,8 +420,8 @@ previous block from the header - which is very simple for `Header BlockC`:
 **`HasHeader`**
 
 The `HasHeader` typeclass has the `getHeaderFields` function which projects the
-information in the header to a `HeaderFields` record containing the slot, block number, and
-block hash.
+information in the header to a `HeaderFields` record containing the slot, block
+number, and block hash.
 
 We implement this both for `Header Block`:
 
@@ -425,7 +432,8 @@ We implement this both for `Header Block`:
 >                          , headerFieldHash = hbc_Hash hdr
 >                          }
 
-As well as `BlockC` itself - which calls the `getHeaderFields` defined for `Header BlockC`:
+As well as `BlockC` itself - which calls the `getHeaderFields` defined for
+`Header BlockC`:
 
 > instance HasHeader BlockC where
 >   getHeaderFields = castHeaderFields
@@ -607,12 +615,12 @@ The interface used by the rest of the ledger infrastructure to access this
 is the `ApplyBlock` typeclass:
 
 > instance ApplyBlock (LedgerState BlockC) BlockC where
->   applyBlockLedgerResult ldgrCfg block tickedLdgrSt =
+>   applyBlockLedgerResult _ldgrCfg block tickedLdgrSt =
 >     pure $ LedgerResult { lrEvents = []
 >                         , lrResult = block `applyBlockTo` tickedLdgrSt
 >                         }
 >
->   reapplyBlockLedgerResult ldgrCfg block tickedLdgrSt =
+>   reapplyBlockLedgerResult _ldgrCfg block tickedLdgrSt =
 >     LedgerResult { lrEvents = []
 >                  , lrResult = block `applyBlockTo` tickedLdgrSt
 >                  }
