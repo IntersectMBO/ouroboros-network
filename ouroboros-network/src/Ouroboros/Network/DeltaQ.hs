@@ -15,7 +15,7 @@ module Ouroboros.Network.DeltaQ
   , deltaqProbabilityMassBeforeDeadline
     -- * GSV
   , GSV (..)
-  , SizeInBytes
+  , SizeInBytes (..)
   , ballisticGSV
   , gsvLeadingEdgeArrive
   , gsvTrailingEdgeDepart
@@ -35,7 +35,7 @@ module Ouroboros.Network.DeltaQ
 
 import           Control.Monad.Class.MonadTime (DiffTime, Time (..), diffTime)
 
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
+import           Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 
 --

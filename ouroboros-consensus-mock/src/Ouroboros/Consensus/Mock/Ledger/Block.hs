@@ -170,6 +170,7 @@ data SimpleStdHeader c ext = SimpleStdHeader {
     , simpleSlotNo   :: SlotNo
     , simpleBlockNo  :: BlockNo
     , simpleBodyHash :: Hash (SimpleHash c) SimpleBody
+      -- TODO: use SizeInBytes
     , simpleBodySize :: Word32
     }
   deriving stock    (Generic, Show, Eq)

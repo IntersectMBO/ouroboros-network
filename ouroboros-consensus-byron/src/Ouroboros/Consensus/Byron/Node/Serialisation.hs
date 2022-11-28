@@ -24,6 +24,7 @@ import qualified Cardano.Chain.Byron.API as CC
 
 import           Ouroboros.Network.Block (Serialised (..), unwrapCBORinCBOR,
                      wrapCBORinCBOR)
+import           Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -208,11 +209,11 @@ instance EncodeDiskDepIx (NestedCtxt Header) ByronBlock where
       , case ctxt of
           CtxtByronBoundary size -> mconcat [
               CBOR.encodeWord8 0
-            , CBOR.encodeWord32 size
+            , CBOR.encodeWord32 (getSizeInBytes size)
             ]
           CtxtByronRegular size -> mconcat [
               CBOR.encodeWord8 1
-            , CBOR.encodeWord32 size
+            , CBOR.encodeWord32 (getSizeInBytes size)
             ]
       ]
 
@@ -231,8 +232,8 @@ instance DecodeDiskDepIx (NestedCtxt Header) ByronBlock where
   decodeDiskDepIx _ccfg = do
       enforceSize "decodeDiskDepIx ByronBlock" 2
       CBOR.decodeWord8 >>= \case
-        0 -> SomeSecond . NestedCtxt . CtxtByronBoundary <$> CBOR.decodeWord32
-        1 -> SomeSecond . NestedCtxt . CtxtByronRegular  <$> CBOR.decodeWord32
+        0 -> SomeSecond . NestedCtxt . CtxtByronBoundary . SizeInBytes <$> CBOR.decodeWord32
+        1 -> SomeSecond . NestedCtxt . CtxtByronRegular . SizeInBytes  <$> CBOR.decodeWord32
         t -> cborError $ DecoderErrorUnknownTag "decodeDiskDepIx ByronBlock" t
 
 instance DecodeDiskDep (NestedCtxt Header) ByronBlock where

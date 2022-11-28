@@ -23,12 +23,12 @@ import           Network.Socket (SockAddr (..))
 import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo (..))
-import           Ouroboros.Network.DeltaQ (SizeInBytes)
 import           Ouroboros.Network.Diffusion.Policies
 import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.PeerSelection.Governor
 import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.PeerSelection.Types (PeerSource (..))
+import           Ouroboros.Network.SizeInBytes
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -130,7 +130,7 @@ instance Arbitrary ArbitraryPolicyArguments where
                     -> Gen (Int, SlotNo, ((SockAddr, SizeInBytes), Time))
        fetchedMetric peers slotNo = do
            peer <- elements peers
-           fetched <- choose (1, 0xffff)
+           fetched <- SizeInBytes <$> choose (1, 0xffff)
            return (slotNo, SlotNo $ fromIntegral slotNo,
                    ((peer, fetched), Time 0))
 

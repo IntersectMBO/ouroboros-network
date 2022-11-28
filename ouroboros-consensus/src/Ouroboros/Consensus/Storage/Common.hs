@@ -157,6 +157,7 @@ data BlockComponent blk a where
   GetHash          :: BlockComponent blk (HeaderHash blk)
   GetSlot          :: BlockComponent blk SlotNo
   GetIsEBB         :: BlockComponent blk IsEBB
+  -- TODO: use `SizeInBytes` rather than Word32
   GetBlockSize     :: BlockComponent blk Word32
   GetHeaderSize    :: BlockComponent blk Word16
   GetNestedCtxt    :: BlockComponent blk (SomeSecond (NestedCtxt Header) blk)
