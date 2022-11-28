@@ -95,7 +95,12 @@ data UpdateBehavior =
   | -- | Chain updates involving invalid blocks only arisable by bugs, malice or
     -- incorrect configuration.
     InvalidChainBehavior
-  deriving stock (Show, Eq, Ord, Enum, Bounded)
+  deriving stock (Show, Eq, Enum, Bounded)
+  deriving stock
+    ( -- | Note that this 'Ord' instance (and hence the order of constructors)
+      -- is semantically imporant, cf. 'genChainUpdates'.
+      Ord
+    )
 
 -- | Whether an 'UpdateBehavior' should cause a ChainSync and/or BlockFetch
 -- client to disconnect from its peer.
