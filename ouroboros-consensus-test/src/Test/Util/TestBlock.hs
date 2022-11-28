@@ -168,9 +168,11 @@ import           Test.Util.Orphans.ToExpr ()
 newtype TestHash = UnsafeTestHash {
       unTestHash :: NonEmpty Word64
     }
-  deriving stock    (Generic)
+  deriving stock    (Generic, Typeable)
   deriving newtype  (Eq, Ord, Serialise, ToExpr)
   deriving anyclass (NoThunks)
+
+instance StandardHash (LedgerState (TestBlockWith ptype))
 
 pattern TestHash :: NonEmpty Word64 -> TestHash
 pattern TestHash path <- UnsafeTestHash path where

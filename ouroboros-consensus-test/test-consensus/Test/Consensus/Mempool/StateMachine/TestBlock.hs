@@ -24,6 +24,9 @@ module Test.Consensus.Mempool.StateMachine.TestBlock (
     initialLedgerState
   , sampleMempoolAndModelParams
   , tests
+    -- * Ledger state
+  , TestLedgerState (TestLedgerState, availableTokens)
+  , Token (Token, unToken)
     -- * Test transaction
   , GenTx (TestBlockGenTx)
   , Tx (Tx, produced, consumed)
@@ -152,6 +155,7 @@ instance Arbitrary TestLedgerState where
 
 instance Arbitrary (LedgerState TestBlock) where
   arbitrary = TestLedger <$> arbitrary <*> arbitrary
+  shrink (TestLedger x y) = fmap (uncurry TestLedger) $ shrink (x, y)
 
 instance Arbitrary (Point TestBlock) where
   arbitrary = frequency [ (1, pure GenesisPoint)
