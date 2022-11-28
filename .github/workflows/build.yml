@@ -171,6 +171,9 @@ jobs:
 
     # Test network packages
 
+    - name: ntp-client [test]
+      run: cabal run ntp-client:test
+
     - name: network-mux [test]
       run: cabal run network-mux:test
 
