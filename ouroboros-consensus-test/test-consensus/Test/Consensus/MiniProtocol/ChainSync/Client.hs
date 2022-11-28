@@ -74,7 +74,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Schedule
 import qualified Test.Util.TestBlock as TestBlock
-import           Test.Util.TestBlock
+import           Test.Util.TestBlock hiding (TestBlockError (..))
 import           Test.Util.Tracer (recordingTracerTVar)
 
 {-------------------------------------------------------------------------------
@@ -119,8 +119,10 @@ prop_chainSync ChainSyncClientSetup {..} =
         counterexample ("Terminated with result: " ++ show result) False
       Just (Left ex) ->
         label "Exception" $
-        counterexample ("Exception: " ++ displayException ex)
-        (behaviorValidity serverBehavior == Invalid)
+        counterexample ("Exception: " ++ displayException ex) $
+        behaviorValidity serverBehavior == Invalid .&&. case ex of
+          InvalidBlock{} -> property ()
+          _              -> property False
       Nothing ->
         label "StillRunning" $
         counterexample "Synced fragment not a suffix of the server chain"
@@ -513,7 +515,11 @@ instance Arbitrary ChainSyncClientSetup where
     securityParam  <- SecurityParam <$> choose (2, 5)
     clientUpdates0 <- ClientUpdates <$>
       genUpdateSchedule SelectedChainBehavior securityParam
-    serverBehavior <- elements [TentativeChainBehavior, InvalidChainBehavior]
+    serverBehavior <- frequency
+      [ (1, pure SelectedChainBehavior)
+      , (3, pure TentativeChainBehavior)
+      , (3, pure InvalidChainBehavior)
+      ]
     serverUpdates  <- ServerUpdates <$>
       genUpdateSchedule serverBehavior securityParam
     let clientUpdates = removeLateClientUpdates serverUpdates clientUpdates0
@@ -626,7 +632,9 @@ genInvalidBlocks updateBehavior (ServerUpdates schedule) =
       -- If we spread the invalid block discoveries arbitrarily, we might not
       -- detect intermediate invalid behavior before a fork. Hence, we ensure
       -- that the discovery of an invalid block happens before the next
-      -- SwitchFork.
+      -- SwitchFork. This reflects that the ChainDB's ChainSel logic would
+      -- always detect the invalidity instead of making that switch in a real
+      -- node.
       Invalid -> do
         invalidBlockDiscoveries <-
           forM invalidBlocksWithTick $ \(hash, tick) -> do
