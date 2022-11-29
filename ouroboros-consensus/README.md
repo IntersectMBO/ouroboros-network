@@ -12,6 +12,10 @@ This package contains:
 * `docs`: documentation, in particular, `docs/report` contains the technical
   report about the consensus and storage layer.
 
+* `src-docs`: a collection of tutorials that are helpful for understanding the
+  abstract structure of the consensus protocol. The structure of these is
+  explained in [docs/Tutorials.md](docs/Tutorials.md).
+
 The following packages use `ouroboros-consensus` to integrate specific ledgers:
 
 * `../ouroboros-consensus-byron`: integration with the Byron ledger, including

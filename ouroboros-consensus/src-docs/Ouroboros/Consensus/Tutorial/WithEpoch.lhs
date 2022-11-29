@@ -3,20 +3,17 @@
 Introduction
 ============
 
-This tutorial builds on the example in `Tutorial.lhs` by specifying
-a block, ledger, and protocol for a blockchain that has a notion
-of epoch built into it - serving as an example of a case where
-the state of the ledger is used as part of the machinery
-of consensus.  It is highly recommended that the reader have
-read `Tutorial.lhs` before this if they are not already
-familiar with concepts such as `ConsensusProtocol` and
-`LedgerState`.
+This tutorial builds on the example in `Tutorial.lhs` by specifying a block,
+ledger, and protocol for a blockchain that has a notion of epoch built into it -
+serving as an example of a case where the state of the ledger is used as part of
+the machinery of consensus.  It is highly recommended that the reader have read
+`Tutorial.lhs` before this if they are not already familiar with concepts such
+as `ConsensusProtocol` and `LedgerState`.
 
-Much like the previous example of `BlockC` this blockchain
-(with block type `BlockD`) models a single number resulting
-from a series of _increment_ and _decrement_ transactions in
-the block bodies.  However, the slots are now divided into
-**epochs** each of which has a fixed number of slots.
+Much like the previous example of `BlockC` this blockchain (with block type
+`BlockD`) models a single number resulting from a series of _increment_ and
+_decrement_ transactions in the block bodies.  However, the slots are now
+divided into **epochs** each of which has a fixed number of slots.
 
 Further, the chain is set up such that there are 20 _nodes_
 labelled with a `NodeId` from 0 to 19 participating in the
@@ -57,7 +54,7 @@ As before, we require a few language extensions:
 > {-# LANGUAGE DeriveAnyClass #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
 
-> module Test.Tutorial2() where
+> module Ouroboros.Consensus.Tutorial.WithEpoch () where
 
 And imports, of course:
 

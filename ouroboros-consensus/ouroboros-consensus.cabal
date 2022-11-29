@@ -344,8 +344,8 @@ library
 
 library src-docs
   hs-source-dirs:      src-docs
-  other-modules:       Test.Tutorial
-                     , Test.Tutorial2
+  other-modules:       Ouroboros.Consensus.Tutorial.Simple
+                     , Ouroboros.Consensus.Tutorial.WithEpoch
 
   build-depends:       base
                      , containers

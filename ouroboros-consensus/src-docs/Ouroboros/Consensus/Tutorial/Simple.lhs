@@ -32,7 +32,7 @@ This example uses several extensions:
 > {-# LANGUAGE MultiParamTypeClasses      #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
 
-> module Test.Tutorial () where
+> module Ouroboros.Consensus.Tutorial.Simple () where
 
 First, some imports we'll need:
 
