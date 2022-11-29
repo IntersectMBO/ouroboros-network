@@ -17,6 +17,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Mempool.StateMachine (
     openMempoolWithMockedLedgerItf
   , prop_parallel
@@ -26,40 +27,36 @@ module Test.Consensus.Mempool.StateMachine (
   , InitialMempoolAndModelParams (MempoolAndModelParams, immpInitialState, immpLedgerConfig)
     -- * Labelling
   , showMempoolTestScenarios
-  , tagTransactions
   ) where
 
+import           Control.Monad (void)
 import           Control.Monad.Class.MonadSTM.Strict (MonadSTM (atomically),
                      StrictTVar, writeTVar)
 import           Control.Monad.Trans.Except (runExcept)
 import           Control.Tracer (Tracer)
-import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Kind (Type)
-import           Data.List (partition)
 import           Data.Monoid (Sum (Sum, getSum))
+import qualified Data.Set as Set
 import           Data.TreeDiff.Class (ToExpr)
 import           GHC.Generics (Generic, Generic1)
-import           NoThunks.Class (NoThunks)
 
 import qualified Debug.Trace as Debug
 
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Gen (Gen)
 import qualified Test.QuickCheck.Monadic as QCM
-import           Test.StateMachine (Reference, StateMachine (StateMachine),
-                     runParallelCommands, runParallelCommandsNTimes,
-                     showLabelledExamples)
-import           Test.StateMachine.ConstructorName
-                     (CommandNames (cmdName, cmdNames))
-import           Test.StateMachine.Labelling (Event, eventResp)
-import           Test.StateMachine.Logic
-                     (Logic (Boolean, Not, Top, (:&&), (:=>)), (.==))
+import           Test.StateMachine (StateMachine (StateMachine),
+                     runParallelCommandsNTimes, showLabelledExamples)
+import           Test.StateMachine.ConstructorName (CommandNames)
+import           Test.StateMachine.Labelling (Event (Event), eventAfter,
+                     eventBefore, eventCmd, eventResp)
+import           Test.StateMachine.Logic (Logic (Top, (:&&)), (.==))
 import           Test.StateMachine.Parallel (forAllParallelCommands,
-                     prettyParallelCommands, runParallelCommands)
+                     prettyParallelCommands)
 import           Test.StateMachine.Sequential (checkCommandNames,
                      forAllCommands, prettyCommands, runCommands)
 import           Test.StateMachine.Types (GenSym, Reason (Ok), Symbolic,
-                     concrete, genSym, noCleanup, reference)
+                     concrete, noCleanup, reference)
 import qualified Test.StateMachine.Types as SMT
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.StateMachine.Types.References (Concrete)
@@ -84,14 +81,11 @@ import           Ouroboros.Consensus.Util.IOLike (newTVarIO, readTVar,
                      readTVarIO)
 
 -- SUT
-import           Control.Monad (void)
-import           Data.Maybe (fromMaybe)
-import qualified Data.Set as Set
+
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Mempool.Impl
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
-import           Text.Read (Lexeme (Char))
 
 {-------------------------------------------------------------------------------
   Pure model
@@ -104,10 +98,14 @@ data Model blk (r :: Type -> Type) = Model {
       currentLedgerDBState    :: !(LedgerState blk)
     , forgingFor              :: !SlotNo
     , intermediateLedgerState :: !(TickedLedgerState blk)
+      -- | We need to keep the model config around to be able to call the
+      -- 'applyTx' from the 'LedgerSupportsMempool' class.
     , modelConfig             :: !(LedgerConfig blk)
     , validatedTransactions   :: ![GenTx blk]
       -- | We use an integer for the maximum capacity because we want to detect
       -- if the SUT ever exceeds it.
+      --
+      -- See 'initModel' for the actual number used as initial mempool capacity.
     , remainingCapacity       :: !Int
     }
   deriving stock (Generic)
@@ -124,8 +122,7 @@ deriving stock instance ( Show (LedgerState blk)
                         ) => Show (Model blk r)
 
 initModel :: forall blk r.
-     ( UpdateLedger blk
-     , BasicEnvelopeValidation blk
+     ( BasicEnvelopeValidation blk
      , LedgerSupportsMempool blk -- We need this to calculate the mempool's remainig capacity
      )
   => InitialMempoolAndModelParams blk
@@ -139,9 +136,10 @@ initModel params = Model {
      , remainingCapacity       = fromIntegral $ 2 * txsMaxBytes initialIntermediateLedgerState
      }
   where
-    initialState = immpInitialState params
-    cfg          = immpLedgerConfig params
-    (initialStateSlot, initialIntermediateLedgerState) = tickLedgerState cfg initialState
+    initialState                        = immpInitialState params
+    cfg                                 = immpLedgerConfig params
+    (  initialStateSlot
+     , initialIntermediateLedgerState ) = tickLedgerState cfg initialState
 
 tickLedgerState :: forall blk.
      ( UpdateLedger blk
@@ -161,12 +159,6 @@ tickLedgerState cfg st = (tickedSlot, applyChainTick cfg tickedSlot st)
   Commands and responses
 -------------------------------------------------------------------------------}
 
--- We call the commands or actions of the state machine "events": this captures
--- the fact that the change of ledger state at the tip of the chain is an event
--- (external to the mempool).
---
--- The mempool is generalized over blocks, so there is not much we can do about
--- it.
 data Cmd blk (r :: Type -> Type) =
       TryAddTxs [GenTx blk]
     | SetLedgerState (LedgerState blk)
@@ -180,16 +172,8 @@ data Cmd blk (r :: Type -> Type) =
 deriving stock instance (Show (GenTx blk), Show (LedgerState blk)) => Show (Cmd blk r)
 
 -- | Successful command responses
-data SuccessfulResponse blk (ref :: Type -> Type) =
-      TryAddTxsResult {
-        valid       :: ![GenTx blk]
-      , invalid     :: ![GenTx blk]
-      , unprocessed :: ![GenTx blk]
-        -- | We need the new ticked state to avoid re-calculating transaction
-        -- application in the model 'transition' function.
-      , newTickedSt :: !(TickedLedgerState blk)
-      }
-    | RespOk
+data Response blk (ref :: Type -> Type) =
+      RespOk
     | Snap {
         -- | Transactions that have been sucessfully validated
         --
@@ -201,14 +185,14 @@ data SuccessfulResponse blk (ref :: Type -> Type) =
   deriving stock Generic1
   deriving anyclass Rank2.Foldable
 
-deriving stock instance (Show (GenTx blk), Show (TickedLedgerState blk)) => Show (SuccessfulResponse blk ref)
+deriving stock instance (Show (GenTx blk), Show (TickedLedgerState blk)) => Show (Response blk ref)
 
--- TODO: why not merge this with SuccessfulResponse?
-newtype Response blk ref = Response (SuccessfulResponse blk ref)
-  deriving stock Generic1
-  deriving anyclass Rank2.Foldable
+-- -- TODO: why not merge this with SuccessfulResponse?
+-- newtype Response blk ref = Response (SuccessfulResponse blk ref)
+--   deriving stock Generic1
+--   deriving anyclass Rank2.Foldable
 
-deriving stock instance (Show (GenTx blk), Show (SuccessfulResponse blk ref)) => Show (Response blk ref)
+-- deriving stock instance (Show (GenTx blk), Show (SuccessfulResponse blk ref)) => Show (Response blk ref)
 
 -- | TODO: for now we use a mock reference as a placeholder for mock references
 -- that might be used in the tests.
@@ -226,20 +210,19 @@ data ActualRef = ActualRef
 generator :: forall blk.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
-     , GetTip (LedgerState blk))
+     )
   => Model blk Symbolic -> Maybe (Gen (Cmd blk Symbolic))
-generator (Model {currentLedgerDBState} ) = Just
-                          $ QC.frequency [ (50, fmap TryAddTxs QC.arbitrary)
-                                           -- TODO: if the model is bootstrapped with an "empty"
-                                           -- ledger state we will generate a lot of transactions
-                                           -- that will simply be rejected. Maybe we can force
-                                           -- the generator to always generate a 'SetLedgerState'
-                                           -- action if this is uninitialized.
-                                         , (20, pure GetSnapshot)
-                                         , (20, pure SyncWithLedger)
-                                         , (10, fmap SetLedgerState QC.arbitrary)
-
-                                         ]
+generator _ =
+    Just $ QC.frequency [ (50, fmap TryAddTxs QC.arbitrary)
+                          -- TODO: if the model is bootstrapped with an "empty"
+                          -- ledger state we will generate a lot of transactions
+                          -- that will simply be rejected. Maybe we can force
+                          -- the generator to always generate a 'SetLedgerState'
+                          -- action if this is uninitialized.
+                         , (20, pure GetSnapshot)
+                         , (20, pure SyncWithLedger)
+                         , (10, fmap SetLedgerState QC.arbitrary)
+                         ]
 
 shrinker ::
      (QC.Arbitrary (GenTx blk), QC.Arbitrary (LedgerState blk))
@@ -253,43 +236,46 @@ shrinker _model SyncWithLedger      = []
   State machine
 -------------------------------------------------------------------------------}
 
--- | TODO Here is where we call the actual mempool commands
 semantics :: forall blk idx.
      LedgerSupportsMempool blk
   => MempoolWithMockedLedgerItf IO blk idx
   -> Cmd blk Concrete
   -> IO ((Response blk) Concrete)
 semantics mempoolWithMockedLedgerItf (TryAddTxs txs) = do
-    (processed, toProcess) <- tryAddTxs (getMempool mempoolWithMockedLedgerItf)
-                                        DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
-                                        txs
-    let (added, rejected) = partition isMempoolTxAdded processed
-    -- TODO hmmm, I'd need to take this from the internal mempool state. The
-    -- alternative is to calculate this state by applying the transactions in
-    -- the model, but we'll have to calculate this twice.
-    newTickedSt <-   fmap snapshotLedgerState
-                   $ atomically
-                   $ getSnapshot (getMempool mempoolWithMockedLedgerItf)
-    pure $! Response
-         $! TryAddTxsResult
-              { valid       = fmap getTx added
-              , invalid     = fmap getTx rejected
-              , unprocessed = toProcess
-              , newTickedSt = newTickedSt
-              }
-  where
-    getTx (MempoolTxAdded vtx)     = txForgetValidated vtx
-    getTx (MempoolTxRejected tx _) = tx
+    void $ tryAddTxs (getMempool mempoolWithMockedLedgerItf)
+                      DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
+                      txs
+    pure RespOk
+    -- (processed, toProcess) <- tryAddTxs (getMempool mempoolWithMockedLedgerItf)
+    --                                     DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
+    --                                     txs
+  --   let (added, rejected) = partition isMempoolTxAdded processed
+  --   -- TODO hmmm, I'd need to take this from the internal mempool state. The
+  --   -- alternative is to calculate this state by applying the transactions in
+  --   -- the model, but we'll have to calculate this twice.
+  --   newTickedSt <-   fmap snapshotLedgerState
+  --                  $ atomically
+  --                  $ getSnapshot (getMempool mempoolWithMockedLedgerItf)
+  --   pure $! Response
+  --        $! TryAddTxsResult
+  --             { valid       = fmap getTx added
+  --             , invalid     = fmap getTx rejected
+  --             , unprocessed = toProcess
+  --             , newTickedSt = newTickedSt
+  --             }
+  -- where
+  --   getTx (MempoolTxAdded vtx)     = txForgetValidated vtx
+  --   getTx (MempoolTxRejected tx _) = tx
 semantics mempoolWithMockedLedgerItf (SetLedgerState newSt) = do
   setLedgerState mempoolWithMockedLedgerItf newSt
-  pure $ Response RespOk
+  pure RespOk
 semantics mempoolWithMockedLedgerItf SyncWithLedger = do
   void $ syncWithLedger $ getMempool mempoolWithMockedLedgerItf
-  pure $ Response RespOk
+  pure RespOk
 semantics mempoolWithMockedLedgerItf GetSnapshot = do
   -- TODO: Maybe mempoolWithMockedLedgerItf should implement the mempool API
   snap <- atomically $ getSnapshot $ getMempool mempoolWithMockedLedgerItf
-  pure $ Response $ Snap {
+  pure $ Snap {
       snapTxs         = fmap (txForgetValidated . fst) $ snapshotTxs snap
     , snapLedgerState = snapshotLedgerState snap
     }
@@ -301,66 +287,56 @@ postcondition :: forall blk.
      ( LedgerSupportsMempool blk
      , Ord (GenTx blk)
      , Eq (TickedLedgerState blk)
-     , Show (GenTx blk)
-     , Show (LedgerState blk)
      , Show (TickedLedgerState blk)
      )
   => Model    blk Concrete
   -> Cmd      blk Concrete
   -> Response blk  Concrete
   -> Logic
-postcondition Model {remainingCapacity}
-              cmd@(TryAddTxs {})
-              rsp@(Response TryAddTxsResult {valid}) =
-      Boolean $ 0 <= remainingCapacity - txsSize valid
-postcondition model GetSnapshot (Response Snap { snapTxs, snapLedgerState }) =
+postcondition _model TryAddTxs {} RespOk = Top
+postcondition model  GetSnapshot  Snap { snapTxs, snapLedgerState } =
       (intermediateLedgerState model .== snapLedgerState)
   :&& (validatedTransactions   model .== snapTxs)
-postcondition _model SyncWithLedger (Response RespOk) = Top
+postcondition _model SyncWithLedger RespOk = Top
 -- TODO: add an error clause for unexpected cmd/response commands
 postcondition _model _cmd _response = Top
 
 mock :: forall blk.
-     (LedgerSupportsMempool blk)
-  => Model blk Symbolic
+     Model blk Symbolic
   -> Cmd blk Symbolic
   -> GenSym (Response blk Symbolic)
--- Here we should use the LedgerSupports mempool instace for blk. Why? Because
--- we want to compare the model against the SUT using __the same impl__
-mock Model {modelConfig, intermediateLedgerState} (TryAddTxs txs) =
+mock _model (TryAddTxs _) = pure $ RespOk
   -- TODO: maybe we should take the mempool capacity into account. If we use
   -- this only to generate commands then this might not be necessary.
-  pure $! Response
-       $! TryAddTxsResult {
-          valid       = val
-        , invalid     = inv
-        , unprocessed = unp
-        , newTickedSt = st'
-        }
-  where
-    (val, inv, unp, st') = applyTxs modelConfig intermediateLedgerState txs
-
-mock _model (SetLedgerState _) = pure $! Response RespOk
-mock model  GetSnapshot        = pure $! Response $! Snap {
+mock _model (SetLedgerState _) = pure RespOk
+mock model  GetSnapshot        = pure Snap {
       snapTxs         = validatedTransactions model
     , snapLedgerState = intermediateLedgerState model
   }
-mock model SyncWithLedger = pure $! Response RespOk
+mock _model SyncWithLedger = pure RespOk
 
-applyTxs ::
+applyTxs :: forall blk r.
      LedgerSupportsMempool blk
-  => LedgerConfig blk
-  -> TickedLedgerState blk
+  => Model blk r
   -> [GenTx blk]
-  -- TODO Comment this and consider replacing the use of a big tuple here. This might require factoring out the TryAddTxsResult
-  -> ([GenTx blk], [GenTx blk], [GenTx blk], TickedLedgerState  blk)
-applyTxs cfg initSt txs = go txs [] [] [] initSt
+  -- TODO Comment this and consider replacing the use of a big tuple here.
+  -> ([GenTx blk], TickedLedgerState  blk, Int)
+applyTxs model txs = go txs [] intermediateLedgerState remainingCapacity
   where
-    go []       !val !inv !unp !st = (reverse val, reverse inv, unp, st)
-    go (tx:tys) !val !inv !unp !st  =
-      case mockApplyTx cfg st tx of
-        Valid st'   -> go tys (tx:val) inv      unp st'
-        Invalid st' -> go tys val      (tx:inv) unp st'
+    Model {intermediateLedgerState, remainingCapacity, modelConfig} = model
+    go :: [GenTx blk]
+       -> [GenTx blk]
+       -> TickedLedgerState blk
+       -> Int
+       -> ([GenTx blk], TickedLedgerState  blk, Int)
+    go []       !val !st !rcap = (reverse val, st, rcap)
+    go (tx:tys) !val !st !rcap =
+      let rcap' = rcap - txSize tx in
+      if  rcap' < 0
+      then (reverse val, st, rcap)
+      else case mockApplyTx modelConfig st tx of
+        Valid st'   -> go tys (tx:val)  st' rcap'
+        Invalid st' -> go tys val       st' rcap
 
 data TxApplyResult st = Valid st | Invalid st
 
@@ -382,24 +358,24 @@ mockApplyTx cfg st tx =
     At slot = getTipSlot st
 
 transition ::
-  ( Show (GenTx blk)
-  , Show (LedgerState blk)
-  , Show (TickedLedgerState blk)
+  ( Show (TickedLedgerState blk)
   , LedgerSupportsMempool blk
   , BasicEnvelopeValidation blk
   , StandardHash (LedgerState blk)
   ) => Model blk r -> Cmd blk r -> (Response blk) r -> Model blk r
-transition model (TryAddTxs _) (Response TryAddTxsResult {valid, newTickedSt}) =
-  model { intermediateLedgerState = newTickedSt
-        , validatedTransactions   = validatedTransactions model <> valid
-        , remainingCapacity       = remainingCapacity model - txsSize valid
-        }
-transition model (SetLedgerState newSt) (Response RespOk) =
+transition model (TryAddTxs txs) RespOk =
+  -- NOTE: this is consistent with the QSM example showed in https://github.com/stevana/quickcheck-state-machine#example
+  model {
+      intermediateLedgerState = st'
+    , validatedTransactions   = validatedTransactions model <> valid
+    , remainingCapacity       = rcap
+  }
+  where
+    (valid, st', rcap) = applyTxs model txs
+transition model (SetLedgerState newSt) RespOk =
   model { currentLedgerDBState = newSt }
 transition model GetSnapshot _ = model
 transition model SyncWithLedger _ =
-    let Model {currentLedgerDBState, intermediateLedgerState} = model
-    in
     -- If the tip of the ledger DB does not change wrt the mempool's
     -- internal state we do  not revalidate.
     if getTip currentLedgerDBState == castPoint (getTip intermediateLedgerState)
@@ -407,25 +383,35 @@ transition model SyncWithLedger _ =
     else
       -- TODO: the implementation of this function seems to be a combination of
       -- model initialization and trying to add all the validated transactions
-      -- in the mempool. Furthermore, we are performing transactions application
-      -- both in the transitions and in the mock. I do not konw if this
-      -- inconsistency is justified.
+      -- in the mempool, maybe we should abstract away this pattern.
+      --
       model
         { forgingFor              = slot
         , intermediateLedgerState = tickedSt'
         , validatedTransactions   = valid
-        , remainingCapacity       = (fromIntegral $ 2 * txsMaxBytes tickedSt') - txsSize valid
+        , remainingCapacity       = rcap
         }
       where
-        Model{modelConfig, currentLedgerDBState, validatedTransactions} = model
-        (slot,         tickedSt) = tickLedgerState modelConfig currentLedgerDBState
-        (valid, _, _, tickedSt') = applyTxs modelConfig tickedSt validatedTransactions
+        Model{ modelConfig
+             , currentLedgerDBState
+             , validatedTransactions
+             , intermediateLedgerState } = model
+        (slot,  tickedSt)                = tickLedgerState modelConfig currentLedgerDBState
+        modelWithResetCapacity           = model {
+                                               remainingCapacity = fromIntegral $ 2 * txsMaxBytes tickedSt'
+                                             , intermediateLedgerState = tickedSt
+                                             }
+        (valid, tickedSt', rcap)         = applyTxs modelWithResetCapacity validatedTransactions
 transition _ cmd resp = error $  "Unexpected command response combination."
                               <> " Command: " <> show cmd
-                              <> " Response: " <> show resp -- TODO: using pretty printing
+                              <> " Response: " <> show resp -- TODO: use pretty printing
 
 txsSize:: LedgerSupportsMempool blk => [GenTx blk] -> Int
-txsSize = fromIntegral . getSum . foldMap (Sum . txInBlockSize)
+txsSize = getSum . foldMap (Sum . txSize)
+
+txSize:: LedgerSupportsMempool blk => GenTx blk -> Int
+txSize = fromIntegral . txInBlockSize
+
 
 -- | State machine for which we do not have a mempool, and therefore we cannot
 -- use the SUT.
@@ -492,7 +478,7 @@ prop_sequential :: forall blk idx.
   => (InitialMempoolAndModelParams blk ->  IO (MempoolWithMockedLedgerItf IO blk idx))
   -> InitialMempoolAndModelParams blk
   -> QC.Property
-prop_sequential mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess  10000 $ do   --  TODO set the number of tests the right way
+prop_sequential mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 10000 $ do   --  TODO set the number of tests the right way
     forAllCommands (stateMachineWithoutSUT initialParams) Nothing $ \cmds -> QCM.monadicIO $ do
         mempool <- QCM.run $ mempoolWithMockedLedgerItfAct initialParams
         let modelWithSUT = stateMachine initialParams mempool
@@ -504,10 +490,6 @@ prop_sequential mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 
 prop_parallel :: forall blk idx.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
-     , ToExpr (LedgerState blk)
-     , ToExpr (TickedLedgerState blk)
-     , ToExpr (LedgerConfig blk)
-     , ToExpr (GenTx blk)
      , Ord (GenTx blk)
      , Eq (TickedLedgerState blk)
      , Show (TickedLedgerState blk)
@@ -519,7 +501,7 @@ prop_parallel :: forall blk idx.
   => (InitialMempoolAndModelParams blk ->  IO (MempoolWithMockedLedgerItf IO blk idx))
   -> InitialMempoolAndModelParams blk
   -> QC.Property
-prop_parallel mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 1000 $ do
+prop_parallel mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 10000 $ do
   forAllParallelCommands (stateMachineWithoutSUT initialParams) Nothing $ \cmds -> QCM.monadicIO $ do
         mempool <- QCM.run $ mempoolWithMockedLedgerItfAct initialParams
         let modelWithSUT = stateMachine initialParams mempool
@@ -556,7 +538,6 @@ showMempoolTestScenarios :: forall blk.
      , QC.Arbitrary (LedgerState blk)
      , Ord (GenTx blk)
      , Eq (TickedLedgerState blk)
-     , Show (LedgerState blk)
      , Show (LedgerConfig blk)
      , Show (TickedLedgerState blk)
      , LedgerSupportsMempool blk
@@ -568,61 +549,38 @@ showMempoolTestScenarios params =
   showLabelledExamples (stateMachineWithoutSUT params) tagEventSeq
   where
     tagEventSeq :: [Event (Model blk) (Cmd blk) (Response blk) Symbolic] -> [Tag]
-    tagEventSeq events =  validTransactions events
-                       <> invalidTransactions events
+    tagEventSeq = concatMap tagEvent
+    -- TODO: stop as soon as we have collected all tags.
+
+tagEvent ::
+     Ord (GenTx blk)
+  => Event (Model blk) (Cmd blk) (Response blk) Symbolic
+  -> [Tag]
+tagEvent Event {eventBefore, eventCmd, eventAfter} =
+   tagAcceptedTxs eventBefore eventCmd eventAfter <> tagMaxCapacityReached eventAfter
+  where
+    tagAcceptedTxs model (TryAddTxs txs) model' =
+        let
+            addedTransactions     = validatedTransactions model' \\ validatedTransactions model
+            remainingTransactions = txs \\ addedTransactions
+        in
+        case (txs, addedTransactions, remainingTransactions) of
+          ([], _  , _  ) -> [AddedEmptyListOfTransactions]
+          (_ , [] , _:_) -> [RemainingTransactions]
+          (_ , _:_, [] ) -> [AcceptedTransactions]
+          (_ , _:_, _:_) -> [AcceptedTransactions, RemainingTransactions]
+          (_:_, [], [] ) -> error "This should not happen, there should be accepted or rejected transactions"
       where
-        -- Produce a AcceptedTransactions if one of the event contain a response with an accepted transaction
-        validTransactions [] = [] --
-        validTransactions (ev : evs) =
-          case validTransactionsInResponse (eventResp ev) of
-            [] -> validTransactions evs   -- We keep on looking
-            _  -> [AcceptedTransactions] -- The list of events (trace) contained a valid transaction
+          x \\ y = Set.toList (Set.fromList x Set.\\ Set.fromList y)
+    tagAcceptedTxs _ _ _ = []
+    tagMaxCapacityReached model' = [ MaxCapacityReached | remainingCapacity model' == 0 ]
 
-        -- TODO: factor out duplication in logic
-        invalidTransactions [] = [] --
-        invalidTransactions (ev : evs) =
-          case invalidTransactionsInResponse (eventResp ev) of
-            [] -> validTransactions evs   -- We keep on looking
-            _  -> [RejectedTransactions]
-
-validTransactionsInResponse :: Response blk ref -> [GenTx blk]
-validTransactionsInResponse (Response TryAddTxsResult {valid}) = valid
-validTransactionsInResponse _                                  = []
-
-invalidTransactionsInResponse :: Response blk ref -> [GenTx blk]
-invalidTransactionsInResponse (Response TryAddTxsResult {invalid}) = invalid
-invalidTransactionsInResponse _                                    = []
-
-data Tag = AcceptedTransactions | RejectedTransactions
+-- | Tag to identify the different tests scenarios.
+data Tag = AddedEmptyListOfTransactions
+         | AcceptedTransactions
+         | RemainingTransactions
+         | MaxCapacityReached
   deriving (Show)
-
-
-
-tagTransactions :: forall blk tag.
-     ( QC.Arbitrary (GenTx blk)
-     , QC.Arbitrary (LedgerState blk)
-     , Ord (GenTx blk)
-     , Show tag
-     , Show (LedgerConfig blk)
-     , Eq (TickedLedgerState blk)
-     , Show (TickedLedgerState blk)
-     , LedgerSupportsMempool blk
-     , BasicEnvelopeValidation blk
-     , StandardHash (LedgerState blk)
-     )
-   => InitialMempoolAndModelParams blk
-   -> (GenTx blk -> tag)
-   -> IO ()
-tagTransactions params txTag =
-  showLabelledExamples
-      (stateMachineWithoutSUT params)
-      (concatMap (mTxTag . eventResp))
-  where mTxTag (Response TryAddTxsResult {valid, invalid}) =  fmap (ValidTag   . txTag) valid
-                                                           <> fmap (InvalidTag   . txTag) invalid
-        mTxTag _                                           = []
-
-data ValidityTag tag = ValidTag tag | InvalidTag tag
-  deriving Show
 
 {------------------------------------------------------------------------------
   Mempool with a mocked ledger interface
@@ -639,7 +597,7 @@ data MempoolWithMockedLedgerItf m blk idx = MempoolWithMockedLedgerItf {
     , getMempool         :: Mempool m blk idx
     }
 
-openMempoolWithMockedLedgerItf::
+openMempoolWithMockedLedgerItf ::
      ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
@@ -650,7 +608,7 @@ openMempoolWithMockedLedgerItf::
   -> InitialMempoolAndModelParams blk
     -- ^ Initial ledger state for the mocked Ledger DB interface.
   -> IO (MempoolWithMockedLedgerItf IO blk TicketNo)
-openMempoolWithMockedLedgerItf capacityOverride tracer txSize params = do
+openMempoolWithMockedLedgerItf capacityOverride tracer txSizeImpl params = do
     currentLedgerStateTVar <- newTVarIO (immpInitialState params)
     let ledgerItf = LedgerInterface {
             getCurrentLedgerState = readTVar currentLedgerStateTVar
@@ -660,7 +618,7 @@ openMempoolWithMockedLedgerItf capacityOverride tracer txSize params = do
                    (immpLedgerConfig params)
                    capacityOverride
                    tracer
-                   txSize
+                   txSizeImpl
     pure MempoolWithMockedLedgerItf {
         getLedgerInterface = ledgerItf
       , getLedgerStateTVar = currentLedgerStateTVar
@@ -672,6 +630,7 @@ setLedgerState ::
   -> IO ()
 setLedgerState MempoolWithMockedLedgerItf {getLedgerStateTVar} newSt =
   atomically $ writeTVar getLedgerStateTVar newSt
+
 {-------------------------------------------------------------------------------
   Instances required to run the state machine
 -------------------------------------------------------------------------------}

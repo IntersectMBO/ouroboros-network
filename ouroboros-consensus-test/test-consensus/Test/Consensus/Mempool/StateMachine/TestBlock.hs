@@ -18,7 +18,7 @@
 --
 -- >>> import Test.Consensus.Mempool.StateMachine.TestBlock
 -- >>> import Test.Consensus.Mempool.StateMachine
--- >>> showMempoolTestScenarios initialParams
+-- >>> showMempoolTestScenarios sampleMempoolAndModelParams
 --
 module Test.Consensus.Mempool.StateMachine.TestBlock (
     initialLedgerState
@@ -104,13 +104,13 @@ instance Arbitrary HardFork.EraParams where
 
 deriving instance ToExpr HardFork.EraParams
 --  toExpr = App "EraParams" []
-deriving instance ToExpr HardFork.SafeZone
-deriving instance ToExpr EpochSize
-deriving instance ToExpr SlotLength
+deriving anyclass instance ToExpr HardFork.SafeZone
+deriving anyclass instance ToExpr EpochSize
+deriving anyclass instance ToExpr SlotLength
 instance ToExpr NominalDiffTime where
   toExpr = defaultExprViaShow -- TODO define this properly
-deriving instance ToExpr (GenTx TestBlock)
-deriving instance ToExpr Tx
+deriving anyclass instance ToExpr (GenTx TestBlock)
+deriving anyclass instance ToExpr Tx
 
 -- TODO: consider removing this level of indirection
 type TestBlock = TestBlockWith Tx
