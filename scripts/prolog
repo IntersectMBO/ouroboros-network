@@ -20,20 +20,20 @@ This site contains Haskell documentation of
 
       * /Implementations, type level specifications, and APIs of all the protocols:/
 
-          * __[ChainSync](ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html)__
-          * __[BlockFetch](ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html)__
-          * __[TxSubmission](ouroboros-network/Ouroboros-Network-Protocol-TxSubmission-Type.html)__
-          * __[TxSubmission2](ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html)__
-          * __[LocalTxSubmission](ouroboros-network/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html)__
-          * __[LocalStateQuery](ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html)__
-          * __[LocalTxMonitor](ouroboros-network/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
+          * __[ChainSync](ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type.html)__
+          * __[BlockFetch](ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type.html)__
+          * __[TxSubmission](ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission-Type.html)__
+          * __[TxSubmission2](ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type.html)__
+          * __[LocalTxSubmission](ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html)__
+          * __[LocalStateQuery](ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html)__
+          * __[LocalTxMonitor](ouroboros-network-potocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
           * __[Handshake](ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html)__
 
      * /Block chain related data structures that the networking code needs
        to be aware of:/
 
-          * __[Block](ouroboros-network/Ouroboros-Network-Block.html)__
-          * __[AnchoredFragment](ouroboros-network/Ouroboros-Network-AnchoredFragment.html)__
+          * __[Block](ouroboros-network-api/Ouroboros-Network-Block.html)__
+          * __[AnchoredFragment](ouroboros-network-api/Ouroboros-Network-AnchoredFragment.html)__
 
      * /Network applications:/
 
@@ -59,9 +59,9 @@ This graph depicts the relationship between the various `xxx-consensus-yyy` pack
 
     * The [Ouroboros Consensus Modules Map](./modules-consensus.svg) represents the dependencies between various /Consensus/ modules and is a map to navigate the (large) codebase. Clicking on a module should bring you to the corresponding haddock page from which you can later navigate to the source code. __Note__: The image needs to be enlarged to be useful hence why it's an external link.
 
-* __ouroboros-consensus-test__ : Property and model-based tests for consensus, using [io-sim](https://)
+* __ouroboros-consensus-test__ : Property and model-based tests for consensus, using [io-sim](https://github.com/input-output-hk/io-sim)
 
-    * __[Network Simulator](ouroboros-consensus-test/Test-ThreadNet-Network.html)__: Simulates a network of nodes
+    * __[ThreadNet Simulator](ouroboros-consensus-test/Test-ThreadNet-Network.html)__: Simulates a network of nodes
 
 * __ouroboros-consensus-byron__ : Byron-era consensus logic
 * __ouroboros-consensus-byron-test__ : Byron specific tests
