@@ -38,7 +38,7 @@ package kes-agent
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: e3b646950eb68140b180a1f025cd859f316c797b
+  tag: e96c08f328042de477b78f76dffda7182a09c7c7
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     base-deriving-via
