@@ -7,7 +7,7 @@ This site contains Haskell documentation of
 * __Ouroboros-Network__  - networking component of the Haskell implementation of Ouroboros protocols
 * __Ouroboros-Consensus__ - Ouroboros Consensus family of protocols which integrate with `Ouroboros-Network`
 
-== Module Structure And Network Components
+== Network Components
 
 * __IOSim & Monad Classes__
 
@@ -43,7 +43,7 @@ This site contains Haskell documentation of
               * __[LocalStateQuery](ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html)__
               * __[LocalTxMonitor](ouroboros-network/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
               * __[Handshake](ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html)__
-          
+
          * /Block chain related data structures that the networking code needs
            to be aware of:/
 
@@ -63,4 +63,9 @@ This site contains Haskell documentation of
                 a [node](https://github.com://input-output-hk/cardano-node)
               * __[NodeToNode API](ouroboros-network/Ouroboros-Network-NodeToNode.html)__
               * __[NodeToClient API](ouroboros-network/Ouroboros-Network-NodeToClient.html)__
-      
+
+== Ouroboros Consensus Components
+
+The [Ouroboros Consensus Modules Map](./modules-consensus.svg) represents the dependencies between various /Consensus/ modules and is a map to navigate the (large) codebase. Clicking on a module should bring you to the corresponding haddock page from which you can later navigate to the source code.
+
+* __ouroboros-consensus__ : Main package for Cardano consensus implementation
