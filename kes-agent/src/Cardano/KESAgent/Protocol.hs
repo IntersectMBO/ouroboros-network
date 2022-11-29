@@ -22,6 +22,7 @@ import Cardano.KESAgent.RefCounting
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Mock
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DSIGN.Ed25519ML
@@ -54,11 +55,17 @@ newtype VersionIdentifier =
 
 data StandardCrypto
 
+data SingleCrypto
+
 data MockCrypto
 
 instance Crypto StandardCrypto where
   type KES StandardCrypto = Sum6KES Ed25519DSIGNM Blake2b_256
   type DSIGN StandardCrypto = Ed25519DSIGN
+
+instance Crypto SingleCrypto where
+  type KES SingleCrypto = SingleKES Ed25519DSIGNM
+  type DSIGN SingleCrypto = Ed25519DSIGN
 
 instance Crypto MockCrypto where
   type KES MockCrypto = MockKES 128
@@ -74,6 +81,10 @@ mkVersionIdentifier raw =
 instance VersionedProtocol (KESProtocol StandardCrypto) where
   versionIdentifier _ =
     mkVersionIdentifier "StandardCrypto:0.1"
+
+instance VersionedProtocol (KESProtocol SingleCrypto) where
+  versionIdentifier _ =
+    mkVersionIdentifier "SingleCrypto:0.1"
 
 instance VersionedProtocol (KESProtocol MockCrypto) where
   versionIdentifier _ =

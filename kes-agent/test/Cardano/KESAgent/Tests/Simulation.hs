@@ -72,6 +72,7 @@ tests :: Lock -> TestTree
 tests lock =
   testGroup "Simulation"
   [ testCrypto @MockCrypto Proxy lock
+  , testCrypto @SingleCrypto Proxy lock
   , testCrypto @StandardCrypto Proxy lock
   ]
 
@@ -288,6 +289,8 @@ testOneKeyThroughChain p
     hSetBuffering stdout LineBuffering
     expectedSK <- genKeyKES @IO @(KES c) seedKES
     let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
+    expectedSKBS <- rawSerialiseSignKeyKES expectedSK
+
     withNewCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP $ \expectedSKPVar -> do
       vkHot <- deriveVerKeyKES expectedSK
       let kesPeriod = KESPeriod 0
@@ -300,7 +303,6 @@ testOneKeyThroughChain p
       runTestNetwork p nullTracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay
         (\sim -> sendKey sim (expectedSKPVar, expectedOC))
         (\(resultSKPVar, resultOC) finish -> do
-            expectedSKBS <- rawSerialiseSignKeyKES expectedSK
             (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
                             skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
                             return (skp, periodKES resultSKP)
@@ -385,7 +387,7 @@ testConcurrentPushes proxyCrypto proxyN
 --
 instance Show (SignKeyKES (SingleKES Ed25519DSIGNM)) where
   show (SignKeySingleKES (SignKeyEd25519DSIGNM mlsb)) =
-    let hexstr = hexShowBS $ mlsbToByteString mlsb
+    let hexstr = hexShowBS $ mlsbAsByteString mlsb
     in "SignKeySingleKES (SignKeyEd25519DSIGNM " ++ hexstr ++ ")"
 
 instance Show (SignKeyKES d) => Show (SignKeyKES (SumKES h d)) where
