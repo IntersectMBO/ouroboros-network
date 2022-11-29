@@ -15,28 +15,24 @@ Much like the previous example of `BlockC` this blockchain (with block type
 _decrement_ transactions in the block bodies.  However, the slots are now
 divided into **epochs** each of which has a fixed number of slots.
 
-Further, the chain is set up such that there are 20 _nodes_
-labelled with a `NodeId` from 0 to 19 participating in the
-computation.
+Further, the chain is set up such that there are 20 _nodes_ labelled with a
+`NodeId` from 0 to 19 participating in the computation.
 
-At the beginning of an epoch, the current value of the
-ledger - that is, the sum of the _increment_ transactions minus
-the sum of the _decrement_ transactions is snapshotted as
-part of the ledger.
+At the beginning of an epoch, the current value of the ledger - that is, the sum
+of the _increment_ transactions minus the sum of the _decrement_ transactions is
+snapshotted as part of the ledger.
 
-During the epoch, the snapshot *from two epochs ago* determines
-which subset of a set of
-20 nodes is allowed to lead slots.  If the snapshot is even,
-then slots contained in that epoch follow a round-robin leadership schedule
-among nodes 0 through 9 inclusive.  Similarly, if the snapshot is odd then
-the slots of that epoch will be follow a round-robin leadership schedule
-from the set of nodes from 10 to 19.
+During the epoch, the snapshot *from two epochs ago* determines which subset of
+a set of 20 nodes is allowed to lead slots.  If the snapshot is even, then slots
+contained in that epoch follow a round-robin leadership schedule among nodes 0
+through 9 inclusive.  Similarly, if the snapshot is odd then the slots of that
+epoch will be follow a round-robin leadership schedule from the set of nodes
+from 10 to 19.
 
-Though it is difficult to imagine a real system doing this,
-it is a simple example of a case where the value computed
-by the blockchain (the `LedgerState`) is relevant - through the
-leader schedule - to the behavior of consensus.  One can perhaps view
-it as a very simplified analog to stake distribution.
+Though it is difficult to imagine a real system doing this, it is a simple
+example of a case where the value computed by the blockchain (the `LedgerState`)
+is relevant - through the leader schedule - to the behavior of consensus.  One
+can perhaps view it as a very simplified analog to stake distribution.
 
 Setup
 -----
@@ -102,10 +98,11 @@ Epochs occur at a fixed interval:
 > slotsInEpoch :: Word64
 > slotsInEpoch = 50
 
-We also write a function from `WithOrigin SlotNo` to the corresponding epoch number to
-express this behavior.  The `WithOrigin` type allows us to describe the behavior
-of this in the presence of the first (origin) block on the chain.
-We will consider `Origin` to be a special epoch before the epochs of the slots proper:
+We also write a function from `WithOrigin SlotNo` to the corresponding epoch
+number to express this behavior.  The `WithOrigin` type allows us to describe
+the behavior of this in the presence of the first (origin) block on the chain.
+We will consider `Origin` to be a special epoch before the epochs of the slots
+proper:
 
 > epochOf :: WithOrigin SlotNo -> WithOrigin EpochNo
 > epochOf Origin = Origin
@@ -126,8 +123,7 @@ Hashing
 -------
 
 In this tutorial, we'll use a more real (but still very contrived) hashing
-infrastructure built on top of the `Hashable` class from the
-`hashable` package.
+infrastructure built on top of the `Hashable` class from the `hashable` package.
 
 Our infastructure is quite simple - a `newtype` for hashes:
 
@@ -147,8 +143,8 @@ Node Identifiers
 ----------------
 
 We'll also need a notion of node identity since this will be used to specify
-some things with respect to leadership.  We'll assume all nodes that can lead have
-identifiers in the range of 0..19.
+some things with respect to leadership.  We'll assume all nodes that can lead
+have identifiers in the range of 0..19.
 
 > type NodeId = Word64
 
@@ -158,8 +154,8 @@ Block
 Block Type
 ----------
 
-Our block and transaction type is structurally the same as `BlockC` - a
-header followed by a list of transactions `Tx`:
+Our block and transaction type is structurally the same as `BlockC` - a header
+followed by a list of transactions `Tx`:
 
 > data BlockD = BlockD { bd_header :: Header BlockD
 >                      , bd_body :: [Tx]
@@ -170,16 +166,14 @@ header followed by a list of transactions `Tx`:
 >   deriving (Show, Eq, Generic, Serialise, NoThunks, Hashable)
 
 
-
-
 Block Header
 ------------
 
 However, the header is somewhat different as it includes the node identifier
 that created the block.  Naturally in a more realistic system this would instead
-be some value that provides stronger (probably cryptographic) evidence for
-this block's provenance but since this is a simple example, we will simply
-use a `NodeId`:
+be some value that provides stronger (probably cryptographic) evidence for this
+block's provenance but since this is a simple example, we will simply use a
+`NodeId`:
 
 > data instance Header BlockD =
 >   HdrBlockD
@@ -198,10 +192,10 @@ use a `NodeId`:
 Block Hashing
 -------------
 
-Since we're using a more complicated hashing scheme for `BlockD` than we
-used for `BlockC` we'll also need to specify how we compute hashes
-for `BlockD`.  First, we specify the type of `HeaderHash BlockD` to
-be the `Hash` type we defined earlier:
+Since we're using a more complicated hashing scheme for `BlockD` than we used
+for `BlockC` we'll also need to specify how we compute hashes for `BlockD`.
+First, we specify the type of `HeaderHash BlockD` to be the `Hash` type we
+defined earlier:
 
 > type instance HeaderHash BlockD = Hash
 
@@ -219,16 +213,16 @@ itself:
 >          , body
 >          )
 
-Finally, a convenience function `addBlockHash` allows us to properly
-set the hash of a `BlockD` to its computed value:
+Finally, a convenience function `addBlockHash` allows us to properly set the
+hash of a `BlockD` to its computed value:
 
 > addBlockHash :: BlockD -> BlockD
 > addBlockHash b = b { bd_header = header' }
 >   where
 >     header' = (bd_header b) { hbd_Hash = computeBlockHash b }
 
-The preceding definitions require that `ChainHash BlockD` be `Hashable`
-so we derive a suitable instance here:
+The preceding definitions require that `ChainHash BlockD` be `Hashable` so we
+derive a suitable instance here:
 
 > deriving instance Hashable (ChainHash BlockD)
 
@@ -236,8 +230,8 @@ so we derive a suitable instance here:
 Block Header
 ------------
 
-As before, we to implement a few type families to fully specify
-the header - `GetHeader`, `GetPrevHash`, and `HasHeader`:
+As before, we to implement a few type families to fully specify the header -
+`GetHeader`, `GetPrevHash`, and `HasHeader`:
 
 > instance GetHeader BlockD where
 >   getHeader          = bd_header
@@ -268,8 +262,8 @@ As part of our implementation of hashing, note that `blockMatchesHeader` in
 Block Configuration
 -------------------
 
-In this example, there is no interesting static configuration for blocks -
-so the following are trivial instances:
+In this example, there is no interesting static configuration for blocks - so
+the following are trivial instances:
 
 > data instance CodecConfig BlockD = CCfgBlockD
 >   deriving (Generic, NoThunks)
@@ -284,8 +278,8 @@ so the following are trivial instances:
 Validation
 ----------
 
-Similarly, this example does not have any interesting validation logic,
-but a few more trivial implementations are needed:
+Similarly, this example does not have any interesting validation logic, but a
+few more trivial implementations are needed:
 
 > instance HasAnnTip BlockD where {}
 > instance ValidateEnvelope BlockD where {}
@@ -296,9 +290,9 @@ Ledger
 ======
 
 While this is similar to the `LedgerState` for `BlockC` the `Ledger` instance
-corresponding to `BlockD` needs to hold snapshots of the count at the
-last two epoch boundaries - this is the `lsbd_snapshot1` and `lsbd_snapshot2`
-fields below:
+corresponding to `BlockD` needs to hold snapshots of the count at the last two
+epoch boundaries - this is the `lsbd_snapshot1` and `lsbd_snapshot2` fields
+below:
 
 > data instance LedgerState BlockD =
 >   LedgerD
@@ -329,8 +323,8 @@ Our `GetTip` implementation retrieves the tip from the `lsbd_tip` field:
 Ticking
 -------
 
-`LedgerState BlockD` also needs a corresponding `Ticked` instance which
-is still very simple:
+`LedgerState BlockD` also needs a corresponding `Ticked` instance which is still
+very simple:
 
 > newtype instance Ticked (LedgerState BlockD) =
 >   TickedLedgerStateD {
@@ -339,13 +333,12 @@ is still very simple:
 >   deriving stock (Show, Eq, Generic)
 >   deriving newtype (NoThunks, Serialise)
 
-Because the ledger now needs to track the snapshots in `lsbd_snapshot1`
-and `lsbd_snapshot2` we
-can express this in terms of ticking a `LedgerState BlockD`.
+Because the ledger now needs to track the snapshots in `lsbd_snapshot1` and
+`lsbd_snapshot2` we can express this in terms of ticking a `LedgerState BlockD`.
 We'll write a function (that we'll use later) to express this relationship
 computing the `Ticked (LedgerState BlockD)` resulting from a starting
-`LedgerState BlockD` being ticked to some slot in the future - assuming
-no intervening blocks are applied:
+`LedgerState BlockD` being ticked to some slot in the future - assuming no
+intervening blocks are applied:
 
 > tickLedgerStateD ::
 >   SlotNo -> LedgerState BlockD -> Ticked (LedgerState BlockD)
@@ -371,10 +364,9 @@ no intervening blocks are applied:
 >       EQ -> False
 >       GT -> error "cannot tick slots backwards"
 
-Note that this implementation merely projects the current `lsbd_count`
-into the snapshot indefinitely far in the future -
-consistent with the assumption that no blocks are applied during the span of
-time represented by the slot argument.
+Note that this implementation merely projects the current `lsbd_count` into the
+snapshot indefinitely far in the future - consistent with the assumption that no
+blocks are applied during the span of time represented by the slot argument.
 
 We can now use `tickLedgerStateD` to instantiate `IsLedger`:
 
@@ -394,8 +386,8 @@ We can now use `tickLedgerStateD` to instantiate `IsLedger`:
 Applying Blocks
 ---------------
 
-Applying a `BlockD` to a `Ticked (LedgerState BlockD)` is (again) the result
-of applying each individual transaction - exactly as it was in for `BlockC`:
+Applying a `BlockD` to a `Ticked (LedgerState BlockD)` is (again) the result of
+applying each individual transaction - exactly as it was in for `BlockC`:
 
 > applyBlockTo :: BlockD -> Ticked (LedgerState BlockD) -> LedgerState BlockD
 > applyBlockTo block tickedLedgerState =
@@ -421,43 +413,42 @@ of applying each individual transaction - exactly as it was in for `BlockC`:
 >                  , lrEvents = []
 >                  }
 
-Note that prior to `applyBlockLedgerResult` being invoked, the calling
-code will have already established that the header is valid and that the
-header matches the block.  As a result, we do not need to check that
-the leader is correct here.  Also, for this tutorial's notion of blocks
-applying blocks cannot fail because applying transactions cannot fail -
-even in cases where there is overflow `Data.Word` will wrap around.
+Note that prior to `applyBlockLedgerResult` being invoked, the calling code will
+have already established that the header is valid and that the header matches
+the block.  As a result, we do not need to check that the leader is correct
+here.  Also, for this tutorial's notion of blocks applying blocks cannot fail
+because applying transactions cannot fail - even in cases where there is
+overflow `Data.Word` will wrap around.
 
 Protocol
 ========
 
-Following the practice earlier established, we define an empty marker
-type for the protocol - `PrtclD`:
+Following the practice earlier established, we define an empty marker type for
+the protocol - `PrtclD`:
 
 > data PrtclD
 
-However, due to the fact that ability to be a slot leader now depends
-on the ledger we'll have a (slightly) more interesting set of
-evidence that a particular `NodeId` can be a leader.
-This just consists of the `NodeId` itself - which is obviously insecure in
-that the proof we can be a leader should not be easy to falsify -
-it is fine for our example:
+However, due to the fact that ability to be a slot leader now depends on the
+ledger we'll have a (slightly) more interesting set of evidence that a
+particular `NodeId` can be a leader.  This just consists of the `NodeId` itself
+- which is obviously insecure in that the proof we can be a leader should not be
+easy to falsify - it is fine for our example:
 
 > data PrtclD_CanBeLeader = PrtclD_CanBeLeader NodeId
 >   deriving (Eq, Show, Generic, NoThunks)
 
-The proof that we are a slot leader should be evident from the context -
-the combination of the slot number and the ledger's snapshot parity
-is sufficient evidence that a particular node is the leader for that
-slot - this makes our evidence that a particular node is the leader
-uninteresting given that security is not being considered in this example:
+The proof that we are a slot leader should be evident from the context - the
+combination of the slot number and the ledger's snapshot parity is sufficient
+evidence that a particular node is the leader for that slot - this makes our
+evidence that a particular node is the leader uninteresting given that security
+is not being considered in this example:
 
 > data PrtclD_IsLeader    = PrtclD_IsLeader
 
-With some notions of the types involved in leadership defined, we
-can now instantiate the `ConsensusConfig` with our security parameter
-as well as the particular `NodeId` - expressed as a `PrtclD_CanBeLeader`
-- that a particular instance of the `ConsensusProtocol` should be running as:
+With some notions of the types involved in leadership defined, we can now
+instantiate the `ConsensusConfig` with our security parameter as well as the
+particular `NodeId` - expressed as a `PrtclD_CanBeLeader` - that a particular
+instance of the `ConsensusProtocol` should be running as:
 
 > data instance ConsensusConfig PrtclD =
 >   PrtclD_Config
@@ -474,11 +465,10 @@ as well as the particular `NodeId` - expressed as a `PrtclD_CanBeLeader`
 >   deriving NoThunks via OnlyCheckWhnfNamed "PrtclD_Config"
 >                         (ConsensusConfig PrtclD)
 
-We will also need to have a view of the ledger that contains enough
-information for the protocol to validate the leadership claim.
-Since the leader for a slot is determined by the parity of the epoch
-snapshot along with the slot number, our `LedgerView`
-for `PrtclD` will simply be the snapshot (though we could have
+We will also need to have a view of the ledger that contains enough information
+for the protocol to validate the leadership claim.  Since the leader for a slot
+is determined by the parity of the epoch snapshot along with the slot number,
+our `LedgerView` for `PrtclD` will simply be the snapshot (though we could have
 just as easily used a `Bool` representing the parity):
 
 > newtype LedgerViewD = LVD Word64
@@ -491,29 +481,30 @@ We also define a trivial `Ticked LedgerViewD` instance:
 >   deriving stock (Show, Eq, Generic)
 >   deriving newtype (Serialise, NoThunks)
 
-The parity of the epoch snapshot and the slot are together _sufficient_
-to determine the leadership schedule.  As such, we do not need
-any notion of state specific to `PrtclD`:
+The parity of the epoch snapshot and the slot are together _sufficient_ to
+determine the leadership schedule.  As such, we do not need any notion of state
+specific to `PrtclD`:
 
 > data ChainDepStateD = ChainDepStateD
 >   deriving (Eq,Show,Generic,NoThunks)
 
-However, the `Ticked` representation contains the `LedgerViewD` containing
-the epoch snapshot.   This is due to functions for `ConsensusProtocol` only
-taking the `LedgerView` as an argument in some cases:
+However, the `Ticked` representation contains the `LedgerViewD` containing the
+epoch snapshot.  This is due to functions for `ConsensusProtocol` only taking
+the `LedgerView` as an argument in some cases:
 
 > data instance Ticked ChainDepStateD =
 >   TickedChainDepStateD { tickedChainDepLV :: LedgerViewD }
 >   deriving (Eq, Show, Generic, NoThunks)
 
-`ConsensusProtocol` is set up this way mostly because this is what implementations
-thus far have required, but the organization of the functions interacting with
-`ChainDepState` is currently under review.
+`ConsensusProtocol` is set up this way mostly because this is what
+implementations thus far have required, but the organization of the functions
+interacting with `ChainDepState` is currently under review.
 
-We can determine if a particular node is the leader of a slot given the slot number
-along with the epoch snapshot.  We can express this determination via a function modeling
-the leadership schedule.  For ease of use in our instantiation of `ConsensusProtocol PrtclD`
-we will represent the epoch snapshot using the `LedgerView` we just defined:
+We can determine if a particular node is the leader of a slot given the slot
+number along with the epoch snapshot.  We can express this determination via a
+function modeling the leadership schedule.  For ease of use in our instantiation
+of `ConsensusProtocol PrtclD` we will represent the epoch snapshot using the
+`LedgerView` we just defined:
 
 > isLeader :: NodeId -> SlotNo -> LedgerView PrtclD -> Bool
 > isLeader nodeId (SlotNo slot) (LVD cntr) =
@@ -524,8 +515,8 @@ we will represent the epoch snapshot using the `LedgerView` we just defined:
 >     1 -> (slot `mod` 10)+10 == nodeId
 >     _ -> error "panic: the impossible ..."
 
-Now we can instantiate `ConsensusProtocol PrtclD` proper with the
-types and functions defined above:
+Now we can instantiate `ConsensusProtocol PrtclD` proper with the types and
+functions defined above:
 
 > instance ConsensusProtocol PrtclD where
 >
@@ -580,10 +571,9 @@ Integration
 Block/Protocol Integration
 --------------------------
 
-Our implementation of `BlockSupportsProtocol BlockD` supports our
-definition of `ConsensusProtocol PrtclD` closely, with
-`validateView` extracting the `NodeId` from the block header,
-and `selectView` projecting out the block number:
+Our implementation of `BlockSupportsProtocol BlockD` supports our definition of
+`ConsensusProtocol PrtclD` closely, with `validateView` extracting the `NodeId`
+from the block header, and `selectView` projecting out the block number:
 
 > instance BlockSupportsProtocol BlockD where
 >   validateView _bcfg hdr = hbd_nodeId hdr
@@ -598,11 +588,11 @@ All that remains is to establish `PrtclD` as the protocol for
 Ledger/Protocol Integration
 ---------------------------
 
-Implementing `LedgerSupportsProtocol` requires us to put a little
-more thought into forecasting.  Our range of forecasting now
-ends at the last slot in the following epoch.  There are two cases for which
-we can forecast the ticked ledger view: (1) the slot (`for` in the code below)
-is in the current epoch and (2) the slot is in the following epoch.
+Implementing `LedgerSupportsProtocol` requires us to put a little more thought
+into forecasting.  Our range of forecasting now ends at the last slot in the
+following epoch.  There are two cases for which we can forecast the ticked
+ledger view: (1) the slot (`for` in the code below) is in the current epoch and
+(2) the slot is in the following epoch.
 
 > instance LedgerSupportsProtocol BlockD where
 >   protocolLedgerView _ldgrCfg (TickedLedgerStateD ldgrSt) =
@@ -654,35 +644,32 @@ is in the current epoch and (2) the slot is in the following epoch.
 Summary and Review
 ==================
 
-Above, we defined a block, ledger, and consensus protocol as well as
-wrote the class/family instances necessary to connect them together.
-The behavior of the blockchain modeled by these is very simple
-and does not deal with security considerations in any depth
-but does implement behavior - the leadership schedule - such that
-the valid future states of the chain depend on the value
+Above, we defined a block, ledger, and consensus protocol as well as wrote the
+class/family instances necessary to connect them together.  The behavior of the
+blockchain modeled by these is very simple and does not deal with security
+considerations in any depth but does implement behavior - the leadership
+schedule - such that the valid future states of the chain depend on the value
 (aka `LedgerState`) computed by the chain in previous epochs.
 
-To review, we made a few changes from our even more trivial prior
-example involving `BlockC`:
+To review, we made a few changes from our even more trivial prior example
+involving `BlockC`:
 
 - We implemented a slightly more realistic version of hashing
-- Nodes participating in the protocols were given identifiers
-  allowing a less trivial version of leadership to be
-  implemented
+- Nodes participating in the protocols were given identifiers allowing a less
+  trivial version of leadership to be implemented
 - A node identifier was added to our block type
-- The `LedgerState` for our block type required the relevant
-  data to be snapshotted so that it could be tracked
-- The logic for applying blocks to the ledger in `ApplyBlock`
-  needed to be aware of the epoch changes such that it could
-  update the snapshots accordingly when blocks are applied
-- The `checkIsLeader` in the protocol changed to reflect the
-  leadership schedule
-- The protocol's `LedgerView` also needed access to the relevant
-  snapshot for the epoch
-- Forecasting, as implemented in `LedgerSupportsProtocol`, needed
-  to know when to stop being able to forecast - namely when
-  the supply of snapshot data is exhausted
+- The `LedgerState` for our block type required the relevant data to be
+  snapshotted so that it could be tracked
+- The logic for applying blocks to the ledger in `ApplyBlock` needed to be aware
+  of the epoch changes such that it could update the snapshots accordingly when
+  blocks are applied
+- The `checkIsLeader` in the protocol changed to reflect the leadership schedule
+- The protocol's `LedgerView` also needed access to the relevant snapshot for
+  the epoch
+- Forecasting, as implemented in `LedgerSupportsProtocol`, needed to know when
+  to stop being able to forecast - namely when the supply of snapshot data is
+  exhausted
 
-While this is a large ecosystem of interrelated typeclasses and
-families, the overall organization of things is such that
-Haskell's type checking can help guide the implementation.
+While this is a large ecosystem of interrelated typeclasses and families, the
+overall organization of things is such that Haskell's type checking can help
+guide the implementation.
