@@ -256,15 +256,18 @@ instance HasPartialLedgerConfig ByronBlock where
 
 type CardanoHardForkConstraints c =
   ( TPraos.PraosCrypto c
+  , TPraos.PraosCrypto (PrevCrypto c)
   , Praos.PraosCrypto c
+  , Praos.PraosCrypto (PrevCrypto c)
   , TranslateProto (TPraos c) (Praos c)
-  , ShelleyCompatible (TPraos c) (ShelleyEra c)
-  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (ShelleyEra c))
-  , ShelleyCompatible (TPraos c) (AllegraEra c)
+  , TranslateProto (TPraos (PrevCrypto c)) (Praos c)
+  , ShelleyCompatible (TPraos (PrevCrypto c)) (ShelleyEra (PrevCrypto c))
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos (PrevCrypto c)) (ShelleyEra (PrevCrypto c)))
+  , ShelleyCompatible (TPraos (PrevCrypto c)) (AllegraEra (PrevCrypto c))
   , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (AllegraEra c))
-  , ShelleyCompatible (TPraos c) (MaryEra    c)
-  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (MaryEra c))
-  , ShelleyCompatible (TPraos c) (AlonzoEra  c)
+  , ShelleyCompatible (TPraos (PrevCrypto c)) (MaryEra    (PrevCrypto c))
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos (PrevCrypto c)) (MaryEra (PrevCrypto c)))
+  , ShelleyCompatible (TPraos (PrevCrypto c)) (AlonzoEra  (PrevCrypto c))
   , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (AlonzoEra c))
   , ShelleyCompatible (Praos c) (BabbageEra  c)
   , LedgerSupportsProtocol (ShelleyBlock (Praos c) (BabbageEra c))

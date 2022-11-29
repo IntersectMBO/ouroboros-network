@@ -41,12 +41,19 @@ overShelleyBasedLedgerState f (HardForkLedgerState st) =
         :* injectSingleEra
         :* injectSingleEra
         :* injectSingleEra
-        :* injectSingleEra
+        :* injectSingleEraCurrent
         :* Nil
 
     injectSingleEra ::
-      ( ShelleyCompatible proto era, EraCrypto era ~ c
+      ( ShelleyCompatible proto era, EraCrypto era ~ (PrevCrypto c)
       , shelleyEra ~ ShelleyBlock proto era
       )
       => (LedgerState -.-> LedgerState) shelleyEra
     injectSingleEra = fn f
+
+    injectSingleEraCurrent ::
+      ( ShelleyCompatible proto era, EraCrypto era ~ c
+      , shelleyEra ~ ShelleyBlock proto era
+      )
+      => (LedgerState -.-> LedgerState) shelleyEra
+    injectSingleEraCurrent = fn f

@@ -19,6 +19,7 @@ import qualified Data.ByteString.Short as Short
 
 import           Cardano.Binary
 import           Cardano.Prelude (cborError)
+import qualified Cardano.Prelude as CP
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -234,7 +235,7 @@ instance DecodeDiskDepIx (NestedCtxt Header) ByronBlock where
       CBOR.decodeWord8 >>= \case
         0 -> SomeSecond . NestedCtxt . CtxtByronBoundary <$> CBOR.decodeWord32
         1 -> SomeSecond . NestedCtxt . CtxtByronRegular  <$> CBOR.decodeWord32
-        t -> cborError $ DecoderErrorUnknownTag "decodeDiskDepIx ByronBlock" t
+        t -> CP.cborError $ DecoderErrorUnknownTag "decodeDiskDepIx ByronBlock" t
 
 instance DecodeDiskDep (NestedCtxt Header) ByronBlock where
   decodeDiskDep ByronCodecConfig{..} (NestedCtxt ctxt) =

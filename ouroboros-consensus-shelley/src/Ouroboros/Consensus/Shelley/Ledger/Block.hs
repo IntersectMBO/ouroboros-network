@@ -113,6 +113,7 @@ instance ShelleyCompatible proto era => ConvertRawHash (ShelleyBlock proto era) 
 -- | Shelley-based block type.
 --
 -- This block is parametrised over both the (ledger) era and the protocol.
+-- TODO: A block protocol will aloways be parametrized by the same crypto
 data ShelleyBlock proto era = ShelleyBlock {
       shelleyBlockRaw        :: !(SL.Block (ShelleyProtocolHeader proto) era)
     , shelleyBlockHeaderHash :: !(ShelleyHash (ProtoCrypto proto))

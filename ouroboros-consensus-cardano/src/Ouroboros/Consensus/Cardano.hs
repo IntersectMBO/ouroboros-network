@@ -46,5 +46,5 @@ type ProtocolCardano = HardForkProtocol '[ ByronBlock
                                          , ShelleyBlock (TPraos StandardCrypto) StandardAllegra
                                          , ShelleyBlock (TPraos StandardCrypto) StandardMary
                                          , ShelleyBlock (TPraos StandardCrypto) StandardAlonzo
-                                         , ShelleyBlock (Praos StandardCrypto)  StandardBabbage
+                                         , ShelleyBlock (Praos StandardCryptoV2)  StandardBabbageV2 -- Use batch VRF and compact KES
                                          ]

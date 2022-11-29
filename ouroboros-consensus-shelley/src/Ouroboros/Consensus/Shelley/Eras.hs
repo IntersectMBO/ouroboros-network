@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardAllegra
   , StandardAlonzo
   , StandardBabbage
+  , StandardBabbageV2
   , StandardMary
   , StandardShelley
     -- * Shelley-based era
@@ -58,7 +59,7 @@ import qualified Cardano.Ledger.Babbage.Rules as Babbage
 import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
 import           Cardano.Ledger.Core as Core
-import           Cardano.Ledger.Crypto (StandardCrypto)
+import           Cardano.Ledger.Crypto (StandardCrypto, StandardCryptoV2)
 import           Cardano.Ledger.Keys (DSignable, Hash)
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
@@ -93,6 +94,9 @@ type StandardAlonzo = AlonzoEra StandardCrypto
 
 -- | The Babbage era with standard crypto
 type StandardBabbage = BabbageEra StandardCrypto
+
+-- | The Babbage era with standard crypto version 2
+type StandardBabbageV2 = BabbageEra StandardCryptoV2
 
 {-------------------------------------------------------------------------------
   Type synonyms for convenience
