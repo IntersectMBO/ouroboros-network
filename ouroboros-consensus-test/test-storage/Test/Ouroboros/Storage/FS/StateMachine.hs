@@ -1388,7 +1388,7 @@ prop_sequential tmpDir = withMaxSuccess 50000 $
           let mount = MountPoint tstTmpDir
               sm'   = sm mount
 
-          (hist, model, res) <- QSM.runCommands' sm' cmds
+          (hist, model, res) <- QSM.runCommands' (pure sm') cmds
 
           -- Close all open handles
           forM_ (RE.keys (knownHandles model)) $ F.close . handleRaw . QSM.concrete
