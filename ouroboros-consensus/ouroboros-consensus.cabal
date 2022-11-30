@@ -354,7 +354,7 @@ library src-docs
                      , nothunks
                      , serialise
                      , ouroboros-consensus
-                     , ouroboros-network
+                     , ouroboros-network-api
 
   default-language:    Haskell2010
   ghc-options:         -Wall
