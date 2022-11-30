@@ -29,7 +29,9 @@ flowchart LR;
   Ledger-->AuxLedgerEvent[AuxLedgerEvent l]; class AuxLedgerEvent tf
   Ledger-->LedgerErr[LedgerErr l]; class LedgerErr tf
 
-  Protocol(Protocol)-->ConsensusConfig[ConsensusConfig p]
+  Protocol(Protocol); class Protocol kind
+  ConsensusConfig; class ConsensusConfig df
+  Protocol-->ConsensusConfig[ConsensusConfig p];
   subgraph ConsensusProtocol[class ConsensusProtocol]
     ChainDepState[ChainDepState p]; class ChainDepState tf
     IsLeader[IsLeader p]; class IsLeader tf
