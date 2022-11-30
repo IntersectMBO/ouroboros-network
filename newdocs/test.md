@@ -1,16 +1,20 @@
 ```mermaid
+graph TB
+  classDef df fill:#E57A77;
+  classDef tf fill:#7CA1CC;
+  classDef kind fill:#A8B6CC;
+
+  Concept[Concept or kind]; class Concept kind;
+  DF[Data family]; class DF df;
+  TF[Type family]; class TF tf;
+```
+
+```mermaid
 flowchart LR;
 
   classDef df fill:#E57A77;
   classDef tf fill:#7CA1CC;
   classDef kind fill:#A8B6CC;
-
-  subgraph Legend
-    direction TB;
-    Concept[Concept or kind]; class Concept kind;
-    DF[Data family]; class DF df;
-    TF[Type family]; class TF tf;
-  end
 
   Block(Block)-->BlockProtocol[BlockProtocol blk]; class Block kind;
   BlockProtocol[BlockProtocol blk]-.->Protocol(Protocol); class BlockProtocol tf;
