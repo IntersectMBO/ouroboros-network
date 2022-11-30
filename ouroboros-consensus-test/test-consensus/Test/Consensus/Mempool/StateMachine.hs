@@ -100,7 +100,7 @@ data Model blk (r :: Type -> Type) = Model {
     , intermediateLedgerState :: !(TickedLedgerState blk)
       -- | We need to keep the model config around to be able to call the
       -- 'applyTx' from the 'LedgerSupportsMempool' class.
-    , modelConfig             :: !(LedgerConfig blk)
+    , modelConfig             :: !(LedgerConfig blk) -- TODO we could make this a parameter of all functions
     , validatedTransactions   :: ![GenTx blk]
       -- | We use an integer for the maximum capacity because we want to detect
       -- if the SUT ever exceeds it.
@@ -187,13 +187,6 @@ data Response blk (ref :: Type -> Type) =
 
 deriving stock instance (Show (GenTx blk), Show (TickedLedgerState blk)) => Show (Response blk ref)
 
--- -- TODO: why not merge this with SuccessfulResponse?
--- newtype Response blk ref = Response (SuccessfulResponse blk ref)
---   deriving stock Generic1
---   deriving anyclass Rank2.Foldable
-
--- deriving stock instance (Show (GenTx blk), Show (SuccessfulResponse blk ref)) => Show (Response blk ref)
-
 -- | TODO: for now we use a mock reference as a placeholder for mock references
 -- that might be used in the tests.
 data MockRef = MockRef
@@ -220,8 +213,8 @@ generator _ =
                           -- the generator to always generate a 'SetLedgerState'
                           -- action if this is uninitialized.
                          , (20, pure GetSnapshot)
-                         , (20, pure SyncWithLedger)
-                         , (10, fmap SetLedgerState QC.arbitrary)
+                         , (15, pure SyncWithLedger)
+                         , (15, fmap SetLedgerState QC.arbitrary)
                          ]
 
 shrinker ::
@@ -246,26 +239,6 @@ semantics mempoolWithMockedLedgerItf (TryAddTxs txs) = do
                       DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
                       txs
     pure RespOk
-    -- (processed, toProcess) <- tryAddTxs (getMempool mempoolWithMockedLedgerItf)
-    --                                     DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
-    --                                     txs
-  --   let (added, rejected) = partition isMempoolTxAdded processed
-  --   -- TODO hmmm, I'd need to take this from the internal mempool state. The
-  --   -- alternative is to calculate this state by applying the transactions in
-  --   -- the model, but we'll have to calculate this twice.
-  --   newTickedSt <-   fmap snapshotLedgerState
-  --                  $ atomically
-  --                  $ getSnapshot (getMempool mempoolWithMockedLedgerItf)
-  --   pure $! Response
-  --        $! TryAddTxsResult
-  --             { valid       = fmap getTx added
-  --             , invalid     = fmap getTx rejected
-  --             , unprocessed = toProcess
-  --             , newTickedSt = newTickedSt
-  --             }
-  -- where
-  --   getTx (MempoolTxAdded vtx)     = txForgetValidated vtx
-  --   getTx (MempoolTxRejected tx _) = tx
 semantics mempoolWithMockedLedgerItf (SetLedgerState newSt) = do
   setLedgerState mempoolWithMockedLedgerItf newSt
   pure RespOk
@@ -291,7 +264,7 @@ postcondition :: forall blk.
      )
   => Model    blk Concrete
   -> Cmd      blk Concrete
-  -> Response blk  Concrete
+  -> Response blk Concrete
   -> Logic
 postcondition _model TryAddTxs {} RespOk = Top
 postcondition model  GetSnapshot  Snap { snapTxs, snapLedgerState } =
@@ -528,11 +501,7 @@ instance ( QC.Arbitrary (LedgerState blk)
   Labelling
 -------------------------------------------------------------------------------}
 
--- Show the labelled examples. In particular:
---
--- Mempool with at least N accepted transactions
--- Mempool with at least N rejected transactions
---
+-- Show the labelled examples. See 'Tag' for a description of the cases we tag.
 showMempoolTestScenarios :: forall blk.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
