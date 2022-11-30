@@ -1,8 +1,8 @@
 ```mermaid
 graph TB
-  classDef df fill:#E57A77;
-  classDef tf fill:#7CA1CC;
-  classDef kind fill:#A8B6CC;
+  classDef df fill:#4285F4;
+  classDef tf fill:#34A853;
+  classDef kind fill:#EA4335;
 
   Concept[Concept or kind]; class Concept kind;
   DF[Data family]; class DF df;
@@ -12,9 +12,9 @@ graph TB
 ```mermaid
 flowchart LR;
 
-  classDef df fill:#E57A77;
-  classDef tf fill:#7CA1CC;
-  classDef kind fill:#A8B6CC;
+  classDef df fill:#4285F4;
+  classDef tf fill:#34A853;
+  classDef kind fill:#EA4335;
 
   Block(Block)-->BlockProtocol[BlockProtocol blk]; class Block kind;
   BlockProtocol[BlockProtocol blk]-.->Protocol(Protocol); class BlockProtocol tf;
