@@ -47,7 +47,7 @@ data MempoolSize = MempoolSize
     -- ^ The number of transactions in the mempool.
   , msNumBytes :: !Word32
     -- ^ The summed byte size of all the transactions in the mempool.
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
 
 instance Semigroup MempoolSize where
   MempoolSize xt xb <> MempoolSize yt yb = MempoolSize (xt + yt) (xb + yb)

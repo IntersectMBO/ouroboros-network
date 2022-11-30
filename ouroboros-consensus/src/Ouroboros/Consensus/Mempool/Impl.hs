@@ -106,7 +106,7 @@ mkMempool ::
 mkMempool mpEnv = Mempool
     { tryAddTxs      = implTryAddTxs mpEnv
     , removeTxs      = implRemoveTxs mpEnv
-    , syncWithLedger = implSyncWithLedger mpEnv
+    , syncWithLedger = fst <$> implSyncWithLedger mpEnv
     , getSnapshot    = implSnapshotFromIS <$> readTMVar istate
     , getSnapshotFor = implGetSnapshotFor mpEnv
     , getCapacity    = isCapacity <$> readTMVar istate
@@ -297,7 +297,8 @@ implTryAddTxs mpEnv wti =
             -- We couldn't retrieve the values because the state is no longer on
             -- the db. We need to resync.
             atomically $ putTMVar istate is
-            void $ implSyncWithLedger mpEnv
+            (_, mTrace) <- implSyncWithLedger mpEnv
+            whenJust mTrace (traceWith trcr)
             go acc txs
 
 implSyncWithLedger ::
@@ -308,7 +309,7 @@ implSyncWithLedger ::
      , HasTxId (GenTx blk)
      )
   => MempoolEnv m blk
-  -> m (MempoolSnapshot blk)
+  -> m (MempoolSnapshot blk, Maybe (TraceEventMempool blk))
 implSyncWithLedger mpEnv = do
   (is, ls) <- atomically $ do
     is <- takeTMVar istate
@@ -322,7 +323,7 @@ implSyncWithLedger mpEnv = do
     then do
     -- The tip didn't change, put the same state.
     atomically $ putTMVar istate is
-    pure $ implSnapshotFromIS is
+    pure $ (implSnapshotFromIS is, Nothing)
     else do
     -- We need to revalidate
     let pt = castPoint (getTip ls)
@@ -341,7 +342,7 @@ implSyncWithLedger mpEnv = do
                               is
         atomically $ putTMVar istate is'
         whenJust mTrace (traceWith trcr)
-        return $ implSnapshotFromIS is'
+        return $ (implSnapshotFromIS is', mTrace)
       Left ChainDB.PointNotFound{} -> do
         -- If the point is gone, resync
         atomically $ putTMVar istate is

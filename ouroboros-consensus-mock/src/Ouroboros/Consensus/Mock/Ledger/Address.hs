@@ -15,6 +15,7 @@ import           Data.Text (pack, unpack)
 import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (NodeId (..))
 import           Ouroboros.Consensus.Util.Condense
