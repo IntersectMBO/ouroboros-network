@@ -340,3 +340,29 @@ library
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
     cpp-options:       -DENABLE_ASSERTIONS
+
+
+library src-docs
+  hs-source-dirs:      src-docs
+  other-modules:       Ouroboros.Consensus.Tutorial.Simple
+                     , Ouroboros.Consensus.Tutorial.WithEpoch
+
+  build-depends:       base
+                     , containers
+                     , hashable
+                     , mtl
+                     , nothunks
+                     , serialise
+                     , ouroboros-consensus
+                     , ouroboros-network-api
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -fno-ignore-asserts
