@@ -8,6 +8,9 @@ This document should eventually specify that level of detail as well.
 
 ## Desiderata
 
+- *Conventional Version Number*.
+  We'd like our release versions to have the standard shape of `A.B.C`, where in particular increments of `C` principally represent bugfixes.
+
 - *Simplicity and Familiarity*.
   We'd like the versioning scheme to be simple to explain, and ideally already well-established.
 
@@ -25,17 +28,17 @@ This document should eventually specify that level of detail as well.
 
 ## Proposal Simplest
 
-To cut a release, merely create branch `release/XXX` pointing at the desired commit on the `master` branch and also immediately create a subsequent `master` commit that advances all the appropriate versions.
+To cut a new significant release, merely create branch `release/foo-A.B.x` pointing at the desired commit on the `master` branch and also immediately create a subsequent `master` commit that advances all the appropriate versions.
 
 ## Proposal Parity
 
 Minor versions will be odd for packages on the `master` branch and even for releases (like the GHC Team's scheme).
-To cut a release, create branch `release/XXX` pointing at the desired `master` commit and then add a commit to `release/XXX` that bumps all versions to the next even number, and also immediately create a subsequent `master` commit that advances all the appropriate versions to the next odd number.
+To cut a new significant release, create branch `release/foo-A.B.x` pointing at the desired `master` commit and then add a commit to `release/foo-A.B.x` that bumps all versions to the next even number, and also immediately create a subsequent `master` commit that advances all the appropriate versions to the next odd number.
 
 ## Proposal NonZero
 
-Master always has degenerate versions on it: everything is version 0.
-To cut a release, create branch `release/XXX` pointing at the desired `master` commit and then add a commit to `release/XXX` that advances all appropriate versions COMPARED TO their value in the previous release branch.
+Master always has degenerate versions on it: everything is version `0`.
+To cut a new significant release, create branch `release/foo-A.B.x` pointing at the desired `master` commit and then add a commit to `release/foo-A.B.x` that advances all appropriate versions COMPARED TO their value in the previous release branch.
 
 ## Proposal Dimension
 
@@ -46,6 +49,6 @@ Prelude Data.Version> makeVersion [1,2,0] `compare` makeVersion [1,2]
 GT
 ```
 
-Master versions only have two dimensions: `major.minor`.
-Release versions have at least three `major.minor.patch`, where patch can be `0`.
-To cut a release, create branch `release/XXX` pointing at the desired `master` commit and then add a `.0` patch dimension to the existing `major.minor` and immediately create a subsequent `master` commit that advances all appropriate versions to the next greater `major.minor` pair.
+Master versions only have two dimensions: `A.B`.
+Release versions have at least three `A.B.C`, where `C` can be `0`.
+To cut a new significant release, create branch `release/foo-A.B.x` pointing at the desired `master` commit and then add a `.0` `C` dimension to the existing `A.B` and immediately create a subsequent `master` commit that advances all appropriate versions to the next greater `A.B` pair.
