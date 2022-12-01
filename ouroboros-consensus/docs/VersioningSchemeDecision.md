@@ -2,6 +2,10 @@
 
 This document records our discussions around choosing how to version our packages.
 
+In its current state, the document is primarily focused on one question: for each individual package, how should the version listed in the .cabal file on the master branch relate to the version in the .cabal file in the latest release?
+In particular, I think this question is almost entirely independent of usings `git` branches versus `git` tags, SemVer versus PVP, etc.
+This document should eventually specify that level of detail as well.
+
 ## Desiderata
 
 - *Simplicity and Familiarity*. We'd like the versioning scheme to be simple to explain, and ideally already well-established.
