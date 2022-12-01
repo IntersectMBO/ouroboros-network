@@ -14,11 +14,11 @@ This document should eventually specify that level of detail as well.
 - *Simplicity and Familiarity*.
   We'd like the versioning scheme to be simple to explain, and ideally already well-established.
 
-- *Ease of execution*.
+- *Ease of Execution*.
   We'd like the process of cutting a release to merely involve following a very simple checklist.
   We'd like it to require as few inputs, discussions, decisions, etc.
 
-- *Distinguished development versions*.
+- *Distinguished Development Versions*.
   We'd like to distinguish between the two possible semantics of a version number.
 
     - The version of a released thing identifies some immutable thing, which is always somehow more refined than any release that has a lesser version number.
