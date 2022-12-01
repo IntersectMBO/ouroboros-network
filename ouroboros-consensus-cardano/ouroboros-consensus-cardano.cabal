@@ -1,3 +1,4 @@
+cabal-version:         3.0
 name:                  ouroboros-consensus-cardano
 version:               0.1.0.0
 synopsis:              The instantation of the Ouroboros consensus layer used by Cardano
@@ -10,7 +11,6 @@ author:                IOHK Engineering Team
 maintainer:            operations@iohk.io
 category:              Network
 build-type:            Simple
-cabal-version:         >=1.10
 
 source-repository head
   type:     git
@@ -53,7 +53,7 @@ library
                      , cardano-protocol-tpraos
                      , cardano-slotting
 
-                     , ouroboros-network
+                     , ouroboros-network ^>= 0.2
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-protocol
