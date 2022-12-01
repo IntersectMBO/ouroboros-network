@@ -41,6 +41,7 @@ packages: ./ouroboros-network-testing
           ./ouroboros-consensus-cardano-tools
           ./ouroboros-consensus-diffusion
           ./cardano-client
+          ./cabal-lint
 
 tests: True
 
