@@ -1,10 +1,10 @@
 # Consensus Cheatsheet (Type Families, Classes, & Notes)
 
 See [Diagrammatic Conventions](#diagrammatic-conventions)
-    
+
 ## Birds Eye Overview of Consensus Types
 ### Type Families (standalone and associated types)
-    
+
 From inspecting the directions of the arrows, it should be clear that `b :: B`
 fully determines---directly or indirectly---all the other types.
 
@@ -16,7 +16,7 @@ fully determines---directly or indirectly---all the other types.
  p  ◀──(BlockProtocol :: B→P)──── b ──(BlockConfig :: B→*)──────────────────────────────────▶ bc  ┃{- config-}┃
                                   b ──(LedgerState :: B→L)──▶ l ──(LedgerCfg :: L→*)────────▶ lc  ┃{- data  -}┃
                                                                                                   ┗━━━━━━━━━━━┛
-                                  
+
                                   b ──(LedgerState :: B→L)──▶ l ──(AuxLedgerEvent :: L→*)──▶ lev   -- events emitted by ledger
                                                               l ──(LedgerErr :: L→*)───────▶ lerr  -- errors when updating ledger
 
@@ -24,9 +24,9 @@ fully determines---directly or indirectly---all the other types.
                                   b ──(CodecConfig   :: B→*)──────▶ codecc -- for serialisation and deserialisation
                                   b ──(StorageConfig :: B→*)──────▶ sc     -- for (re)initializing the Storage Layer
                                   b ──(Header        :: B→*)──────▶ hdr    -- link block to its header
-                                  
+
                                               b,l ──(HeaderHash :: *→*)──────▶ hash   -- link block/ledger to a hash
-                        
+
   p ──(ChainDepState :: P→*)──> cds     -- protocol specific state (part that depends on the chain), would rollback when chain does
   p ──(IsLeader      :: P→*)──> isldr   -- evidence that a node /is/ the leader
   p ──(CanBeLeader   :: P→*)──> cbldr   -- evidence that we /can/ be leader
@@ -50,11 +50,11 @@ These type constructors effectively function as type families (as type families 
 
 ```haskell
                                   b ────(Point :: B→*)───────────▶ point    -- newtype ... -- a point on the chain: hash & slotno
-                                  
+
                                   b ────(LedgerConfig :: B→*)───────────▶ lc    -- type LedgerConfig b = LedgerCfg (LedgerState b)
                                   b ────(LedgerError  :: B→*)───────────▶ lerr  -- type LedgerError  b = LedgerErr (LedgerState b)
                                   b ────(TickedLedgerState :: B→*)──────▶ tls   -- type TickedLedgerState b = Ticked (LedgerState b)
-                                  
+
                                   b,l ──(HeaderFields :: *→*)────────▶ data .. = .. SlotNo .. BlockNo .. HeaderHash b ..
                                   b ────(ChainHash :: B→*)───────────▶ data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
 ```

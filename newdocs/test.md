@@ -33,6 +33,12 @@ flowchart LR;
   click Ledger "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Abstract.hs"
   Block-->LedgerState[LedgerState blk]; class LedgerState df;
   click LedgerState "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/Basics.hs"
+
+  Block-->GenTx[GenTx blk]; class GenTx df
+  click GenTx "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/SupportsMemPool.hs"
+  Block-->ApplyTxErr[GenTx blk]; class ApplyTxErr df
+  click ApplyTxErr "https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/src/Ouroboros/Consensus/Ledger/SupportsMemPool.hs"
+  Block-->ApplyTxErr[GenTx blk]; class ApplyTxErr df
   LedgerState-.->Ledger
   Ledger-->AuxLedgerEvent[AuxLedgerEvent l]; class AuxLedgerEvent tf
   Ledger-->LedgerErr[LedgerErr l]; class LedgerErr tf
