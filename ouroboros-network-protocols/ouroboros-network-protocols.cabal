@@ -95,9 +95,10 @@ library
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
 
-                       io-classes       ^>=0.3,
-                       ouroboros-network-api,
-                       typed-protocols   >=0.1 && <1.0,
+                       io-classes,
+                       ouroboros-network-api
+                                        ^>=0.1,
+                       typed-protocols,
                        typed-protocols-cborg
                                          >=0.1 && <1.0
 

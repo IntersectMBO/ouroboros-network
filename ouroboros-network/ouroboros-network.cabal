@@ -119,15 +119,13 @@ library
                        contra-tracer,
                        monoidal-synchronisation,
 
-                       io-classes       ^>=0.3,
-                       network-mux       >=0.1 && <1.0,
+                       io-classes,
+                       network-mux,
                        ouroboros-network-api,
-                       ouroboros-network-framework
-                                         >=0.1 && <1.0,
-                       ouroboros-network-protocols
-                                        ^>=0.2,
-                       strict-stm       ^>=0.2,
-                       typed-protocols   >=0.1 && <1.0,
+                       ouroboros-network-framework ^>=0.2,
+                       ouroboros-network-protocols ^>=0.2,
+                       strict-stm,
+                       typed-protocols,
   if !os(windows)
     build-depends:     directory,
                        unix

@@ -65,7 +65,7 @@ library
                        contra-tracer,
 
                        io-classes       ^>=0.3,
-                       network-mux       >=0.1 && <1.0,
+                       network-mux      ^>=0.2,
                        strict-stm       ^>=0.2,
                        typed-protocols  ^>=0.1,
 
