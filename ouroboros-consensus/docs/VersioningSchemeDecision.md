@@ -1,3 +1,7 @@
+TODO "WLOG, suppose the repository contains only one package"
+
+TODO simpler formula for "release a non-`master` commit that declares version ..."
+
 # Choosing a Versioning Schemes
 
 This document records our discussions around choosing how to version our packages.
@@ -65,19 +69,46 @@ The following enrichment adds the minimal amount of additional complexity to avo
 
 Release versions are A.B.C = Major.Minor.Patch (or PVP's Major.Major.Minor.Patch)
 
-Master versions are either Left A.B = Major.Minor OR Right A.B.C.Z = Major.Minor.Patch.666
+Master versions are either A.B = Major.Minor OR A.B.C.Z = Major.Minor.Patch.9001;
+it's four dimensional when the next release is just a patch, and it's two dimensional when the next release is more than a patch.
 
 Any PR that just fixes bug doesn't alter the master versions.
 And any PR that does more than just fix a bug must also update the master versions as follows.
 
-  Right A.B.C.666 -> Left next(A.B)
-  Left  A.B       -> Left A.B          -- NB you're free to choose (A+n).(B+n) if you wanted
+  A.B.C.9001 -> next(A.B)
+  A.B        -> A.B
 
-To cut a significant release from master version Left A.B, release a non-`master` commit that declares version A.B.0.
-Also immediately update the master version to Left A.B.0.666.
+Of course, you're also free to choose that any PR sets the version to (A+1+n).(B+1+n) even if the above rules do not require it.
 
-To cut a significant release from master version Right A.B.C.666, release a non-`master` commit that declares version A.B.(C+1).
-Also immediately update the master version to Right A.B.(C+1).666.
+To cut a significant release from master version A.B, release a non-`master` commit that declares version A.B.0.
+Also immediately update the master version to A.B.0.9001.
+
+To cut a significant release from master version Right A.B.C.9001, release a non-`master` commit that declares version A.B.(C+1).
+Also immediately update the master version to Right A.B.(C+1).9001.
+
+The following labelled transition system rules captures how the master version evolves.
+
+```
+  st          --------[patch PR]-------> st
+
+  A.B.C.9001  ---[more-than-patch PR]--> next(A.B)
+  A.B         ---[more-than-patch PR]--> A.B
+
+  A.B.C.9001  ---[release A.B.(C+1)]---> A.B.(C+1).9001
+  A.B         -----[release A.B.0]-----> A.B.0.9001
+```
+
+Pro:
+
+- It enforces all desired invariants.
+
+- It's a very mechanical state machine, easy to execute and also easy to immediately recognize which state it's in.
+
+Cons:
+
+- The state machine prevents any explanation from being comparatively small.
+
+- This scheme is certainly not already well-established!
 
 This only thing this scheme does not track bugfix changes within master versions;
 but that isn't even on of our desiderata.
