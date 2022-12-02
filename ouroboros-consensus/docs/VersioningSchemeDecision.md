@@ -55,7 +55,8 @@ Cons:
 ## Proposal FallingEdgePatch
 
 A patch PR doesn't alter the `main` version.
-Each more-than-patch PR must update the `main` version from `A.B.C` to `next(A.B).0` unless `A.B.0` is already greater than the previous release.
+Each `A`-level PR must update the `main` version from `A.B.C` to `(A+1).B.0` unless `A.0.0` is already greater than the previous release.
+Each `B`-level PR must update the `main` version from `A.B.C` to `A.(B+1).0` unless `A.B.0` is already greater than the previous release.
 
 To cut a release from a commit COMMIT on `main` that declares `A.B.C`, announce COMMIT.
 Also immediately update the `main` version to `A.B.(C+1)`.
@@ -64,7 +65,7 @@ Cons:
 
 - `main` versions and release versions are not distinguished.
 
-- Some `main` commits will declare version `A.B.(C+1)`, even if that version is never officially released or is created only later by backporting _different_ patch commits to a previous release branch.
+- Some `main` commits will declare version `A.B.(C+1)` even if that version is never officially released or is created only later by backporting _different_ (patch) commits to a previous release branch.
 
 ## Proposal Parity
 
@@ -75,11 +76,11 @@ This is similar to the GHC Team's scheme.
 PRs do not alter the `main` version.
 
 To cut a release from a commit COMMIT on `main` that declares version `A.B` (where `B` is necessarily odd), announce a new non-`main` commit that extends COMMIT merely to declare version `X.Y = next(A.B)` (where `Y` is necessarily even).
-Also immediately update the `main` version to the next `X.(Y+2)`.
+Also immediately update the `main` version to `X.(Y+1)`.
 
 Cons:
 
-- Commits on `main` that only include patches since the previous release would still spuriously include the `+2` increase in the `B` dimension.
+- Commits on `main` that only include patches since the previous release would still spuriously include the `Y+1` increment in the `B` dimension.
 
 ## Proposal NonZero
 
@@ -123,33 +124,42 @@ Proposal Dimension above has the downside that it incur spurious increments of `
 The following enrichment adds the minimal amount of additional complexity to avoid that without losing any invariants.
 
 Each release version is three-dimensional, `A.B.C`.
-Each `main` version is either two-dimensional `A.B` or four-dimensional `A.B.C.9001`;
+Each `main` version is either two-dimensional `A.B` or four-dimensional `A.B.C.2718`;
 it's four-dimensional when the next release is just a patch, and it's two-dimensional when the next release is more than a patch.
+`2718` is just a meaningless signpost; it's so large it's unlikely to come up in actual versioning and it's the first digits of _e_, which is related to _growth_.
 
 A patch PR doesn't alter the `main` version.
-A more-than-patch PR must update the `main` version as follows.
+A `B`-level PR must update the `main` version as follows.
 
 ```
-  A.B.C.9001 -> next(A.B)
+  A.B.C.2718 -> A.(B+1)
   A.B        -> A.B
 ```
 
-To cut a release from a commit COMMIT on `main` that declares version `A.B`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.0`.
-Also immediately update the `main` version to `A.B.0.9001`.
+An `A`-level PR must update the `main` version as follows.
 
-To cut a release from a commit COMMIT on `main` that declares version `A.B.C.9001`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.(C+1)`.
-Also immediately update the `main` version to `A.B.(C+1).9001`.
+```
+  A.B.C.2718 -> (A+1).0
+  A.B        -> if A.0 is already greater than the latest release then A.B else (A+1).B
+```
+
+To cut a release from a commit COMMIT on `main` that declares version `A.B`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.0`.
+Also immediately update the `main` version to `A.B.0.2718`.
+
+To cut a release from a commit COMMIT on `main` that declares version `A.B.C.2718`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.(C+1)`.
+Also immediately update the `main` version to `A.B.(C+1).2718`.
 
 The following labelled transition system rules captures how the `main` version evolves.
 
 ```
   st          --------[patch PR]-------> st
 
-  A.B.C.9001  ---[more-than-patch PR]--> next(A.B)
-  A.B         ---[more-than-patch PR]--> A.B
+  A.B.C.2718  ---[more-than-patch PR]--> next(A.B)
+  A.B         ------[B-level PR]-------> A.B
+  A.B         ------[A-level PR]-------> if A.0 is greater than the latest release then A.B else (A+1).B
 
-  A.B.C.9001  ---[release A.B.(C+1)]---> A.B.(C+1).9001
-  A.B         -----[release A.B.0]-----> A.B.0.9001
+  A.B.C.2718  ---[release A.B.(C+1)]---> A.B.(C+1).2718
+  A.B         -----[release A.B.0]-----> A.B.0.2718
 ```
 
 Pro:
