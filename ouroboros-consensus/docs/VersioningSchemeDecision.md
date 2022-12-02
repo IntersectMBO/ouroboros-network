@@ -38,7 +38,12 @@ To cut a new significant release, create branch `release/foo-A.B.x` pointing at 
 ## Proposal NonZero
 
 Master always has degenerate versions on it: everything is version `0`.
-To cut a new significant release, create branch `release/foo-A.B.x` pointing at the desired `master` commit and then add a commit to `release/foo-A.B.x` that advances all appropriate versions COMPARED TO their value in the previous release branch.
+
+To cut a new significant release, tag a commit _not on `master`_ that advances all appropriate versions COMPARED TO their value in the previous release branch.
+
+Note that the degenerate versions could carry information.
+EG they could be just a single number.
+The only requirement is that they are inherently distinguished from release versions.
 
 ## Proposal Dimension
 
