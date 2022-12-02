@@ -42,6 +42,7 @@ library
                      , cardano-crypto-wrapper
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
+                     , cardano-slotting
                      , containers        >=0.5   && <0.7
                      , hedgehog-quickcheck
                      , mtl               >=2.2   && <2.3
