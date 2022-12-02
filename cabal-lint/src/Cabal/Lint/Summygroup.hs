@@ -13,8 +13,16 @@ import qualified Data.Map as Map
 
 -----
 
--- | Like 'Semigroup', but for disjunction instead of conjunction
-class Summygroup m where (<+>) :: m -> m -> m
+-- | Given a semigroup interpreted here as multiplication, this class adds an additive operator with distributivity.
+--
+-- > (a <+> b) <+> c = a <+> (b <+> c)
+--
+-- > (a <+> b) <> x = (a <> x) <+> (b <> x)
+--
+-- This abstraction is a semiring without the additive identity; we don't think
+-- there's an effective established name for that, so we keep the cheeky
+-- @Summygroup@.
+class Semigroup m => Summygroup m where (<+>) :: m -> m -> m
 
 instance Summygroup b => Summygroup (a -> b) where
   f <+> g = \x -> f x <+> g x
