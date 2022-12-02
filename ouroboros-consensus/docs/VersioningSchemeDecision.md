@@ -57,3 +57,27 @@ GT
 Master versions only have two dimensions: `A.B`.
 Release versions have at least three `A.B.C`, where `C` can be `0`.
 To cut a new significant release, create branch `release/foo-A.B.x` pointing at the desired `master` commit and then add a `.0` `C` dimension to the existing `A.B` and immediately create a subsequent `master` commit that advances all appropriate versions to the next greater `A.B` pair.
+
+## Proposal Dimension24
+
+Proposal Dimension above has the downside of spurious increments of Major.Minor.
+The following enrichment adds the minimal amount of additional complexity to avoid that without losing any invariants.
+
+Release versions are A.B.C = Major.Minor.Patch (or PVP's Major.Major.Minor.Patch)
+
+Master versions are either Left A.B = Major.Minor OR Right A.B.C.Z = Major.Minor.Patch.666
+
+Any PR that just fixes bug doesn't alter the master versions.
+And any PR that does more than just fix a bug must also update the master versions as follows.
+
+  Right A.B.C.666 -> Left next(A.B)
+  Left  A.B       -> Left A.B          -- NB you're free to choose (A+n).(B+n) if you wanted
+
+To cut a significant release from master version Left A.B, release a non-`master` commit that declares version A.B.0.
+Also immediately update the master version to Left A.B.0.666.
+
+To cut a significant release from master version Right A.B.C.666, release a non-`master` commit that declares version A.B.(C+1).
+Also immediately update the master version to Right A.B.(C+1).666.
+
+This only thing this scheme does not track bugfix changes within master versions;
+but that isn't even on of our desiderata.
