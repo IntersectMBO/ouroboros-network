@@ -59,6 +59,7 @@ module Data.Map.Diff.Strict (
   , Act (..)
   , foldMapAct
   , traverseActs_
+  , traverseLastDiffEntries
   , unsafeFoldMapDiffEntry
   ) where
 
@@ -571,3 +572,14 @@ foldMapAct f (Diff m) = foldMap (fmap f . foldToAct)  m
 unsafeFoldMapDiffEntry :: (Monoid m) => (DiffEntry v -> m) -> Diff k v -> m
 unsafeFoldMapDiffEntry f (Diff m) =
   foldMap (f . NESeq.last . unNEDiffHistory) m
+
+-- | Like @'traverseActs_'@, but traverses over the last diff entry in each diff
+-- history, instead of folded actions.
+traverseLastDiffEntries ::
+     Applicative t
+  => (k -> DiffEntry v -> t a)
+  -> Diff k v
+  -> t ()
+traverseLastDiffEntries f (Diff m) = () <$ Map.traverseWithKey g m
+  where
+    g k dh = f k (last dh)

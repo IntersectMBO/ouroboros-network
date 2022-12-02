@@ -451,21 +451,20 @@ readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK (DS.Keys keys)) =
           Just v  -> Map.insert k v m
 
 writeLMDBTable ::
-     Eq v
-  => LMDBMK  k v
+     LMDBMK  k v
   -> CodecMK k v
   -> DiffMK  k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
 writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK d) =
     ApplyEmptyMK <$ lmdbWriteTable
   where
-    lmdbWriteTable = void $ DS.traverseActs_ go d
+    lmdbWriteTable = void $ DS.traverseLastDiffEntries go d
       where
-        go k act = put codecMK db k $ case act of
-          DS.Del _v       -> Nothing
-          DS.Ins v        -> Just v
-          DS.DelIns _v v' -> Just v'
-          DS.InsDel       -> Nothing
+        go k de = put codecMK db k $ case de of
+          DS.Delete _v           -> Nothing
+          DS.Insert v            -> Just v
+          DS.UnsafeAntiDelete _v -> error "Found anti-delete."
+          DS.UnsafeAntiInsert _v -> error "Found anti-insert."
 
 {-------------------------------------------------------------------------------
  Db Settings
