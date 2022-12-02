@@ -68,7 +68,7 @@ data ComponentError =
   |
     MissingOptions (NES.NonEmptySet String)
   |
-    NonEmptyDefaultExtensions (NES.NonEmptySet C.Extension)
+    NonEmptyExtensions (NES.NonEmptySet C.Extension)
   deriving (Eq, Ord)
 
 -- | Error at the package scope
@@ -145,7 +145,7 @@ classifyMessage = \case
         RepeatDeps{} -> "RepeatDeps"
         RepeatOptions{} -> "RepeatOptions"
         MissingOptions{} -> "MissingOptions"
-        NonEmptyDefaultExtensions{} -> "DefaultExtensions"
+        NonEmptyExtensions{} -> "Extensions"
 
 -- | The user-readable meaning of a 'Message'
 renderMessageOneLineText :: forall puid. (PrjPkgId puid -> String) -> Message puid -> String
@@ -163,7 +163,7 @@ renderMessageOneLineText sho e = case e of
         RepeatDeps pkgnames -> "repeats dependencies in its `build-depends' fields: " <> intercalate ", " [ C.prettyShow pname <> ":" <> C.prettyShow (C.CLibName libname) | DepId pname libname <- NES.toList pkgnames ]
         RepeatOptions opt -> "repeats options in its `ghc-options' fields: " <> unwords (NES.toList opt)
         MissingOptions opts -> "is missing required options in its `ghc-options' fields: " <> unwords (NES.toList opts)
-        NonEmptyDefaultExtensions exts -> "declares default language extensions: " <> unwords (map C.prettyShow $ NES.toList exts)
+        NonEmptyExtensions exts -> "declares `default-extensions' and/or `other-extensions': " <> unwords (map C.prettyShow $ NES.toList exts)
   where
     prettyV vrange =
         if C.anyVersion == vrange

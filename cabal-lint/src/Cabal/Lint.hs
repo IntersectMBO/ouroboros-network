@@ -206,8 +206,8 @@ lintPackageDescription cfg gpd =
     getLanguage me bi =
         ( oneOccurrence (MyLanguage <$> C.defaultLanguage bi) me
         ,   mconcat
-          $ [ oneSometimes $ NonEmptyDefaultExtensions exts'
-            | exts' <- maybeToList $ mkNES $ Set.fromList $ C.defaultExtensions bi
+          $ [ oneSometimes $ NonEmptyExtensions exts'
+            | exts' <- maybeToList $ mkNES $ Set.fromList $ (C.defaultExtensions <> C.otherExtensions) bi
             ]
         )
 
