@@ -22,6 +22,9 @@ import qualified Data.Map as Map
 -- This abstraction is a semiring without the additive identity; we don't think
 -- there's an effective established name for that, so we keep the cheeky
 -- @Summygroup@.
+--
+-- This class does not constrain how 'mempty' and @<+>@ relate when @m@ is a 'Monoid'.
+-- EG it annihilates for 'Always' and is neutral for 'Sometimes'.
 class Semigroup m => Summygroup m where (<+>) :: m -> m -> m
 
 instance Summygroup b => Summygroup (a -> b) where
