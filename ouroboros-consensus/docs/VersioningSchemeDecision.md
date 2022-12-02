@@ -54,7 +54,7 @@ Cons:
 
 ## Proposal FallingEdgePatch
 
-A patch PR doesn't alter the `main` version.
+A `C`-level PR doesn't alter the `main` version.
 Each `A`-level PR must update the `main` version from `A.B.C` to `(A+1).B.0` unless `A.0.0` is already greater than the previous release.
 Each `B`-level PR must update the `main` version from `A.B.C` to `A.(B+1).0` unless `A.B.0` is already greater than the previous release.
 
@@ -118,51 +118,7 @@ PRs do not alter the `main` version.
 To cut a release from a commit COMMIT on `main` that declares version `A.B`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.0`.
 Also immediately update the `main` version to `next(A.B)`.
 
-## Proposal Dimension24
-
-Proposal Dimension above has the downside that it incur spurious increments of `A.B` when the only differences between two releases were patch PRs.
-The following enrichment adds the minimal amount of additional complexity to avoid that without losing any invariants.
-
-Each release version is three-dimensional, `A.B.C`.
-Each `main` version is either two-dimensional `A.B` or four-dimensional `A.B.C.2718`;
-it's four-dimensional when the next release is just a patch, and it's two-dimensional when the next release is more than a patch.
-`2718` is just a meaningless signpost; it's so large it's unlikely to come up in actual versioning and it's the first digits of _e_, which is related to _growth_.
-
-A patch PR doesn't alter the `main` version.
-A `B`-level PR must update the `main` version as follows.
-
-```
-  A.B.C.2718 -> A.(B+1)
-  A.B        -> A.B
-```
-
-An `A`-level PR must update the `main` version as follows.
-
-```
-  A.B.C.2718 -> (A+1).0
-  A.B        -> if A.0 is already greater than the latest release then A.B else (A+1).B
-```
-
-To cut a release from a commit COMMIT on `main` that declares version `A.B`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.0`.
-Also immediately update the `main` version to `A.B.0.2718`.
-
-To cut a release from a commit COMMIT on `main` that declares version `A.B.C.2718`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.(C+1)`.
-Also immediately update the `main` version to `A.B.(C+1).2718`.
-
-The following labelled transition system rules captures how the `main` version evolves.
-
-```
-  st          --------[patch PR]-------> st
-
-  A.B.C.2718  ---[more-than-patch PR]--> next(A.B)
-  A.B         ------[B-level PR]-------> A.B
-  A.B         ------[A-level PR]-------> if A.0 is greater than the latest release then A.B else (A+1).B
-
-  A.B.C.2718  ---[release A.B.(C+1)]---> A.B.(C+1).2718
-  A.B         -----[release A.B.0]-----> A.B.0.2718
-```
-
-Pro:
+Pros:
 
 - It enforces all desired invariants.
 
@@ -170,8 +126,64 @@ Pro:
 
 Cons:
 
-- The state machine prevents any explanation from being comparatively small.
+- The multi-sorted state transition system prevents any explanation from being comparatively small.
 
 - This scheme is certainly not already well-established!
 
-This only thing this scheme does not track is changes between `main` versions beyond the escalation from patch-level changes to more-than-patch level.
+- It incurs spurious increments of `A.B` when the only differences between two releases were patch PRs.
+
+## Proposal Dimension124
+
+Proposal Dimension above has the downside that it incurs spurious increments of `A.B` when the only differences between two releases were patch PRs.
+The following enrichment adds the minimal amount of additional complexity to avoid that without losing any invariants.
+
+Each `main` version is `A`, `A.B` where `B>0`, or `A.B.C.2718`; it is never three-dimensional.
+Each release version is the usual `A.B.C`.
+`2718` is just a recognizable magic number; it's so large it's unlikely to come up in actual versioning and it's the first digits of _e_, which is related to _growth_, which is what the `main` branch is for.
+
+PRs alter the `main` version as indicated in the following diagram.
+
+```
+  A          --------[A-level PR]---------> A
+  A          --------[B-level PR]---------> A
+  A          --------[C-level PR]---------> A
+
+  A.B        --------[A-level PR]---------> A+1
+  A.B        --------[B-level PR]---------> A.B
+  A.B        --------[C-level PR]---------> A.B
+
+  A.B.C.2718 --------[A-level PR]---------> A+1
+  A.B.C.2718 --------[B-level PR]---------> A.(B+1)
+  A.B.C.2718 --------[C-level PR]---------> A.B.C.2718
+```
+
+To cut a release from a commit COMMIT on `main` that declares version `A`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.0.0`.
+Also immediately update the `main` version to `A.0.0.2718`.
+
+To cut a release from a commit COMMIT on `main` that declares version `A.B`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.0`.
+Also immediately update the `main` version to `A.B.0.2718`.
+
+To cut a release from a commit COMMIT on `main` that declares version `A.B.C.2718`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.(C+1)`.
+Also immediately update the `main` version to `A.B.(C+1).2718`.
+
+This is summarized in the following diagram.
+
+```
+  A          -----[release A.0.0    ]-----> A.0.0.2718
+  A.B        -----[release A.B.0    ]-----> A.B.0.2718
+  A.B.C.2718 -----[release A.B.(C+1)]-----> A.B.(C+1).2718
+```
+
+Pros:
+
+- It enforces all desired invariants.
+
+- It's a very mechanical state machine, easy to execute and also easy to immediately recognize which state it's in.
+
+- It allows for the natural minimal progression of release versions.
+
+Cons:
+
+- The multi-sorted state transition system prevents any explanation from being comparatively small.
+
+- This scheme is certainly not already well-established!
