@@ -2,11 +2,11 @@
 
 This document records our discussions around choosing how to version our packages.
 
-In its current state, the document is primarily focused on one question: for each individual package, how should the version listed in the .cabal file on the main integration branch relate to the version in the .cabal file in the latest release?
+In its current state, the document is primarily focused on one question: for each individual package, how should the version listed in the `.cabal` file on the main integration branch relate to the version in the `.cabal` file in the latest release?
 In particular, I think this question is almost entirely independent of usings `git` branches versus `git` tags for releases, SemVer versus PVP, etc.
 This document should eventually specify that level of detail as well.
 
-Given its current focus, Without loss of generality, suppose the repository contains only one package while considering the proposals below.
+Given its current focus, without loss of generality, suppose the repository contains only one package while considering the proposals below.
 
 ## Desiderata
 
