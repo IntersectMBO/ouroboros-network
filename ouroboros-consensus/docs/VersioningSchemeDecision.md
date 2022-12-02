@@ -50,6 +50,8 @@ Cons:
 
 - `main` versions and release versions are not distinguished.
 
+- Cutting a release requires assessing all the changes on `main` since the last release.
+
 ## Proposal FallingEdgePatch
 
 A patch PR doesn't alter the `main` version.
@@ -68,16 +70,16 @@ Cons:
 
 Each `main` version `A.B.C` has an odd `B`.
 Each release version `A.B.C` has an even `B`.
-(This is similar to the GHC Team's scheme.)
+This is similar to the GHC Team's scheme.
 
 PRs do not alter the `main` version.
 
-To cut a release from a commit COMMIT on `main` that declares version `A.B` (where `B` is necessarily odd), announce a new non-`main` commit that extends COMMIT merely to declare version `next(A.B)`.
-Also immediately update the `main` version to `A.(B+2)`.
+To cut a release from a commit COMMIT on `main` that declares version `A.B` (where `B` is necessarily odd), announce a new non-`main` commit that extends COMMIT merely to declare version `X.Y = next(A.B)` (where `Y` is necessarily even).
+Also immediately update the `main` version to the next `X.(Y+2)`.
 
 Cons:
 
-- Commits on `main` that only include patches since the previous commit would still spuriously include the `A.(B+2)` increment.
+- Commits on `main` that only include patches since the previous release would still spuriously include the `+2` increase in the `B` dimension.
 
 ## Proposal NonZero
 
@@ -95,6 +97,8 @@ The only requirement is that they are inherently distinguished from release vers
 Cons:
 
 - `main` versions would always be less than some older released version, which could cause confusion (among people and/or tools).
+
+- Cutting a release requires assessing all the changes on `main` since the last release.
 
 ## Proposal Dimension
 
