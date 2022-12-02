@@ -11,12 +11,15 @@ Given its current focus, without loss of generality, suppose the repository cont
 ## Desiderata
 
 - *Conventional Version Numbers*.
-  We'd like our release versions to have the standard shape of `A.B.C`, where in particular increments of `C` principally represent bugfixes/documentation improvements/etc; we'll call that kind of change a _patch PR_.
-  (Note, in the context of [the PVP](https://pvp.haskell.org/) eg, our `A` here would denote a pair.)
+  We'd like our release versions to have the standard shape of `A.B.C`, and the standard rules that `A` must increase for breaking changes, `B` must increase for backwards-compatible changes, and `C` must increase for anything else (eg bugfixes/documentation/etc aka "patches").
 
-    - Our proposals here discuss when to increment `B`, but they never discuss incrementing `A`.
-      You are of course free to decide any PR should advance to `(A+1+n).0...` or `A.(B+1+n)...` even if the proposed rules do not require it.
-      They only risk of doing so is confusing downstream users.
+    - Some of our proposals below don't care about the distinction between `A` and `B`.
+      Instead of repeating the semantics of `A` and `B` in each proposal, we refer to `next(A.B)` with the intention that the developer's determine whether to increment `A` or `B`.
+
+    - You are of course free to decide any PR should increment `A` or `B` even if the proposed rules do not require it.
+      Ultimately, the only risk of such spurious increases is confusing/inconveniencing downstream users.
+
+    - Note, in the context of [the PVP](https://pvp.haskell.org/) eg, our `A` dimension here would itself denote a pair.
 
 - *Simplicity and Familiarity*.
   We'd like the versioning scheme to be simple to explain and ideally already well-established.
@@ -41,7 +44,7 @@ The main integration branch is typically named `main` in fresh GitHub repositori
 
 PRs do not alter the `main` version.
 
-To cut a release from a commit COMMIT1 on `main` that declares version `A.B.C`, add to `main` a commit COMMIT2 that extends COMMIT1 merely to declare the version `A.(B+1).0` or `A.B.(C+1)` depending on what has changed on `main` since the previous release, and announce COMMIT2.
+To cut a release from a commit COMMIT1 on `main` that declares version `A.B.C`, add to `main` a commit COMMIT2 that extends COMMIT1 merely to declare the version `next(A.B).0` or `A.B.(C+1)` depending on what has changed on `main` since the previous release, and announce COMMIT2.
 
 Cons:
 
@@ -50,7 +53,7 @@ Cons:
 ## Proposal FallingEdgePatch
 
 A patch PR doesn't alter the `main` version.
-Each more-than-patch PR must update the `main` version from `A.B.C` to `A.(B+1).0` unless `A.B.0 is already greater than the previous release.
+Each more-than-patch PR must update the `main` version from `A.B.C` to `next(A.B).0` unless `A.B.0` is already greater than the previous release.
 
 To cut a release from a commit COMMIT on `main` that declares `A.B.C`, announce COMMIT.
 Also immediately update the `main` version to `A.B.(C+1)`.
@@ -69,7 +72,7 @@ Each release version `A.B.C` has an even `B`.
 
 PRs do not alter the `main` version.
 
-To cut a release from a commit COMMIT on `main` that declares version `A.B` (where `B` is necessarily odd), announce a new non-`main` commit that extends COMMIT merely to declare version `A.(B+1)`.
+To cut a release from a commit COMMIT on `main` that declares version `A.B` (where `B` is necessarily odd), announce a new non-`main` commit that extends COMMIT merely to declare version `next(A.B)`.
 Also immediately update the `main` version to `A.(B+2)`.
 
 Cons:
@@ -83,7 +86,7 @@ Each release version is the usual `A.B.C`.
 
 PRs do not alter the `main` version.
 
-To cut a release from a commit COMMIT on `main` (that necessarily declares version `0`), announce a new non-`main` commit that extends COMMIT merely to declare the version to be `A.(B+1).0`, or `A.B.(C+1)` depending on what has changed on `main` since the previous release.
+To cut a release from a commit COMMIT on `main` (that necessarily declares version `0`), announce a new non-`main` commit that extends COMMIT merely to declare the version to be `next(A.B).0`, or `A.B.(C+1)` depending on what has changed on `main` since the previous release.
 
 Note that the degenerate versions could carry information.
 EG they could be just a single number.
@@ -108,7 +111,7 @@ Each release version has at least three `A.B.C`, where `C` can be `0`.
 PRs do not alter the `main` version.
 
 To cut a release from a commit COMMIT on `main` that declares version `A.B`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.0`.
-Also immediately update the `main` version to `A.(B+1)`.
+Also immediately update the `main` version to `next(A.B)`.
 
 ## Proposal Dimension24
 
@@ -123,7 +126,7 @@ A patch PR doesn't alter the `main` version.
 A more-than-patch PR must update the `main` version as follows.
 
 ```
-  A.B.C.9001 -> A.(B+1)
+  A.B.C.9001 -> next(A.B)
   A.B        -> A.B
 ```
 
@@ -138,7 +141,7 @@ The following labelled transition system rules captures how the `main` version e
 ```
   st          --------[patch PR]-------> st
 
-  A.B.C.9001  ---[more-than-patch PR]--> A.(B+1)
+  A.B.C.9001  ---[more-than-patch PR]--> next(A.B)
   A.B         ---[more-than-patch PR]--> A.B
 
   A.B.C.9001  ---[release A.B.(C+1)]---> A.B.(C+1).9001
