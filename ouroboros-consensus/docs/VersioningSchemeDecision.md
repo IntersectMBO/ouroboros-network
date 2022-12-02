@@ -14,8 +14,9 @@ Given its current focus, without loss of generality, suppose the repository cont
   We'd like our release versions to have the standard shape of `A.B.C`, where in particular increments of `C` principally represent bugfixes/documentation improvements/etc; we'll call that kind of change a _patch PR_.
   (Note, in the context of [the PVP](https://pvp.haskell.org/) eg, our `A` here would denote a pair.)
 
-    - Our proposal here discuss when to increment `B`, but they never discuss incrementing `A`.
-      You are of course free to decide any PR should advance to `(A+1).0...` or `A.(B+1)...` even if the proposed rules do not require it.
+    - Our proposals here discuss when to increment `B`, but they never discuss incrementing `A`.
+      You are of course free to decide any PR should advance to `(A+1+n).0...` or `A.(B+1+n)...` even if the proposed rules do not require it.
+      They only risk of doing so is confusing downstream users.
 
 - *Simplicity and Familiarity*.
   We'd like the versioning scheme to be simple to explain and ideally already well-established.
@@ -28,15 +29,15 @@ Given its current focus, without loss of generality, suppose the repository cont
   We'd like to distinguish between the two possible semantics of a version number.
 
     - The version of a released thing identifies some immutable thing, which is always somehow more refined than any thing---but especially another _released_ thing---that has a lesser version number.
-      We denote this by "release version" below.
+      We denote this kind of version by "release version" below.
 
     - A development version refers to some mutable thing that is improving during the time between two releases, eg the version on the main integration branch.
       Note in particular that there will usually be multiple different commits that all have the same development version number.
-      We denote this by "`main` version" below.
+      We denote this kind of version by "`main` version" below.
 
 The main integration branch is typically named `main` in fresh GitHub repositories, so that's what we'll use in this document.
 
-## Proposal AdvanceJustInTime
+## Proposal RisingEdge
 
 PRs do not alter the `main` version.
 
@@ -46,10 +47,10 @@ Cons:
 
 - `main` versions and release versions are not distinguished.
 
-## Proposal AdvanceImmediately
+## Proposal FallingEdgePatch
 
 A patch PR doesn't alter the `main` version.
-A more-than-patch PR must update the `main` version from `A.B.C` to `A.(B+1).0`.
+Each more-than-patch PR must update the `main` version from `A.B.C` to `A.(B+1).0` unless `A.B.0 is already greater than the previous release.
 
 To cut a release from a commit COMMIT on `main` that declares `A.B.C`, announce COMMIT.
 Also immediately update the `main` version to `A.B.(C+1)`.
