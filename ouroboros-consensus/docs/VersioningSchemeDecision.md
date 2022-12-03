@@ -166,12 +166,95 @@ Also immediately update the `main` version to `A.B.0.2718`.
 To cut a release from a commit COMMIT on `main` that declares version `A.B.C.2718`, announce a new non-`main` commit that extends COMMIT merely to declare version `A.B.(C+1)`.
 Also immediately update the `main` version to `A.B.(C+1).2718`.
 
-This is summarized in the following diagram.
+The above is summarized in the following diagram, which relies on this legend depicting the semantics of the one kind of node (state) and the semantics of the two kinds of edges (transitions).
 
+```mermaid
+%%{init: {'themeVariables': { 'edgeLabelBackground': 'black', 'clusterBkg': 'transparent', 'clusterBorder': 'transparent' }}}%%
+graph LR
+    %% colors from https://davidmathlogic.com/colorblind/
+    %% theming syntax from https://mermaid-js.github.io/mermaid/#/theming?id=customizing-themes-with-themevariables
+
+    %% invisible nodes
+    preLEGEND[ ]; style preLEGEND height:0px
+    preLEGEND1[ ]; style preLEGEND1 height:0px
+    preLEGEND2[ ]; style preLEGEND2 height:0px
+
+    LEGEND["what the subsequent version on main branch must immediately be"]
+
+    preLEGEND --- preLEGEND1 --> |cut the release X.Y.Z| LEGEND
+    linkStyle 0 stroke:transparent
+    linkStyle 1 stroke:#E1BE6A
+
+    preLEGEND --- preLEGEND2 --> |merge a PR| LEGEND
+    linkStyle 2 stroke:transparent
+    linkStyle 3 stroke:#40B0A6
 ```
-  A          -----[release A.0.0    ]-----> A.0.0.2718
-  A.B        -----[release A.B.0    ]-----> A.B.0.2718
-  A.B.C.2718 -----[release A.B.(C+1)]-----> A.B.(C+1).2718
+
+This diagram is a schema: one instance exists for every concrete value of the release version `A.B.C`.
+Crucially: the result state of each `release X.Y.Z` transition also exists in its own instance of the schema.
+Thus, this schema inductively defines an exhaustive (infinite) state machine.
+
+```mermaid
+%%{init: {'themeVariables': { 'edgeLabelBackground': 'black', 'clusterBkg': 'transparent', 'clusterBorder': 'transparent' }}}%%
+graph LR
+    %% colors from https://davidmathlogic.com/colorblind/
+    %% theming syntax from https://mermaid-js.github.io/mermaid/#/theming?id=customizing-themes-with-themevariables
+
+    START[ ]; style START height:0px
+
+    %% cause the layout algorithm to group up the principal nodes, those states between release A.B.C and whatever the next release is
+    subgraph " "
+        cright["A.B.C.2718"]
+        bplusleft["A.(B+1)"]
+        aplusleft["A+1"]
+    end
+
+    %% invisible intermediate nodes that force each release transition to reach outside of the above subgraph
+    RELEASEA[ ]; style RELEASEA height:0px
+    RELEASEB[ ]; style RELEASEB height:0px
+    RELEASEC[ ]; style RELEASEC height:0px
+
+    %% release transitions
+    START     --> |release A.B.C| cright
+    cright    --- RELEASEC --> |"release A.B.(C+1)"| cplus["A.B.(C+1).2718"]
+    bplusleft --- RELEASEB --> |"release A.(B+1).0"| bplus["A.(B+1).0.2718"]
+    aplusleft --- RELEASEA --> |"release (A+1).0.0"| aplus["(A+1).0.0.2718"]
+    linkStyle 0 stroke:#E1BE6A
+    linkStyle 1 stroke:#E1BE6A
+    linkStyle 2 stroke:#E1BE6A
+    linkStyle 3 stroke:#E1BE6A
+    linkStyle 4 stroke:#E1BE6A
+    linkStyle 5 stroke:#E1BE6A
+    linkStyle 6 stroke:#E1BE6A
+
+    %% merge transitions
+    cright    --> |bugfix PR| cright
+    cright    --> |backwards-compat PR| bplusleft
+    cright    --> |backwards-incompat PR| aplusleft
+    bplusleft --> |bugfix or backwards-compat PR| bplusleft
+    bplusleft --> |backwards-incompat PR| aplusleft
+    aplusleft --> |any PR| aplusleft
+    linkStyle 7 stroke:#40B0A6
+    linkStyle 8 stroke:#40B0A6
+    linkStyle 9 stroke:#40B0A6
+    linkStyle 10 stroke:#40B0A6
+    linkStyle 11 stroke:#40B0A6
+    linkStyle 12 stroke:#40B0A6
+```
+
+The induced state machine ensures that each version is as meaningful as we'd like because `P <= Q` on every PR merge and `R < X.Y.Z < S` on every release.
+
+```mermaid
+%%{init: {'themeVariables': { 'edgeLabelBackground': 'black', 'clusterBkg': 'transparent', 'clusterBorder': 'transparent' }}}%%
+graph LR
+    %% colors from https://davidmathlogic.com/colorblind/
+    %% theming syntax from https://mermaid-js.github.io/mermaid/#/theming?id=customizing-themes-with-themevariables
+
+    L1[P] --> |merge a PR| R1[Q]
+    linkStyle 0 stroke:#40B0A6
+
+    L2[R] --> |cut the release X.Y.Z| R2[S]
+    linkStyle 1 stroke:#E1BE6A
 ```
 
 Pros:
