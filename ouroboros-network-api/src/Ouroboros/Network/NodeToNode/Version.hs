@@ -1,4 +1,11 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 module Ouroboros.Network.NodeToNode.Version
   ( NodeToNodeVersion (..)
@@ -13,6 +20,10 @@ module Ouroboros.Network.NodeToNode.Version
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
+import           Data.Enum.Min
+
+import           GHC.Generics
+import           Generics.SOP.TH
 
 import qualified Codec.CBOR.Term as CBOR
 
@@ -44,7 +55,12 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable full duplex connections.
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
+  deriving (Eq, Ord, Bounded, Generic, Show, Typeable)
+
+
+deriveGeneric ''NodeToNodeVersion
+
+deriving via MinEnum 7 NodeToNodeVersion instance Enum NodeToNodeVersion
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
@@ -54,14 +70,14 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_9  = CBOR.TInt 9
     encodeTerm NodeToNodeV_10 = CBOR.TInt 10
 
-    decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
-    decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
-    decodeTerm (CBOR.TInt 9) = Right NodeToNodeV_9
+    decodeTerm (CBOR.TInt 7)  = Right NodeToNodeV_7
+    decodeTerm (CBOR.TInt 8)  = Right NodeToNodeV_8
+    decodeTerm (CBOR.TInt 9)  = Right NodeToNodeV_9
     decodeTerm (CBOR.TInt 10) = Right NodeToNodeV_10
-    decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
-                                        <> T.pack (show n)
-                                    , Just n
-                                    )
+    decodeTerm (CBOR.TInt n)  = Left (    T.pack "decode NodeToNodeVersion: unknonw tag: "
+                                       <> T.pack (show n)
+                                     , Just n
+                                     )
     decodeTerm _ = Left ( T.pack "decode NodeToNodeVersion: unexpected term"
                         , Nothing)
 

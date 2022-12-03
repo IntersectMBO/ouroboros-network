@@ -34,8 +34,11 @@ genericToEnum = to . SOP . go
   where
     go :: Int -> NS (NP I) (Code a)
     go n | n < 0 = error "genericToEnum: negative value"
-    go 0 = unsafeCoerce (Z Nil)
-    go n = unsafeCoerce (S (go (n - 1)))
+    go 0 = coerce (Z Nil)
+    go n = coerce (S (go (n - 1)))
+
+    coerce :: NS (NP I) k -> NS (NP I) (Code a)
+    coerce = unsafeCoerce
 
 instance (KnownNat n, IsEnumType a) => Enum (MinEnum n a) where
     fromEnum (MinEnum a) = genericFromEnum a + fromIntegral (natVal (Proxy :: Proxy n))

@@ -1,5 +1,11 @@
-
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
@@ -12,6 +18,10 @@ import           Data.Bits (clearBit, setBit, testBit)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
+import           Data.Enum.Min
+
+import           GHC.Generics
+import           Generics.SOP.TH
 
 import qualified Codec.CBOR.Term as CBOR
 
@@ -36,7 +46,11 @@ data NodeToClientVersion
     -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
     | NodeToClientV_14
     -- ^ added @GetPoolDistr, @GetPoolState, @GetSnapshots
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
+  deriving (Eq, Ord, Bounded, Show, Typeable, Generic)
+
+deriveGeneric ''NodeToClientVersion
+
+deriving via MinEnum 9 NodeToClientVersion instance Enum NodeToClientVersion
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
 -- `NodeToClientVersion`.  This way connecting wrong protocol suite will fail
