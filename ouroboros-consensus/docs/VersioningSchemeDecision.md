@@ -270,3 +270,17 @@ Cons:
 - The multi-sorted state transition system prevents any explanation from being comparatively small.
 
 - This scheme is certainly not already well-established!
+
+Notes:
+
+- The above state machine is natural for a monorepo, since you wouldn't make a release if nothing had changed.
+  However, in a polyrepo, you might regret updating all the revisions to `A.B.C.2718` if you want to do your next release when some of the packages haven't changed.
+  You can slightly complicate the state machine to avoid that happening.
+
+    - Split the `A.B.C.2718` node into two: `A.B.C.2718` and just `A.B.C`.
+
+    - Transition from `A.B.C` to `A.B.C.2718` only when merging a bugfix/etc PR.
+      Otherwise `A.B.C` has the some outgoing transitions as `A.B.C.2718`.
+
+    - Change all of the `release X.Y.Z` transitions to target `X.Y.Z`.
+      Thus, you set the `main` version to the release version immediately after cutting a release, but _any_ PR affecting that package should increase its `main` version to at least `X.Y.Z.2718`.
