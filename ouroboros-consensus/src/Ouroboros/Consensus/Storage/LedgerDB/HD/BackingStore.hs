@@ -16,9 +16,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
   , bsRead
   , withBsValueHandle
     -- * An in-memory backing store
-  , TVarBackingStoreClosedExn (..)
-  , TVarBackingStoreDeserialiseExn (..)
-  , TVarBackingStoreValueHandleClosedExn (..)
+  , TVarBackingStoreExn (..)
   , newTVarBackingStore
     -- * A trivial backing store
   , trivialBackingStore
@@ -26,8 +24,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
-import qualified Control.Exception as Exn
-import           Control.Monad (join, unless, void)
+import           Control.Exception (Exception)
+import           Control.Monad (join, unless, void, when)
 import qualified Data.ByteString.Lazy as BSL
 import           Data.String (fromString)
 import           GHC.Generics (Generic)
@@ -150,22 +148,18 @@ data TVarBackingStoreContents m values =
       !values
   deriving (Generic, NoThunks)
 
-data TVarBackingStoreClosedExn = TVarBackingStoreClosedExn
-  deriving anyclass (Exn.Exception)
-  deriving stock    (Show)
-
-data TVarBackingStoreValueHandleClosedExn = TVarBackingStoreValueHandleClosedExn
-  deriving anyclass (Exn.Exception)
-  deriving stock    (Show)
-
-data TVarBackingStoreDeserialiseExn =
-    TVarBackingStoreDeserialiseExn CBOR.DeserialiseFailure
+data TVarBackingStoreExn =
+    TVarBackingStoreClosedExn
+  | TVarBackingStoreValueHandleClosedExn
+  | TVarBackingStoreDirectoryExists
+  | TVarBackingStoreNonMonotonicSeq !(WithOrigin SlotNo) !(WithOrigin SlotNo)
+  | TVarBackingStoreDeserialiseExn CBOR.DeserialiseFailure
   | TVarIncompleteDeserialiseExn
-  deriving anyclass (Exn.Exception)
+  deriving anyclass (Exception)
   deriving stock    (Show)
 
 newtype StoreDirIsIncompatible = StoreDirIsIncompatible FilePath
-  deriving anyclass (Exn.Exception)
+  deriving anyclass (Exception)
 
 instance Show StoreDirIsIncompatible where
   show (StoreDirIsIncompatible p) =
@@ -197,65 +191,82 @@ newTVarBackingStore lookup_ rangeRead_ forwardValues_ enc dec initialization = d
           tvarFileExists <- FS.doesFileExist fs (extendPath path)
           -- simHasFS would error on unsafeToFilePath unless we take advantage
           -- of lazyness
-          unless tvarFileExists $ Exn.throw . StoreDirIsIncompatible =<< FS.unsafeToFilePath fs path
+          unless tvarFileExists $ IOLike.throwIO . StoreDirIsIncompatible =<< FS.unsafeToFilePath fs path
           FS.withFile fs (extendPath path) FS.ReadMode $ \h -> do
             bs <- FS.hGetAll fs h
             case CBOR.deserialiseFromBytes ((,) <$> CBOR.fromCBOR <*> dec) bs of
-              Left  err        -> Exn.throw $ TVarBackingStoreDeserialiseExn err
+              Left  err        -> IOLike.throwIO $ TVarBackingStoreDeserialiseExn err
               Right (extra, x) -> do
-                unless (BSL.null extra) $ Exn.throw TVarIncompleteDeserialiseExn
+                unless (BSL.null extra) $ IOLike.throwIO TVarIncompleteDeserialiseExn
                 pure x
         Right x -> pure x
       IOLike.newTVarIO $ TVarBackingStoreContents slot values
     pure BackingStore {
         bsClose    = IOLike.atomically $ do
+          guardClosed ref
           IOLike.writeTVar ref TVarBackingStoreContentsClosed
       , bsCopy = \(FS.SomeHasFS fs) (BackingStorePath path) ->
           join $ IOLike.atomically $ do
             IOLike.readTVar ref >>= \case
               TVarBackingStoreContentsClosed                ->
-                pure $ Exn.throw TVarBackingStoreClosedExn
+                IOLike.throwSTM TVarBackingStoreClosedExn
               TVarBackingStoreContents slot values -> pure $ do
+                exists <- FS.doesDirectoryExist fs path
+                when exists $ IOLike.throwIO TVarBackingStoreDirectoryExists
                 FS.createDirectory fs path
                 FS.withFile fs (extendPath path) (FS.WriteMode FS.MustBeNew) $ \h -> do
                   void $ FS.hPutAll fs h $ CBOR.toLazyByteString $ CBOR.toCBOR slot <> enc values
       , bsValueHandle = join $ IOLike.atomically $ do
           IOLike.readTVar ref >>= \case
             TVarBackingStoreContentsClosed                ->
-              pure $ Exn.throw TVarBackingStoreClosedExn
+              IOLike.throwSTM TVarBackingStoreClosedExn
             TVarBackingStoreContents slot values -> pure $ do
               refHandleClosed <- IOLike.newTVarIO False
               pure $ (,) slot $ BackingStoreValueHandle {
                   bsvhClose     = IOLike.atomically $ do
+                    guardClosed ref
+                    guardHandleClosed refHandleClosed
                     IOLike.writeTVar refHandleClosed True
-                , bsvhRangeRead = \rq -> join $ IOLike.atomically $ do
-                    isClosed <- IOLike.readTVar refHandleClosed
-                    pure $
-                      if isClosed
-                      then Exn.throw TVarBackingStoreValueHandleClosedExn
-                      else pure $ rangeRead_ rq values
-                , bsvhRead      = \keys -> join $ IOLike.atomically $ do
-                    isClosed <- IOLike.readTVar refHandleClosed
-                    pure $
-                      if isClosed
-                      then Exn.throw TVarBackingStoreValueHandleClosedExn
-                      else pure $ lookup_ keys values
+                , bsvhRangeRead = \rq -> IOLike.atomically $ do
+                    guardClosed ref
+                    guardHandleClosed refHandleClosed
+                    pure $ rangeRead_ rq values
+                , bsvhRead      = \keys -> IOLike.atomically $ do
+                    guardClosed ref
+                    guardHandleClosed refHandleClosed
+                    pure $ lookup_ keys values
                 }
-      , bsWrite    = \slot2 diff -> join $ IOLike.atomically $ do
+      , bsWrite    = \slot2 diff -> IOLike.atomically $ do
           IOLike.readTVar ref >>= \case
             TVarBackingStoreContentsClosed        ->
-              pure $ Exn.throw TVarBackingStoreClosedExn
-            TVarBackingStoreContents slot1 values ->
-              Exn.assert (slot1 <= At slot2) $ do
-                IOLike.writeTVar ref $
-                  TVarBackingStoreContents
-                    (At slot2)
-                    (forwardValues_ values diff)
-                pure $ pure ()
+              IOLike.throwSTM TVarBackingStoreClosedExn
+            TVarBackingStoreContents slot1 values -> do
+              unless (slot1 <= At slot2) $
+                IOLike.throwSTM $ TVarBackingStoreNonMonotonicSeq (At slot2) slot1
+              IOLike.writeTVar ref $
+                TVarBackingStoreContents
+                  (At slot2)
+                  (forwardValues_ values diff)
       }
   where
     extendPath path =
       FS.fsPathFromList $ FS.fsPathToList path <> [fromString "tvar"]
+
+guardClosed ::
+     IOLike m
+  => IOLike.StrictTVar m (TVarBackingStoreContents ks vs)
+  -> IOLike.STM m ()
+guardClosed ref = IOLike.readTVar ref >>= \case
+  TVarBackingStoreContentsClosed -> IOLike.throwSTM TVarBackingStoreClosedExn
+  TVarBackingStoreContents _ _   -> pure ()
+
+guardHandleClosed ::
+     IOLike m
+  => IOLike.StrictTVar m Bool
+  -> IOLike.STM m ()
+guardHandleClosed refHandleClosed = do
+  isClosed <- IOLike.readTVar refHandleClosed
+  when isClosed $ IOLike.throwSTM TVarBackingStoreValueHandleClosedExn
 
 trivialBackingStore :: IOLike m => values -> m (BackingStore m keys values diff)
 trivialBackingStore emptyValues = do
