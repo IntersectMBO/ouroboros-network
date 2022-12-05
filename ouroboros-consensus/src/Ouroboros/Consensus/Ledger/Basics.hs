@@ -865,6 +865,9 @@ showsApplyMapKind = \case
     ApplyQueryAllMK       -> showParen True $ showString "ApplyQueryAllMK"
     ApplyQuerySomeMK keys -> showParen True $ showString "ApplyQuerySomeMK " . shows keys
 
+instance (Show k, Show v) => Show (ApplyMapKind' mk k v) where
+  show = flip showsApplyMapKind ""
+
 data instance Sing (mk :: MapKind') :: Type where
   SEmptyMK    :: Sing EmptyMK'
   SKeysMK     :: Sing KeysMK'

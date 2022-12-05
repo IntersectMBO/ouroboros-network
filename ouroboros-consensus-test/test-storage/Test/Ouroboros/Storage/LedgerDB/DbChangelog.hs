@@ -119,9 +119,6 @@ deriving instance Eq (LedgerTables TestLedger ValuesMK)
 instance ShowLedgerState (LedgerTables TestLedger) where
   showsLedgerState _ (TestTables t) = showString "TestTables " . shows t
 
-instance Show (ApplyMapKind' mk' Key Int) where
-  show ap = showsApplyMapKind ap ""
-
 instance ShowLedgerState TestLedger where
   showsLedgerState _ TestLedger {tlUtxos, tlTip} =
     showString "TestLedger" . showSpace . showString "{" . shows tlUtxos .
