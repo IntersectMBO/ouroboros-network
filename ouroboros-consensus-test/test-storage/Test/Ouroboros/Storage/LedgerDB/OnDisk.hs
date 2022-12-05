@@ -366,9 +366,6 @@ instance StowableLedgerTables (LedgerState TestBlock) where
 stowErr :: String -> a
 stowErr fname = error $ "Function " <> fname <> " should not be used in these tests."
 
-instance Show (ApplyMapKind' mk' Token TValue) where
-  show ap = showsApplyMapKind ap ""
-
 instance ToExpr (ApplyMapKind' mk' Token TValue) where
   toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
   toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
