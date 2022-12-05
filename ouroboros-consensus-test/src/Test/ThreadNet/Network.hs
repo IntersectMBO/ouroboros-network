@@ -660,13 +660,13 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> DiskLedgerView m (ExtLedgerState blk)
+                   -> m (DiskLedgerView m (ExtLedgerState blk))
                       -- ^ How to get the current ledger state
                    -> Mempool m blk
                    -> m ()
-    forkTxProducer coreNodeId registry clock cfg nodeSeed dlv mempool =
+    forkTxProducer coreNodeId registry clock cfg nodeSeed mdlv mempool =
         void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do
-          let (DiskLedgerView emptySt _ doRangeQuery _) = dlv
+          DiskLedgerView emptySt _ doRangeQuery _ <- mdlv
           fullLedgerSt <- fmap ledgerState $ do
                 -- FIXME: we know that the range query implemetation will add at
                 -- most 1 to the number of requested keys, hence the
@@ -1046,29 +1046,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -- Create a 'DiskLedgerView' to be used in 'forkTxProducer'. This function
       -- needs the 'DiskLedgerView' to elaborate a complete UTxO set to generate
       -- transactions.
-      let
-        extractBsValueHandle ::
-             StaticEither
-               'False
-               ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-               , LedgerDB' blk
-               , m ()
-               )
-               (Either
-                 (Point blk)
-                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-                 , LedgerDB' blk
-                 , m ())
-               )
-          -> ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-             , LedgerDB (ExtLedgerState blk)
-             , m ()
-             )
-        extractBsValueHandle = \case
-            StaticLeft bsValueHandle -> bsValueHandle
-      seBsValueHandle <-
-          fmap extractBsValueHandle
-        $ ChainDB.getLedgerBackingStoreValueHandle chainDB registry (StaticLeft ())
+      let getValueHandle = do
+            bsvh <- ChainDB.getLedgerBackingStoreValueHandle chainDB registry (StaticLeft ())
+            pure $ mkDiskLedgerView $ case bsvh of
+              StaticLeft v -> v
       forkTxProducer
         coreNodeId
         registry
@@ -1079,7 +1060,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
         (seed `combineWith` unCoreNodeId coreNodeId)
         -- Uses the same varRNG as the block producer, but we split the RNG
         -- each time, so this is fine.
-        (mkDiskLedgerView seBsValueHandle)
+        getValueHandle
         mempool
 
       return (nodeKernel, LimitedApp app)
