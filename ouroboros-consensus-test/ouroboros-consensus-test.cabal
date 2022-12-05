@@ -76,6 +76,7 @@ library
                        Test.Util.Stream
                        Test.Util.Tasty.Traceable
                        Test.Util.TestBlock
+                       Test.Util.TestLedgerState
                        Test.Util.TestEnv
                        Test.Util.Time
                        Test.Util.Tracer
@@ -244,6 +245,10 @@ test-suite test-storage
                        Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Registry
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Lockstep
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Mock
                        Test.Ouroboros.Storage.LedgerDB.HD.DiffSeq
                        Test.Ouroboros.Storage.LedgerDB.HD.LMDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
@@ -258,6 +263,7 @@ test-suite test-storage
 
   build-depends:       base
                      , async
+                     , anti-diff
                      , bifunctors
                      , binary
                      , bytestring
@@ -265,9 +271,11 @@ test-suite test-storage
                      , cardano-crypto-class
                      , cardano-slotting
                      , cborg
+                     , constraints
                      , containers
                      , contra-tracer
                      , directory
+                     , exceptions
                      , generics-sop
                      , hashable
                      , mtl
@@ -275,6 +283,8 @@ test-suite test-storage
                      , nothunks
                      , pretty-show
                      , QuickCheck
+                     , quickcheck-dynamic
+                     , quickcheck-lockstep >=0.2.0
                      , quickcheck-state-machine >=0.7.0
                      , random
                      , serialise
