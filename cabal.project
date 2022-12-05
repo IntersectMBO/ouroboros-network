@@ -136,17 +136,23 @@ constraints:
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/haskell-lmdb
-  tag: 5aef2ccc8b7e5e91aa609dc531df392c46eaae09
-  --sha256: 09sxgxylf9m78qmf1sh82ydvq3ihkgfh829yy9cd526kp75wiy86
+  tag: fe5d3e54a3b3a683c8ec8712abb160561a676b4a
+  --sha256: 1zfyhdvz4wgyrl8wl4q1pcn3zys7742r2gs61pzmbfvaf0icz89r
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/lmdb-simple
-  tag: 5b2c622c1cf43deca081139b2d1d1eb9fc991064
-  --sha256: 0n96rzj4901y0q2l1fb6ffjp1kvgqchliig9id6jaq05xn4v386s
+  tag: 955df18972b51da31609889028e15f268b14edf2
+  --sha256: 0f8lvw83z9pzx5v49243a64spsmflmd313fsvnc8mv89p9n3knyy
 
 source-repository-package
   type: git
   location: https://github.com/stevana/quickcheck-state-machine
   tag: 8b7844a5a202c8e7e6be12960d28797267e11790
   --sha256: 1zj4lcrj6f8gymcwy9dhvzzw929hrszs1plkj3k8ngk182v1mpi4
+
+source-repository-package
+  type: git
+  location: https://github.com/well-typed/quickcheck-lockstep
+  tag: c0143cee64ed882aeb63494da51b801b3febcc4d
+  --sha256: 178bgwhs0v4hf0nyrnrc0zr0jghbhhkmv9wb7rwirpnq0219vmdn

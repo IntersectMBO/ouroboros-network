@@ -31,6 +31,7 @@ import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.FS.IO as FS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as Consensus.LMDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB.Bridge as Consensus.LMDB.Bridge
 
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
@@ -39,6 +40,7 @@ import           Ouroboros.Consensus.Protocol.Translate
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 
 import qualified Database.LMDB.Simple as LMDB
+import qualified Database.LMDB.Simple.Cursor as LMDB.Cursor
 
 data Options = Options { inmemFile :: FilePath, lmdbFile :: FilePath } deriving Show
 
@@ -87,13 +89,15 @@ getLMDB dbFilePath = do
   (Consensus.LMDB.dbsSeq dbSettings,) <$> (LMDB.readWriteTransaction dbEnv (zipLedgerTablesA f dbBackingTables codecLedgerTables) :: IO (LedgerTables (ExtLedgerState (CardanoBlock StandardCrypto)) ValuesMK))
   where
     f :: Ord k => Consensus.LMDB.LMDBMK k v -> CodecMK k v -> LMDB.Transaction mode (ValuesMK k v)
-    f (Consensus.LMDB.LMDBMK _ db) cdc = ApplyValuesMK
-                        . DS.Values
-                       <$> Consensus.LMDB.foldrWithKey
-                            Map.insert
-                            Map.empty
-                            cdc
-                            db
+    f (Consensus.LMDB.LMDBMK _ db) codecMK =
+      ApplyValuesMK . DS.Values <$>
+        Consensus.LMDB.Bridge.runCursorAsTransaction'
+          (LMDB.Cursor.forEachForward
+            (\acc k v -> Map.insert k v acc)
+            Map.empty
+          )
+          db
+          codecMK
     -- Preferably, these settings should match the default configuration for
     -- @cardano-node@. There, we pick @'lmdbMapSize'@ and @'lmdbMaxDatabases'@
     -- such that they are sufficient for the medium term, i.e., until a more
