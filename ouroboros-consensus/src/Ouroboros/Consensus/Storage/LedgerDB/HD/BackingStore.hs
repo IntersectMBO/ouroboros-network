@@ -70,6 +70,7 @@ deriving via OnlyCheckWhnfNamed "BackingStore" (BackingStore m keys values diff)
   instance NoThunks (BackingStore m keys values diff)
 
 newtype BackingStorePath = BackingStorePath FS.FsPath
+  deriving stock (Show, Eq, Ord)
   deriving newtype NoThunks
 
 -- | An ephemeral handle to an immutable value of the entire database
@@ -109,6 +110,7 @@ data RangeQuery keys = RangeQuery {
       -- of them were deleted in the changelog?
     , rqCount :: !Int
     }
+    deriving stock (Show, Eq)
 
 -- | TODO Is there a good way to not assume that any function that creates a
 -- 'BackingStoreValueHandle' doesn't hold space leaks in its closure?
