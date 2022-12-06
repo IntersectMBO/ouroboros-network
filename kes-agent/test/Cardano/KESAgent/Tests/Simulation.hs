@@ -30,7 +30,6 @@ import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
 import Cardano.Crypto.PinnedSizedBytes
 import Cardano.Crypto.Seed
-import Cardano.Crypto.SafePinned
 import Cardano.Binary (FromCBOR)
 
 import Control.Concurrent (threadDelay)
@@ -401,12 +400,6 @@ deriving instance Eq (SignKeyDSIGNM d)
                => Eq (SignKeyKES (SingleKES d))
 deriving instance (KESAlgorithm d, SodiumHashAlgorithm h, Eq (SignKeyKES d))
                => Eq (SignKeyKES (SumKES h d))
-
-instance Eq a => Eq (SafePinned a) where
-  ap == bp = unsafePerformIO $ do
-    interactSafePinned ap $ \a ->
-      interactSafePinned bp $ \b ->
-        return (a == b)
 
 -- We cannot allow this instance, because it doesn't guarantee timely
 -- forgetting of the MLocked memory.
