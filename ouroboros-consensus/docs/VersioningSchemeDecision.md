@@ -284,3 +284,114 @@ Notes:
 
     - Change all of the `release X.Y.Z` transitions to target `X.Y.Z`.
       Thus, you set the `main` version to the release version immediately after cutting a release, but _any_ PR affecting that package should increase its `main` version to at least `X.Y.Z.2718`.
+
+## Proposal Redimensional
+
+What should the version on your main branch as of merging a PR that changes your package?
+The code is now more advanced than the previous release---call that `A.B.C`---so it should have a greater version than `A.B.C`.
+That's either `A.B.(C+1)` for a bugfix, `A.(B+1).0` for new functionality, or `(A+1).0.0` for a breaking change.
+Let's suppose the PR adds a feature and so sets the version to `A.(B+1).0`.
+As a result, the resulting merge commit that declares that it defines version `A.(B+1).0` of the package.
+
+If you were to now announce that commit as version `A.(B+1).0`, then all will be intuitive and risk no surprises.
+However, suppose you never announce that commit; perhaps it's too incremental to trouble your users with a dedicated release.
+Instead, the next thing you do is merge another feature PR.
+There are three options for how that second feature PR should affect the version.
+- The second PR bumps the version to `A.(B+2).0`.
+  This would be unintuitive/surprising because now the timeline of releases will skip version `A.(B+1).0` of our package.
+- The second PR bumps the version to `A.(B+1).1`.
+  This would be very unintuitive/suprising for the same reason as `A.(B+2).0` and also because it violates the usual semantics of version components.
+- The second PR leaves the version at `A.(B+1).0`.
+  This would be unintuitive/surprising because there are now two commits (forever accessible via the main branch) that both claim to define version `A.(B+1).0` of the package.
+  (Many readers might be unalarmed about that, but I suspect acceptance/the status quo is partly why.)
+
+The above thought experiment generalizes to the following claim.
+
+> Without a distinction between development versions and release versions, the maintainer must continually choose from the following unappealing options.
+>
+> - Have multiple commits (forever accessible via the main branch) that all claim to define the same version of the package.
+> - Skip over some version numbers in the release timeline.
+> - Release after every PR that changes the package.
+
+How, then, to distinguish between dev versions and release versions?
+The core requirements are as follows.
+- Every release version should be familiar, eg the standard `A.B.C`.
+  (In the context of [the PVP](https://pvp.haskell.org/) eg, this `A` component would itself contain two inner components.)
+- Both must be compatible with standard tools.
+  For example, standard tools must be able to parse both dev versions and release versions.
+- The repository as of the merge commit of a PR must not declare release versions for packages that the PR changed.
+- A package must have a release version as of a commit announced as a release of that package.
+Thus the first PR that alters a package after the previous release must change that package's declared version from the release version to a dev version.
+
+The remaining question is what should that dev version be for a specific PR?
+Suppose the previous release was `2.2.2`.
+Also suppose this PR is just a bugfix.
+A promising idea is to use `2.2.2.0` as the new dev version.
+- It has one more component than the release version, so it's distinct.
+- Standard tools typically support a variable number of components.
+- Moreover, `2.2.2.0` is greater than `2.2.2`, which seems intuitive: it's more correct than `2.2.2`.
+- Similarily, it's less than all the possible next releases: `2.2.3`, `2.3.0`, and `3.0.0`.
+
+Suppose instead the PR added a feature instead of fixing a bug.
+Is it still the case that new version should be `2.2.2.0`?
+It does seem surprising that a version `2.2.2.0` would have more _features_ than version `2.2.2`, since they both start with `2.2`.
+One could dismiss this, arguing that `2.2.2.0` is obviously a dev version (it has the extra component), and so people who understand the distinction between dev versions and release versions would know not to infer anything more than "2.2.2.0 is at least one PR ahead of version 2.2.2".
+
+However, standard tools do not understand the distinction!
+In particular, `Cabal` will happily pick `2.2.2.0` when the downstream user has written the constraint as `>= 2.2.2 && < 2.3.0`.
+In this case, because the commit that defines `2.2.2.0` adds a feature, `Cabal`'s naive inference based on `2.2.2.0 < 2.3.0` is unsound.
+One could also dismiss this concern about tooling, though, because only devs (here or downstream) should ever be building dev versions, and they should only do so explicitly (eg building from source by building a git worktree or by listing a specific git commit as the dependency).
+As long as no one installs a dev version package into a repository, there's no risk of a tool that picks amongst versions from some repository even considering a dev version.
+Dev versions are never _released_, and so should never be in any public package repository such as Hackage or [CHaP](https://github.com/input-output-hk/cardano-haskell-packages).
+The most likely way we can imagine a dev version might end up in a repository would be if a developer/user who doesn't know any better builds from source and installs a dev version into their machine's local package database.
+That single risk seems manageable.
+
+This suggests the following proposal.
+- Each release version is `A.B.C`.
+- Each dev version is `A.B.C.D`.
+- Any PR that alters a package in a way that should affect the next release version should update its version as follows.
+    - If the version was `A.B.C` before the PR, bump it to `A.B.C.0`.
+    - If the version was `A.B.C.D` before the PR, bump it to `A.B.C.(D+1)`.
+        - This rule isn't fundamental, but it ensures that every PR touches the version, which in turn ensures `git` will raise merge conflicts for backports/rebases/cherry-picking/etc.
+          Those conflicts force the developer to make adjustments to versions.
+          Those conflicts are necessary and also trivial to resolve but would be easy to overlook without this rule leveraging `git` to remind us.
+          Additionally, this means that no two code-changing commits in the subset of a single branch will declare the same version---or set of versions if the repo has multiple packages---which seems intuitive.
+        - Similar conflicts will also require updating open version-altering PRs after each version-altering PR is merged.
+          Con: that will likely be tedious.
+          Pro: it will likely lead to more linear integration branch history: you might was well rebase while you're updating the version bumps.
+        - If you want `D` to exactly count the number of relevant PRs since the previous release, then you'll need to require every merge is a [fast-forward merge](https://git-scm.com/docs/git-merge#_fast_forward_merge); see [`git merge --ff-only`](https://git-scm.com/docs/git-merge#Documentation/git-merge.txt---ff-only).
+- Cut a new release as follows.
+    - Merge a fresh PR that doesn't alter the package but does bump dev version `A.B.C.D` to the next release version, depending on the contents of the relevant PRs since the previous release:
+      `(A+1).0.0` if there were breaking changes, else `A.(B+1).0` if there were some new features, else `A.B.(C+1)`.
+      (Note that `.D` is present, so at least one version-influencing change was made.
+      If the version in the commit was still `A.B.C`, why are you announcing a new release?)
+    - Announce that commit.
+
+## Proposal Redimensional124
+
+Recall that the motivation for Proposal Redimensional dismisses the concern that people and/or tools will be confused by `A.B.C.D` possible having more features or breaking changes compared to `A.B.C`.
+Those not ready to dismiss that concern can consider the following proposal, which considers enough additional shapes of dev version to eliminate that risk.
+- Each release version is `A.B.C`.
+- Each dev version is either `A`, `A.B`, or `A.B.C.0`.
+    - (We have fixed `.D` at `.0`, for consistency with the other two dev version shapes, which don't have the degree of freedom.
+      This unfortunately does increase the risks of backports/rebases/cherry-picking/etc failing to bump the version.)
+    - (It may be helpful to recognize `A.B.C.0` as `A.B.C + ϵ = A.B.(C+1) - ϵ`, `A.B` as `A.B.0 - ϵ`, and `A` as `A.0.0 - ϵ`, where ϵ stands for a 3-vector ["bigger than [`0.0.0`], but smaller than all the [others]"](https://en.wikipedia.org/wiki/Greek_letters_used_in_mathematics,_science,_and_engineering).)
+- Any PR that alters a package in a way that should affect the next release version should update its version as follows.
+    - If the version was `A` before the PR, leave it.
+    - Else if the version was `A.B` before the PR:
+        - If the PR makes a breaking change, bump it to `(A+1)`.
+        - Else leave it.
+    - Else if the version was `A.B.C.0` before the PR:
+        - If the PR makes a breaking change, bump it to `(A+1)`.
+        - Else if the PR adds new functionality, bump it to `A.(B+1)`.
+        - Else leave it.
+    - Else the version must have been `A.B.C` before the PR.
+        - If the PR makes a breaking change, bump it to `(A+1)`.
+        - Else if the PR adds new functionality, bump it to `A.(B+1)`.
+        - Else bump it to `A.B.C.0`.
+- Cut a new release as follows.
+    - Merge a fresh PR that doesn't alter the package but does bump dev version to the next release version, as follows.
+        - Bump `A` to `A.0.0`.
+        - Bump `A.B` to `A.B.0`.
+        - Bump `A.B.C.0` to `A.B.(C+1)`.
+    - Announce that commit.
