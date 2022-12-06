@@ -371,7 +371,7 @@ This suggests the following proposal.
 
 ## Proposal EasierRedimensional
 
-There is a variant of the above that means no only release PRs alter the version, which is more scalable.
+There is a variant of the above that means only release PRs alter the version, which is more scalable.
 
 - Each release version is `A.B.C`.
 - Each dev version is either `A`, `A.B`, or `A.B.C.0`.
@@ -387,7 +387,7 @@ There is a variant of the above that means no only release PRs alter the version
       (In a monorepo, there's just the one.
       But in a polyrepo, there may be packages that haven't changed since the previous release.)
     - Immediately merge another fresh PR that adds the `.0` component to the versions of the just released packages.
-      So what was `A.B.C.0` before the release, became either `(A+1).0.0`, `A.(B+1).0`, or `A.B.(C+1)` after the first PR and know becomes either `(A+1).0.0.0`, `A.(B+1).0.0`, or `A.B.(C+1).0` after the second PR.
+      So what was `A.B.C.0` before the release became either `(A+1).0.0`, `A.(B+1).0`, or `A.B.(C+1)` after the first PR and now becomes either `(A+1).0.0.0`, `A.(B+1).0.0`, or `A.B.(C+1).0` after the second PR.
 
 ## Proposal Redimensional124
 
