@@ -365,7 +365,9 @@ This suggests the following proposal.
       `(A+1).0.0` if there were breaking changes, else `A.(B+1).0` if there were some new features, else `A.B.(C+1)`.
       (Note that `.D` is present, so at least one version-influencing change was made.
       If the version in the commit was still `A.B.C`, why are you announcing a new release?)
-    - Announce that commit.
+    - Announce that commit as a release of the packages that have changed since the previous release.
+      (In a monorepo, there's just the one.
+      But in a polyrepo, there may be packages that haven't changed since the previous release.)
 
 ## Proposal Redimensional124
 
@@ -394,4 +396,7 @@ Those not ready to dismiss that concern can consider the following proposal, whi
         - Bump `A` to `A.0.0`.
         - Bump `A.B` to `A.B.0`.
         - Bump `A.B.C.0` to `A.B.(C+1)`.
+    - Announce that commit as a release of the packages that have changed since the previous release.
+      (In a monorepo, there's just the one.
+      But in a polyrepo, there may be packages that haven't changed since the previous release.)
     - Announce that commit.
