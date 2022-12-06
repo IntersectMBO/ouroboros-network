@@ -369,6 +369,26 @@ This suggests the following proposal.
       (In a monorepo, there's just the one.
       But in a polyrepo, there may be packages that haven't changed since the previous release.)
 
+## Proposal EasierRedimensional
+
+There is a variant of the above that means no only release PRs alter the version, which is more scalable.
+
+- Each release version is `A.B.C`.
+- Each dev version is either `A`, `A.B`, or `A.B.C.0`.
+    - (We have fixed `.D` at `.0`, so that each PR doesn't need to alter it.
+      This unfortunately does increase the risks of backports/rebases/cherry-picking/etc failing to bump the version.)
+- Typical development PRs do not alter versions.
+- Cut a new release as follows.
+    - Merge a fresh PR that doesn't alter the package but does bump dev version `A.B.C.0` to the next release version, depending on the contents of the relevant PRs since the previous release:
+      `(A+1).0.0` if there were breaking changes, else `A.(B+1).0` if there were some new features, else `A.B.(C+1)`.
+      (Note that `.0` is present, so at least one version-influencing change was made.
+      If the version in the commit was still `A.B.C`, why are you announcing a new release?)
+    - Announce that commit as a release of the packages that have changed since the previous release.
+      (In a monorepo, there's just the one.
+      But in a polyrepo, there may be packages that haven't changed since the previous release.)
+    - Immediately merge another fresh PR that adds the `.0` component to the versions of the just released packages.
+      So what was `A.B.C.0` before the release, became either `(A+1).0.0`, `A.(B+1).0`, or `A.B.(C+1)` after the first PR and know becomes either `(A+1).0.0.0`, `A.(B+1).0.0`, or `A.B.(C+1).0` after the second PR.
+
 ## Proposal Redimensional124
 
 Recall that the motivation for Proposal Redimensional dismisses the concern that people and/or tools will be confused by `A.B.C.D` possible having more features or breaking changes compared to `A.B.C`.
