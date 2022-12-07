@@ -462,4 +462,4 @@ _Remark_.
 You could also add the extra `.0` version component from Proposal Redimensional in a commit immediately _after_ the release.
 That extra `.0` would be naturally removed by the pre-release commit, since you're only releasing a package if its `wip-status` directory is non-empty.
 It suffers the same coarseness of dev revisions as Proposal Redimensional, because every commit between release `A.B.C.D` and release `A.B.(C+1).0` would be versioned `A.B.C.*.0` even if some have more features than the other---and similar for major version bumps and breaking changes.
-But that should be mostly harmless, since development versions (`A.B.C.D.0`) should be visible downstream when developers are very explicitly opting-in to them.
+But that should be mostly harmless, since development versions (`A.B.C.D.0`) should be visible downstream only when developers are very explicitly opting-in to them.
