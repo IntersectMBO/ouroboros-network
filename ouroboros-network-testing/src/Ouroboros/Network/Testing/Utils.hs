@@ -35,7 +35,7 @@ module Ouroboros.Network.Testing.Utils
   ) where
 
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Contravariant (contramap), Tracer (..),
                      contramapM)
 

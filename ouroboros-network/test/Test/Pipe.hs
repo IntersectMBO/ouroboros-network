@@ -15,7 +15,7 @@ import           Control.Exception
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))

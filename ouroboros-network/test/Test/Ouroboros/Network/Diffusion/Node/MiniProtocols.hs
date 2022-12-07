@@ -16,6 +16,8 @@ module Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
   , applications
   ) where
 
+import           Control.Applicative (Alternative)
+import           Control.Concurrent.Class.MonadMVar (MonadMVar)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
@@ -23,8 +25,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Functor (($>))
@@ -85,7 +87,6 @@ import           Network.TypedProtocol
 
 import qualified Pipes
 
-import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
                      chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
                      peerSharingMiniProtocolNum)
@@ -215,7 +216,8 @@ data AppArgs header block m = AppArgs
 -- | Protocol handlers.
 --
 applications :: forall block header m.
-                ( MonadAsync m
+                ( Alternative (STM m)
+                , MonadAsync m
                 , MonadFork  m
                 , MonadMask  m
                 , MonadMVar  m

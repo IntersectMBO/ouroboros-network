@@ -118,13 +118,15 @@ library
                        contra-tracer,
                        monoidal-synchronisation,
 
-                       io-classes,
+                       io-classes       ^>=1.1,
+                       io-classes-mtl   ^>=0.1,
                        network-mux,
+                       si-timers,
                        ouroboros-network-api,
                        ouroboros-network-framework ^>=0.4,
                        ouroboros-network-protocols ^>=0.4,
                        strict-stm,
-                       typed-protocols,
+                       typed-protocols   >=0.1.0.4 && <1.0,
   if !os(windows)
     build-depends:     directory,
                        unix
@@ -218,6 +220,7 @@ test-suite test
                        ouroboros-network-protocols:testlib,
                        ouroboros-network-framework:testlib,
                        ouroboros-network-testing,
+                       si-timers,
                        strict-stm,
                        typed-protocols,
                        typed-protocols-examples,

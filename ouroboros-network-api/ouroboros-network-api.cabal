@@ -65,10 +65,11 @@ library
                        cardano-strict-containers,
                        contra-tracer,
 
-                       io-classes       ^>=0.3,
+                       io-classes       ^>=1.1,
                        network-mux      ^>=0.3,
-                       strict-stm       ^>=0.2,
-                       typed-protocols  ^>=0.1,
+                       strict-stm,
+                       si-timers,
+                       typed-protocols  ^>=0.1.0.4,
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

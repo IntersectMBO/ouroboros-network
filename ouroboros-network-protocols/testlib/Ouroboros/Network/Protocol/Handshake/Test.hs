@@ -30,13 +30,15 @@ import           GHC.Generics
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
                      MonadThrow, bracket)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
@@ -1010,10 +1012,14 @@ prop_channel_simultaneous_open_NodeToClient_IO
 
 prop_channel_simultaneous_open_sim
     :: forall vNumber vData m.
-       ( MonadAsync       m
+       ( Alternative (STM m)
+       , MonadAsync       m
        , MonadCatch       m
+       , MonadDelay       m
+       , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
+       , MonadMonotonicTime m
        , MonadST          m
        , MonadThrow  (STM m)
        , MonadTime        m

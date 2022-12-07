@@ -3,7 +3,7 @@
 
 module TestLib.Utils where
 
-import           Control.Monad.Class.MonadTime (DiffTime, Time, diffTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime, Time, diffTime)
 import           Control.Monad.IOSim
 
 import           Data.Bifoldable (bifoldMap)

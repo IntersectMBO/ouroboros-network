@@ -46,8 +46,8 @@ import           Data.Typeable (eqT, (:~:) (..))
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 
 import           Data.Semigroup.Action
 
@@ -253,7 +253,7 @@ newPeerStatesVar = atomically newPeerStatesVarSTM
 -- | Periodically clean 'PeerState'.  It will stop when 'PeerState' becomes
 -- 'ThrowException'.
 --
-cleanPeerStates :: ( MonadTime  m
+cleanPeerStates :: ( MonadDelay m
                    , MonadTimer m
                    )
                 => DiffTime
@@ -505,8 +505,8 @@ type BeforeConnect m s addr = Time -> addr -> s -> STM m (ConnectDecision s)
 
 -- | Run 'BeforeConnect' callback in a 'MonadTime' monad.
 --
-runBeforeConnect :: ( MonadSTM  m
-                    , MonadTime m
+runBeforeConnect :: ( MonadMonotonicTime m
+                    , MonadSTM  m
                     )
                  => StrictTVar m s
                  -> BeforeConnect m s addr

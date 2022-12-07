@@ -40,7 +40,7 @@ import           Text.Printf
 
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.Subscription.PeerState
 

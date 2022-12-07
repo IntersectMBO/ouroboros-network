@@ -1,12 +1,14 @@
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TupleSections  #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE TupleSections    #-}
 
 module Ouroboros.Network.PeerSharing where
 
-import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM,
+import           Control.Applicative (Alternative)
+import           Control.Concurrent.Class.MonadMVar (MVar, MonadMVar (putMVar))
+import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, STM,
                      StrictTMVar, StrictTVar, atomically, modifyTVar,
                      newEmptyTMVarIO, newTVarIO, retry, takeTMVar)
-import           Control.Monad.Class.MonadMVar (MVar, MonadMVar (putMVar))
 import           Control.Monad.Class.MonadThrow (MonadThrow, bracket)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -65,7 +67,8 @@ bracketPeerSharingClient (PeerSharingRegistry registry) peer k = do
           (\_ -> atomically (modifyTVar registry (Map.delete peer)))
           (\_ -> k newPSController)
 
-peerSharingClient :: ( MonadMVar m
+peerSharingClient :: ( Alternative (STM m)
+                     , MonadMVar m
                      , MonadSTM m
                      )
                   => ControlMessageSTM m

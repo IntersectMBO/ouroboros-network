@@ -35,13 +35,14 @@ module Ouroboros.Network.ConnectionHandler
   , ConnectionHandlerTrace (..)
   ) where
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeAsyncException)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow hiding (handle)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
@@ -172,11 +173,11 @@ type MuxConnectionManager muxMode socket peerAddr versionData versionNumber byte
 --
 makeConnectionHandler
     :: forall peerAddr muxMode socket versionNumber versionData m a b.
-       ( MonadAsync m
+       ( Alternative (STM m)
+       , MonadAsync m
        , MonadFork  m
        , MonadLabelledSTM m
        , MonadThrow (STM m)
-       , MonadTime  m
        , MonadTimer m
        , MonadMask  m
        , Ord      versionNumber

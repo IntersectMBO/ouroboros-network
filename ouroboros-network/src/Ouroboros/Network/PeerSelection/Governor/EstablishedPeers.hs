@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -12,10 +13,11 @@ import           Data.Semigroup (Min (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.JobPool (Job (..))
 import           Control.Exception (SomeException)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -48,7 +50,10 @@ import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeer
 -- action never picks local root peers.
 --
 belowTarget :: forall peeraddr peerconn m.
-               (MonadSTM m, Ord peeraddr)
+               ( Alternative (STM m)
+               , MonadSTM m
+               , Ord peeraddr
+               )
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
 belowTarget = belowTargetLocal <> belowTargetOther

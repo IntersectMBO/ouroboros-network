@@ -30,11 +30,9 @@ module Ouroboros.Network.Driver.Limits
 import           Data.Maybe (fromMaybe)
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), traceWith)
 
 import           Network.Mux.Timeout
@@ -152,7 +150,6 @@ runPeerWithLimits
      , MonadFork m
      , MonadMask m
      , MonadThrow (STM m)
-     , MonadMonotonicTime m
      , MonadTimer m
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')
@@ -185,7 +182,6 @@ runPipelinedPeerWithLimits
      , MonadFork m
      , MonadMask m
      , MonadThrow (STM m)
-     , MonadMonotonicTime m
      , MonadTimer m
      , forall (st' :: ps). Show (ClientHasAgency st')
      , forall (st' :: ps). Show (ServerHasAgency st')

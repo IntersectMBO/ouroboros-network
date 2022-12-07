@@ -11,7 +11,7 @@ import qualified Data.IntMap.Strict as IM
 import           Data.Maybe
 import           Data.Word (Word32)
 
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Network.Mux.DeltaQ.TraceStatsSupport
 import           Network.Mux.DeltaQ.TraceTypes
 import           Network.Mux.Types

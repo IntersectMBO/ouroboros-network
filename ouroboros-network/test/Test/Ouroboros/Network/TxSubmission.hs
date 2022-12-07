@@ -19,8 +19,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim hiding (SimResult)
 import           Control.Tracer (Tracer (..), contramap, nullTracer,
                      showTracing, traceWith)
@@ -190,6 +190,7 @@ txSubmissionCodec2 =
 txSubmissionSimulation
   :: forall m txid.
      ( MonadAsync m
+     , MonadDelay m
      , MonadFork  m
      , MonadMask  m
      , MonadSay   m
@@ -360,6 +361,7 @@ instance (Show a) => Show (WithThreadAndTime a) where
 
 verboseTracer :: forall a m.
                        ( MonadAsync m
+                       , MonadDelay m
                        , MonadSay m
                        , MonadMonotonicTime m
                        , Show a
@@ -369,6 +371,7 @@ verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
+                       , MonadDelay m
                        , MonadMonotonicTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a

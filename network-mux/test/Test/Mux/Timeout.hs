@@ -15,8 +15,8 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import           Control.Monad.IOSim
 
 import           Network.Mux.Time (microsecondsToDiffTime)
@@ -73,6 +73,7 @@ tests =
 
 type TimeoutConstraints m =
       ( MonadAsync m
+      , MonadDelay m
       , MonadFork  m
       , MonadTime  m
       , MonadTimer m

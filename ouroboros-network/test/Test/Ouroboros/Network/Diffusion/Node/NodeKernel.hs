@@ -30,13 +30,14 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 import           GHC.Generics (Generic)
 
+import           Control.Applicative (Alternative)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Hashable (Hashable)
 import           Data.IP (IP (..), fromIPv4w, fromIPv6w, toIPv4, toIPv4w,
@@ -327,7 +328,9 @@ instance Exception NodeKernelError where
 --
 withNodeKernelThread
   :: forall block header m seed a.
-     ( MonadAsync         m
+     ( Alternative (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
      , MonadMonotonicTime m
      , MonadTimer         m
      , MonadThrow         m

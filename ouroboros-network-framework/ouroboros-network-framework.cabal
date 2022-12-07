@@ -85,7 +85,7 @@ library
                      , cardano-prelude
                      , contra-tracer
 
-                     , io-classes
+                     , io-classes     ^>=1.1
                      , monoidal-synchronisation
                                        >=0.1   && < 0.2
                      , network         >=3.1.2.2 && < 3.2
@@ -93,8 +93,9 @@ library
                      , ouroboros-network-api
                                       ^>=0.2
                      , ouroboros-network-testing
-                     , strict-stm     ^>=0.2
-                     , typed-protocols
+                     , si-timers
+                     , strict-stm
+                     , typed-protocols >=0.1   && < 0.2
                      , typed-protocols-cborg
                                       ^>=0.1
                      , Win32-network  ^>=0.1
@@ -130,7 +131,7 @@ library testlib
                    , QuickCheck
 
                    , io-sim
-                   , io-classes
+                   , si-timers
                    , typed-protocols
                    , ouroboros-network-framework
 
@@ -179,6 +180,7 @@ test-suite test
 
                      , io-sim
                      , io-classes
+                     , si-timers
                      , strict-stm
                      , network-mux
                      , monoidal-synchronisation
@@ -251,6 +253,7 @@ executable demo-connection-manager
 
                        io-classes,
                        network-mux,
+                       si-timers,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        strict-stm,

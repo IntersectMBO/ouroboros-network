@@ -8,7 +8,7 @@ module Network.Mux.Time
   , timestampMicrosecondsLow32Bits
   ) where
 
-import           Control.Monad.Class.MonadTime (Time (..))
+import           Control.Monad.Class.MonadTime.SI (Time (..))
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds,
                      picosecondsToDiffTime)
 import           Data.Word (Word32)

@@ -18,7 +18,7 @@ module Ouroboros.Network.BlockFetch.DeltaQ
   , comparePeerGSV'
   ) where
 
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Data.Fixed as Fixed (Pico)
 import           Data.Hashable
 import           Data.Set (Set)

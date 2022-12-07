@@ -11,7 +11,7 @@ module Ouroboros.Network.ExitPolicy
   , alwaysCleanReturnPolicy
   ) where
 
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Data.Semigroup (Max (..))
 
 newtype ReconnectDelay = ReconnectDelay { reconnectDelay :: DiffTime }

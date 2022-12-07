@@ -22,7 +22,7 @@ module Ouroboros.Network.Testing.Data.AbsBearerInfo
   , AbsIOErrType (..)
   ) where
 
-import           Control.Monad.Class.MonadTime (DiffTime, Time (..), addTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
 import qualified Data.List as List
 import qualified Data.List.NonEmpty as NonEmpty

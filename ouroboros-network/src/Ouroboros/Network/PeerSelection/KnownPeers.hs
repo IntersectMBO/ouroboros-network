@@ -43,7 +43,7 @@ import qualified Data.Set as Set
 --import           System.Random (RandomGen(..))
 
 import           Control.Exception (assert)
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)

@@ -18,14 +18,15 @@ module Test.Simulation.Network.Snocket
   , toBearerInfo
   ) where
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, contramapM, nullTracer)
 
@@ -165,14 +166,15 @@ untilSuccess go =
 
 clientServerSimulation
     :: forall m addr payload.
-       ( MonadAsync       m
+       ( Alternative (STM m)
+       , MonadAsync       m
+       , MonadDelay       m
        , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
        , MonadSay         m
        , MonadST          m
        , MonadThrow  (STM m)
-       , MonadTime        m
        , MonadTimer       m
 
        , Serialise payload

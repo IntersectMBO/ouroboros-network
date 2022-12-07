@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -16,8 +17,8 @@ import           Control.Concurrent.JobPool (Job (..))
 import           Control.Exception (Exception (..), SomeException, assert)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
@@ -422,11 +423,12 @@ waitAllCatchOrTimeout :: (MonadAsync m, MonadTimer m)
                       -> m (Either [Maybe (Either SomeException a)]
                                    [Either SomeException a])
 waitAllCatchOrTimeout as time = do
-    t       <- newTimeout time
+    (readTimeout, cancelTimeout) <- registerDelayCancellable time
     results <- atomically $
                          (Right <$> mapM waitCatchSTM as)
-                `orElse` (Left  <$> (awaitTimeout t >> mapM pollSTM as))
+                `orElse` (Left  <$> (readTimeout >>= \case TimeoutPending -> retry
+                                                           _              -> mapM pollSTM as))
     case results of
-      Right{} -> cancelTimeout t
+      Right{} -> cancelTimeout
       _       -> return ()
     return results

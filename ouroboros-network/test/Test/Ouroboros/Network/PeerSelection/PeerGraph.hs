@@ -32,7 +32,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Tree as Tree
 
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.Testing.Data.Script (Script (..),
                      ScriptDelay (NoDelay), TimedScript, arbitraryScriptOf)

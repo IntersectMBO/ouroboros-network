@@ -45,13 +45,13 @@ import qualified Data.Set as Set
 import           Data.Void (Void, absurd)
 import           Data.Word (Word32)
 
-import           Control.Applicative ((<|>))
+import           Control.Applicative (Alternative, (<|>))
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
 
@@ -91,7 +91,8 @@ data TraceLocalRootPeers peerAddr exception =
 --
 localRootPeersProvider
   :: forall m peerAddr resolver exception.
-     ( MonadAsync m
+     ( Alternative (STM m)
+     , MonadAsync m
      , MonadDelay m
      , Eq (Async m Void)
      , Ord peerAddr

@@ -76,7 +76,7 @@ import qualified Control.Concurrent.Async as Async
 import           Control.Exception (ErrorCall, IOException)
 import           Control.Monad (forever)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 
 import qualified Codec.CBOR.Term as CBOR
 import qualified Data.ByteString.Lazy as BL
@@ -431,7 +431,7 @@ type LocalConnectionId = ConnectionId LocalAddress
 --
 
 chainSyncPeerNull
-    :: forall (header :: Type) (point :: Type) (tip :: Type) m a. MonadTimer m
+    :: forall (header :: Type) (point :: Type) (tip :: Type) m a. MonadDelay m
     => Peer (ChainSync.ChainSync header point tip)
             AsClient ChainSync.StIdle m a
 chainSyncPeerNull =
@@ -440,7 +440,7 @@ chainSyncPeerNull =
 
 localStateQueryPeerNull
     :: forall (block :: Type) (point :: Type) (query :: Type -> Type) m a.
-       MonadTimer m
+       MonadDelay m
     => Peer (LocalStateQuery.LocalStateQuery block point query)
             AsClient LocalStateQuery.StIdle m a
 localStateQueryPeerNull =
@@ -448,7 +448,7 @@ localStateQueryPeerNull =
       (LocalStateQuery.LocalStateQueryClient untilTheCowsComeHome)
 
 localTxSubmissionPeerNull
-    :: forall (tx :: Type) (reject :: Type) m a. MonadTimer m
+    :: forall (tx :: Type) (reject :: Type) m a. MonadDelay m
     => Peer (LocalTxSubmission.LocalTxSubmission tx reject)
             AsClient LocalTxSubmission.StIdle m a
 localTxSubmissionPeerNull =
@@ -456,7 +456,7 @@ localTxSubmissionPeerNull =
       (LocalTxSubmission.LocalTxSubmissionClient untilTheCowsComeHome)
 
 localTxMonitorPeerNull
-    :: forall (txid :: Type) (tx :: Type) (slot :: Type) m a. MonadTimer m
+    :: forall (txid :: Type) (tx :: Type) (slot :: Type) m a. MonadDelay m
     => Peer (LocalTxMonitor.LocalTxMonitor txid tx slot)
             AsClient LocalTxMonitor.StIdle m a
 localTxMonitorPeerNull =
@@ -464,5 +464,5 @@ localTxMonitorPeerNull =
       (LocalTxMonitor.LocalTxMonitorClient untilTheCowsComeHome)
 
 -- ;)
-untilTheCowsComeHome :: MonadTimer m => m a
+untilTheCowsComeHome :: MonadDelay m => m a
 untilTheCowsComeHome = forever $ threadDelay 43200 {- day in seconds -}

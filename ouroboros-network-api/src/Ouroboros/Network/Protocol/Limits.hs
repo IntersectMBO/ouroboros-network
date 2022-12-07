@@ -9,7 +9,7 @@
 module Ouroboros.Network.Protocol.Limits where
 
 import           Control.Exception
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import           Network.TypedProtocol.Core
 

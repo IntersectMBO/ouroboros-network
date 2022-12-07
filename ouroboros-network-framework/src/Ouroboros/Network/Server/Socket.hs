@@ -31,8 +31,8 @@ import qualified Control.Concurrent.STM as STM
 import           Control.Exception (IOException, SomeException (..), finally,
                      mask, mask_, onException, try)
 import           Control.Monad (forM_, join)
-import           Control.Monad.Class.MonadTime (Time, getMonotonicTime)
-import           Control.Monad.Class.MonadTimer (threadDelay)
+import           Control.Monad.Class.MonadTime.SI (Time, getMonotonicTime)
+import           Control.Monad.Class.MonadTimer.SI (threadDelay)
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Foldable (traverse_)
 import           Data.Set (Set)

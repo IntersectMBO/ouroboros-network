@@ -21,8 +21,8 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer
 
 import           Ouroboros.Network.Mux

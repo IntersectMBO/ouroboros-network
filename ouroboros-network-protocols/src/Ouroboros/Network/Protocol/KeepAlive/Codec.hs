@@ -14,7 +14,7 @@ module Ouroboros.Network.Protocol.KeepAlive.Codec
   ) where
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import           Data.ByteString.Lazy (ByteString)
 import           Text.Printf

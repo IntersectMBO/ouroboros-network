@@ -1,7 +1,9 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Test.Data.Monoid.Synchronisation where
 
+import           Control.Monad (MonadPlus)
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad.Class.MonadFork
 
@@ -23,6 +25,7 @@ tests =
 lastToFinishExperiment
     :: forall m.
        ( MonadFork  m
+       , MonadPlus (STM m)
        , MonadSTM   m
        )
     => Bool -> m Bool

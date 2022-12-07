@@ -24,7 +24,7 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import qualified Data.Set as Set
 
@@ -75,8 +75,8 @@ type BlockFetchClient header block m a =
 --
 blockFetchClient :: forall header block versionNumber m.
                     (MonadSTM m, MonadThrow m, MonadTime m,
-                     HasHeader header, HasHeader block,
-                     HeaderHash header ~ HeaderHash block)
+                     MonadMonotonicTime m, HasHeader header,
+                     HasHeader block, HeaderHash header ~ HeaderHash block)
                  => versionNumber
                  -> ControlMessageSTM m
                  -> FetchedMetricsTracer m

@@ -27,8 +27,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime (MonadTime (..))
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI (MonadTime (..))
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
@@ -137,8 +137,9 @@ genClientAndServerData g0 len = ClientAndServerData {
 --
 
 type ConnectionManagerMonad m =
-       ( MonadAsync m, MonadCatch m, MonadEvaluate m, MonadFork m, MonadMask  m
-       , MonadST m, MonadTime m, MonadTimer m, MonadThrow m, MonadThrow (STM m)
+       ( Alternative (STM m), MonadAsync m, MonadCatch m, MonadEvaluate m,
+         MonadFork m, MonadMask m, MonadST m, MonadTime m, MonadTimer m,
+         MonadThrow m, MonadThrow (STM m)
        )
 
 
@@ -177,6 +178,7 @@ withBidirectionalConnectionManager
        -- debugging
        , MonadFix m
        , MonadAsync m
+       , MonadDelay m
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
@@ -366,7 +368,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
 --
 runInitiatorProtocols
     :: forall muxMode m a b.
-       ( MonadAsync      m
+       ( Alternative (STM m)
+       , MonadAsync      m
        , MonadCatch      m
        , MonadSTM        m
        , MonadThrow (STM m)

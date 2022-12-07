@@ -36,14 +36,12 @@ module Network.Mux.Compat
 import qualified Data.ByteString.Lazy as BL
 import           Data.Void (Void)
 
-import           Control.Applicative ((<|>))
+import           Control.Applicative (Alternative (..), (<|>))
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer
 
 import           Network.Mux (StartOnDemandOrEagerly (..), newMux,
@@ -92,8 +90,8 @@ muxStart
        ( MonadAsync m
        , MonadFork m
        , MonadLabelledSTM m
+       , Alternative (STM m)
        , MonadThrow (STM m)
-       , MonadTime  m
        , MonadTimer m
        , MonadMask m
        )

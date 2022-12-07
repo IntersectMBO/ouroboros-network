@@ -12,7 +12,7 @@ import qualified Data.ByteString.Lazy as BL
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer
 
 import qualified Network.Mux.Codec as Mx
@@ -31,7 +31,7 @@ data QueueChannel m = QueueChannel {
 queueChannelAsMuxBearer
   :: forall m.
      ( MonadSTM   m
-     , MonadTime  m
+     , MonadMonotonicTime m
      , MonadThrow m
      )
   => Mx.SDUSize

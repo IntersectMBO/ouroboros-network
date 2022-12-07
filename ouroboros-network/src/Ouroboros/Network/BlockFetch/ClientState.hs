@@ -39,7 +39,7 @@ import qualified Data.Set as Set
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer, traceWith)
 
 import           Network.Mux.Trace (TraceLabelPeer (..))

@@ -30,7 +30,7 @@ import qualified System.Process as IO (createPipe)
 
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 
 
 data Channel m = Channel {
@@ -209,8 +209,7 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
 -- This is intended for testing, as a crude approximation of network delays.
 -- More accurate models along these lines are of course possible.
 --
-delayChannel :: ( MonadTimer m
-                )
+delayChannel :: MonadDelay m
              => DiffTime
              -> Channel m
              -> Channel m

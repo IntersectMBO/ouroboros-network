@@ -33,7 +33,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Control.Exception (assert)
 import           Control.Monad (guard)
-import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))

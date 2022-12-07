@@ -22,7 +22,7 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (ClientHasAgency (..), Message (..), PeerSharing,
                      ServerHasAgency (..))
 
-import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime)
 import           Ouroboros.Network.Protocol.Limits
 
 codecPeerSharing :: forall m peerAddress.

@@ -41,8 +41,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer
 
@@ -1007,13 +1007,13 @@ encodeInvalidMuxSDU sdu =
 -- | Verify ingress processing of valid and invalid SDUs.
 --
 prop_demux_sdu :: forall m.
-                    ( MonadAsync m
+                    ( Alternative (STM m)
+                    , MonadAsync m
                     , MonadFork m
                     , MonadLabelledSTM m
                     , MonadMask m
                     , MonadSay m
                     , MonadThrow (STM m)
-                    , MonadTime m
                     , MonadTimer m
                     )
                  => ArbitrarySDU
@@ -1254,8 +1254,8 @@ instance Arbitrary DummyApps where
 
 dummyAppToChannel :: forall m.
                      ( MonadAsync m
+                     , MonadDelay m
                      , MonadCatch m
-                     , MonadTimer m
                      )
                   => DummyApp
                   -> (Channel m -> m ((), Maybe BL.ByteString))
@@ -1290,7 +1290,7 @@ instance Arbitrary DummyRestartingApps where
 dummyRestartingAppToChannel :: forall a m.
                      ( MonadAsync m
                      , MonadCatch m
-                     , MonadTimer m
+                     , MonadDelay m
                      )
                   => (DummyApp, a)
                   -> (Channel m -> m ((DummyApp, a), Maybe BL.ByteString))
@@ -1306,9 +1306,8 @@ appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits
 
 triggerApp :: forall m.
               ( MonadAsync m
+              , MonadDelay m
               , MonadSay m
-              , MonadTime m
-              , MonadTimer m
               )
             => MuxBearer m
             -> DummyApp
@@ -1322,13 +1321,14 @@ triggerApp bearer app = do
     return ()
 
 prop_mux_start_mX :: forall m.
-                       ( MonadAsync m
+                       ( Alternative (STM m)
+                       , MonadAsync m
+                       , MonadDelay m
                        , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
                        , MonadThrow (STM m)
-                       , MonadTime m
                        , MonadTimer m
                        )
                     => DummyApps
@@ -1376,13 +1376,14 @@ prop_mux_start_mX apps runTime = do
                       Right _ -> return (counterexample "not-failed" False, r)
 
 prop_mux_restart_m :: forall m.
-                       ( MonadAsync m
+                       ( Alternative (STM m)
+                       , MonadAsync m
+                       , MonadDelay m
                        , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
                        , MonadThrow (STM m)
-                       , MonadTime m
                        , MonadTimer m
                        )
                     => DummyRestartingApps
@@ -1543,13 +1544,14 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
 
 
 prop_mux_start_m :: forall m.
-                       ( MonadAsync m
-                       , MonadFork m
+                       ( Alternative (STM m)
+                       , MonadAsync m
+                       , MonadDelay m
+                       , MonadFork  m
                        , MonadLabelledSTM m
                        , MonadMask m
                        , MonadSay m
                        , MonadThrow (STM m)
-                       , MonadTime m
                        , MonadTimer m
                        )
                     => MuxBearer m
@@ -1702,8 +1704,8 @@ instance (Show a) => Show (WithThreadAndTime a) where
 
 verboseTracer :: forall a m.
                        ( MonadAsync m
+                       , MonadMonotonicTime m
                        , MonadSay m
-                       , MonadTime m
                        , Show a
                        )
                => Tracer m a
@@ -1711,7 +1713,7 @@ verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
-                       , MonadTime m
+                       , MonadMonotonicTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
 threadAndTimeTracer tr = Tracer $ \s -> do
@@ -1758,11 +1760,11 @@ withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
 
 close_experiment
     :: forall sock acc req resp m.
-       ( MonadAsync       m
+       ( Alternative (STM m)
+       , MonadAsync       m
        , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
-       , MonadTime        m
        , MonadTimer       m
        , MonadThrow  (STM m)
        , MonadST          m

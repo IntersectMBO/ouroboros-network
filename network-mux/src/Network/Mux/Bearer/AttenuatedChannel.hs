@@ -21,8 +21,8 @@ import           Prelude hiding (read)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
 import           GHC.IO.Exception
@@ -156,7 +156,7 @@ data Attenuation = Attenuation {
 -- | Make a 'AttenuatedChannel' from a 'QueueChannel'.
 --
 newAttenuatedChannel :: forall m.
-                        ( MonadTime       m
+                        ( MonadDelay      m
                         , MonadTimer      m
                         , MonadThrow      m
                         , MonadThrow (STM m)
@@ -232,8 +232,8 @@ newAttenuatedChannel tr Attenuation { aReadAttenuation,
 --
 newConnectedAttenuatedChannelPair
     :: forall m.
-       ( MonadLabelledSTM m
-       , MonadTime        m
+       ( MonadDelay       m
+       , MonadLabelledSTM m
        , MonadTimer       m
        , MonadThrow       m
        , MonadThrow  (STM m)

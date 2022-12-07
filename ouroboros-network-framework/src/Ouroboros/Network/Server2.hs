@@ -31,12 +31,13 @@ module Ouroboros.Network.Server2
   , module ControlChannel
   ) where
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow hiding (handle)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
@@ -116,7 +117,9 @@ server_CONNABORTED_DELAY = 0.5
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
 run :: forall muxMode socket peerAddr versionData versionNumber m a b.
-       ( MonadAsync    m
+       ( Alternative (STM m)
+       , MonadAsync    m
+       , MonadDelay    m
        , MonadCatch    m
        , MonadEvaluate m
        , MonadLabelledSTM  m

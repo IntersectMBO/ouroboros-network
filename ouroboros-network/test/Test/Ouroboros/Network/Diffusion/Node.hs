@@ -30,6 +30,8 @@ module Test.Ouroboros.Network.Diffusion.Node
   , config_RECONNECT_DELAY
   ) where
 
+import           Control.Applicative (Alternative)
+import           Control.Concurrent.Class.MonadMVar (MonadMVar)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad ((>=>))
@@ -40,8 +42,8 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
                      MonadThrow, SomeException)
-import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
-import           Control.Monad.Class.MonadTimer (MonadTimer)
+import           Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime)
+import           Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer (..), nullTracer)
 
@@ -102,7 +104,6 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
-import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -162,7 +163,9 @@ data Arguments m = Arguments
 type ResolverException = SomeException
 
 run :: forall resolver m.
-       ( MonadAsync       m
+       ( Alternative (STM m)
+       , MonadAsync       m
+       , MonadDelay       m
        , MonadEvaluate    m
        , MonadFix         m
        , MonadFork        m

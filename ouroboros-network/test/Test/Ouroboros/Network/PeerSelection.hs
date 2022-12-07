@@ -43,8 +43,8 @@ import           System.Random (mkStdGen)
 
 import           Control.Exception (AssertionFailed (..), catch, evaluate)
 import           Control.Monad.Class.MonadSTM (STM)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.IOSim.Types hiding (STM)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..))
 
 import qualified Network.DNS as DNS (defaultResolvConf)

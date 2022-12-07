@@ -12,10 +12,10 @@
 
 module Test.Ouroboros.Network.Testnet (tests) where
 
-import           Control.Monad.Class.MonadTime (DiffTime, Time (Time), addTime,
-                     diffTime)
+import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time),
+                     addTime, diffTime)
 import           Control.Monad.IOSim
-import           Control.Monad.IOSim.Types (ThreadId)
 import           Control.Tracer (Tracer (Tracer))
 import           Data.Bifoldable (bifoldMap)
 
@@ -607,7 +607,7 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
                                   iosimTracer
                                   tracerDiffusionSimWithTimeName
 
-        trace :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+        trace :: [(Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType)]
         trace = take 125000
               . traceEvents
               $ runSimTrace sim
@@ -620,7 +620,7 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
                                   trace
   where
     check_governor_nolivelock :: DiffTime
-                              -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+                              -> [(Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType)]
                               -> Property
     check_governor_nolivelock dt trace =
       let trace' = (\(t, tid, tl, e) -> (t, (tid, tl, e)))
@@ -2670,7 +2670,7 @@ fromJoinedOrKilled :: c -> c -> JoinedOrKilled -> c
 fromJoinedOrKilled j _ Joined = j
 fromJoinedOrKilled _ k Killed = k
 
-getTime :: (Time, ThreadId, Maybe ThreadLabel, SimEventType) -> Time
+getTime :: (Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType) -> Time
 getTime (t, _, _, _) = t
 
 classifySimulatedTime :: Time -> Property -> Property
@@ -2794,8 +2794,8 @@ toBearerInfo abi =
 -- index.
 --
 takeUntilEndofTurn :: Int
-                   -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
-                   -> [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
+                   -> [(Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType)]
+                   -> [(Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType)]
 takeUntilEndofTurn n as =
     case splitAt n as of
         ([],  _) -> []

@@ -23,6 +23,7 @@ module Ouroboros.Network.InboundGovernor.Event
   , firstPeerCommitRemote
   ) where
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow hiding (handle)
 
@@ -123,7 +124,7 @@ data Terminated muxMode peerAddr m a b = Terminated {
 --
 -- /triggers:/ 'MiniProtocolTerminated'.
 --
-firstMiniProtocolToFinish :: MonadSTM m
+firstMiniProtocolToFinish :: Alternative (STM m)
                           => EventSignal muxMode peerAddr versionData m a b
 firstMiniProtocolToFinish
     connId
@@ -158,7 +159,9 @@ firstMiniProtocolToFinish
 -- @Unidirectional@ connections.
 --
 firstPeerPromotedToWarm :: forall muxMode peerAddr versionData m a b.
-                           MonadSTM m
+                           ( Alternative (STM m)
+                           , MonadSTM m
+                           )
                         => EventSignal muxMode peerAddr versionData m a b
 firstPeerPromotedToWarm
     connId
@@ -209,7 +212,9 @@ firstPeerPromotedToWarm
 -- run running).
 --
 firstPeerPromotedToHot :: forall muxMode peerAddr versionData m a b.
-                          MonadSTM m
+                          ( Alternative (STM m)
+                          , MonadSTM m
+                          )
                        => EventSignal muxMode peerAddr versionData m a b
 firstPeerPromotedToHot
    connId connState@ConnectionState { csRemoteState }
@@ -259,7 +264,9 @@ firstPeerPromotedToHot
 -- `RemoteHot → RemoteWarm` transition.
 --
 firstPeerDemotedToWarm :: forall muxMode peerAddr versionData m a b.
-                          MonadSTM m
+                          ( Alternative (STM m)
+                          , MonadSTM m
+                          )
                        => EventSignal muxMode peerAddr versionData m a b
 firstPeerDemotedToWarm
     connId connState@ConnectionState { csRemoteState }
@@ -302,7 +309,9 @@ firstPeerDemotedToWarm
 --
 -- /triggers:/ 'DemotedToColdRemote'
 --
-firstPeerDemotedToCold :: MonadSTM m
+firstPeerDemotedToCold :: ( Alternative (STM m)
+                          ,  MonadSTM m
+                          )
                        => EventSignal muxMode peerAddr versionData m a b
 firstPeerDemotedToCold
     connId
@@ -343,7 +352,7 @@ firstPeerDemotedToCold
 
 -- | First peer for which the 'RemoteIdle' timeout expires.
 --
-firstPeerCommitRemote :: MonadSTM m
+firstPeerCommitRemote :: Alternative (STM m)
                       => EventSignal muxMode peerAddr versionData m a b
 firstPeerCommitRemote
     connId ConnectionState { csRemoteState }

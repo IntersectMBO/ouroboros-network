@@ -29,8 +29,8 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, contramap, nullTracer)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
@@ -61,8 +61,9 @@ import           Ouroboros.Network.Mock.ConcreteBlock
 -- | Run a single block fetch protocol until the chain is downloaded.
 --
 blockFetchExample0 :: forall m.
-                      (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
-                       MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
+                      (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
+                       MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
+                       MonadThrow (STM m))
                    => Tracer m [TraceLabelPeer Int
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
@@ -169,8 +170,9 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
 -- will be interested in downloading them all.
 --
 blockFetchExample1 :: forall m.
-                      (MonadSTM m, MonadST m, MonadAsync m, MonadFork m,
-                       MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
+                      (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
+                       MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
+                       MonadThrow (STM m))
                    => Tracer m [TraceLabelPeer Int
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
@@ -317,8 +319,8 @@ exampleFixedPeerGSVs =
 -- Utils to run fetch clients and servers
 --
 
-runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-                   MonadST m, MonadTime m, MonadTimer m,
+runFetchClient :: (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
+                   MonadThrow (STM m), MonadST m, MonadTime m, MonadTimer m,
                    Ord peerid, Serialise block, Serialise point,
                    Typeable block, ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block point))
@@ -356,8 +358,8 @@ runFetchServer tracer channel server =
 
 runFetchClientAndServerAsync
                :: forall peerid block header version m a b.
-                  (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-                   MonadST m, MonadTime m, MonadTimer m,
+                  (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
+                   MonadThrow (STM m), MonadST m, MonadTime m, MonadTimer m,
                    Ord peerid, Show peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block),

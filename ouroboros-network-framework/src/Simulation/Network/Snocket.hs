@@ -45,12 +45,13 @@ module Simulation.Network.Snocket
 
 import           Prelude hiding (read)
 
+import           Control.Applicative (Alternative)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
 import           GHC.IO.Exception
@@ -126,8 +127,8 @@ dualConnection conn@Connection { connChannelLocal, connChannelRemote } =
          }
 
 
-mkConnection :: ( MonadLabelledSTM   m
-                , MonadTime          m
+mkConnection :: ( MonadDelay         m
+                , MonadLabelledSTM   m
                 , MonadTimer         m
                 , MonadThrow         m
                 , MonadThrow    (STM m)
@@ -381,9 +382,10 @@ instance GlobalAddressScheme Int where
 --
 withSnocket
     :: forall m peerAddr a.
-       ( MonadLabelledSTM m
+       ( Alternative (STM m)
+       , MonadDelay       m
+       , MonadLabelledSTM m
        , MonadMask        m
-       , MonadTime        m
        , MonadTimer       m
        , MonadThrow  (STM m)
        , GlobalAddressScheme peerAddr
@@ -630,10 +632,11 @@ connectTimeout = 120
 -- should be shared with all nodes in the same network.
 --
 mkSnocket :: forall m addr.
-             ( MonadLabelledSTM   m
+             ( Alternative   (STM m)
+             , MonadDelay         m
+             , MonadLabelledSTM   m
              , MonadThrow    (STM m)
              , MonadMask          m
-             , MonadTime          m
              , MonadTimer         m
              , GlobalAddressScheme addr
              , Ord  addr

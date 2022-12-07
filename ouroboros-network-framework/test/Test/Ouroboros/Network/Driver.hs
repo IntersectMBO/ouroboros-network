@@ -27,11 +27,10 @@ import           Network.TypedProtocol.ReqResp.Type
 
 import           Control.Monad (replicateM, void)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer
 
@@ -107,8 +106,8 @@ data ShouldFail
 -- with the given payloads.
 --
 prop_runPeerWithLimits
-  :: forall m. ( MonadAsync m, MonadFork m, MonadMask m,
-                 MonadThrow (STM m), MonadTime m, MonadTimer m)
+  :: forall m. ( MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
+                 MonadThrow (STM m), MonadTimer m)
   => Tracer m (TraceSendRecv (ReqResp String ()))
   -> Word
   -- ^ byte limit

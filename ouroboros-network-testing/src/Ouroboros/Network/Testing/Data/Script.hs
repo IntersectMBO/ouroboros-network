@@ -37,7 +37,7 @@ import qualified Data.Set as Set
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
@@ -140,7 +140,7 @@ instance Arbitrary ScriptDelay where
   shrink NoDelay    = []
   shrink (Delay _)  = []
 
-playTimedScript :: (MonadAsync m, MonadTimer m)
+playTimedScript :: (MonadAsync m, MonadDelay m)
                 => Tracer m a -> TimedScript a -> m (TVar m a)
 playTimedScript tracer (Script ((x0,d0) :| script)) = do
     v <- newTVarIO x0
