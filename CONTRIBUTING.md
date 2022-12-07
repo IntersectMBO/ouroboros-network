@@ -123,3 +123,20 @@ of the content. There are two relatively straightforward ways to do this:
 
 1. The TOFU approach: put in the wrong hash and then Nix will tell you the correct one, which you can copy in.
 2. Calculate the hash with `nix-shell -p nix-prefetch-git --run 'nix-prefetch-git <URL> <COMMIT_HASH>'`
+
+## Roles and Responsibilities
+
+Maintainers of each package are listed in the corresponding `*.cabal` file.
+
+We maintain a [CODEOWNERS file][CODEOWNERS] which provides information who should
+review your code if it touches given projects.  Note that you need to get
+approvals from all code owners (even though GitHub doesn't give a way to
+enforce it).
+
+For general architectural overview of the network code contact either:
+@coot or @dcoutts.
+
+For general architectural overview of the consensus code contact either:
+@dnadales or @nfrisby.
+
+[CODEOWNERS]: https://github.com/input-output-hk/ouroboros-network/blob/master/.github/CODEOWNERS
