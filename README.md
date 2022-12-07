@@ -1,16 +1,30 @@
+# Introduction
+
+This repository contains the core components of the network & consensus code
+for  the Cardano node.  It is a dependency when building the node from the
+cardano-node repository.
+
 # Ouroboros-Network
 
-* `io-sim` - `IOSim` simulator monad which supports asynchronous exceptions,
-  `STM` transactions and `async` interface, timers.
-* `io-classes` - type classes, all of them have instance for both `IOSim` and
-  `IO`.
-* `typed-protocols` - session type framework with support of [protocol pipelining](https://en.wikipedia.org/wiki/Protocol_pipelining)
-  * See 45min Haskell eXchange 2019 [talk](https://skillsmatter.com/skillscasts/14633-45-minute-talk-by-duncan-coutts) by @dcoutts.
-  * See three 50min Monadic Party 2019 workshop talks by @coot: [Part 1](https://www.youtube.com/watch?v=j8gza2L61nM), [Part 2](https://www.youtube.com/watch?v=oV6KSl1srL8), [Part 3](https://www.youtube.com/watch?v=nOIQCRPwmPA).
-* `ouroboros-network`- ouroboros network package which implements protocols
-  which to run ouroboros family of protocols, multiplexing layer.
-* The [`byron-proxy`](https://github.com/input-output-hk/cardano-byron-proxy) is a network protocol proxy between Byron and Shelley.
-  It now lives in a separate repository.
+* `network-mux` - implementation of a general network muliplexer.
+* `ouroboros-network-api` - shared API between `network` and `consensus` components.
+* `ouroboros-network-framework` - low level network components, e.g. snockets,
+  connection manager, inbound governor, handshake mini-protocol, network
+  simulator. 
+* `ouroboros-network-protocols` - implementation of all /node-to-node/
+  & /node-to-client/ protocols.  Also contains a testing library which is
+  implements various applications for testing purposes.
+* `ouroboros-network`- top level integration of all network components also
+  defines `node-to-node` and `node-to-client` API.  It contains the implementation
+  of outbound governor.
+* `ouroboros-network-mock` & `ouroboros-network-testing` - shared testing code.
+* `ntp-client` - an `ntp` client (used by `cardano-wallet`).
+
+Libraries:
+
+* `monoidal-synchronisation` - a small standalone package which contains
+  synchronisation primitives.
+
 
 ## Ouroboros-Network Documentation
 
@@ -41,7 +55,7 @@ the Cardano Shelley implementation:
 
 The API consists of three layers:
 
-• mini-protocol api's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol`; this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
+• mini-protocol api's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol` (defined in `ouroboros-network-protocols` package); this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
 
 • callback `ptcl -> channel -> m ()` where `ptcl` is enumeration for each mini-protocol, this is either `NodeToNodeProtocols` or `NodeToClientProtocols`.  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator / responder (or client / server) callbacks.
 
@@ -53,7 +67,6 @@ The API consists of three layers:
 * [cardano-ping](https://github.com/input-output-hk/ouroboros-network/wiki/cardano-ping)
 * [mux-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/demo/mux-demo.hs)
 * [demo-ping-pong](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network-framework/demo/ping-pong.hs)
-* [named-pipe-demo](https://github.com/input-output-hk/ouroboros-network/blob/master/Win32-network/demo/named-pipe-demo.hs) (Windows only)
 * [demo-ntp-client](https://github.com/input-output-hk/ouroboros-network/blob/master/ntp-client/demo/Main.hs)
 
 <details>
