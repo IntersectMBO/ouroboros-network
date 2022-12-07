@@ -420,3 +420,46 @@ Those not ready to dismiss that concern can consider the following proposal, whi
       (In a monorepo, there's just the one.
       But in a polyrepo, there may be packages that haven't changed since the previous release.)
     - Announce that commit.
+
+## Proposal ScrivvyRedimensional
+
+Maintain a `wip-status` directory for each package.
+
+When merging a PR, add one of these empty files as appropriate to each package the PR alters.
+
+- `<package>/wip-status/major/<scriv-id>`
+- `<package>/wip-status/minor/<scriv-id>`
+- `<package>/wip-status/patch/<scriv-id>`
+
+(`<scriv-id>` is the timestamp, commit handle, and branch name, [like `scriv`](https://github.com/nedbat/scriv/blob/cd79a2a618eb752075bbf45e93ad6b7576a2924a/docs/index.rst#getting-started).)
+
+In particular, if the PR should add `wip-status/minor/<this-PR-id>`, then it should do so even if `wip-status/major` is non-empty.
+That would ensure that backporting this PR onto a branch with an empty `major` directory would still appropriately alter the `wip-status` directory.
+
+Immediately before announcing the release of some package, merge a commit that does both of the following.
+
+- Bump each package version according to the contents of its `wip-status` (leave it unchaged if the directory is empty).
+- Remove all files from the three `wip-status/{major,minor,patch}` directories.
+
+_Remark_.
+If you maintain a separate changelog per package, then `scriv`'s [Categories](https://github.com/nedbat/scriv/blob/cd79a2a618eb752075bbf45e93ad6b7576a2924a/docs/concepts.rst#categories) can be leveraged for this, instead of these empty files.
+
+Pros:
+
+- A PR's contribution to the subsequent release's version bump is judged when reviewing the PR instead of being assessed (many days) later.
+
+- It does not have distinct dev version and release versions, but inspecting the contents of a specific commit would let you determine whether its actually the release version it declares or else some evolution of it.
+  But that requires inspecting the special files, which users, downstream devs, and standard tools won't do.
+  (However, see the Remark below.)
+
+Cons:
+
+- It requires the additional consideration/discussion of which of the three `wip-status/{major,minor,patch}` directories to add the empty file in for each package the PR touches.
+  This makes it a little harder to merge a PR, but not as much as writing the changelog entry would.
+  (It avoids merge/rebase conflicts the same way that `scriv` does.)
+
+_Remark_.
+You could also add the extra `.0` version component from Proposal Redimensional in a commit immediately _after_ the release.
+That extra `.0` would be naturally removed by the pre-release commit, since you're only releasing a package if its `wip-status` directory is non-empty.
+It suffers the same coarseness of dev revisions as Proposal Redimensional, because every commit between release `A.B.C.D` and release `A.B.(C+1).0` would be versioned `A.B.C.*.0` even if some have more features than the other---and similar for major version bumps and breaking changes.
+But that should be mostly harmless, since development versions (`A.B.C.D.0`) should be visible downstream when developers are very explicitly opting-in to them.
