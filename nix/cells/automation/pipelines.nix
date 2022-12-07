@@ -23,11 +23,11 @@
         nix-systems -i |
         jq 'with_entries(select(.value))' # filter out systems that we cannot build for
       '';
-      each.text = ''nix build -L .#hydraJobs."$1".required'';
+      each.text = ''nix build -L .#hydraJobs."$1".required --max-silent-time 1800'';
       skippedDescription = lib.escapeShellArg "No nix builder available for this system";
     };
 
-    memory = 1024 * 8;
+    memory = 1024 * 16;
     nomad.resources.cpu = 10000;
   };
 }
