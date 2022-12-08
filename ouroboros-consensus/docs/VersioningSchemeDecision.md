@@ -463,3 +463,115 @@ You could also add the extra `.0` version component from Proposal Redimensional 
 That extra `.0` would be naturally removed by the pre-release commit, since you're only releasing a package if its `wip-status` directory is non-empty.
 It suffers the same coarseness of dev revisions as Proposal Redimensional, because every commit between release `A.B.C.D` and release `A.B.(C+1).0` would be versioned `A.B.C.*.0` even if some have more features than the other---and similar for major version bumps and breaking changes.
 But that should be mostly harmless, since development versions (`A.B.C.D.0`) should be visible downstream only when developers are very explicitly opting-in to them.
+
+# Second Draft of this whole document
+
+When should you update the version declarations in your package manifests (eg the top-level `version:` field in your `.cabal` file)?
+We would prefer for some unassailable authority to enumerate and explain the archetypal options, but we have not yet discovered such an article in our research or discussions.
+This short document therefore assembles what prior art we have found into such a resource.
+
+Executive summary: the challenge of maintaining versions is qualitatively equivalent to the challenge of maintaining a changelog.
+
+### Design Space Overview
+
+It's a surprisingly rich design space, but the following concepts delineate its perimeter and the main trends within it.
+
+A principal dichotomy among possible version declaration maintenance schemes has become apparent during our research.
+- Definition _RisingEdge_. The version declaration is altered by (some of the) development PRs; it's already correct when it comes time to announce a release.
+- Definition _FallingEdge_. The version declaration is altered only immediately before announcing a release.
+
+A few desiderata have also become apparent.
+- Definition _TypicalReleases_. We do not want our releases to surprise downstream devs or users; no exotic release version numbers, no gaps or weird orderings in the sequence of released versions, neither too frequent nor too infrequent, etc.
+- Definition _EasyPR_. We do not want our scheme to significantly increase the average- and worst-case effort required to prepare, usher, review, and/or merge a PR.
+- Definition _EasyRelease_. We do not want our scheme to significantly increase the average- and worst-case effort required to prepare and/or announce a release.
+
+The most extreme RisingEdge scheme would require that every PR increments the version number.
+
+| TypicalReleases | EasyPR | EasyRelease |
+|:---------------:|:------:|:-----------:|
+| ✗               | ✗      | ✓           |
+
+This rule is so simple that the ✗ for EasyPR is somewhat surpising.
+The hidden problem is that this scheme causes spurious merge conflicts among all your PRs.
+It would only be possible to merge PRs sequentially and merging one PR requires rebasing every other PR and updating its version number diff (assuming a single target branch).
+That usually implies a very poor contributor experience.
+(If you're wondering about variations on this, such as "only bump the version if it hasn't already been bumped", see [below](#RisingEdgeCompromises).)
+
+We assign ✓ for EasyRelease because each release doesn't require any additional work; merely announce the result of the latest PR.
+Relatedly, though, we assign ✗ for TypicalReleases because it's unrealistic to release after every PR.
+Therefore the eventual timeline of your releases will have confusing gaps between the released version numbers.
+
+The opposite scheme would be the most extreme FallingEdge scheme, in which normal PRs never change version declarations, only release-preparation PRs do.
+
+| TypicalReleases | EasyPR | EasyRelease |
+|:---------------:|:------:|:-----------:|
+| ✓               | ✓      | ✗           |
+
+We assign ✓ for TypicalRelease because this scheme constrains neither how often you release nor the evolution of version numbers.
+We similarly assign ✓ for EasyPR because the scheme requires nothing from normal PRs.
+
+However, we assign ✗ for EasyRelease because the scheme requires assessing all of the changes on this branch since the previous release from this branch.
+This is a problem because PRs should be assessed while they're being developed and reviewed, active in the teams' minds, instead of some days/weeks later when the team has "paged out" the details of the PR.
+
+It is unlikely that the version control history, the list of pull requests, or any other _automatic_ log can be used to trivialize the obligation of the post hoc assessment.
+Even if we assume an ideal commit messages and/or PR descriptions, there will likely be a burdensome number of them.
+The slightly more realistic assumptions of commit messages and/or PR descriptions that do have ideal content but don't have perfectly uniform structure means the assessor would still have to thoroughly read each, judging what the content requires of the version bump under consideration.
+
+However, there is one standard log that can often make this assessment much easier: the changelog.
+It's not automatic, but it is often structured around "additions/changes/etc", which are exactly what determines the next version under a policy like SemVer, for example.
+
+Thus our final scheme to consider is a variant of FallingEdge that also requires/assumes the maintenance of a _bumplog_, which is merely a degenerate changelog that contains nothing more than what's necessary to determine the next version number for each changed packaged (ie one classification of `patch`, `minor`, and `major` for each merged PR).
+
+| TypicalReleases | EasyPR | EasyRelease |
+|:---------------:|:------:|:-----------:|
+| ✓               | 90% ✓  | 95% ✓       |
+
+We assign ✓ for TypicalRelease for the same reason as FallingEdge.
+We assign a partial 90% ✓ for EasyPR because the presence of a correct bumplog entry requires non-trivial effort from the submitter and the reviewer.
+We also assign a partial 95% ✓ for EasyRelease to account for the following small checklist for each release.
+- Scan the bumplog entries that are new since the previous release from this branch.
+  (We the degenerately minimal structure of the entries ensures this is easy.)
+- Thereby determine what the next version should be for each package being released.
+- Add a commit that sets those versions accordingly.
+
+If you're envisioning a single bumplog file, then you might be wondering why this scheme wouldn't also incur spurious merge conflicts among PRs, etc.
+Fortunately, this is already a solved problem for changelogs; see tools like https://scriv.readthedocs.io/en/latest et al.
+
+_Remark_.
+We chose 90% and 95% based on the use of a degenerate changelog.
+Mature/stable projects likely already have a non-degenerate changelog that would make the pre-release assessment required by FallingEdge very simple, if not totally trivial.
+Thus, such projects' teams might assign slighty better and/or worse scores to EasyPR and/or
+EasyRelease to this scheme, depending on how they choose to resolve the tension between the bumplog and the structure/thoroughness of their actual changelog.
+One notable option, though, is to keep the two separate: maintain the additional bumplog used only for assessing version bumps; we would still score that as above (90% EasyPR and 95% EasyRelease).
+
+## Possible RisingEdge Compromises
+
+<a id="RisingEdgeCompromises"/>There are some comprimises you could make to the most extreme RisingEdge scheme.
+
+You could allowing for batched merges and only require that the single merge commit for a batched increases the version.
+That would eliminate some of spurious conflicts, but not all.
+
+You could also require that PRs don't need to bump the version if a previous PR has already sufficiently bumped it.
+That would likely eliminate many of the spurious conflicts, but not amongst the first PRs after a release.
+However, it comes with an additional subtle problem.
+This scheme means that eg a bugfix PR merged after a new feature PR would not adjust the version declaration.
+If that bugfix were then backported/rebased/cherry-picked onto a previous release commit, then now it _should_ being increasing the version.
+
+The upshot is that schemes that depend on the order of PRs are brittle in the context of rebases/cherry-picks/etc.
+We do not consider those operations to be exotic, especially since they are commonly used to backport some improvements to an older release branch, which is a relatively common task among stable/mature projects.
+
+## Distinguishing dev versions and release versions
+
+TODO discuss how to maintain the extra `.0` component, including a risk assessment of its motivation
+
+## Annotated Bibliography
+
+- https://semver.org is clear about how release versions should relate to one another, but doesn't advise about how to maintain them correctly in your repository.
+  The same goes for https://pvp.haskell.org.
+
+- https://opensource.guide/best-practices/#bring-in-the-robots mentions https://github.com/semantic-release/semantic-release.
+  In our opinion, this tool relies too much on automation.
+  A typo in your commit message, forgetting to the annotation in your commit message, etc could all lead to surprises.
+  However, its clean specification supplies good inspiration for a human-friendly checklist.
+
+- We realized the correspondence (obvious in hindsight) with the maintenance of changelogs when reviewing the process documented at https://github.com/input-output-hk/plutus/blob/master/doc/read-the-docs-site/RELEASE.adoc, especially the scripts.
