@@ -110,7 +110,7 @@ let
         [ "haskellPackages" "ouroboros-network-framework" "coverageReport" ]
         [ "haskellPackages" "ouroboros-network-testing" "coverageReport" ]
       ])) ++ (testsPaths [ "ouroboros-network-protocols-test" "cddl" ])
-  ++ (exesPaths [ "network-mux" "cardano-ping" ]) ++ [[ "checks" "styles" ]]
+  ++ (exesPaths [ "network-mux" ]) ++ [[ "checks" "styles" ]]
   ++ onlyBuildOnDefaultSystem;
 
   # Remove build jobs for which cross compiling does not make sense.
