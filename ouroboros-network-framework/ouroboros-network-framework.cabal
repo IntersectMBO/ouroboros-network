@@ -14,7 +14,7 @@ license-files:
   NOTICE
 copyright:           2019-2023 Input Output Global Inc (IOG)
 author:              Alexander Vieth, Duncan Coutts, Marcin Szamotulski
-maintainer:          alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io
+maintainer:          marcin.szamotulski@iohk.io
 -- category:
 build-type:          Simple
 extra-source-files:  CHANGELOG.md
