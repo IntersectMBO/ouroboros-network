@@ -24,6 +24,7 @@ let
       pkgconfig
       nixfmt
       stylish-haskell
+      lmdb
     ];
 
     tools = {
