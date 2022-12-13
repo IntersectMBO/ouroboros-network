@@ -575,3 +575,71 @@ TODO discuss how to maintain the extra `.0` component, including a risk assessme
   However, its clean specification supplies good inspiration for a human-friendly checklist.
 
 - We realized the correspondence (obvious in hindsight) with the maintenance of changelogs when reviewing the process documented at https://github.com/input-output-hk/plutus/blob/master/doc/read-the-docs-site/RELEASE.adoc, especially the scripts.
+
+
+
+-----
+
+Desiderata:
+
+- A.B.C is the version declared by an actual release.
+    - For all time, the next greater released version is one of either A.B.(C+1), or else A.(B+1).0, or else (A+1).0.0.
+
+- XXX is the version declared by source code during the development between releases.
+    - A.B.C < XXX   and   XXX < A.B.(C+1)     and XXX < A.(B+1).Z     and XXX < (A+1).Y.Z
+
+Problem: the version declaration of a commit should not be dependent on the
+nearest preceding release on that branch.
+
+EG the XXX declared by a bugfix commit immediately after the commit that
+released A.(B+1).0 would might change the version declaration to A.(B+1).0 - epsilon.
+
+However, it is common practice to cherry-pick that commit onto the commit that
+released A.B.Z, in which case the bugfix's version declaration should instead be
+A.B.(Z+1) - epsilon.
+
+
+
+
+The internal version representation is A.x.B.y.C.z, where x y and z are sets of ids that uniquely map to development work.
+
+The (partial) order is lexicographical.
+Each A/B/C component uses the usual order on integers.
+Each x/y/z component uses set inclusion (partial) order.
+The actual release A.B.C is equal to A.{}.B.{}.C.{}.
+(In fact, I think you can assert that number.number abbreviates number.{}.number.)
+
+Every element of a set is X.Y.Z-timestamp-string.
+
+- You must merge a PR whose source branch diverges from the target branch
+  earlier than some release on the target branch--you have to rebase at least as
+  far as the latest release on the target branch.
+
+- X.Y.Z must be the version of the youngest release on the PR's source branch
+  when it was merged.
+
+- timestamp is most recent UTC time at which the X.Y.Z part of this id was
+  changed (ie after the final rebase prior to merging the PR).
+
+- string is arbitrary, but enough to avoid collisions (eg repository name and PR
+  number is likely a useful start).
+
+x must only contain ids starting with X.Y.Z where A     <= X.
+y must only contain ids starting with X.Y.Z where A.B   <= X.Y.
+z must only contain ids starting with X.Y.Z where A.B.C <= X.Y.Z.
+
+IE you can backport work freely, but "forwardporting" work requires you to
+update the ids appropriately.
+
+Finally, extend the relevant parsers of ghc, ghc-pkg, cabal, stack, et al with the `version-directory:` field.
+
+```
+version: A.x.B.y.C.z
+version-directory: $path/
+```
+
+Tooling must expect that path to be a directory.
+It must also contain the ids as the names of files in the `$path/x/`, `$path/y/`, and `$path/z/` directories.
+It must fail if any of those id files are non-empty.
+
+Alternative: publish a git --merge-strategy that does set union to resolve conflicts in `dev-version-x:`, `dev-version-y:`, `dev-version-z:` fields, which must have one element per line.
