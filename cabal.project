@@ -13,11 +13,12 @@ repository cardano-haskell-packages
 -- See CONTRIBUTING for some Nix commands you will need to run if you
 -- update either of these.
 -- Bump this if you need newer packages from Hackage
-index-state: 2022-11-14T00:00:00Z
+index-state: 2022-12-01T00:00:00Z
 -- Bump this if you need newer packages from CHaP
 index-state: cardano-haskell-packages 2022-11-15T00:00:00Z
 
-packages: ./ouroboros-network-testing
+packages: ./cardano-ping
+          ./ouroboros-network-testing
           ./monoidal-synchronisation
           ./network-mux
           ./ouroboros-network
@@ -44,6 +45,9 @@ packages: ./ouroboros-network-testing
           ./cardano-client
 
 tests: True
+
+package cardano-ping
+  flags: +asserts
 
 package io-classes
   flags: +asserts
