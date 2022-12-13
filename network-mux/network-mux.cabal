@@ -8,7 +8,7 @@ license-files:
   NOTICE
 copyright:           2019 Input Output (Hong Kong) Ltd.
 author:              Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies
-maintainer:          duncan@well-typed.com, marcin.szamotulski@iohk.io, marc.fontaine@iohk.io, karl.knutsson@iohk.io, alex@well-typed.com, neil.davies@pnsol.com
+maintainer:          marcin.szamotulski@iohk.io
 category:            Network
 build-type:          Simple
 extra-source-files:  CHANGELOG.md

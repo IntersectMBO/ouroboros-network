@@ -8,7 +8,7 @@ license-files:
   NOTICE
 copyright:           2019 Input Output (Hong Kong) Ltd.
 author:              IOHK Engineering Team
-maintainer:          operations@iohk.io
+maintainer:          marcin.szamotulski@iohk.io
 category:            Network
 build-type:          Simple
 -- extra-source-files:  ChangeLog.md
