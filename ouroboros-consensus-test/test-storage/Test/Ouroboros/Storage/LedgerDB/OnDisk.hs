@@ -958,11 +958,14 @@ initStandaloneDB ::
 initStandaloneDB dbEnv@DbEnv{..} dbSecParam = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
-    dbBackingStore <- uncheckedNewTVarM
-                      =<< newBackingStore
-                             dbTracer
-                             dbBackingStoreSelector
+    let
+      (LedgerBackingStoreInitialiser bsi) =
+        newBackingStoreInitialiser dbTracer dbBackingStoreSelector
+    dbBackingStore <- uncheckedNewTVarM . LedgerBackingStore
+                      =<< HD.initFromValues
+                             bsi
                              dbHasFS
+                             Origin
                              initTables -- TODO we could consider adapting the test generator to generate an initial ledger with non-empty tables.
     let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks

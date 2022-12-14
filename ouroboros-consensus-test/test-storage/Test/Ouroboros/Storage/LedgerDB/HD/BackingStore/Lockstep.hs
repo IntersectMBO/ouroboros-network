@@ -23,6 +23,7 @@ module Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Lockstep (
   , unIOLikeMonad
     -- * Model state
   , BackingStoreState (..)
+  , RealEnv (..)
   , maxOpenValueHandles
   ) where
 
@@ -34,8 +35,6 @@ import           Data.Bifunctor
 import           Data.Constraint
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Typeable
 
 import qualified Test.QuickCheck as QC
@@ -55,18 +54,17 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as LMDB
                      (DbErr (..))
 import           Ouroboros.Consensus.Util.IOLike hiding (MonadMask (..), handle)
 
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.Orphans.ToExpr ()
 
 import qualified Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Mock as Mock
 import           Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Mock (Err (..),
-                     Mock (..), MockValueHandle (..), runMockState)
+                     Mock (..), ValueHandle (..), runMockState)
 import           Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Registry
 
 {-------------------------------------------------------------------------------
   Facilitate running the tests in @'IO'@ or @'IOSim'@.
-
-  TODO: put this in a separate module?
 -------------------------------------------------------------------------------}
 
 -- This wrapper allows us to run the tests both in @'IO'@ and @'IOSim'@, without
@@ -144,9 +142,6 @@ initState = BackingStoreState {
 --
 -- 32 is an arbitrary number of readers. We can increase or decrease this at
 -- will.
---
--- TODO: should the LMDB backing store keep track of the number of open value
--- handles itself, and throw a custom error if the maximum is exceeded?
 maxOpenValueHandles :: Int
 maxOpenValueHandles = 32
 
@@ -154,11 +149,12 @@ maxOpenValueHandles = 32
   @'StateModel'@ and @'RunModel'@ instances
 -------------------------------------------------------------------------------}
 
-type RealEnv m ks vs d = (
-    SomeHasFS m
-  , BS.BackingStore m ks vs d
-  , HandleRegistry m (BS.BackingStoreValueHandle m ks vs)
-  )
+data RealEnv m ks vs d = RealEnv {
+    reSomeHasFS        :: SomeHasFS m
+  , reBackingStoreInit :: BS.BackingStoreInitialiser m ks vs d
+  , reBackingStore     :: StrictMVar m (BS.BackingStore m ks vs d)
+  , reRegistry         :: HandleRegistry m (BS.BackingStoreValueHandle m ks vs)
+  }
 
 type RealMonad m ks vs d = ReaderT (RealEnv m ks vs d) (IOLikeMonad m)
 
@@ -177,21 +173,28 @@ instance ( Show ks, Show vs, Show d
          , Mock.HasOps ks vs d
          ) => StateModel (Lockstep (BackingStoreState ks vs d)) where
   data Action (Lockstep (BackingStoreState ks vs d)) a where
-    BSClose       :: BSAct ks vs d ()
-    BSCopy        :: BS.BackingStorePath
-                  -> BSAct ks vs d ()
-    BSValueHandle :: BSAct ks vs d (WithOrigin SlotNo, Handle)
-    BSWrite       :: SlotNo
-                  -> d
-                  -> BSAct ks vs d ()
-    BSVHClose     :: BSVar ks vs d Handle
-                  -> BSAct ks vs d ()
-    BSVHRangeRead :: BSVar ks vs d Handle
-                  -> BS.RangeQuery ks
-                  -> BSAct ks vs d (Values vs)
-    BSVHRead      :: BSVar ks vs d Handle
-                  -> ks
-                  -> BSAct ks vs d (Values vs)
+    -- Reopen a backing store by intialising from values.
+    BSInitFromValues :: WithOrigin SlotNo
+                     -> Values vs
+                     ->  BSAct ks vs d ()
+    -- Reopen a backing store by initialising from a copy.
+    BSInitFromCopy   :: BS.BackingStorePath
+                     -> BSAct ks vs d ()
+    BSClose          :: BSAct ks vs d ()
+    BSCopy           :: BS.BackingStorePath
+                     -> BSAct ks vs d ()
+    BSValueHandle    :: BSAct ks vs d (WithOrigin SlotNo, Handle)
+    BSWrite          :: SlotNo
+                     -> d
+                     -> BSAct ks vs d ()
+    BSVHClose        :: BSVar ks vs d Handle
+                     -> BSAct ks vs d ()
+    BSVHRangeRead    :: BSVar ks vs d Handle
+                     -> BS.RangeQuery ks
+                     -> BSAct ks vs d (Values vs)
+    BSVHRead         :: BSVar ks vs d Handle
+                     -> ks
+                     -> BSAct ks vs d (Values vs)
 
   initialState        = Lockstep.initialState initState
   nextState           = Lockstep.nextState
@@ -229,12 +232,14 @@ modelPrecondition ::
     -> LockstepAction (BackingStoreState ks vs d) a
     -> Bool
 modelPrecondition (BackingStoreState mock _stats) action = case action of
-    BSCopy _      -> canOpenReader
-    BSValueHandle -> canOpenReader
-    _             -> True
+    BSInitFromValues _ _ -> isClosed mock
+    BSInitFromCopy _     -> isClosed mock
+    BSCopy _             -> canOpenReader
+    BSValueHandle        -> canOpenReader
+    _                    -> True
   where
     canOpenReader         = Map.size openValueHandles < maxOpenValueHandles
-    openValueHandles      = Map.filter not (valueHandles mock)
+    openValueHandles      = Map.filter (==Mock.Open) (valueHandles mock)
 
 {-------------------------------------------------------------------------------
   @'InLockstep'@ instance
@@ -252,7 +257,7 @@ instance ( Show ks, Show vs, Show d
          ) => InLockstep (BackingStoreState ks vs d) where
 
   data instance ModelValue (BackingStoreState ks vs d) a where
-    MValueHandle :: MockValueHandle vs -> BSVal ks vs d Handle
+    MValueHandle :: ValueHandle vs -> BSVal ks vs d Handle
 
     MErr    :: Err
             -> BSVal ks vs d Err
@@ -307,13 +312,15 @@ instance ( Show ks, Show vs, Show d
        LockstepAction (BackingStoreState ks vs d) a
     -> [AnyGVar (ModelOp (BackingStoreState ks vs d))]
   usedVars = \case
-    BSClose           -> []
-    BSCopy _          -> []
-    BSValueHandle     -> []
-    BSWrite _ _       -> []
-    BSVHClose h       -> [SomeGVar h]
-    BSVHRangeRead h _ -> [SomeGVar h]
-    BSVHRead h _      -> [SomeGVar h]
+    BSInitFromValues _ _ -> []
+    BSInitFromCopy _     -> []
+    BSClose              -> []
+    BSCopy _             -> []
+    BSValueHandle        -> []
+    BSWrite _ _          -> []
+    BSVHClose h          -> [SomeGVar h]
+    BSVHRangeRead h _    -> [SomeGVar h]
+    BSVHRead h _         -> [SomeGVar h]
 
   arbitraryWithVars ::
        ModelFindVariables (BackingStoreState ks vs d)
@@ -360,26 +367,30 @@ instance ( Show ks, Show vs, Show d
     -> Realized (RealMonad m ks vs d) a
     -> BSObs ks vs d a
   observeReal _proxy = \case
-    BSClose           -> OEither . bimap OId OId
-    BSCopy _          -> OEither . bimap OId OId
-    BSValueHandle     -> OEither . bimap OId (OPair . bimap OId (const OValueHandle))
-    BSWrite _ _       -> OEither . bimap OId OId
-    BSVHClose _       -> OEither . bimap OId OId
-    BSVHRangeRead _ _ -> OEither . bimap OId (OValues . unValues)
-    BSVHRead _ _      -> OEither . bimap OId (OValues . unValues)
+    BSInitFromValues _ _ -> OEither . bimap OId OId
+    BSInitFromCopy _     -> OEither . bimap OId OId
+    BSClose              -> OEither . bimap OId OId
+    BSCopy _             -> OEither . bimap OId OId
+    BSValueHandle        -> OEither . bimap OId (OPair . bimap OId (const OValueHandle))
+    BSWrite _ _          -> OEither . bimap OId OId
+    BSVHClose _          -> OEither . bimap OId OId
+    BSVHRangeRead _ _    -> OEither . bimap OId (OValues . unValues)
+    BSVHRead _ _         -> OEither . bimap OId (OValues . unValues)
 
   showRealResponse ::
        Proxy (RealMonad m ks vs d)
     -> LockstepAction (BackingStoreState ks vs d) a
     -> Maybe (Dict (Show (Realized (RealMonad m ks vs d) a)))
   showRealResponse _proxy = \case
-    BSClose           -> Just Dict
-    BSCopy _          -> Just Dict
-    BSValueHandle     -> Nothing
-    BSWrite _ _       -> Just Dict
-    BSVHClose _       -> Just Dict
-    BSVHRangeRead _ _ -> Just Dict
-    BSVHRead _ _      -> Just Dict
+    BSInitFromValues _ _ -> Just Dict
+    BSInitFromCopy _     -> Just Dict
+    BSClose              -> Just Dict
+    BSCopy _             -> Just Dict
+    BSValueHandle        -> Just Dict
+    BSWrite _ _          -> Just Dict
+    BSVHClose _          -> Just Dict
+    BSVHRangeRead _ _    -> Just Dict
+    BSVHRead _ _         -> Just Dict
 
 {-------------------------------------------------------------------------------
   Interpreter against the model
@@ -394,6 +405,10 @@ runMock ::
      , Mock vs
      )
 runMock lookUp = \case
+    BSInitFromValues sl (Values vs) ->
+      wrap MUnit . runMockState (Mock.mBSInitFromValues sl vs)
+    BSInitFromCopy bsp ->
+      wrap MUnit . runMockState (Mock.mBSInitFromCopy bsp)
     BSClose            ->
       wrap MUnit . runMockState Mock.mBSClose
     BSCopy bsp         ->
@@ -416,11 +431,11 @@ runMock lookUp = \case
     wrap f = first (MEither . bimap MErr f)
 
     mBSValueHandle ::
-         (WithOrigin SlotNo, MockValueHandle vs)
+         (WithOrigin SlotNo, ValueHandle vs)
       -> BSVal ks vs d (WithOrigin SlotNo, Handle)
     mBSValueHandle (sl, h) = MPair (MSlotNo sl, MValueHandle h)
 
-    getHandle :: BSVal ks vs d Handle -> MockValueHandle vs
+    getHandle :: BSVal ks vs d Handle -> ValueHandle vs
     getHandle (MValueHandle h) = h
 
 {-------------------------------------------------------------------------------
@@ -446,7 +461,9 @@ arbitraryBackingStoreAction findVars (BackingStoreState mock _stats) =
   where
     withoutVars :: [(Int, Gen (Any (LockstepAction (BackingStoreState ks vs d))))]
     withoutVars = [
-        (1, pure $ Some BSClose)
+        (5, fmap Some $ BSInitFromValues <$> QC.arbitrary <*> (Values <$> QC.arbitrary))
+      , (5, fmap Some $ BSInitFromCopy <$> genBackingStorePath)
+      , (2, pure $ Some BSClose)
       , (5, fmap Some $ BSCopy <$> genBackingStorePath)
       , (5, pure $ Some BSValueHandle)
       , (5, fmap Some $ BSWrite <$> genSlotNo <*> genDiff)
@@ -456,9 +473,9 @@ arbitraryBackingStoreAction findVars (BackingStoreState mock _stats) =
          Gen (BSVar ks vs d (Either Err (WithOrigin SlotNo, Handle)))
       -> [(Int, Gen (Any (LockstepAction (BackingStoreState ks vs d))))]
     withVars genVar = [
-          (2, fmap Some $ BSVHClose <$> (fhandle <$> genVar))
-        , (10, fmap Some $ BSVHRangeRead <$> (fhandle <$> genVar) <*> QC.arbitrary)
-        , (10, fmap Some $ BSVHRead <$> (fhandle <$> genVar) <*> QC.arbitrary)
+          (5, fmap Some $ BSVHClose <$> (fhandle <$> genVar))
+        , (5, fmap Some $ BSVHRangeRead <$> (fhandle <$> genVar) <*> QC.arbitrary)
+        , (5, fmap Some $ BSVHRead <$> (fhandle <$> genVar) <*> QC.arbitrary)
         ]
       where
         fhandle ::
@@ -475,7 +492,7 @@ arbitraryBackingStoreAction findVars (BackingStoreState mock _stats) =
     -- the set of possible file names small, such that errors (i.e., file alread
     -- exists) occur most of the time.
     genBSPFile :: Gen String
-    genBSPFile = QC.elements ["a", "b", "c", "d"]
+    genBSPFile = QC.elements [show x | x <- [1 :: Int .. 10]]
 
     -- Generate a slot number that is close before, at, or after the backing
     -- store's current slot number. A
@@ -538,24 +555,28 @@ runIO ::
      LockstepAction (BackingStoreState ks vs d) a
   -> LookUp (RealMonad m ks vs d)
   -> RealMonad m ks vs d (Realized (RealMonad m ks vs d) a)
-runIO action lookUp = ReaderT $ \(sfhs, bs, rr) ->
-    ioLikeMonad $ aux sfhs bs rr action
+runIO action lookUp = ReaderT $ \renv ->
+    ioLikeMonad $ aux renv action
   where
     aux ::
-         SomeHasFS m
-      -> BS.BackingStore m ks vs d
-      -> HandleRegistry m (BS.BackingStoreValueHandle m ks vs)
+         RealEnv m ks vs d
       -> LockstepAction (BackingStoreState ks vs d) a
       -> m a
-    aux sfhs bs rr = \case
+    aux renv = \case
+        BSInitFromValues sl (Values vs) -> catchErr $ do
+          bs <- BS.initFromValues bsi sfhs sl vs
+          void $ swapMVar bsVar bs
+        BSInitFromCopy bsp -> catchErr $ do
+          bs <- BS.initFromCopy bsi sfhs bsp
+          void $ swapMVar bsVar bs
         BSClose            -> catchErr $
-          BS.bsClose bs
+          readMVar bsVar >>= BS.bsClose
         BSCopy bsp         -> catchErr $
-          BS.bsCopy bs sfhs bsp
+          readMVar bsVar >>= \bs -> BS.bsCopy bs sfhs bsp
         BSValueHandle      -> catchErr $
-          BS.bsValueHandle bs >>= mapM (registerHandle rr)
+          readMVar bsVar >>= (BS.bsValueHandle >=> mapM (registerHandle rr))
         BSWrite sl d       -> catchErr $
-          BS.bsWrite bs sl d
+          readMVar bsVar >>= \bs -> BS.bsWrite bs sl d
         BSVHClose h        -> catchErr $
           readHandle rr (lookUp' h) >>= \vh -> BS.bsvhClose vh
         BSVHRangeRead h rq -> catchErr $ Values <$>
@@ -563,6 +584,13 @@ runIO action lookUp = ReaderT $ \(sfhs, bs, rr) ->
         BSVHRead h ks      -> catchErr $ Values <$>
           (readHandle rr (lookUp' h) >>= \vh -> BS.bsvhRead vh ks)
       where
+        RealEnv{
+            reSomeHasFS        = sfhs
+          , reBackingStoreInit = bsi
+          , reBackingStore     = bsVar
+          , reRegistry         = rr
+          } = renv
+
         lookUp' :: BSVar ks vs d x -> Realized (RealMonad m ks vs d) x
         lookUp' = lookUpGVar (Proxy @(RealMonad m ks vs d)) lookUp
 
@@ -571,7 +599,7 @@ instance InterpretOp Op (WrapRealized (IOLikeMonad m)) where
 
 catchErr :: forall m a. IOLike m => m a -> m (Either Err a)
 catchErr act = catches (Right <$> act)
-    [mkHandler fromTVarExn, mkHandler fromDbErr]
+    [mkHandler fromTVarExn, mkHandler fromTVarExn', mkHandler fromDbErr]
 
 {-------------------------------------------------------------------------------
   Statistics and tagging
@@ -579,7 +607,7 @@ catchErr act = catches (Right <$> act)
 
 data Stats ks vs d = Stats {
     -- | Slots that value handles were created in
-    handleSlots         :: Map (MockValueHandle vs) (WithOrigin SlotNo)
+    handleSlots         :: Map (ValueHandle vs) (WithOrigin SlotNo)
     -- | Slots in which writes were performed
   , writeSlots          :: Map SlotNo Int
     -- | A value handle was created before a write, and read after the write
@@ -587,8 +615,6 @@ data Stats ks vs d = Stats {
     -- | A value handle was created before a write, and range read after the
     -- write
   , rangeReadAfterWrite :: Bool
-    -- | Actions that caused a @'ErrBackingStoreClosed'@ error to be thrown
-  , bsClosedThrown      :: Set TagAction
   }
   deriving stock (Show, Eq)
 
@@ -599,7 +625,6 @@ initStats = Stats {
   , writeSlots          = Map.empty
   , readAfterWrite      = False
   , rangeReadAfterWrite = False
-  , bsClosedThrown      = Set.empty
   }
 
 updateStats ::
@@ -609,21 +634,24 @@ updateStats ::
   -> BSVal ks vs d a
   -> Stats ks vs d
   -> Stats ks vs d
-updateStats action lookUp result stats@Stats{handleSlots, writeSlots, bsClosedThrown} =
+updateStats action lookUp result stats@Stats{handleSlots, writeSlots} =
       updateHandleSlots
     . updateWriteSlots
     . updateReadAfterWrite
     . updateRangeReadAfterWrite
-    . updateBSClosedThrown
     $ stats
   where
-    getHandle :: BSVal ks vs d Handle -> MockValueHandle vs
+    getHandle :: BSVal ks vs d Handle -> ValueHandle vs
     getHandle (MValueHandle h) = h
 
     updateHandleSlots :: Stats ks vs d -> Stats ks vs d
     updateHandleSlots s = case (action, result) of
       (BSValueHandle, MEither (Right (MPair (MSlotNo sl, MValueHandle h))))
         -> s {handleSlots = Map.insert h sl handleSlots}
+      (BSClose, MEither (Right _))
+        -> s {handleSlots = Map.empty}
+      (BSVHClose h, MEither (Right _))
+        -> s {handleSlots = Map.delete (getHandle $ lookUp h) handleSlots}
       _ -> s
 
     updateWriteSlots :: Stats ks vs d -> Stats ks vs d
@@ -631,6 +659,8 @@ updateStats action lookUp result stats@Stats{handleSlots, writeSlots, bsClosedTh
       (BSWrite sl d, MEither (Right (MUnit ())))
         | 1 <= Mock.diffSize d
         -> s {writeSlots = Map.insert sl (Mock.diffSize d) writeSlots}
+      (BSClose, MEither (Right _))
+        -> s {writeSlots = Map.empty}
       _ -> s
 
     updateReadAfterWrite :: Stats ks vs d -> Stats ks vs d
@@ -655,14 +685,10 @@ updateStats action lookUp result stats@Stats{handleSlots, writeSlots, bsClosedTh
         -> s {rangeReadAfterWrite = True}
       _ -> s
 
-    updateBSClosedThrown :: Stats ks vs d -> Stats ks vs d
-    updateBSClosedThrown s = case (action, result) of
-      (_, MEither (Left (MErr ErrBackingStoreClosed)))
-        -> s { bsClosedThrown = Set.insert (tAction action) bsClosedThrown}
-      _ -> s
-
 data TagAction =
-    TBSClose
+    TBSInitFromValues
+  | TBSInitFromCopy
+  | TBSClose
   | TBSCopy
   | TBSValueHandle
   | TBSWrite
@@ -674,13 +700,15 @@ data TagAction =
 -- | Identify actions by their constructor.
 tAction :: LockstepAction (BackingStoreState ks vs d) a -> TagAction
 tAction = \case
-  BSClose           -> TBSClose
-  BSCopy _          -> TBSCopy
-  BSValueHandle     -> TBSValueHandle
-  BSWrite _ _       -> TBSWrite
-  BSVHClose _       -> TBSVHClose
-  BSVHRangeRead _ _ -> TBSVHRangeRead
-  BSVHRead _ _      -> TBSVHRead
+  BSInitFromValues _ _ -> TBSInitFromValues
+  BSInitFromCopy _     -> TBSInitFromCopy
+  BSClose              -> TBSClose
+  BSCopy _             -> TBSCopy
+  BSValueHandle        -> TBSValueHandle
+  BSWrite _ _          -> TBSWrite
+  BSVHClose _          -> TBSVHClose
+  BSVHRangeRead _ _    -> TBSVHRangeRead
+  BSVHRead _ _         -> TBSVHRead
 
 data Tag =
     -- | A value handle is created before a write, and read after the write. The
@@ -689,7 +717,8 @@ data Tag =
     -- | A value handle is created before a write, and read after the write. The
     -- write should not affect the result of the read.
   | RangeReadAfterWrite
-  | AllActionsErrorBecauseBackingStoreIsClosed
+  | ErrorBecauseBackingStoreIsClosed TagAction
+  | ErrorBecauseBackingStoreValueHandleIsClosed TagAction
   deriving (Show)
 
 tagBSAction ::
@@ -697,18 +726,22 @@ tagBSAction ::
   -> LockstepAction (BackingStoreState ks vs d) a
   -> BSVal ks vs d a
   -> [Tag]
-tagBSAction Stats{readAfterWrite, rangeReadAfterWrite, bsClosedThrown} _ _ =
-    globalTags
+tagBSAction stats action result =
+    globalTags ++ case (action, result) of
+      (_, MEither (Left (MErr ErrBackingStoreClosed))) ->
+        [ErrorBecauseBackingStoreIsClosed (tAction action)]
+      (_, MEither (Left (MErr ErrBackingStoreValueHandleClosed))) ->
+        [ErrorBecauseBackingStoreValueHandleIsClosed (tAction action)]
+      _ -> []
   where
+    Stats{readAfterWrite, rangeReadAfterWrite} = stats
+
     globalTags = mconcat [
         [ ReadAfterWrite
         | readAfterWrite
         ]
       , [ RangeReadAfterWrite
         | rangeReadAfterWrite
-        ]
-      , [ AllActionsErrorBecauseBackingStoreIsClosed
-        | Set.fromList [minBound .. maxBound] == bsClosedThrown
         ]
       ]
 
@@ -730,11 +763,11 @@ fromDbErr = \case
   DbErrNoDbState              -> Nothing
   DbErrNonMonotonicSeq wo wo' -> Just $ ErrNonMonotonicSeqNo wo wo'
   DbErrInitialisingNonEmpty _ -> Nothing
-  DbErrNoValueHandle _        -> Just ErrBSVHDoesNotExist
+  DbErrNoValueHandle _        -> Just ErrBackingStoreValueHandleClosed
   DbErrBadRead                -> Nothing
   DbErrBadRangeRead           -> Nothing
   DbErrDirExists _            -> Just ErrCopyPathAlreadyExists
-  DbErrDirDoesntExist _       -> Nothing
+  DbErrDirDoesntExist _       -> Just ErrCopyPathDoesNotExist
   DbErrDirIsNotLMDB _         -> Nothing
   DbErrClosed                 -> Just ErrBackingStoreClosed
 
@@ -742,8 +775,12 @@ fromDbErr = \case
 fromTVarExn :: BS.TVarBackingStoreExn -> Maybe Err
 fromTVarExn = \case
   BS.TVarBackingStoreClosedExn              -> Just ErrBackingStoreClosed
-  BS.TVarBackingStoreValueHandleClosedExn   -> Just ErrBSVHDoesNotExist
+  BS.TVarBackingStoreValueHandleClosedExn   -> Just ErrBackingStoreValueHandleClosed
   BS.TVarBackingStoreDirectoryExists        -> Just ErrCopyPathAlreadyExists
   BS.TVarBackingStoreNonMonotonicSeq wo wo' -> Just $ ErrNonMonotonicSeqNo wo wo'
   BS.TVarBackingStoreDeserialiseExn _       -> Nothing
   BS.TVarIncompleteDeserialiseExn           -> Nothing
+
+fromTVarExn' :: BS.StoreDirIsIncompatible -> Maybe Err
+fromTVarExn' = \case
+  BS.StoreDirIsIncompatible _ -> Just ErrCopyPathDoesNotExist

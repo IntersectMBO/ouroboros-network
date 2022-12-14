@@ -10,14 +10,19 @@
 module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
     -- * Backing store interface
     BackingStore (..)
+  , BackingStoreInitialiser (..)
   , BackingStorePath (..)
   , BackingStoreValueHandle (..)
+  , InitFrom (..)
   , RangeQuery (..)
   , bsRead
+  , initFromCopy
+  , initFromValues
   , withBsValueHandle
     -- * An in-memory backing store
+  , StoreDirIsIncompatible (..)
   , TVarBackingStoreExn (..)
-  , newTVarBackingStore
+  , newTVarBackingStoreInitialiser
     -- * A trivial backing store
   , trivialBackingStore
   ) where
@@ -42,6 +47,31 @@ import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 {-------------------------------------------------------------------------------
   Backing store interface
 -------------------------------------------------------------------------------}
+
+data InitFrom values =
+    InitFromValues !(WithOrigin SlotNo) !values
+  | InitFromCopy !BackingStorePath
+
+-- | Initialisation for a backing store
+newtype BackingStoreInitialiser m keys values diff = BackingStoreInitialiser {
+    bsiInit :: FS.SomeHasFS m -> InitFrom values -> m (BackingStore m keys values diff)
+  }
+  deriving newtype NoThunks
+
+initFromValues ::
+     BackingStoreInitialiser m keys values diff
+  -> FS.SomeHasFS m
+  -> WithOrigin SlotNo
+  -> values
+  -> m (BackingStore m keys values diff)
+initFromValues bsi shfs sl vs = bsiInit bsi shfs (InitFromValues sl vs)
+
+initFromCopy ::
+     BackingStoreInitialiser m keys values diff
+  -> FS.SomeHasFS m
+  -> BackingStorePath
+  -> m (BackingStore m keys values diff)
+initFromCopy bsi shfs bsp = bsiInit bsi shfs (InitFromCopy bsp)
 
 -- | A backing store for a map
 data BackingStore m keys values diff = BackingStore {
@@ -160,7 +190,7 @@ data TVarBackingStoreExn =
   deriving anyclass (Exception)
   deriving stock    (Show)
 
-newtype StoreDirIsIncompatible = StoreDirIsIncompatible FilePath
+newtype StoreDirIsIncompatible = StoreDirIsIncompatible FS.FsErrorPath
   deriving anyclass (Exception)
 
 instance Show StoreDirIsIncompatible where
@@ -171,37 +201,30 @@ instance Show StoreDirIsIncompatible where
        \ implementation. Please delete your ledger database directory."
 
 -- | Use a 'TVar' as a trivial backing store
-newTVarBackingStore ::
+newTVarBackingStoreInitialiser ::
      (IOLike m, NoThunks values)
   => (keys -> values -> values)
   -> (RangeQuery keys -> values -> values)
   -> (values -> diff -> values)
   -> (values -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s values)
-  -> Either
-       (FS.SomeHasFS m, BackingStorePath)
-       (WithOrigin SlotNo, values)   -- ^ initial seqno and contents
-  -> m (BackingStore m
-          keys
-          values
-          diff
-       )
-newTVarBackingStore lookup_ rangeRead_ forwardValues_ enc dec initialization = do
+  -> BackingStoreInitialiser m keys values diff
+newTVarBackingStoreInitialiser lookup_ rangeRead_ forwardValues_ enc dec =
+  BackingStoreInitialiser $ \(FS.SomeHasFS fs0) initialization -> do
     ref <- do
       (slot, values) <- case initialization of
-        Left (FS.SomeHasFS fs, BackingStorePath path) -> do
-          tvarFileExists <- FS.doesFileExist fs (extendPath path)
-          -- simHasFS would error on unsafeToFilePath unless we take advantage
-          -- of lazyness
-          unless tvarFileExists $ IOLike.throwIO . StoreDirIsIncompatible =<< FS.unsafeToFilePath fs path
-          FS.withFile fs (extendPath path) FS.ReadMode $ \h -> do
-            bs <- FS.hGetAll fs h
+        InitFromCopy (BackingStorePath path) -> do
+          tvarFileExists <- FS.doesFileExist fs0 (extendPath path)
+          unless tvarFileExists $
+            IOLike.throwIO . StoreDirIsIncompatible $ FS.mkFsErrorPath fs0 path
+          FS.withFile fs0 (extendPath path) FS.ReadMode $ \h -> do
+            bs <- FS.hGetAll fs0 h
             case CBOR.deserialiseFromBytes ((,) <$> CBOR.fromCBOR <*> dec) bs of
               Left  err        -> IOLike.throwIO $ TVarBackingStoreDeserialiseExn err
               Right (extra, x) -> do
                 unless (BSL.null extra) $ IOLike.throwIO TVarIncompleteDeserialiseExn
                 pure x
-        Right x -> pure x
+        InitFromValues slot values -> pure (slot, values)
       IOLike.newTVarIO $ TVarBackingStoreContents slot values
     pure BackingStore {
         bsClose    = IOLike.atomically $ do

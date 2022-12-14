@@ -9,19 +9,20 @@
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
-module Test.Ouroboros.Storage.LedgerDB.HD.BackingStore (tests) where
+module Test.Ouroboros.Storage.LedgerDB.HD.BackingStore (
+    labelledExamples
+  , tests
+  ) where
 
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Except hiding (lift)
 import           Control.Monad.IOSim
 import           Control.Monad.Reader
-import           Control.Tracer (nullTracer)
 import qualified Data.Map.Diff.Strict as Diff
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
@@ -34,14 +35,15 @@ import           System.IO.Temp (createTempDirectory)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
+import           Cardano.Slotting.Slot
+
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck (Arbitrary (..), Property, Testable)
 import           Test.QuickCheck.Gen.Unsafe
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Monadic (PropertyM)
 import           Test.Tasty
-import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck (testProperty)
+import           Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Storage.FS.API hiding (Handle)
@@ -56,10 +58,10 @@ import           Ouroboros.Consensus.Util.IOLike hiding (MonadMask (..))
 
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
+import           Test.Util.LedgerStateOnlyTables
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.Orphans.ToExpr ()
-import           Test.Util.TestLedgerState
 
 import           Test.QuickCheck.StateModel as StateModel
 import           Test.QuickCheck.StateModel.Lockstep as Lockstep
@@ -73,24 +75,25 @@ import           Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Registry
   Main test tree
 -------------------------------------------------------------------------------}
 
--- TODO: use scaling instead of withMaxSuccess
 tests :: TestTree
 tests = testGroup "BackingStore" [
-    testProperty "InMemory IOSim SimHasFS" $ QC.withMaxSuccess 1000
-      testWithIOSim
-  , testProperty "InMemory IO SimHasFS" $ QC.withMaxSuccess 1000 $
-      testWithIO $
+    adjustOption (scaleQuickCheckTests 10) $
+      testProperty "InMemory IOSim SimHasFS" testWithIOSim
+  , adjustOption (scaleQuickCheckTests 10) $
+      testProperty "InMemory IO SimHasFS" $ testWithIO $
         setupBSEnv InMemoryBackingStore setupSimHasFS (pure ())
-  , testProperty "InMemory IO IOHasFS" $ QC.withMaxSuccess 1000 $
-      testWithIO $ do
+  , adjustOption (scaleQuickCheckTests 10) $
+      testProperty "InMemory IO IOHasFS" $ testWithIO $ do
         (fp, cleanup) <- setupTempDir
         setupBSEnv InMemoryBackingStore (setupIOHasFS fp) cleanup
-  , testProperty "LMDB IO IOHasFS" $ QC.withMaxSuccess 200 $
-      testWithIO $ do
+  , adjustOption (scaleQuickCheckTests 2) $
+      testProperty "LMDB IO IOHasFS" $ testWithIO $ do
         (fp, cleanup) <- setupTempDir
         setupBSEnv (LMDBBackingStore testLMDBLimits) (setupIOHasFS fp) cleanup
-  , testCase "labelledExamples" labelledExamples
   ]
+
+scaleQuickCheckTests :: Int -> QuickCheckTests -> QuickCheckTests
+scaleQuickCheckTests c (QuickCheckTests n) = QuickCheckTests $ c * n
 
 testLMDBLimits :: LMDB.LMDBLimits
 testLMDBLimits = LMDB.LMDBLimits
@@ -108,11 +111,11 @@ testLMDBLimits = LMDB.LMDBLimits
 
 testWithIOSim :: Actions (Lockstep (BackingStoreState K V D)) -> Property
 testWithIOSim acts = monadicSim $ do
-  BSEnv {bsSomeHasFS, bsBackingStore, bsCleanup, bsRegistry} <-
+  BSEnv {bsRealEnv, bsCleanup} <-
     QC.run (setupBSEnv InMemoryBackingStore setupSimHasFS (pure ()))
   void $
     runPropertyIOLikeMonad $
-      runPropertyReaderT (StateModel.runActions acts) (bsSomeHasFS, bsBackingStore, bsRegistry)
+      runPropertyReaderT (StateModel.runActions acts) bsRealEnv
   QC.run bsCleanup
   pure True
 
@@ -125,13 +128,14 @@ runner ::
      RealMonad m ks vs d a
   -> BSEnv m ks vs d
   -> m a
-runner c r = unIOLikeMonad . runReaderT c $
-  (bsSomeHasFS r, bsBackingStore r, bsRegistry r)
+runner c r = unIOLikeMonad . runReaderT c $ bsRealEnv r
 
 -- | Generate minimal examples for each label.
 labelledExamples :: IO ()
 labelledExamples = do
-  -- TODO: remove
+  -- TODO: the thread delay ensures that we do not start printing labelled
+  -- exampes throughout other test output, but it is not a very nice solution.
+  -- We should find a better alternative.
   threadDelay 1
   QC.labelledExamples $ tagActions pT
 
@@ -140,10 +144,8 @@ labelledExamples = do
 -------------------------------------------------------------------------------}
 
 data BSEnv m ks vs d = BSEnv {
-    bsSomeHasFS    :: SomeHasFS m
-  , bsBackingStore :: BS.BackingStore m ks vs d
-  , bsRegistry     :: HandleRegistry m (BS.BackingStoreValueHandle m ks vs)
-  , bsCleanup      :: m ()
+    bsRealEnv :: RealEnv m ks vs d
+  , bsCleanup :: m ()
   }
 
 -- | Set up a simulated @'HasFS'@.
@@ -169,25 +171,33 @@ setupBSEnv ::
   -> m ()
   -> m (BSEnv m K V D)
 setupBSEnv bss mkSfhs cleanup = do
-  bsSomeHasFS@(SomeHasFS hfs) <- mkSfhs
+  sfhs@(SomeHasFS hfs) <- mkSfhs
 
   createDirectory hfs (mkFsPath ["copies"])
 
-  LedgerBackingStore bsBackingStore <-
-    newBackingStore
-      nullTracer
-      bss
-      bsSomeHasFS
-      polyEmptyLedgerTables
+  let
+    LedgerBackingStoreInitialiser bsi =
+      newBackingStoreInitialiser mempty bss
 
-  bsRegistry <- initHandleRegistry
+  bsVar <- newMVar =<< BS.initFromValues bsi sfhs Origin polyEmptyLedgerTables
+
+  rr <- initHandleRegistry
 
   let
     bsCleanup = do
-      catches (BS.bsClose bsBackingStore) closeHandlers
+      bs <- readMVar bsVar
+      catches (BS.bsClose bs) closeHandlers
       cleanup
 
-  pure BSEnv {bsSomeHasFS, bsBackingStore, bsCleanup, bsRegistry}
+  pure BSEnv {
+      bsRealEnv = RealEnv {
+          reSomeHasFS = sfhs
+        , reBackingStoreInit = bsi
+        , reBackingStore = bsVar
+        , reRegistry = rr
+        }
+    , bsCleanup
+    }
 
 -- | A backing store will throw an error on close if it has already been closed,
 -- which we ignore if we are performing a close as part of resource cleanup.
@@ -210,9 +220,9 @@ type T = BackingStoreState K V D
 pT :: Proxy T
 pT = Proxy
 
-type K = LedgerTables (SimpleLedgerState (Fixed Word) (Fixed Word)) KeysMK
-type V = LedgerTables (SimpleLedgerState (Fixed Word) (Fixed Word)) ValuesMK
-type D = LedgerTables (SimpleLedgerState (Fixed Word) (Fixed Word)) DiffMK
+type K = LedgerTables (OTLedgerState (Fixed Word) (Fixed Word)) KeysMK
+type V = LedgerTables (OTLedgerState (Fixed Word) (Fixed Word)) ValuesMK
+type D = LedgerTables (OTLedgerState (Fixed Word) (Fixed Word)) DiffMK
 
 {-------------------------------------------------------------------------------
   @'HasOps'@ instances
@@ -263,24 +273,26 @@ instance Mock.LookupKeys K V where
         ApplyValuesMK $ DS.restrictValues vs ks
 
 instance Mock.ValuesLength V where
-  valuesLength (SimpleLedgerTables (ApplyValuesMK (DS.Values m))) =
+  valuesLength (OTLedgerTables (ApplyValuesMK (DS.Values m))) =
     Map.size m
 
 instance Mock.MakeDiff V D where
   diff t1 t2 = zipLedgerTables (rawForgetValues .: rawCalculateDifference) t1 t2
 
 instance Mock.DiffSize D where
-  diffSize (SimpleLedgerTables (ApplyDiffMK (Diff.Diff m))) = Map.size m
+  diffSize (OTLedgerTables (ApplyDiffMK (Diff.Diff m))) = Map.size m
 
 instance Mock.KeysSize K where
-  keysSize (SimpleLedgerTables (ApplyKeysMK (Diff.Keys s))) = Set.size s
+  keysSize (OTLedgerTables (ApplyKeysMK (Diff.Keys s))) = Set.size s
 
 instance Mock.HasOps K V D
 
 {-------------------------------------------------------------------------------
   Utilities
 
-  TODO: should become available in a newer version of @quickcheck-dynamic@.
+  TODO: these definitions are duplicated code, and they should become available
+  in @quickcheck-dynamic-0.3.0@. We should remove these duplicates once that
+  version is released.
 -------------------------------------------------------------------------------}
 
 -- | Copied from the @Test.QuickCheck.Extras@ module in the @quickcheck-dynamic@
@@ -319,7 +331,7 @@ monadicSim m = QC.property (runSimGen (QC.monadic' m))
 deriving newtype instance QC.Arbitrary (ApplyMapKind' mk k v)
                        => QC.Arbitrary (
                             LedgerTables
-                              (SimpleLedgerState k v)
+                              (OTLedgerState k v)
                               (ApplyMapKind' mk)
                             )
 
@@ -331,12 +343,12 @@ instance (Ord k, QC.Arbitrary k)
 instance (Ord k, QC.Arbitrary k, QC.Arbitrary v)
       => QC.Arbitrary (DiffMK k v) where
   arbitrary = ApplyDiffMK <$> QC.arbitrary
-  shrink (ApplyDiffMK d)= ApplyDiffMK <$> QC.shrink d
+  shrink (ApplyDiffMK d) = ApplyDiffMK <$> QC.shrink d
 
 instance (Ord k, QC.Arbitrary k, QC.Arbitrary v)
       => QC.Arbitrary (ValuesMK k v) where
   arbitrary = ApplyValuesMK <$> QC.arbitrary
-  shrink (ApplyValuesMK d)= ApplyValuesMK <$> QC.shrink d
+  shrink (ApplyValuesMK vs) = ApplyValuesMK <$> QC.shrink vs
 
 deriving newtype instance (Ord k, QC.Arbitrary k, QC.Arbitrary v)
                        => QC.Arbitrary (DS.Values k v)

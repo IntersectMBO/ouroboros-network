@@ -142,17 +142,11 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/lmdb-simple
-  tag: 955df18972b51da31609889028e15f268b14edf2
-  --sha256: 0f8lvw83z9pzx5v49243a64spsmflmd313fsvnc8mv89p9n3knyy
+  tag: 4d34386fe4e26ca0ba618a1906a89ca51ec7ad2a
+  --sha256: 0d9ix4gjfd5ymj2nd12zz8cywlxkhvpsp23wqk31j4rv3q3zh4d8
 
 source-repository-package
   type: git
   location: https://github.com/stevana/quickcheck-state-machine
   tag: 8b7844a5a202c8e7e6be12960d28797267e11790
   --sha256: 1zj4lcrj6f8gymcwy9dhvzzw929hrszs1plkj3k8ngk182v1mpi4
-
-source-repository-package
-  type: git
-  location: https://github.com/well-typed/quickcheck-lockstep
-  tag: c0143cee64ed882aeb63494da51b801b3febcc4d
-  --sha256: 178bgwhs0v4hf0nyrnrc0zr0jghbhhkmv9wb7rwirpnq0219vmdn

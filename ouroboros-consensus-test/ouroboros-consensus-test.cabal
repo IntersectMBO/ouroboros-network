@@ -50,6 +50,7 @@ library
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
+                       Test.Util.LedgerStateOnlyTables
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
@@ -76,7 +77,6 @@ library
                        Test.Util.Stream
                        Test.Util.Tasty.Traceable
                        Test.Util.TestBlock
-                       Test.Util.TestLedgerState
                        Test.Util.TestEnv
                        Test.Util.Time
                        Test.Util.Tracer
@@ -284,7 +284,7 @@ test-suite test-storage
                      , pretty-show
                      , QuickCheck
                      , quickcheck-dynamic
-                     , quickcheck-lockstep >=0.2.0
+                     , quickcheck-lockstep >=0.2.1
                      , quickcheck-state-machine >=0.7.0
                      , random
                      , serialise

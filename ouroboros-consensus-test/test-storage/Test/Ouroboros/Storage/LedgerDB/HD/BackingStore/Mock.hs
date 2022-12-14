@@ -4,13 +4,17 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Mock (
     -- * Types
     Err (..)
   , ID (..)
   , Mock (..)
-  , MockValueHandle (..)
+  , ValueHandle (..)
+  , ValueHandleStatus (..)
   , emptyMock
     -- * Type classes
   , ApplyDiff (..)
@@ -28,6 +32,8 @@ module Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Mock (
     -- * Mocked @'BackingStore'@ operations
   , mBSClose
   , mBSCopy
+  , mBSInitFromCopy
+  , mBSInitFromValues
   , mBSVHClose
   , mBSVHRangeRead
   , mBSVHRead
@@ -44,8 +50,6 @@ import           Control.Monad.State (MonadState, State, StateT (StateT), gets,
                      modify, runState)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
 
 import           Ouroboros.Consensus.Block.Abstract (SlotNo, WithOrigin (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BS
@@ -57,26 +61,29 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BS
 data Mock vs = Mock {
     backingValues :: vs
   , backingSeqNo  :: WithOrigin SlotNo
-  , copies        :: Set BS.BackingStorePath
+  , copies        :: Map BS.BackingStorePath (WithOrigin SlotNo, vs)
   , isClosed      :: Bool
     -- | Track whether value handles have been closed.
-  , valueHandles  :: Map ID Bool
+  , valueHandles  :: Map ID ValueHandleStatus
     -- | The next id to use if a new value handle is opened.
   , nextId        :: ID
   }
   deriving stock (Show, Eq)
 
-data MockValueHandle values = MockValueHandle {
+data ValueHandleStatus = Open | ClosedByStore | ClosedByHandle
+  deriving stock (Show, Eq)
+
+data ValueHandle values = ValueHandle {
     getId  :: ID
   , values :: values
   , seqNo  :: WithOrigin SlotNo
   }
   deriving stock Show
 
-instance Eq (MockValueHandle vs) where
+instance Eq (ValueHandle vs) where
   x == y = getId x == getId y
 
-instance Ord (MockValueHandle vs) where
+instance Ord (ValueHandle vs) where
   x <= y = getId x < getId y
 
 -- | An ID for a mocked value handle.
@@ -89,7 +96,7 @@ emptyMock :: EmptyValues vs => Mock vs
 emptyMock = Mock {
     backingValues = emptyValues
   , backingSeqNo  = Origin
-  , copies        = Set.empty
+  , copies        = Map.empty
   , isClosed      = False
   , valueHandles  = Map.empty
   , nextId        = 0
@@ -97,9 +104,10 @@ emptyMock = Mock {
 
 data Err =
     ErrBackingStoreClosed
+  | ErrBackingStoreValueHandleClosed
   | ErrCopyPathAlreadyExists
+  | ErrCopyPathDoesNotExist
   | ErrNonMonotonicSeqNo (WithOrigin SlotNo) (WithOrigin SlotNo)
-  | ErrBSVHDoesNotExist
   deriving stock (Show, Eq)
 
 {-------------------------------------------------------------------------------
@@ -160,6 +168,31 @@ runMockState (MockState t) = runState . runExceptT $ t
   Mocked @'BackingStore'@ operations
 ------------------------------------------------------------------------------}
 
+mBSInitFromValues ::
+     forall vs m. (MonadState (Mock vs) m)
+  => WithOrigin SlotNo
+  -> vs
+  -> m ()
+mBSInitFromValues sl vs = modify (\m -> m {
+    backingValues = vs
+  , backingSeqNo  = sl
+  , isClosed      = False
+  })
+
+mBSInitFromCopy ::
+     forall vs m. (MonadState (Mock vs) m, MonadError Err m)
+  => BS.BackingStorePath
+  ->  m ()
+mBSInitFromCopy bsp = do
+  cps <- gets copies
+  case Map.lookup bsp cps of
+    Nothing       -> throwError ErrCopyPathDoesNotExist
+    Just (sl, vs) -> modify (\m -> m {
+        backingValues = vs
+      , backingSeqNo  = sl
+  , isClosed      = False
+      })
+
 -- | Throw an error if the backing store has been closed, which prevents any
 -- other operations from succeeding.
 mGuardBSClosed :: (MonadState (Mock vs) m, MonadError Err m) => m ()
@@ -174,6 +207,7 @@ mBSClose = do
   mGuardBSClosed
   modify (\m -> m {
       isClosed = True
+    , valueHandles = fmap (const ClosedByStore) (valueHandles m)
     })
 
 -- | Copy the contents of the backing store to the given path.
@@ -181,26 +215,26 @@ mBSCopy :: (MonadState (Mock vs) m, MonadError Err m) => BS.BackingStorePath -> 
 mBSCopy bsp = do
   mGuardBSClosed
   cps <- gets copies
-  when (bsp `elem` cps) $
+  when (bsp `Map.member` cps) $
     throwError ErrCopyPathAlreadyExists
   modify (\m -> m {
-      copies = bsp `Set.insert` copies m
+      copies = Map.insert bsp (backingSeqNo m, backingValues m) (copies m)
     })
 
 -- | Open a new value handle, which captures the state of the backing store
 -- at the time of opening the handle.
 mBSValueHandle ::
      (MonadState (Mock vs) m, MonadError Err m)
-  => m (WithOrigin SlotNo, MockValueHandle vs)
+  => m (WithOrigin SlotNo, ValueHandle vs)
 mBSValueHandle = do
   mGuardBSClosed
   vs <- gets backingValues
   seqNo <- gets backingSeqNo
   nxt <- gets nextId
   let
-    vh = MockValueHandle nxt vs seqNo
+    vh = ValueHandle nxt vs seqNo
   modify (\m -> m {
-      valueHandles = Map.insert nxt False (valueHandles m)
+      valueHandles = Map.insert nxt Open (valueHandles m)
     , nextId = nxt + 1
     })
 
@@ -226,31 +260,35 @@ mBSWrite sl d = do
 -- | Throw an error if the required backing store value handle has been closed.
 mGuardBSVHClosed ::
      (MonadState (Mock vs) m, MonadError Err m)
-  => MockValueHandle vs
+  => ValueHandle vs
   -> m ()
 mGuardBSVHClosed vh = do
   vhs <- gets valueHandles
   case Map.lookup (getId vh) vhs of
     Nothing -> error "Value handle not found"
-    Just b  -> when b $ throwError ErrBSVHDoesNotExist
+    Just status ->
+      case status of
+        ClosedByStore  -> throwError ErrBackingStoreClosed
+        ClosedByHandle -> throwError ErrBackingStoreValueHandleClosed
+        _              -> pure ()
 
 -- | Close a backing store value handle.
 mBSVHClose ::
      (MonadState (Mock vs) m, MonadError Err m)
-  => MockValueHandle vs
+  => ValueHandle vs
   -> m ()
 mBSVHClose vh = do
   mGuardBSClosed
   mGuardBSVHClosed vh
   vhs <- gets valueHandles
   modify (\m -> m {
-    valueHandles = Map.adjust (const True) (getId vh) vhs
+    valueHandles = Map.adjust (const ClosedByHandle) (getId vh) vhs
   })
 
 -- | Perform a range read on a backing store value handle.
 mBSVHRangeRead ::
      (MonadState (Mock vs) m, MonadError Err m, LookupKeysRange ks vs)
-  => MockValueHandle vs
+  => ValueHandle vs
   -> BS.RangeQuery ks
   -> m vs
 mBSVHRangeRead vh BS.RangeQuery{BS.rqPrev, BS.rqCount} = do
@@ -263,7 +301,7 @@ mBSVHRangeRead vh BS.RangeQuery{BS.rqPrev, BS.rqCount} = do
 -- | Perform a regular read on a backing store value handle
 mBSVHRead ::
      (MonadState (Mock vs) m, MonadError Err m, LookupKeys ks vs)
-  => MockValueHandle vs
+  => ValueHandle vs
   -> ks
   -> m vs
 mBSVHRead vh ks = do

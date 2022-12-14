@@ -203,11 +203,15 @@ initLgrDB
 initLgrDB k chain = do
     varDB          <- newTVarIO genesisLedgerDB
     varPrevApplied <- newTVarIO mempty
+    let
+      backingStoreInitialiser =
+        TECHDEBT.newBackingStoreInitialiser
+        mempty
+        TECHDEBT.InMemoryBackingStore
     backingStore <- do
       v <- uncheckedNewTVarM Mock.empty
       TECHDEBT.newBackingStore
-        mempty
-        TECHDEBT.InMemoryBackingStore
+        backingStoreInitialiser
         (SomeHasFS (simHasFS v))
         (ExtLedgerStateTables NoTestLedgerTables)
     rawLock <- TECHDEBT.new ()
