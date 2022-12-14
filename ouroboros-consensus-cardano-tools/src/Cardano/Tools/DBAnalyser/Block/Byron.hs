@@ -22,8 +22,8 @@ import qualified Cardano.Crypto as Crypto
 
 import qualified Cardano.Chain.Block as Chain
 import qualified Cardano.Chain.Genesis as Genesis
-import qualified Cardano.Chain.UTxO as Chain
 import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.UTxO as Chain
 
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
