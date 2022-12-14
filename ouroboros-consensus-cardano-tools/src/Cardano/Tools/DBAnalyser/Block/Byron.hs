@@ -14,6 +14,7 @@ module Cardano.Tools.DBAnalyser.Block.Byron (
 import           Control.Monad.Except
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
+import           Text.Builder (decimal)
 
 import           Cardano.Binary (Raw, unAnnotated)
 import           Cardano.Crypto (RequiresNetworkMagic (..))
@@ -21,8 +22,8 @@ import qualified Cardano.Crypto as Crypto
 
 import qualified Cardano.Chain.Block as Chain
 import qualified Cardano.Chain.Genesis as Genesis
-import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Chain
+import qualified Cardano.Chain.Update as Update
 
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -39,6 +40,9 @@ instance HasAnalysis ByronBlock where
     blockTxSizes = aBlockOrBoundary (const []) blockTxSizesByron
     knownEBBs = const Byron.knownEBBs
     emitTraces _ = []
+    blockStats blk = [ decimal $ length $ blockTxSizes blk
+                     , decimal $ sum $ blockTxSizes blk
+                     ]
 
 instance HasProtocolInfo ByronBlock where
     data Args ByronBlock =

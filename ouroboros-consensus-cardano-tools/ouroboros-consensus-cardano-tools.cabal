@@ -56,6 +56,7 @@ library
                      , serialise
                      , cardano-strict-containers
                      , text
+                     , text-builder
                      , transformers
                      , transformers-except
 
@@ -70,6 +71,8 @@ library
                      , cardano-ledger-shelley
                      , cardano-protocol-tpraos
                      , cardano-prelude
+                     , cardano-ledger-shelley-ma
+                     , cardano-slotting
 
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
@@ -91,6 +94,7 @@ library
                      , Cardano.Node.Protocol.Byron
                      , Cardano.Node.Protocol.Cardano
                      , Cardano.Node.Protocol.Shelley
+                     , Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint
 
   default-language:    Haskell2010
 
