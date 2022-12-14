@@ -46,6 +46,7 @@ import           Data.Bifunctor
 import           Data.Foldable (toList)
 import           Data.Functor.Classes
 import qualified Data.List as L
+import           Data.List.NonEmpty (nonEmpty)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust, fromMaybe)
@@ -71,6 +72,10 @@ import           Test.Tasty (TestTree, askOption, testGroup)
 import qualified Test.Util.Tasty.Traceable as TTT
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import qualified Cardano.Slotting.Slot as WithOrigin
+
+import           Ouroboros.Network.Block (Point (Point))
+import           Ouroboros.Network.Point (Block (Block))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -79,6 +84,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
+import           Ouroboros.Consensus.Storage.ChainDB (PointNotFound (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import qualified Ouroboros.Consensus.Storage.FS.IO as FSIO
@@ -121,6 +127,7 @@ tests = askOption $ \showTrace -> testGroup "OnDisk"
         , freqRestore = 1
         , freqCorrupt = 1
         , freqDrop    = 1
+        , freqGetTables = 1
         }
 
     -- NOTE: For the LMDB backend we chose this distribution, which reduces the
@@ -139,6 +146,7 @@ tests = askOption $ \showTrace -> testGroup "OnDisk"
         , freqRestore = 1
         , freqCorrupt = 1
         , freqDrop    = 1
+        , freqGetTables = 1
         }
 
 testLMDBLimits :: LMDB.LMDBLimits
@@ -179,7 +187,13 @@ data Tx = Tx {
 -- also analogous to @TxIn@, since we trivially only have one output per 'Tx'.
 newtype Token = Token { unToken :: Point TestBlock }
   deriving stock (Show, Eq, Ord, Generic)
-  deriving newtype (Serialise, NoThunks, ToExpr)
+  deriving newtype (Serialise, NoThunks, ToExpr, QC.Arbitrary)
+
+instance QC.Arbitrary (Point TestBlock) where
+  arbitrary = do
+    slot <- SlotNo <$> QC.arbitrary
+    hash <- TestHash . fromJust . nonEmpty . QC.getNonEmpty <$> QC.arbitrary
+    pure $ Point $ WithOrigin.At $ Block slot hash
 
 -- | Unit of value associated with the output produced by a transaction.
 --
@@ -286,7 +300,7 @@ queryKeys f (TokenToTValue (ApplyValuesMK (DS.Values utxovals))) = f utxovals
 
 instance TableStuff (LedgerState TestBlock) where
   newtype LedgerTables (LedgerState TestBlock) mk =
-    TokenToTValue { testUtxtokTable :: ApplyMapKind mk Token TValue }
+    TokenToTValue { testUtxtokTable :: mk Token TValue }
     deriving stock (Generic)
 
   projectLedgerTables st       = utxtoktables $ payloadDependentState st
@@ -309,7 +323,9 @@ instance TableStuff (LedgerState TestBlock) where
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) EmptyMK)
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) DiffMK)
 deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) ValuesMK)
+deriving newtype  instance Eq       (LedgerTables (LedgerState TestBlock) KeysMK)
 deriving newtype  instance Show     (LedgerTables (LedgerState TestBlock) (ApplyMapKind' mk))
+deriving newtype  instance Show     (LedgerTables (ExtLedgerState TestBlock) (ApplyMapKind' mk))
 deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) EmptyMK)
 deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) ValuesMK)
 deriving anyclass instance NoThunks (LedgerTables (LedgerState TestBlock) DiffMK)
@@ -552,6 +568,8 @@ data Cmd ss =
     --
     -- Since 'Drop' therefore implies a 'Restore', we return the new ledger.
   | Drop Word64
+
+  | GetTablesAtFor (Point TestBlock) (LedgerTables (ExtLedgerState TestBlock) KeysMK)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 data Success ss =
@@ -560,6 +578,7 @@ data Success ss =
   | Ledger (ExtLedgerState TestBlock EmptyMK)
   | Snapped (Maybe (ss, RealPoint TestBlock))
   | Restored (MockInitLog ss, ExtLedgerState TestBlock EmptyMK)
+  | Tables (Either (PointNotFound TestBlock) (LedgerTables (ExtLedgerState TestBlock) ValuesMK))
   | Flushed
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
@@ -782,7 +801,7 @@ runMock cmd initMock =
         mock'   = applyMockLog initLog mock
         mock''  = mock'  { mockLatestFlushedPoint = mockRestore mock' }
     go Flush         mock =
-      (Flushed, mock { mockLatestFlushedPoint = immutableTipSlot })
+      (Flushed, mock { mockLatestFlushedPoint = immutableTipSlot mock })
       -- When we flush, we might encounter the following scenarios:
       --
       -- 1. We do not have an immutable tip because we have less than @k@ blocks
@@ -794,15 +813,6 @@ runMock cmd initMock =
       --
       -- 2. We have more than @k@ blocks, in which case we set the latest
       -- flushed point to the immutable tip.
-      where
-        immutableTipSlot :: Point TestBlock
-        immutableTipSlot =
-          case drop k (mockLedger mock) of
-            []           -> mockLatestFlushedPoint mock
-            (blk, _st):_ -> max (mockLatestFlushedPoint mock) (blockPoint blk)
-          where
-            k :: Int
-            k = fromIntegral $ maxRollbacks $ mockSecParam mock
     go Snap          mock = case mbSnapshot of
         Just pt
           | let mockSnap = MockSnap (unSlotNo (realPointSlot pt))
@@ -858,6 +868,16 @@ runMock cmd initMock =
         go Restore $ mock {
             mockLedger = drop (fromIntegral n) (mockLedger mock)
           }
+
+    go (GetTablesAtFor pt keys) mock = (,mock) $
+      if pointSlot pt < pointSlot (immutableTipSlot mock)
+      then Tables $ Left $ PointNotFound pt
+      else
+        case L.find (\(_, st) -> castPoint (getTip st) == pt) (mockLedger mock) of
+          Nothing -> Tables $ Left $ PointNotFound pt
+          Just (_, st) -> Tables $ Right $ zipLedgerTables f (projectLedgerTables st) keys
+        where f :: Ord k => ValuesMK k v -> KeysMK k v -> ValuesMK k v
+              f (ApplyValuesMK (DS.Values vals)) (ApplyKeysMK (DS.Keys ks)) = ApplyValuesMK $ DS.Values $ vals `Map.restrictKeys` ks
 
     push :: TestBlock -> StateT MockLedger (Except (ExtValidationError TestBlock)) ()
     push b = do
@@ -923,6 +943,15 @@ data StandaloneDB m = DB {
       -- | needed for restore TODO does this really belong here?
     , sdbBackingStoreSelector :: BackingStoreSelector m
     }
+
+immutableTipSlot :: Mock -> Point TestBlock
+immutableTipSlot mock =
+  case drop k (mockLedger mock) of
+    []           -> mockLatestFlushedPoint mock
+    (blk, _st):_ -> max (mockLatestFlushedPoint mock) (blockPoint blk)
+  where
+    k :: Int
+    k = fromIntegral $ maxRollbacks $ mockSecParam mock
 
 initStandaloneDB ::
      forall m. (Trans.MonadIO m, IOLike m)
@@ -1129,6 +1158,20 @@ runDB standalone@DB{..} cmd =
             (rs, _db) <- readTVar dbState
             writeTVar dbState (drop (fromIntegral n) rs, error "ledger DB not initialized")
         go hasFS Restore
+    go hasFS g@(GetTablesAtFor pt keys) = do
+        (bstore, lgrDb) <- atomically $ do
+          (_, db) <- readTVar dbState
+          bstore <- readTVar dbBackingStore
+          pure (bstore, db)
+        case ledgerDbPrefix pt lgrDb of
+          Nothing -> pure $ Tables $ Left $ PointNotFound pt
+          Just l  -> do
+            eValues <- defaultReadKeySets
+              (readKeySets bstore)
+              (getLedgerTablesFor l keys)
+            case eValues of
+              Right v -> pure $ Tables $ Right v
+              Left _  -> go hasFS g
 
     push ::
          TestBlock
@@ -1265,14 +1308,15 @@ execCmds secParam = \(QSM.Commands cs) -> go (initModel secParam) cs
 --
 -- The values in this type determine what is passed to QuickCheck's 'frequency'.
 data CmdDistribution = CmdDistribution
-    { freqCurrent :: Int
-    , freqPush    :: Int
-    , freqSwitch  :: Int
-    , freqSnap    :: Int
-    , freqFlush   :: Int
-    , freqRestore :: Int
-    , freqCorrupt :: Int
-    , freqDrop    :: Int
+    { freqCurrent   :: Int
+    , freqPush      :: Int
+    , freqSwitch    :: Int
+    , freqSnap      :: Int
+    , freqFlush     :: Int
+    , freqRestore   :: Int
+    , freqCorrupt   :: Int
+    , freqDrop      :: Int
+    , freqGetTables :: Int
     }
     deriving (Generic, Show, Eq)
 
@@ -1298,8 +1342,38 @@ generator cd secParam (Model mock hs) =
         , (freqFlush,   pure Flush)
         , (freqRestore, pure Restore)
         , (freqDrop,    Drop <$> QC.choose (0, mockChainLength mock))
+        , (freqGetTables, genGetTables)
         ]
       where
+        genGetTables :: Gen (Cmd ss)
+        genGetTables =
+          let randomPoint = do
+                pt <- QC.arbitrary
+                keys <- ExtLedgerStateTables . TokenToTValue . ApplyKeysMK . DS.Keys <$> QC.arbitrary
+                pure $ GetTablesAtFor pt keys
+          in
+          if null (mockLedger mock)
+            then randomPoint
+            else do
+              QC.frequency
+               [ (5, do
+                     -- existing point, subset of keys
+                     pt <- QC.elements (mockLedger mock)
+                     keys <- traverseLedgerTables f (projectLedgerTables $ snd pt)
+                     pure $ GetTablesAtFor (blockPoint . fst $ pt) keys)
+               , (1, do
+                     -- existing point, random keys
+                     pt <- QC.elements (mockLedger mock)
+                     keys <- ExtLedgerStateTables . TokenToTValue . ApplyKeysMK . DS.Keys <$> QC.arbitrary
+                     pure $ GetTablesAtFor (blockPoint . fst $ pt) keys)
+               , (1, randomPoint)
+               ]
+          where
+            f :: Ord k => ValuesMK k v -> Gen (KeysMK k v)
+            f (ApplyValuesMK (DS.Values vals)) = do
+              requested <- QC.sublistOf (Set.toList $ Map.keysSet vals)
+              pure $ ApplyKeysMK $ DS.Keys $ Set.fromList requested
+
         mockCurrent :: Mock -> ExtLedgerState TestBlock ValuesMK
         mockCurrent Mock{..} =
           case mockLedger of
@@ -1346,6 +1420,7 @@ shrinker _ (At cmd) =
       Snap         -> []
       Flush        -> []
       Restore      -> []
+      GetTablesAtFor{} -> []
       Switch 0 [b] -> [At $ Push b]
       Switch n bs  -> if length bs > fromIntegral n
                         then [At $ Switch n (init bs)]
@@ -1361,14 +1436,15 @@ shrinker _ (At cmd) =
 -------------------------------------------------------------------------------}
 
 instance CommandNames (At Cmd) where
-  cmdName (At Current{}) = "Current"
-  cmdName (At Push{})    = "Push"
-  cmdName (At Switch{})  = "Switch"
-  cmdName (At Snap{})    = "Snap"
-  cmdName (At Flush{})   = "Flush"
-  cmdName (At Restore{}) = "Restore"
-  cmdName (At Corrupt{}) = "Corrupt"
-  cmdName (At Drop{})    = "Drop"
+  cmdName (At Current{})        = "Current"
+  cmdName (At Push{})           = "Push"
+  cmdName (At Switch{})         = "Switch"
+  cmdName (At Snap{})           = "Snap"
+  cmdName (At Flush{})          = "Flush"
+  cmdName (At Restore{})        = "Restore"
+  cmdName (At Corrupt{})        = "Corrupt"
+  cmdName (At Drop{})           = "Drop"
+  cmdName (At GetTablesAtFor{}) = "GetTables"
 
   cmdNames _ = [
       "Current"
@@ -1379,6 +1455,7 @@ instance CommandNames (At Cmd) where
     , "Restore"
     , "Corrupt"
     , "Drop"
+    , "GetTables"
     ]
 
 instance Functor f => Rank2.Functor (At f) where
@@ -1576,14 +1653,15 @@ tagCmds = map (tagCmd . eventCmd)
 
 tagCmd :: At Cmd Symbolic -> CmdTag
 tagCmd (At cmd) = case cmd of
-  Current     -> CTagCurrent
-  Push _      -> CTagPush
-  Switch _ _  -> CTagSwitch
-  Snap        -> CTagSnap
-  Flush       -> CTagFlush
-  Restore     -> CTagRestore
-  Corrupt _ _ -> CTagCorrupt
-  Drop _      -> CTagDrop
+  Current          -> CTagCurrent
+  Push _           -> CTagPush
+  Switch _ _       -> CTagSwitch
+  Snap             -> CTagSnap
+  Flush            -> CTagFlush
+  Restore          -> CTagRestore
+  Corrupt _ _      -> CTagCorrupt
+  Drop _           -> CTagDrop
+  GetTablesAtFor{} -> CGetTables
 
 -- | Tags for the various @Cmd@'s.
 data CmdTag =
@@ -1595,6 +1673,7 @@ data CmdTag =
   | CTagRestore
   | CTagCorrupt
   | CTagDrop
+  | CGetTables
   deriving stock (Show, Eq, Ord, Enum, Bounded)
 
 -- | Counting occurrences of each command tag.
