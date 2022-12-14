@@ -19,6 +19,10 @@ OUTPUT_DIR=${1:-"./haddocks"}
 REGENERATE=${2:-"true"}
 BUILD_DIR=${3:-"dist-newstyle"}
 
+# the directory containing this script
+SCRIPTS_DIR=$(realpath $(dirname $(realpath $0)))
+
+
 GHC_VERSION=$(ghc --numeric-version)
 OS_ARCH="$(cat dist-newstyle/cache/plan.json | jq -r '.arch + "-" + .os' | head -n 1 | xargs)"
 
@@ -55,16 +59,20 @@ if [[ !( -d ${OUTPUT_DIR} ) ]]; then
   mkdir -p ${OUTPUT_DIR}
 fi
 
+# make all files user writable
+chmod -R u+w "${OUTPUT_DIR}"
+
 # copy the new docs
 for dir in $(ls "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}"); do
   package=$(echo "${dir}" | sed 's/-[0-9]\+\(\.[0-9]\+\)*//')
   cp -r "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}/${dir}/noopt/doc/html/${package}" ${OUTPUT_DIR}
 done
 
+
 # --read-interface options
 interface_options () {
   for package in $(ls "${OUTPUT_DIR}"); do
-    echo "--read-interface=${package},${OUTPUT_DIR}/${package}/${package}.haddock"
+    [[ -d "${OUTPUT_DIR}/${package}" ]] && echo "--read-interface=${package},${OUTPUT_DIR}/${package}/${package}.haddock"
   done
 }
 
@@ -92,3 +100,8 @@ for file in $(ls $OUTPUT_DIR/*/doc-index.json); do
     > /tmp/doc-index.json
   mv /tmp/doc-index.json "${OUTPUT_DIR}/doc-index.json"
 done
+
+# Copy modules map to output directory
+# TODO: dynamically generate
+cp "${SCRIPTS_DIR}/modules-consensus.svg" "${OUTPUT_DIR}"
+cp "${SCRIPTS_DIR}/packages-consensus.svg" "${OUTPUT_DIR}"
