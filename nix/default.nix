@@ -5,7 +5,8 @@ let
     // sourcesOverride;
   iohkNixMain = import sources.iohk-nix { };
   haskellNix = import sources."haskell.nix" {
-    inherit system sourcesOverride;
+    inherit system;
+    sourcesOverride = { hackage = sources."hackage.nix"; } // sourcesOverride;
     pkgs = import iohkNixMain.sources.nixpkgs { inherit system; };
   };
   haskellNixArgs = haskellNix.nixpkgsArgs;
