@@ -443,7 +443,7 @@ getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
         . LedgerDB.volatileStatesBimap headerState headerState
 
 -- | The requested point is not found on the ledger db
-data PointNotFound blk = PointNotFound !(Point blk)
+data PointNotFound blk = PointNotFound !(Point blk) deriving (Eq, Show)
 
 {-------------------------------------------------------------------------------
   Adding a block
