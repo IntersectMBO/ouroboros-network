@@ -150,10 +150,12 @@ test-suite test-consensus
                        Test.Consensus.HardFork.Combinator
                        Test.Consensus.HardFork.Combinator.A
                        Test.Consensus.HardFork.Combinator.B
+                       Test.Consensus.Mempool
                        Test.Consensus.MiniProtocol.BlockFetch.Client
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
-                       Test.Consensus.Mempool
+                       Test.Consensus.Model.Mempool
+                       Test.Consensus.Model.Property
                        Test.Consensus.Node
                        Test.Consensus.ResourceRegistry
                        Test.Consensus.Util.MonadSTM.RAWLock
@@ -174,6 +176,7 @@ test-suite test-consensus
                      , mtl
                      , nothunks
                      , QuickCheck
+                     , quickcheck-dynamic
                      , quickcheck-state-machine
                      , quiet
                      , serialise
