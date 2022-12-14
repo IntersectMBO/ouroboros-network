@@ -118,6 +118,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Abstraction over the ledger-state HD interface
   , BackingStoreSelector (..)
   , LedgerBackingStore (..)
+  , LedgerBackingStoreInitialiser (..)
   , LedgerBackingStoreValueHandle (..)
   , flush
   , mkDiskLedgerView
@@ -146,6 +147,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , decorateReplayTracerWithStart
     -- * For testing
   , newBackingStore
+  , newBackingStoreInitialiser
   , replayStartingWith
   , restoreBackingStore
   , streamAll
@@ -348,6 +350,12 @@ initLedgerDB replayTracer
              bss = do
     listSnapshots hasFS >>= tryNewestFirst id
   where
+    lbsi ::
+         (TableStuff l, NoThunks (LedgerTables l ValuesMK)
+         , SufficientSerializationForAnyBackingStore l)
+      => LedgerBackingStoreInitialiser m l
+    lbsi = newBackingStoreInitialiser nullTracer bss
+
     tryNewestFirst :: (InitLog blk -> InitLog blk)
                    -> [DiskSnapshot]
                    -> m ( InitLog   blk
@@ -361,7 +369,7 @@ initLedgerDB replayTracer
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
           initDb        = ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
-      backingStore <- newBackingStore nullTracer bss hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
+      backingStore <- newBackingStore lbsi hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
                             cfg
@@ -400,7 +408,7 @@ initLedgerDB replayTracer
               tryNewestFirst (acc . InitFailure s InitFailureGenesis) []
 
             NotOrigin tip -> do
-              backingStore <- restoreBackingStore hasFS s bss -- TODO this needs to go in the resource registry
+              backingStore <- restoreBackingStore lbsi hasFS s -- TODO this needs to go in the resource registry
               traceWith replayTracer $
                 ReplayFromSnapshot s tip (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
@@ -482,15 +490,12 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
-     ( IOLike m
-     , NoThunks (LedgerTables l ValuesMK)
-     , TableStuff l
-     , SufficientSerializationForAnyBackingStore l)
-  => SomeHasFS m
+     IOLike m
+  => LedgerBackingStoreInitialiser m l
+  -> SomeHasFS m
   -> DiskSnapshot
-  -> BackingStoreSelector m
   -> m (LedgerBackingStore m l)
-restoreBackingStore someHasFs snapshot bss = do
+restoreBackingStore lbsi someHasFs snapshot = do
     -- TODO a backing store that actually resides on-disk during use should have
     -- a @new*@ function that receives both the location it should load from (ie
     -- 'loadPath') and also the location at which it should maintain itself (ie
@@ -499,57 +504,51 @@ restoreBackingStore someHasFs snapshot bss = do
     -- reset the second location to the value of the first (a la @rsync@). Etc.
     -- The in-memory backing store, on the other hand, keeps nothing at
     -- '_tablesPath'.
-
-    store <- case bss of
-      LMDBBackingStore limits -> LMDB.newLMDBBackingStore mempty limits someHasFs (LMDB.LIInitialiseFromLMDB loadPath)
-      InMemoryBackingStore -> BackingStore.newTVarBackingStore
-               (zipLedgerTables lookup_)
-               (\rq values -> case BackingStore.rqPrev rq of
-                   Nothing   ->
-                     mapLedgerTables (rangeRead0_ (BackingStore.rqCount rq))      values
-                   Just keys ->
-                     zipLedgerTables (rangeRead_  (BackingStore.rqCount rq)) keys values
-               )
-               (zipLedgerTables applyDiff_)
-               valuesMKEncoder
-               valuesMKDecoder
-               (Left (someHasFs, BackingStore.BackingStorePath loadPath))
-    pure (LedgerBackingStore store)
+    LedgerBackingStore <$>
+      BackingStore.initFromCopy bsi someHasFs (BackingStore.BackingStorePath loadPath)
   where
+    LedgerBackingStoreInitialiser bsi = lbsi
     loadPath = snapshotToTablesPath snapshot
 
 -- | Create a backing store from the given genesis ledger state
 newBackingStore ::
-     ( IOLike m
-     , NoThunks (LedgerTables l ValuesMK)
-     , TableStuff l
-     , SufficientSerializationForAnyBackingStore l)
-  => Tracer m LMDB.TraceDb
-  -> BackingStoreSelector m
+     IOLike m
+  => LedgerBackingStoreInitialiser m l
   -> SomeHasFS m
   -> LedgerTables l ValuesMK
   -> m (LedgerBackingStore m l)
-newBackingStore tracer bss someHasFS tables = do
-  store <- case bss of
+newBackingStore lbsi someHasFS tables = do
+    LedgerBackingStore <$> BackingStore.initFromValues bsi someHasFS Origin tables
+  where
+    LedgerBackingStoreInitialiser bsi = lbsi
+
+newBackingStoreInitialiser ::
+     ( IOLike m
+     , NoThunks (LedgerTables l ValuesMK)
+     , TableStuff l
+     , SufficientSerializationForAnyBackingStore l
+     )
+  => Tracer m LMDB.TraceDb
+  -> BackingStoreSelector m
+  -> LedgerBackingStoreInitialiser m l
+newBackingStoreInitialiser tracer bss = LedgerBackingStoreInitialiser $
+  case bss of
     LMDBBackingStore limits ->
-      LMDB.newLMDBBackingStore
-      tracer
-      limits
-      someHasFS
-      (LMDB.LIInitialiseFromMemory Origin tables)
-    InMemoryBackingStore -> BackingStore.newTVarBackingStore
-               (zipLedgerTables lookup_)
-               (\rq values -> case BackingStore.rqPrev rq of
-                   Nothing   ->
-                     mapLedgerTables (rangeRead0_ (BackingStore.rqCount rq))      values
-                   Just keys ->
-                     zipLedgerTables (rangeRead_  (BackingStore.rqCount rq)) keys values
-               )
-               (zipLedgerTables applyDiff_)
-               valuesMKEncoder
-               valuesMKDecoder
-               (Right (Origin, tables))
-  pure (LedgerBackingStore store)
+      LMDB.newLMDBBackingStoreInitialiser
+        tracer
+        limits
+    InMemoryBackingStore ->
+      BackingStore.newTVarBackingStoreInitialiser
+        (zipLedgerTables lookup_)
+        (\rq values -> case BackingStore.rqPrev rq of
+            Nothing   ->
+              mapLedgerTables (rangeRead0_ (BackingStore.rqCount rq))      values
+            Just keys ->
+              zipLedgerTables (rangeRead_  (BackingStore.rqCount rq)) keys values
+        )
+        (zipLedgerTables applyDiff_)
+        valuesMKEncoder
+        valuesMKDecoder
 
 lookup_ ::
      Ord k
@@ -586,6 +585,14 @@ applyDiff_ ::
   -> ApplyMapKind ValuesMK k v
 applyDiff_ (ApplyValuesMK values) (ApplyDiffMK diff) =
   ApplyValuesMK (DS.applyDiff values diff)
+
+newtype LedgerBackingStoreInitialiser m l = LedgerBackingStoreInitialiser
+  (BackingStore.BackingStoreInitialiser m
+    (LedgerTables l KeysMK)
+    (LedgerTables l ValuesMK)
+    (LedgerTables l DiffMK)
+  )
+  deriving newtype (NoThunks)
 
 -- | A handle to the backing store for the ledger tables
 newtype LedgerBackingStore m l = LedgerBackingStore

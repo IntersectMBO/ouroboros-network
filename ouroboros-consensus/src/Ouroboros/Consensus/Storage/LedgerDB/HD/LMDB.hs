@@ -15,7 +15,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB (
   , LMDBInit (..)
   , LMDBValueHandle
   , TraceDb (..)
-  , newLMDBBackingStore
+  , newLMDBBackingStoreInitialiser
     -- * Configuration
   , LMDBLimits (LMDBLimits, lmdbMapSize, lmdbMaxDatabases, lmdbMaxReaders)
     -- * Exported for ledger-db-backends-checker
@@ -45,7 +45,7 @@ import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB.Bridge as Bridge
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB.PersistentTransaction as PT
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB.TransactionHandle as TrH
 import           Ouroboros.Consensus.Util (foldlM', unComp2, (:..:) (..))
 import           Ouroboros.Consensus.Util.IOLike (Exception (..), IOLike,
                      MonadCatch (..), MonadThrow (..), bracket)
@@ -59,6 +59,12 @@ import qualified Database.LMDB.Simple.Internal as LMDB.Internal
 {-------------------------------------------------------------------------------
  Backing Store interface
 -------------------------------------------------------------------------------}
+
+type LMDBBackingStoreInitialiser l m =
+  HD.BackingStoreInitialiser m
+    (LedgerTables l KeysMK)
+    (LedgerTables l ValuesMK)
+    (LedgerTables l DiffMK)
 
 type LMDBBackingStore l m =
   HD.BackingStore m
@@ -500,7 +506,7 @@ lmdbCopy tracer dbEnv to = do
 -- TODO 50% of total time is spent somewhere else. Where?
 
 -- | Initialise a backing store.
-newLMDBBackingStore ::
+newLMDBBackingStoreInitialiser ::
      forall m l. (TableStuff l, SufficientSerializationForAnyBackingStore l, MonadIO m, IOLike m)
   => Trace.Tracer m TraceDb
   -> LMDBLimits
@@ -508,12 +514,8 @@ newLMDBBackingStore ::
      -- initialise. In case we initialise the LMDB database from
      -- an existing LMDB database, we use these same configuration parameters
      -- to open the existing LMDB database.
-  -> FS.SomeHasFS m
-     -- ^ Abstraction over the filesystem.
-  -> LMDBInit l
-     -- ^ Determines how the LMDB database should be initialised.
-  -> m (LMDBBackingStore l m)
-newLMDBBackingStore dbTracer limits sfs initDb = do
+  -> LMDBBackingStoreInitialiser l m
+newLMDBBackingStoreInitialiser dbTracer limits = HD.BackingStoreInitialiser $ \sfs initFrom -> do
   Trace.traceWith dbTracer TDBOpening
 
   dbOpenHandles <- IOLike.newTVarIO Map.empty
@@ -522,11 +524,11 @@ newLMDBBackingStore dbTracer limits sfs initDb = do
   let
     path = FS.mkFsPath ["tables"]
 
-    (gdd, copyDbAction :: m (), initAction :: Db m l -> m ()) = case initDb of
-      LIInitialiseFromLMDB fp
+    (gdd, copyDbAction :: m (), initAction :: Db m l -> m ()) = case initFrom of
+      HD.InitFromCopy (HD.BackingStorePath fp)
         -- If fp == path then this is the LINoInitialise case
         | fp /= path -> (GDDMustNotExist, initFromLMDBs dbTracer limits sfs fp path, \_ -> pure ())
-      LIInitialiseFromMemory slot vals -> (GDDMustNotExist, pure (), initFromVals slot vals)
+      HD.InitFromValues slot vals -> (GDDMustNotExist, pure (), initFromVals slot vals)
       _ -> (GDDMustExist, pure (), \_ -> pure ())
 
   -- get the filepath for this db creates the directory if appropriate
@@ -633,8 +635,8 @@ mkLMDBBackingStoreValueHandle Db{..} = do
 
   Trace.traceWith tracer TVHOpening
 
-  it <- liftIO $ PT.new dbEnvRo
-  mbInitSlot <- liftIO $ PT.submit it $ readDbStateMaybeNull dbState
+  trh <- liftIO $ TrH.newReadOnly dbEnvRo
+  mbInitSlot <- liftIO $ TrH.submitReadOnly trh $ readDbStateMaybeNull dbState
   initSlot <- liftIO $ maybe (throwIO $ DbErrStr "mkLMDBBackingStoreValueHandle ") (pure . dbsSeq) mbInitSlot
 
   let
@@ -643,7 +645,7 @@ mkLMDBBackingStoreValueHandle Db{..} = do
       Trace.traceWith tracer TVHClosing
       guardDbClosed dbClosed
       guardBsvhClosed vhId dbOpenHandles
-      liftIO $ PT.close it
+      liftIO $ TrH.commit trh
       IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vhId)
       Trace.traceWith tracer TVHClosed
 
@@ -652,7 +654,7 @@ mkLMDBBackingStoreValueHandle Db{..} = do
       Trace.traceWith tracer TVHReadStarted
       guardDbClosed dbClosed
       guardBsvhClosed vhId dbOpenHandles
-      res <- liftIO $ PT.submit it (zipLedgerTables2A readLMDBTable dbBackingTables codecLedgerTables keys)
+      res <- liftIO $ TrH.submitReadOnly trh (zipLedgerTables2A readLMDBTable dbBackingTables codecLedgerTables keys)
       Trace.traceWith tracer TVHReadEnded
       pure res
 
@@ -678,7 +680,7 @@ mkLMDBBackingStoreValueHandle Db{..} = do
 
       guardDbClosed dbClosed
       guardBsvhClosed vhId dbOpenHandles
-      res <- liftIO $ PT.submit it transaction
+      res <- liftIO $ TrH.submitReadOnly trh transaction
       Trace.traceWith tracer TVHRangeReadEnded
       pure res
 

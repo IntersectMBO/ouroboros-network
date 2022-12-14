@@ -111,11 +111,13 @@ initLMDB mayLimits = do
   let
     fs = someHasFSIO tmpdir
     limits = fromMaybe defaultLMDBLimits mayLimits
-    emptyInit :: LMDB.LMDBInit l
-    emptyInit = LMDB.LIInitialiseFromMemory Origin polyEmptyLedgerTables
-  bs <- LMDB.newLMDBBackingStore
-    Trace.nullTracer
-    limits fs emptyInit
+    emptyInit :: HD.InitFrom (LedgerTables l ValuesMK)
+    emptyInit = HD.InitFromValues Origin polyEmptyLedgerTables
+  let
+    bsi = LMDB.newLMDBBackingStoreInitialiser
+            Trace.nullTracer
+            limits
+  bs <- HD.bsiInit bsi fs emptyInit
   pure (tmpdir, bs)
 
 -- | Close the 'LMDB.LMDBBackingStore' and remove the temporary
