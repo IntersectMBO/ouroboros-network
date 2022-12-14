@@ -44,8 +44,12 @@ module Test.Util.TestBlock (
   , successorBlock
     -- ** Payload semantics
   , PayloadSemantics (..)
+  , applyDirectlyToPayloadDependentState
     -- * LedgerState
+  , LedgerState (TestLedger)
+  , Ticked (TickedTestLedger)
   , lastAppliedPoint
+  , payloadDependentState
     -- * Chain
   , BlockChain (..)
   , blockChain
@@ -172,13 +176,26 @@ import           Test.Util.Orphans.ToExpr ()
 newtype TestHash = UnsafeTestHash {
       unTestHash :: NonEmpty Word64
     }
-  deriving stock    (Generic)
+  deriving stock    (Generic, Typeable)
   deriving newtype  (Eq, Ord, Serialise, ToExpr)
   deriving anyclass (NoThunks)
+
+instance StandardHash (LedgerState (TestBlockWith ptype))
 
 pattern TestHash :: NonEmpty Word64 -> TestHash
 pattern TestHash path <- UnsafeTestHash path where
   TestHash path = UnsafeTestHash (force path)
+
+-- FIXME: we should make sure that we don't break any invariants and that this
+-- instance makes sense. We might want to reduce the range of the data we
+-- generate.
+instance Arbitrary TestHash where
+  arbitrary = fmap UnsafeTestHash ((:|) <$> arbitrary <*> arbitrary)
+
+  shrink (UnsafeTestHash xs) = fmap UnsafeTestHash $ shrinkNE xs
+    where
+      shrinkNE (_ :| []) = []
+      shrinkNE (x :| ys) = fmap (uncurry (:|)) $ shrink (x, ys)
 
 {-# COMPLETE TestHash #-}
 
@@ -354,6 +371,17 @@ instance PayloadSemantics () where
   type PayloadDependentError () = ()
 
   applyPayload _ _ = Right ()
+-- | Apply the payload to a ticked state directly to the payload dependent state
+-- portion of it, leaving the rest of the input ticked state unaltered.
+applyDirectlyToPayloadDependentState ::
+     PayloadSemantics ptype
+  => Ticked (LedgerState (TestBlockWith ptype))
+  -> ptype
+  -> Either (PayloadDependentError ptype)
+            (Ticked (LedgerState (TestBlockWith ptype)))
+applyDirectlyToPayloadDependentState (TickedTestLedger st) tx = do
+  payloadDepSt' <-  applyPayload (payloadDependentState st) tx
+  pure $ TickedTestLedger $ st { payloadDependentState = payloadDepSt' }
 
 {-------------------------------------------------------------------------------
   NestedCtxt
@@ -472,6 +500,8 @@ testInitLedgerWithState = TestLedger GenesisPoint
 newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
       getTickedTestLedger :: LedgerState (TestBlockWith ptype)
     }
+  deriving stock (Generic, Show)
+  deriving newtype (NoThunks, ToExpr, Eq)
 
 testInitExtLedgerWithState :: PayloadDependentState ptype -> ExtLedgerState (TestBlockWith ptype)
 testInitExtLedgerWithState st = ExtLedgerState {

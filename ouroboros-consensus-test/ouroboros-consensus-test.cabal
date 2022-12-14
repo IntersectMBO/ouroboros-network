@@ -111,7 +111,6 @@ library
                      , template-haskell
                      , text              >=1.2   && <1.3
                      , time
-                     , transformers
                      , tree-diff
                      , utf8-string
 
@@ -151,11 +150,13 @@ test-suite test-consensus
                        Test.Consensus.HardFork.Combinator.A
                        Test.Consensus.HardFork.Combinator.B
                        Test.Consensus.Mempool
+                       Test.Consensus.Mempool.StateMachine
                        Test.Consensus.MiniProtocol.BlockFetch.Client
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Model.Mempool
                        Test.Consensus.Model.Property
+                       Test.Consensus.Model.TestBlock
                        Test.Consensus.Node
                        Test.Consensus.ResourceRegistry
                        Test.Consensus.Util.MonadSTM.RAWLock
@@ -181,6 +182,8 @@ test-suite test-consensus
                      , quiet
                      , serialise
                      , sop-core
+                     , strict-stm
+                     , transformers
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
