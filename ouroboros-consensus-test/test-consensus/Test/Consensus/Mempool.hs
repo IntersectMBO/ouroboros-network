@@ -53,8 +53,6 @@ import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.ChainDB (PointNotFound (..))
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck (elements)
 
