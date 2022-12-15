@@ -129,8 +129,8 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- * Exported only for testing
   , rawApplyDiffs
   , rawCalculateDifference
-  , rawPrependTrackingDiffs
   , rawForgetValues
+  , rawPrependTrackingDiffs
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR

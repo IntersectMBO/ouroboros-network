@@ -80,7 +80,7 @@ import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (FromCBOR(..), ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
@@ -107,7 +107,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
-import           Ouroboros.Consensus.Mock.Ledger.UTxO (Tx(..))
+import           Ouroboros.Consensus.Mock.Ledger.UTxO (Tx (..))
 
 {-------------------------------------------------------------------------------
   Definition of a block

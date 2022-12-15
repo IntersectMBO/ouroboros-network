@@ -12,8 +12,8 @@ import qualified Data.Set as Set
 import           Data.Typeable
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Mock.Ledger
 
 import           Test.QuickCheck hiding (elements)
 
