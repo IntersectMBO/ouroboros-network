@@ -8,10 +8,11 @@ module Test.Consensus.Model.Property (prop_Model_accept_all_non_conficting_txs) 
 
 import           Control.Exception (SomeException (..))
 import           Control.Monad.IOSim (Failure (FailureException), IOSim,
-                     ppEvents, runSimTrace, traceEvents, traceResult)
-import           Control.Monad.Reader (runReaderT)
-import           Test.Consensus.Model.Mempool (Action (..), MempoolModel (..),
-                     RunMonad (..))
+                     ppEvents, runSimTrace, traceEvents, traceM, traceResult)
+import           Control.Monad.State (evalStateT, runStateT)
+import           Control.Tracer (Tracer (Tracer))
+import           Test.Consensus.Model.Mempool (Action (..),
+                     ConcreteMempool (..), MempoolModel (..), RunMonad (..))
 import           Test.QuickCheck (Gen, Property, Testable, counterexample,
                      property, within)
 import           Test.QuickCheck.DynamicLogic (DL, action, anyActions_,
@@ -37,6 +38,7 @@ accept_all_non_conflicting_txs = do
     getModelStateDL >>= \case
         MempoolModel{transactions} ->
             eventually (HasValidatedTxs transactions)
+        _ -> pure ()
   where
     eventually a = action (Wait 10) >> action a
 
@@ -50,7 +52,7 @@ accept_all_non_conflicting_txs = do
 runIOSimProp :: Testable a => (forall s. PropertyM (RunMonad (IOSim s)) a) -> Gen Property
 runIOSimProp p = do
     Capture eval <- capture
-    let tr = runSimTrace $  (runMonad $ eval $ monadic' p) `runReaderT` error "Not Implemented"
+    let tr = runSimTrace $  (runMonad $ eval $ monadic' p) `evalStateT` ConcreteMempool{theMempool = Nothing, tracer = Tracer traceM}
         traceDump = ppEvents $ traceEvents tr
         logsOnError = counterexample ("trace:\n" <> traceDump)
     case traceResult False tr of

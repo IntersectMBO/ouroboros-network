@@ -30,6 +30,8 @@ module Test.Consensus.Model.TestBlock (
     -- * Test transaction
   , GenTx (TestBlockGenTx)
   , Tx (Tx, produced, consumed)
+  , Validated (..)
+  , txSize
     -- * Labelling
   , TestBlock
   , tagConsumedTx
@@ -244,7 +246,7 @@ newtype instance TxId (GenTx TestBlock) = TestBlockTxId Tx
 instance HasTxId (GenTx TestBlock) where
   txId (TestBlockGenTx tx) = TestBlockTxId tx
 
-newtype instance Validated (GenTx TestBlock) = ValidatedGenTx (GenTx TestBlock)
+newtype instance Validated (GenTx TestBlock) = ValidatedGenTx { fromValidated :: (GenTx TestBlock) }
   deriving stock (Generic)
   deriving newtype (Show, NoThunks)
 

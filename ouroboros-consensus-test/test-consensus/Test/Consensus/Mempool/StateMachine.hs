@@ -493,6 +493,10 @@ deriving instance ( Show (LedgerConfig blk)
                   , Show (LedgerState blk)
                   ) => Show (InitialMempoolAndModelParams blk)
 
+deriving instance ( Eq (LedgerConfig blk)
+                  , Eq (LedgerState blk)
+                  ) => Eq (InitialMempoolAndModelParams blk)
+
 instance ( QC.Arbitrary (LedgerState blk)
          , QC.Arbitrary (LedgerConfig blk)
          ) => QC.Arbitrary (InitialMempoolAndModelParams blk) where

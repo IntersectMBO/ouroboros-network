@@ -3,80 +3,110 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# OPTIONS_GHC -Wno-partial-fields #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Test.Consensus.Model.Mempool where
 
 import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, StrictTVar,
                      atomically, newTVarIO, readTVar, writeTVar)
-import           Control.Monad (void)
-import           Control.Monad.Reader (MonadReader (ask), MonadTrans,
-                     ReaderT (..), lift)
+import           Control.Monad.Reader (MonadTrans, lift)
+import           Control.Monad.State (MonadState (..), StateT (StateT), gets,
+                     modify)
 import           Control.Tracer (Tracer)
 import           Ouroboros.Consensus.HardFork.Combinator.Basics (LedgerState)
-import           Ouroboros.Consensus.HeaderValidation (ValidateEnvelope)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx,
                      WhetherToIntervene (..))
 import           Ouroboros.Consensus.Mempool (LedgerInterface (..), Mempool,
                      TicketNo, TraceEventMempool, getSnapshot,
                      openMempoolWithoutSyncThread, tryAddTxs)
-import           Ouroboros.Consensus.Mempool.API (MempoolCapacityBytesOverride,
-                     TxSizeInBytes)
+import           Ouroboros.Consensus.Mempool.API
+                     (MempoolCapacityBytesOverride (NoMempoolCapacityBytesOverride),
+                     TxSizeInBytes, snapshotTxs)
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import           Test.Consensus.Mempool.StateMachine
                      (InitialMempoolAndModelParams (..))
-import           Test.Consensus.Model.TestBlock (TestBlock)
+import           Test.Consensus.Model.TestBlock (TestBlock,
+                     TestLedgerState (..), fromValidated, txSize)
+import           Test.QuickCheck (arbitrary)
 import           Test.QuickCheck.DynamicLogic (DynLogicModel)
-import           Test.QuickCheck.StateModel (Realized, RunModel (..),
+import           Test.QuickCheck.StateModel (Any (..), Realized, RunModel (..),
                      StateModel (..))
+import           Test.Util.Orphans.IOLike ()
+import           Test.Util.TestBlock (payloadDependentState)
 
-data MempoolModel = MempoolModel {transactions :: [GenTx TestBlock]}
+data MempoolModel = Idle
+  |  MempoolModel { transactions :: [GenTx TestBlock],
+                    ledgerState  :: TestLedgerState }
     deriving (Show)
 
 instance StateModel MempoolModel where
     data Action MempoolModel a where
-        AddTxs :: [GenTx TestBlock] -> Action MempoolModel ()
+        InitMempool :: InitialMempoolAndModelParams TestBlock -> Action MempoolModel ()
+        -- | Adds some new transactions to mempoool
+        -- Those transactions are guaranteed to not conflict with the curent state
+        -- of the Mempool. Returns the list of txs effectively added to the mempool.
+        AddTxs :: [GenTx TestBlock] -> Action MempoolModel [GenTx TestBlock]
         -- | An 'observation' that checks the given list of transactions is part of
         -- the mempool
-        HasValidatedTxs :: [GenTx TestBlock] -> Action MempoolModel ()
+        HasValidatedTxs :: [GenTx TestBlock] -> Action MempoolModel [GenTx TestBlock]
         -- | An action to explicitly wait some amount of time
         Wait :: Int -> Action MempoolModel ()
 
-    arbitraryAction = error "not implemented"
+    arbitraryAction = \case
+      Idle -> Some . InitMempool <$> arbitrary
+      MempoolModel{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs <$> pure []
 
-    initialState = MempoolModel []
+
+    initialState = Idle
+
+    nextState Idle (InitMempool imamp) var =
+      MempoolModel [] (payloadDependentState $ immpInitialState imamp)
+    nextState st (AddTxs gts) var          = error "not implemented"
+    nextState st (HasValidatedTxs gts) var = error "not implemented"
+    nextState st (Wait n) var              = error "not implemented"
 
 deriving instance Show (Action MempoolModel a)
 deriving instance Eq (Action MempoolModel a)
 
 instance DynLogicModel MempoolModel
 
-type ConcreteMempool m = MempoolWithMockedLedgerItf m TestBlock TicketNo
+data ConcreteMempool m = ConcreteMempool {
+  theMempool :: Maybe (MempoolWithMockedLedgerItf m TestBlock TicketNo),
+  tracer     :: Tracer m (TraceEventMempool TestBlock)
+  }
 
-newtype RunMonad m a = RunMonad {runMonad :: ReaderT (ConcreteMempool m) m a}
-    deriving (Functor, Applicative, Monad, MonadReader (ConcreteMempool m) )
+
+newtype RunMonad m a = RunMonad {runMonad :: StateT (ConcreteMempool m) m a}
+    deriving (Functor, Applicative, Monad, MonadFail, MonadState (ConcreteMempool m) )
 
 instance MonadTrans RunMonad where
-  lift m = RunMonad $ ReaderT $ \ _ -> m
+  lift m = RunMonad $ StateT $ \ s ->  (,s) <$> m
 
 type instance Realized (RunMonad m) a = a
 
-instance MonadSTM m => RunModel MempoolModel (RunMonad m) where
+instance (IOLike m, MonadSTM m, MonadFail m) => RunModel MempoolModel (RunMonad m) where
+  perform _ (InitMempool start) _ = do
+    tr <- gets tracer
+    let capacityOverride :: MempoolCapacityBytesOverride
+        capacityOverride = NoMempoolCapacityBytesOverride -- TODO we might want to generate this
+    mempool <- lift $ openMempoolWithMockedLedgerItf capacityOverride tr txSize start
+    modify $ \ st -> st { theMempool = Just mempool}
   perform _ (AddTxs txs) _          = do
-    mempoolWithMockedLedgerItf  <- ask
-    lift $ void $ tryAddTxs (getMempool mempoolWithMockedLedgerItf)
+    Just mempoolWithMockedLedgerItf  <- gets theMempool
+    lift $ snd <$> tryAddTxs (getMempool mempoolWithMockedLedgerItf)
       DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
       txs
-    pure ()
   perform _ (HasValidatedTxs txs) _ = do
-    mempoolWithMockedLedgerItf <- ask
-    -- TODO: Maybe mempoolWithMockedLedgerItf should implement the mempool API
-    _snap <- lift $ atomically $ getSnapshot $ getMempool mempoolWithMockedLedgerItf
-    pure ()
+    Just mempoolWithMockedLedgerItf <- gets theMempool
+    snap <- lift $ atomically $ getSnapshot $ getMempool $ mempoolWithMockedLedgerItf
+    pure $ fmap (fromValidated . fst) . snapshotTxs $ snap
   perform _st _act _env             = error "not implemented"
 
 -- The idea of this data structure is that we make sure that the ledger
@@ -89,7 +119,7 @@ data MempoolWithMockedLedgerItf m blk idx = MempoolWithMockedLedgerItf {
     }
 
 openMempoolWithMockedLedgerItf ::
-     ( MonadSTM m, IOLike m, ValidateEnvelope TestBlock     )
+     ( MonadSTM m, IOLike m)
   => MempoolCapacityBytesOverride
   -> Tracer m (TraceEventMempool TestBlock)
   -> (GenTx TestBlock -> TxSizeInBytes)
