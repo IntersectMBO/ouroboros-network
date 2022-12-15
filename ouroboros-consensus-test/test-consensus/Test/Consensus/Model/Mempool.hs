@@ -45,8 +45,7 @@ import           Test.QuickCheck.DynamicLogic (DynLogicModel)
 import           Test.QuickCheck.StateModel (Any (..), Realized, RunModel (..),
                      StateModel (..))
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (applyPayload, payloadDependentState,
-                     tbPayload)
+import           Test.Util.TestBlock (applyPayload, payloadDependentState)
 
 data MempoolModel = Idle
   |  MempoolModel { transactions :: [GenTx TestBlock],
@@ -61,10 +60,9 @@ instance StateModel MempoolModel where
         -- of the Mempool. Returns the list of txs effectively added to the mempool.
         AddTxs :: [GenTx TestBlock] -> Action MempoolModel [GenTx TestBlock]
         -- | An 'observation' that checks the given list of transactions is part of
-        -- the mempool
-        HasValidatedTxs :: [GenTx TestBlock] -> Action MempoolModel [GenTx TestBlock]
-        -- | An action to explicitly wait some amount of time
-        Wait :: Int -> Action MempoolModel ()
+        -- the mempool _after_ some time
+        HasValidatedTxs :: [GenTx TestBlock] -> Int -> Action MempoolModel [GenTx TestBlock]
+
 
     arbitraryAction = \case
       Idle -> Some . InitMempool <$> arbitrary
@@ -73,15 +71,13 @@ instance StateModel MempoolModel where
     precondition Idle InitMempool{}          = True
     precondition MempoolModel{ledgerState} (AddTxs gts)          =
       isRight $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> gts
-    precondition MempoolModel{transactions} (HasValidatedTxs gts) =
+    precondition MempoolModel{transactions} (HasValidatedTxs gts _) =
       Set.fromList gts == Set.fromList transactions
-    precondition _ Wait{}              = True
     precondition _ _ = False
 
     shrinkAction _ (InitMempool imamp)   = Some . InitMempool <$> shrink imamp
     shrinkAction _ (AddTxs gts)          = Some . AddTxs <$> shrink gts
-    shrinkAction _ (HasValidatedTxs gts) = Some . HasValidatedTxs <$> shrink gts
-    shrinkAction _ Wait{}                = []
+    shrinkAction _ (HasValidatedTxs gts wait) = Some . flip HasValidatedTxs wait <$> shrink gts
 
     initialState :: MempoolModel
     initialState = Idle
@@ -125,18 +121,36 @@ instance (IOLike m, MonadSTM m, MonadFail m) => RunModel MempoolModel (RunMonad 
     lift $ snd <$> tryAddTxs (getMempool mempoolWithMockedLedgerItf)
       DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
       txs
-  perform _ HasValidatedTxs{} _ = do
+  perform _ (HasValidatedTxs gts wait) _ = do
     Just mempoolWithMockedLedgerItf <- gets theMempool
-    snap <- lift $ atomically $ getSnapshot $ getMempool $ mempoolWithMockedLedgerItf
-    pure $ fmap (fromValidated . fst) . snapshotTxs $ snap
-  perform _st (Wait n) _env             = lift $ threadDelay (fromIntegral n)
+    waitForTxsToMatch mempoolWithMockedLedgerItf gts wait
 
-  postcondition (_before, _after) (HasValidatedTxs gts) _env result = pure $ gts == result
+  postcondition (_before, _after) (HasValidatedTxs gts _ ) _env result = pure $ Set.fromList gts == Set.fromList result
   postcondition _ _ _ _                               = pure True
 
   monitoring (_before, _after) HasValidatedTxs{} _env result =
     counterexample ("Validated txs: " <> show result)
   monitoring _ _ _ _ = id
+
+-- | Keep retrieving content of the mempool at most `retryCount` times.
+-- Loops and wait until either the content of the ledger matches `expected` set of transaction
+-- or `retryCount` reaches 0.
+--
+-- Returns content of the mempool.
+waitForTxsToMatch :: IOLike m => MempoolWithMockedLedgerItf m TestBlock TicketNo -> [GenTx TestBlock] -> Int -> RunMonad m [GenTx TestBlock]
+waitForTxsToMatch mempoolWithMockedLedgerItf expected = \case
+  0 -> getAllValidatedTxs mempoolWithMockedLedgerItf
+  retryCount -> do
+    txs <- getAllValidatedTxs mempoolWithMockedLedgerItf
+    if Set.fromList txs /= Set.fromList expected
+      then lift (threadDelay 10) >> waitForTxsToMatch mempoolWithMockedLedgerItf expected (retryCount -1 )
+      else pure txs
+
+
+getAllValidatedTxs :: (MonadSTM m) => MempoolWithMockedLedgerItf m TestBlock idx -> RunMonad m [GenTx TestBlock]
+getAllValidatedTxs mempool = do
+  snap <- lift $ atomically $ getSnapshot $ getMempool mempool
+  pure $ fmap (fromValidated . fst) . snapshotTxs $ snap
 
 -- The idea of this data structure is that we make sure that the ledger
 -- interface used by the mempool gets mocked in the right way.

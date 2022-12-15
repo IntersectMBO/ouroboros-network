@@ -45,10 +45,8 @@ accept_all_non_conflicting_txs = do
     anyActions_
     getModelStateDL >>= \case
         MempoolModel{transactions} ->
-            eventually (HasValidatedTxs transactions)
+            action (HasValidatedTxs transactions 10)
         _ -> pure ()
-  where
-    eventually a = action (Wait 10) >> action a
 
 --
 

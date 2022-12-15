@@ -42,8 +42,7 @@ import           Codec.Serialise (Serialise)
 import           Control.Monad.Trans.Except (except)
 import           Data.Set (Set, (\\))
 import qualified Data.Set as Set
-import           Data.TreeDiff.Class (ToExpr, defaultExprViaShow, genericToExpr,
-                     toExpr)
+import           Data.TreeDiff.Class (ToExpr, defaultExprViaShow, toExpr)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -53,7 +52,7 @@ import           Test.QuickCheck (Arbitrary, Gen, arbitrary, frequency, shrink,
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Tracer
+import           Control.Tracer (Tracer, nullTracer)
 
 import           Cardano.Slotting.Slot (EpochSize, SlotNo (SlotNo))
 import           Cardano.Slotting.Time (SlotLength, slotLengthFromSec)
@@ -64,10 +63,9 @@ import           Ouroboros.Consensus.Config.SecurityParam
                      (SecurityParam (SecurityParam))
 import           Ouroboros.Consensus.HardFork.History (defaultEraParams)
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import           Ouroboros.Consensus.Ledger.Basics (LedgerCfg, LedgerConfig)
-import           Ouroboros.Consensus.Util.IOLike (newTVarIO, readTVar)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 
-import           Ouroboros.Network.Block (Point (Point), pattern BlockPoint,
+import           Ouroboros.Network.Block (pattern BlockPoint,
                      pattern GenesisPoint)
 
 import           Test.Util.Orphans.Arbitrary ()
@@ -82,10 +80,15 @@ import           Test.Util.TestBlock (LedgerState (TestLedger),
                      TestBlockWith, applyDirectlyToPayloadDependentState,
                      lastAppliedPoint, payloadDependentState)
 
-import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Block (Point)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
+                     HasTxId (..),
+                     LedgerSupportsMempool (applyTx, reapplyTx, txForgetValidated, txInBlockSize, txsMaxBytes),
+                     TxId, Validated, WhetherToIntervene (DoNotIntervene))
 import           Ouroboros.Consensus.Mempool.API
-import           Ouroboros.Consensus.Mempool.Impl
-import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+                     (MempoolCapacityBytesOverride (NoMempoolCapacityBytesOverride),
+                     TraceEventMempool, TxSizeInBytes)
+import           Ouroboros.Consensus.Mempool.Impl ()
 
 tests :: TestTree
 tests = testGroup "Mempool State Machine" [
@@ -237,9 +240,10 @@ instance LedgerSupportsMempool TestBlock where
     fst <$> applyTx cfg DoNotIntervene slot genTx tickedSt
     -- FIXME: it is ok to use 'DoNotIntervene' here?
 
-  -- We tweaked this in such a way that we test the case in which we exceed the
-  -- maximum mempool capacity. The value used here depends on 'txInBlockSize'.
-  txsMaxBytes _ = 10
+  -- TODO: make it a parameter of `TestBlock` so that we can define the behaviour
+  -- of the mempool from within the model
+  -- currently unbounded so all valid transactions should end up being in the mempool
+  txsMaxBytes _ = maxBound
 
   txInBlockSize = txSize
 
