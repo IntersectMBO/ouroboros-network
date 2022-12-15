@@ -51,6 +51,7 @@ module Test.Util.TestBlock (
     -- * LedgerState
   , LedgerState (TestLedger, payloadDependentState, lastAppliedPoint)
   , Ticked1 (TickedTestLedger)
+  , getTickedTestLedger
     -- * Chain
   , BlockChain (..)
   , blockChain
@@ -568,7 +569,7 @@ testInitLedgerWithState = TestLedger GenesisPoint
 -- Ticking has no effect
 newtype instance Ticked1 (LedgerState (TestBlockWith ptype)) mk = TickedTestLedger {
       getTickedTestLedger :: LedgerState (TestBlockWith ptype) mk
-    }
+    } deriving Generic
 
 testInitExtLedgerWithState ::
   PayloadDependentState ptype mk -> ExtLedgerState (TestBlockWith ptype) mk
