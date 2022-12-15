@@ -1,18 +1,26 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase       #-}
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE PatternSynonyms  #-}
-{-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Test.Consensus.Model.Property (prop_Model_accept_all_non_conficting_txs) where
 
 import           Control.Exception (SomeException (..))
 import           Control.Monad.IOSim (Failure (FailureException), IOSim,
-                     ppEvents, runSimTrace, traceEvents, traceM, traceResult)
+                     SimTrace, ppEvents, runSimTrace, selectTraceEventsDynamic',
+                     traceEvents, traceM, traceResult)
 import           Control.Monad.State (evalStateT, runStateT)
 import           Control.Tracer (Tracer (Tracer))
+import           Data.Data (Proxy)
+import           Data.Typeable (Proxy (..), Typeable)
+import           Ouroboros.Consensus.Mempool.API (TraceEventMempool)
 import           Test.Consensus.Model.Mempool (Action (..),
                      ConcreteMempool (..), MempoolModel (..), RunMonad (..))
+import           Test.Consensus.Model.TestBlock (TestBlock)
 import           Test.QuickCheck (Gen, Property, Testable, counterexample,
                      property, within)
 import           Test.QuickCheck.DynamicLogic (DL, action, anyActions_,
@@ -53,8 +61,9 @@ runIOSimProp :: Testable a => (forall s. PropertyM (RunMonad (IOSim s)) a) -> Ge
 runIOSimProp p = do
     Capture eval <- capture
     let tr = runSimTrace $  (runMonad $ eval $ monadic' p) `evalStateT` ConcreteMempool{theMempool = Nothing, tracer = Tracer traceM}
-        traceDump = ppEvents $ traceEvents tr
-        logsOnError = counterexample ("trace:\n" <> traceDump)
+        traceDump = indent $ lines $ ppEvents $ traceEvents tr
+        traceLogs = printTrace (Proxy :: Proxy (TraceEventMempool TestBlock)) tr
+        logsOnError = counterexample ("trace:\n" <> traceDump) . counterexample ("logs: \n" <> traceLogs)
     case traceResult False tr of
         Right x ->
             pure $ logsOnError x
@@ -62,3 +71,11 @@ runIOSimProp p = do
             pure $ counterexample (show ex) $ logsOnError $ property False
         Left ex ->
             pure $ counterexample (show ex) $ logsOnError $ property False
+
+indent :: [String] -> String
+indent = unlines . fmap ("  " <>)
+
+printTrace :: forall log a. (Typeable log, Show log) => Proxy log -> SimTrace a -> String
+printTrace _ tr =
+  indent $ fmap show $
+    selectTraceEventsDynamic' @_ @log tr
