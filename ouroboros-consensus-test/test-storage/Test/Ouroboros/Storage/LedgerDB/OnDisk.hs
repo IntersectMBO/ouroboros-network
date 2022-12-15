@@ -119,14 +119,14 @@ tests = askOption $ \showTrace -> testGroup "OnDisk"
   )
   where
     uniform = CmdDistribution
-        { freqCurrent = 1
-        , freqPush    = 1
-        , freqSwitch  = 1
-        , freqSnap    = 1
-        , freqFlush   = 1
-        , freqRestore = 1
-        , freqCorrupt = 1
-        , freqDrop    = 1
+        { freqCurrent   = 1
+        , freqPush      = 1
+        , freqSwitch    = 1
+        , freqSnap      = 1
+        , freqFlush     = 1
+        , freqRestore   = 1
+        , freqCorrupt   = 1
+        , freqDrop      = 1
         , freqGetTables = 1
         }
 
@@ -138,14 +138,14 @@ tests = askOption $ \showTrace -> testGroup "OnDisk"
     -- to introduce modifications in the system under test only to accommodate
     -- the database sharing functionality needed for tests.
     lmdbCustom = CmdDistribution
-        { freqCurrent = 10
-        , freqPush    = 10
-        , freqSwitch  = 1
-        , freqSnap    = 1
-        , freqFlush   = 5
-        , freqRestore = 1
-        , freqCorrupt = 1
-        , freqDrop    = 1
+        { freqCurrent   = 10
+        , freqPush      = 10
+        , freqSwitch    = 1
+        , freqSnap      = 1
+        , freqFlush     = 5
+        , freqRestore   = 1
+        , freqCorrupt   = 1
+        , freqDrop      = 1
         , freqGetTables = 1
         }
 
@@ -1335,38 +1335,46 @@ generator cd secParam (Model mock hs) =
   where
     withoutRef :: [(Int, Gen (Cmd :@ Symbolic))]
     withoutRef = fmap (bimap ($cd) (fmap At)) [
-          (freqCurrent, pure Current)
-        , (freqPush,    Push <$> genBlockFromLedgerState (mockCurrent mock))
-        , (freqSwitch,  genSwitchCmd)
-        , (freqSnap,    pure Snap)
-        , (freqFlush,   pure Flush)
-        , (freqRestore, pure Restore)
-        , (freqDrop,    Drop <$> QC.choose (0, mockChainLength mock))
+          (freqCurrent,   pure Current)
+        , (freqPush,      Push <$> genBlockFromLedgerState (mockCurrent mock))
+        , (freqSwitch,    genSwitchCmd)
+        , (freqSnap,      pure Snap)
+        , (freqFlush,     pure Flush)
+        , (freqRestore,   pure Restore)
+        , (freqDrop,      Drop <$> QC.choose (0, mockChainLength mock))
         , (freqGetTables, genGetTables)
         ]
       where
         genGetTables :: Gen (Cmd ss)
         genGetTables =
-          let randomPoint = do
+          let randomGetTablesAtFor = do
                 pt <- QC.arbitrary
-                keys <- ExtLedgerStateTables . TokenToTValue . ApplyKeysMK . DS.Keys <$> QC.arbitrary
+                keys <- ExtLedgerStateTables
+                      . TokenToTValue
+                      . ApplyKeysMK
+                      . DS.Keys
+                    <$> QC.arbitrary
                 pure $ GetTablesAtFor pt keys
           in
           if null (mockLedger mock)
-            then randomPoint
+            then randomGetTablesAtFor
             else do
               QC.frequency
                [ (5, do
                      -- existing point, subset of keys
-                     pt <- QC.elements (mockLedger mock)
-                     keys <- traverseLedgerTables f (projectLedgerTables $ snd pt)
-                     pure $ GetTablesAtFor (blockPoint . fst $ pt) keys)
+                     (blk, st) <- QC.elements (mockLedger mock)
+                     keys <- traverseLedgerTables f (projectLedgerTables st)
+                     pure $ GetTablesAtFor (blockPoint blk) keys)
                , (1, do
                      -- existing point, random keys
-                     pt <- QC.elements (mockLedger mock)
-                     keys <- ExtLedgerStateTables . TokenToTValue . ApplyKeysMK . DS.Keys <$> QC.arbitrary
-                     pure $ GetTablesAtFor (blockPoint . fst $ pt) keys)
-               , (1, randomPoint)
+                     (blk, _) <- QC.elements (mockLedger mock)
+                     keys <- ExtLedgerStateTables
+                          .  TokenToTValue
+                          .  ApplyKeysMK
+                          .  DS.Keys
+                         <$> QC.arbitrary
+                     pure $ GetTablesAtFor (blockPoint blk) keys)
+               , (1, randomGetTablesAtFor)
                ]
           where
             f :: Ord k => ValuesMK k v -> Gen (KeysMK k v)
