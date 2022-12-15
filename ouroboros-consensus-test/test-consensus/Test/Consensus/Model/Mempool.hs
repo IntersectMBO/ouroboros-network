@@ -23,6 +23,8 @@ import           Control.Monad.Reader (MonadTrans, lift)
 import           Control.Monad.State (MonadState (..), StateT (StateT), gets,
                      modify)
 import           Control.Tracer (Tracer)
+import           Data.Either (isRight)
+import qualified Data.Set as Set
 import           Ouroboros.Consensus.HardFork.Combinator.Basics (LedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx,
                      WhetherToIntervene (..))
@@ -38,7 +40,7 @@ import           Test.Consensus.Mempool.StateMachine
 import           Test.Consensus.Model.TestBlock (GenTx (..), TestBlock,
                      TestLedgerState (..), Tx, fromValidated, genValidTx,
                      txSize)
-import           Test.QuickCheck (arbitrary)
+import           Test.QuickCheck (arbitrary, counterexample, shrink)
 import           Test.QuickCheck.DynamicLogic (DynLogicModel)
 import           Test.QuickCheck.StateModel (Any (..), Realized, RunModel (..),
                      StateModel (..))
@@ -68,6 +70,20 @@ instance StateModel MempoolModel where
       Idle -> Some . InitMempool <$> arbitrary
       MempoolModel{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs . (:[]) . TestBlockGenTx <$> genValidTx availableTokens
 
+    precondition Idle InitMempool{}          = True
+    precondition MempoolModel{ledgerState} (AddTxs gts)          =
+      isRight $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> gts
+    precondition MempoolModel{transactions} (HasValidatedTxs gts) =
+      Set.fromList gts == Set.fromList transactions
+    precondition _ Wait{}              = True
+    precondition _ _ = False
+
+    shrinkAction _ (InitMempool imamp)   = Some . InitMempool <$> shrink imamp
+    shrinkAction _ (AddTxs gts)          = Some . AddTxs <$> shrink gts
+    shrinkAction _ (HasValidatedTxs gts) = Some . HasValidatedTxs <$> shrink gts
+    shrinkAction _ Wait{}                = []
+
+    initialState :: MempoolModel
     initialState = Idle
 
     nextState Idle (InitMempool imamp) _var =
@@ -117,6 +133,10 @@ instance (IOLike m, MonadSTM m, MonadFail m) => RunModel MempoolModel (RunMonad 
 
   postcondition (_before, _after) (HasValidatedTxs gts) _env result = pure $ gts == result
   postcondition _ _ _ _                               = pure True
+
+  monitoring (_before, _after) HasValidatedTxs{} _env result =
+    counterexample ("Validated txs: " <> show result)
+  monitoring _ _ _ _ = id
 
 -- The idea of this data structure is that we make sure that the ledger
 -- interface used by the mempool gets mocked in the right way.

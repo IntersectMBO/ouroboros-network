@@ -24,7 +24,7 @@ import           Test.Consensus.Model.TestBlock (TestBlock)
 import           Test.QuickCheck (Gen, Property, Testable, counterexample,
                      property, within)
 import           Test.QuickCheck.DynamicLogic (DL, action, anyActions_,
-                     forAllDL_, getModelStateDL)
+                     forAllDL, forAllDL_, getModelStateDL)
 import           Test.QuickCheck.Gen.Unsafe (Capture (Capture), capture)
 import           Test.QuickCheck.Monadic (PropertyM, assert, monadic')
 import           Test.QuickCheck.StateModel (Actions, runActions)
@@ -32,7 +32,7 @@ import           Test.QuickCheck.StateModel (Actions, runActions)
 prop_Model_accept_all_non_conficting_txs :: Property
 prop_Model_accept_all_non_conficting_txs =
     within 50000000 $
-        forAllDL_ accept_all_non_conflicting_txs prop_MemPool
+        forAllDL accept_all_non_conflicting_txs prop_MemPool
 
 prop_MemPool :: Actions MempoolModel -> Property
 prop_MemPool actions = property $
