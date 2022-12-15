@@ -36,7 +36,8 @@ import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import           Test.Consensus.Mempool.StateMachine
                      (InitialMempoolAndModelParams (..))
 import           Test.Consensus.Model.TestBlock (GenTx (..), TestBlock,
-                     TestLedgerState (..), Tx, fromValidated, txSize)
+                     TestLedgerState (..), Tx, fromValidated, genValidTx,
+                     txSize)
 import           Test.QuickCheck (arbitrary)
 import           Test.QuickCheck.DynamicLogic (DynLogicModel)
 import           Test.QuickCheck.StateModel (Any (..), Realized, RunModel (..),
@@ -65,7 +66,7 @@ instance StateModel MempoolModel where
 
     arbitraryAction = \case
       Idle -> Some . InitMempool <$> arbitrary
-      MempoolModel{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs <$> pure []
+      MempoolModel{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs . (:[]) . TestBlockGenTx <$> genValidTx availableTokens
 
     initialState = Idle
 

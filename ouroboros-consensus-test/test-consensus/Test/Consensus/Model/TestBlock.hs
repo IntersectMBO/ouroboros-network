@@ -34,6 +34,7 @@ module Test.Consensus.Model.TestBlock (
   , txSize
     -- * Labelling
   , TestBlock
+  , genValidTx
   , tagConsumedTx
   ) where
 
@@ -47,7 +48,8 @@ import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Test.QuickCheck (Arbitrary, arbitrary, frequency, shrink)
+import           Test.QuickCheck (Arbitrary, Gen, arbitrary, frequency, shrink,
+                     sublistOf)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -142,6 +144,11 @@ instance Arbitrary Tx where
   arbitrary = Tx <$> arbitrary <*> arbitrary
 
   shrink Tx {produced, consumed} = uncurry Tx <$> shrink (consumed, produced)
+
+-- | Generate a valid transaction consuming a subset of available tokens
+genValidTx :: Set Token -> Gen Tx
+genValidTx available =
+  Tx <$> (Set.fromList <$> sublistOf (Set.toList available)) <*> arbitrary
 
 --------------------------------------------------------------------------------
 -- Payload semantics
