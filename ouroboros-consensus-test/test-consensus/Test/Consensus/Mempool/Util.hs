@@ -1,19 +1,19 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE NumericUnderscores #-}
 
 module Test.Consensus.Mempool.Util (
     TestBlock
   , TestTx
   , TestTxError
-  , testInitLedger
-  , testLedgerConfig
+  , applyTxToLedger
+  , genInvalidTx
   , genTxs
+  , genValidTx
   , genValidTxs
   , mustBeValid
+  , testInitLedger
+  , testLedgerConfig
   , txIsValid
-  , genValidTx
-  , genInvalidTx
-  , applyTxToLedger
   ) where
 
 import           Control.Exception (assert)

@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -72,7 +71,8 @@ import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.State
 import           Ouroboros.Consensus.Mock.Ledger.UTxO (Expiry, Tx, TxIn, TxOut)
 
-import           Test.Consensus.Mempool.Util (TestBlock, genTxs, testLedgerConfig, testInitLedger, genValidTxs, applyTxToLedger)
+import           Test.Consensus.Mempool.Util (TestBlock, applyTxToLedger,
+                     genTxs, genValidTxs, testInitLedger, testLedgerConfig)
 
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -88,7 +88,7 @@ instance Arbitrary ModifyDB where
   arbitrary = bool KeepDB ClearDB <$> arbitrary
 
 keepsDB :: ModifyDB -> Bool
-keepsDB KeepDB = True
+keepsDB KeepDB  = True
 keepsDB ClearDB = False
 
 -- | The model
@@ -97,27 +97,27 @@ data Model blk r = Model {
     modelMempoolIntermediateState :: !(TickedLedgerState blk ValuesMK)
 
     -- | The old states which are still on the LedgerDB
-  , modelOldReachableStates:: !(Set (LedgerState blk ValuesMK))
+  , modelOldReachableStates       :: !(Set (LedgerState blk ValuesMK))
 
     -- | The old states which are no more on the LedgerDB
-  , modelOldUnreachableStates:: !(Set (LedgerState blk ValuesMK))
+  , modelOldUnreachableStates     :: !(Set (LedgerState blk ValuesMK))
 
     -- | The current tip on the ledgerdb
-  , modelLedgerDBTip :: !(LedgerState blk ValuesMK)
+  , modelLedgerDBTip              :: !(LedgerState blk ValuesMK)
 
     -- | The current list of transactions
-  , modelTxs :: ![(GenTx blk, TicketNo)]
+  , modelTxs                      :: ![(GenTx blk, TicketNo)]
 
     -- | The maximum capacity of the mempool
-  , modelRemainingCapacity :: !MempoolCapacityBytes
+  , modelRemainingCapacity        :: !MempoolCapacityBytes
 
     -- | Last seen ticket number
     --
     -- This indicates how many transactions have ever been added to the mempool.
-  , modelLastSeenTicketNo :: !TicketNo
+  , modelLastSeenTicketNo         :: !TicketNo
 
     -- | Used only for tagging
-  , modelMempoolWasFilled :: !Bool
+  , modelMempoolWasFilled         :: !Bool
   }
 
 -- | The commands used by QSM
@@ -505,9 +505,9 @@ deriving instance ( NoThunks (Mempool m blk)
 -- The ledger interface will serve the values from this datatype.
 data MockedLedgerDB blk = MockedLedgerDB {
     -- | The current LedgerDB tip
-    ldbTip  :: !(LedgerState blk ValuesMK)
+    ldbTip             :: !(LedgerState blk ValuesMK)
     -- | States which are still reachable in the LedgerDB
-  , oldReachableTips :: !(Set (LedgerState blk ValuesMK))
+  , oldReachableTips   :: !(Set (LedgerState blk ValuesMK))
     -- | States which are no longer reachable in the LedgerDB
   , oldUnreachableTips :: !(Set (LedgerState blk ValuesMK))
   } deriving (Generic)
@@ -872,8 +872,8 @@ instance ( ToExpr (TxId (GenTx blk))
 
 instance ToExpr (GenTx blk) => ToExpr (Action blk r) where
   toExpr (TryAddTxs txs) = App "TryAddTxs" $ map toExpr txs
-  toExpr SyncLedger   = App "SyncLedger" []
-  toExpr GetSnapshot  = App "GetSnapshot" []
+  toExpr SyncLedger      = App "SyncLedger" []
+  toExpr GetSnapshot     = App "GetSnapshot" []
 
 instance ToExpr (LedgerState blk ValuesMK) => ToExpr (Event blk r) where
   toExpr (ChangeLedger ls b) =
