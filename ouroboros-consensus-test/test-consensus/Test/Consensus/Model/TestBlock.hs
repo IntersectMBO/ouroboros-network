@@ -28,7 +28,7 @@ module Test.Consensus.Model.TestBlock (
   , TestLedgerState (TestLedgerState, availableTokens)
   , Token (Token, unToken)
     -- * Test transaction
-  , GenTx (TestBlockGenTx)
+  , GenTx (..)
   , Tx (Tx, produced, consumed)
   , Validated (..)
   , txSize
@@ -117,7 +117,7 @@ deriving anyclass instance ToExpr Tx
 -- TODO: consider removing this level of indirection
 type TestBlock = TestBlockWith Tx
 
-newtype instance GenTx TestBlock = TestBlockGenTx Tx
+newtype instance GenTx TestBlock = TestBlockGenTx { blockTx :: Tx }
   deriving stock (Generic)
   deriving newtype (Show, Arbitrary, NoThunks, Eq, Ord)
 

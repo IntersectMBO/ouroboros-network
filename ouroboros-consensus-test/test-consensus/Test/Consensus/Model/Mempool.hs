@@ -11,11 +11,14 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Test.Consensus.Model.Mempool where
 
 import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, StrictTVar,
                      atomically, newTVarIO, readTVar, writeTVar)
+import           Control.Monad (foldM)
+import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Monad.Reader (MonadTrans, lift)
 import           Control.Monad.State (MonadState (..), StateT (StateT), gets,
                      modify)
@@ -32,14 +35,15 @@ import           Ouroboros.Consensus.Mempool.API
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import           Test.Consensus.Mempool.StateMachine
                      (InitialMempoolAndModelParams (..))
-import           Test.Consensus.Model.TestBlock (TestBlock,
-                     TestLedgerState (..), fromValidated, txSize)
+import           Test.Consensus.Model.TestBlock (GenTx (..), TestBlock,
+                     TestLedgerState (..), Tx, fromValidated, txSize)
 import           Test.QuickCheck (arbitrary)
 import           Test.QuickCheck.DynamicLogic (DynLogicModel)
 import           Test.QuickCheck.StateModel (Any (..), Realized, RunModel (..),
                      StateModel (..))
 import           Test.Util.Orphans.IOLike ()
-import           Test.Util.TestBlock (payloadDependentState)
+import           Test.Util.TestBlock (applyPayload, payloadDependentState,
+                     tbPayload)
 
 data MempoolModel = Idle
   |  MempoolModel { transactions :: [GenTx TestBlock],
@@ -63,14 +67,15 @@ instance StateModel MempoolModel where
       Idle -> Some . InitMempool <$> arbitrary
       MempoolModel{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs <$> pure []
 
-
     initialState = Idle
 
-    nextState Idle (InitMempool imamp) var =
+    nextState Idle (InitMempool imamp) _var =
       MempoolModel [] (payloadDependentState $ immpInitialState imamp)
-    nextState st (AddTxs gts) var          = error "not implemented"
-    nextState st (HasValidatedTxs gts) var = error "not implemented"
-    nextState st (Wait n) var              = error "not implemented"
+    nextState MempoolModel{transactions, ledgerState} (AddTxs newTxs) _var =
+      let newState = either (error . show) id $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> newTxs
+      in MempoolModel { transactions = transactions <> newTxs , ledgerState = newState }
+    nextState Idle act@AddTxs{} _var = error $ "Invalid transition from Idle state with action: "<> show act
+    nextState st _act _var = st
 
 deriving instance Show (Action MempoolModel a)
 deriving instance Eq (Action MempoolModel a)
@@ -103,11 +108,14 @@ instance (IOLike m, MonadSTM m, MonadFail m) => RunModel MempoolModel (RunMonad 
     lift $ snd <$> tryAddTxs (getMempool mempoolWithMockedLedgerItf)
       DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
       txs
-  perform _ (HasValidatedTxs txs) _ = do
+  perform _ HasValidatedTxs{} _ = do
     Just mempoolWithMockedLedgerItf <- gets theMempool
     snap <- lift $ atomically $ getSnapshot $ getMempool $ mempoolWithMockedLedgerItf
     pure $ fmap (fromValidated . fst) . snapshotTxs $ snap
-  perform _st _act _env             = error "not implemented"
+  perform _st (Wait n) _env             = lift $ threadDelay (fromIntegral n)
+
+  postcondition (_before, _after) (HasValidatedTxs gts) _env result = pure $ gts == result
+  postcondition _ _ _ _                               = pure True
 
 -- The idea of this data structure is that we make sure that the ledger
 -- interface used by the mempool gets mocked in the right way.
