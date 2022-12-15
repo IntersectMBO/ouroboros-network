@@ -596,7 +596,7 @@ test cmds = do
       $ \varDB -> do
         let env = VolatileDBEnv { varErrors, varDB, args }
             sm' = sm env dbm
-        (hist, _model, res) <- QSM.runCommands' sm' cmds
+        (hist, _model, res) <- QSM.runCommands' (pure sm') cmds
         trace <- getTrace
         return (hist, res, trace)
 

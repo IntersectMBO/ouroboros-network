@@ -8,6 +8,7 @@ import qualified Test.Consensus.HardFork.Forecast (tests)
 import qualified Test.Consensus.HardFork.History (tests)
 import qualified Test.Consensus.HardFork.Summary (tests)
 import qualified Test.Consensus.Mempool (tests)
+import qualified Test.Consensus.Mempool.StateMachine (tests)
 import qualified Test.Consensus.MiniProtocol.BlockFetch.Client (tests)
 import qualified Test.Consensus.MiniProtocol.ChainSync.Client (tests)
 import qualified Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests)
@@ -28,7 +29,10 @@ tests =
   , Test.Consensus.MiniProtocol.BlockFetch.Client.tests
   , Test.Consensus.MiniProtocol.ChainSync.Client.tests
   , Test.Consensus.MiniProtocol.LocalStateQuery.Server.tests
-  , Test.Consensus.Mempool.tests
+  , testGroup "Mempool"
+      [ Test.Consensus.Mempool.tests
+      , Test.Consensus.Mempool.StateMachine.tests
+      ]
   , Test.Consensus.Node.tests
   , Test.Consensus.ResourceRegistry.tests
   , Test.Consensus.Util.MonadSTM.RAWLock.tests

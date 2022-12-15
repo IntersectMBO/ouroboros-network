@@ -494,6 +494,8 @@ data TraceEventMempool blk
       TxSeq.MempoolSize
       -- ^ The current size of the Mempool.
 
+    deriving (Generic)
+
 deriving instance ( Eq (GenTx blk)
                   , Eq (Validated (GenTx blk))
                   , Eq (GenTxId blk)
@@ -520,10 +522,10 @@ deriving instance ( Show (GenTx blk)
 -- after a known sequence number, to get new transactions. It is also used to
 -- look up individual transactions.
 --
--- Note that it is expected that 'getTx' will often return 'Nothing'
--- even for tx sequence numbers returned in previous snapshots. This happens
--- when the transaction has been removed from the mempool between snapshots.
---
+-- Note that it is expected that 'snapshotLookupTxTx' will often return
+-- 'Nothing' even for tx sequence numbers returned in previous snapshots. This
+-- happens when the transaction has been removed from the mempool between
+-- snapshots.
 data MempoolSnapshot blk = MempoolSnapshot {
     -- | Get all transactions (oldest to newest) in the mempool snapshot along
     -- with their ticket number.
