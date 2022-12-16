@@ -15,6 +15,7 @@ import           Data.Foldable
 import           Data.Sequence (Seq)
 import           Data.Sequence.NonEmpty (NESeq)
 
+import qualified Data.FingerTree.RootMeasured.Strict as RMFT
 import qualified Data.FingerTree.Strict as FT
 import           Data.Map.Diff.Strict (Diff (..), DiffEntry (..),
                      DiffHistory (..), Keys (..), NEDiffHistory (..),
@@ -23,9 +24,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.HD (SeqUtxoDiff (..),
                      SudElement (..), SudMeasure (..), UtxoDiff (..),
                      UtxoEntryDiff (..), UtxoEntryDiffState (..), UtxoKeys (..),
                      UtxoValues (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (Element (..),
-                     InternalMeasure (..), Length (..), RootMeasure (..),
-                     SlotNoLB (..), SlotNoUB (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq (..),
+                     Element (..), InternalMeasure (..), Length (..),
+                     RootMeasure (..), SlotNoLB (..), SlotNoUB (..))
 
 {------------------------------------------------------------------------------
   StrictFingerTree
@@ -56,8 +57,8 @@ deriving newtype instance (Ord k, NFData k, NFData v) => NFData (SeqUtxoDiff k v
   DiffSeq
 -------------------------------------------------------------------------------}
 
--- deriving anyclass instance (NFData vt, NFData (FT.StrictFingerTree vi a)
---                            ) => NFData (RMFT.StrictFingerTree vt vi a)
+deriving anyclass instance (NFData vt, NFData vi, NFData a, FT.Measured vi a
+                           ) => NFData (RMFT.StrictFingerTree vt vi a)
 
 deriving anyclass instance NFData v => NFData (DiffEntry v)
 deriving newtype instance NFData v => NFData (UnsafeDiffHistory Seq v)
@@ -75,4 +76,4 @@ deriving newtype instance NFData SlotNoLB
 deriving anyclass instance (NFData k, NFData v) => NFData (RootMeasure k v)
 deriving anyclass instance (NFData k, NFData v) => NFData (InternalMeasure k v)
 deriving anyclass instance (NFData k, NFData v) => NFData (Element k v)
---deriving newtype instance (NFData k, NFData v) => NFData (DiffSeq k v)
+deriving newtype instance (NFData k, NFData v) => NFData (DiffSeq k v)

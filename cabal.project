@@ -96,7 +96,7 @@ constraints:
   , cardano-slotting  == 0.1.0.0
   , measures == 0.1.0.0
   , orphans-deriving-via == 0.1.0.0
-  , strict-containers == 0.1.0.0
+  , cardano-strict-containers == 0.1.1.0
   , plutus-core == 1.0.0.1
   , plutus-ledger-api == 1.0.0.1
   , plutus-tx == 1.0.0.0
