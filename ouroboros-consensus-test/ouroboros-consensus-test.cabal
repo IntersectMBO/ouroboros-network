@@ -364,7 +364,7 @@ benchmark bench-storage
                      , mtl
                      , QuickCheck
                      , QuickCheck-GenT
-                     , strict-containers
+                     , cardano-strict-containers
                      , tasty-bench <= 0.3.1
                      , tasty-quickcheck
 
