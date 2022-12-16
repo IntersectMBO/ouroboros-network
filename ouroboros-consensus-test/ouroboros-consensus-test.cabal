@@ -51,6 +51,7 @@ library
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
+                       Test.Util.LedgerStateOnlyTables
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
@@ -253,6 +254,10 @@ test-suite test-storage
                        Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
                        Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Registry
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Lockstep
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Mock
                        Test.Ouroboros.Storage.LedgerDB.HD.DiffSeq
                        Test.Ouroboros.Storage.LedgerDB.HD.LMDB
                        Test.Ouroboros.Storage.LedgerDB.InMemory
@@ -267,6 +272,7 @@ test-suite test-storage
 
   build-depends:       base              >=4.14 && <4.17
                      , async
+                     , anti-diff
                      , bifunctors
                      , binary
                      , bytestring
@@ -274,9 +280,11 @@ test-suite test-storage
                      , cardano-crypto-class
                      , cardano-slotting
                      , cborg
+                     , constraints
                      , containers
                      , contra-tracer
                      , directory
+                     , exceptions
                      , generics-sop
                      , hashable
                      , mtl
@@ -284,6 +292,8 @@ test-suite test-storage
                      , nothunks
                      , pretty-show
                      , QuickCheck
+                     , quickcheck-dynamic
+                     , quickcheck-lockstep >=0.2.1
                      , quickcheck-state-machine >=0.7.0
                      , random
                      , serialise

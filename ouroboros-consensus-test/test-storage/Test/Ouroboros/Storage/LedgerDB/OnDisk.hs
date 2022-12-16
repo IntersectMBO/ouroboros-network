@@ -366,9 +366,6 @@ instance StowableLedgerTables (LedgerState TestBlock) where
 stowErr :: String -> a
 stowErr fname = error $ "Function " <> fname <> " should not be used in these tests."
 
-instance Show (ApplyMapKind' mk' Token TValue) where
-  show ap = showsApplyMapKind ap ""
-
 instance ToExpr (ApplyMapKind' mk' Token TValue) where
   toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
   toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
@@ -961,11 +958,14 @@ initStandaloneDB ::
 initStandaloneDB dbEnv@DbEnv{..} dbSecParam = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
-    dbBackingStore <- uncheckedNewTVarM
-                      =<< newBackingStore
-                             dbTracer
-                             dbBackingStoreSelector
+    let
+      (LedgerBackingStoreInitialiser bsi) =
+        newBackingStoreInitialiser dbTracer dbBackingStoreSelector
+    dbBackingStore <- uncheckedNewTVarM . LedgerBackingStore
+                      =<< HD.initFromValues
+                             bsi
                              dbHasFS
+                             Origin
                              initTables -- TODO we could consider adapting the test generator to generate an initial ledger with non-empty tables.
     let dbResolve :: ResolveBlock m TestBlock
         dbResolve r = atomically $ getBlock r <$> readTVar dbBlocks

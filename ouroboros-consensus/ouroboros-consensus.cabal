@@ -228,6 +228,8 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                        Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
                        Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB.Bridge
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB.TransactionHandle
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.LedgerDB.Types

@@ -7,6 +7,7 @@ module Ouroboros.Consensus.Storage.FS.IO (
 
 import           Control.Concurrent.MVar
 import qualified Control.Exception as E
+import           Control.Monad.IO.Class (MonadIO (..))
 import qualified Data.ByteString.Unsafe as BS
 import qualified Data.Set as Set
 import           Foreign (castPtr)
@@ -27,48 +28,48 @@ import qualified Ouroboros.Consensus.Storage.IO as F
 -- We store the path the handle points to for better error messages
 type HandleIO = F.FHandle
 
-ioHasFS :: MountPoint -> HasFS IO HandleIO
+ioHasFS :: MonadIO m => MountPoint -> HasFS m HandleIO
 ioHasFS mount = HasFS {
       -- TODO(adn) Might be useful to implement this properly by reading all
       -- the stuff available at the 'MountPoint'.
       dumpState = return "<dumpState@IO>"
-    , hOpen = \fp openMode -> do
+    , hOpen = \fp openMode -> liftIO $ do
         let path = root fp
         osHandle <- rethrowFsError fp $
             F.open path openMode
         hVar <- newMVar $ Just osHandle
         return $ Handle (H.HandleOS path hVar) fp
-    , hClose = \(Handle h fp) -> rethrowFsError fp $
+    , hClose = \(Handle h fp) -> liftIO $ rethrowFsError fp $
         F.close h
-    , hIsOpen = H.isOpenHandleOS . handleRaw
-    , hSeek = \(Handle h fp) mode o -> rethrowFsError fp $
+    , hIsOpen = liftIO . H.isOpenHandleOS . handleRaw
+    , hSeek = \(Handle h fp) mode o -> liftIO $ rethrowFsError fp $
         F.seek h mode o
-    , hGetSome = \(Handle h fp) n -> rethrowFsError fp $
+    , hGetSome = \(Handle h fp) n -> liftIO $ rethrowFsError fp $
         F.read h n
-    , hGetSomeAt = \(Handle h fp) n o -> rethrowFsError fp $
+    , hGetSomeAt = \(Handle h fp) n o -> liftIO $ rethrowFsError fp $
         F.pread h n (unAbsOffset o)
-    , hTruncate = \(Handle h fp) sz -> rethrowFsError fp $
+    , hTruncate = \(Handle h fp) sz -> liftIO $ rethrowFsError fp $
         F.truncate h sz
-    , hGetSize = \(Handle h fp) -> rethrowFsError fp $
+    , hGetSize = \(Handle h fp) -> liftIO $ rethrowFsError fp $
         F.getSize h
-    , hPutSome = \(Handle h fp) bs -> rethrowFsError fp $ do
+    , hPutSome = \(Handle h fp) bs -> liftIO $ rethrowFsError fp $ do
         BS.unsafeUseAsCStringLen bs $ \(ptr, len) ->
             fromIntegral <$> F.write h (castPtr ptr) (fromIntegral len)
-    , createDirectory = \fp -> rethrowFsError fp $
+    , createDirectory = \fp -> liftIO $ rethrowFsError fp $
         Dir.createDirectory (root fp)
-    , listDirectory = \fp -> rethrowFsError fp $
+    , listDirectory = \fp -> liftIO $ rethrowFsError fp $
         Set.fromList <$>  Dir.listDirectory (root fp)
-    , doesDirectoryExist= \fp -> rethrowFsError fp $
+    , doesDirectoryExist= \fp -> liftIO $ rethrowFsError fp $
         Dir.doesDirectoryExist (root fp)
-    , doesFileExist = \fp -> rethrowFsError fp $
+    , doesFileExist = \fp -> liftIO $ rethrowFsError fp $
         Dir.doesFileExist (root fp)
-    , createDirectoryIfMissing = \createParent fp -> rethrowFsError fp $
+    , createDirectoryIfMissing = \createParent fp -> liftIO $ rethrowFsError fp $
         Dir.createDirectoryIfMissing createParent (root fp)
-    , removeDirectoryRecursive = \fp -> rethrowFsError fp $
+    , removeDirectoryRecursive = \fp -> liftIO $ rethrowFsError fp $
         Dir.removeDirectoryRecursive (root fp)
-    , removeFile = \fp -> rethrowFsError fp $
+    , removeFile = \fp -> liftIO $ rethrowFsError fp $
         Dir.removeFile (root fp)
-    , renameFile = \fp1 fp2 -> rethrowFsError fp1 $
+    , renameFile = \fp1 fp2 -> liftIO $ rethrowFsError fp1 $
         Dir.renameFile (root fp1) (root fp2)
     , mkFsErrorPath = fsToFsErrorPath mount
     , unsafeToFilePath = pure . root
