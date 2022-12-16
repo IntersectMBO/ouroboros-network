@@ -63,7 +63,7 @@ library
                      , nothunks          >=0.1.2 && <0.2
                      , QuickCheck
                      , semigroupoid
-                     , strict-containers
+                     , cardano-strict-containers
                      , tasty
                      , tasty-quickcheck
 
@@ -92,7 +92,7 @@ test-suite test
                      , nonempty-containers
                      , groups
                      , QuickCheck
-                     , strict-containers
+                     , cardano-strict-containers
                      , tasty
                      , tasty-quickcheck
 
