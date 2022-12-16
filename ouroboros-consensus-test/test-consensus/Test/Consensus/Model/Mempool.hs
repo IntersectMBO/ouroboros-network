@@ -15,9 +15,11 @@
 
 module Test.Consensus.Model.Mempool where
 
-import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, StrictTVar,
-                     atomically, newTVarIO, readTVar, writeTVar)
-import           Control.Monad (foldM)
+import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM,
+                     StrictTQueue, StrictTVar, atomically, labelTQueueIO,
+                     newTQueueIO, newTVarIO, readTQueue, readTVar, writeTQueue,
+                     writeTVar)
+import           Control.Monad (foldM, forM, forever, zipWithM)
 import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Monad.Reader (MonadTrans, lift)
 import           Control.Monad.State (MonadState (..), StateT (StateT), gets,
@@ -34,13 +36,14 @@ import           Ouroboros.Consensus.Mempool (LedgerInterface (..), Mempool,
 import           Ouroboros.Consensus.Mempool.API
                      (MempoolCapacityBytesOverride (NoMempoolCapacityBytesOverride),
                      TxSizeInBytes, snapshotTxs)
-import           Ouroboros.Consensus.Util.IOLike (IOLike)
+import           Ouroboros.Consensus.Util.IOLike (IOLike, MonadAsync (Async),
+                     MonadLabelledSTM, async, labelThisThread, labelThread)
 import           Test.Consensus.Mempool.StateMachine
                      (InitialMempoolAndModelParams (..))
 import           Test.Consensus.Model.TestBlock (GenTx (..), TestBlock,
                      TestLedgerState (..), Tx, fromValidated, genValidTx,
                      txSize)
-import           Test.QuickCheck (arbitrary, counterexample, shrink)
+import           Test.QuickCheck (arbitrary, choose, counterexample, shrink)
 import           Test.QuickCheck.DynamicLogic (DynLogicModel)
 import           Test.QuickCheck.StateModel (Any (..), Realized, RunModel (..),
                      StateModel (..))
@@ -49,12 +52,13 @@ import           Test.Util.TestBlock (applyPayload, payloadDependentState)
 
 data MempoolModel = Idle
   |  MempoolModel { transactions :: [GenTx TestBlock],
-                    ledgerState  :: TestLedgerState }
+                    ledgerState  :: TestLedgerState}
     deriving (Show)
 
 instance StateModel MempoolModel where
     data Action MempoolModel a where
-        InitMempool :: InitialMempoolAndModelParams TestBlock -> Action MempoolModel ()
+        -- | Initial state of the mempool and number of clients to run
+        InitMempool :: InitialMempoolAndModelParams TestBlock -> Int -> Action MempoolModel ()
         -- | Adds some new transactions to mempoool
         -- Those transactions are guaranteed to not conflict with the curent state
         -- of the Mempool. Returns the list of txs effectively added to the mempool.
@@ -63,9 +67,8 @@ instance StateModel MempoolModel where
         -- the mempool _after_ some time
         HasValidatedTxs :: [GenTx TestBlock] -> Int -> Action MempoolModel [GenTx TestBlock]
 
-
     arbitraryAction = \case
-      Idle -> Some . InitMempool <$> arbitrary
+      Idle -> Some <$> (InitMempool <$> arbitrary <*> choose (2, 10))
       MempoolModel{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs . (:[]) . TestBlockGenTx <$> genValidTx availableTokens
 
     precondition Idle InitMempool{}          = True
@@ -75,14 +78,14 @@ instance StateModel MempoolModel where
       Set.fromList gts == Set.fromList transactions
     precondition _ _ = False
 
-    shrinkAction _ (InitMempool imamp)   = Some . InitMempool <$> shrink imamp
+    shrinkAction _ (InitMempool imamp n)   = Some <$> (InitMempool <$> shrink imamp <*> shrink n)
     shrinkAction _ (AddTxs gts)          = Some . AddTxs <$> shrink gts
     shrinkAction _ (HasValidatedTxs gts wait) = Some . flip HasValidatedTxs wait <$> shrink gts
 
     initialState :: MempoolModel
     initialState = Idle
 
-    nextState Idle (InitMempool imamp) _var =
+    nextState Idle (InitMempool imamp _) _var =
       MempoolModel [] (payloadDependentState $ immpInitialState imamp)
     nextState MempoolModel{transactions, ledgerState} (AddTxs newTxs) _var =
       let newState = either (error . show) id $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> newTxs
@@ -95,11 +98,18 @@ deriving instance Eq (Action MempoolModel a)
 
 instance DynLogicModel MempoolModel
 
-data ConcreteMempool m = ConcreteMempool {
-  theMempool :: Maybe (MempoolWithMockedLedgerItf m TestBlock TicketNo),
-  tracer     :: Tracer m (TraceEventMempool TestBlock)
+-- | A single client trying to add transactions to the mempool
+-- concurrenty with other clients
+data MempoolClient m = MempoolClient {
+  txsQueue :: StrictTQueue m (GenTx TestBlock),
+  thread   :: Async m ()
   }
 
+data ConcreteMempool m = ConcreteMempool {
+  theMempool :: Maybe (MempoolWithMockedLedgerItf m TestBlock TicketNo),
+  tracer     :: Tracer m (TraceEventMempool TestBlock),
+  clients    :: [MempoolClient m]
+  }
 
 newtype RunMonad m a = RunMonad {runMonad :: StateT (ConcreteMempool m) m a}
     deriving (Functor, Applicative, Monad, MonadFail, MonadState (ConcreteMempool m) )
@@ -109,18 +119,16 @@ instance MonadTrans RunMonad where
 
 type instance Realized (RunMonad m) a = a
 
-instance (IOLike m, MonadSTM m, MonadFail m) => RunModel MempoolModel (RunMonad m) where
-  perform _ (InitMempool start) _ = do
+instance (IOLike m, MonadSTM m, MonadFail m, MonadLabelledSTM m) => RunModel MempoolModel (RunMonad m) where
+  perform _ (InitMempool start n) _ = do
     tr <- gets tracer
     let capacityOverride :: MempoolCapacityBytesOverride
         capacityOverride = NoMempoolCapacityBytesOverride -- TODO we might want to generate this
     mempool <- lift $ openMempoolWithMockedLedgerItf capacityOverride tr txSize start
-    modify $ \ st -> st { theMempool = Just mempool}
-  perform _ (AddTxs txs) _          = do
-    Just mempoolWithMockedLedgerItf  <- gets theMempool
-    lift $ snd <$> tryAddTxs (getMempool mempoolWithMockedLedgerItf)
-      DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
-      txs
+    clients <- lift $ forM [ 1.. n] (startMempoolClient mempool)
+    modify $ \ st -> st { theMempool = Just mempool, clients}
+  perform _ (AddTxs txs) _          =
+    gets clients >>= lift . dispatch txs
   perform _ (HasValidatedTxs gts wait) _ = do
     Just mempoolWithMockedLedgerItf <- gets theMempool
     waitForTxsToMatch mempoolWithMockedLedgerItf gts wait
@@ -131,6 +139,31 @@ instance (IOLike m, MonadSTM m, MonadFail m) => RunModel MempoolModel (RunMonad 
   monitoring (_before, _after) HasValidatedTxs{} _env result =
     counterexample ("Validated txs: " <> show result)
   monitoring _ _ _ _ = id
+
+dispatch :: IOLike m => [GenTx TestBlock] -> [MempoolClient m] -> m [GenTx TestBlock]
+dispatch txs clients =
+  zipWithM submitTx txs clients
+  where
+   submitTx tx MempoolClient{txsQueue} = atomically (writeTQueue txsQueue tx) >> pure tx
+
+addTxs :: Functor m => MempoolWithMockedLedgerItf m blk idx -> [GenTx blk] -> m [GenTx blk]
+addTxs mempool txs =
+  snd <$> tryAddTxs (getMempool mempool)
+      DoNotIntervene  -- TODO: we need to think if we want to model the 'WhetherToIntervene' behaviour.
+      txs
+
+startMempoolClient :: (IOLike m, MonadLabelledSTM m) => MempoolWithMockedLedgerItf m TestBlock TicketNo -> Int -> m (MempoolClient m)
+startMempoolClient mempool idx = do
+  txsQueue <- newTQueueIO
+  labelTQueueIO txsQueue $ "client-queue-" <> show idx
+  thread <- async $ runClient txsQueue
+  pure MempoolClient{txsQueue, thread}
+  where
+    runClient q = do
+      labelThisThread $ "client-" <> show idx
+      forever $ do
+        tx <- atomically $ readTQueue q
+        addTxs mempool [tx]
 
 -- | Keep retrieving content of the mempool at most `retryCount` times.
 -- Loops and wait until either the content of the ledger matches `expected` set of transaction

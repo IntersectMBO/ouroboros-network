@@ -46,7 +46,7 @@ accept_all_non_conflicting_txs = do
     getModelStateDL >>= \case
         MempoolModel{transactions} ->
             action (HasValidatedTxs transactions 10)
-        _ -> pure ()
+        Idle -> pure ()
 
 --
 
@@ -58,7 +58,7 @@ accept_all_non_conflicting_txs = do
 runIOSimProp :: Testable a => (forall s. PropertyM (RunMonad (IOSim s)) a) -> Gen Property
 runIOSimProp p = do
     Capture eval <- capture
-    let tr = runSimTrace $  (runMonad $ eval $ monadic' p) `evalStateT` ConcreteMempool{theMempool = Nothing, tracer = Tracer traceM}
+    let tr = runSimTrace $  (runMonad $ eval $ monadic' p) `evalStateT` ConcreteMempool{theMempool = Nothing, tracer = Tracer traceM, clients = mempty}
         traceDump = indent $ lines $ ppEvents $ traceEvents tr
         traceLogs = printTrace (Proxy :: Proxy (TraceEventMempool TestBlock)) tr
         logsOnError = counterexample ("trace:\n" <> traceDump) . counterexample ("logs: \n" <> traceLogs)
