@@ -30,7 +30,13 @@ module Test.Consensus.Mempool.StateMachine.TestBlock (
     -- * Test transaction
   , GenTx (TestBlockGenTx)
   , Tx (Tx, produced, consumed)
+    -- * Examples
+  , addTwoTrivialTxsInOneCmd
     -- * Labelling
+  , atLeastThreeNonTrivialValidatedTxs
+  , atLeastTwoNonTrivialAddTxsMultiple
+  , atLeastTwoNonTrivialValidatedTxs
+  , labelTxInputs
   , tagConsumedTx
   ) where
 
@@ -42,12 +48,24 @@ import qualified Data.Set as Set
 import           Data.TreeDiff.Class (ToExpr, defaultExprViaShow, genericToExpr,
                      toExpr)
 import           Data.Word (Word8)
+import           GHC.Exts (fromList)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
+import           Text.Show.Pretty (pPrint)
 
-import           Test.QuickCheck (Arbitrary, arbitrary, frequency, shrink)
+import           Test.QuickCheck (Arbitrary, Property, arbitrary, collect,
+                     elements, frequency, listOf1, oneof, quickCheck, shrink,
+                     tabulate, withMaxSuccess)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+
+-- TOOO: maybe we can avoid this dependency on state machine by having a custom way to represent events.
+import           Test.StateMachine.Labelling (Event (Event), eventAfter,
+                     eventBefore, eventCmd, eventResp)
+import           Test.StateMachine.Types (Command (Command),
+                     Commands (Commands), GenSym, Reason (Ok), Symbolic,
+                     concrete, noCleanup, reference, unCommands)
+
 
 import           Control.Tracer
 
@@ -68,10 +86,12 @@ import           Ouroboros.Network.Block (Point (Point), pattern BlockPoint,
 
 import           Test.Util.Orphans.Arbitrary ()
 
-import           Test.Consensus.Mempool.StateMachine
-                     (InitialMempoolAndModelParams (MempoolAndModelParams, immpInitialState, immpLedgerConfig),
-                     openMempoolWithMockedLedgerItf, prop_parallel,
-                     prop_sequential)
+import           Test.Consensus.Mempool.StateMachine (Cmd (..),
+                     InitialMempoolAndModelParams (MempoolAndModelParams, immpInitialState, immpLedgerConfig),
+                     Model (validatedTransactions), Response (..),
+                     collectCommands, openMempoolWithMockedLedgerItf,
+                     prop_parallel, prop_sequential, runMempoolCommands,
+                     showMempoolTestScenariosWith)
 
 import           Test.Util.TestBlock (LedgerState (TestLedger),
                      PayloadSemantics (PayloadDependentError, PayloadDependentState, applyPayload),
@@ -89,14 +109,15 @@ tests = testGroup "Mempool State Machine" [
     , testProperty "Parallel"   (prop_parallel mOpenMempool)
     ]
   where
-    mOpenMempool =
-      let
-        capacityOverride :: MempoolCapacityBytesOverride
-        capacityOverride = NoMempoolCapacityBytesOverride -- TODO we might want to generate this
 
-        tracer :: Tracer IO (TraceEventMempool TestBlock)
-        tracer = nullTracer
-      in openMempoolWithMockedLedgerItf capacityOverride tracer txSize
+mOpenMempool =
+  let
+    capacityOverride :: MempoolCapacityBytesOverride
+    capacityOverride = NoMempoolCapacityBytesOverride -- TODO we might want to generate this
+
+    tracer :: Tracer IO (TraceEventMempool TestBlock)
+    tracer = nullTracer
+  in openMempoolWithMockedLedgerItf capacityOverride tracer txSize
 
 instance Arbitrary HardFork.EraParams where
   arbitrary = pure $ defaultEraParams (SecurityParam 10) (slotLengthFromSec 2) -- TODO
@@ -115,7 +136,7 @@ deriving anyclass instance ToExpr Tx
 -- TODO: consider removing this level of indirection
 type TestBlock = TestBlockWith Tx
 
-newtype instance GenTx TestBlock = TestBlockGenTx Tx
+newtype instance GenTx TestBlock = TestBlockGenTx { unGenTx :: Tx }
   deriving stock (Generic)
   deriving newtype (Show, Arbitrary, NoThunks, Eq, Ord)
 
@@ -127,8 +148,12 @@ data Tx = Tx
   { consumed :: Set Token
   , produced :: Set Token
   }
-  deriving stock (Show, Eq, Ord, Generic)
+  deriving stock (Eq, Ord, Generic)
   deriving anyclass (NoThunks)
+
+instance Show Tx where
+  show Tx {produced, consumed} = "[ " <> short produced  <> " -> " <> short consumed <> "]"
+    where short xs = show $ fmap unToken $ Set.toList xs
 
 -- Tokens from a small universe
 newtype Token = Token { unToken :: Word8  }
@@ -137,7 +162,13 @@ newtype Token = Token { unToken :: Word8  }
   deriving anyclass (NoThunks, ToExpr, Serialise)
 
 instance Arbitrary Tx where
-  arbitrary = Tx <$> arbitrary <*> arbitrary
+  arbitrary = frequency [  (1, Tx     mempty      <$> smallTokens)
+                         , (1, Tx <$> smallTokens <*> arbitrary )
+                         , (1, Tx <$> arbitrary   <*> arbitrary)
+                        ]
+    where
+      smallToken = Token <$> elements [0..10]
+      smallTokens = Set.fromList <$> listOf1 smallToken
 
   shrink Tx {produced, consumed} = uncurry Tx <$> shrink (consumed, produced)
 
@@ -230,7 +261,7 @@ instance LedgerSupportsMempool TestBlock where
 
   -- We tweaked this in such a way that we test the case in which we exceed the
   -- maximum mempool capacity. The value used here depends on 'txInBlockSize'.
-  txsMaxBytes _ = 10
+  txsMaxBytes _ = 20
 
   txInBlockSize = txSize
 
@@ -250,9 +281,105 @@ newtype instance Validated (GenTx TestBlock) = ValidatedGenTx (GenTx TestBlock)
 
 type instance ApplyTxErr TestBlock = TxApplicationError
 
+{-------------------------------------------------------------------------------
+  Examples
+-------------------------------------------------------------------------------}
+
+-- | Add two trivial transactions in the same TryAddTxs command
+addTwoTrivialTxsInOneCmd :: IO ()
+addTwoTrivialTxsInOneCmd = do
+  (hist, model, res) <- runMempoolCommands mOpenMempool sampleMempoolAndModelParams cmds
+  pPrint hist
+  pPrint model
+  where
+    cmds = Commands {
+      unCommands =
+        [ Command
+            (TryAddTxs
+               [ TestBlockGenTx (Tx { consumed = fromList [] , produced = fromList [] } )])
+            RespOk
+            []
+        , Command
+            (TryAddTxs
+               [ TestBlockGenTx (Tx { consumed = fromList [] , produced = fromList [] }) ])
+            RespOk
+            []
+        , Command
+            (TryAddTxs
+               [ TestBlockGenTx (Tx { consumed = fromList [] , produced = fromList [] }) ])
+            RespOk
+            []
+        , Command GetSnapshot RespOk []
+        ]
+    }
+
 {------------------------------------------------------------------------------
   Labelling
 -------------------------------------------------------------------------------}
+labelTxInputs :: IO ()
+labelTxInputs = quickCheck $ withMaxSuccess 1000 $ noOpTx
+  where
+    noOpTx :: Tx -> Property
+    noOpTx Tx { consumed } =
+      collect (Set.size consumed) True
+
+-- collectTxInputs :: IO ()
+-- collectTxInputs = collectCommands @TestBlock @Symbolic maxConsumedSize
+--   where maxConsumedSize (TryAddTxs xs) = maximum $ fmap (Set.size . consumed . unGenTx) xs
+--         maxConsumedSize _              = 0
+
+data Tag = -- | There were two commands at least that tried to add more than one
+           -- transaction. This is important to make sure we ejercise the
+           -- parallel addition of non-singleton transactions.
+           AtLeastTwoTryAddTxsMultiple
+         | AtLeastTwoNonTrivialValidatedTxs
+           deriving (Show)
+
+atLeastTwoNonTrivialAddTxsMultiple :: IO ()
+atLeastTwoNonTrivialAddTxsMultiple =
+    showMempoolTestScenariosWith sampleMempoolAndModelParams tagger
+  where
+    tagger :: [Event (Model TestBlock) (Cmd TestBlock) (Response TestBlock) Symbolic] -> [Tag]
+    tagger events = [ AtLeastTwoTryAddTxsMultiple | 2 <= Set.size (Set.fromList (fmap (getTxs . eventCmd) (filter tryAddMoreThanOneTxs events))) ]
+      where
+        getTxs (TryAddTxs xs) = xs
+        getTxs  _             = []
+        tryAddMoreThanOneTxs event =
+          case eventCmd event of
+            TryAddTxs xs -> 1 <= Set.size (Set.fromList (filter ((1<=) . Set.size . produced . unGenTx) xs))
+            _            -> False
+
+atLeastThreeNonTrivialValidatedTxs :: IO ()
+atLeastThreeNonTrivialValidatedTxs =
+    showMempoolTestScenariosWith sampleMempoolAndModelParams tagger
+  where
+    tagger :: [Event (Model TestBlock) (Cmd TestBlock) (Response TestBlock) Symbolic] -> [Tag]
+    tagger events = [ AtLeastTwoNonTrivialValidatedTxs | 1 <= length (filter moreThanOneValidatedTx events)]
+      where
+        moreThanOneValidatedTx event = 1 < length (validatedTransactions (eventAfter event))
+
+
+-- | TODO: look for non-trivial validated txs
+atLeastTwoNonTrivialValidatedTxs :: IO ()
+atLeastTwoNonTrivialValidatedTxs =
+    showMempoolTestScenariosWith sampleMempoolAndModelParams tagger
+  where
+    tagger :: [Event (Model TestBlock) (Cmd TestBlock) (Response TestBlock) Symbolic] -> [Tag]
+    tagger events = [ AtLeastTwoNonTrivialValidatedTxs | 1 <= length (filter moreThanOneValidatedTx events)]
+      where
+        moreThanOneValidatedTx event = 1 < length (filter nonTrivial (validatedTransactions (eventAfter event)))
+          where
+            nonTrivial = not . Set.null . produced . unGenTx
+
+-- Let's count the accepted validated transactions per-pair
+newlyAcceptedTxs :: [Model TestBlock r] -> [Int]
+newlyAcceptedTxs []                    = [0]
+newlyAcceptedTxs models@(_:modelsTail) =
+  fmap (max 0 . uncurry (-)) $ zip (numValidatedTxs modelsTail) (numValidatedTxs models)
+  where
+    numValidatedTxs = fmap (length . validatedTransactions)
+
+
 
 tagConsumedTx :: GenTx TestBlock-> Consumed
 tagConsumedTx (TestBlockGenTx Tx{consumed}) =

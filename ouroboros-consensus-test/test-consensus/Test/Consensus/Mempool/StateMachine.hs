@@ -19,14 +19,21 @@
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Mempool.StateMachine (
-    openMempoolWithMockedLedgerItf
+    Cmd (..)
+  , Model (validatedTransactions)
+  , Response (..)
+  , openMempoolWithMockedLedgerItf
   , prop_parallel
   , prop_sequential
   , stateMachine
     -- * Model and SUT parameters
   , InitialMempoolAndModelParams (MempoolAndModelParams, immpInitialState, immpLedgerConfig)
+    -- * Examples
+  , runMempoolCommands
     -- * Labelling
+  , collectCommands
   , showMempoolTestScenarios
+  , showMempoolTestScenariosWith
   ) where
 
 import           Control.Monad (void)
@@ -46,17 +53,21 @@ import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Gen (Gen)
 import qualified Test.QuickCheck.Monadic as QCM
 import           Test.StateMachine (StateMachine (StateMachine),
-                     runParallelCommandsNTimes, showLabelledExamples)
+                     prettyParallelCommandsWithOpts,
+                     runParallelCommandsNTimesWithSetup,
+                     runParallelCommandsWithSetup, showLabelledExamples')
 import           Test.StateMachine.ConstructorName (CommandNames)
+import           Test.StateMachine.DotDrawing (GraphOptions (..),
+                     GraphvizOutput (Png))
 import           Test.StateMachine.Labelling (Event (Event), eventAfter,
                      eventBefore, eventCmd, eventResp)
 import           Test.StateMachine.Logic (Logic (Top, (:&&)), (.==))
 import           Test.StateMachine.Parallel (forAllParallelCommands,
                      prettyParallelCommands)
 import           Test.StateMachine.Sequential (checkCommandNames,
-                     forAllCommands, prettyCommands, runCommands)
-import           Test.StateMachine.Types (GenSym, Reason (Ok), Symbolic,
-                     concrete, noCleanup, reference)
+                     forAllCommands, prettyCommands, runCommands, runCommands')
+import           Test.StateMachine.Types (GenSym, History, Reason (Ok),
+                     Symbolic, concrete, noCleanup, reference)
 import qualified Test.StateMachine.Types as SMT
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.StateMachine.Types.References (Concrete)
@@ -177,10 +188,8 @@ data Response blk (ref :: Type -> Type) =
     | Snap {
         -- | Transactions that have been sucessfully validated
         --
-        -- TODO: do we need to include the ticket logic here?
+        -- TODO: we need to include the ticket logic here?
         snapTxs         :: ![GenTx blk]
-        -- | State of the mempool after applying all the transactions in 'snapTxs'
-      , snapLedgerState :: !(TickedLedgerState blk)
     }
   deriving stock Generic1
   deriving anyclass Rank2.Foldable
@@ -250,7 +259,6 @@ semantics mempoolWithMockedLedgerItf GetSnapshot = do
   snap <- atomically $ getSnapshot $ getMempool mempoolWithMockedLedgerItf
   pure $ Snap {
       snapTxs         = fmap (txForgetValidated . fst) $ snapshotTxs snap
-    , snapLedgerState = snapshotLedgerState snap
     }
 
 precondition :: Model blk Symbolic -> Cmd blk Symbolic -> Logic
@@ -267,9 +275,8 @@ postcondition :: forall blk.
   -> Response blk Concrete
   -> Logic
 postcondition _model TryAddTxs {} RespOk = Top
-postcondition model  GetSnapshot  Snap { snapTxs, snapLedgerState } =
-      (intermediateLedgerState model .== snapLedgerState)
-  :&& (validatedTransactions   model .== snapTxs)
+postcondition model  GetSnapshot  Snap { snapTxs } =
+  validatedTransactions model .== snapTxs
 postcondition _model SyncWithLedger RespOk = Top
 -- TODO: add an error clause for unexpected cmd/response commands
 postcondition _model _cmd _response = Top
@@ -284,7 +291,6 @@ mock _model (TryAddTxs _) = pure $ RespOk
 mock _model (SetLedgerState _) = pure RespOk
 mock model  GetSnapshot        = pure Snap {
       snapTxs         = validatedTransactions model
-    , snapLedgerState = intermediateLedgerState model
   }
 mock _model SyncWithLedger = pure RespOk
 
@@ -433,6 +439,9 @@ stateMachine initialParams mempool = StateMachine
                       -- initializes the whole mempool.
   }
 
+{-------------------------------------------------------------------------------
+  Properties
+-------------------------------------------------------------------------------}
 prop_sequential :: forall blk idx.
      ( QC.Arbitrary (GenTx blk)
      , QC.Arbitrary (LedgerState blk)
@@ -474,13 +483,18 @@ prop_parallel :: forall blk idx.
   => (InitialMempoolAndModelParams blk ->  IO (MempoolWithMockedLedgerItf IO blk idx))
   -> InitialMempoolAndModelParams blk
   -> QC.Property
-prop_parallel mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 10000 $ do
+prop_parallel mempoolWithMockedLedgerItfAct initialParams = QC.withMaxSuccess 1000 $ do
   forAllParallelCommands (stateMachineWithoutSUT initialParams) Nothing $ \cmds -> QCM.monadicIO $ do
-        mempool <- QCM.run $ mempoolWithMockedLedgerItfAct initialParams
-        let modelWithSUT = stateMachine initialParams mempool
+        -- mempool <- QCM.run $ mempoolWithMockedLedgerItfAct initialParams
+        let modelWithSUT = do
+              mempool <- mempoolWithMockedLedgerItfAct initialParams
+              pure $ stateMachine initialParams mempool
         -- (hist, _model, res) <- runParallelCommands  modelWithSUT cmds
-        res <- runParallelCommandsNTimes 1 modelWithSUT cmds
-        prettyParallelCommands cmds res -- TODO: check if we need the mempool in 'prettyCommands'
+        res <- runParallelCommandsNTimesWithSetup 5000 modelWithSUT cmds
+        prettyParallelCommandsWithOpts
+          cmds
+          (Just (GraphOptions "./mempoolParallel.png" Png))
+          res -- TODO: check if we need the mempool in 'prettyCommands'
 
 -- Parameters common to the constructor functions for mempool and model
 data InitialMempoolAndModelParams blk = MempoolAndModelParams {
@@ -498,8 +512,50 @@ instance ( QC.Arbitrary (LedgerState blk)
   arbitrary = MempoolAndModelParams <$> QC.arbitrary <*> QC.arbitrary
 
 {-------------------------------------------------------------------------------
+  Examples
+-------------------------------------------------------------------------------}
+
+runMempoolCommands :: forall blk idx r.
+     ( QC.Arbitrary (GenTx blk)
+     , QC.Arbitrary (LedgerState blk)
+     , ToExpr (LedgerState blk)
+     , ToExpr (TickedLedgerState blk)
+     , ToExpr (LedgerConfig blk)
+     , ToExpr (GenTx blk)
+     , Ord (GenTx blk)
+     , Eq (TickedLedgerState blk)
+     , Show (TickedLedgerState blk)
+     , Show (LedgerConfig blk)
+     , LedgerSupportsMempool blk
+     , BasicEnvelopeValidation blk
+     , StandardHash (LedgerState blk)
+     )
+  => (InitialMempoolAndModelParams blk ->  IO (MempoolWithMockedLedgerItf IO blk idx))
+  -> InitialMempoolAndModelParams blk
+  -> SMT.Commands (Cmd blk) (Response blk)
+  -> IO (History (Cmd blk) (Response blk), Model blk Concrete, Reason)
+runMempoolCommands mempoolWithMockedLedgerItfAct initialParams cmds = do
+    let modelWithSUT = do
+          mempool <- mempoolWithMockedLedgerItfAct initialParams
+          pure $ stateMachine initialParams mempool
+    runCommands' modelWithSUT cmds
+
+{-------------------------------------------------------------------------------
   Labelling
 -------------------------------------------------------------------------------}
+
+collectCommands :: forall blk r a.
+     ( Show a
+     , QC.Arbitrary (Cmd blk r)
+     , Show (GenTx blk)
+     , Show (LedgerState blk)
+     )
+  => (Cmd blk r -> a) -> IO ()
+collectCommands toA = QC.quickCheck $ QC.withMaxSuccess 1000 $ noCheckCmd
+  where
+    noCheckCmd :: Cmd blk r -> QC.Property
+    noCheckCmd cmd =
+      QC.collect (toA cmd) True
 
 -- Show the labelled examples. See 'Tag' for a description of the cases we tag.
 showMempoolTestScenarios :: forall blk.
@@ -514,19 +570,39 @@ showMempoolTestScenarios :: forall blk.
      , StandardHash (LedgerState blk)
      )
    => InitialMempoolAndModelParams blk -> IO ()
-showMempoolTestScenarios params =
-  showLabelledExamples (stateMachineWithoutSUT params) tagEventSeq
+showMempoolTestScenarios params = showMempoolTestScenariosWith params tagEventSeq
   where
     tagEventSeq :: [Event (Model blk) (Cmd blk) (Response blk) Symbolic] -> [Tag]
-    tagEventSeq = concatMap tagEvent
     -- TODO: stop as soon as we have collected all tags.
+    tagEventSeq = concatMap tagEvent
+
+-- | Show a labelled example using the custom tagger.
+showMempoolTestScenariosWith :: forall blk tag.
+     ( QC.Arbitrary (GenTx blk)
+     , QC.Arbitrary (LedgerState blk)
+     , Ord (GenTx blk)
+     , Eq (TickedLedgerState blk)
+     , Show (LedgerConfig blk)
+     , Show (TickedLedgerState blk)
+     , LedgerSupportsMempool blk
+     , BasicEnvelopeValidation blk
+     , StandardHash (LedgerState blk)
+     , Show tag
+     )
+   => InitialMempoolAndModelParams blk
+   -> ([Event (Model blk) (Cmd blk) (Response blk) Symbolic] -> [tag])
+   -> IO ()
+showMempoolTestScenariosWith params tagger =
+    showLabelledExamples' (stateMachineWithoutSUT params) Nothing 100000 tagger (const True)
 
 tagEvent ::
      Ord (GenTx blk)
   => Event (Model blk) (Cmd blk) (Response blk) Symbolic
   -> [Tag]
 tagEvent Event {eventBefore, eventCmd, eventAfter} =
-   tagAcceptedTxs eventBefore eventCmd eventAfter <> tagMaxCapacityReached eventAfter
+      tagAcceptedTxs eventBefore eventCmd eventAfter
+   <> tagMaxCapacityReached eventAfter
+   <> tagMoreThanNValidatedTransactions eventAfter
   where
     tagAcceptedTxs model (TryAddTxs txs) model' =
         let
@@ -542,6 +618,8 @@ tagEvent Event {eventBefore, eventCmd, eventAfter} =
       where
           x \\ y = Set.toList (Set.fromList x Set.\\ Set.fromList y)
     tagAcceptedTxs _ _ _ = []
+    tagMoreThanNValidatedTransactions model = [ MoreThanNValidatedTransactions n ]
+      where n = length $ validatedTransactions model
     tagMaxCapacityReached model' = [ MaxCapacityReached | remainingCapacity model' == 0 ]
 
 -- | Tag to identify the different tests scenarios.
@@ -549,6 +627,7 @@ data Tag = AddedEmptyListOfTransactions
          | AcceptedTransactions
          | RemainingTransactions
          | MaxCapacityReached
+         | MoreThanNValidatedTransactions Int
   deriving (Show)
 
 {------------------------------------------------------------------------------

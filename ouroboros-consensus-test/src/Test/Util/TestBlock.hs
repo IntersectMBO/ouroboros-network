@@ -372,7 +372,7 @@ applyDirectlyToPayloadDependentState ::
   -> Either (PayloadDependentError ptype)
             (Ticked (LedgerState (TestBlockWith ptype)))
 applyDirectlyToPayloadDependentState (TickedTestLedger st) tx = do
-  payloadDepSt' <-  applyPayload (payloadDependentState st) tx
+  payloadDepSt' <- applyPayload (payloadDependentState st) tx
   pure $ TickedTestLedger $ st { payloadDependentState = payloadDepSt' }
 
 {-------------------------------------------------------------------------------
