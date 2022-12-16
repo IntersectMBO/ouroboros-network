@@ -1,12 +1,13 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
@@ -64,6 +65,9 @@ module Ouroboros.Consensus.Util (
   , (...:)
   , (..:)
   , (.:)
+    -- * Type-level composition
+  , unComp2
+  , (:..:) (..)
     -- * Product
   , pairFst
   , pairSnd
@@ -371,6 +375,7 @@ allDisjoint = go Set.empty
 dimap :: Ord k2 => (k1 -> k2) -> (v1 -> v2) -> Map k1 v1 -> Map k2 v2
 dimap keyFn valFn = Map.foldlWithKey update Map.empty
   where update m k1 v1 =  Map.insert (keyFn k1) (valFn v1) m
+
 {-------------------------------------------------------------------------------
   Composition
 -------------------------------------------------------------------------------}
@@ -392,6 +397,17 @@ dimap keyFn valFn = Map.foldlWithKey update Map.empty
 
 (......:) :: (y -> z) -> (x0 -> x1 -> x2 -> x3 -> x4 -> x5 -> x6 -> y) -> (x0 -> x1 -> x2 -> x3 -> x4 -> x5 -> x6 -> z)
 (f ......: g) x0 x1 x2 x3 x4 x5 x6 = f (g x0 x1 x2 x3 x4 x5 x6)
+
+{-------------------------------------------------------------------------------
+  Type-level composition
+-------------------------------------------------------------------------------}
+
+type (:..:) :: (m -> Type) -> (k -> l -> m) -> k -> l -> Type
+newtype (f :..: g) p r = Comp2 (f (g p r))
+
+unComp2 :: (f :..: g) p q -> f (g p q)
+unComp2 (Comp2 x) = x
+
 {-------------------------------------------------------------------------------
   Product
 -------------------------------------------------------------------------------}

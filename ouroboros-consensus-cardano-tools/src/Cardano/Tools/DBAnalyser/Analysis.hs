@@ -690,11 +690,19 @@ ledgerDbAndBackingStore ::
   -> IO (LedgerDB' blk, LedgerBackingStore IO (ExtLedgerState blk))
 ledgerDbAndBackingStore bss fs  = \case
   Left (initLedger', s) -> do
-        backingStore <- restoreBackingStore fs s bss
+        let
+          backingStoreInitialiser = newBackingStoreInitialiser mempty bss
+        backingStore <- restoreBackingStore backingStoreInitialiser fs s
         return (ledgerDbWithAnchor initLedger'
                , backingStore)
   Right genesisLedger -> do
-        backingStore <- newBackingStore mempty bss fs (projectLedgerTables genesisLedger)
+        let
+          backingStoreInitialiser = newBackingStoreInitialiser mempty bss
+        backingStore <-
+          newBackingStore
+            backingStoreInitialiser
+            fs
+            (projectLedgerTables genesisLedger)
         return (ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
                , backingStore)
 
