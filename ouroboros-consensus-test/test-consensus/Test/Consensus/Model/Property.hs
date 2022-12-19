@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
-module Test.Consensus.Model.Property (prop_Model_accept_all_non_conficting_txs) where
+module Test.Consensus.Model.Property (tests) where
 
 import           Control.Exception (SomeException (..))
 import           Control.Monad.IOSim (Failure (FailureException), IOSim,
@@ -28,11 +28,19 @@ import           Test.QuickCheck.DynamicLogic (DL, action, anyActions_,
 import           Test.QuickCheck.Gen.Unsafe (Capture (Capture), capture)
 import           Test.QuickCheck.Monadic (PropertyM, assert, monadic')
 import           Test.QuickCheck.StateModel (Actions, runActions)
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
-prop_Model_accept_all_non_conficting_txs :: Property
-prop_Model_accept_all_non_conficting_txs =
+tests :: TestTree
+tests =
+    testGroup
+        "Mempool Model"
+        [ testProperty "is always consistent" prop_Model_mempool_is_always_consistent ]
+
+prop_Model_mempool_is_always_consistent :: Property
+prop_Model_mempool_is_always_consistent =
     within 50000000 $
-        forAllDL accept_all_non_conflicting_txs prop_MemPool
+        forAllDL mempool_is_always_consistent prop_MemPool
 
 prop_MemPool :: Actions MempoolModel -> Property
 prop_MemPool actions = property $
@@ -40,11 +48,11 @@ prop_MemPool actions = property $
         _ <- runActions actions
         assert True
 
-accept_all_non_conflicting_txs :: DL MempoolModel ()
-accept_all_non_conflicting_txs = do
+mempool_is_always_consistent :: DL MempoolModel ()
+mempool_is_always_consistent = do
     anyActions_
     getModelStateDL >>= \case
-        MempoolModel{transactions} ->
+        Open{transactions} ->
             action (HasValidatedTxs transactions 10)
         Idle -> pure ()
 

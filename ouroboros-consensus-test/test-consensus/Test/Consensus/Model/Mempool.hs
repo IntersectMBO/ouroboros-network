@@ -51,8 +51,8 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (applyPayload, payloadDependentState)
 
 data MempoolModel = Idle
-  |  MempoolModel { transactions :: [GenTx TestBlock],
-                    ledgerState  :: TestLedgerState}
+  |  Open { transactions :: [GenTx TestBlock],
+            ledgerState  :: TestLedgerState}
     deriving (Show)
 
 instance StateModel MempoolModel where
@@ -69,12 +69,12 @@ instance StateModel MempoolModel where
 
     arbitraryAction = \case
       Idle -> Some <$> (InitMempool <$> arbitrary <*> choose (2, 10))
-      MempoolModel{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs . (:[]) . TestBlockGenTx <$> genValidTx availableTokens
+      Open{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs . (:[]) . TestBlockGenTx <$> genValidTx availableTokens
 
     precondition Idle InitMempool{}          = True
-    precondition MempoolModel{ledgerState} (AddTxs gts)          =
+    precondition Open{ledgerState} (AddTxs gts)          =
       isRight $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> gts
-    precondition MempoolModel{transactions} (HasValidatedTxs gts _) =
+    precondition Open{transactions} (HasValidatedTxs gts _) =
       Set.fromList gts == Set.fromList transactions
     precondition _ _ = False
 
@@ -86,10 +86,10 @@ instance StateModel MempoolModel where
     initialState = Idle
 
     nextState Idle (InitMempool imamp _) _var =
-      MempoolModel [] (payloadDependentState $ immpInitialState imamp)
-    nextState MempoolModel{transactions, ledgerState} (AddTxs newTxs) _var =
+      Open [] (payloadDependentState $ immpInitialState imamp)
+    nextState Open{transactions, ledgerState} (AddTxs newTxs) _var =
       let newState = either (error . show) id $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> newTxs
-      in MempoolModel { transactions = transactions <> newTxs , ledgerState = newState }
+      in Open { transactions = transactions <> newTxs , ledgerState = newState }
     nextState Idle act@AddTxs{} _var = error $ "Invalid transition from Idle state with action: "<> show act
     nextState st _act _var = st
 

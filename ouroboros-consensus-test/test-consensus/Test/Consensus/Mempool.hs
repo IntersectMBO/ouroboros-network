@@ -1,67 +1,61 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Test.Consensus.Mempool (tests) where
 
-import Control.Exception (assert)
-import Control.Monad (foldM, forM, forM_, void)
-import Control.Monad.Except (Except, runExcept)
-import Control.Monad.State (State, evalState, get, modify)
-import Data.Bifunctor (first)
-import Data.Either (isRight)
-import Data.List (foldl', isSuffixOf, nub, partition, sort)
-import Data.Map.Strict (Map)
+import           Control.Exception (assert)
+import           Control.Monad (foldM, forM, forM_, void)
+import           Control.Monad.Except (Except, runExcept)
+import           Control.Monad.State (State, evalState, get, modify)
+import           Data.Bifunctor (first)
+import           Data.Either (isRight)
+import           Data.List (foldl', isSuffixOf, nub, partition, sort)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
+import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
-import Data.Word
-import GHC.Stack (HasCallStack)
+import           Data.Word
+import           GHC.Stack (HasCallStack)
 
-import Test.QuickCheck hiding (elements)
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.QuickCheck (testProperty)
+import           Test.QuickCheck hiding (elements)
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 
-import Cardano.Binary (Encoding, toCBOR)
-import Cardano.Crypto.Hash
+import           Cardano.Binary (Encoding, toCBOR)
+import           Cardano.Crypto.Hash
 
-import Control.Monad.IOSim (runSimOrThrow)
+import           Control.Monad.IOSim (runSimOrThrow)
 
-import Control.Tracer (Tracer (..))
+import           Control.Tracer (Tracer (..))
 
-import Ouroboros.Consensus.Block
-import Ouroboros.Consensus.BlockchainTime
-import Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config.SecurityParam
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import Ouroboros.Consensus.Ledger.Abstract
-import Ouroboros.Consensus.Ledger.SupportsMempool
-import Ouroboros.Consensus.Mempool
-import Ouroboros.Consensus.Mempool.TxSeq as TxSeq
-import Ouroboros.Consensus.Mock.Ledger hiding (TxId)
-import Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import Ouroboros.Consensus.Protocol.BFT
-import Ouroboros.Consensus.Util (
-    repeatedly,
-    repeatedlyM,
-    safeMaximumOn,
-    (.:),
- )
-import Ouroboros.Consensus.Util.Condense (condense)
-import Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
+import           Ouroboros.Consensus.Protocol.BFT
+import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
+                     safeMaximumOn, (.:))
+import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.IOLike
 
-import Test.Consensus.Model.Property (
-    prop_Model_accept_all_non_conficting_txs,
- )
+import qualified Test.Consensus.Model.Property as Model
 
-import Test.Util.Orphans.IOLike ()
-import Test.Util.QuickCheck (elements)
+import           Test.Util.Orphans.IOLike ()
+import           Test.Util.QuickCheck (elements)
 
 tests :: TestTree
 tests =
@@ -87,9 +81,7 @@ tests =
         , testProperty "idx consistency" prop_Mempool_idx_consistency
         , testProperty "removeTxs" prop_Mempool_removeTxs
         , testProperty "removeTxs [..] == forM [..] removeTxs" prop_Mempool_semigroup_removeTxs
-        , testGroup
-            "Mempool Model"
-            [testProperty "eventually accepts all non-conflicting txs" prop_Model_accept_all_non_conficting_txs]
+        , Model.tests
         ]
 
 {-------------------------------------------------------------------------------
@@ -151,7 +143,7 @@ prop_Mempool_addTxs_result setup =
         return $
             counterexample (ppTxs (txs setup)) $
                 [ case res of
-                    MempoolTxAdded vtx -> (txForgetValidated vtx, True)
+                    MempoolTxAdded vtx        -> (txForgetValidated vtx, True)
                     MempoolTxRejected tx _err -> (tx, False)
                 | res <- result
                 ]
@@ -268,7 +260,7 @@ prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
       where
         processed' =
             [ case txAddRes of
-                MempoolTxAdded vtx -> (txForgetValidated vtx, True)
+                MempoolTxAdded vtx        -> (txForgetValidated vtx, True)
                 MempoolTxRejected tx _err -> (tx, False)
             | txAddRes <- processed
             ]
@@ -315,7 +307,7 @@ prop_Mempool_TraceValidTxs setup =
   where
     isAddedTxsEvent :: TraceEventMempool TestBlock -> Maybe (GenTx TestBlock)
     isAddedTxsEvent (TraceMempoolAddedTx tx _ _) = Just (txForgetValidated tx)
-    isAddedTxsEvent _ = Nothing
+    isAddedTxsEvent _                            = Nothing
 
 {- | Test that all invalid rejected transactions returned from 'addTxs' are
  appropriately represented in the trace of events.
@@ -333,7 +325,7 @@ prop_Mempool_TraceRejectedTxs setup =
   where
     isRejectedTxEvent :: TraceEventMempool blk -> Maybe (GenTx blk)
     isRejectedTxEvent (TraceMempoolRejectedTx tx _ _) = Just tx
-    isRejectedTxEvent _ = Nothing
+    isRejectedTxEvent _                               = Nothing
 
 {- | Test that all transactions in the 'Mempool' that have become invalid
  because of an update to the ledger are appropriately represented in the
@@ -409,9 +401,9 @@ testLedgerConfig =
         }
 
 data TestSetup = TestSetup
-    { testLedgerState :: LedgerState TestBlock
+    { testLedgerState        :: LedgerState TestBlock
     , -- | These are all valid and will be the initial contents of the Mempool.
-      testInitialTxs :: [TestTx]
+      testInitialTxs         :: [TestTx]
     , testMempoolCapOverride :: MempoolCapacityBytesOverride
     }
     deriving (Show)
@@ -544,7 +536,7 @@ mustBeValid ::
     Except TestTxError (LedgerState TestBlock) ->
     LedgerState TestBlock
 mustBeValid ex = case runExcept ex of
-    Left _ -> error "impossible"
+    Left _       -> error "impossible"
     Right ledger -> ledger
 
 txIsValid :: LedgerState TestBlock -> TestTx -> Bool
@@ -664,7 +656,7 @@ applyTxToLedger (SimpleLedgerState mockState) tx =
         SimpleLedgerState mockState'{mockTip = BlockPoint slot' hash'}
 
     slot' = case pointSlot $ mockTip mockState of
-        Origin -> 0
+        Origin      -> 0
         NotOrigin s -> succ s
 
     -- A little trick to instantiate the phantom parameter of 'Hash' (and
@@ -684,7 +676,7 @@ applyTxToLedger (SimpleLedgerState mockState) tx =
 data TestSetupWithTxs = TestSetupWithTxs
     { testSetup :: TestSetup
     , -- | The 'Bool' indicates whether the transaction is valid
-      txs :: [(TestTx, Bool)]
+      txs       :: [(TestTx, Bool)]
     }
     deriving (Show)
 
@@ -794,20 +786,20 @@ data TestMempool m = TestMempool
     { -- | A mempool with random contents.
       --
       -- Starts out synced with the ledger.
-      mempool :: Mempool m TestBlock TicketNo
+      mempool          :: Mempool m TestBlock TicketNo
     , -- | When called, obtains all events traced after opening the mempool at
       -- the given state from oldest-to-newest.
       --
       -- Events traced while setting up the mempool to contain random contents
       -- are not included.
-      getTraceEvents :: m [TraceEventMempool TestBlock]
+      getTraceEvents   :: m [TraceEventMempool TestBlock]
     , -- | Erase the events traced so far. The return of 'getTraceEvents' will
       -- again be an empty list until another event is traced.
       eraseTraceEvents :: m ()
     , -- | This function can be used to add transactions to the ledger/chain.
       --
       -- Remember to synchronise the mempool afterwards.
-      addTxsToLedger :: [TestTx] -> STM m [Either TestTxError ()]
+      addTxsToLedger   :: [TestTx] -> STM m [Either TestTxError ()]
     , -- | Return the current ledger.
       getCurrentLedger :: STM m (LedgerState TestBlock)
     }
@@ -833,7 +825,7 @@ withTestMempool setup@TestSetup{..} prop =
                         runSimOrThrow setUpAndRun
   where
     isOverride (MempoolCapacityBytesOverride _) = True
-    isOverride NoMempoolCapacityBytesOverride = False
+    isOverride NoMempoolCapacityBytesOverride   = False
 
     setUpAndRun :: forall m. IOLike m => m Property
     setUpAndRun = do
@@ -924,7 +916,7 @@ withTestMempool setup@TestSetup{..} prop =
                     txs
                     (TickedSimpleLedgerState ledgerState) of
                 Right _ -> property True
-                Left e -> counterexample (mkErrMsg e) $ property False
+                Left e  -> counterexample (mkErrMsg e) $ property False
           where
             txs = map (txForgetValidated . fst) snapshotTxs
             mkErrMsg e =
@@ -978,7 +970,7 @@ prop_TxSeq_lookupByTicketNo_complete xs =
     and
         [ case TxSeq.lookupByTicketNo txseq tn of
             Just tx' -> tx == tx'
-            Nothing -> False
+            Nothing  -> False
         | (tx, tn) <- TxSeq.toTuples txseq
         ]
   where
@@ -1055,7 +1047,7 @@ prop_TxSeq_splitAfterTxSizeSpec tss =
 -------------------------------------------------------------------------------}
 
 data TxSizeSplitTestSetup = TxSizeSplitTestSetup
-    { tssTxSizes :: ![TxSizeInBytes]
+    { tssTxSizes         :: ![TxSizeInBytes]
     , tssTxSizeToSplitOn :: !TxSizeInBytes
     }
     deriving (Show)
@@ -1157,7 +1149,7 @@ prop_Mempool_idx_consistency (Actions actions) =
             }
 
     lastOfMempoolRemoved txsInMempool = \case
-        AddTxs _ -> False
+        AddTxs _      -> False
         RemoveTxs txs -> last txsInMempool `elem` txs
 
     isConsistentWith curAsgn expAsgn
@@ -1216,7 +1208,7 @@ executeAction testMempool action = case action of
         void $ addTxs mempool txs
         tracedAddedTxs <- expectTraceEvent $ \case
             TraceMempoolAddedTx tx _ _ -> Just tx
-            _ -> Nothing
+            _                          -> Nothing
         return $
             if map txForgetValidated tracedAddedTxs == txs
                 then property True
@@ -1231,7 +1223,7 @@ executeAction testMempool action = case action of
         removeTxs mempool (map txId txs)
         tracedManuallyRemovedTxs <- expectTraceEvent $ \case
             TraceMempoolManuallyRemovedTxs txIds _ _ -> Just txIds
-            _ -> Nothing
+            _                                        -> Nothing
         return $
             if concat tracedManuallyRemovedTxs == map txId txs
                 then property True
