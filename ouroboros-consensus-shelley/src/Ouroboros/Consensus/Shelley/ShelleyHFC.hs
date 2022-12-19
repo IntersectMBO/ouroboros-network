@@ -345,6 +345,7 @@ instance ( ShelleyBasedEra era
          , SL.TranslationError era SL.NewEpochState ~ Void
          , SL.TranslationError era TxOutWrapper ~ Void
          , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
+         , IsApplyMapKind (ApplyMapKind' mk)
          ) => SL.TranslateEra era (Flip LedgerState (ApplyMapKind' mk) :.: ShelleyBlock proto) where
   translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition tables))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
@@ -362,13 +363,14 @@ translateShelleyTables ::
      , EraCrypto (SL.PreviousEra era) ~ EraCrypto era
      , Eq (Cardano.Ledger.Core.TxOut (SL.PreviousEra era))
      , Eq (Cardano.Ledger.Core.TxOut era)
+     , IsApplyMapKind (ApplyMapKind' mk)
      )
   => SL.TranslationContext era
   -> LedgerTables (LedgerState (ShelleyBlock proto (SL.PreviousEra era))) (ApplyMapKind' mk)
   -> LedgerTables (LedgerState (ShelleyBlock proto                 era))  (ApplyMapKind' mk)
 translateShelleyTables ctxt (ShelleyLedgerTables utxoTable) =
       ShelleyLedgerTables
-    $ mapValuesAppliedMK
+    $ mapMK
         (unTxOutWrapper . SL.translateEra' ctxt . TxOutWrapper)
         utxoTable
 

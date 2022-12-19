@@ -83,10 +83,10 @@ deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError    blk)
 deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError    blk)
 
 instance LedgerSupportsProtocol blk => ShowLedgerState (ExtLedgerState blk) where
-  showsLedgerState mk st =
+  showsLedgerState st =
       showParen True $ showString "ExtLedgerState {"
-        . showSpace      . showString "headerState = " . shows               headerState
-        . showCommaSpace . showString "ledgerState = " . showsLedgerState mk ledgerState
+        . showSpace      . showString "headerState = " . shows            headerState
+        . showCommaSpace . showString "ledgerState = " . showsLedgerState ledgerState
         . showString " }"
     where
       ExtLedgerState _dummy _ = st

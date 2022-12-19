@@ -114,4 +114,4 @@ deriving newtype instance NoThunks (mk k v)
 
 instance (Show k, Show v)
       => ShowLedgerState (LedgerTables (OTLedgerState k v)) where
-  showsLedgerState _ = shows
+  showsLedgerState = shows

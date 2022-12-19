@@ -464,7 +464,7 @@ instance ( Typeable ptype
 type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
 
 instance PayloadSemantics ptype => ShowLedgerState (LedgerState (TestBlockWith ptype)) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance TableStuff (LedgerState TestBlock) where
   data LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables
@@ -494,7 +494,7 @@ instance TickedTableStuff (LedgerState TestBlock) where
       TickedTestLedger $ withLedgerTables st tables
 
 instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables   (TestLedger p EmptyPLDS) = TestLedger p EmptyPLDS
