@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeSynonymInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 -- |
 -- TODO: explain how to use showMempoolTestScenarios in combination with
 -- initialLedgerState in the REPL.
@@ -31,10 +32,11 @@ module Test.Consensus.Model.TestBlock (
   , GenTx (..)
   , Tx (Tx, produced, consumed)
   , Validated (..)
+  , genValidTx
+  , genValidTxs
   , txSize
     -- * Labelling
   , TestBlock
-  , genValidTx
   , tagConsumedTx
   ) where
 
@@ -89,6 +91,7 @@ import           Ouroboros.Consensus.Mempool.API
                      (MempoolCapacityBytesOverride (NoMempoolCapacityBytesOverride),
                      TraceEventMempool, TxSizeInBytes)
 import           Ouroboros.Consensus.Mempool.Impl ()
+import           Test.QuickCheck (suchThat)
 
 tests :: TestTree
 tests = testGroup "Mempool State Machine" [
@@ -152,6 +155,18 @@ instance Arbitrary Tx where
 genValidTx :: Set Token -> Gen Tx
 genValidTx available =
   Tx <$> (Set.fromList <$> sublistOf (Set.toList available)) <*> arbitrary
+
+-- | Generate a list of valid transactions consuming _all_ tokens from the
+-- the given set and producing _different tokens_
+genValidTxs :: Set Token -> Gen [Tx]
+genValidTxs toConsume = go toConsume mempty
+  where
+    go available generated
+      | null available = pure []
+      | otherwise = do
+          consumed <- Set.fromList <$> sublistOf (Set.toList available)
+          produced <- arbitrary `suchThat` (\ tokens -> null $ tokens  `Set.intersection` generated)
+          (Tx consumed produced :) <$> go (available Set.\\ consumed) (generated `Set.union` produced)
 
 --------------------------------------------------------------------------------
 -- Payload semantics

@@ -37,11 +37,11 @@ import           Ouroboros.Consensus.Mempool.API
                      (MempoolCapacityBytesOverride (NoMempoolCapacityBytesOverride),
                      TxSizeInBytes, snapshotTxs)
 import           Ouroboros.Consensus.Util.IOLike (IOLike, MonadAsync (Async),
-                     MonadLabelledSTM, async, labelThisThread, labelThread)
+                     MonadLabelledSTM, async, labelThisThread)
 import           Test.Consensus.Mempool.StateMachine
                      (InitialMempoolAndModelParams (..))
 import           Test.Consensus.Model.TestBlock (GenTx (..), TestBlock,
-                     TestLedgerState (..), Tx, fromValidated, genValidTx,
+                     TestLedgerState (..), Tx, fromValidated, genValidTxs,
                      txSize)
 import           Test.QuickCheck (arbitrary, choose, counterexample, shrink)
 import           Test.QuickCheck.DynamicLogic (DynLogicModel)
@@ -60,16 +60,18 @@ instance StateModel MempoolModel where
         -- | Initial state of the mempool and number of clients to run
         InitMempool :: InitialMempoolAndModelParams TestBlock -> Int -> Action MempoolModel ()
         -- | Adds some new transactions to mempoool
-        -- Those transactions are guaranteed to not conflict with the curent state
-        -- of the Mempool. Returns the list of txs effectively added to the mempool.
+        -- Some transactions may conflict with the current state of the mempool but it's
+        -- expected th
         AddTxs :: [GenTx TestBlock] -> Action MempoolModel [GenTx TestBlock]
         -- | An 'observation' that checks the given list of transactions is part of
         -- the mempool _after_ some time
         HasValidatedTxs :: [GenTx TestBlock] -> Int -> Action MempoolModel [GenTx TestBlock]
 
     arbitraryAction = \case
-      Idle -> Some <$> (InitMempool <$> arbitrary <*> choose (2, 10))
-      Open{ledgerState=TestLedgerState{availableTokens}} -> Some . AddTxs . (:[]) . TestBlockGenTx <$> genValidTx availableTokens
+      Idle ->
+        Some <$> (InitMempool <$> arbitrary <*> choose (2, 10))
+      Open{ledgerState=TestLedgerState{availableTokens}} ->
+        Some . AddTxs . (fmap TestBlockGenTx) <$> genValidTxs availableTokens
 
     precondition Idle InitMempool{}          = True
     precondition Open{ledgerState} (AddTxs gts)          =
