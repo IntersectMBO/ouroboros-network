@@ -57,7 +57,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
-import           Ouroboros.Consensus.Util.Singletons (SingI)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
@@ -99,25 +98,24 @@ deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock
 
 deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs) SeqDiffMK)
 
-instance (SingI mk, CanHardFork xs) => Show (LedgerState (HardForkBlock xs) (ApplyMapKind' mk)) where
-  showsPrec p = showParen (p >= 11) . showsLedgerState sMapKind
+instance CanHardFork xs => Show (LedgerState (HardForkBlock xs) (ApplyMapKind' mk)) where
+  showsPrec p = showParen (p >= 11) . showsLedgerState
 
 instance CanHardFork xs => ShowLedgerState (LedgerState (HardForkBlock xs)) where
-  showsLedgerState = \mk (HardForkLedgerState hfstate) ->
+  showsLedgerState = \(HardForkLedgerState hfstate) ->
         showParen True
       $ (showString "HardForkLedgerState " .)
       $ shows
-      $ hcmap proxySingle (showInner mk) hfstate
+      $ hcmap proxySingle showInner hfstate
     where
        showInner ::
             SingleEraBlock x
-         => SMapKind mk
-         -> Flip LedgerState (ApplyMapKind' mk) x
+         => Flip LedgerState (ApplyMapKind' mk) x
          -> AlreadyShown        x
-       showInner mk (Flip st) =
+       showInner (Flip st) =
            AlreadyShown
          $ showParen True
-         $ showString "Flip " . showsLedgerState mk st
+         $ showString "Flip " . showsLedgerState st
 
 newtype AlreadyShown x = AlreadyShown {unAlreadyShown :: ShowS}
 instance Show (AlreadyShown x) where showsPrec _p = unAlreadyShown

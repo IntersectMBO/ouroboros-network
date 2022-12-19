@@ -566,10 +566,10 @@ instance ( ShowLedgerState (LedgerState m)
          , ShowLedgerState (LedgerState a)
          , Bridge m a
          ) => ShowLedgerState (LedgerState (DualBlock m a)) where
-  showsLedgerState mk st =
+  showsLedgerState st =
       showString "DualLedgerState" . showSpace . showString "{" .
-                             showsLedgerState mk dualLedgerStateMain
-          . showCommaSpace . showsLedgerState mk dualLedgerStateAux
+                             showsLedgerState dualLedgerStateMain
+          . showCommaSpace . showsLedgerState dualLedgerStateAux
           . showCommaSpace . shows dualLedgerStateBridge
           . showString "}"
     where
