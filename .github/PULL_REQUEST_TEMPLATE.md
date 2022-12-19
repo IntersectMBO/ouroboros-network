@@ -20,6 +20,7 @@ the PR to a particular issue, see
 - Branch
     - [ ] Commit sequence broadly makes sense
     - [ ] Commits have useful messages
+    - [ ] The documentation has been properly updated
     - [ ] New tests are added if needed and existing tests are updated
     - [ ] If this branch changes Consensus and has any consequences for downstream repositories or end users, said changes must be documented in [`interface-CHANGELOG.md`](../ouroboros-consensus/docs/interface-CHANGELOG.md)
     - [ ] If this branch changes Network and has any consequences for downstream repositories or end users, said changes must be documented in [`interface-CHANGELOG.md`](../docs/interface-CHANGELOG.md)
