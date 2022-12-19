@@ -16,17 +16,16 @@
 module Test.Consensus.Model.Mempool where
 
 import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM,
-                     StrictTQueue, StrictTVar, atomically, labelTQueueIO,
-                     newTQueueIO, newTVarIO, readTQueue, readTVar, writeTQueue,
-                     writeTVar)
+                     StrictTQueue, StrictTVar, atomically, isEmptyTQueue,
+                     labelTQueueIO, newTQueueIO, newTVarIO, readTQueue,
+                     readTVar, writeTQueue, writeTVar)
 import           Control.Monad (foldM, forM, forever, zipWithM)
-import           Control.Monad.Class.MonadTimer (threadDelay)
 import           Control.Monad.Reader (MonadTrans, lift)
 import           Control.Monad.State (MonadState (..), StateT (StateT), gets,
                      modify)
 import           Control.Tracer (Tracer)
 import           Data.Either (isRight)
-import qualified Data.Set as Set
+import           Debug.Trace (trace)
 import           Ouroboros.Consensus.HardFork.Combinator.Basics (LedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx,
                      WhetherToIntervene (..))
@@ -41,9 +40,10 @@ import           Ouroboros.Consensus.Util.IOLike (IOLike, MonadAsync (Async),
 import           Test.Consensus.Mempool.StateMachine
                      (InitialMempoolAndModelParams (..))
 import           Test.Consensus.Model.TestBlock (GenTx (..), TestBlock,
-                     TestLedgerState (..), Tx, fromValidated, genValidTxs,
+                     TestLedgerState (..), Tx (..), fromValidated, genValidTxs,
                      txSize)
-import           Test.QuickCheck (arbitrary, choose, counterexample, shrink)
+import           Test.QuickCheck (arbitrary, choose, counterexample, frequency,
+                     scale, shrink, tabulate)
 import           Test.QuickCheck.DynamicLogic (DynLogicModel)
 import           Test.QuickCheck.StateModel (Any (..), Realized, RunModel (..),
                      StateModel (..))
@@ -51,8 +51,9 @@ import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock (applyPayload, payloadDependentState)
 
 data MempoolModel = Idle
-  |  Open { transactions :: [GenTx TestBlock],
-            ledgerState  :: TestLedgerState}
+  |  Open { startState   :: TestLedgerState,
+            transactions :: [GenTx TestBlock],
+            currentState :: TestLedgerState}
     deriving (Show)
 
 instance StateModel MempoolModel where
@@ -60,38 +61,41 @@ instance StateModel MempoolModel where
         -- | Initial state of the mempool and number of clients to run
         InitMempool :: InitialMempoolAndModelParams TestBlock -> Int -> Action MempoolModel ()
         -- | Adds some new transactions to mempoool
-        -- Some transactions may conflict with the current state of the mempool but it's
-        -- expected th
-        AddTxs :: [GenTx TestBlock] -> Action MempoolModel [GenTx TestBlock]
-        -- | An 'observation' that checks the given list of transactions is part of
-        -- the mempool _after_ some time
-        HasValidatedTxs :: [GenTx TestBlock] -> Int -> Action MempoolModel [GenTx TestBlock]
+        -- Returns the number of transactions submitted.
+        AddTxs :: [GenTx TestBlock] -> Action MempoolModel Int
+        -- | An 'action' that checks the current state of the mempool is consistent, eg.
+        -- all transactions can apply to the current ledger's state.
+        -- Returns the number of txs still in flight from clients and the total number of txs
+        -- in the mempool
+        HasConsistentTxs :: Action MempoolModel (Int, [GenTx TestBlock])
 
     arbitraryAction = \case
       Idle ->
         Some <$> (InitMempool <$> arbitrary <*> choose (2, 10))
-      Open{ledgerState=TestLedgerState{availableTokens}} ->
-        Some . AddTxs . (fmap TestBlockGenTx) <$> genValidTxs availableTokens
+      Open{currentState=TestLedgerState{availableTokens}} ->
+        frequency [ (10, Some . AddTxs . (fmap TestBlockGenTx) <$> genValidTxs availableTokens)
+                  , (1 , pure $ Some HasConsistentTxs)
+                  ]
 
     precondition Idle InitMempool{}          = True
-    precondition Open{ledgerState} (AddTxs gts)          =
-      isRight $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> gts
-    precondition Open{transactions} (HasValidatedTxs gts _) =
-      Set.fromList gts == Set.fromList transactions
+    precondition Open{currentState} (AddTxs gts)          =
+      isRight $ foldM (applyPayload @Tx) currentState $ blockTx <$> gts
+    precondition Open{} HasConsistentTxs = True
     precondition _ _ = False
 
     shrinkAction _ (InitMempool imamp n)   = Some <$> (InitMempool <$> shrink imamp <*> shrink n)
     shrinkAction _ (AddTxs gts)          = Some . AddTxs <$> shrink gts
-    shrinkAction _ (HasValidatedTxs gts wait) = Some . flip HasValidatedTxs wait <$> shrink gts
+    shrinkAction _ HasConsistentTxs = []
 
     initialState :: MempoolModel
     initialState = Idle
 
     nextState Idle (InitMempool imamp _) _var =
-      Open [] (payloadDependentState $ immpInitialState imamp)
-    nextState Open{transactions, ledgerState} (AddTxs newTxs) _var =
-      let newState = either (error . show) id $ foldM (applyPayload @Tx) ledgerState $ blockTx <$> newTxs
-      in Open { transactions = transactions <> newTxs , ledgerState = newState }
+      let ledgerState = (payloadDependentState $ immpInitialState imamp)
+      in Open{ startState = ledgerState, transactions =  [] , currentState = ledgerState }
+    nextState open@Open{startState,transactions, currentState} (AddTxs newTxs) _var =
+      let newState = either (error . show) id $ foldM (applyPayload @Tx) currentState $ blockTx <$> newTxs
+      in Open{ startState, transactions = transactions <> newTxs , currentState = newState }
     nextState Idle act@AddTxs{} _var = error $ "Invalid transition from Idle state with action: "<> show act
     nextState st _act _var = st
 
@@ -130,21 +134,39 @@ instance (IOLike m, MonadSTM m, MonadFail m, MonadLabelledSTM m) => RunModel Mem
     clients <- lift $ forM [ 1.. n] (startMempoolClient mempool)
     modify $ \ st -> st { theMempool = Just mempool, clients}
   perform _ (AddTxs txs) _          =
-    gets clients >>= lift . dispatch txs
-  perform _ (HasValidatedTxs gts wait) _ = do
-    Just mempoolWithMockedLedgerItf <- gets theMempool
-    waitForTxsToMatch mempoolWithMockedLedgerItf gts wait
+    gets clients >>= (length <$>) . lift . dispatch txs
+  perform _ HasConsistentTxs _ = do
+    clients <- gets clients
+    Just mempool <- gets theMempool
+    allTxs <- getAllValidatedTxs mempool
+    busy <- lift $ atomically $ sequence $ (fmap not . isEmptyTQueue . txsQueue) <$> clients
+    pure (length $ filter id  busy, allTxs)
 
-  postcondition (_before, _after) (HasValidatedTxs gts _ ) _env result = pure $ Set.fromList gts == Set.fromList result
+
+  postcondition (_before, Open{startState}) HasConsistentTxs _env result = do
+    Just mempool <- gets theMempool
+    allTxs <- getAllValidatedTxs mempool
+    let finalLedger = foldM (applyPayload @Tx) startState $ blockTx <$> allTxs
+    pure $ isRight finalLedger
+
   postcondition _ _ _ _                               = pure True
 
-  monitoring (_before, _after) HasValidatedTxs{} _env result =
-    counterexample ("Validated txs: " <> show result)
+  monitoring (_before, _after) HasConsistentTxs _env result =
+    counterexample ("Conflicting txs: " <> show result) . tabulate "Txs Queue length" [show $ fst result]  . tabulate "Txs in Mempool" [groupByLength $ snd result]
+  monitoring _ (AddTxs txs) _ _ = tabulate "Submitted Txs" [groupByLength txs]
   monitoring _ _ _ _ = id
+
+groupByLength :: [a] -> String
+groupByLength xs =
+  let tens = length xs `div` 10
+      hundreds = length xs `div` 100
+  in if tens < 10
+     then "<= " <> show (tens * 10)
+     else "<= " <> show (hundreds * 100)
 
 dispatch :: IOLike m => [GenTx TestBlock] -> [MempoolClient m] -> m [GenTx TestBlock]
 dispatch txs clients =
-  zipWithM submitTx txs clients
+  zipWithM submitTx txs (cycle clients)
   where
    submitTx tx MempoolClient{txsQueue} = atomically (writeTQueue txsQueue tx) >> pure tx
 
@@ -166,21 +188,6 @@ startMempoolClient mempool idx = do
       forever $ do
         tx <- atomically $ readTQueue q
         addTxs mempool [tx]
-
--- | Keep retrieving content of the mempool at most `retryCount` times.
--- Loops and wait until either the content of the ledger matches `expected` set of transaction
--- or `retryCount` reaches 0.
---
--- Returns content of the mempool.
-waitForTxsToMatch :: IOLike m => MempoolWithMockedLedgerItf m TestBlock TicketNo -> [GenTx TestBlock] -> Int -> RunMonad m [GenTx TestBlock]
-waitForTxsToMatch mempoolWithMockedLedgerItf expected = \case
-  0 -> getAllValidatedTxs mempoolWithMockedLedgerItf
-  retryCount -> do
-    txs <- getAllValidatedTxs mempoolWithMockedLedgerItf
-    if Set.fromList txs /= Set.fromList expected
-      then lift (threadDelay 10) >> waitForTxsToMatch mempoolWithMockedLedgerItf expected (retryCount -1 )
-      else pure txs
-
 
 getAllValidatedTxs :: (MonadSTM m) => MempoolWithMockedLedgerItf m TestBlock idx -> RunMonad m [GenTx TestBlock]
 getAllValidatedTxs mempool = do

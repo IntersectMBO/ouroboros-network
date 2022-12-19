@@ -49,8 +49,8 @@ import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Test.QuickCheck (Arbitrary, Gen, arbitrary, frequency, shrink,
-                     sublistOf)
+import           Test.QuickCheck (Arbitrary, Gen, arbitrary, choose, frequency,
+                     scale, shrink, sublistOf)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -164,8 +164,9 @@ genValidTxs toConsume = go toConsume mempty
     go available generated
       | null available = pure []
       | otherwise = do
-          consumed <- Set.fromList <$> sublistOf (Set.toList available)
-          produced <- arbitrary `suchThat` (\ tokens -> null $ tokens  `Set.intersection` generated)
+          n <- choose (1, min (length available) 10)
+          let consumed = Set.fromList $ take n  (Set.toList available)
+          produced <- arbitrary `suchThat` (\ tokens -> null (tokens  `Set.intersection` generated) && not (null tokens))
           (Tx consumed produced :) <$> go (available Set.\\ consumed) (generated `Set.union` produced)
 
 --------------------------------------------------------------------------------
@@ -179,7 +180,7 @@ data TestLedgerState = TestLedgerState {
   deriving anyclass (NoThunks, ToExpr, Serialise)
 
 instance Arbitrary TestLedgerState where
-  arbitrary = TestLedgerState <$> arbitrary
+  arbitrary = TestLedgerState <$> scale (* 10) arbitrary
   shrink    = fmap TestLedgerState . shrink . availableTokens
 
 instance Arbitrary (LedgerState TestBlock) where

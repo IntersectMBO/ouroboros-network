@@ -52,8 +52,8 @@ mempool_is_always_consistent :: DL MempoolModel ()
 mempool_is_always_consistent = do
     anyActions_
     getModelStateDL >>= \case
-        Open{transactions} ->
-            action (HasValidatedTxs transactions 10)
+        Open{} ->
+            action HasConsistentTxs
         Idle -> pure ()
 
 --
