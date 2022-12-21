@@ -77,6 +77,8 @@ data TraceLocalRootPeers peerAddr exception =
      | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
      | TraceLocalRootGroups  (Seq (Int, Map peerAddr PeerAdvertise))
        -- ^ This traces the results of the local root peer provider
+     | TraceLocalRootReconfigured [(Int, Map RelayAccessPoint PeerAdvertise)] -- ^ Old value
+                                  [(Int, Map RelayAccessPoint PeerAdvertise)] -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
@@ -178,7 +180,10 @@ localRootPeersProvider tracer
                                   -- current domain groups haven't changed, we
                                   -- can return them
                                   >> return domainsGroups
-            Right domainsGroups'  -> return domainsGroups'
+            Right domainsGroups'  -> traceWith tracer (TraceLocalRootReconfigured domainsGroups domainsGroups')
+                                  -- current domain groups changed, we should
+                                  -- return them
+                                  >> return domainsGroups'
       -- we continue the loop outside of 'withAsyncAll',  this makes sure that
       -- all the monitoring threads are killed.
       loop domainsGroups'

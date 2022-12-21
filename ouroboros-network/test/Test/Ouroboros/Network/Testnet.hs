@@ -59,7 +59,8 @@ import           Ouroboros.Network.Testing.Data.Script (singletonScript)
 import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
                      eventsToList, signalProperty)
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
-import           Ouroboros.Network.Testing.Utils hiding (debugTracer)
+import           Ouroboros.Network.Testing.Utils hiding (SmallDelay,
+                     debugTracer)
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
@@ -97,6 +98,8 @@ tests =
                  prop_diffusion_nolivelock
   , testProperty "dns can recover from fails"
                  prop_diffusion_dns_can_recover
+  , testProperty "unit #4191"
+                 unit_4191
   , testProperty "target established public"
                  prop_diffusion_target_established_public
   , testProperty "target active public"
@@ -812,6 +815,9 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
              in verify (Map.insert dns (addTime ttl' t) toRecover)
                         ttlMap'
                         recovered t evs
+        DiffusionLocalRootPeerTrace
+          (TraceLocalRootReconfigured _ _) ->
+            verify Map.empty ttlMap recovered t evs
         DiffusionLocalRootPeerTrace (TraceLocalRootResult dap r) ->
           let dns = dapDomain dap
               ttls = map snd r
@@ -823,9 +829,89 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                                   (recovered + 1)
                                   t
                                   evs
-        DiffusionDiffusionSimulationTrace TrReconfigurionNode ->
+        DiffusionDiffusionSimulationTrace TrReconfiguringNode ->
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
+
+-- | Unit test which covers issue #4191
+--
+unit_4191 :: Property
+unit_4191 = prop_diffusion_dns_can_recover absInfo script
+  where
+    absInfo =
+      AbsBearerInfo
+        { abiConnectionDelay = SmallDelay,
+          abiInboundAttenuation = NoAttenuation NormalSpeed,
+          abiOutboundAttenuation = ErrorInterval NormalSpeed (Time 17.666666666666) 888,
+          abiInboundWriteFailure = Nothing,
+          abiOutboundWriteFailure = Just 2,
+          abiAcceptFailure = Nothing, abiSDUSize = LargeSDU
+        }
+    script =
+      DiffusionScript
+        (SimArgs 1 20)
+        [(NodeArgs
+            16
+            InitiatorAndResponderDiffusionMode
+            (Just 224)
+            []
+            (Map.fromList
+              [ ("test2", [ read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9"
+                          , read "254.167.216.215"
+                          , read "27.173.29.254"
+                          , read "61.238.34.238"
+                          , read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d"
+                          ])
+              , ("test3", [ read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430"
+                          , read "19.40.90.161"
+                          ])
+              ])
+            (TestAddress (IPAddr (read "0.0.1.236") 65527))
+            [ (2,Map.fromList [ (RelayAccessDomain "test2" 15,DoNotAdvertisePeer)
+                              , (RelayAccessDomain "test3" 4,DoAdvertisePeer)])
+            ]
+            PeerSelectionTargets
+              { targetNumberOfRootPeers = 6,
+                targetNumberOfKnownPeers = 7,
+                targetNumberOfEstablishedPeers = 7,
+                targetNumberOfActivePeers = 6
+              }
+            (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
+                                                           , DNSTimeout {getDNSTimeout = 0.333}
+                                                           , DNSTimeout {getDNSTimeout = 0.352}
+                                                           , DNSTimeout {getDNSTimeout = 0.123}
+                                                           , DNSTimeout {getDNSTimeout = 0.12}
+                                                           , DNSTimeout {getDNSTimeout = 0.23}
+                                                           , DNSTimeout {getDNSTimeout = 0.311}
+                                                           , DNSTimeout {getDNSTimeout = 0.37}
+                                                           , DNSTimeout {getDNSTimeout = 0.153}
+                                                           , DNSTimeout {getDNSTimeout = 0.328}
+                                                           , DNSTimeout {getDNSTimeout = 0.239}
+                                                           , DNSTimeout {getDNSTimeout = 0.261}
+                                                           , DNSTimeout {getDNSTimeout = 0.15}
+                                                           , DNSTimeout {getDNSTimeout = 0.26}
+                                                           , DNSTimeout {getDNSTimeout = 0.37}
+                                                           , DNSTimeout {getDNSTimeout = 0.28}
+                                                           ]))
+            (Script (DNSLookupDelay {getDNSLookupDelay = 0.124} :| [ DNSLookupDelay {getDNSLookupDelay = 0.11}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.129}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.066}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.125}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.046}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.135}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.05}
+                                                                   , DNSLookupDelay {getDNSLookupDelay = 0.039}
+                                                                   ]))
+            , [ JoinNetwork 6.710144927536 Nothing
+              , Kill 7.454545454545
+              , JoinNetwork 10.763157894736 (Just (TestAddress (IPAddr (read "4.138.119.62") 65527)))
+              , Reconfigure 0.415384615384 [(1,Map.fromList [])
+              , (1,Map.fromList [])]
+              , Reconfigure 15.550561797752 [(1,Map.fromList [])
+              , (1,Map.fromList [(RelayAccessDomain "test2" 15,DoAdvertisePeer)])]
+              , Reconfigure 82.85714285714 []
+              ])
+        ]
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_public'
