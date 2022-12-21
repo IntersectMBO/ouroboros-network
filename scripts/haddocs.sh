@@ -104,4 +104,5 @@ done
 # Copy modules map to output directory
 # TODO: dynamically generate
 cp "${SCRIPTS_DIR}/modules-consensus.svg" "${OUTPUT_DIR}"
+cp "${SCRIPTS_DIR}/Consensus.svg" "${OUTPUT_DIR}"
 cp "${SCRIPTS_DIR}/packages-consensus.svg" "${OUTPUT_DIR}"

@@ -1,0 +1,1098 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentStyleType="text/css" height="614px" preserveAspectRatio="none" style="width:971px;height:614px;background:#FFFFFF;" version="1.1" viewBox="0 0 971 614" width="971px" zoomAndPan="magnify"><defs/><g><!--MD5=[d4fa3e45765ee48370eda2a72939d2e4]
+entity chainDB--><g id="elem_chainDB"><a href="./ouroboros-consensus/Ouroboros-Consensus-Storage-ChainDB.html" target="_top" title="./ouroboros-consensus/Ouroboros-Consensus-Storage-ChainDB.html" xlink:actuate="onRequest" xlink:href="./ouroboros-consensus/Ouroboros-Consensus-Storage-ChainDB.html" xlink:show="new" xlink:title="./ouroboros-consensus/Ouroboros-Consensus-Storage-ChainDB.html" xlink:type="simple"><path d="M342.5,345 C342.5,335 427.5,335 427.5,335 C427.5,335 512.5,335 512.5,345 L512.5,419.9531 C512.5,429.9531 427.5,429.9531 427.5,429.9531 C427.5,429.9531 342.5,429.9531 342.5,419.9531 L342.5,345 " fill="#85BBF0" style="stroke:#78A8D8;stroke-width:0.5;"/><path d="M342.5,345 C342.5,355 427.5,355 427.5,355 C427.5,355 512.5,355 512.5,345 " fill="none" style="stroke:#78A8D8;stroke-width:0.5;"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="75" x="390" y="374.4688">Chain DB</text><text fill="#000000" font-family="sans-serif" font-size="12" font-style="italic" lengthAdjust="spacing" textLength="20" x="417.5" y="389.4453">[FS]</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="425.5" y="405.5117"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="150" x="352.5" y="422">Stores chain of blocks</text></a></g><!--MD5=[f439d459884f50afe74224a4b36ecaad]
+entity mempool--><g id="elem_mempool"><a href="./ouroboros-consensus/Ouroboros-Consensus-Mempool.html" target="_top" title="./ouroboros-consensus/Ouroboros-Consensus-Mempool.html" xlink:actuate="onRequest" xlink:href="./ouroboros-consensus/Ouroboros-Consensus-Mempool.html" xlink:show="new" xlink:title="./ouroboros-consensus/Ouroboros-Consensus-Mempool.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="216" x="437.5" y="7"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="76" x="507.5" y="32.4688">Mempool</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="543.5" y="49.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="192" x="447.5" y="65.8672">Holds new transactions past</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="183" x="454" y="82.3555">the current tip of the chain</text></a></g><!--MD5=[cba65c40434287781810217c466e68cf]
+entity syncer--><g id="elem_syncer"><a href="./ouroboros-consensus/Ouroboros-Consensus-Mempool-Impl.html" target="_top" title="./ouroboros-consensus/Ouroboros-Consensus-Mempool-Impl.html" xlink:actuate="onRequest" xlink:href="./ouroboros-consensus/Ouroboros-Consensus-Mempool-Impl.html" xlink:show="new" xlink:title="./ouroboros-consensus/Ouroboros-Consensus-Mempool-Impl.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="212" x="302.5" y="171"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="135" x="341" y="196.4688">Mempool Syncer</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="406.5" y="213.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="186" x="313.5" y="229.8672">Synchronizes the mempool</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="192" x="312.5" y="246.3555">with latest state of the chain</text></a></g><!--MD5=[d56f3779aae7a4b147375af41ec24ca3]
+entity block_creation--><g id="elem_block_creation"><a href="./ouroboros-consensus/Ouroboros-Consensus-Block-Forging.html" target="_top" title="./ouroboros-consensus/Ouroboros-Consensus-Block-Forging.html" xlink:actuate="onRequest" xlink:href="./ouroboros-consensus/Ouroboros-Consensus-Block-Forging.html" xlink:show="new" xlink:title="./ouroboros-consensus/Ouroboros-Consensus-Block-Forging.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="219" x="550" y="171"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="108" x="605.5" y="196.4688">Block Creator</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="657.5" y="213.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="195" x="560" y="229.8672">Creates new block out of txs</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="108" x="605.5" y="246.3555">in the mempool</text></a></g><!--MD5=[b9182696dcc45246c82e5b2dcab8e94d]
+entity candidates--><g id="elem_candidates"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="209" x="7" y="338.5"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="143" x="40" y="363.9688">Chain Candidates</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="109.5" y="380.8789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="185" x="17" y="397.3672">Maintains candidate chains</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="75" x="74" y="413.8555">from peers</text></g><!--MD5=[d322f53d462a423102f5a34810d08be3]
+entity block_download--><g id="elem_block_download"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="174" x="15.5" y="520"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="132" x="36.5" y="545.4688">Block Download</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="100.5" y="562.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="150" x="25.5" y="578.8672">Select which blocks to</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="75" x="65" y="595.3555">downloads</text></g><!--MD5=[1f6d3dd701152be45e713d5931302324]
+entity tx_sub_in--><g id="elem_tx_sub_in"><a href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Client.html" target="_top" title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Client.html" xlink:actuate="onRequest" xlink:href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Client.html" xlink:show="new" xlink:title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Client.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="202" x="140.5" y="7"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="173" x="155" y="32.4688">Tx Submission Client</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="239.5" y="49.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="178" x="150.5" y="65.8672">Receives new transactions</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="150" x="166.5" y="82.3555">from connected peers</text></a></g><!--MD5=[0b75c27ad7792fcce40439497f1fdf5f]
+entity tx_sub_out--><g id="elem_tx_sub_out"><a href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Server.html" target="_top" title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Server.html" xlink:actuate="onRequest" xlink:href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Server.html" xlink:show="new" xlink:title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Server.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="217" x="748" y="7"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="176" x="768.5" y="32.4688">Tx Submission Server</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="854.5" y="49.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="197" x="758" y="65.8672">Propagates new transactions</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="131" x="791" y="82.3555">to connected peers</text></a></g><!--MD5=[d5f299fc2e12ceb4ced76cd59ae37888]
+entity chain_sync_in--><g id="elem_chain_sync_in"><a href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html" target="_top" title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html" xlink:actuate="onRequest" xlink:href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html" xlink:show="new" xlink:title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="214" x="37.5" y="171"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="142" x="73.5" y="196.4688">Chain Sync Client</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="142.5" y="213.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="190" x="47.5" y="229.8672">Receives new block headers</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="150" x="69.5" y="246.3555">from connected peers</text></a></g><!--MD5=[a410d0c224c1d7c6d4ff5c2ddd9e3d39]
+entity chain_sync_out--><g id="elem_chain_sync_out"><a href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Server.html" target="_top" title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Server.html" xlink:actuate="onRequest" xlink:href="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Server.html" xlink:show="new" xlink:title="./ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Server.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="210" x="684.5" y="338.5"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="145" x="717" y="363.9688">Chain Sync Server</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="787.5" y="380.8789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="150" x="712.5" y="397.3672">Propagates new block</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="190" x="694.5" y="413.8555">headers to connected peers</text></a></g><!--MD5=[857ba4fdcddaaf9d45f98f6f429a254b]
+entity block_fetch_in--><g id="elem_block_fetch_in"><a href="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Client.html" target="_top" title="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Client.html" xlink:actuate="onRequest" xlink:href="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Client.html" xlink:show="new" xlink:title="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Client.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="199" x="328" y="520"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="145" x="355" y="545.4688">Block Fetch Client</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="425.5" y="562.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="175" x="338" y="578.8672">Receives new blocks from</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="113" x="371" y="595.3555">connected peers</text></a></g><!--MD5=[66d75b2d9b247608dca324c429733f16]
+entity block_fetch_out--><g id="elem_block_fetch_out"><a href="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Server.html" target="_top" title="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Server.html" xlink:actuate="onRequest" xlink:href="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Server.html" xlink:show="new" xlink:title="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Server.html" xlink:type="simple"><rect fill="#85BBF0" height="88.3086" rx="2.5" ry="2.5" style="stroke:#78A8D8;stroke-width:0.5;" width="199" x="562" y="520"/><text fill="#000000" font-family="sans-serif" font-size="16" font-weight="bold" lengthAdjust="spacing" textLength="148" x="587.5" y="545.4688">Block Fetch Server</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="4" x="659.5" y="562.3789"> </text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="175" x="572" y="578.8672">Propagates new blocks to</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="113" x="605" y="595.3555">connected peers</text></a></g><!--MD5=[6cecc151fd3f056425ae6cac1e22eb01]
+reverse link syncer to chainDB--><g id="link_syncer_chainDB"><path d="M414.37,267.16 C416.86,288.78 419.73,313.78 422.15,334.89 " fill="none" id="syncer-backto-chainDB" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="413.44,259.05,411.3728,267.3402,417.3336,266.6553,413.44,259.05" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="82" x="420.5" y="301.6016">Reads blocks</text></g><!--MD5=[e1e22b61862f45ebcc7563288024fcd0]
+reverse link mempool to syncer--><g id="link_mempool_syncer"><path d="M496.85,101.15 C489.54,108.99 482.21,117.11 475.5,125 C463.22,139.44 450.52,155.86 439.53,170.64 " fill="none" id="mempool-backto-syncer" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="502.43,95.22,494.7625,98.9895,499.1317,103.1017,502.43,95.22" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="114" x="476.5" y="137.6016">Updates mempool</text></g><!--MD5=[164efa2dfeade96862ed7aa5a3a93b48]
+link mempool to block_creation--><g id="link_mempool_block_creation"><path d="M576.05,95.41 C590.93,116.56 608.91,142.1 624.36,164.06 " fill="none" id="mempool-to-block_creation" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="629.06,170.75,626.901,162.4833,621.9977,165.9413,629.06,170.75" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="60" x="607.5" y="137.6016">Reads txs</text></g><!--MD5=[24f01a96f44d0befac184bd748dae564]
+link block_creation to chainDB--><g id="link_block_creation_chainDB"><path d="M599.15,259.05 C568.69,280.78 531.53,307.29 499.57,330.08 " fill="none" id="block_creation-to-chainDB" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="492.84,334.89,501.0959,332.6899,497.6135,327.8038,492.84,334.89" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="92" x="551.5" y="301.6016">Add new block</text></g><!--MD5=[4e0e624c2b8f0837bff3e7f30d1743db]
+link tx_sub_in to mempool--><g id="link_tx_sub_in_mempool"><path d="M342.73,51 C370.51,51 400.86,51 429.41,51 " fill="none" id="tx_sub_in-to-mempool" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="437.41,51,429.41,48,429.41,54,437.41,51" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="58" x="361" y="44.6016">Adds Txs</text></g><!--MD5=[ca4e4942f0d5d5532b370e08f9d8e1cd]
+link mempool to tx_sub_out--><g id="link_mempool_tx_sub_out"><path d="M653.84,51 C681.52,51 711.4,51 739.5,51 " fill="none" id="mempool-to-tx_sub_out" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="747.76,51,739.76,48,739.76,54,747.76,51" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="58" x="671.75" y="44.6016">Adds Txs</text></g><!--MD5=[286c9654116c41f20ef0caf91cb19780]
+link block_fetch_in to block_fetch_out--><!--MD5=[5ffdb11381a9cce2e1e08a41c9c763a5]
+reverse link chain_sync_in to chainDB--><g id="link_chain_sync_in_chainDB"><path d="M224.44,263.27 C247.37,276.78 272.41,291.5 295.5,305 C312.08,314.69 329.85,325.03 346.82,334.87 " fill="none" id="chain_sync_in-backto-chainDB" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="217.4,259.11,222.7756,265.751,225.8168,260.5788,217.4,259.11" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="112" x="296.5" y="301.6016">Reads Chain state</text></g><!--MD5=[da84bf6df51a5d75b9bd627b05a8276a]
+link chain_sync_in to candidates--><g id="link_chain_sync_in_candidates"><path d="M121.3,259.36 C117.24,268.87 113.64,279.07 111.5,289 C108.67,302.13 107.69,316.55 107.65,330.03 " fill="none" id="chain_sync_in-to-candidates" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="107.74,338.27,110.6541,330.2383,104.6545,330.3026,107.74,338.27" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="116" x="112.5" y="301.6016">Download headers</text></g><!--MD5=[2b0a6ac2bce00af14828867b029bd568]
+link candidates to block_download--><g id="link_candidates_block_download"><path d="M109.32,426.95 C108.04,452.53 106.41,485.01 105.07,511.82 " fill="none" id="candidates-to-block_download" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="104.66,519.95,108.0558,512.1098,102.0632,511.8102,104.66,519.95" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="98" x="109.5" y="472.6016">Select blocks to</text><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="61" x="130" y="486.7344">download</text></g><!--MD5=[920ed69ecbf6858be87f3f1895b8520a]
+link block_download to block_fetch_in--><g id="link_block_download_block_fetch_in"><path d="M189.59,564 C229.6,564 277.45,564 319.71,564 " fill="none" id="block_download-to-block_fetch_in" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="327.8,564,319.8,561,319.8,567,327.8,564" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="98" x="207.75" y="543.6016">Select blocks to</text><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="61" x="228.25" y="557.7344">download</text></g><!--MD5=[7854ef4718eac98e3f3bfc4c1b664655]
+reverse link chainDB to block_fetch_in--><g id="link_chainDB_block_fetch_in"><path d="M427.5,438.51 C427.5,464.67 427.5,495.5 427.5,519.93 " fill="none" id="chainDB-backto-block_fetch_in" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="427.5,430.19,424.5,438.19,430.5,438.19,427.5,430.19" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="86" x="428.5" y="479.6016">Extends chain</text></g><!--MD5=[930716fd9dff0a881471838341fd007b]
+link chainDB to block_fetch_out--><g id="link_chainDB_block_fetch_out"><path d="M488.37,430.19 C522.27,456.19 564.4,488.52 598.62,514.76 " fill="none" id="chainDB-to-block_fetch_out" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="605.35,519.93,600.8223,512.6843,597.1744,517.448,605.35,519.93" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="131" x="566.5" y="472.6016">Propagates blocks to</text><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="34" x="617" y="486.7344">peers</text></g><!--MD5=[ca3334c6fc5bcbaf354b1caa4efb4495]
+link chainDB to chain_sync_out--><g id="link_chainDB_chain_sync_out"><path d="M512.83,382.5 C561.64,382.5 623.48,382.5 676.31,382.5 " fill="none" id="chainDB-to-chain_sync_out" style="stroke:#666666;stroke-width:1.0;"/><polygon fill="#666666" points="684.37,382.5,676.37,379.5,676.37,385.5,684.37,382.5" style="stroke:#666666;stroke-width:1.0;"/><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="131" x="531" y="362.1016">Propagates blocks to</text><text fill="#666666" font-family="sans-serif" font-size="12" font-weight="bold" lengthAdjust="spacing" textLength="41" x="578" y="376.2344">clients</text></g><!--MD5=[937824e947be24c30e981ef610996864]
+@startuml Consensus
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+HIDE_STEREOTYPE()
+
+ComponentDb(chainDB, "Chain DB", "FS", "Stores chain of blocks", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Storage-ChainDB.html")
+
+
+Component(mempool, "Mempool", "", "Holds new transactions past the current tip of the chain", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Mempool.html")
+Component(syncer, "Mempool Syncer", "", "Synchronizes the mempool with latest state of the chain", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Mempool-Impl.html")
+Component(block_creation, "Block Creator", "", "Creates new block out of txs in the mempool", $link = "https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Block-Forging.html")
+Component(candidates, "Chain Candidates", "", "Maintains candidate chains from peers")
+Component(block_download, "Block Download", "", "Select which blocks to downloads")
+
+Component(tx_sub_in, "Tx Submission Client", "", "Receives new transactions from connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Client.html")
+Component(tx_sub_out, "Tx Submission Server", "", "Propagates new transactions to connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Server.html")
+
+Component(chain_sync_in, "Chain Sync Client", "", "Receives new block headers from connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html")
+Component(chain_sync_out, "Chain Sync Server", "", "Propagates new block headers to connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Server.html")
+
+Component(block_fetch_in, "Block Fetch Client", "", "Receives new blocks from connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Client.html")
+Component(block_fetch_out, "Block Fetch Server", "", "Propagates new blocks to connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Server.html")
+
+
+Rel_U(chainDB, syncer, "Reads blocks")
+Rel_U(syncer, mempool, "Updates mempool")
+Rel_D(mempool, block_creation, "Reads txs")
+Rel_D(block_creation, chainDB, "Add new block")
+
+Rel_R(tx_sub_in, mempool, "Adds Txs")
+Rel_R(mempool, tx_sub_out, "Adds Txs")
+
+Lay_L(block_fetch_out, block_fetch_in)
+
+Rel_L(chainDB, chain_sync_in, "Reads Chain state")
+Rel_D(chain_sync_in, candidates, "Download headers")
+Rel_D(candidates, block_download, "Select blocks to download")
+Rel_R(block_download, block_fetch_in, "Select blocks to download")
+Rel_U(block_fetch_in, chainDB, "Extends chain")
+Rel_D(chainDB, block_fetch_out, "Propagates blocks to peers")
+Rel_R(chainDB, chain_sync_out, "Propagates blocks to clients")
+
+@enduml
+
+@startuml Consensus
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+skinparam defaultTextAlignment center
+
+skinparam wrapWidth 200
+skinparam maxMessageSize 150
+
+skinparam LegendBorderColor transparent
+skinparam LegendBackgroundColor transparent
+skinparam LegendFontColor #FFFFFF
+
+skinparam shadowing<<legendArea>> false
+skinparam rectangle<<legendArea>> {
+    backgroundcolor #00000000
+    bordercolor #00000000
+}
+
+skinparam rectangle {
+    StereotypeFontSize 12
+    shadowing false
+}
+
+skinparam database {
+    StereotypeFontSize 12
+    shadowing false
+}
+
+skinparam queue {
+    StereotypeFontSize 12
+    shadowing false
+}
+
+skinparam arrow {
+    Color #666666
+    FontColor #666666
+    FontSize 12
+}
+
+skinparam person {
+    StereotypeFontSize 12
+    shadowing false
+}
+
+skinparam actor {
+    StereotypeFontSize 12
+    shadowing false
+    style awesome
+}
+
+skinparam rectangle<<boundary>> {
+    Shadowing false
+    StereotypeFontSize 6
+    StereotypeFontColor transparent
+    BorderStyle dashed
+}
+
+skinparam package {
+    StereotypeFontSize 6
+    StereotypeFontColor transparent
+    FontStyle plain
+    BackgroundColor transparent
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+skinparam rectangle<<boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam database<<boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam queue<<boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam person<<boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam actor<<boundary>> {
+    FontColor transparent
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam package<<boundary>>StereotypeFontColor transparent
+skinparam rectangle<<boundary>>StereotypeFontColor transparent
+
+skinparam rectangle<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam database<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam queue<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam person<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam actor<<enterprise_boundary>> {
+    FontColor transparent
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam package<<enterprise_boundary>>StereotypeFontColor transparent
+skinparam rectangle<<enterprise_boundary>>StereotypeFontColor transparent
+
+
+skinparam rectangle<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam database<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam queue<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam person<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam actor<<system_boundary>> {
+    FontColor transparent
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam package<<system_boundary>>StereotypeFontColor transparent
+skinparam rectangle<<system_boundary>>StereotypeFontColor transparent
+
+
+skinparam rectangle<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam database<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam queue<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam person<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam actor<<container_boundary>> {
+    FontColor transparent
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam package<<container_boundary>>StereotypeFontColor transparent
+skinparam rectangle<<container_boundary>>StereotypeFontColor transparent
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+skinparam rectangle<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam database<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam queue<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam person<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam actor<<person>> {
+    StereotypeFontColor #08427B
+    FontColor #08427B
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+
+skinparam rectangle<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam database<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam queue<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam person<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam actor<<external_person>> {
+    StereotypeFontColor #686868
+    FontColor #686868
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+
+skinparam rectangle<<system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #1168BD
+    BorderColor #3C7FC0
+}
+skinparam database<<system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #1168BD
+    BorderColor #3C7FC0
+}
+skinparam queue<<system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #1168BD
+    BorderColor #3C7FC0
+}
+skinparam person<<system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #1168BD
+    BorderColor #3C7FC0
+}
+skinparam actor<<system>> {
+    StereotypeFontColor #1168BD
+    FontColor #1168BD
+    BackgroundColor #1168BD
+    BorderColor #3C7FC0
+}
+
+skinparam rectangle<<external_system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #999999
+    BorderColor #8A8A8A
+}
+skinparam database<<external_system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #999999
+    BorderColor #8A8A8A
+}
+skinparam queue<<external_system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #999999
+    BorderColor #8A8A8A
+}
+skinparam person<<external_system>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #999999
+    BorderColor #8A8A8A
+}
+skinparam actor<<external_system>> {
+    StereotypeFontColor #999999
+    FontColor #999999
+    BackgroundColor #999999
+    BorderColor #8A8A8A
+}
+
+
+skinparam rectangle<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam database<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam queue<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam person<<enterprise_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam actor<<enterprise_boundary>> {
+    FontColor transparent
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam package<<enterprise_boundary>>StereotypeFontColor transparent
+skinparam rectangle<<enterprise_boundary>>StereotypeFontColor transparent
+
+
+skinparam rectangle<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam database<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam queue<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam person<<system_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam actor<<system_boundary>> {
+    FontColor transparent
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam package<<system_boundary>>StereotypeFontColor transparent
+skinparam rectangle<<system_boundary>>StereotypeFontColor transparent
+
+
+
+
+
+
+sprite $person [48x48/16] {
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+0000000000000000000049BCCA7200000000000000000000
+0000000000000000006EFFFFFFFFB3000000000000000000
+00000000000000001CFFFFFFFFFFFF700000000000000000
+0000000000000001EFFFFFFFFFFFFFF80000000000000000
+000000000000000CFFFFFFFFFFFFFFFF6000000000000000
+000000000000007FFFFFFFFFFFFFFFFFF100000000000000
+00000000000001FFFFFFFFFFFFFFFFFFF900000000000000
+00000000000006FFFFFFFFFFFFFFFFFFFF00000000000000
+0000000000000BFFFFFFFFFFFFFFFFFFFF40000000000000
+0000000000000EFFFFFFFFFFFFFFFFFFFF70000000000000
+0000000000000FFFFFFFFFFFFFFFFFFFFF80000000000000
+0000000000000FFFFFFFFFFFFFFFFFFFFF80000000000000
+0000000000000DFFFFFFFFFFFFFFFFFFFF60000000000000
+0000000000000AFFFFFFFFFFFFFFFFFFFF40000000000000
+00000000000006FFFFFFFFFFFFFFFFFFFE00000000000000
+00000000000000EFFFFFFFFFFFFFFFFFF800000000000000
+000000000000007FFFFFFFFFFFFFFFFFF100000000000000
+000000000000000BFFFFFFFFFFFFFFFF5000000000000000
+0000000000000001DFFFFFFFFFFFFFF70000000000000000
+00000000000000000BFFFFFFFFFFFF500000000000000000
+0000000000000000005DFFFFFFFFA1000000000000000000
+0000000000000000000037ABB96100000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000025788300000000005886410000000000000
+000000000007DFFFFFFD9643347BFFFFFFFB400000000000
+0000000004EFFFFFFFFFFFFFFFFFFFFFFFFFFB1000000000
+000000007FFFFFFFFFFFFFFFFFFFFFFFFFFFFFD200000000
+00000006FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE10000000
+0000003FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB0000000
+000000BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5000000
+000003FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD000000
+000009FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF200000
+00000DFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF600000
+00000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF800000
+00001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA00000
+00001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB00000
+00001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB00000
+00001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB00000
+00001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA00000
+00000EFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF700000
+000006FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE100000
+0000008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD3000000
+000000014555555555555555555555555555555300000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+}
+
+sprite $person2 [48x48/16] {
+0000000000000000000049BCCA7200000000000000000000
+0000000000000000006EFFFFFFFFB3000000000000000000
+00000000000000001CFFFFFFFFFFFF700000000000000000
+0000000000000001EFFFFFFFFFFFFFF80000000000000000
+000000000000000CFFFFFFFFFFFFFFFF6000000000000000
+000000000000007FFFFFFFFFFFFFFFFFF100000000000000
+00000000000001FFFFFFFFFFFFFFFFFFF900000000000000
+00000000000006FFFFFFFFFFFFFFFFFFFF00000000000000
+0000000000000BFFFFFFFFFFFFFFFFFFFF40000000000000
+0000000000000EFFFFFFFFFFFFFFFFFFFF70000000000000
+0000000000000FFFFFFFFFFFFFFFFFFFFF80000000000000
+0000000000000FFFFFFFFFFFFFFFFFFFFF80000000000000
+0000000000000DFFFFFFFFFFFFFFFFFFFF60000000000000
+0000000000000AFFFFFFFFFFFFFFFFFFFF40000000000000
+00000000000006FFFFFFFFFFFFFFFFFFFE00000000000000
+00000000000000EFFFFFFFFFFFFFFFFFF800000000000000
+000000000000007FFFFFFFFFFFFFFFFFF100000000000000
+000000000000000BFFFFFFFFFFFFFFFF5000000000000000
+0000000000000001DFFFFFFFFFFFFFF70000000000000000
+00000000000000000BFFFFFFFFFFFF500000000000000000
+0000000000000000005DFFFFFFFFA1000000000000000000
+0000000000000000000037ABB96100000000000000000000
+000000000002578888300000000005888864100000000000
+0000000007DFFFFFFFFD9643347BFFFFFFFFFB4000000000
+00000004EFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB10000000
+0000007FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD2000000
+000006FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE100000
+00003FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB00000
+0000BFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF50000
+0003FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD0000
+0009FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF2000
+000DFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF6000
+000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB000
+001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB000
+001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB000
+001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA000
+000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+000DFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF6000
+0009FFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFFF2000
+0003FFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFFD0000
+0000BFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFF50000
+00003FFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFB00000
+000006FFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFE100000
+0000007FFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFD2000000
+00000004EFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFB10000000
+0000000007DF8FFFFFFFFFFFFFFFFFFFFFF8FB4000000000
+000000000002578888888888888888888864100000000000
+}
+
+sprite $robot [48x48/16] {
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000005BFFFFFFFFFFFFFFFFFFFFFE9100000000000
+0000000000AFFFFFFFFFFFFFFFFFFFFFFFFFE30000000000
+0000000007FFFFFFFFFFFFFFFFFFFFFFFFFFFE1000000000
+000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000000000
+000000004FFFFFFFFFFFFFFFFFFFFFFFFFFFFFC000000000
+000000005FFFFFFFFFFFFFFFFFFFFFFFFFFFFFD000000000
+000000005FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE000000000
+000000005FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE000000000
+000699405FFFFFFC427FFFFFFFFFC427FFFFFFE009982000
+008FFF705FFFFFE10006FFFFFFFE00007FFFFFE00FFFF100
+00CFFF705FFFFFA00001FFFFFFF900002FFFFFE00FFFF500
+00DFFF705FFFFFB00002FFFFFFFA00003FFFFFE00FFFF500
+00DFFF705FFFFFF4000AFFFFFFFF3000BFFFFFE00FFFF500
+00DFFF705FFFFFFFA8DFFFFFFFFFFA8DFFFFFFE00FFFF500
+00DFFF705FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE00FFFF500
+00DFFF705FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE00FFFF500
+00DFFF705FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE00FFFF500
+00DFFF705FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE00FFFF500
+00DFFF705FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE00FFFF500
+00CFFF705FFFFFF87777777777777777CFFFFFE00FFFF500
+008FFF705FFFFFF100000000000000009FFFFFE00FFFF100
+000699405FFFFFF76666666666666666CFFFFFE009982000
+000000005FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE000000000
+000000005FFFFFFFFFFFFFFFFFFFFFFFFFFFFFE000000000
+000000004FFFFFFFFFFFFFFFFFFFFFFFFFFFFFC000000000
+000000000EFFFFFFFFFFFFFFFFFFFFFFFFFFFF7000000000
+0000000005FFFFFFFFFFFFFFFFFFFFFFFFFFFD0000000000
+00000000004CFFFFFFFFFFFFFFFFFFFFFFFF910000000000
+000000000000011111111111111111111110000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000
+}
+
+sprite $robot2 [48x48/16] {
+000000000000000088888888888888880000000000000000
+000000000000000AFFFFFFFFFFFFFFFFA000000000000000
+00000000000000CFFFFFFFFFFFFFFFFFFC00000000000000
+00000000000004EFFFFFFFFFFFFFFFFFFE40000000000000
+0000000000000AFFFFFFFFFFFFFFFFFFFFA0000000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000888FFFFFFFFFFFFFFFFFFFF88800000000000
+00000000008FF8FFFFFFFFFFFFFFFFFFFF8FF80000000000
+00000000008FF8FFFFFFFFFFFFFFFFFFFF8FF80000000000
+00000000008FF8FFFFFFFFFFFFFFFFFFFF8FF80000000000
+00000000008FF8FFFFFFFFFFFFFFFFFFFF8FF80000000000
+00000000008FF8FFFFFFFFFFFFFFFFFFFF8FF80000000000
+00000000008FF8FFFFFFFFFFFFFFFFFFFF8FF80000000000
+00000000000888FFFFFFFFFFFFFFFFFFFF88800000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000008FFFFFFFFFFFFFFFFFFFF80000000000000
+00000000000004CFFFFFFFFFFFFFFFFFFC40000000000000
+000000488888848CFFFFFFFFFFFFFFFFC848888884000000
+00000CFFFFFFFFC888888888888888888CFFFFFFFFC00000
+00008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF80000
+0000CFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC0000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8000
+0008FFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFFF8000
+0008FFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFFF8000
+0008FFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFFF8000
+0008FFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFFF8000
+0000CFFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFFC0000
+00008FFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFF80000
+00000CFFFFFF8FFFFFFFFFFFFFFFFFFFFFF8FFFFFFC00000
+000000488887578888888888888888888864688884000000
+000000000000000000000000000000000000000000000000
+}
+
+
+
+
+skinparam rectangle<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam database<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam queue<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam person<<person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+skinparam actor<<person>> {
+    StereotypeFontColor #08427B
+    FontColor #08427B
+    BackgroundColor #08427B
+    BorderColor #073B6F
+}
+
+
+skinparam rectangle<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam database<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam queue<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam person<<external_person>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+skinparam actor<<external_person>> {
+    StereotypeFontColor #686868
+    FontColor #686868
+    BackgroundColor #686868
+    BorderColor #8A8A8A
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+skinparam rectangle<<container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #438DD5
+    BorderColor #3C7FC0
+}
+skinparam database<<container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #438DD5
+    BorderColor #3C7FC0
+}
+skinparam queue<<container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #438DD5
+    BorderColor #3C7FC0
+}
+skinparam person<<container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #438DD5
+    BorderColor #3C7FC0
+}
+skinparam actor<<container>> {
+    StereotypeFontColor #438DD5
+    FontColor #438DD5
+    BackgroundColor #438DD5
+    BorderColor #3C7FC0
+}
+
+skinparam rectangle<<external_container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #B3B3B3
+    BorderColor #A6A6A6
+}
+skinparam database<<external_container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #B3B3B3
+    BorderColor #A6A6A6
+}
+skinparam queue<<external_container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #B3B3B3
+    BorderColor #A6A6A6
+}
+skinparam person<<external_container>> {
+    StereotypeFontColor #FFFFFF
+    FontColor #FFFFFF
+    BackgroundColor #B3B3B3
+    BorderColor #A6A6A6
+}
+skinparam actor<<external_container>> {
+    StereotypeFontColor #B3B3B3
+    FontColor #B3B3B3
+    BackgroundColor #B3B3B3
+    BorderColor #A6A6A6
+}
+
+
+skinparam rectangle<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam database<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam queue<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam person<<container_boundary>> {
+    FontColor #444444
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam actor<<container_boundary>> {
+    FontColor transparent
+    BackgroundColor transparent
+    BorderColor #444444
+}
+skinparam package<<container_boundary>>StereotypeFontColor transparent
+skinparam rectangle<<container_boundary>>StereotypeFontColor transparent
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+skinparam rectangle<<component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #85BBF0
+    BorderColor #78A8D8
+}
+skinparam database<<component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #85BBF0
+    BorderColor #78A8D8
+}
+skinparam queue<<component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #85BBF0
+    BorderColor #78A8D8
+}
+skinparam person<<component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #85BBF0
+    BorderColor #78A8D8
+}
+skinparam actor<<component>> {
+    StereotypeFontColor #85BBF0
+    FontColor #85BBF0
+    BackgroundColor #85BBF0
+    BorderColor #78A8D8
+}
+
+skinparam rectangle<<external_component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #CCCCCC
+    BorderColor #BFBFBF
+}
+skinparam database<<external_component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #CCCCCC
+    BorderColor #BFBFBF
+}
+skinparam queue<<external_component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #CCCCCC
+    BorderColor #BFBFBF
+}
+skinparam person<<external_component>> {
+    StereotypeFontColor #000000
+    FontColor #000000
+    BackgroundColor #CCCCCC
+    BorderColor #BFBFBF
+}
+skinparam actor<<external_component>> {
+    StereotypeFontColor #CCCCCC
+    FontColor #CCCCCC
+    BackgroundColor #CCCCCC
+    BorderColor #BFBFBF
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+hide stereotype
+
+database "== Chain DB\n//<size:12>[FS]</size>//\n\nStores chain of blocks" <<component>> as chainDB [[https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Storage-ChainDB.html]]
+
+
+rectangle "== Mempool\n\nHolds new transactions past the current tip of the chain" <<component>> as mempool [[https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Mempool.html]]
+rectangle "== Mempool Syncer\n\nSynchronizes the mempool with latest state of the chain" <<component>> as syncer [[https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Mempool-Impl.html]]
+rectangle "== Block Creator\n\nCreates new block out of txs in the mempool" <<component>> as block_creation [[https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Block-Forging.html]]
+rectangle "== Chain Candidates\n\nMaintains candidate chains from peers" <<component>> as candidates
+rectangle "== Block Download\n\nSelect which blocks to downloads" <<component>> as block_download
+
+rectangle "== Tx Submission Client\n\nReceives new transactions from connected peers" <<component>> as tx_sub_in [[https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Client.html]]
+rectangle "== Tx Submission Server\n\nPropagates new transactions to connected peers" <<component>> as tx_sub_out [[https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Server.html]]
+
+rectangle "== Chain Sync Client\n\nReceives new block headers from connected peers" <<component>> as chain_sync_in [[https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html]]
+rectangle "== Chain Sync Server\n\nPropagates new block headers to connected peers" <<component>> as chain_sync_out [[https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Server.html]]
+
+rectangle "== Block Fetch Client\n\nReceives new blocks from connected peers" <<component>> as block_fetch_in [[https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Client.html]]
+rectangle "== Block Fetch Server\n\nPropagates new blocks to connected peers" <<component>> as block_fetch_out [[https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Server.html]]
+
+
+chainDB -UP->> syncer : **Reads blocks**
+syncer -UP->> mempool : **Updates mempool**
+mempool -DOWN->> block_creation : **Reads txs**
+block_creation -DOWN->> chainDB : **Add new block**
+
+tx_sub_in -RIGHT->> mempool : **Adds Txs**
+mempool -RIGHT->> tx_sub_out : **Adds Txs**
+
+block_fetch_out -[hidden]L- block_fetch_in
+
+chainDB -LEFT->> chain_sync_in : **Reads Chain state**
+chain_sync_in -DOWN->> candidates : **Download headers**
+candidates -DOWN->> block_download : **Select blocks to download**
+block_download -RIGHT->> block_fetch_in : **Select blocks to download**
+block_fetch_in -UP->> chainDB : **Extends chain**
+chainDB -DOWN->> block_fetch_out : **Propagates blocks to peers**
+chainDB -RIGHT->> chain_sync_out : **Propagates blocks to clients**
+
+@enduml
+
+PlantUML version 1.2022.7(Mon Aug 22 19:01:30 CEST 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: FR
+--></g></svg>

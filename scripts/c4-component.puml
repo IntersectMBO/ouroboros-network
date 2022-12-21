@@ -1,0 +1,42 @@
+@startuml Consensus
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+HIDE_STEREOTYPE()
+
+ComponentDb(chainDB, "Chain DB", "FS", "Stores chain of blocks", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Storage-ChainDB.html")
+
+
+Component(mempool, "Mempool", "", "Holds new transactions past the current tip of the chain", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Mempool.html")
+Component(syncer, "Mempool Syncer", "", "Synchronizes the mempool with latest state of the chain", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Mempool-Impl.html")
+Component(block_creation, "Block Creator", "", "Creates new block out of txs in the mempool", $link = "https://input-output-hk.github.io/ouroboros-network/ouroboros-consensus/Ouroboros-Consensus-Block-Forging.html")
+Component(candidates, "Chain Candidates", "", "Maintains candidate chains from peers")
+Component(block_download, "Block Download", "", "Select which blocks to downloads")
+
+Component(tx_sub_in, "Tx Submission Client", "", "Receives new transactions from connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Client.html")
+Component(tx_sub_out, "Tx Submission Server", "", "Propagates new transactions to connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Server.html")
+
+Component(chain_sync_in, "Chain Sync Client", "", "Receives new block headers from connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html")
+Component(chain_sync_out, "Chain Sync Server", "", "Propagates new block headers to connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Server.html")
+
+Component(block_fetch_in, "Block Fetch Client", "", "Receives new blocks from connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Client.html")
+Component(block_fetch_out, "Block Fetch Server", "", "Propagates new blocks to connected peers", $link="https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Server.html")
+
+
+Rel_U(chainDB, syncer, "Reads blocks")
+Rel_U(syncer, mempool, "Updates mempool")
+Rel_D(mempool, block_creation, "Reads txs")
+Rel_D(block_creation, chainDB, "Add new block")
+
+Rel_R(tx_sub_in, mempool, "Adds Txs")
+Rel_R(mempool, tx_sub_out, "Adds Txs")
+
+Lay_L(block_fetch_out, block_fetch_in)
+
+Rel_L(chainDB, chain_sync_in, "Reads Chain state")
+Rel_D(chain_sync_in, candidates, "Download headers")
+Rel_D(candidates, block_download, "Select blocks to download")
+Rel_R(block_download, block_fetch_in, "Select blocks to download")
+Rel_U(block_fetch_in, chainDB, "Extends chain")
+Rel_D(chainDB, block_fetch_out, "Propagates blocks to peers")
+Rel_R(chainDB, chain_sync_out, "Propagates blocks to clients")
+
+@enduml
