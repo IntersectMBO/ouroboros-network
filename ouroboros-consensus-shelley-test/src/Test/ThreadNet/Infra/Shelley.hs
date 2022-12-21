@@ -91,6 +91,7 @@ import           Cardano.Protocol.TPraos.OCert
                      (OCert (ocertKESPeriod, ocertN, ocertSigma, ocertVkHot))
 import qualified Cardano.Protocol.TPraos.OCert as SL (KESPeriod, OCert (OCert),
                      OCertSignable (..))
+import           Cardano.Protocol.TPraos.Rules.Overlay (toPoolStakeVRF)                     
 
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
@@ -391,7 +392,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
               ( SL.hashKey . SL.VKey . deriveVerKeyDSIGN $ cnStakingKey
               , SL.PoolParams
                 { SL._poolId = poolHash
-                , SL._poolVrf = vrfHash
+                , SL._poolVrf = toPoolStakeVRF vrfHash
                   -- Each core node pledges its full stake to the pool.
                 , SL._poolPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
                 , SL._poolCost = SL.Coin 1

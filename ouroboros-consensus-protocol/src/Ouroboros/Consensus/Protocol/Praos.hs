@@ -44,7 +44,7 @@ import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer),
                      VKey (VKey), coerceKeyRole, hashKey)
 import qualified Cardano.Ledger.Keys as SL
 import           Cardano.Ledger.PoolDistr
-                     (IndividualPoolStake (IndividualPoolStake))
+                     (IndividualPoolStake (IndividualPoolStake), PoolStakeVRF)
 import           Cardano.Ledger.Shelley.API (computeStabilityWindow)
 import qualified Cardano.Ledger.Shelley.API as SL
 import           Cardano.Ledger.Slot (Duration (Duration), (+*))
@@ -53,6 +53,7 @@ import           Cardano.Protocol.TPraos.BHeader (BoundedNatural (bvValue),
 import           Cardano.Protocol.TPraos.OCert (KESPeriod (KESPeriod),
                      OCert (OCert), OCertSignable)
 import qualified Cardano.Protocol.TPraos.OCert as OCert
+import           Cardano.Protocol.TPraos.Rules.Overlay (hashPoolStakeVRF)
 import           Cardano.Slotting.EpochInfo (EpochInfo, epochInfoEpoch,
                      epochInfoFirst, hoistEpochInfo)
 import           Cardano.Slotting.Slot (EpochNo (EpochNo), SlotNo (SlotNo),
@@ -321,7 +322,7 @@ data PraosValidationErr c
       !(KeyHash SL.StakePool c) -- unknown VRF keyhash (not registered)
   | VRFKeyWrongVRFKey
       !(KeyHash SL.StakePool c) -- KeyHash of block issuer
-      !(SL.Hash c (SL.VerKeyVRF c)) -- VRF KeyHash registered with stake pool
+      !(SL.Hash c PoolStakeVRF) -- VRF KeyHash registered with stake pool
       !(SL.Hash c (SL.VerKeyVRF c)) -- VRF KeyHash from Header
   | VRFKeyBadProof
       !SlotNo -- Slot used for VRF calculation
@@ -538,7 +539,7 @@ validateVRFSignature eta0 (Views.lvPoolDistr -> SL.PoolDistr pd) f b = do
   case Map.lookup hk pd of
     Nothing -> throwError $ VRFKeyUnknown hk
     Just (IndividualPoolStake sigma vrfHK) -> do
-      vrfHK == hashVerKeyVRF vrfK
+      vrfHK == hashPoolStakeVRF vrfK
         ?! VRFKeyWrongVRFKey hk vrfHK (hashVerKeyVRF vrfK)
       VRF.verifyCertified
         ()
