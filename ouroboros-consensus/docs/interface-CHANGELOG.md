@@ -58,6 +58,10 @@ https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
 ## Circa 2022-11-23
 
+- Removed dead `protocolInfoPraosBabbage` and `protocolInfoPraosShelleyBased`.
+
+## Circa 2022-11-23
+
 - Added `ouroboros-consensus-diffusion`, a top level integration package of
   `ouroboros-network` & `ouroboros-consensus`
 
