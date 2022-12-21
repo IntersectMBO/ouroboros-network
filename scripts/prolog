@@ -84,6 +84,7 @@ This graph depicts the relationship between the various `xxx-consensus-yyy` pack
 
 === Consensus Components
 
-The following  [C4 Component Diagram](https://c4model.com/) provides a high-level overview of the main components involved in /Consensus/:
+The following  [C4 Component Diagram](https://c4model.com/) provides a high-level overview of the main components involved in /Consensus/. Note that clicking on
+a box should link to the corresponding documentation:
 
 ![Ouroboros Consensus Components](./Consensus.svg)
