@@ -554,7 +554,7 @@ prop_diffusionScript_commandScript_valid (DiffusionScript sa ((_, cmds): t)) =
 data DiffusionSimulationTrace
   = TrJoiningNetwork
   | TrKillingNode
-  | TrReconfigurionNode
+  | TrReconfiguringNode
   | TrUpdatingDNS
   | TrRunning
   deriving (Show)
@@ -679,7 +679,7 @@ diffusionSimulation
     runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
-      traceWith tracer (WithName (naAddr nArgs) TrReconfigurionNode)
+      traceWith tracer (WithName (naAddr nArgs) TrReconfiguringNode)
       _ <- atomically $ writeTVar lrpVar newLrp
       runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                  cs
