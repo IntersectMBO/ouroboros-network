@@ -129,7 +129,7 @@ class LedgerTablesCanHardFork xs where
   hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables xs) xs
 
 newtype InjectLedgerTables xs x = InjectLedgerTables {
-      applyInjectLedgerTables :: forall mk. IsApplyMapKind mk =>
+      applyInjectLedgerTables :: forall mk. IsMapKind mk =>
            LedgerTables (LedgerState                  x) mk
         -> LedgerTables (LedgerState (HardForkBlock xs)) mk
     }

@@ -269,7 +269,7 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
 -------------------------------------------------------------------------------}
 
 projectLedgerTablesHelper :: forall proto1 era1 proto2 era2 fmk mk.
-     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsApplyMapKind mk)
+     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fmk x -> LedgerTables (LedgerState x) mk
@@ -308,7 +308,7 @@ instance (SL.Crypto (Snd a) ~ SL.Crypto c, ShelleyBasedEra (Snd a)) => SndShelle
 -- 'projectLedgerTablesHelper'
 withLedgerTablesHelper ::
   forall proto1 era1 proto2 era2 mk fany fmk.
-     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsApplyMapKind mk)
+     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fany x -> LedgerTables (LedgerState x) mk -> fmk x
