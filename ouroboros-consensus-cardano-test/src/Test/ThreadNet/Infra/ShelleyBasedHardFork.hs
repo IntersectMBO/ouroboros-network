@@ -269,7 +269,7 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
 -------------------------------------------------------------------------------}
 
 projectLedgerTablesHelper :: forall proto1 era1 proto2 era2 fmk mk.
-     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsApplyMapKind mk)
+     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fmk x -> LedgerTables (LedgerState x) mk
@@ -299,7 +299,7 @@ projectLedgerTablesHelper prj (HardForkState tele) =
         inj ::
              ApplyMapKind mk (SL.TxIn (EraCrypto era1)) (Core.TxOut (Snd a))
           -> ApplyMapKind mk (SL.TxIn (EraCrypto era1)) (ShelleyTxOut (MapSnd '[ '(proto1, era1), '(proto2, era2)]))
-        inj = mapValuesAppliedMK (ShelleyTxOut . SOP.injectNS (castSndIdx idx) . TxOutWrapper)
+        inj = mapMK (ShelleyTxOut . SOP.injectNS (castSndIdx idx) . TxOutWrapper)
 
 class (SL.Crypto (Snd a) ~ SL.Crypto c, ShelleyBasedEra (Snd a)) => SndShelleyBasedEra c a
 instance (SL.Crypto (Snd a) ~ SL.Crypto c, ShelleyBasedEra (Snd a)) => SndShelleyBasedEra c a
@@ -308,7 +308,7 @@ instance (SL.Crypto (Snd a) ~ SL.Crypto c, ShelleyBasedEra (Snd a)) => SndShelle
 -- 'projectLedgerTablesHelper'
 withLedgerTablesHelper ::
   forall proto1 era1 proto2 era2 mk fany fmk.
-     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsApplyMapKind mk)
+     (ShelleyBasedHardForkConstraints proto1 era1 proto2 era2, IsMapKind mk)
   => (forall x.
          TickedTableStuff (LedgerState x)
       => fany x -> LedgerTables (LedgerState x) mk -> fmk x
@@ -338,7 +338,7 @@ withLedgerTablesHelper with (HardForkState tele) (ShelleyBasedHardForkLedgerTabl
             newInnerSt =
                 with innerSt
               $ ShelleyLedgerTables
-              $ mapValuesAppliedMK
+              $ mapMK
                   (unTxOutWrapper . SOP.apFn translate . SOP.K . unShelleyTxOut)
                   appliedMK
         in UncurryComp $ current{HFC.currentState = newInnerSt}
@@ -414,7 +414,7 @@ deriving instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 => NoT
 
 instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
       => ShowLedgerState (LedgerTables (LedgerState (ShelleyBasedHardForkBlock proto1 era1 proto2 era2))) where
-  showsLedgerState _mk (ShelleyBasedHardForkLedgerTables utxo) =
+  showsLedgerState (ShelleyBasedHardForkLedgerTables utxo) =
         showParen True
       $ showString "ShelleyBasedHardForkLedgerTables " . showsApplyMapKind utxo
 
@@ -452,7 +452,7 @@ instance
       shelley idx =
           InjectLedgerTables
         $ \(ShelleyLedgerTables lt) ->
-            ShelleyBasedHardForkLedgerTables $ mapValuesAppliedMK (ShelleyTxOut . SOP.injectNS (castSndIdx idx) . TxOutWrapper) lt
+            ShelleyBasedHardForkLedgerTables $ mapMK (ShelleyTxOut . SOP.injectNS (castSndIdx idx) . TxOutWrapper) lt
 
 {-------------------------------------------------------------------------------
   Protocol info

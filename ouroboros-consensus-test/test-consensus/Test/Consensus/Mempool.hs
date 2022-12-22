@@ -352,7 +352,7 @@ instance Show TestSetup where
   show (TestSetup st tx cap) =
     showParen True
       (showString "TestSetup {"
-        . showSpace      . showString "testLedgerState = " . showsLedgerState sMapKind st
+        . showSpace      . showString "testLedgerState = " . showsLedgerState st
         . showCommaSpace . showString "testInitialTxs = " . shows tx
         . showCommaSpace . showString "testMempoolCapOverride = " . shows cap
         . showString " }"

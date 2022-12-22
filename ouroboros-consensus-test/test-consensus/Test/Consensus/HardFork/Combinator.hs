@@ -415,7 +415,7 @@ instance InMemory (Ticked1 (LedgerState (HardForkBlock '[BlockA, BlockB]))) wher
           hfstate
 
 instance ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[BlockA, BlockB]))) where
-  showsLedgerState _mk = shows
+  showsLedgerState = shows
 
 {-------------------------------------------------------------------------------
   Hard fork

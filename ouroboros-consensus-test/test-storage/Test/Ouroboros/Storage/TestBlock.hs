@@ -561,7 +561,7 @@ instance IsLedger (LedgerState TestBlock) where
                                  . noNewTickingDiffs
 
 instance ShowLedgerState (LedgerState TestBlock) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance TableStuff (LedgerState TestBlock) where
   data LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables
@@ -595,7 +595,7 @@ instance TickedTableStuff (LedgerState TestBlock) where
       TickedTestLedger $ withLedgerTables st tables
 
 instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})

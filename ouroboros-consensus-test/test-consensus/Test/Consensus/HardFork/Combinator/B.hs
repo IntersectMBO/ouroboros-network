@@ -195,10 +195,10 @@ instance TickedTableStuff (LedgerState BlockB) where
   withLedgerTablesTicked    st NoBTables = convertMapKind st
 
 instance ShowLedgerState (LedgerState BlockB) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance (ShowLedgerState (LedgerTables (LedgerState BlockB))) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 type instance LedgerCfg (LedgerState BlockB) = ()
 

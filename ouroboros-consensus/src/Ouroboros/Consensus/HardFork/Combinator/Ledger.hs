@@ -267,10 +267,10 @@ instance (SingleEraBlock x) => TickedTableStuff (LedgerState (HardForkBlock '[x]
       current' = current{currentState = FlipTickedLedgerState x'}
 
 instance TableStuff (LedgerState x) => ShowLedgerState (LedgerTables (LedgerState (HardForkBlock '[x]))) where
-  showsLedgerState sing (LedgerTablesOne x) =
+  showsLedgerState (LedgerTablesOne x) =
         showString "LedgerTablesOne"
       . showSpace
-      . showParen True (showsLedgerState sing x)
+      . showParen True (showsLedgerState x)
 
 instance
      ( TableStuff (LedgerState x)

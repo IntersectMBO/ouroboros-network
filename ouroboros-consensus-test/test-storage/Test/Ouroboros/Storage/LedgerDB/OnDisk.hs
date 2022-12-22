@@ -357,7 +357,7 @@ instance TickedTableStuff (LedgerState TestBlock) where
     TickedTestLedger $ withLedgerTables st tables
 
 instance ShowLedgerState (LedgerTables (LedgerState TestBlock)) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance StowableLedgerTables (LedgerState TestBlock) where
   stowLedgerTables     = stowErr "stowLedgerTables"
