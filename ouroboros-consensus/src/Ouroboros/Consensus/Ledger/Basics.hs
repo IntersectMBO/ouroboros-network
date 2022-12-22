@@ -789,7 +789,15 @@ data ApplyMapKind' :: MapKind' -> Type -> Type -> Type where
   ApplyQueryAllMK  ::                ApplyMapKind' QueryMK' k v
   ApplyQuerySomeMK :: !(Keys k v) -> ApplyMapKind' QueryMK' k v
 
-class IsMapKind mk where
+-- | A general interface to mapkinds.
+--
+-- In some cases where @mk@ is not specialised to a concrete mapkind like
+-- @'ValuesMK'@, there are often still a number of operations that we can
+-- perform for this @mk@ that make sense regardless of the concrete mapkind. For
+-- example, we should always be able to map over a mapkind to change the type of
+-- values that it contains. This class is an interface to mapkinds that provides
+-- such common functions.
+class IsMapKind (mk :: MapKind) where
   emptyMK :: forall k v. (Ord k, Eq v) => mk k v
   default emptyMK :: forall k v. Monoid (mk k v) => mk k v
   emptyMK = mempty
