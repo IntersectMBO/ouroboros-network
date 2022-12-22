@@ -119,7 +119,7 @@ instance IsLedger (LedgerState ByronSpecBlock) where
           }
 
 instance ShowLedgerState (LedgerState ByronSpecBlock) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance TableStuff (LedgerState ByronSpecBlock) where
   data LedgerTables (LedgerState ByronSpecBlock) mk = NoByronSpecLedgerTables
@@ -153,7 +153,7 @@ instance InMemory (Ticked1 (LedgerState ByronSpecBlock)) where
   convertMapKind TickedByronSpecLedgerState{..} = TickedByronSpecLedgerState{..}
 
 instance ShowLedgerState (LedgerTables (LedgerState ByronSpecBlock)) where
-  showsLedgerState _sing = shows
+  showsLedgerState = shows
 
 instance StowableLedgerTables (LedgerState ByronSpecBlock) where
   stowLedgerTables     = convertMapKind

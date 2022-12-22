@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE DeriveFunctor         #-}
@@ -60,26 +61,18 @@ module Ouroboros.Consensus.Ledger.Basics (
     -- ** Tables values
   , ApplyMapKind
   , ApplyMapKind' (..)
+  , IsMapKind (..)
   , MapKind
-  , SMapKind
-  , Sing (..)
-  , emptyAppliedMK
-  , mapValuesAppliedMK
-  , sMapKind
-  , sMapKind'
   , showsApplyMapKind
-  , toSMapKind
     -- *** Mediators
   , CodecMK (..)
   , DiffMK
   , EmptyMK
-  , IsApplyMapKind
   , KeysMK
   , NameMK (..)
   , QueryMK
   , SeqDiffMK
   , TrackingMK
-  , UnApplyMapKind
   , ValuesMK
     -- ** Queries
   , DiskLedgerView (..)
@@ -142,10 +135,9 @@ import qualified Data.Map as Map
 import           Data.Monoid (Sum (..))
 import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
-import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..))
+import           NoThunks.Class (NoThunks (..))
 import qualified NoThunks.Class as NoThunks
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Slot (WithOrigin (..))
 
 import           Ouroboros.Network.AnchoredSeq (AnchoredSeq)
@@ -157,7 +149,6 @@ import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
-import           Ouroboros.Consensus.Util.Singletons
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
@@ -225,7 +216,7 @@ pureLedgerResult a = LedgerResult {
 -------------------------------------------------------------------------------}
 
 class ShowLedgerState (l :: LedgerStateKind) where
-  showsLedgerState :: SMapKind mk -> l (ApplyMapKind' mk) -> ShowS
+  showsLedgerState :: l (ApplyMapKind' mk) -> ShowS
 
 {-------------------------------------------------------------------------------
   Definition of a ledger independent of a choice of block
@@ -236,8 +227,8 @@ type family LedgerCfg (l :: LedgerStateKind) :: Type
 
 class ( -- Requirements on the ledger state itself
         ShowLedgerState                     l
---      , forall mk. IsApplyMapKind mk                => Eq       (l mk)
---      , forall mk. (IsApplyMapKind mk, Typeable mk) => NoThunks (l mk)
+--      , forall mk. IsMapKind mk                => Eq       (l mk)
+--      , forall mk. (IsMapKind mk, Typeable mk) => NoThunks (l mk)
       , Eq       (l EmptyMK)
       , NoThunks (l EmptyMK)
       , Eq       (l DiffMK)
@@ -314,7 +305,7 @@ class ( -- Requirements on the ledger state itself
   -- >    ledgerTipPoint (applyChainTick cfg slot st)
   -- > == ledgerTipPoint st
   --
-  -- NOTE: The 'IsApplyMapKind' constraint is here for the same reason it's on
+  -- NOTE: The 'IsMapKind' constraint is here for the same reason it's on
   -- 'projectLedgerTables'
   applyChainTickLedgerResult ::
        LedgerCfg l
@@ -361,7 +352,7 @@ class ( ShowLedgerState (LedgerTables l)
   -- the 'SingI' constraint. Unfortunately, that is not always the case. The
   -- example we have found in our prototype UTxO HD implementat is that a Byron
   -- ledger state does not determine @mk@, but the Cardano ledger tables do.
-  projectLedgerTables :: IsApplyMapKind mk => l mk -> LedgerTables l mk
+  projectLedgerTables :: IsMapKind mk => l mk -> LedgerTables l mk
 
   -- | Overwrite the tables in some ledger state.
   --
@@ -373,9 +364,9 @@ class ( ShowLedgerState (LedgerTables l)
   --
   -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
   --
-  -- TODO: This 'IsApplyMapKind' constraint is necessary because the
+  -- TODO: This 'IsMapKind' constraint is necessary because the
   -- 'CardanoBlock' instance uses 'projectLedgerTables'.
-  withLedgerTables :: IsApplyMapKind mk => l any -> LedgerTables l mk -> l mk
+  withLedgerTables :: IsMapKind mk => l any -> LedgerTables l mk -> l mk
 
   pureLedgerTables ::
        (forall k v.
@@ -478,14 +469,14 @@ class ( ShowLedgerState (LedgerTables l)
   namesLedgerTables :: LedgerTables l NameMK
 
 overLedgerTables ::
-     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
+     (TableStuff l, IsMapKind mk1, IsMapKind mk2)
   => (LedgerTables l mk1 -> LedgerTables l mk2)
   -> l mk1
   -> l mk2
 overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
 
 mapOverLedgerTables ::
-     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
+     (TableStuff l, IsMapKind mk1, IsMapKind mk2)
   => (forall k v.
           (Ord k, Eq v)
        => mk1 k v
@@ -496,7 +487,7 @@ mapOverLedgerTables ::
 mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
 
 zipOverLedgerTables ::
-     (TableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
+     (TableStuff l, IsMapKind mk1, IsMapKind mk3)
   => (forall k v.
           (Ord k, Eq v)
        => mk1 k v
@@ -514,15 +505,15 @@ zipOverLedgerTables f l tables2 =
 -- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
 -- involving double-ticked types.
 class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
-  -- | NOTE: The 'IsApplyMapKind mk2' constraint is here for the same reason
+  -- | NOTE: The 'IsMapKind mk2' constraint is here for the same reason
   -- it's on 'projectLedgerTables'
-  projectLedgerTablesTicked :: IsApplyMapKind mk => Ticked1 l mk  -> LedgerTables l mk
-  -- | NOTE: The 'IsApplyMapKind mk2' constraint is here for the same reason
+  projectLedgerTablesTicked :: IsMapKind mk => Ticked1 l mk  -> LedgerTables l mk
+  -- | NOTE: The 'IsMapKind mk2' constraint is here for the same reason
   -- it's on 'withLedgerTables'
-  withLedgerTablesTicked    :: IsApplyMapKind mk => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
+  withLedgerTablesTicked    :: IsMapKind mk => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
 
 overLedgerTablesTicked ::
-     (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
+     (TickedTableStuff l, IsMapKind mk1, IsMapKind mk2)
   => (LedgerTables l mk1 -> LedgerTables l mk2)
   -> Ticked1 l mk1
   -> Ticked1 l mk2
@@ -530,7 +521,7 @@ overLedgerTablesTicked f l =
     withLedgerTablesTicked l $ f $ projectLedgerTablesTicked l
 
 mapOverLedgerTablesTicked ::
-     (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk2)
+     (TickedTableStuff l, IsMapKind mk1, IsMapKind mk2)
   => (forall k v.
          (Ord k, Eq v)
       => mk1 k v
@@ -541,7 +532,7 @@ mapOverLedgerTablesTicked ::
 mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
 
 zipOverLedgerTablesTicked ::
-     (TickedTableStuff l, IsApplyMapKind mk1, IsApplyMapKind mk3)
+     (TickedTableStuff l, IsMapKind mk1, IsMapKind mk3)
   => (forall k v.
          (Ord k, Eq v)
       => mk1 k v
@@ -618,8 +609,8 @@ emptyLedgerTables :: TableStuff l => LedgerTables l EmptyMK
 emptyLedgerTables = polyEmptyLedgerTables
 
 -- | Empty values for every table
-polyEmptyLedgerTables :: forall mk l. (TableStuff l, IsApplyMapKind mk) => LedgerTables l mk
-polyEmptyLedgerTables = pureLedgerTables $ emptyAppliedMK sMapKind
+polyEmptyLedgerTables :: forall mk l. (TableStuff l, IsMapKind mk) => LedgerTables l mk
+polyEmptyLedgerTables = pureLedgerTables emptyMK
 
 -- Forget all
 
@@ -798,15 +789,51 @@ data ApplyMapKind' :: MapKind' -> Type -> Type -> Type where
   ApplyQueryAllMK  ::                ApplyMapKind' QueryMK' k v
   ApplyQuerySomeMK :: !(Keys k v) -> ApplyMapKind' QueryMK' k v
 
-emptyAppliedMK :: (Ord k, Eq v) => SMapKind mk -> ApplyMapKind' mk k v
-emptyAppliedMK = \case
-    SEmptyMK    -> ApplyEmptyMK
-    SKeysMK     -> ApplyKeysMK      mempty
-    SValuesMK   -> ApplyValuesMK    mempty
-    STrackingMK -> ApplyTrackingMK  mempty mempty
-    SDiffMK     -> ApplyDiffMK      mempty
-    SSeqDiffMK  -> ApplySeqDiffMK   empty
-    SQueryMK    -> ApplyQuerySomeMK mempty
+-- | A general interface to mapkinds.
+--
+-- In some cases where @mk@ is not specialised to a concrete mapkind like
+-- @'ValuesMK'@, there are often still a number of operations that we can
+-- perform for this @mk@ that make sense regardless of the concrete mapkind. For
+-- example, we should always be able to map over a mapkind to change the type of
+-- values that it contains. This class is an interface to mapkinds that provides
+-- such common functions.
+class IsMapKind (mk :: MapKind) where
+  emptyMK :: forall k v. (Ord k, Eq v) => mk k v
+  default emptyMK :: forall k v. Monoid (mk k v) => mk k v
+  emptyMK = mempty
+
+  mapMK :: forall k v v'. (Ord k, Eq v, Eq v') => (v -> v') -> mk k v -> mk k v'
+  default mapMK :: forall k v v'. (Functor (mk k)) => (v -> v') -> mk k v -> mk k v'
+  mapMK = fmap
+
+instance IsMapKind EmptyMK where
+  emptyMK = ApplyEmptyMK
+  mapMK _ ApplyEmptyMK = ApplyEmptyMK
+
+instance IsMapKind KeysMK where
+  emptyMK = ApplyKeysMK mempty
+  mapMK f (ApplyKeysMK ks) = ApplyKeysMK $ fmap f ks
+
+instance IsMapKind ValuesMK where
+  emptyMK = ApplyValuesMK mempty
+  mapMK f (ApplyValuesMK vs) = ApplyValuesMK $ fmap f vs
+
+instance IsMapKind TrackingMK where
+  emptyMK = ApplyTrackingMK mempty mempty
+  mapMK f (ApplyTrackingMK vs d) = ApplyTrackingMK (fmap f vs) (fmap f d)
+
+instance IsMapKind DiffMK where
+  emptyMK = ApplyDiffMK mempty
+
+instance IsMapKind SeqDiffMK where
+  emptyMK = ApplySeqDiffMK empty
+  mapMK f (ApplySeqDiffMK ds) = ApplySeqDiffMK $ mapDiffSeq f ds
+
+instance IsMapKind (ApplyMapKind' QueryMK') where
+  emptyMK = ApplyQuerySomeMK mempty
+  mapMK f qmk = case qmk of
+    ApplyQuerySomeMK ks -> ApplyQuerySomeMK $ fmap f ks
+    ApplyQueryAllMK     -> ApplyQueryAllMK
 
 instance Ord k => Semigroup (ApplyMapKind' KeysMK' k v) where
   ApplyKeysMK l <> ApplyKeysMK r = ApplyKeysMK (l <> r)
@@ -816,18 +843,6 @@ instance Ord k => Monoid (ApplyMapKind' KeysMK' k v) where
 
 instance Functor (DiffMK k) where
   fmap f (ApplyDiffMK d) = ApplyDiffMK $ fmap f d
-
-mapValuesAppliedMK :: (Ord k, Eq v, Eq v') => (v -> v') -> ApplyMapKind' mk k v ->  ApplyMapKind' mk k v'
-mapValuesAppliedMK f = \case
-  ApplyEmptyMK         -> ApplyEmptyMK
-  ApplyKeysMK ks       -> ApplyKeysMK     (castKeys ks)
-  ApplyValuesMK vs     -> ApplyValuesMK   (fmap f vs)
-  ApplyTrackingMK vs d -> ApplyTrackingMK (fmap f vs)   (fmap f d)
-  ApplyDiffMK d        -> ApplyDiffMK     (fmap f d)
-  ApplySeqDiffMK ds    -> ApplySeqDiffMK  (mapDiffSeq f ds)
-
-  ApplyQueryAllMK      -> ApplyQueryAllMK
-  ApplyQuerySomeMK vs  -> ApplyQuerySomeMK (fmap f vs)
 
 instance (Ord k, Eq v) => Eq (ApplyMapKind' mk k v) where
   ApplyEmptyMK          == _                     = True
@@ -868,80 +883,6 @@ showsApplyMapKind = \case
 instance (Show k, Show v) => Show (ApplyMapKind' mk k v) where
   show = flip showsApplyMapKind ""
 
-data instance Sing (mk :: MapKind') :: Type where
-  SEmptyMK    :: Sing EmptyMK'
-  SKeysMK     :: Sing KeysMK'
-  SValuesMK   :: Sing ValuesMK'
-  STrackingMK :: Sing TrackingMK'
-  SDiffMK     :: Sing DiffMK'
-  SSeqDiffMK  :: Sing SeqDiffMK'
-  SQueryMK    :: Sing QueryMK'
-
-type SMapKind = Sing :: MapKind' -> Type
-
-type family UnApplyMapKind (mk :: MapKind) :: MapKind' where
-  UnApplyMapKind (ApplyMapKind' mk') = mk'
-
-type IsApplyMapKind mk = (mk ~ ApplyMapKind' (UnApplyMapKind mk), SingI (UnApplyMapKind mk))
-
-instance SingI EmptyMK'    where sing = SEmptyMK
-instance SingI KeysMK'     where sing = SKeysMK
-instance SingI ValuesMK'   where sing = SValuesMK
-instance SingI TrackingMK' where sing = STrackingMK
-instance SingI DiffMK'     where sing = SDiffMK
-instance SingI SeqDiffMK'  where sing = SSeqDiffMK
-instance SingI QueryMK'    where sing = SQueryMK
-
-sMapKind :: IsApplyMapKind mk => SMapKind (UnApplyMapKind mk)
-sMapKind = sing
-
-sMapKind' :: IsApplyMapKind mk => proxy mk -> SMapKind (UnApplyMapKind mk)
-sMapKind' _ = sMapKind
-
-toSMapKind :: ApplyMapKind' mk k v -> SMapKind mk
-toSMapKind = \case
-    ApplyEmptyMK{}     -> SEmptyMK
-    ApplyKeysMK{}      -> SKeysMK
-    ApplyValuesMK{}    -> SValuesMK
-    ApplyTrackingMK{}  -> STrackingMK
-    ApplyDiffMK{}      -> SDiffMK
-    ApplySeqDiffMK{}   -> SSeqDiffMK
-
-    ApplyQueryAllMK{}  -> SQueryMK
-    ApplyQuerySomeMK{} -> SQueryMK
-
-instance Eq (Sing (mk :: MapKind')) where
-  _ == _ = True
-
-instance Show (Sing (mk :: MapKind')) where
-  show = \case
-    SEmptyMK    -> "SEmptyMK"
-    SKeysMK     -> "SKeysMK"
-    SValuesMK   -> "SValuesMK"
-    STrackingMK -> "STrackingMK"
-    SDiffMK     -> "SDiffMK"
-    SSeqDiffMK  -> "SSeqDiffMK"
-    SQueryMK    -> "SQueryMK"
-
-deriving via OnlyCheckWhnfNamed "Sing @MapKind'" (Sing (mk :: MapKind')) instance NoThunks (Sing mk)
-
--- TODO include a tag, for some self-description
-instance ToCBOR (Sing EmptyMK')    where toCBOR SEmptyMK    = CBOR.encodeNull
-instance ToCBOR (Sing KeysMK')     where toCBOR SKeysMK     = CBOR.encodeNull
-instance ToCBOR (Sing ValuesMK')   where toCBOR SValuesMK   = CBOR.encodeNull
-instance ToCBOR (Sing TrackingMK') where toCBOR STrackingMK = CBOR.encodeNull
-instance ToCBOR (Sing DiffMK')     where toCBOR SDiffMK     = CBOR.encodeNull
-instance ToCBOR (Sing SeqDiffMK')  where toCBOR SSeqDiffMK  = CBOR.encodeNull
-instance ToCBOR (Sing QueryMK')    where toCBOR SQueryMK    = CBOR.encodeNull
-
--- TODO include a tag, for some self-description
-instance FromCBOR (Sing EmptyMK')    where fromCBOR = SEmptyMK    <$ CBOR.decodeNull
-instance FromCBOR (Sing KeysMK')     where fromCBOR = SKeysMK     <$ CBOR.decodeNull
-instance FromCBOR (Sing ValuesMK')   where fromCBOR = SValuesMK   <$ CBOR.decodeNull
-instance FromCBOR (Sing TrackingMK') where fromCBOR = STrackingMK <$ CBOR.decodeNull
-instance FromCBOR (Sing DiffMK')     where fromCBOR = SDiffMK     <$ CBOR.decodeNull
-instance FromCBOR (Sing SeqDiffMK')  where fromCBOR = SSeqDiffMK  <$ CBOR.decodeNull
-instance FromCBOR (Sing QueryMK')    where fromCBOR = SQueryMK    <$ CBOR.decodeNull
 
 {-------------------------------------------------------------------------------
   Link block to its ledger
@@ -1028,7 +969,7 @@ instance (ShowLedgerState l, ShowLedgerState (LedgerTables l)) => Show (DbChange
         showParen (p >= 11)
       $   showString "DbChangelog {"
         . showSpace      . showString "changelogDiffAnchor = "      . shows changelogDiffAnchor
-        . showCommaSpace . showString "changelogDiffs = "           . showsLedgerState sMapKind changelogDiffs
+        . showCommaSpace . showString "changelogDiffs = "           . showsLedgerState changelogDiffs
         . showCommaSpace . showString "changelogImmutableStates = " . shows changelogImmutableStates
         . showCommaSpace . showString "changelogVolatileStates = "  . shows changelogVolatileStates
         . showString " }"
@@ -1050,7 +991,7 @@ deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
 instance ShowLedgerState l => Show (DbChangelogState l) where
   showsPrec p (DbChangelogState x) =
         showParen (p >= 11)
-      $ showString "DbChangelogState " . showsLedgerState sMapKind x
+      $ showString "DbChangelogState " . showsLedgerState x
 
 instance GetTip (l EmptyMK) => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
   asAnchor = id

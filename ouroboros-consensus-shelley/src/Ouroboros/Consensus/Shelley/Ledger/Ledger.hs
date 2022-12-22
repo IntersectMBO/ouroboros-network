@@ -88,7 +88,6 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
-import           Ouroboros.Consensus.Util.Singletons (SingI)
 import           Ouroboros.Consensus.Util.Versioned
 
 import qualified Cardano.Ledger.BaseTypes as SL (epochInfoPure)
@@ -217,17 +216,17 @@ data instance LedgerState (ShelleyBlock proto era) mk = ShelleyLedgerState {
 deriving instance (ShelleyBasedEra era, Eq       (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => Eq       (LedgerState (ShelleyBlock proto era) mk)
 deriving instance (ShelleyBasedEra era, NoThunks (mk (SL.TxIn (EraCrypto era)) (Core.TxOut era))) => NoThunks (LedgerState (ShelleyBlock proto era) mk)
 
-instance (ShelleyBasedEra era, SingI mk) => Show (LedgerState (ShelleyBlock proto era) (ApplyMapKind' mk)) where
-  showsPrec _prec = showsLedgerState sMapKind
+instance ShelleyBasedEra era => Show (LedgerState (ShelleyBlock proto era) (ApplyMapKind' mk)) where
+  showsPrec _prec = showsLedgerState
 
 instance ShelleyBasedEra era => ShowLedgerState (LedgerState (ShelleyBlock proto era)) where
-  showsLedgerState mk st =
+  showsLedgerState st =
         showParen True
       $   showString "ShelleyLedgerState {"
         . showSpace      . showString "shelleyLedgerTip = " . shows shelleyLedgerTip
         . showCommaSpace . showString "shelleyLedgerState = " . shows shelleyLedgerState
         . showCommaSpace . showString "shelleyLedgerTransition = " . shows shelleyLedgerTransition
-        . showCommaSpace . showString "shelleyLedgerTables = " . showsLedgerState mk shelleyLedgerTables
+        . showCommaSpace . showString "shelleyLedgerTables = " . showsLedgerState shelleyLedgerTables
         . showString " }"
     where
       ShelleyLedgerState _dummy _ _ _ = st
@@ -343,7 +342,7 @@ instance ShelleyBasedEra era => SufficientSerializationForAnyBackingStore (Ledge
     codecLedgerTables = ShelleyLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
 
 instance ShelleyBasedEra era => ShowLedgerState (LedgerTables (LedgerState (ShelleyBlock proto era))) where
-  showsLedgerState _mk (ShelleyLedgerTables utxo) =
+  showsLedgerState (ShelleyLedgerTables utxo) =
         showParen True
       $ showString "ShelleyLedgerTables " . showsApplyMapKind utxo
 

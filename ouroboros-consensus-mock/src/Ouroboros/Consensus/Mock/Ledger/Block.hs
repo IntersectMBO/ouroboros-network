@@ -398,21 +398,21 @@ data instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
     }
   deriving stock   (Generic)
 
-instance (SimpleCrypto c, Typeable ext, IsApplyMapKind mk)
-      => Show (LedgerState (SimpleBlock c ext) mk) where
-  show st = showsLedgerState sMapKind st ""
+instance (SimpleCrypto c, Typeable ext)
+      => Show (LedgerState (SimpleBlock c ext) (ApplyMapKind' mk)) where
+  show st = showsLedgerState st ""
 
-deriving instance (SimpleCrypto c, Typeable ext, IsApplyMapKind mk)
+deriving instance (SimpleCrypto c, Typeable ext, Eq (mk Mock.TxIn Mock.TxOut))
             => Eq (LedgerState (SimpleBlock c ext) mk)
-deriving instance (SimpleCrypto c, Typeable ext, IsApplyMapKind mk)
+deriving instance (SimpleCrypto c, Typeable ext, NoThunks (mk Mock.TxIn Mock.TxOut))
             => NoThunks (LedgerState (SimpleBlock c ext) mk)
 
 instance (SimpleCrypto c, Typeable ext) => ShowLedgerState (LedgerState (SimpleBlock c ext)) where
-  showsLedgerState mk st =
+  showsLedgerState st =
         showParen True
       $   showString "SimpleLedgerState {"
         . showSpace . showString "simpleLedgerState = " . shows simpleLedgerState
-        . showCommaSpace . showString "simpleLedgerTables = " . showsLedgerState mk simpleLedgerTables
+        . showCommaSpace . showString "simpleLedgerTables = " . showsLedgerState simpleLedgerTables
         . showString " }"
     where
       SimpleLedgerState {
@@ -426,16 +426,16 @@ newtype instance Ticked1 (LedgerState (SimpleBlock c ext)) mk = TickedSimpleLedg
     }
   deriving stock   (Generic)
 
-deriving instance (SimpleCrypto c, Typeable ext, IsApplyMapKind mk)
+deriving instance (SimpleCrypto c, Typeable ext, Eq (mk Mock.TxIn Mock.TxOut))
                => Eq (Ticked1 (LedgerState (SimpleBlock c ext)) mk)
 deriving anyclass
-         instance (SimpleCrypto c, Typeable ext, IsApplyMapKind mk)
+         instance (SimpleCrypto c, Typeable ext, NoThunks (mk Mock.TxIn Mock.TxOut))
                => NoThunks (Ticked1 (LedgerState (SimpleBlock c ext)) mk)
 
 deriving anyclass
-         instance IsApplyMapKind mk
+         instance NoThunks (mk Mock.TxIn Mock.TxOut)
                => NoThunks (LedgerTables (LedgerState (SimpleBlock c ext)) mk)
-deriving instance IsApplyMapKind mk
+deriving instance Eq (mk Mock.TxIn Mock.TxOut)
                => Eq (LedgerTables (LedgerState (SimpleBlock c ext)) mk)
 
 instance (SimpleCrypto c, Typeable ext) => TableStuff (LedgerState (SimpleBlock c ext)) where
@@ -490,7 +490,7 @@ instance SufficientSerializationForAnyBackingStore (LedgerState (SimpleBlock c e
     codecLedgerTables = SimpleLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
 
 instance ShowLedgerState (LedgerTables (LedgerState (SimpleBlock c ext))) where
-  showsLedgerState _sing (SimpleLedgerTables tbs) =
+  showsLedgerState (SimpleLedgerTables tbs) =
       showParen True
     $ showString "SimpleLedgerTables " . showsApplyMapKind tbs
 

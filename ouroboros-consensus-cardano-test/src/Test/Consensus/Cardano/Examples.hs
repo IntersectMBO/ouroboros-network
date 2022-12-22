@@ -34,7 +34,7 @@ import           Ouroboros.Network.Block (Serialised (..))
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, IsApplyMapKind,
+import           Ouroboros.Consensus.Ledger.Basics (EmptyMK, IsMapKind,
                      ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (SomeQuery (..))
@@ -178,7 +178,7 @@ injectWrapLedgerTables _startBounds idx (WrapLedgerTables (ExtLedgerStateTables 
     WrapLedgerTables $ ExtLedgerStateTables $ injectLedgerTables lt
   where
     injectLedgerTables ::
-         (IsApplyMapKind mk)
+         (IsMapKind mk)
       => LedgerTables (LedgerState                  x) mk
       -> LedgerTables (LedgerState (HardForkBlock xs)) mk
     injectLedgerTables = applyInjectLedgerTables
