@@ -10,7 +10,30 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
-
+-- | Tests for the computation of blockchain time.
+--
+-- The @BlockchainTime@ in consensus used to be ubiquitous throughout the code
+-- base, but is now only used in one place: when we are checking if we should
+-- produce a block. It is a simple abstraction that returns the current slot
+-- number, /if it is known/ (it might be unknown of the current ledger state is
+-- too far behind the wallclock). In addition to the problem of the current slot
+-- being unknown, it must also deal with discontinuities in the system's
+-- wallclock: NTP might adjust the clock forward or backward, or, worse, the
+-- user might change their wallclock by a large amount. We don't try to deal
+-- with all of these cases:
+--
+-- * if the clock jumps forward (so we "skip slots") this is no problem
+-- * if the clock is moved back a small amount so that we are still in the same
+--   slot when we expected to be in the next, also okay
+-- * if the clock is moved back by more than that, so that the current slot
+--   would actually /decrease/, we throw an exception; it's then up to the user
+--   (or the wallet) to restart the node.
+--
+-- Since all our tests run in an IO simulator, we can test this by having the
+-- clock behave very erratically. We then compute (in a model) what we expect
+-- the behaviour of the @BlockchainTime@ to be given a specific erratic
+-- behaviour, and then verify that it matches the model.
+--
 module Test.Consensus.BlockchainTime.Simple (tests) where
 
 import           Control.Applicative (Alternative (..))

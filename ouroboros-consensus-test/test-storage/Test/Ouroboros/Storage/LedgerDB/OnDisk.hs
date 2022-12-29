@@ -24,6 +24,19 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- | On-disk ledger DB tests.
+--
+-- This is a model based test. The commands here are
+--
+-- * Get the current ledger state
+-- * Push a block, or switch to a fork
+-- * Write a snapshot to disk
+-- * Restore the ledger DB from the snapshots on disk
+-- * Model disk corruption
+--
+-- The model here is satisfyingly simple: just a map from blocks to their
+-- corresponding ledger state.
+--
 module Test.Ouroboros.Storage.LedgerDB.OnDisk (
     showLabelledExamples
   , tests

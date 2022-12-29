@@ -88,3 +88,143 @@ The following  [C4 Component Diagram](https://c4model.com/) provides a high-leve
 a box should link to the corresponding documentation:
 
 ![Ouroboros Consensus Components](./Consensus.svg)
+
+=== Testing in the consensus layer
+
+The vast majority of the tests in the consensus layer are QuickCheck property
+tests, and many of these are model based. There are only a handful of unit
+tests. The consensus layer is an intricate piece of software with lots of
+components, which we set at virtually every level of granularity. Below we give
+an overview of the tests that we do per component. For the detailed listing,
+please refer to the various test suites within the [repository](https://github.com/input-output-hk/ouroboros-network/).
+
+* __[test-infra\/Main.hs](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus-test/test-infra/Main.hs)__
+  provides tests for the infrastructure used for running consensus-related tests.
+
+* __[test-storage\/Main.hs](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus-test/test-storage/Main.hs)__
+  provides tests for the storage layer used by Consensus.
+
+    * The file system abstraction tests can be found in
+      __[Test.Ouroboros.Storage.FS.StateMachine](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-FS-StateMachine.html)__.
+
+    * The immutable DB tests can be found in
+      __[Test.Ouroboros.Storage.ImmutableDB](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-ImmutableDB.html)__.
+
+        * The primary index test can be found in
+          __[Test.Ouroboros.Storage.ImmutableDB.Primary](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-ImmutableDB-Primary.html)__.
+
+        * The model-based tests for the immutable DB can be found in
+          __[Test.Ouroboros.Storage.ImmutableDB.StateMachine](ouroboros-consensus-test-test-storage/test-storage/Test-Ouroboros-Storage-ImmutableDB-StateMachine.html)__.
+
+    * The tests for the volatile DB can be found in
+      __[Test.Ouroboros.Storage.VolatileDB.StateMachine](ouroboros-consensus-test-test-storage/test-storage/Test-Ouroboros-Storage-VolatileDB-StateMachine.html)__.
+
+    * The ledger DB tests can be found in
+      __[Test.Ouroboros.Storage.LedgerDB](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-LedgerDB.html)__:
+
+        * The in-memory ledger DB tests can be found in
+          __[Test.Ouroboros.Storage.LedgerDB.InMemory](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-LedgerDB-InMemory.html)__.
+
+        * The on-disk ledger DB tests can be found in
+          __[Test.Ouroboros.Storage.LedgerDB.OnDisk](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-LedgerDB-OnDisk.html)__.
+
+    * The tests for the chain DB can be found in
+      __[Test.Ouroboros.Storage.ChainDB](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-ChainDB.html)__. The tests include:
+
+        * The tests for the garbage collection schedule can be found in
+          __[Test.Ouroboros.Storage.ChainDB.GcSchedule](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-ChainDB-GcSchedule.html)__.
+
+        * The tests for the chain DB iterator can be found in
+          __[Test.Ouroboros.Storage.ChainDB.Iterator](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-ChainDB-Iterator.html)__.
+
+        * The tests of properties of the chain DB model can be found in
+          __[Test.Ouroboros.Storage.ChainDB.Model.Test](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-ChainDB-Model-Test.html)__.
+
+        * The main tests for the chain DB can be found in
+          __[Test.Ouroboros.Storage.ChainDB.StateMachine](ouroboros-consensus-test-test-storage/Test-Ouroboros-Storage-ChainDB-StateMachine.html)__.
+
+* Golden tests: our golden tests infrastructure lives in
+  __[Test.Util.Serialisation.Golden](ouroboros-consensus-test/Test-Util-Serialisation-Golden.html)__.
+  Golden tests are specific to each era:
+
+    * [Test.Consensus.Byron.Golden](ouroboros-consensus-byron-test-test/Test-Consensus-Byron-Golden.html)
+
+    * [Test.Consensus.Shelley.Golden](ouroboros-consensus-shelley-test-test/Test-Consensus-Shelley-Golden.html)
+
+    * [Test.Consensus.Cardano.Golden](ouroboros-consensus-cardano-test-test/Test-Consensus-Cardano-Golden.html)
+
+* Miscellanous tests (@test-consensus@ test suite)
+
+    * The tests for the resource registry can be found in
+      __[Test.Consensus.ResourceRegistry](ouroboros-consensus-test-test-consensus/Test-Consensus-ResourceRegistry.html)__.
+
+    * The tests for the RAW lock mechanism we use can be found in
+      __[Test.Consensus.Util.MonadSTM.RAWLock](ouroboros-consensus-test-test-consensus/Test-Consensus-Util-MonadSTM-RAWLock.html)__.
+
+    * The tests for the computation of blockchain time can be found in
+      __[Test.Consensus.BlockchainTime.Simple](ouroboros-consensus-test-test-consensus/Test-Consensus-BlockchainTime-Simple.html)__.
+
+    * The tests for the mempool can be found in
+      __[Test.Consensus.Mempool](ouroboros-consensus-test-test-consensus/Test-Consensus-Mempool.html)__.
+
+    * The tests for the chain sync client can be found in
+      __[Test.Consensus.MiniProtocol.ChainSync.Client](ouroboros-consensus-test-test-consensus/Test-Consensus-MiniProtocol-ChainSync-Client.html)__.
+
+    * The tests for the local state query server can be found in
+      __[Test.Consensus.MiniProtocol.LocalStateQuery.Server](ouroboros-consensus-test-test-consensus/Test-Consensus-MiniProtocol-LocalStateQuery-Server.html)__.
+
+    * The tests for versioned serialisation can be found in
+      __[Test.Consensus.Util.Versioned](ouroboros-consensus-test-test-consensus/Test-Consensus-Util-Versioned.html)__.
+
+    * The tests for the DB marker and DB lock can be found in
+      __[Test.Consensus.Node](ouroboros-consensus-test-test-consensus/Test-Consensus-Node.html)__.
+
+* The hard fork combinator, time infrastructure: One of the responsibilities of
+  the HFC is to offer time conversions (slot to epoch, wall clock to slot, etc.)
+  across era transitions (which might change parameters such as the slot length
+  and the epoch size). It does this by constructing a "summary" of the current
+  state of the chain, basically recording what the various slot lengths and
+  epoch sizes have been so far, and how far ahead we can look (the so-called
+  "safe zone": if the transition to the next era is not yet known, there must
+  exist a limited period after the ledger tip in which we can still time
+  conversions).
+
+    * The tests for the hard fork summary can be found in
+      __[Test.Consensus.HardFork.Summary](ouroboros-consensus-test-test-consensus/Test-Consensus-HardFork-Summary.html)__.
+
+    * The tests for the hard fork history can be found in
+      __[Test.Consensus.HardFork.History](ouroboros-consensus-test-test-consensus/Test-Consensus-HardFork-History.html)__.
+
+==== Consensus tests
+
+The main consensus tests are the consensus layer's sophisticated tests. They are
+"system level" tests, in which we set up a mock network of nodes, where we can
+simulate things like nodes joining late, network message delay, etc. We then
+have these nodes run the full protocol, exchanging blocks, doing chain
+selection, etc. Finally we verify that the nodes can reach consensus. We have
+some generic infrastructure for doing all of this, and then have specific tests
+for each of the protocols/ledgers we support.
+
+In a way, these are the most important tests we have, as they are testing
+properties of the system as a whole. Of course, that also means that if
+something goes wrong, debugging these tests can be difficult, and it would be
+better to have such problems caught by the other, more fine-grained, tests.
+
+We run these tests for
+
+* A mock ledger (containing bare bones UTxO style transactions) using a variety
+  of consensus protocols: BFT, PBFT, Praos, and a version of Praos where we
+  override the leader schedule. See [this directory](https://github.com/input-output-hk/ouroboros-network/tree/master/ouroboros-consensus-mock-test/test/Test/ThreadNet).
+* Byron/PBFT. See
+  __[Test.ThreadNet.Byron](ouroboros-consensus-byron-test-test/Test-ThreadNet-Byron.html)__.
+* DualByron. See
+  __[Test.ThreadNet.DualByron](ouroboros-consensus-byron-test-test/Test-ThreadNet-DualByron.html)__.
+* Shelley/TPraos. See
+  __[Test.ThreadNet.Shelley](ouroboros-consensus-shelley-test-test/Test-ThreadNet-Shelley.html)__.
+* The hard fork combinator transitioning from a mock ledger @A@ to a mock ledger @B@;
+  these mock ledgers are absolutely minimal ledgers: the only transaction supported
+  on the @A@ ledger is "initiate transition to @B@", and the @B@ ledger can only contain
+  blocks with a header only, no body at all.
+* @HardForkBlock '[Byron, Shelley]@: the hard fork combinator instantiated with
+  the Byron and Shelley ledgers, running @PBFT@ before the transition and
+  @TPraos@ after.

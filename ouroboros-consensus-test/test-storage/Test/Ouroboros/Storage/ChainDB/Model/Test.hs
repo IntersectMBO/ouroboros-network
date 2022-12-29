@@ -6,6 +6,22 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
+-- | Tests of properties of the chain DB model
+--
+-- The model for the chain DB (@Test.Ouroboros.Storage.ChainDB.Model@) contains
+-- a quite a bit of info, but that is primarily because it needs to support
+-- stateful APIs such as followers (that follow the tip of the chain) and
+-- iterators (which stream a chunk of the chain). The main part of the model is
+-- it's model of the volatile DB and the immutable DB, which is again satisfyingly
+-- simple: the volatile DB is modelled simply as a set of blocks, and the
+-- immutable DB is modelled simply as a list of blocks (i.e., a chain).
+--
+-- Nonetheless, the implementation of the operations on that model is subtle.
+-- In particular, the chain DB is responsible for chain selection, and so the
+-- model must too. So we have a few properties checking some aspects of the model;
+-- in particular, we verify that no matter in which order we add blocks to the
+-- chain DB, we always pick the most preferred chain.
+--
 module Test.Ouroboros.Storage.ChainDB.Model.Test (tests) where
 
 import           GHC.Stack

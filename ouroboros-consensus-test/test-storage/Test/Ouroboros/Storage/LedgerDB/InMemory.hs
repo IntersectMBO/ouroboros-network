@@ -9,7 +9,22 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-
+-- | In-memory ledger DB tests.
+--
+-- The in-memory component of the ledger DB is a bit tricky: it stores only a
+-- few snapshots of the ledger state, in order to reduce memory footprint, but
+-- must nonetheless be able to construct any ledger state (within @k@ blocks
+-- from the chain tip) efficiently. The properties we are verify here are
+-- various invariants of this data type, things such as
+--
+-- * Rolling back and then reapplying the same blocks is an identity operation
+--   (provided the rollback is not too far)
+-- * The shape of the datatype (where we store snapshots and how many we store)
+--   always matches the policy set by the user, and is invariant under any of
+--   the operations (add a block, switch to a fork, etc.)
+-- * The maximum rollback supported is always @k@ (unless we are near genesis)
+-- * etc.
+--
 module Test.Ouroboros.Storage.LedgerDB.InMemory (tests) where
 
 import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..), fromFlatTerm,

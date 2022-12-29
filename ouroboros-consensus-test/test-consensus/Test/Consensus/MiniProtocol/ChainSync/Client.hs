@@ -6,6 +6,22 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+-- | Tests for the chain sync client.
+--
+-- The chain sync client is a stateful component that tracks the chain of an
+-- upstream peer. It validates the headers that it receives from the peer;
+-- validated headers are then reported to the block fetch client which will
+-- download them and offer them to the chain DB, which makes the final choice
+-- whether or not to adopt those blocks.
+--
+-- The tests mock a series of state changes of the up-stream node as well as the
+-- node's own state (the node's own state is relevant because if the node and the
+-- up-stream peer diverge too much we are not interested in their chain anymore,
+-- and we might not be able to validate their headers). We then check that the
+-- chain sync client is reporting the right exceptions if and only if we expect
+-- them to be thrown based on the mock state changes (exceptions such as
+-- "fork is deep", "up-stream node asked for an invalid rollback", etc.).
+--
 module Test.Consensus.MiniProtocol.ChainSync.Client (tests) where
 
 import           Control.Monad.Class.MonadThrow (Handler (..), catches)

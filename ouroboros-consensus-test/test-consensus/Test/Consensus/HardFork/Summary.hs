@@ -7,6 +7,19 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 
+-- | Tests for the hard fork summary.
+--
+-- This module verifies the property that /no matter how the summary is
+-- constructed/, as long as it satisfies its invariants, we should have
+-- roundtrip properties:
+--
+-- * Converting time to a slot and then back to time should be an identity
+--   (modulo the time spent in that slot).
+-- * Converting a slot to time and then back should be an identity.
+-- * Converting slot to an epoch and then back to a slot should be an identity
+--   (modulo the time spent in that epoch).
+-- * Converting an epoch to a slot and then back should be an identity.
+--
 module Test.Consensus.HardFork.Summary (tests) where
 
 import           Data.Time

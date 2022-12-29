@@ -3,6 +3,19 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RecordWildCards            #-}
+-- | Tests for the garbage collection schedule.
+--
+-- The real implementation of course is stateful, running some code at various
+-- intervals. We have a model of the implementation along with some @QuickCheck@
+-- properties checking various invariants of the model such as
+--
+-- * The length of the queue is bounded
+-- * The overlap between the volatile DB and immutable DB (due to blocks that
+--   could have been moved but haven't yet) is bounded.
+--
+-- We then test that the real implementation behaves exactly as the model
+-- predicts.
+--
 module Test.Ouroboros.Storage.ChainDB.GcSchedule (
     example
   , tests

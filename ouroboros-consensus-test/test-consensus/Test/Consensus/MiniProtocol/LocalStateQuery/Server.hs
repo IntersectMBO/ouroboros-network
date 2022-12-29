@@ -3,6 +3,19 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- | Tests for the local state query server.
+--
+-- The local state query protocol allows clients such as wallets to query the
+-- state of the ledger at any point within @k@ blocks from the tip. The test for
+-- this is quite minimal at present: it prepopulates a ledger DB with a bunch of
+-- blocks, and then verifies that requesting the ledger tip corresponding to the
+-- these blocks gives the right answers, and that asking for blocks not on the
+-- chain results in the right error message.
+--
+-- Note that the query protocol is abstract in the ledger, and the query
+-- /language/ we offer (the kinds of queries that can be asked) of course
+-- depends on the ledger. The tests use a mock ledger for this purpose.
+--
 module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
 import           Control.Tracer (nullTracer)

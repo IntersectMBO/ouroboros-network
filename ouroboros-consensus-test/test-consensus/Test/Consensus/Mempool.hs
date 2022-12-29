@@ -9,6 +9,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
+-- | Property tests for the mempool.
+--
+-- The mempool collects transactions from downstream nodes, makes them
+-- available to upstream nodes, and of course provides the pool of transactions
+-- that we use when forging blocks.
+--
+-- These tests for the mempool are not model based, but instead check various
+-- simple properties and invariants, for instance:
+--
+-- * After adding valid transactions to the mempool, they can be retrieved.
+-- * Adding invalid transactions from the mempool will report them as invalid,
+--   and they are not added.
+-- * Transactions cannot be retrieved after they are removed.
+-- * The mempool capacity is not exceeded
+--
 module Test.Consensus.Mempool (tests) where
 
 import           Control.Exception (assert)

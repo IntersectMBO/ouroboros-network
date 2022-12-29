@@ -12,6 +12,34 @@
 {-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- | Golden tests infrastructure.
+--
+-- Golden tests are implemented using
+-- __[tasty-golden](https://github.com/UnkindPartition/tasty-golden)__.
+--
+-- When adding a new golden test, running the test suite locally will generate
+-- the golden files. These files should be checked in as CI will fail if there
+-- are missing golden files.
+--
+-- Failing a golden test suite when the corresponding golden files are not found
+-- is done via the @--no-create@ flag, which surprisingly is opt-in. In our
+-- @nix@ infrastructure, this flag for CI is set in
+-- __[ouroboros-network.nix](/nix/ouroboros-network.nix)__:
+--
+-- >  # Command-line options for test suites:
+-- >  packages.ouroboros-consensus-byron-test.components.tests.test.testFlags =
+-- >    lib.mkForce [ "-- >no-create" ];
+-- >  packages.ouroboros-consensus-shelley-test.components.tests.test.testFlags =
+-- >    lib.mkForce [ "-- >no-create" ];
+-- >  packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags =
+-- >    lib.mkForce [ "-- >no-create" ];
+--
+-- In particular, if we introduce golden tests in different suites, we need to add
+-- a line in the nix configuration above similar to the previous ones, eg:
+--
+-- > packages.some-new-package.components.tests.test.testFlags =
+-- >    lib.mkForce [ "-- >no-create" ];
+--
 module Test.Util.Serialisation.Golden (
     Examples (..)
   , Labelled
