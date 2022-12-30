@@ -24,6 +24,8 @@ jobs:
       # current ref from: 27.02.2022
       SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
 
+      SECP_CACHE_VERSION: "2022-12-29"
+
     steps:
     - uses: actions/checkout@v3
 
@@ -58,20 +60,10 @@ jobs:
         sudo apt-get -y autoremove
 
     - name: Install secp256k1
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get -y install autoconf automake libtool
-        mkdir secp256k1-sources
-        cd secp256k1-sources
-        git clone https://github.com/bitcoin-core/secp256k1.git
-        cd secp256k1
-        git reset --hard $SECP256K1_REF
-        ./autogen.sh
-        ./configure --prefix=/usr --enable-module-schnorrsig --enable-experimental
-        make
-        make check
-        sudo make install
-        cd ../..
+      uses: input-output-hk/setup-secp256k1@v1
+      with:
+        git-ref: ${{ env.SECP256K1_REF }}
+        cache-version: ${{ env.SECP_CACHE_VERSION }}
 
     - name: Set up temp directory
       run: |
