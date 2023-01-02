@@ -7,7 +7,7 @@ description:            Tests of the mock ledger integration in the Ouroboros co
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
-copyright:              2020 Input Output (Hong Kong) Ltd.
+copyright:           2020-2023 Input Output Global Inc (IOG)
 author:                 IOHK Engineering Team
 maintainer:             operations@iohk.io
 category:               Network

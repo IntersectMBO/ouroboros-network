@@ -7,6 +7,7 @@ description:            Cardano consensus protocols.
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
+copyright:          2021-2023 Input Output Global Inc (IOG)
 author:                 IOHK Formal methods team
 maintainer:             operations@iohk.io
 category:               Network

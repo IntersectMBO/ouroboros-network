@@ -8,6 +8,7 @@ license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
 maintainer:             operations@iohk.io
+copyright:              2019-2023 Input Output Global Inc (IOG)
 category:               Network
 build-type:             Simple
 extra-source-files:     README.md
