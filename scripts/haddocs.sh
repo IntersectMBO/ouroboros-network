@@ -66,13 +66,27 @@ chmod -R u+w "${OUTPUT_DIR}"
 for dir in $(ls "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}"); do
   package=$(echo "${dir}" | sed 's/-[0-9]\+\(\.[0-9]\+\)*//')
   cp -r "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}/${dir}/noopt/doc/html/${package}" ${OUTPUT_DIR}
+  # copy test packages documentation when it exists
+  if [ -d "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}/${dir}/t" ]; then
+      for test_package in $(ls "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}/${dir}/t"); do
+          if [ -d "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}/${dir}/t/${test_package}/noopt/doc/html/${package}/${test_package}" ]; then
+              cp -r "${BUILD_DIR}/build/${OS_ARCH}/ghc-${GHC_VERSION}/${dir}/t/${test_package}/noopt/doc/html/${package}/${test_package}" "${OUTPUT_DIR}/${package}-${test_package}"
+          fi
+      done
+  fi
 done
 
 
 # --read-interface options
 interface_options () {
-  for package in $(ls "${OUTPUT_DIR}"); do
-    [[ -d "${OUTPUT_DIR}/${package}" ]] && echo "--read-interface=${package},${OUTPUT_DIR}/${package}/${package}.haddock"
+    for package in $(ls "${OUTPUT_DIR}"); do
+        if [[ -d "${OUTPUT_DIR}/${package}" ]]; then
+            # take the first haddock file found.
+            # there should be only one but the filename is the name of the main pacakage
+            # and can differ from the name of the enclosing directory
+            haddock_file=$(ls -1 ${OUTPUT_DIR}/${package}/*.haddock | head -1)
+            echo "--read-interface=${package},${haddock_file}"
+        fi
   done
 }
 
