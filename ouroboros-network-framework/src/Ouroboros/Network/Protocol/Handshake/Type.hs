@@ -81,9 +81,9 @@ instance Protocol (Handshake vNumber vParams) where
 
       -- |
       -- `MsgReplyVersions` received as a response to 'MsgProposeVersions'.  It
-      -- is not supported to explicitly send this message. It can only be
-      -- received as a copy of 'MsgProposeVersions' in a simultaneous open
-      -- scenario.
+      -- is only explicitly sent when a version query was received. Previously, it
+      -- could only be received as a copy of 'MsgProposeVersions' in a simultaneous
+      -- open scenario.
       --
       MsgReplyVersions
         :: Map vNumber vParams

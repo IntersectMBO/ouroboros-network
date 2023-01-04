@@ -260,6 +260,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
         noTimeLimitsHandshake
         unversionedProtocolDataCodec
         acceptableVersion
+        queryVersion
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
@@ -272,6 +273,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
             unversionedProtocolDataCodec
             (NetworkConnectTracers activeMuxTracer nullTracer)
             acceptableVersion
+            queryVersion
             (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
             responderAddr
@@ -517,6 +519,7 @@ prop_socket_client_connect_error _ xs =
         unversionedProtocolDataCodec
         nullNetworkConnectTracers
         acceptableVersion
+        queryVersion
         (unversionedProtocol app)
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)

@@ -21,6 +21,7 @@ import           Ouroboros.Network.BlockFetch.ConsensusInterface
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
+import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
@@ -128,6 +129,8 @@ instance Acceptable NodeToNodeVersionData where
                        ++ show local
                        ++ " /= " ++ show remote
 
+instance Queryable NodeToNodeVersionData where
+    queryVersion = query
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
 nodeToNodeCodecCBORTerm version

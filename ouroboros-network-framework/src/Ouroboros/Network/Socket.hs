@@ -280,6 +280,7 @@ connectToNode
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers addr vNumber
   -> (vData -> vData -> Accept vData)
+  -> (vData -> Bool)
   -> Versions vNumber vData (OuroborosApplication appType addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Maybe addr
@@ -287,7 +288,7 @@ connectToNode
   -> addr
   -- ^ remote address
   -> IO ()
-connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions localAddr remoteAddr =
+connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion queryVersion versions localAddr remoteAddr =
     bracket
       (Snocket.openToConnect sn remoteAddr)
       (Snocket.close sn)
@@ -297,7 +298,7 @@ connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits ver
             Just addr -> Snocket.bind sn sd addr
             Nothing   -> return ()
           Snocket.connect sn sd remoteAddr
-          connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions sd
+          connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion queryVersion versions sd
       )
 
 -- |
@@ -322,12 +323,13 @@ connectToNode'
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers addr vNumber
   -> (vData -> vData -> Accept vData)
+  -> (vData -> Bool)
   -> Versions vNumber vData (OuroborosApplication appType addr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> fd
   -- ^ a configured socket to use to connect to a remote service provider
   -> IO ()
-connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } acceptVersion versions sd = do
+connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } acceptVersion queryVersion versions sd = do
     connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
@@ -343,6 +345,7 @@ connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec
           haHandshakeCodec   = handshakeCodec,
           haVersionDataCodec = versionDataCodec,
           haAcceptVersion    = acceptVersion,
+          haQueryVersion     = queryVersion,
           haTimeLimits       = handshakeTimeLimits
         }
         versions
@@ -379,11 +382,12 @@ connectToNodeSocket
   -> VersionDataCodec CBOR.Term vNumber vData
   -> NetworkConnectTracers Socket.SockAddr vNumber
   -> (vData -> vData -> Accept vData)
+  -> (vData -> Bool)
   -> Versions vNumber vData (OuroborosApplication appType Socket.SockAddr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Socket.Socket
   -> IO ()
-connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions sd =
+connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion queryVersion versions sd =
     connectToNode'
       (Snocket.socketSnocket iocp)
       Mx.makeSocketBearer
@@ -392,6 +396,7 @@ connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tra
       versionDataCodec
       tracers
       acceptVersion
+      queryVersion
       versions
       sd
 
@@ -448,10 +453,11 @@ beginConnection
     -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
+    -> (vData -> Bool)
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber vData addr IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr fd st ()
-beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion fn t addr st = do
+beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion queryVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
       AcceptConnection st' connectionId versions -> pure $ Server.Accept st' $ \sd -> do
@@ -469,6 +475,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
               haHandshakeCodec   = handshakeCodec,
               haVersionDataCodec = versionDataCodec,
               haAcceptVersion    = acceptVersion,
+              haQueryVersion     = queryVersion,
               haTimeLimits       = handshakeTimeLimits
             }
            versions
@@ -616,6 +623,7 @@ runServerThread
     -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
+    -> (vData -> Bool)
     -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString IO b)
     -> ErrorPolicies
     -> IO Void
@@ -634,6 +642,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
                 handshakeTimeLimits
                 versionDataCodec
                 acceptVersion
+                queryVersion
                 versions
                 errorPolicies = do
     sockAddr <- Snocket.getLocalAddr sn sd
@@ -644,7 +653,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
         serverSocket
         acceptedConnectionsLimit
         (acceptException sockAddr)
-        (beginConnection makeBearer nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
+        (beginConnection makeBearer nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion queryVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
         -- using 'CompleteConnection'
         (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
@@ -734,6 +743,7 @@ withServerNode
     -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
+    -> (vData -> Bool)
     -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString IO b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
@@ -754,6 +764,7 @@ withServerNode sn makeBearer
                handshakeTimeLimits
                versionDataCodec
                acceptVersion
+               queryVersion
                versions
                errorPolicies
                k =
@@ -769,6 +780,7 @@ withServerNode sn makeBearer
         handshakeTimeLimits
         versionDataCodec
         acceptVersion
+        queryVersion
         versions
         errorPolicies
         k
@@ -809,6 +821,7 @@ withServerNode'
     -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
     -> VersionDataCodec CBOR.Term vNumber vData
     -> (vData -> vData -> Accept vData)
+    -> (vData -> Bool)
     -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString IO b)
     -- ^ The mux application that will be run on each incoming connection from
     -- a given address.  Note that if @'MuxClientAndServerApplication'@ is
@@ -828,6 +841,7 @@ withServerNode' sn makeBearer
                 handshakeTimeLimits
                 versionDataCodec
                 acceptVersion
+                queryVersion
                 versions
                 errorPolicies
                 k = do
@@ -844,6 +858,7 @@ withServerNode' sn makeBearer
           handshakeTimeLimits
           versionDataCodec
           acceptVersion
+          queryVersion
           versions
           errorPolicies)
         (k addr')

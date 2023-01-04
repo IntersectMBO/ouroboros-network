@@ -69,7 +69,7 @@ import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..))
+import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..), Queryable (..))
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
@@ -254,6 +254,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
               haHandshakeCodec = unversionedHandshakeCodec,
               haVersionDataCodec = unversionedProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
+              haQueryVersion = queryVersion,
               haTimeLimits = timeLimitsHandshake
             }
           (unversionedProtocol
