@@ -18,6 +18,7 @@ import qualified Codec.CBOR.Term as CBOR
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
+import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import           Ouroboros.Network.Magic
 
 
@@ -93,6 +94,9 @@ instance Acceptable NodeToClientVersionData where
       | otherwise =  Refuse $ T.pack $ "version data mismatch: "
                                     ++ show local
                                     ++ " /= " ++ show remote
+
+instance Queryable NodeToClientVersionData where
+    queryVersion = query
 
 nodeToClientCodecCBORTerm :: NodeToClientVersion -> CodecCBORTerm Text NodeToClientVersionData
 nodeToClientCodecCBORTerm _ = CodecCBORTerm {encodeTerm, decodeTerm}

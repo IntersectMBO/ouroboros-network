@@ -99,6 +99,9 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- argument is the remote version data.
       haAcceptVersion :: vData -> vData -> Accept vData,
 
+      -- | Whether version data requested a query of support version.
+      haQueryVersion :: vData -> Bool,
+
       -- | 'Driver' timeouts for 'Handshake' protocol.
       --
       haTimeLimits
@@ -169,6 +172,7 @@ runHandshakeServer bearer
                      haHandshakeCodec,
                      haVersionDataCodec,
                      haAcceptVersion,
+                     haQueryVersion,
                      haTimeLimits
                    }
                    versions  =
@@ -180,4 +184,4 @@ runHandshakeServer bearer
           byteLimitsHandshake
           haTimeLimits
           (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir))
-          (handshakeServerPeer haVersionDataCodec haAcceptVersion versions))
+          (handshakeServerPeer haVersionDataCodec haAcceptVersion haQueryVersion versions))

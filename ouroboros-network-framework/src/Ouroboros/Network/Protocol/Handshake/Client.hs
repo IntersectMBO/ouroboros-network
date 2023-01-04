@@ -7,6 +7,7 @@
 
 module Ouroboros.Network.Protocol.Handshake.Client
   ( handshakeClientPeer
+  , encodeVersions
   , acceptOrRefuse
   ) where
 
