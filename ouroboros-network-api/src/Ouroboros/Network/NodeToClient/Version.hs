@@ -77,14 +77,19 @@ nodeToClientVersionBit = 15
 
 -- | Version data for NodeToClient protocol v1
 --
-newtype NodeToClientVersionData = NodeToClientVersionData
-  { networkMagic :: NetworkMagic }
+data NodeToClientVersionData = NodeToClientVersionData
+  { networkMagic :: NetworkMagic
+  , query        :: !Bool
+  }
   deriving (Eq, Show, Typeable)
 
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote
-      | local == remote
-      = Accept local
+      | networkMagic local == networkMagic remote
+      = Accept NodeToClientVersionData
+          { networkMagic  = networkMagic local
+          , query         = query local `min` query remote
+          }
       | otherwise =  Refuse $ T.pack $ "version data mismatch: "
                                     ++ show local
                                     ++ " /= " ++ show remote
@@ -93,10 +98,20 @@ nodeToClientCodecCBORTerm :: NodeToClientVersion -> CodecCBORTerm Text NodeToCli
 nodeToClientCodecCBORTerm _ = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
-      encodeTerm NodeToClientVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+      encodeTerm NodeToClientVersionData { networkMagic, query }
+        | query
+        = CBOR.TList [CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
+        | otherwise
+        = CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
-                               | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
-      decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+      decodeTerm (CBOR.TInt x)
+        = decoder x False
+      decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool query])
+        = decoder x query
+      decodeTerm t
+        = Left $ T.pack $ "unknown encoding: " ++ show t
+
+      decoder :: Int -> Bool -> Either Text NodeToClientVersionData
+      decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
+                      | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x

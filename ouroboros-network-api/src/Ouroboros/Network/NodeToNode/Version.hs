@@ -92,6 +92,7 @@ data DiffusionMode
 data NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic  :: !NetworkMagic
   , diffusionMode :: !DiffusionMode
+  , query         :: !Bool
   }
   deriving (Show, Typeable, Eq)
   -- 'Eq' instance is not provided, it is not what we need in version
@@ -106,6 +107,7 @@ instance Acceptable NodeToNodeVersionData where
       = Accept NodeToNodeVersionData
           { networkMagic  = networkMagic local
           , diffusionMode = diffusionMode local `min` diffusionMode remote
+          , query         = query local `min` query remote
           }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
@@ -116,29 +118,36 @@ instance Acceptable NodeToNodeVersionData where
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
 nodeToNodeCodecCBORTerm _version
   = let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode }
-          = CBOR.TList
+        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, query }
+          = CBOR.TList $
               [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
               , CBOR.TBool (case diffusionMode of
                              InitiatorOnlyDiffusionMode         -> True
                              InitiatorAndResponderDiffusionMode -> False)
-              ]
+              ] <> if query then [ CBOR.TBool True ] else []
 
         decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
         decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
+          = decoder x diffusionMode False
+        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TBool query])
+          = decoder x diffusionMode query
+        decodeTerm t
+          = Left $ T.pack $ "unknown encoding: " ++ show t
+
+        decoder :: Int -> Bool -> Bool -> Either Text NodeToNodeVersionData
+        decoder x diffusionMode query
           | x >= 0
           , x <= 0xffffffff
           = Right
               NodeToNodeVersionData {
-                  networkMagic = NetworkMagic (fromIntegral x),
-                  diffusionMode = if diffusionMode
+                  networkMagic  = NetworkMagic (fromIntegral x)
+                , diffusionMode = if diffusionMode
                                   then InitiatorOnlyDiffusionMode
                                   else InitiatorAndResponderDiffusionMode
+                , query         = query
                 }
           | otherwise
           = Left $ T.pack $ "networkMagic out of bound: " <> show x
-        decodeTerm t
-          = Left $ T.pack $ "unknown encoding: " ++ show t
     in CodecCBORTerm {encodeTerm, decodeTerm}
 
 
