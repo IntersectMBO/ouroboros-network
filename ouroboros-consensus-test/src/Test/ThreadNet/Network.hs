@@ -84,6 +84,8 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool
 import qualified Ouroboros.Consensus.MiniProtocol.ChainSync.Client as CSClient
 import qualified Ouroboros.Consensus.Network.NodeToNode as NTN
@@ -112,10 +114,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery (RangeQuery))
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-                     (BackingStoreSelector (..), LedgerBackingStoreValueHandle,
-                     LedgerDB', mkDiskLedgerView)
+                     (BackingStoreSelector (..), mkDiskLedgerView)
 import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 
 import           Test.ThreadNet.TxGen

@@ -18,7 +18,7 @@ import qualified Ouroboros.Network.MockChain.Chain as Chain
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Basics (convertMapKind)
+import           Ouroboros.Consensus.Ledger.Tables
 import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),

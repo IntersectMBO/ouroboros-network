@@ -18,6 +18,7 @@ import           Ouroboros.Network.Block
 
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Mempool.API (TxSizeInBytes)
 import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, TxTicket (..))

@@ -21,7 +21,8 @@ import           NoThunks.Class (NoThunks)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
-import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 
 {-------------------------------------------------------------------------------
   Simple ledger state

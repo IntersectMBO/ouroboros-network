@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -7,7 +6,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
 
 import           Data.SOP.Strict
 
-import           Ouroboros.Consensus.Ledger.Basics (EmptyMK)
+import           Ouroboros.Consensus.Ledger.Tables (EmptyMK)
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Util.SOP
 

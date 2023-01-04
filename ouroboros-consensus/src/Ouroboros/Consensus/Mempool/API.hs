@@ -27,6 +27,7 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 import           Ouroboros.Consensus.Block (Point, SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Util.IOLike
 

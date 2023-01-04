@@ -1,10 +1,7 @@
-{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.State.Types (
@@ -30,8 +27,9 @@ import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History (Bound)
-import           Ouroboros.Consensus.Ledger.Basics (DiffMK, EmptyMK,
-                     LedgerState, LedgerTables)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import           Ouroboros.Consensus.Ledger.Tables (DiffMK, EmptyMK,
+                     LedgerTables)
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope

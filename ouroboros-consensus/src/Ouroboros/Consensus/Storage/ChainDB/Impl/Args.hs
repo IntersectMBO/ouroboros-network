@@ -1,9 +1,6 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE RecordWildCards           #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Ouroboros.Consensus.Storage.ChainDB.Impl.Args (
     ChainDbArgs (..)
@@ -21,8 +18,8 @@ import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
-import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Tables (ValuesMK)
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 

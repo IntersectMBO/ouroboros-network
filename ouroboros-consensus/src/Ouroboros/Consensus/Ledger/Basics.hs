@@ -1,24 +1,15 @@
-{-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DefaultSignatures     #-}
 {-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveFoldable        #-}
-{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DeriveTraversable     #-}
-{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE Rank2Types            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -41,70 +32,15 @@ module Ouroboros.Consensus.Ledger.Basics (
   , IsLedger (..)
   , LedgerCfg
   , applyChainTick
-  , noNewTickingDiffs
     -- * Link block to its ledger
   , LedgerConfig
   , LedgerError
   , LedgerState
   , LedgerStateKind
   , TickedLedgerState
-    -- * UTxO HD
-    -- ** Isolating the tables
-  , TableStuff (..)
-  , TickedTableStuff (..)
-  , mapOverLedgerTables
-  , mapOverLedgerTablesTicked
-  , overLedgerTables
-  , overLedgerTablesTicked
-  , zipOverLedgerTables
-  , zipOverLedgerTablesTicked
-    -- ** Tables values
-  , ApplyMapKind
-  , ApplyMapKind' (..)
-  , IsMapKind (..)
-  , MapKind
-  , showsApplyMapKind
-    -- *** Mediators
-  , CodecMK (..)
-  , DiffMK
-  , EmptyMK
-  , KeysMK
-  , NameMK (..)
-  , QueryMK
-  , SeqDiffMK
-  , TrackingMK
-  , ValuesMK
     -- ** Queries
   , DiskLedgerView (..)
   , FootprintL (..)
-    -- ** Convenience aliases
-  , applyLedgerTablesDiffs
-  , applyLedgerTablesDiffsTicked
-  , attachAndApplyDiffsTicked
-  , calculateAdditions
-  , calculateDifference
-  , calculateDifferenceTicked
-  , emptyLedgerTables
-  , forgetLedgerTables
-  , forgetLedgerTablesDiffs
-  , forgetLedgerTablesDiffsTicked
-  , forgetLedgerTablesValues
-  , forgetLedgerTablesValuesTicked
-  , polyEmptyLedgerTables
-  , prependLedgerTablesDiffs
-  , prependLedgerTablesDiffsFromTicked
-  , prependLedgerTablesDiffsRaw
-  , prependLedgerTablesDiffsTicked
-  , prependLedgerTablesTrackingDiffs
-  , rawReapplyTracking
-  , reapplyTrackingTicked
-    -- ** Special classes of ledger states
-  , InMemory (..)
-  , StowableLedgerTables (..)
-    -- ** Serialization
-  , SufficientSerializationForAnyBackingStore (..)
-  , valuesMKDecoder
-  , valuesMKEncoder
     -- ** Changelog
   , DbChangelog (..)
   , DbChangelogFlushPolicy (..)
@@ -117,26 +53,14 @@ module Ouroboros.Consensus.Ledger.Basics (
   , pruneVolatilePartDbChangelog
   , rollbackDbChangelog
   , youngestImmutableSlotDbChangelog
-    -- ** Misc
-  , ShowLedgerState (..)
-    -- * Exported only for testing
-  , rawApplyDiffs
-  , rawCalculateDifference
-  , rawForgetValues
-  , rawPrependTrackingDiffs
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
-import qualified Data.Map as Map
-import           Data.Monoid (Sum (..))
 import           GHC.Generics (Generic)
 import           GHC.Show (showCommaSpace, showSpace)
 import           NoThunks.Class (NoThunks (..))
-import qualified NoThunks.Class as NoThunks
 
 import           Cardano.Slotting.Slot (WithOrigin (..))
 
@@ -147,9 +71,11 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 
+import           Ouroboros.Consensus.Ledger.Tables.Utils (forgetLedgerTables)
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                      (RangeQuery)
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
@@ -210,13 +136,6 @@ pureLedgerResult a = LedgerResult {
     lrEvents = mempty
   , lrResult = a
   }
-
-{-------------------------------------------------------------------------------
-  Basic LedgerState classes
--------------------------------------------------------------------------------}
-
-class ShowLedgerState (l :: LedgerStateKind) where
-  showsLedgerState :: l (ApplyMapKind' mk) -> ShowS
 
 {-------------------------------------------------------------------------------
   Definition of a ledger independent of a choice of block
@@ -323,568 +242,6 @@ applyChainTick ::
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
- [Ticked]TableStuff
--------------------------------------------------------------------------------}
-
--- | When applying a block that is not on an era transition, ticking won't
--- generate new values, so this function can be used to wrap the call to the
--- ledger rules that perform the tick.
-noNewTickingDiffs :: TickedTableStuff l
-                   => l any
-                   -> l DiffMK
-noNewTickingDiffs l = withLedgerTables l polyEmptyLedgerTables
-
--- This can't be in IsLedger because we have a compositional IsLedger instance
--- for LedgerState HardForkBlock but we will not (at least ast first) have a
--- compositional LedgerTables instance for HardForkBlock.
-class ( ShowLedgerState (LedgerTables l)
-      , Eq (l EmptyMK)
-      , Eq (LedgerTables l DiffMK)
-      , Eq (LedgerTables l ValuesMK)
-      ) => TableStuff (l :: LedgerStateKind) where
-
-  data family LedgerTables l :: LedgerStateKind
-
-  -- | Some values of @l mk@ do not determine @mk@, hence the 'SingI' constraint.
-  --
-  -- If it were always the case that @l mk@ not determing @mk@ implies
-  -- @LedgerTables l mk@ also does not determine @mk@, then we would not need
-  -- the 'SingI' constraint. Unfortunately, that is not always the case. The
-  -- example we have found in our prototype UTxO HD implementat is that a Byron
-  -- ledger state does not determine @mk@, but the Cardano ledger tables do.
-  projectLedgerTables :: IsMapKind mk => l mk -> LedgerTables l mk
-
-  -- | Overwrite the tables in some ledger state.
-  --
-  -- The contents of the tables should not be /younger/ than the content of the
-  -- ledger state. In particular, for a
-  -- 'Ouroboros.Consensus.HardFork.Combinator.Basics.HardForkBlock' ledger, the
-  -- tables argument should not contain any data from eras that succeed the
-  -- current era of the ledger state argument.
-  --
-  -- TODO: reconsider the name: don't we use 'withX' in the context of bracket like functions?
-  --
-  -- TODO: This 'IsMapKind' constraint is necessary because the
-  -- 'CardanoBlock' instance uses 'projectLedgerTables'.
-  withLedgerTables :: IsMapKind mk => l any -> LedgerTables l mk -> l mk
-
-  pureLedgerTables ::
-       (forall k v.
-            (Ord k, Eq v)
-         => mk k v
-       )
-    -> LedgerTables l mk
-
-  mapLedgerTables ::
-       (forall k v.
-            (Ord k, Eq v)
-         => mk1 k v
-         -> mk2 k v
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
-
-  traverseLedgerTables ::
-       Applicative f
-    => (forall k v .
-           (Ord k, Eq v)
-        =>    mk1 k v
-        -> f (mk2 k v)
-       )
-    ->    LedgerTables l mk1
-    -> f (LedgerTables l mk2)
-
-  zipLedgerTables ::
-       (forall k v.
-            (Ord k, Eq v)
-         => mk1 k v
-         -> mk2 k v
-         -> mk3 k v
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
-    -> LedgerTables l mk3
-
-  zipLedgerTables2 ::
-       (forall k v.
-            (Ord k, Eq v)
-         => mk1 k v
-         -> mk2 k v
-         -> mk3 k v
-         -> mk4 k v
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
-    -> LedgerTables l mk3
-    -> LedgerTables l mk4
-
-  zipLedgerTablesA ::
-       Applicative f
-    => (forall k v.
-            (Ord k, Eq v)
-         => mk1 k v
-         -> mk2 k v
-         -> f (mk3 k v)
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
-    -> f (LedgerTables l mk3)
-
-  zipLedgerTables2A ::
-       Applicative f
-    => (forall k v.
-            (Ord k, Eq v)
-         => mk1 k v
-         -> mk2 k v
-         -> mk3 k v
-         -> f (mk4 k v)
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
-    -> LedgerTables l mk3
-    -> f (LedgerTables l mk4)
-
-  foldLedgerTables ::
-       Monoid m
-    => (forall k v.
-            (Ord k, Eq v)
-         => mk k v
-         -> m
-       )
-    -> LedgerTables l mk
-    -> m
-
-  foldLedgerTables2 ::
-       Monoid m
-    => (forall k v.
-           (Ord k, Eq v)
-        => mk1 k v
-        -> mk2 k v
-        -> m
-       )
-    -> LedgerTables l mk1
-    -> LedgerTables l mk2
-    -> m
-
-  namesLedgerTables :: LedgerTables l NameMK
-
-overLedgerTables ::
-     (TableStuff l, IsMapKind mk1, IsMapKind mk2)
-  => (LedgerTables l mk1 -> LedgerTables l mk2)
-  -> l mk1
-  -> l mk2
-overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
-
-mapOverLedgerTables ::
-     (TableStuff l, IsMapKind mk1, IsMapKind mk2)
-  => (forall k v.
-          (Ord k, Eq v)
-       => mk1 k v
-       -> mk2 k v
-     )
-  -> l mk1
-  -> l mk2
-mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
-
-zipOverLedgerTables ::
-     (TableStuff l, IsMapKind mk1, IsMapKind mk3)
-  => (forall k v.
-          (Ord k, Eq v)
-       => mk1 k v
-       -> mk2 k v
-       -> mk3 k v
-     )
-  ->              l mk1
-  -> LedgerTables l mk2
-  ->              l mk3
-zipOverLedgerTables f l tables2 =
-    overLedgerTables
-      (\tables1 -> zipLedgerTables f tables1 tables2)
-      l
-
--- Separate so that we can have a 'TableStuff' instance for 'Ticked1' without
--- involving double-ticked types.
-class TableStuff l => TickedTableStuff (l :: LedgerStateKind) where
-  -- | NOTE: The 'IsMapKind mk2' constraint is here for the same reason
-  -- it's on 'projectLedgerTables'
-  projectLedgerTablesTicked :: IsMapKind mk => Ticked1 l mk  -> LedgerTables l mk
-  -- | NOTE: The 'IsMapKind mk2' constraint is here for the same reason
-  -- it's on 'withLedgerTables'
-  withLedgerTablesTicked    :: IsMapKind mk => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
-
-overLedgerTablesTicked ::
-     (TickedTableStuff l, IsMapKind mk1, IsMapKind mk2)
-  => (LedgerTables l mk1 -> LedgerTables l mk2)
-  -> Ticked1 l mk1
-  -> Ticked1 l mk2
-overLedgerTablesTicked f l =
-    withLedgerTablesTicked l $ f $ projectLedgerTablesTicked l
-
-mapOverLedgerTablesTicked ::
-     (TickedTableStuff l, IsMapKind mk1, IsMapKind mk2)
-  => (forall k v.
-         (Ord k, Eq v)
-      => mk1 k v
-      -> mk2 k v
-     )
-  -> Ticked1 l mk1
-  -> Ticked1 l mk2
-mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
-
-zipOverLedgerTablesTicked ::
-     (TickedTableStuff l, IsMapKind mk1, IsMapKind mk3)
-  => (forall k v.
-         (Ord k, Eq v)
-      => mk1 k v
-      -> mk2 k v
-      -> mk3 k v
-     )
-  -> Ticked1      l mk1
-  -> LedgerTables l mk2
-  -> Ticked1      l mk3
-zipOverLedgerTablesTicked f l tables2 =
-    overLedgerTablesTicked
-      (\tables1 -> zipLedgerTables f tables1 tables2)
-      l
-
-{-------------------------------------------------------------------------------
-  Serialization Codecs
--------------------------------------------------------------------------------}
-
--- | This class provides a 'CodecMK' that can be used to encode/decode keys and
--- values on @'LedgerTables' l mk@
-class SufficientSerializationForAnyBackingStore (l :: LedgerStateKind) where
-  codecLedgerTables :: LedgerTables l CodecMK
-
--- | Default encoder of @'LedgerTables' l ''ValuesMK'@ to be used by the
--- in-memory backing store.
-valuesMKEncoder ::
-     ( TableStuff l
-     , SufficientSerializationForAnyBackingStore l
-     )
-  => LedgerTables l ValuesMK
-  -> CBOR.Encoding
-valuesMKEncoder tables =
-       CBOR.encodeListLen (getSum (foldLedgerTables (\_ -> Sum 1) tables))
-    <> foldLedgerTables2 go codecLedgerTables tables
-  where
-    go :: CodecMK k v -> ApplyMapKind ValuesMK k v -> CBOR.Encoding
-    go (CodecMK encK encV _decK _decV) (ApplyValuesMK (Values m)) =
-         CBOR.encodeMapLen (fromIntegral $ Map.size m)
-      <> Map.foldMapWithKey (\k v -> encK k <> encV v) m
-
--- | Default encoder of @'LedgerTables' l ''ValuesMK'@ to be used by the
--- in-memory backing store.
---
--- TODO: we need to make sure there are tests that exercise this function.
-valuesMKDecoder ::
-     ( TableStuff l
-     , SufficientSerializationForAnyBackingStore l
-     )
-  => CBOR.Decoder s (LedgerTables l ValuesMK)
-valuesMKDecoder = do
-    numTables <- CBOR.decodeListLen
-    if numTables == 0
-      then
-        return polyEmptyLedgerTables
-      else do
-        mapLen <- CBOR.decodeMapLen
-        ret    <- traverseLedgerTables (go mapLen) codecLedgerTables
-        Exn.assert ((getSum (foldLedgerTables (\_ -> Sum 1) ret)) == numTables)
-          $ return ret
- where
-  go :: Ord k
-     => Int
-     -> CodecMK k v
-     -> CBOR.Decoder s (ApplyMapKind ValuesMK k v)
-  go len (CodecMK _encK _encV decK decV) =
-        ApplyValuesMK . Values . Map.fromList
-    <$> sequence (replicate len ((,) <$> decK <*> decV))
-
-{-------------------------------------------------------------------------------
-  Convenience aliases
--------------------------------------------------------------------------------}
-
-emptyLedgerTables :: TableStuff l => LedgerTables l EmptyMK
-emptyLedgerTables = polyEmptyLedgerTables
-
--- | Empty values for every table
-polyEmptyLedgerTables :: forall mk l. (TableStuff l, IsMapKind mk) => LedgerTables l mk
-polyEmptyLedgerTables = pureLedgerTables emptyMK
-
--- Forget all
-
-forgetLedgerTables :: TableStuff l => l mk -> l EmptyMK
-forgetLedgerTables l = withLedgerTables l emptyLedgerTables
-
--- Forget values
-
-rawForgetValues :: TrackingMK k v -> DiffMK k v
-rawForgetValues (ApplyTrackingMK _vs d) = ApplyDiffMK d
-
-forgetLedgerTablesValues :: TableStuff l => l TrackingMK -> l DiffMK
-forgetLedgerTablesValues = mapOverLedgerTables rawForgetValues
-
-forgetLedgerTablesValuesTicked :: TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l DiffMK
-forgetLedgerTablesValuesTicked = mapOverLedgerTablesTicked rawForgetValues
-
-
--- Forget diffs
-
-rawForgetDiffs :: TrackingMK k v -> ValuesMK k v
-rawForgetDiffs (ApplyTrackingMK vs _ds) = ApplyValuesMK vs
-
-forgetLedgerTablesDiffs       ::       TableStuff l =>         l TrackingMK ->         l ValuesMK
-forgetLedgerTablesDiffsTicked :: TickedTableStuff l => Ticked1 l TrackingMK -> Ticked1 l ValuesMK
-forgetLedgerTablesDiffs       = mapOverLedgerTables rawForgetDiffs
-forgetLedgerTablesDiffsTicked = mapOverLedgerTablesTicked rawForgetDiffs
-
--- Prepend diffs
-
-rawPrependDiffs ::
-     (Ord k, Eq v)
-  => DiffMK k v -- ^ Earlier differences
-  -> DiffMK k v -- ^ Later differences
-  -> DiffMK k v
-rawPrependDiffs (ApplyDiffMK d1) (ApplyDiffMK d2) = ApplyDiffMK (d1 <> d2)
-
-prependLedgerTablesDiffsRaw        ::       TableStuff l => LedgerTables l DiffMK ->         l DiffMK ->         l DiffMK
-prependLedgerTablesDiffs           ::       TableStuff l =>              l DiffMK ->         l DiffMK ->         l DiffMK
-prependLedgerTablesDiffsFromTicked :: TickedTableStuff l => Ticked1      l DiffMK ->         l DiffMK ->         l DiffMK
-prependLedgerTablesDiffsTicked     :: TickedTableStuff l =>              l DiffMK -> Ticked1 l DiffMK -> Ticked1 l DiffMK
-prependLedgerTablesDiffsRaw        = flip (zipOverLedgerTables rawPrependDiffs)
-prependLedgerTablesDiffs           = prependLedgerTablesDiffsRaw . projectLedgerTables
-prependLedgerTablesDiffsFromTicked = prependLedgerTablesDiffsRaw . projectLedgerTablesTicked
-prependLedgerTablesDiffsTicked     = flip (zipOverLedgerTablesTicked rawPrependDiffs) . projectLedgerTables
-
--- Apply diffs
-
-rawApplyDiffs ::
-     Ord k
-  => ValuesMK k v -- ^ Values to which differences are applied
-  -> DiffMK   k v -- ^ Differences to apply
-  -> ValuesMK k v
-rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (applyDiff vals diffs)
-
-applyLedgerTablesDiffs       ::       TableStuff l => l ValuesMK ->         l DiffMK ->         l ValuesMK
-applyLedgerTablesDiffsTicked :: TickedTableStuff l => l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
-applyLedgerTablesDiffs       = flip (zipOverLedgerTables       $ flip rawApplyDiffs) . projectLedgerTables
-applyLedgerTablesDiffsTicked = flip (zipOverLedgerTablesTicked $ flip rawApplyDiffs) . projectLedgerTables
-
--- Calculate differences
-
-rawCalculateDifference ::
-     (Ord k, Eq v)
-  => ValuesMK   k v
-  -> ValuesMK   k v
-  -> TrackingMK k v
-rawCalculateDifference (ApplyValuesMK before) (ApplyValuesMK after) = ApplyTrackingMK after (diff before after)
-
-calculateAdditions        ::       TableStuff l =>         l ValuesMK ->                               l TrackingMK
-calculateDifference       :: TickedTableStuff l => Ticked1 l ValuesMK ->         l ValuesMK ->         l TrackingMK
-calculateDifferenceTicked :: TickedTableStuff l => Ticked1 l ValuesMK -> Ticked1 l ValuesMK -> Ticked1 l TrackingMK
-calculateAdditions               after = zipOverLedgerTables       (flip rawCalculateDifference) after polyEmptyLedgerTables
-calculateDifference       before after = zipOverLedgerTables       (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
-calculateDifferenceTicked before after = zipOverLedgerTablesTicked (flip rawCalculateDifference) after (projectLedgerTablesTicked before)
-
-rawAttachAndApplyDiffs ::
-     Ord k
-  => DiffMK     k v
-  -> ValuesMK   k v
-  -> TrackingMK k v
-rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (applyDiff v d) d
-
--- | Replace the tables in the first parameter with the tables of the second
--- parameter after applying the differences in the first parameter to them
-attachAndApplyDiffsTicked ::
-     TickedTableStuff l
-  => Ticked1 l DiffMK
-  ->         l ValuesMK
-  -> Ticked1 l TrackingMK
-attachAndApplyDiffsTicked after before =
-    zipOverLedgerTablesTicked rawAttachAndApplyDiffs after
-  $ projectLedgerTables before
-
-rawPrependTrackingDiffs ::
-      (Ord k, Eq v)
-   => TrackingMK k v
-   -> TrackingMK k v
-   -> TrackingMK k v
-rawPrependTrackingDiffs (ApplyTrackingMK v d2) (ApplyTrackingMK _v d1) =
-  ApplyTrackingMK v (d1 <> d2)
-
--- | Mappend the differences in the ledger tables. Keep the ledger state of the
--- first one.
-prependLedgerTablesTrackingDiffs ::
-     TickedTableStuff l
-  => Ticked1 l TrackingMK
-  -> Ticked1 l TrackingMK
-  -> Ticked1 l TrackingMK
-prependLedgerTablesTrackingDiffs after before =
-    zipOverLedgerTablesTicked rawPrependTrackingDiffs after
-  $ projectLedgerTablesTicked before
-
-rawReapplyTracking ::
-     Ord k
-  => TrackingMK k v
-  -> ValuesMK   k v
-  -> TrackingMK k v
-rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) = ApplyTrackingMK (applyDiff v d) d
-
--- | Replace the tables in the first parameter with the tables of the second
--- parameter after applying the differences in the first parameter to them
-reapplyTrackingTicked ::
-     TickedTableStuff l
-  => Ticked1 l TrackingMK
-  ->         l ValuesMK
-  -> Ticked1 l TrackingMK
-reapplyTrackingTicked after before =
-    zipOverLedgerTablesTicked rawReapplyTracking after
-  $ projectLedgerTables before
-
-{-------------------------------------------------------------------------------
-  Concrete ledger tables
--------------------------------------------------------------------------------}
-
-type MapKind         = {- key -} Type -> {- value -} Type -> Type
-type LedgerStateKind = MapKind -> Type
-
-data MapKind' = DiffMK'
-              | EmptyMK'
-              | KeysMK'
-              | QueryMK'
-              | SeqDiffMK'
-              | TrackingMK'
-              | ValuesMK'
-
-type DiffMK     = ApplyMapKind' DiffMK'
-type EmptyMK    = ApplyMapKind' EmptyMK'
-type KeysMK     = ApplyMapKind' KeysMK'
-type QueryMK    = ApplyMapKind' QueryMK'
-type SeqDiffMK  = ApplyMapKind' SeqDiffMK'
-type TrackingMK = ApplyMapKind' TrackingMK'
-type ValuesMK   = ApplyMapKind' ValuesMK'
-
--- | A codec 'MapKind' that will be used to refer to @'LedgerTables' l CodecMK@
--- as the codecs that can encode every key and value in the @'LedgerTables' l
--- mk@.
-data CodecMK k v = CodecMK
-                     (k -> CBOR.Encoding)
-                     (v -> CBOR.Encoding)
-                     (forall s . CBOR.Decoder s k)
-                     (forall s . CBOR.Decoder s v)
-
-newtype NameMK k v = NameMK String
-
-type ApplyMapKind mk = mk
-
-data ApplyMapKind' :: MapKind' -> Type -> Type -> Type where
-  ApplyDiffMK     :: !(Diff    k v)                -> ApplyMapKind' DiffMK'       k v
-  ApplyEmptyMK    ::                                  ApplyMapKind' EmptyMK'      k v
-  ApplyKeysMK     :: !(Keys    k v)                -> ApplyMapKind' KeysMK'       k v
-  ApplySeqDiffMK  :: !(DiffSeq k v)                -> ApplyMapKind' SeqDiffMK'    k v
-  ApplyTrackingMK :: !(Values  k v) -> !(Diff k v) -> ApplyMapKind' TrackingMK'   k v
-  ApplyValuesMK   :: !(Values  k v)                -> ApplyMapKind' ValuesMK'     k v
-
-  ApplyQueryAllMK  ::                ApplyMapKind' QueryMK' k v
-  ApplyQuerySomeMK :: !(Keys k v) -> ApplyMapKind' QueryMK' k v
-
--- | A general interface to mapkinds.
---
--- In some cases where @mk@ is not specialised to a concrete mapkind like
--- @'ValuesMK'@, there are often still a number of operations that we can
--- perform for this @mk@ that make sense regardless of the concrete mapkind. For
--- example, we should always be able to map over a mapkind to change the type of
--- values that it contains. This class is an interface to mapkinds that provides
--- such common functions.
-class IsMapKind (mk :: MapKind) where
-  emptyMK :: forall k v. (Ord k, Eq v) => mk k v
-  default emptyMK :: forall k v. Monoid (mk k v) => mk k v
-  emptyMK = mempty
-
-  mapMK :: forall k v v'. (Ord k, Eq v, Eq v') => (v -> v') -> mk k v -> mk k v'
-  default mapMK :: forall k v v'. (Functor (mk k)) => (v -> v') -> mk k v -> mk k v'
-  mapMK = fmap
-
-instance IsMapKind EmptyMK where
-  emptyMK = ApplyEmptyMK
-  mapMK _ ApplyEmptyMK = ApplyEmptyMK
-
-instance IsMapKind KeysMK where
-  emptyMK = ApplyKeysMK mempty
-  mapMK f (ApplyKeysMK ks) = ApplyKeysMK $ fmap f ks
-
-instance IsMapKind ValuesMK where
-  emptyMK = ApplyValuesMK mempty
-  mapMK f (ApplyValuesMK vs) = ApplyValuesMK $ fmap f vs
-
-instance IsMapKind TrackingMK where
-  emptyMK = ApplyTrackingMK mempty mempty
-  mapMK f (ApplyTrackingMK vs d) = ApplyTrackingMK (fmap f vs) (fmap f d)
-
-instance IsMapKind DiffMK where
-  emptyMK = ApplyDiffMK mempty
-
-instance IsMapKind SeqDiffMK where
-  emptyMK = ApplySeqDiffMK empty
-  mapMK f (ApplySeqDiffMK ds) = ApplySeqDiffMK $ mapDiffSeq f ds
-
-instance IsMapKind (ApplyMapKind' QueryMK') where
-  emptyMK = ApplyQuerySomeMK mempty
-  mapMK f qmk = case qmk of
-    ApplyQuerySomeMK ks -> ApplyQuerySomeMK $ fmap f ks
-    ApplyQueryAllMK     -> ApplyQueryAllMK
-
-instance Ord k => Semigroup (ApplyMapKind' KeysMK' k v) where
-  ApplyKeysMK l <> ApplyKeysMK r = ApplyKeysMK (l <> r)
-
-instance Ord k => Monoid (ApplyMapKind' KeysMK' k v) where
-  mempty = ApplyKeysMK mempty
-
-instance Functor (DiffMK k) where
-  fmap f (ApplyDiffMK d) = ApplyDiffMK $ fmap f d
-
-instance (Ord k, Eq v) => Eq (ApplyMapKind' mk k v) where
-  ApplyEmptyMK          == _                     = True
-  ApplyKeysMK   l       == ApplyKeysMK   r       = l == r
-  ApplyValuesMK l       == ApplyValuesMK r       = l == r
-  ApplyTrackingMK l1 l2 == ApplyTrackingMK r1 r2 = l1 == r1 && l2 == r2
-  ApplyDiffMK l         == ApplyDiffMK r         = l == r
-  ApplySeqDiffMK l      == ApplySeqDiffMK r      = l == r
-  ApplyQueryAllMK       == ApplyQueryAllMK       = True
-  ApplyQuerySomeMK l    == ApplyQuerySomeMK r    = l == r
-  _                     == _                     = False
-
-instance (Ord k, NoThunks k, NoThunks v) => NoThunks (ApplyMapKind' mk k v) where
-  wNoThunks ctxt   = NoThunks.allNoThunks . \case
-    ApplyEmptyMK         -> []
-    ApplyKeysMK ks       -> [noThunks ctxt ks]
-    ApplyValuesMK vs     -> [noThunks ctxt vs]
-    ApplyTrackingMK vs d -> [noThunks ctxt vs, noThunks ctxt d]
-    ApplyDiffMK d        -> [noThunks ctxt d]
-    ApplySeqDiffMK ds    -> [noThunks ctxt ds]
-    ApplyQueryAllMK      -> []
-    ApplyQuerySomeMK ks  -> [noThunks ctxt ks]
-
-  showTypeOf _ = "ApplyMapKind"
-
-showsApplyMapKind :: (Show k, Show v) => ApplyMapKind' mk k v -> ShowS
-showsApplyMapKind = \case
-    ApplyEmptyMK             -> showString "ApplyEmptyMK"
-    ApplyKeysMK keys         -> showParen True $ showString "ApplyKeysMK " . shows keys
-    ApplyValuesMK values     -> showParen True $ showString "ApplyValuesMK " . shows values
-    ApplyTrackingMK values d -> showParen True $ showString "ApplyTrackingMK " . shows values . showString " " . shows d
-    ApplyDiffMK d            -> showParen True $ showString "ApplyDiffMK " . shows d
-    ApplySeqDiffMK sq        -> showParen True $ showString "ApplySeqDiffMK " . shows sq
-
-    ApplyQueryAllMK       -> showParen True $ showString "ApplyQueryAllMK"
-    ApplyQuerySomeMK keys -> showParen True $ showString "ApplyQuerySomeMK " . shows keys
-
-instance (Show k, Show v) => Show (ApplyMapKind' mk k v) where
-  show = flip showsApplyMapKind ""
-
-
-{-------------------------------------------------------------------------------
   Link block to its ledger
 -------------------------------------------------------------------------------}
 
@@ -913,27 +270,6 @@ data DiskLedgerView m l =
       (LedgerTables l KeysMK -> m (LedgerTables l ValuesMK))
       (RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK))   -- TODO will be unacceptably coarse once we have multiple tables
       (m ())
-
-{-------------------------------------------------------------------------------
-  Special classes of ledger states
-
-  TODO if having such class(es) make sense but only in the context of testing
-  code we should move this to the appropriate module.
--------------------------------------------------------------------------------}
-
-class InMemory (l :: LedgerStateKind) where
-
-  -- | If the ledger state is always in memory, then l mk will be isomorphic to
-  -- l mk' for all mk, mk'. As a result, we can convert between ledgers states
-  -- indexed by different map kinds.
-  --
-  -- This function is useful to combine functions that operate on functions that
-  -- transform the map kind on a ledger state (eg applyChainTickLedgerResult).
-  convertMapKind :: l mk -> l mk'
-
-class StowableLedgerTables (l :: LedgerStateKind) where
-  stowLedgerTables     :: l ValuesMK -> l EmptyMK
-  unstowLedgerTables   :: l EmptyMK  -> l ValuesMK
 
 {-------------------------------------------------------------------------------
   Changelog

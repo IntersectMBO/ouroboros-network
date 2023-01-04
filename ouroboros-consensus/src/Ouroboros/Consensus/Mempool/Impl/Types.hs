@@ -57,6 +57,8 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool.TxSeq (MempoolSize, TicketNo,
                      TxSeq (..), TxTicket (..), zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq

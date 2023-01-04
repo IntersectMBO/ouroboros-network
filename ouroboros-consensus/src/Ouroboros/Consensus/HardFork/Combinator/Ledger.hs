@@ -56,6 +56,8 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense
@@ -213,11 +215,10 @@ instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerSta
   withLedgerTables st (LedgerTablesOne tables) =
       withOneState st $ projectOneState st `withLedgerTables` tables
 
-  traverseLedgerTables f (LedgerTablesOne tables) =
-      LedgerTablesOne <$> traverseLedgerTables f tables
-
   pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState x) f
   mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState x) f
+  traverseLedgerTables f (LedgerTablesOne tables) =
+      LedgerTablesOne <$> traverseLedgerTables f tables
   zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState x) f
   zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState x) f
   foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState x) f

@@ -27,11 +27,11 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
-import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView (..),
-                     convertMapKind, getTip)
+import           Ouroboros.Consensus.Ledger.Basics (DiskLedgerView (..), getTip)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query (Query (..),
                      QueryWithSomeFootprintL (..))
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
