@@ -45,7 +45,8 @@ import           Test.QuickCheck.Monadic (PropertyM)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
 
-import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Storage.FS.API hiding (Handle)
 import           Ouroboros.Consensus.Storage.FS.API.Types hiding (Handle)
 import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)

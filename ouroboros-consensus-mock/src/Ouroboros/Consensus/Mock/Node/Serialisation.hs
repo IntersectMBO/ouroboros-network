@@ -25,6 +25,7 @@ import           Ouroboros.Consensus.HeaderValidation (AnnTip,
                      defaultDecodeAnnTip, defaultEncodeAnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.Run

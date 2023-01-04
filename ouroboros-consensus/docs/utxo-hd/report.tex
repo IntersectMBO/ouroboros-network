@@ -156,8 +156,8 @@ has ledger tables attached to it which share the particular choice of \htt{MapKi
 views). The ledger tables of a ledger state can be accessed via \htt{projectLedgerTables} and new tables can be attached to a ledger state via \htt{withLedgerTables}.
 
 \begin{code}
-projectLedgerTables :: IsApplyMapKind mk => l mk  -> LedgerTables l mk
-withLedgerTables    :: IsApplyMapKind mk => l any -> LedgerTables l mk -> l mk
+projectLedgerTables :: IsMapKind mk => l mk  -> LedgerTables l mk
+withLedgerTables    :: IsMapKind mk => l any -> LedgerTables l mk -> l mk
 \end{code}
 
 This is then concretized by the \htt{ApplyMapKind'} GADT which represents each

@@ -23,9 +23,10 @@ import           Ouroboros.Consensus.Config (SecurityParam (SecurityParam),
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
                      (HeaderState (HeaderState))
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig, ValuesMK,
-                     polyEmptyLedgerTables)
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Tables (ValuesMK)
+import           Ouroboros.Consensus.Ledger.Tables.Utils (polyEmptyLedgerTables)
 import           Ouroboros.Consensus.Mempool.TxLimits
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey

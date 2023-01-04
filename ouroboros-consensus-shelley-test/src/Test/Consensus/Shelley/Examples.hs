@@ -37,11 +37,11 @@ import qualified Cardano.Protocol.TPraos.BHeader as SL
 import           Data.Coerce (coerce)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Basics
-                     (ApplyMapKind' (ApplyEmptyMK))
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import           Ouroboros.Consensus.Protocol.Praos.Header
                      (HeaderBody (HeaderBody))
@@ -55,7 +55,6 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Test.Cardano.Ledger.Shelley.Orphans ()
 
-import qualified Ouroboros.Consensus.Ledger.Basics as Basics
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.HFEras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -160,7 +159,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                        ledgerState
                        (genesisHeaderState chainDepState)
     ledgerTables = ShelleyLedgerTables
-                 $ Basics.ApplyValuesMK
+                 $ ApplyValuesMK
                  $ DS.Values
                  $ Map.fromList
                  $ zip exampleTxIns exampleTxOuts
@@ -269,7 +268,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
                                   }
     , shelleyLedgerState      = sleNewEpochState
     , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-    , shelleyLedgerTables = Basics.polyEmptyLedgerTables
+    , shelleyLedgerTables     = polyEmptyLedgerTables
     }
     chainDepState = translateChainDepState @(TPraos (EraCrypto era)) @(Praos (EraCrypto era))
       $ TPraosState (NotOrigin 1) sleChainDepState
@@ -277,7 +276,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
                        ledgerState
                        (genesisHeaderState chainDepState)
     ledgerTables = ShelleyLedgerTables
-                 $ Basics.ApplyValuesMK
+                 $ ApplyValuesMK
                  $ DS.Values
                  $ Map.fromList
                  $ zip exampleTxIns exampleTxOuts
