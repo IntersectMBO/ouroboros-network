@@ -79,7 +79,7 @@ nodeToClientVersionBit = 15
 -- | Version data for NodeToClient protocol v1
 --
 data NodeToClientVersionData = NodeToClientVersionData
-  { networkMagic :: NetworkMagic
+  { networkMagic :: !NetworkMagic
   , query        :: !Bool
   }
   deriving (Eq, Show, Typeable)
