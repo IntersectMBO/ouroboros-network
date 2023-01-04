@@ -108,7 +108,7 @@ instance Acceptable NodeToNodeVersionData where
       = Accept NodeToNodeVersionData
           { networkMagic  = networkMagic local
           , diffusionMode = diffusionMode local `min` diffusionMode remote
-          , query         = query local `min` query remote
+          , query         = query local || query remote
           }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "

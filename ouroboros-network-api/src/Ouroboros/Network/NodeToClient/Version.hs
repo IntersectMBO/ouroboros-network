@@ -89,7 +89,7 @@ instance Acceptable NodeToClientVersionData where
       | networkMagic local == networkMagic remote
       = Accept NodeToClientVersionData
           { networkMagic  = networkMagic local
-          , query         = query local `min` query remote
+          , query         = query local || query remote
           }
       | otherwise =  Refuse $ T.pack $ "version data mismatch: "
                                     ++ show local
