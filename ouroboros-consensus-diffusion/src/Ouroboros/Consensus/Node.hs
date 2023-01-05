@@ -697,11 +697,13 @@ stdVersionDataNTN :: NetworkMagic -> DiffusionMode -> NodeToNodeVersionData
 stdVersionDataNTN networkMagic diffusionMode = NodeToNodeVersionData
     { networkMagic
     , diffusionMode
+    , query = False
     }
 
 stdVersionDataNTC :: NetworkMagic -> NodeToClientVersionData
 stdVersionDataNTC networkMagic = NodeToClientVersionData
     { networkMagic
+    , query = False
     }
 
 stdRunDataDiffusion ::

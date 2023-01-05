@@ -380,6 +380,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                           unversionedProtocolDataCodec
                           nullNetworkConnectTracers
                           acceptableVersion
+                          queryVersion
                           (simpleSingletonVersions
                             UnversionedProtocol
                             UnversionedProtocolData
@@ -436,6 +437,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       noTimeLimitsHandshake
       unversionedProtocolDataCodec
       acceptableVersion
+      queryVersion
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
