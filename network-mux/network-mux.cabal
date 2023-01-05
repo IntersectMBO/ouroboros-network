@@ -194,7 +194,8 @@ executable cardano-ping
                        cborg,
                        network,
                        tdigest,
-                       text
+                       text,
+                       transformers
   if os(windows)
     buildable:         False
   else
