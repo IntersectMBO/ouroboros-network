@@ -194,6 +194,9 @@ instance Acceptable VersionData where
                                     dataVersion2 = dataVersion2 d
                                                 || dataVersion2 d' }
 
+instance Queryable VersionData where
+    queryVersion _d = False
+
 dataCodecCBORTerm :: VersionNumber -> CodecCBORTerm Text VersionData
 dataCodecCBORTerm Version_0 = CodecCBORTerm {encodeTerm, decodeTerm}
     where
@@ -429,6 +432,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
               (handshakeServerPeer
                 (cborTermVersionDataCodec dataCodecCBORTerm)
                 acceptableVersion
+                queryVersion
                 serverVersions)) of
       (clientRes', serverRes', TerminalStates TokDone TokDone) ->
            fromMaybe False clientRes === either (const False) (\(a,_,_) -> a) clientRes'
@@ -465,6 +469,7 @@ prop_channel createChannels clientVersions serverVersions =
         (handshakeServerPeer
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
+          queryVersion
           serverVersions)
     pure $
       case (clientRes', serverRes') of
@@ -534,6 +539,7 @@ prop_channel_asymmetric createChannels clientVersions = do
         (handshakeServerPeer
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
+          queryVersion
           serverVersions)
     pure $
       case (clientRes', serverRes') of
@@ -613,21 +619,26 @@ newtype ArbitraryNodeToNodeVersionData =
     deriving Show
 
 instance Arbitrary ArbitraryNodeToNodeVersionData where
-    arbitrary = ( fmap ArbitraryNodeToNodeVersionData
+    arbitrary = ( ((ArbitraryNodeToNodeVersionData .) .)
                 . NodeToNodeVersionData
                 )
             <$> (NetworkMagic <$> arbitrary)
             <*> elements [ InitiatorOnlyDiffusionMode
                          , InitiatorAndResponderDiffusionMode
                          ]
+            <*> arbitrary
     shrink (ArbitraryNodeToNodeVersionData
-             (NodeToNodeVersionData magic mode)) =
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode)
+             (NodeToNodeVersionData magic mode query)) =
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode query)
         | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
         ]
         ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode')
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' query)
         | mode' <- shrinkMode mode
+        ]
+        ++
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode query')
+        | query' <- shrink query
         ]
       where
         shrinkMode :: DiffusionMode -> [DiffusionMode]
@@ -674,14 +685,19 @@ newtype ArbitraryNodeToClientVersionData =
     deriving Show
 
 instance Arbitrary ArbitraryNodeToClientVersionData where
-    arbitrary = ( ArbitraryNodeToClientVersionData
+    arbitrary = ( (ArbitraryNodeToClientVersionData .)
                 . NodeToClientVersionData
                 )
             <$> (NetworkMagic <$> arbitrary)
+            <*> arbitrary
     shrink (ArbitraryNodeToClientVersionData
-             (NodeToClientVersionData magic)) =
-        [ ArbitraryNodeToClientVersionData (NodeToClientVersionData magic')
+             (NodeToClientVersionData magic query)) =
+        [ ArbitraryNodeToClientVersionData (NodeToClientVersionData magic' query)
         | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
+        ]
+        ++
+        [ ArbitraryNodeToClientVersionData (NodeToClientVersionData magic query')
+        | query' <- shrink query
         ]
 
 newtype ArbitraryNodeToClientVersions =

@@ -1157,6 +1157,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                          cborTermVersionDataCodec
                            NodeToNode.nodeToNodeCodecCBORTerm,
                        haAcceptVersion = acceptableVersion,
+                       haQueryVersion = queryVersion,
                        haTimeLimits = timeLimitsHandshake
                      }
                  diNtcHandshakeArguments =
@@ -1167,6 +1168,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                          cborTermVersionDataCodec
                            NodeToClient.nodeToClientCodecCBORTerm,
                        haAcceptVersion = acceptableVersion,
+                       haQueryVersion = queryVersion,
                        haTimeLimits = noTimeLimitsHandshake
                      }
 

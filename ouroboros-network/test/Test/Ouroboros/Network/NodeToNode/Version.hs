@@ -31,6 +31,7 @@ instance Arbitrary NodeToNodeVersionData where
         <*> oneof [ pure InitiatorOnlyDiffusionMode
                   , pure InitiatorAndResponderDiffusionMode
                   ]
+        <*> arbitrary
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 prop_nodeToNodeCodec ntnVersion ntnData =

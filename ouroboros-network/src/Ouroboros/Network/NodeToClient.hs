@@ -247,6 +247,7 @@ connectTo snocket tracers versions path =
                   (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                   tracers
                   acceptableVersion
+                  queryVersion
                   versions
                   Nothing
                   (localAddressFromPath path)
@@ -277,6 +278,7 @@ withServer sn tracers networkState sd versions errPolicies =
     noTimeLimitsHandshake
     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
     acceptableVersion
+    queryVersion
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
@@ -325,6 +327,7 @@ ncSubscriptionWorker
           (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
           acceptableVersion
+          queryVersion
           versions)
 
 -- | 'ErrorPolicies' for client application.  Additional rules can be added by
