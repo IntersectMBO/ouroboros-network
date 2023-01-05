@@ -141,8 +141,6 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
         <> CBOR.encodeWord 0
         <> encodeVersions versionNumberCodec vs
 
-      -- Although `MsgReplyVersions` shall not be sent, for testing purposes it
-      -- is useful to have an encoder for it.
       encodeMsg (ServerAgency TokConfirm) (MsgReplyVersions vs)
         = CBOR.encodeListLen 2
         <> CBOR.encodeWord 0
