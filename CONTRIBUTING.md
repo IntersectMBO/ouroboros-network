@@ -141,6 +141,29 @@ as well as implementation level comments.
 If changes would modify any existing design the contributor might be expected
 to be asked to also update the standalone documentation (written in `tex`).
 
+### Building technical documentation
+
+There are three documents in three directories:
+
+* `./doc/network-design`
+* `./doc/network-spec`
+* `./ouroboros-consensus/docs/report/`
+
+Either go to one of the directories and run `pdflatex` & `bibtex` (there's a
+`Makefile` or a script to do that).  Note that in you need to install a `tex`
+distribution on your system with all the necessary packages; or build it with
+`nix` (which will take care about all the dependencies one needs):
+
+```sh
+# build network-design & network-spec
+nix build -f default.nix network-docs
+```
+
+```sh
+# build consensus report
+nix build -f default.nix consensus-docs
+```
+
 ## Coding Standards
 
 All contributed code should be well tested.  Low level networking code should
