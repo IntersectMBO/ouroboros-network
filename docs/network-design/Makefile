@@ -1,4 +1,4 @@
-DOCNAME = network-spec
+DOCNAME = network-design
 
 .PHONY: $(DOCNAME).pdf all clean
 
@@ -9,3 +9,4 @@ $(DOCNAME).pdf: $(DOCNAME).tex
 
 clean:
 	latexmk -CA
+
