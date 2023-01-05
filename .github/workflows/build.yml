@@ -194,12 +194,19 @@ jobs:
 
     # Consensus tests take too long on GitHub's Azure machines
 
-    # comment this back in for debugging. Remember to launch a
-    # `pwsh` from the tmux session to debug `pwsh` issues. And
-    # be reminded that the /msys2 and /msys2/mingw64 paths are
-    # not in PATH by default for the workflow, but tmate will
-    # put them in.
-#    - name: Setup tmate session
-#      if: ${{ failure() }}
-#      uses: mxschmitt/action-tmate@v3
-
+    # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
+    # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and
+    # `/msys2/mingw64` paths are not in PATH by default for the workflow, but tmate
+    # will put them in.
+    # You may also want to run
+    #
+    #   $env:PATH=("C:\Program Files\PowerShell\7;{0}" -f $env:ORIGINAL_PATH)
+    #
+    # to restore the original path.  Do note that some test might need msys2
+    # and will silently fail if msys2 is not in path. See the "Run tests" step.
+    #
+    # - name: Setup tmate session
+    #   if: ${{ failure() }}
+    #   uses: mxschmitt/action-tmate@v3
+    #   with:
+    #     limit-access-to-actor: true
