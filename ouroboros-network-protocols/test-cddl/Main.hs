@@ -430,6 +430,7 @@ genNtNHandshake genVersion = oneof
                 , pure PeerSharingPrivate
                 , pure PeerSharingPublic
                 ]
+          <*> arbitrary
 
     genRefuseReason :: Gen (Handshake.RefuseReason NodeToNodeVersion)
     genRefuseReason = oneof
@@ -497,6 +498,7 @@ instance Arbitrary (AnyMessageAndAgency (Handshake NodeToClientVersion CBOR.Term
         genData :: Gen NodeToClientVersionData
         genData = NodeToClientVersionData
               <$> (NetworkMagic <$> arbitrary)
+              <*> arbitrary
 
         genRefuseReason :: Gen (Handshake.RefuseReason NodeToClientVersion)
         genRefuseReason = oneof

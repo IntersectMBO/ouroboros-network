@@ -164,6 +164,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         unversionedProtocolDataCodec
         nullNetworkConnectTracers
         acceptableVersion
+        queryVersion
         (simpleSingletonVersions
            UnversionedProtocol
            UnversionedProtocolData
@@ -199,6 +200,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       noTimeLimitsHandshake
       unversionedProtocolDataCodec
       acceptableVersion
+      queryVersion
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
