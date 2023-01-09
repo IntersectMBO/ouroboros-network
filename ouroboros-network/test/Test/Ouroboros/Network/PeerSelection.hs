@@ -17,6 +17,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- TODO: remove it once #3601 is fixed
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Test.Ouroboros.Network.PeerSelection
   ( tests
