@@ -13,7 +13,7 @@ maintainer:
 category:            Network
 build-type:          Simple
 extra-source-files:
-  ChangeLog.md
+  CHANGELOG.md
 
 flag asserts
   description: Enable assertions
