@@ -19,7 +19,13 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Test.Ouroboros.Storage.ChainDB.StateMachine (tests) where
+module Test.Ouroboros.Storage.ChainDB.StateMachine (
+    At (..)
+  , Cmd (..)
+  , Resp (..)
+  , Success (..)
+  , tests
+  ) where
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad (replicateM, void)

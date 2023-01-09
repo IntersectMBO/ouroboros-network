@@ -5,23 +5,23 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
-module Ouroboros.Network.AnchoredFragment
-  ( -- * AnchoredFragment type and fundamental operations
+module Ouroboros.Network.AnchoredFragment (
+    -- * AnchoredFragment type and fundamental operations
     AnchoredFragment
   , AnchoredSeq (Empty, (:>), (:<))
   , anchor
-  , anchorPoint
   , anchorBlockNo
+  , anchorPoint
     -- * Anchor
   , Anchor (..)
   , anchorFromBlock
   , anchorFromPoint
-  , anchorToPoint
-  , anchorToSlotNo
+  , anchorIsGenesis
   , anchorToBlockNo
   , anchorToHash
-  , anchorIsGenesis
   , anchorToHeaderFields
+  , anchorToPoint
+  , anchorToSlotNo
   , anchorToTip
   , castAnchor
   , valid
@@ -29,60 +29,60 @@ module Ouroboros.Network.AnchoredFragment
     -- ** Block re-exports
   , HasHeader (..)
   , Point (..)
-  , castPoint
   , blockPoint
+  , castPoint
     -- * AnchoredFragment construction and inspection
     -- ** Head inspection
-  , headPoint
   , headAnchor
-  , headSlot
-  , headHash
   , headBlockNo
+  , headHash
+  , headPoint
+  , headSlot
     -- ** Basic operations
+  , dropNewest
+  , dropWhileNewest
+  , fromNewestFirst
+  , fromOldestFirst
   , head
   , last
   , lastPoint
   , lastSlot
-  , toNewestFirst
-  , toOldestFirst
-  , fromNewestFirst
-  , fromOldestFirst
-  , splitAt
-  , dropNewest
-  , takeOldest
-  , dropWhileNewest
-  , takeWhileOldest
   , length
   , null
+  , splitAt
+  , takeOldest
+  , takeWhileOldest
+  , toNewestFirst
+  , toOldestFirst
     -- ** Update type and operations
   , ChainUpdate (..)
   , addBlock
-  , rollback
   , applyChainUpdate
   , applyChainUpdates
+  , rollback
     -- * Special operations
-  , pointOnFragment
-  , withinFragmentBounds
-  , findFirstPoint
-  , successorBlock
-  , selectPoints
-  , isPrefixOf
-  , splitAfterPoint
-  , splitBeforePoint
-  , sliceRange
-  , join
-  , intersect
-  , intersectionPoint
-  , mapAnchoredFragment
   , anchorNewest
   , filter
   , filterWithStop
+  , findFirstPoint
+  , intersect
+  , intersectionPoint
+  , isPrefixOf
+  , join
+  , mapAnchoredFragment
+  , pointOnFragment
+  , selectPoints
+  , sliceRange
+  , splitAfterPoint
+  , splitBeforePoint
+  , successorBlock
+  , withinFragmentBounds
     -- * Helper functions
   , prettyPrint
     -- * Reference implementations for testing
+  , filterWithStopSpec
   , pointOnFragmentSpec
   , selectPointsSpec
-  , filterWithStopSpec
   ) where
 
 import           Prelude hiding (filter, head, last, length, map, null, splitAt)
