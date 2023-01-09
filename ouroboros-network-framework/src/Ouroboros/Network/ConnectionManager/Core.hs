@@ -102,6 +102,10 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         --
         cmSnocket             :: Snocket m socket peerAddr,
 
+        -- | Make MuxBearer.
+        --
+        cmMakeBearer          :: MakeBearer m socket,
+
         -- | Socket configuration.
         --
         cmConfigureSocket     :: socket -> Maybe peerAddr -> m (),
@@ -561,6 +565,7 @@ withConnectionManager ConnectionManagerArguments {
                           cmIPv6Address,
                           cmAddressType,
                           cmSnocket,
+                          cmMakeBearer,
                           cmConfigureSocket,
                           cmTimeWaitTimeout,
                           cmOutboundIdleTimeout,
@@ -776,8 +781,7 @@ withConnectionManager ConnectionManagerArguments {
                      (TrConnectionHandler connId `contramap` tracer)
                      connId
                      (\bearerTimeout ->
-                       toBearer
-                         cmSnocket
+                       getBearer cmMakeBearer
                          bearerTimeout
                          (WithMuxBearer connId `contramap` muxTracer)))
             unmask

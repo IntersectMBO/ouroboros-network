@@ -25,6 +25,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Tracer
 
+import qualified Network.Mux.Bearer as Mx
 import qualified Network.Mux.Bearer.Pipe as Mx
 import qualified Network.Mux.Compat as Mx (muxStart)
 import           Ouroboros.Network.Mux
@@ -186,8 +187,8 @@ demo chain0 updates = do
                                                   (encodeTip encode) (decodeTip decode))
                         (ChainSync.chainSyncServerPeer server)
 
-        let clientBearer = Mx.pipeAsMuxBearer activeTracer chan1
-            serverBearer = Mx.pipeAsMuxBearer activeTracer chan2
+        clientBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan1
+        serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan2
 
         _ <- async $
               Mx.muxStart

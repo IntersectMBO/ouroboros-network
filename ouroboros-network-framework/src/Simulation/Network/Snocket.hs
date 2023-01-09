@@ -1,12 +1,14 @@
-{-# LANGUAGE DerivingStrategies  #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 -- | This module provides simulation environment and a snocket implementation
 -- suitable for 'IOSim'.
@@ -35,6 +37,7 @@ module Simulation.Network.Snocket
   , TimeoutDetail (..)
   , noAttenuation
   , FD
+  , makeFDBearer
   , GlobalAddressScheme (..)
   , AddressType (..)
   , WithAddr (..)
@@ -65,9 +68,8 @@ import           Text.Printf (printf)
 import           Data.Monoid.Synchronisation (FirstToFinish (..))
 import           Data.Wedge
 
+import           Network.Mux (SDUSize (..))
 import           Network.Mux.Bearer.AttenuatedChannel
-import           Network.Mux.Trace (MuxTrace)
-import           Network.Mux.Types (MuxBearer, SDUSize (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types (AddressType (..))
@@ -527,6 +529,40 @@ instance Show addr => Show (FD_ m addr) where
 newtype FD m peerAddr = FD { fdVar :: (StrictTVar m (FD_ m peerAddr)) }
 
 
+makeFDBearer :: forall addr m.
+                ( MonadMonotonicTime m
+                , MonadSTM   m
+                , MonadThrow m
+                , Show addr
+                )
+             => MakeBearer m (FD m (TestAddress addr))
+makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } -> do
+        fd_ <- atomically (readTVar fdVar)
+        case fd_ of
+          FDUninitialised {} ->
+            throwIO (invalidError fd_)
+          FDListening {} ->
+            throwIO (invalidError fd_)
+          FDConnecting _ _ -> do
+            throwIO (invalidError fd_)
+          FDConnected _ conn -> do
+            return $ attenuationChannelAsMuxBearer (connSDUSize conn)
+                                                   sduTimeout muxTracer
+                                                   (connChannelLocal conn)
+          FDClosed {} ->
+            throwIO (invalidError fd_)
+      where
+        -- io errors
+        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError fd_ = IOError
+          { ioe_handle      = Nothing
+          , ioe_type        = InvalidArgument
+          , ioe_location    = "Ouroboros.Network.Snocket.Sim.toBearer"
+          , ioe_description = printf "Invalid argument (%s)" (show fd_)
+          , ioe_errno       = Nothing
+          , ioe_filename    = Nothing
+          }
+
 --
 -- Simulated snockets
 --
@@ -571,7 +607,6 @@ data SnocketTrace m addr
     | STAcceptFailure SockType SomeException
     | STAccepting
     | STAccepted      addr
-    | STBearer       (FD_ m addr)
     | STAttenuatedChannelTrace (ConnectionId addr) AttenuatedChannelTrace
   deriving Show
 
@@ -618,7 +653,6 @@ mkSnocket state tr = Snocket { getLocalAddr
                              , listen
                              , accept
                              , close
-                             , toBearer
                              }
   where
     getLocalAddrM :: FD m (TestAddress addr)
@@ -1304,38 +1338,6 @@ mkSnocket state tr = Snocket { getLocalAddr
           )
           wChannel
 
-
-    toBearer :: DiffTime
-             -> Tracer m MuxTrace
-             -> FD m (TestAddress addr)
-             -> m (MuxBearer m)
-    toBearer sduTimeout muxTracer fd@FD { fdVar } = do
-        fd_ <- atomically (readTVar fdVar)
-        case fd_ of
-          FDUninitialised {} ->
-            throwIO (invalidError fd_)
-          FDListening {} ->
-            throwIO (invalidError fd_)
-          FDConnecting _ _ -> do
-            throwIO (invalidError fd_)
-          FDConnected _ conn -> do
-            traceWith' fd (STBearer fd_)
-            return $ attenuationChannelAsMuxBearer (connSDUSize conn)
-                                                   sduTimeout muxTracer
-                                                   (connChannelLocal conn)
-          FDClosed {} ->
-            throwIO (invalidError fd_)
-      where
-        -- io errors
-        invalidError :: FD_ m (TestAddress addr) -> IOError
-        invalidError fd_ = IOError
-          { ioe_handle      = Nothing
-          , ioe_type        = InvalidArgument
-          , ioe_location    = "Ouroboros.Network.Snocket.Sim.toBearer"
-          , ioe_description = printf "Invalid argument (%s)" (show fd_)
-          , ioe_errno       = Nothing
-          , ioe_filename    = Nothing
-          }
 
 --
 -- Utils

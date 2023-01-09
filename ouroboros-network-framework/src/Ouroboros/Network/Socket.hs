@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -93,6 +94,7 @@ import qualified Network.Socket as Socket
 
 import           Control.Tracer
 
+import qualified Network.Mux.Bearer as Mx
 import qualified Network.Mux.Compat as Mx
 import           Network.Mux.DeltaQ.TraceTransformer
 import           Network.TypedProtocol.Codec hiding (decode, encode)
@@ -270,6 +272,7 @@ connectToNode
      , Mx.HasInitiator appType ~ True
      )
   => Snocket IO fd addr
+  -> Mx.MakeBearer IO fd
   -> (fd -> IO ()) -- ^ configure a socket
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
   -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
@@ -283,7 +286,7 @@ connectToNode
   -> addr
   -- ^ remote address
   -> IO ()
-connectToNode sn configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions localAddr remoteAddr =
+connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions localAddr remoteAddr =
     bracket
       (Snocket.openToConnect sn remoteAddr)
       (Snocket.close sn)
@@ -293,7 +296,7 @@ connectToNode sn configureSock handshakeCodec handshakeTimeLimits versionDataCod
             Just addr -> Snocket.bind sn sd addr
             Nothing   -> return ()
           Snocket.connect sn sd remoteAddr
-          connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions sd
+          connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions sd
       )
 
 -- |
@@ -312,6 +315,7 @@ connectToNode'
      , Mx.HasInitiator appType ~ True
      )
   => Snocket IO fd addr
+  -> Mx.MakeBearer IO fd
   -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
   -> ProtocolTimeLimits (Handshake vNumber CBOR.Term)
   -> VersionDataCodec CBOR.Term vNumber vData
@@ -322,12 +326,12 @@ connectToNode'
   -> fd
   -- ^ a configured socket to use to connect to a remote service provider
   -> IO ()
-connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } acceptVersion versions sd = do
+connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } acceptVersion versions sd = do
     connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
 
-    handshakeBearer <- Snocket.toBearer sn sduHandshakeTimeout muxTracer sd
+    handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer sd
     app_e <-
       runHandshakeClient
         handshakeBearer
@@ -353,7 +357,7 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
 
          Right (app, _versionNumber, _agreedOptions) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             bearer <- Snocket.toBearer sn sduTimeout muxTracer sd
+             bearer <- Mx.getBearer makeBearer sduTimeout muxTracer sd
              Mx.muxStart
                muxTracer
                (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
@@ -381,6 +385,7 @@ connectToNodeSocket
 connectToNodeSocket iocp handshakeCodec handshakeTimeLimits versionDataCodec tracers acceptVersion versions sd =
     connectToNode'
       (Snocket.socketSnocket iocp)
+      Mx.makeSocketBearer
       handshakeCodec
       handshakeTimeLimits
       versionDataCodec
@@ -435,7 +440,7 @@ beginConnection
        , Typeable vNumber
        , Show vNumber
        )
-    => Snocket IO fd addr
+    => Mx.MakeBearer IO fd
     -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) Mx.MuxTrace)
     -> Tracer IO (Mx.WithMuxBearer (ConnectionId addr) (TraceSendRecv (Handshake vNumber CBOR.Term)))
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
@@ -445,7 +450,7 @@ beginConnection
     -> (Time -> addr -> st -> STM.STM (AcceptConnection st vNumber vData addr IO BL.ByteString))
     -- ^ either accept or reject a connection.
     -> Server.BeginConnection addr fd st ()
-beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion fn t addr st = do
+beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion fn t addr st = do
     accept <- fn t addr st
     case accept of
       AcceptConnection st' connectionId versions -> pure $ Server.Accept st' $ \sd -> do
@@ -453,9 +458,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
         traceWith muxTracer' $ Mx.MuxTraceHandshakeStart
 
-        handshakeBearer <- Snocket.toBearer sn
-                                            sduHandshakeTimeout
-                                            muxTracer' sd
+        handshakeBearer <- Mx.getBearer makeBearer sduHandshakeTimeout muxTracer' sd
         app_e <-
           runHandshakeServer
             handshakeBearer
@@ -480,7 +483,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
 
              Right (SomeResponderApplication app, _versionNumber, _agreedOptions) -> do
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                 bearer <- Snocket.toBearer sn sduTimeout muxTracer' sd
+                 bearer <- Mx.getBearer makeBearer sduTimeout muxTracer' sd
                  Mx.muxStart
                    muxTracer'
                    (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
@@ -605,6 +608,7 @@ runServerThread
     => NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
     -> Snocket IO fd addr
+    -> Mx.MakeBearer IO fd
     -> fd
     -> AcceptedConnectionsLimit
     -> Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString
@@ -622,6 +626,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
                 NetworkMutableState { nmsConnectionTable
                                     , nmsPeerStates }
                 sn
+                makeBearer
                 sd
                 acceptedConnectionsLimit
                 handshakeCodec
@@ -638,7 +643,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
         serverSocket
         acceptedConnectionsLimit
         (acceptException sockAddr)
-        (beginConnection sn nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
+        (beginConnection makeBearer nstMuxTracer nstHandshakeTracer handshakeCodec handshakeTimeLimits versionDataCodec acceptVersion (acceptConnectionTx sockAddr))
         -- register producer when application starts, it will be unregistered
         -- using 'CompleteConnection'
         (\remoteAddr thread st -> pure $ registerProducer remoteAddr thread
@@ -717,6 +722,7 @@ withServerNode
        , Ord addr
        )
     => Snocket IO fd addr
+    -> Mx.MakeBearer IO fd
     -> (fd -> addr -> IO ()) -- ^ callback to configure a socket
     -> NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
@@ -736,7 +742,8 @@ withServerNode
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode sn configureSock
+withServerNode sn makeBearer
+               configureSock
                tracers
                networkState
                acceptedConnectionsLimit
@@ -751,6 +758,7 @@ withServerNode sn configureSock
     bracket (mkListeningSocket sn configureSock addr (Snocket.addrFamily sn addr)) (Snocket.close sn) $ \sd -> do
       withServerNode'
         sn
+        makeBearer
         tracers
         networkState
         acceptedConnectionsLimit
@@ -787,6 +795,7 @@ withServerNode'
        , Ord addr
        )
     => Snocket IO fd addr
+    -> Mx.MakeBearer IO fd
     -> NetworkServerTracers addr vNumber
     -> NetworkMutableState addr
     -> AcceptedConnectionsLimit
@@ -808,7 +817,7 @@ withServerNode'
     -- Note: the server thread will terminate when the callback returns or
     -- throws an exception.
     -> IO t
-withServerNode' sn
+withServerNode' sn makeBearer
                 tracers
                 networkState
                 acceptedConnectionsLimit
@@ -826,6 +835,7 @@ withServerNode' sn
           tracers
           networkState
           sn
+          makeBearer
           sd
           acceptedConnectionsLimit
           handshakeCodec

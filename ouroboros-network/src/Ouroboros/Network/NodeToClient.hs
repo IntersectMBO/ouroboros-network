@@ -241,6 +241,7 @@ connectTo
   -> IO ()
 connectTo snocket tracers versions path =
     connectToNode snocket
+                  makeLocalBearer
                   mempty
                   nodeToClientHandshakeCodec
                   noTimeLimitsHandshake
@@ -269,6 +270,7 @@ withServer
 withServer sn tracers networkState sd versions errPolicies =
   withServerNode'
     sn
+    makeLocalBearer
     tracers
     networkState
     (AcceptedConnectionsLimit maxBound maxBound 0)
@@ -320,6 +322,7 @@ ncSubscriptionWorker
         subscriptionParams
         (connectToNode'
           sn
+          makeLocalBearer
           nodeToClientHandshakeCodec
           noTimeLimitsHandshake
           (cborTermVersionDataCodec nodeToClientCodecCBORTerm)

@@ -92,7 +92,7 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (WithName (..),
                      genDelayWithPrecision, tracerWithName)
 import           Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
-                     WithAddr (..), withSnocket)
+                     WithAddr (..), makeFDBearer, withSnocket)
 
 import qualified Test.Ouroboros.Network.Diffusion.Node as NodeKernel
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -782,9 +782,11 @@ diffusionSimulation
           interfaces =
             NodeKernel.Interfaces
               { NodeKernel.iNtnSnocket        = ntnSnocket
+              , NodeKernel.iNtnBearer         = makeFDBearer
               , NodeKernel.iAcceptVersion     = acceptVersion
               , NodeKernel.iNtnDomainResolver = domainResolver raps dMapVar
               , NodeKernel.iNtcSnocket        = ntcSnocket
+              , NodeKernel.iNtcBearer         = makeFDBearer
               , NodeKernel.iRng               = rng
               , NodeKernel.iDomainMap         = dMapVar
               , NodeKernel.iLedgerPeersConsensusInterface

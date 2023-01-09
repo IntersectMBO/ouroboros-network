@@ -31,7 +31,7 @@ import           Data.Maybe (fromMaybe,)
 import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
 import           Data.Text (unpack)
 import           Data.Word (Word16, Word32)
-import           Network.Mux.Bearer.Socket (socketAsMuxBearer)
+import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerial)
 import           Network.Mux.Types (MuxSDUHeader(MuxSDUHeader, mhTimestamp, mhDir, mhLength, mhNum), MiniProtocolNum(..), MiniProtocolDir(InitiatorDir), MuxBearer(read, write), MuxSDU(..), RemoteClockModel(RemoteClockModel))
 import           Network.Socket (AddrInfo, StructLinger (..))
@@ -372,7 +372,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount} ve
     unless pingOptsQuiet $ printf "%s network rtt: %.3f\n" peerStr $ toSample t0_e t0_s
 
     let timeout = 30
-        bearer = socketAsMuxBearer timeout nullTracer sd
+    bearer <- getBearer makeSocketBearer timeout nullTracer sd
 
     !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions)
     (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum

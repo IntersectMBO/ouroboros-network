@@ -1,11 +1,12 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingVia           #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 
 #if !defined(mingw32_HOST_OS)
 #define POSIX
@@ -17,6 +18,7 @@ module Ouroboros.Network.Snocket
   , Accepted (..)
   , AddressFamily (..)
   , Snocket (..)
+  , makeSocketBearer
     -- ** Socket based Snockets
   , SocketSnocket
   , socketSnocket
@@ -25,6 +27,7 @@ module Ouroboros.Network.Snocket
     --
   , LocalSnocket
   , localSnocket
+  , makeLocalBearer
   , LocalSocket (..)
   , LocalAddress (..)
   , localAddressFromPath
@@ -32,11 +35,11 @@ module Ouroboros.Network.Snocket
   , FileDescriptor (..)
   , socketFileDescriptor
   , localSocketFileDescriptor
+    -- * Re-exports
+  , MakeBearer (..)
   ) where
 
 import           Control.Exception
-import           Control.Monad.Class.MonadTime (DiffTime)
-import           Control.Tracer (Tracer)
 import           Data.Bifoldable (Bifoldable (..))
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Hashable
@@ -50,16 +53,12 @@ import           Foreign.Ptr (IntPtr (..), ptrToIntPtr)
 import qualified System.Win32 as Win32
 import qualified System.Win32.Async as Win32.Async
 import qualified System.Win32.NamedPipes as Win32
-
-import           Network.Mux.Bearer.NamedPipe (namedPipeAsBearer)
 #endif
 
 import           Network.Socket (SockAddr (..), Socket)
 import qualified Network.Socket as Socket
 
-import qualified Network.Mux.Bearer.Socket as Mx
-import           Network.Mux.Trace (MuxTrace)
-import           Network.Mux.Types (MuxBearer)
+import           Network.Mux.Bearer
 
 import           Ouroboros.Network.IOManager
 
@@ -260,15 +259,8 @@ data Snocket m fd addr = Snocket {
   , accept        :: fd -> m (Accept m fd addr)
 
   , close         :: fd -> m ()
-
-  , toBearer      :: DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
   }
 
-
-pureBearer :: Monad m
-           => (DiffTime -> Tracer m MuxTrace -> fd ->    MuxBearer m)
-           ->  DiffTime -> Tracer m MuxTrace -> fd -> m (MuxBearer m)
-pureBearer f = \timeout tr fd -> return (f timeout tr fd)
 
 --
 -- Socket based Snockets
@@ -315,7 +307,6 @@ socketSnocket ioManager = Snocket {
       -- should be fixed upstream, once that's done we can remove
       -- `uninterruptibleMask_'
     , close    = uninterruptibleMask_ . Socket.close
-    , toBearer = pureBearer Mx.socketAsMuxBearer
     }
   where
     openSocket :: AddressFamily SockAddr -> IO Socket
@@ -362,6 +353,15 @@ data LocalSocket = LocalSocket { getLocalHandle :: !LocalHandle
 newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
+#endif
+
+makeLocalBearer :: MakeBearer IO LocalSocket
+#if defined(mingw32_HOST_OS)
+makeLocalBearer = MakeBearer $ \sduTimeout tracer LocalSocket { getLocalHandle = fd } ->
+  getBearer makeNamedPipeBearer sduTimeout tracer fd
+#else
+makeLocalBearer = MakeBearer $ \sduTimeout tracer (LocalSocket fd) ->
+  getBearer makeSocketBearer sduTimeout tracer fd
 #endif
 
 -- | System dependent LocalSnocket
@@ -430,8 +430,6 @@ localSnocket ioManager = Snocket {
 
       -- Win32.closeHandle is not interruptible
     , close    = Win32.closeHandle . getLocalHandle
-
-    , toBearer = \_sduTimeout tr -> pure . namedPipeAsBearer tr . getLocalHandle
     }
   where
     acceptNext :: Word64 -> LocalAddress -> Accept IO LocalSocket LocalAddress
@@ -492,7 +490,6 @@ localSnocket ioManager =
       , open          = openSocket
       , openToConnect = openSocket . LocalFamily
       , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
-      , toBearer      = \df tr (LocalSocket sd) -> pure (Mx.socketAsMuxBearer df tr sd)
       }
   where
     toLocalAddress :: SockAddr -> LocalAddress

@@ -243,7 +243,7 @@ instance Arbitrary SnocketType where
       , pure WorkingSnocket
       ]
 
--- | 'addrFamily', 'accept' and 'toBearer' are not needed to run the test suite.
+-- | 'addrFamily', 'accept' is not needed to run the test suite.
 --
 mkSnocket :: MonadThrow m
           => SnocketType
@@ -261,7 +261,6 @@ mkSnocket (AllocateError e) _localAddr _remoteAddr = Snocket {
   , listen = \_ -> pure ()
   , accept = \_ -> error "not supported"
   , close = \_ -> pure ()
-  , toBearer = \_ _ -> error "not supported"
   }
 mkSnocket (ConnectError e) localAddr remoteAddr = Snocket {
     getLocalAddr = \Sock{localAddr = addr} -> pure addr
@@ -274,7 +273,6 @@ mkSnocket (ConnectError e) localAddr remoteAddr = Snocket {
   , bind = \_ _ -> pure ()
   , listen = \_ -> pure ()
   , close = \_ -> pure ()
-  , toBearer = \_ _ -> error "not supported"
   }
 mkSnocket WorkingSnocket localAddr remoteAddr = Snocket {
     getLocalAddr = \Sock{localAddr = addr} -> pure addr
@@ -287,7 +285,6 @@ mkSnocket WorkingSnocket localAddr remoteAddr = Snocket {
   , listen = \_ -> pure ()
   , accept = \_ -> error "not supported"
   , close = \_ -> pure ()
-  , toBearer = \_ _ -> error "not supported"
   }
 
 data ArbApp addr = ArbApp (Maybe ArbException) (Sock addr -> IO ())

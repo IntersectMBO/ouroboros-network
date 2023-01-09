@@ -23,10 +23,13 @@ module Network.Mux
   , MiniProtocolLimits (..)
     -- * Running the Mux
   , runMux
-  , MuxBearer
   , runMiniProtocol
   , StartOnDemandOrEagerly (..)
   , stopMux
+    -- * Bearer
+  , MuxBearer
+  , MakeBearer (..)
+  , SDUSize (..)
     -- * Monitoring
   , miniProtocolStateMap
   , muxStopped
@@ -59,6 +62,7 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer hiding (timeout)
 import           Control.Tracer
 
+import           Network.Mux.Bearer
 import           Network.Mux.Channel
 import           Network.Mux.Egress as Egress
 import           Network.Mux.Ingress as Ingress

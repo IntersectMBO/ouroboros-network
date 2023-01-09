@@ -405,7 +405,7 @@ connectTo
   -> Socket.SockAddr
   -> IO ()
 connectTo sn tr =
-    connectToNode sn configureOutboundSocket nodeToNodeHandshakeCodec timeLimitsHandshake
+    connectToNode sn makeSocketBearer configureOutboundSocket nodeToNodeHandshakeCodec timeLimitsHandshake
                   (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
                   tr acceptableVersion
 
@@ -435,6 +435,7 @@ withServer
 withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolicies =
   withServerNode'
     sn
+    makeSocketBearer
     tracers
     networkState
     acceptedConnectionsLimit
@@ -482,6 +483,7 @@ ipSubscriptionWorker
         subscriptionParams
         (connectToNode'
           sn
+          makeSocketBearer
           nodeToNodeHandshakeCodec
           timeLimitsHandshake
           (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
@@ -526,6 +528,7 @@ dnsSubscriptionWorker
       subscriptionParams
       (connectToNode'
         sn
+        makeSocketBearer
         nodeToNodeHandshakeCodec
         timeLimitsHandshake
         (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)

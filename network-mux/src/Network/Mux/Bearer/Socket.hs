@@ -22,7 +22,6 @@ import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 import qualified System.Win32.Async.Socket.ByteString.Lazy as Win32.Async
 #endif
 
-import qualified Network.Mux as Mx
 import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
 import qualified Network.Mux.Timeout as Mx
@@ -45,15 +44,16 @@ import           Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 -- 'MuxError'.
 --
 socketAsMuxBearer
-  :: DiffTime
+  :: Mx.SDUSize
+  -> DiffTime
   -> Tracer IO Mx.MuxTrace
   -> Socket.Socket
   -> MuxBearer IO
-socketAsMuxBearer sduTimeout tracer sd =
+socketAsMuxBearer sduSize sduTimeout tracer sd =
       Mx.MuxBearer {
         Mx.read    = readSocket,
         Mx.write   = writeSocket,
-        Mx.sduSize = Mx.SDUSize 12288
+        Mx.sduSize = sduSize
       }
     where
       hdrLenght = 8

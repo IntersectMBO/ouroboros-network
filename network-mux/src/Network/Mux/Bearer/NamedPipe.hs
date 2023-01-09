@@ -14,7 +14,6 @@ import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import           Control.Tracer
 
-import qualified Network.Mux as Mx
 import qualified Network.Mux.Codec as Mx
 import qualified Network.Mux.Time as Mx
 import qualified Network.Mux.Timeout as Mx
@@ -30,14 +29,15 @@ import qualified System.Win32.Async as Win32.Async
 -- | Named pipe bearer.  The 'HANDLE' must be associated with IO completion port
 -- using 'System.Win32.Async.associateWithIOCompletionPort'.
 --
-namedPipeAsBearer :: Tracer IO MuxTrace
+namedPipeAsBearer :: Mx.SDUSize
+                  -> Tracer IO MuxTrace
                   -> HANDLE
                   -> MuxBearer IO
-namedPipeAsBearer tracer h =
+namedPipeAsBearer sduSize tracer h =
     Mx.MuxBearer {
         Mx.read    = readNamedPipe,
         Mx.write   = writeNamedPipe,
-        Mx.sduSize = Mx.SDUSize 24576
+        Mx.sduSize = sduSize
       }
   where
     readNamedPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
