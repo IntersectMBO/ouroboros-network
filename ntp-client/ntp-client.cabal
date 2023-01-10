@@ -1,3 +1,5 @@
+cabal-version: 3.0
+
 name:                ntp-client
 version:             0.0.1
 license:             Apache-2.0
@@ -7,7 +9,6 @@ license-files:
 category:            Network
 build-type:          Simple
 extra-source-files:  README.md
-cabal-version:       >=1.10
 
 flag demo
   description: Build a demo application

@@ -1,4 +1,5 @@
-cabal-version:       2.2
+cabal-version: 3.0
+
 name:                network-mux
 version:             0.2.0.0
 synopsis:            Multiplexing library

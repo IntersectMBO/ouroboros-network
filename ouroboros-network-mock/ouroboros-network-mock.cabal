@@ -1,4 +1,5 @@
-cabal-version:       3.0
+cabal-version: 3.0
+
 name:                ouroboros-network-mock
 version:             0.1.0.0
 synopsis:            Ouroboros Network Chain for testing purposes

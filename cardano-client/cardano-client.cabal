@@ -1,3 +1,5 @@
+cabal-version: 3.0
+
 name:                cardano-client
 version:             0.1.0.0
 synopsis:            An API for ouroboros-network
@@ -12,7 +14,6 @@ maintainer:          operations@iohk.io
 category:            Network
 build-type:          Simple
 -- extra-source-files:  ChangeLog.md
-cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src

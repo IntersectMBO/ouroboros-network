@@ -1,3 +1,5 @@
+cabal-version: 3.0
+
 name:                  ouroboros-consensus-cardano-tools
 version:               0.1.0.0
 synopsis:              Programmatically synthesize and analyse a ChainDB
@@ -9,7 +11,6 @@ author:                IOHK
 maintainer:            operations@iohk.io
 category:              Network
 build-type:            Simple
-cabal-version:         >=1.10
 
 source-repository head
   type:     git
