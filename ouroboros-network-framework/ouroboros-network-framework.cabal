@@ -124,7 +124,7 @@ library testlib
 
     other-modules:
 
-    build-depends:   base
+    build-depends:   base              >=4.14 && <4.17
                    , containers
 
                    , QuickCheck
@@ -158,7 +158,7 @@ test-suite test
                        Test.Ouroboros.Network.RateLimiting
                        Test.Simulation.Network.Snocket
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , bytestring
                      , cborg
                      , containers
@@ -215,7 +215,7 @@ test-suite test
 executable demo-ping-pong
   hs-source-dirs:      demo test
   main-is:             ping-pong.hs
-  build-depends:       base,
+  build-depends:       base >=4.14 && <4.17,
                        async,
                        bytestring,
                        directory,
@@ -242,7 +242,7 @@ executable demo-ping-pong
 executable demo-connection-manager
   hs-source-dirs:      demo test
   main-is:             connection-manager.hs
-  build-depends:       base,
+  build-depends:       base >=4.14 && <4.17,
                        bytestring,
                        network,
                        optparse-applicative,

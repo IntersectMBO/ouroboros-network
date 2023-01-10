@@ -41,7 +41,7 @@ library
                      , Cardano.Tools.DBSynthesizer.Run
                      , Cardano.Tools.DBSynthesizer.Types
 
-  build-depends:       base
+  build-depends:       base >=4.14 && <4.17
                      , aeson
                      , base16-bytestring >= 1.0
                      , bytestring
@@ -113,7 +113,7 @@ library
 executable db-analyser
   hs-source-dirs:      app
   main-is:             db-analyser.hs
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , cardano-crypto-wrapper
                      , optparse-applicative
                      , ouroboros-consensus
@@ -142,7 +142,7 @@ executable db-synthesizer
 
   default-language:    Haskell2010
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , aeson
                      , bytestring
                      , directory
@@ -175,7 +175,7 @@ test-suite test
 
   default-language:  Haskell2010
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , ouroboros-consensus-cardano-tools
                      , tasty
                      , tasty-hunit

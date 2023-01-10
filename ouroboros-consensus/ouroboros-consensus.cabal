@@ -280,7 +280,7 @@ library
                        UndecidableSuperClasses
                        ViewPatterns
 
-  build-depends:       base              >=4.9 && <4.17
+  build-depends:       base              >=4.14 && <4.17
                      , base16-bytestring
                      , bimap             >=0.4   && <0.5
                      , binary            >=0.8   && <0.11
@@ -347,7 +347,7 @@ library tutorials
   other-modules:       Ouroboros.Consensus.Tutorial.Simple
                      , Ouroboros.Consensus.Tutorial.WithEpoch
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , containers
                      , hashable
                      , mtl
