@@ -18,7 +18,8 @@ import           Ouroboros.Consensus.Ledger.Query (Query, QueryLedger)
 import qualified Ouroboros.Consensus.Ledger.Query as Query
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
-import           Ouroboros.Consensus.Util (StaticEither (..))
+import           Ouroboros.Consensus.Util (StaticEither (..), fromStaticLeft,
+                     fromStaticRight)
 import           Ouroboros.Consensus.Util.IOLike
 
 localStateQueryServer ::
@@ -52,12 +53,10 @@ localStateQueryServer cfg getDLV =
     handleAcquire mpt = do
         case mpt of
           Nothing -> do
-            o <- getDLV (StaticLeft ())
-            let StaticLeft dlv = o
+            dlv <- fromStaticLeft <$> getDLV (StaticLeft ())
             return $ SendMsgAcquired $ acquired dlv
           Just pt -> do
-            o <- getDLV (StaticRight pt)
-            let StaticRight ei = o
+            ei <- fromStaticRight <$> getDLV (StaticRight pt)
             case ei of
               Left immP
                 | pointSlot pt < pointSlot immP
