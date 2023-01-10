@@ -1,20 +1,17 @@
 cabal-version:       3.0
 
-name:                ouroboros-network
-version:             0.2.0.0
-synopsis:            A networking layer for the Ouroboros blockchain protocol
--- description:
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019-2023 Input Output Global Inc (IOG)
-author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+name:                   ouroboros-network
+version:                0.2.0.0
+synopsis:               A networking layer for the Ouroboros blockchain protocol
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2023 Input Output Global Inc (IOG)
+author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:
-category:            Network
-build-type:          Simple
-extra-source-files:
-  CHANGELOG.md
+category:               Network
+build-type:             Simple
+extra-source-files:     CHANGELOG.md
 
 flag asserts
   description: Enable assertions

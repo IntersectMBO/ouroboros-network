@@ -1,18 +1,17 @@
 cabal-version:       3.0
 
-name:                ouroboros-network-testing
-version:             0.2.0.0
-synopsis:            Common modules used for testing in ouroboros-network and ouroboros-consensus
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019-2023 Input Output Global Inc (IOG)
-author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
+name:                   ouroboros-network-testing
+version:                0.2.0.0
+synopsis:               Common modules used for testing in ouroboros-network and ouroboros-consensus
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2023 Input Output Global Inc (IOG)
+author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
 maintainer:
-category:            Network
-build-type:          Simple
-extra-source-files:  ChangeLog.md
+category:               Network
+build-type:             Simple
+extra-source-files:     ChangeLog.md
 
 source-repository head
   type:     git

@@ -1,18 +1,17 @@
 cabal-version: 3.0
 
-name:                network-mux
-version:             0.2.0.0
-synopsis:            Multiplexing library
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019-2023 Input Output Global Inc (IOG)
-author:              Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies
-maintainer:          duncan@well-typed.com, marcin.szamotulski@iohk.io, marc.fontaine@iohk.io, karl.knutsson@iohk.io, alex@well-typed.com, neil.davies@pnsol.com
-category:            Network
-build-type:          Simple
-extra-source-files:  CHANGELOG.md
+name:                   network-mux
+version:                0.2.0.0
+synopsis:               Multiplexing library
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2023 Input Output Global Inc (IOG)
+author:                 Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies
+maintainer:             duncan@well-typed.com, marcin.szamotulski@iohk.io, marc.fontaine@iohk.io, karl.knutsson@iohk.io, alex@well-typed.com, neil.davies@pnsol.com
+category:               Network
+build-type:             Simple
+extra-source-files:     CHANGELOG.md
 
 flag asserts
   description: Enable assertions
