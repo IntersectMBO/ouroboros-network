@@ -1,29 +1,14 @@
 cabal-version: 3.0
 
-name:               monoidal-synchronisation
-version:            0.1.0.0
-
--- A short (one-line) description of the package.
--- synopsis:
-
--- A longer description of the package.
--- description:
-
--- A URL where users can report bugs.
--- bug-reports:
-
--- The license under which the package is released.
-license:            Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-author:             Marcin Szamotulski
-maintainer:         coot@coot.me
-
--- A copyright notice.
-copyright: 2021-2023 Input Output Global Inc (IOG).
--- category:
-extra-source-files: CHANGELOG.md
+name:                   monoidal-synchronisation
+version:                0.1.0.0
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+author:                 Marcin Szamotulski
+maintainer:             coot@coot.me
+copyright:              2021-2023 Input Output Global Inc (IOG).
+extra-source-files:     CHANGELOG.md
 
 library
   exposed-modules:  Data.Monoid.Synchronisation
