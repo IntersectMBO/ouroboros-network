@@ -6,6 +6,7 @@ synopsis:               Unsound switch
 description:            Unsound switch.
 author:                 IOHK Engineering Team
 maintainer:             operations@iohk.io
+category:               Network
 
 executable unsoundswitch
     main-is:          UnsoundSwitch.hs
