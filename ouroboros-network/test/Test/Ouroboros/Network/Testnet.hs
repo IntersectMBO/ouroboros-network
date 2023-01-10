@@ -124,6 +124,8 @@ tests =
                  prop_diffusion_cm_valid_transitions
   , testProperty "connection manager valid transition order"
                  prop_diffusion_cm_valid_transition_order
+  , testProperty "unit 4258"
+                 prop_unit_4258
   , testProperty "inbound governor valid transitions"
                  prop_diffusion_ig_valid_transitions
   , testProperty "inbound governor valid transition order"
@@ -2191,6 +2193,14 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
          . fmap (map ttTransition)
          . groupConns id abstractStateIsFinalTransition
          $ abstractTransitionEvents
+
+-- | Unit test that checks issue 4258
+-- https://github.com/input-output-hk/ouroboros-network/issues/4258
+prop_unit_4258 :: Property
+prop_unit_4258 =
+  let bearerInfo = AbsBearerInfo {abiConnectionDelay = NormalDelay, abiInboundAttenuation = NoAttenuation FastSpeed, abiOutboundAttenuation = NoAttenuation FastSpeed, abiInboundWriteFailure = Nothing, abiOutboundWriteFailure = Nothing, abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted), abiSDUSize = LargeSDU}
+      diffScript = DiffusionScript (SimArgs 1 10) [(NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224) [] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.4") 9)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.397} :| [DNSTimeout {getDNSTimeout = 0.382},DNSTimeout {getDNSTimeout = 0.321},DNSTimeout {getDNSTimeout = 0.143},DNSTimeout {getDNSTimeout = 0.256},DNSTimeout {getDNSTimeout = 0.142},DNSTimeout {getDNSTimeout = 0.341},DNSTimeout {getDNSTimeout = 0.236}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| [])),[JoinNetwork 4.166666666666 Nothing,Kill 0.3,JoinNetwork 1.517857142857 Nothing,Reconfigure 0.245238095238 [],Reconfigure 4.190476190476 []]),(NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269) [RelayAccessAddress "0.0.0.4" 9] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.8") 65531)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 4, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.281} :| [DNSTimeout {getDNSTimeout = 0.177},DNSTimeout {getDNSTimeout = 0.164},DNSTimeout {getDNSTimeout = 0.373}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.133} :| [DNSLookupDelay {getDNSLookupDelay = 0.128},DNSLookupDelay {getDNSLookupDelay = 0.049},DNSLookupDelay {getDNSLookupDelay = 0.058},DNSLookupDelay {getDNSLookupDelay = 0.042},DNSLookupDelay {getDNSLookupDelay = 0.117},DNSLookupDelay {getDNSLookupDelay = 0.064}])),[JoinNetwork 3.384615384615 Nothing,Reconfigure 3.583333333333 [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],Kill 15.55555555555,JoinNetwork 30.53333333333 Nothing,Kill 71.11111111111])]
+   in prop_diffusion_cm_valid_transition_order bearerInfo diffScript
 
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server2.prop_inbound_governor_valid_transitions'

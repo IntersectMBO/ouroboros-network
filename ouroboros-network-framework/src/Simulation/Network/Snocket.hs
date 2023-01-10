@@ -796,8 +796,21 @@ mkSnocket state tr = Snocket { getLocalAddr
                             ++ show (normaliseId connId))
               )
               `onException`
-                atomically (modifyTVar (nsConnections state)
-                                       (Map.delete (normaliseId connId)))
+                -- In the SimOpen case, it can happen that 1 end of the
+                -- connection receives an asynchronous exception and we don't
+                -- want to remove the connection from the state in this case.
+                -- This is because in the SimOpen case 1 of the connect calls
+                -- would succeed, and right after that the other end (the one
+                -- that got the async exception) would remove the connection
+                -- wrongfully leading to an inconsistent state where there's an
+                -- end of the connection that holds a successful connection that
+                -- does not exist in the state.
+                (case simOpen of
+                  NormalOpen ->
+                    atomically (modifyTVar (nsConnections state)
+                                           (Map.delete (normaliseId connId)))
+                  SimOpen -> pure ()
+                )
 
             when (biConnectionDelay bearerInfo >= connectTimeout) $ do
               traceWith' fd (STConnectTimeout WaitingToConnect)
