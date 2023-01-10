@@ -453,7 +453,7 @@ instance Bifunctor (StaticEither b) where
   second f (StaticRight r) = StaticRight (f r)
 
 fromStaticLeft :: StaticEither 'False l r -> l
-fromStaticLeft = \case (StaticLeft x) -> x
+fromStaticLeft (StaticLeft x) = x
 
 fromStaticRight :: StaticEither 'True l r -> r
-fromStaticRight = \case (StaticRight x) -> x
+fromStaticRight (StaticRight x) = x
