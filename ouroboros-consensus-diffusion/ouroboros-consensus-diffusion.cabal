@@ -1,4 +1,5 @@
 cabal-version:       3.0
+
 name:                ouroboros-consensus-diffusion
 version:             0.1.0.0
 synopsis:            Top level integration for consensus & network layers of the Ouroboros blockchain protocol
