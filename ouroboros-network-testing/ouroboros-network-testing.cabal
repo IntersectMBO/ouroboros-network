@@ -12,8 +12,8 @@ author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     ChangeLog.md
-marcin.szamotulski@iohk.io
+extra-source-files:     CHANGELOG.md
+
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network

@@ -12,6 +12,7 @@ author:                 IOHK Engineering Team
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
+extra-source-files:     CHANGELOG.md
 
 library
   hs-source-dirs:      src
