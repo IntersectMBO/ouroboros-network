@@ -11,7 +11,7 @@ author:                 IOHK Formal methods team
 maintainer:             operations@iohk.io
 category:               Network
 
-source-repository-head
+source-repository head
     type: git
     location: https://github.com/input-output-hk/ouroboros-network
     subdir: ouroboros-consensus-protocol
