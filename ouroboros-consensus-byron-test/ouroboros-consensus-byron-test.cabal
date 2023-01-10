@@ -1,3 +1,5 @@
+cabal-version: 3.0
+
 name:                  ouroboros-consensus-byron-test
 version:               0.1.0.0
 synopsis:              Test infrastructure for Byron
@@ -11,7 +13,6 @@ author:                IOHK Engineering Team
 maintainer:            operations@iohk.io
 category:              Network
 build-type:            Simple
-cabal-version:         >=1.10
 
 source-repository head
   type:     git
