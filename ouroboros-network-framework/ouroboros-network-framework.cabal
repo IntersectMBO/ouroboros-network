@@ -135,8 +135,7 @@ library testlib
                    , ouroboros-network-framework
 
   default-language:  Haskell2010
-  ghc-options:       -rtsopts
-                     -Wall
+  ghc-options:       -Wall
                      -Wcompat
                      -Wincomplete-uni-patterns
                      -Wincomplete-record-updates
