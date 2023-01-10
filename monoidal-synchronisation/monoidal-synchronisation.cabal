@@ -2,6 +2,8 @@ cabal-version: 3.0
 
 name:                   monoidal-synchronisation
 version:                0.1.0.0
+synopsis:               Monoidal synchronisation
+description:            Monoidal synchronisation.
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE

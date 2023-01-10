@@ -2,6 +2,8 @@ cabal-version: 3.0
 
 name:                   unsoundswitch
 version:                0.1.0.0
+synopsis:               Unsound switch
+description:            Unsound switch.
 author:                 IOHK Engineering Team
 maintainer:             operations@iohk.io
 
