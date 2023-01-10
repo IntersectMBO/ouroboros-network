@@ -46,7 +46,7 @@ library
                        Ouroboros.Consensus.Byron.Node.Serialisation
                        Ouroboros.Consensus.Byron.Protocol
 
-  build-depends:       base              >=4.9   && <4.17
+  build-depends:       base              >=4.14  && <4.17
                      , bytestring        >=0.10  && <0.12
                      , cardano-binary
                      , cardano-crypto
@@ -83,7 +83,7 @@ library
 executable db-converter
   hs-source-dirs:      tools/db-converter
   main-is:             Main.hs
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , bytestring
                      , cardano-binary
                      , cardano-ledger-byron

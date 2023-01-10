@@ -33,7 +33,7 @@ library
                        Test.ThreadNet.TxGen.Cardano
                        Test.ThreadNet.TxGen.Mary
 
-  build-depends:       base
+  build-depends:       base >=4.14 && <4.17
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
                      , cardano-slotting
@@ -90,7 +90,7 @@ test-suite test
                        Test.ThreadNet.MaryAlonzo
                        Test.ThreadNet.ShelleyAllegra
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , bytestring
                      , cardano-crypto-class
                      , cardano-slotting
