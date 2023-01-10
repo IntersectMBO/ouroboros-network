@@ -98,7 +98,8 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (StaticEither (StaticLeft))
+import           Ouroboros.Consensus.Util (StaticEither (StaticLeft),
+                     fromStaticLeft)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.IOLike
@@ -1048,8 +1049,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -- transactions.
       let getValueHandle = do
             bsvh <- ChainDB.getLedgerBackingStoreValueHandle chainDB registry (StaticLeft ())
-            pure $ mkDiskLedgerView $ case bsvh of
-              StaticLeft v -> v
+            pure $ mkDiskLedgerView $ fromStaticLeft bsvh
       forkTxProducer
         coreNodeId
         registry
