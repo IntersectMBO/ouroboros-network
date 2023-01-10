@@ -3,6 +3,7 @@ cabal-version: 3.0
 name:                   ouroboros-consensus-cardano-tools
 version:                0.1.0.0
 synopsis:               Programmatically synthesize and analyse a ChainDB
+description:            Programmatically synthesize and analyse a ChainDB.
 license:                Apache-2.0
 license-files:          NOTICE
 copyright:              2022-2023 Input Output Global Inc (IOG)
