@@ -1,19 +1,16 @@
 cabal-version: 3.0
 
-name:                cardano-client
-version:             0.1.0.0
-synopsis:            An API for ouroboros-network
--- description:
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019 Input Output (Hong Kong) Ltd.
-author:              IOHK Engineering Team
-maintainer:          operations@iohk.io
-category:            Network
-build-type:          Simple
--- extra-source-files:  ChangeLog.md
+name:                   cardano-client
+version:                0.1.0.0
+synopsis:               An API for ouroboros-network
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019 Input Output (Hong Kong) Ltd.
+author:                 IOHK Engineering Team
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
 
 library
   hs-source-dirs:      src

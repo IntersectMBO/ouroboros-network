@@ -1,20 +1,17 @@
 cabal-version: 3.0
 
-name:                ouroboros-network-mock
-version:             0.1.0.0
-synopsis:            Ouroboros Network Chain for testing purposes
--- description:
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019-2022 Input Output (Hong Kong) Ltd.
-author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+name:                   ouroboros-network-mock
+version:                0.1.0.0
+synopsis:               Ouroboros Network Chain for testing purposes
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2022 Input Output (Hong Kong) Ltd.
+author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:
-category:            Network
-build-type:          Simple
-extra-source-files:
-  ChangeLog.md
+category:               Network
+build-type:             Simple
+extra-source-files:     ChangeLog.md
 
 flag asserts
   description: Enable assertions

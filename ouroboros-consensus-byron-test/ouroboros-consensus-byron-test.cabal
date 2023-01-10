@@ -1,18 +1,16 @@
 cabal-version: 3.0
 
-name:                  ouroboros-consensus-byron-test
-version:               0.1.0.0
-synopsis:              Test infrastructure for Byron
--- description:
-license:               Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:             2020 Input Output (Hong Kong) Ltd.
-author:                IOHK Engineering Team
-maintainer:            operations@iohk.io
-category:              Network
-build-type:            Simple
+name:                   ouroboros-consensus-byron-test
+version:                0.1.0.0
+synopsis:               Test infrastructure for Byron
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2020 Input Output (Hong Kong) Ltd.
+author:                 IOHK Engineering Team
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
 
 source-repository head
   type:     git

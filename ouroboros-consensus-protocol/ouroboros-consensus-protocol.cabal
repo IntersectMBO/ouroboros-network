@@ -1,14 +1,13 @@
 cabal-version: 3.0
 
-name:               ouroboros-consensus-protocol
-version:            0.1.0.0
-synopsis:           Cardano consensus protocols.
-license:               Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-author:             IOHK Formal methods team
-maintainer:         operations@iohk.io
+name:                   ouroboros-consensus-protocol
+version:                0.1.0.0
+synopsis:               Cardano consensus protocols.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+author:                 IOHK Formal methods team
+maintainer:             operations@iohk.io
 
 source-repository-head
     type: git
