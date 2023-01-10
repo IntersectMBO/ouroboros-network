@@ -9,6 +9,7 @@ license-files:          LICENSE
                         NOTICE
 author:                 IOHK Formal methods team
 maintainer:             operations@iohk.io
+category:               Network
 
 source-repository-head
     type: git

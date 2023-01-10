@@ -10,6 +10,7 @@ license-files:          LICENSE
 copyright:              2019 Input Output (Hong Kong) Ltd.
 author:                 Alexander Vieth, Duncan Coutts, Marcin Szamotulski
 maintainer:             alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io
+category:               Network
 build-type:             Simple
 extra-source-files:     CHANGELOG.md
 
