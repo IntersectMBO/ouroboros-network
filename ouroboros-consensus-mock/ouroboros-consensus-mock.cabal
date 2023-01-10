@@ -47,7 +47,7 @@ library
                        Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
                        Ouroboros.Consensus.Mock.Protocol.Praos
 
-  build-depends:       base              >=4.9   && <4.17
+  build-depends:       base              >=4.14  && <4.17
                      , bimap             >=0.4   && <0.5
                      , bytestring        >=0.10  && <0.12
                      , cardano-binary

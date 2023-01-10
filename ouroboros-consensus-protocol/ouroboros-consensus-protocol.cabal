@@ -37,7 +37,7 @@ library
     Ouroboros.Consensus.Protocol.TPraos
     Ouroboros.Consensus.Protocol.Translate
   build-depends:
-    base,
+    base >=4.14 && <4.17,
     bytestring,
     cardano-binary,
     cardano-crypto-class,
@@ -74,7 +74,7 @@ library ouroboros-consensus-protocol-test
   exposed-modules:
     Test.Consensus.Protocol.Serialisation.Generators
   build-depends:
-    base,
+    base >=4.14 && <4.17,
     bytestring,
     cardano-crypto-class,
     cardano-crypto-tests,
