@@ -12,6 +12,7 @@ maintainer:             operations@iohk.io
 category:               Network
 build-type:             Simple
 extra-source-files:     README.md
+extra-source-files:     CHANGELOG.md
 
 flag demo
   description: Build a demo application
