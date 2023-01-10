@@ -18,7 +18,6 @@ module Ouroboros.Consensus.Util (
   , Some (..)
   , SomePair (..)
   , SomeSecond (..)
-  , StaticEither (..)
   , mustBeRight
     -- * Folding variations
   , foldlM'
@@ -74,6 +73,10 @@ module Ouroboros.Consensus.Util (
     -- * Miscellaneous
   , eitherToMaybe
   , fib
+    -- * Static Either
+  , StaticEither (..)
+  , fromStaticLeft
+  , fromStaticRight
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
@@ -434,6 +437,10 @@ eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Left _)  = Nothing
 eitherToMaybe (Right x) = Just x
 
+{-------------------------------------------------------------------------------
+  Static Either
+-------------------------------------------------------------------------------}
+
 data StaticEither :: Bool -> Type -> Type -> Type where
   StaticLeft  :: l -> StaticEither False l r
   StaticRight :: r -> StaticEither True  l r
@@ -444,3 +451,9 @@ instance Bifunctor (StaticEither b) where
 
   second _ (StaticLeft l)  = StaticLeft l
   second f (StaticRight r) = StaticRight (f r)
+
+fromStaticLeft :: StaticEither 'False l r -> l
+fromStaticLeft = \case (StaticLeft x) -> x
+
+fromStaticRight :: StaticEither 'True l r -> r
+fromStaticRight = \case (StaticRight x) -> x
