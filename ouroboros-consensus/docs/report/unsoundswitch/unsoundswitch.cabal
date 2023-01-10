@@ -4,6 +4,9 @@ name:                   unsoundswitch
 version:                0.1.0.0
 synopsis:               Unsound switch
 description:            Unsound switch.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
 author:                 IOHK Engineering Team
 maintainer:             operations@iohk.io
 category:               Network
