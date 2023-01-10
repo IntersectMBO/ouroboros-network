@@ -10,6 +10,7 @@ license-files:          LICENSE
 author:                 IOHK Formal methods team
 maintainer:             operations@iohk.io
 category:               Network
+extra-source-files:     CHANGELOG.md
 
 source-repository head
     type: git

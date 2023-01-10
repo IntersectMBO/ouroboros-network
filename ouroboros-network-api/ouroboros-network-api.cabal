@@ -12,7 +12,7 @@ author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl
 maintainer:             operations@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     ChangeLog.md
+extra-source-files:     CHANGELOG.md
 
 flag asserts
   description: Enable assertions
