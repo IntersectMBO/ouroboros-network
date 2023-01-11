@@ -59,6 +59,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import qualified Ouroboros.Consensus.Util.SOP as SOP

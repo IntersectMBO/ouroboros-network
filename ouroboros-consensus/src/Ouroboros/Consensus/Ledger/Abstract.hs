@@ -1,14 +1,7 @@
-{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
 
 -- | Interface to the ledger layer
 module Ouroboros.Consensus.Ledger.Abstract (
@@ -40,6 +33,8 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM, (..:))
 
@@ -110,10 +105,6 @@ class ( IsLedger l
 
   -- | Given a block, get the key-sets that we need to apply it to a ledger
   -- state.
-  --
-  -- TODO: this might not be the best place to define this function. Maybe we
-  -- want to make the on-disk ledger state storage concern orthogonal to the
-  -- ledger state transformation concern.
   getBlockKeySets :: blk -> LedgerTables l KeysMK
 
 -- | Interaction with the ledger layer

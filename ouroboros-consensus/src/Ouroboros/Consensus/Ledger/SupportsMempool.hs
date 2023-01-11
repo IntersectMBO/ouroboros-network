@@ -1,4 +1,3 @@
-{-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies     #-}
 
@@ -21,6 +20,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Util.IOLike
 
 -- | Generalized transaction
@@ -124,10 +124,6 @@ class ( UpdateLedger blk
 
   -- | Given a transaction, get the key-sets that we need to apply it to a
   -- ledger state.
-  --
-  -- TODO: this might not be the best place to define this function. Maybe we
-  -- want to make the on-disk ledger state storage concern orthogonal to the
-  -- ledger state transformation concern.
   getTransactionKeySets :: GenTx blk -> LedgerTables (LedgerState blk) KeysMK
 
 -- | A generalized transaction, 'GenTx', identifier.

@@ -122,6 +122,8 @@ library
                        Ouroboros.Consensus.Ledger.SupportsMempool
                        Ouroboros.Consensus.Ledger.SupportsPeerSelection
                        Ouroboros.Consensus.Ledger.SupportsProtocol
+                       Ouroboros.Consensus.Ledger.Tables
+                       Ouroboros.Consensus.Ledger.Tables.Utils
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Impl

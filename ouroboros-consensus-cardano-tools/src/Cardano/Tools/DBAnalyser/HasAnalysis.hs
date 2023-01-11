@@ -15,6 +15,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import qualified Ouroboros.Consensus.Node.Run as Node
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
