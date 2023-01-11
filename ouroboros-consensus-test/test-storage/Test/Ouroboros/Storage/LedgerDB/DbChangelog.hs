@@ -40,6 +40,7 @@ import qualified Ouroboros.Network.Point as Point
 
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
 import           Ouroboros.Consensus.Ledger.Basics hiding (LedgerState)
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()

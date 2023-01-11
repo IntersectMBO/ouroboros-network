@@ -28,7 +28,8 @@ import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Slot (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block (SlotNo, WithOrigin (Origin))
-import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (SomeHasFS))
 import           Ouroboros.Consensus.Storage.FS.API.Types
                      (MountPoint (MountPoint))

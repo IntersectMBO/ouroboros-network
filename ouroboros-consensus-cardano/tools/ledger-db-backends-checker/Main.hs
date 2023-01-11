@@ -24,8 +24,8 @@ import           Cardano.Ledger.Crypto
 import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
 
 import           Ouroboros.Consensus.Cardano
-import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Tables
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.FS.IO as FS

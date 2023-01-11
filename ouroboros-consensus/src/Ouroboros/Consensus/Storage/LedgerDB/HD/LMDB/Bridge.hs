@@ -1,6 +1,5 @@
 {-# LANGUAGE Rank2Types #-}
 
-
 {-| Alternatives to LMDB operations that do not rely on @'Serialise'@ instances
 
   We cannot (easily and without runtime overhead) satisfy the @'Serialise'@
@@ -53,7 +52,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Foreign (Ptr, Storable (peek, poke), castPtr)
 
-import           Ouroboros.Consensus.Ledger.Basics (CodecMK (..))
+import           Ouroboros.Consensus.Ledger.Tables
 
 import           Database.LMDB.Raw (MDB_val (MDB_val), mdb_reserve')
 import           Database.LMDB.Simple (Database, ReadWrite, Transaction)

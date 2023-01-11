@@ -48,6 +48,8 @@ import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool hiding (getTxSize)
 import           Ouroboros.Consensus.Mempool.Impl.Types (ForgeLedgerState (..),
                      tickLedgerState)
