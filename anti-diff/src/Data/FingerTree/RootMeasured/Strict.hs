@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns           #-}
 {-# LANGUAGE ConstraintKinds        #-}
 {-# LANGUAGE DeriveGeneric          #-}
-{-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -19,8 +18,10 @@ module Data.FingerTree.RootMeasured.Strict (
   , fromList
   , (|>)
     -- * Splitting
+  , Sized (..)
   , SplitRootMeasure (..)
   , split
+  , splitSized
   , splitl
   , splitr
     -- * Maps
@@ -140,14 +141,6 @@ fromList !xs = SFT (foldMap measureRoot xs) (FT.fromList xs)
 -- the left part of the split result. @r@ denotes the right part of the split
 -- result. @f@ denotes a @'SplitRootMeasure'@ function. @length@ denotes a
 -- function that computes the length of a finger tree.
---
--- TODO(jdral): Not only the length of the left and right parts of the split
--- determine the complexity of the split function, but also the time complexity
--- of monoidal sums for the type of root measures @vr@. Under the assumption
--- that the time complexity of monoidal sums does not vary too much (or is
--- constant), this heuristic is probably sufficient. In the future, we might
--- want to experiment with different heuristics (that are not too costly to
--- compute), which let us split in even more efficient ways.
 split ::
      SuperMeasured vr vi a
   => (vi -> Bool)
@@ -176,12 +169,8 @@ newtype SplitRootMeasure vr vi a = SplitRootMeasure {
       -> (vr, vr)
   }
 
--- | /O(log(min(i,n-i))) + O(f(l, r)) = O(log(min(i,n-i))) + O(length(l))/.
--- Specialisation of @'split'@ that computes root measures by sutraction of the
--- left part's root measure.
---
--- Note: The @l@ suffix of the function name indicates that its time complexity
--- depends on the length of the left part of the split.
+-- | /O(log(min(i,n-i))) + O(i)/. Specialisation of @'split'@ that is fast if
+-- @i@ is small.
 splitl ::
      SuperMeasured vr vi a
   => (vi -> Bool)
@@ -189,16 +178,12 @@ splitl ::
   -> ( StrictFingerTree vr vi a
      , StrictFingerTree vr vi a
      )
-splitl p = split p $ SplitRootMeasure $ \vr (left, _right) ->
-  let vrLeft = foldMap measureRoot left
-  in  (vrLeft, invert vrLeft <> vr)
+splitl p = split p $ SplitRootMeasure $ \vr (l, _r) ->
+  let vrl = foldMap measureRoot l
+  in  (vrl, invert vrl <> vr)
 
--- | /O(log(min(i,n-i))) + O(f(l, r)) = O(log(min(i,n-i))) + O(length(r))/.
--- Specialisation of @'split'@ that computes root measures by sutraction of the
--- right part's root measure.
---
--- Note: The @r@ suffix of the function name indicates that its time complexity
--- depends on the length of the right part of the split.
+-- | /O(log(min(i,n-i))) + O(n-i)/. Specialisation of @'split'@ that is fast if
+-- if @i@ is large.
 splitr ::
      SuperMeasured vr vi a
   => (vi -> Bool)
@@ -206,9 +191,36 @@ splitr ::
   -> ( StrictFingerTree vr vi a
      , StrictFingerTree vr vi a
      )
-splitr p = split p $ SplitRootMeasure $ \vr (_left, right) ->
-  let vrRight = foldMap measureRoot right
-  in  (vr <> invert vrRight, vrRight)
+splitr p = split p $ SplitRootMeasure $ \vr (_l, r) ->
+  let vrr = foldMap measureRoot r
+  in  (vr <> invert vrr, vrr)
+
+class Sized a where
+  size :: a -> Int
+
+-- | /O(log(min(i,n-i))) + O(min(i,n-i))/. Specialisation of @'split'@ that
+-- automatically determines whether @i@ or @n-i@ is smallest.
+--
+-- Note: a way to view @'splitSized'@ is as being equivalent to a function that
+-- delegates to @'splitl'@ or @'splitr'@ based on whether @i@ or @n-i@ are
+-- smallest respectively.
+splitSized ::
+     (SuperMeasured vr vi a, Sized vi)
+  => (vi -> Bool)
+  -> StrictFingerTree vr vi a
+  -> ( StrictFingerTree vr vi a
+     , StrictFingerTree vr vi a
+     )
+splitSized p = split p $ SplitRootMeasure $ \vr (l, r) ->
+  let
+    (sizel, sizer) = (size (FT.measure l), size (FT.measure r))
+  in
+    if sizel <= sizer then
+      let vrl = foldMap measureRoot l
+      in  (vrl, invert vrl <> vr)
+    else
+      let vrr = foldMap measureRoot r
+      in  (vr ~~ vrr, vrr)
 
 {-------------------------------------------------------------------------------
   Maps
