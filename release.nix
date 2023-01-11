@@ -138,6 +138,7 @@ let
     "${mingwW64.config}" = mapTestOnCross mingwW64
       (packagePlatformsCross (filterProject noCrossBuild));
   }) // (mkRequiredJob (concatLists [
+    (collectJobs jobs.native.shell)
     (collectJobs jobs.native.checks)
     (collectJobs jobs.native.benchmarks)
     (collectJobs jobs.native.libs)
