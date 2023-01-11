@@ -28,6 +28,7 @@ import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
+import Cardano.Crypto.MLockedSeed
 import Cardano.Crypto.PinnedSizedBytes
 import Cardano.Crypto.Seed
 import Cardano.Binary (FromCBOR)
@@ -79,7 +80,7 @@ testCrypto :: forall c n
             . Crypto c
            => Typeable c
            => VersionedProtocol (KESProtocol c)
-           => KESSignAlgorithm IO (KES c)
+           => UnsoundKESSignAlgorithm IO (KES c)
            => ContextKES (KES c) ~ ()
            => DirectSerialise (SignKeyKES (KES c))
            => DirectDeserialise (SignKeyKES (KES c))
@@ -254,7 +255,7 @@ testOneKeyThroughChain :: forall c
                         . Crypto c
                        => Typeable c
                        => VersionedProtocol (KESProtocol c)
-                       => KESSignAlgorithm IO (KES c)
+                       => UnsoundKESSignAlgorithm IO (KES c)
                        => ContextKES (KES c) ~ ()
                        => DirectSerialise (SignKeyKES (KES c))
                        => DirectDeserialise (SignKeyKES (KES c))
@@ -282,7 +283,7 @@ testOneKeyThroughChain p
     certN
     nodeDelay
     controlDelay =
-  ioProperty . withLock lock . withMLSBFromPSB seedKESPSB $ \seedKES -> do
+  ioProperty . withLock lock . withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
     hSetBuffering stdout LineBuffering
@@ -313,7 +314,7 @@ testConcurrentPushes :: forall c n
                      => Crypto c
                      => Typeable c
                      => VersionedProtocol (KESProtocol c)
-                     => KESSignAlgorithm IO (KES c)
+                     => UnsoundKESSignAlgorithm IO (KES c)
                      => ContextKES (KES c) ~ ()
                      => DirectSerialise (SignKeyKES (KES c))
                      => DirectDeserialise (SignKeyKES (KES c))
@@ -349,7 +350,7 @@ testConcurrentPushes proxyCrypto proxyN
     let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
 
     expectedSKOs <- forM (zip [0..] seedsKESRaw) $ \(certN, seedKESPSB) ->
-        withMLSBFromPSB seedKESPSB $ \seedKES -> do
+        withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
           expectedSK <- genKeyKES @IO @(KES c) seedKES
           let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
           expectedSKPVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP
@@ -392,27 +393,6 @@ instance Show (SignKeyKES (SingleKES Ed25519DSIGNM)) where
 instance Show (SignKeyKES d) => Show (SignKeyKES (SumKES h d)) where
   show (SignKeySumKES sk r vk0 vk1) = show sk
 
--- We normally ensure that we avoid naively comparing signing keys by not
--- providing instances, but for tests it is fine, so we provide the orphan
--- instances here.
-
-deriving instance Eq (SignKeyDSIGNM d)
-               => Eq (SignKeyKES (SingleKES d))
-deriving instance (KESAlgorithm d, SodiumHashAlgorithm h, Eq (SignKeyKES d))
-               => Eq (SignKeyKES (SumKES h d))
-
--- We cannot allow this instance, because it doesn't guarantee timely
--- forgetting of the MLocked memory.
--- Instead, use 'arbitrary' to generate a suitably sized PinnedSizedBytes
--- value, and then mlsbFromPSB or withMLSBFromPSB to convert it to an
--- MLockedSizedBytes value.
---
--- instance KnownNat n => Arbitrary (MLockedSizedBytes n) where
---     arbitrary = unsafePerformIO . mlsbFromByteString . BS.pack <$> vectorOf size arbitrary
---       where
---         size :: Int
---         size = fromInteger (natVal (Proxy :: Proxy n))
-
 mlsbFromPSB :: (KnownNat n) => PinnedSizedBytes n -> IO (MLockedSizedBytes n)
 mlsbFromPSB = mlsbFromByteString . psbToByteString
 
@@ -421,6 +401,16 @@ withMLSBFromPSB psb action =
   bracket
     (mlsbFromPSB psb)
     mlsbFinalize
+    action
+
+mlockedSeedFromPSB :: (KnownNat n) => PinnedSizedBytes n -> IO (MLockedSeed n)
+mlockedSeedFromPSB = fmap MLockedSeed . mlsbFromPSB
+
+withMLockedSeedFromPSB :: (KnownNat n) => PinnedSizedBytes n -> (MLockedSeed n -> IO a) -> IO a
+withMLockedSeedFromPSB psb action =
+  bracket
+    (mlockedSeedFromPSB psb)
+    mlockedSeedFinalize
     action
 
 instance KnownNat n => Arbitrary (PinnedSizedBytes n) where
