@@ -345,7 +345,7 @@ newtype ChainLength = ChainLength Int
 mkBlock
   :: HasCallStack
   => (SlotNo -> Bool)
-  -- ^ Is this slot allowed contain an EBB?
+  -- ^ Is this slot allowed to contain an EBB?
   --
   -- This argument is used primarily to detect the generation of invalid blocks
   -- with different kind of 'ChunkInfo'.
@@ -371,9 +371,7 @@ mkBlock canContainEBB testBody thPrevHash thSlotNo thBlockNo thChainLength ebb =
       , thSlotNo
       , thBlockNo
       , thChainLength
-      , thIsEBB = case ebb of
-          Just epoch -> EBB epoch
-          Nothing    -> RegularBlock
+      , thIsEBB = maybe RegularBlock EBB ebb
       }
 
 -- | Note the first block need not be an EBB, see 'firstEBB'.

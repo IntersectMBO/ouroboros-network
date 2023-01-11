@@ -42,6 +42,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
+import qualified Debug.Trace as Debug
+
 {-------------------------------------------------------------------------------
   Accessing the environment
 -------------------------------------------------------------------------------}
@@ -519,6 +521,10 @@ forward registry varFollower blockComponent CDB{..} = \pts -> do
           FollowerInit                  -> return ()
           FollowerInMem _               -> return ()
 
+
+showChain :: HasHeader (Header blk) => AF.AnchoredFragment (Header blk) -> String
+showChain = AF.prettyPrint "" (show . pointHash) (show . getHeaderFields)
+
 -- | Update the given 'FollowerState' to account for switching the current
 -- chain to the given fork (which might just be an extension of the
 -- current chain).
@@ -531,19 +537,25 @@ switchFork ::
   -> AnchoredFragment (Header blk)  -- ^ The new chain
   -> FollowerState m blk b -> FollowerState m blk b
 switchFork ipoint newChain followerState =
+    Debug.trace "switchFork" $
     assert (AF.withinFragmentBounds (castPoint ipoint) newChain) $
-      case followerState of
+      case Debug.trace "SwitchFork" followerState of
         -- If the follower is still in the initial state, switching to a fork
         -- won't affect it.
-        FollowerInit             -> followerState
+        FollowerInit             -> Debug.trace "FollowerInit" followerState
         -- If the follower is still reading from the ImmutableDB, switching to a
         -- fork won't affect it.
-        FollowerInImmutableDB {} -> followerState
+        FollowerInImmutableDB {} -> Debug.trace "FollowerInImmutableDB" followerState
         FollowerInMem rollState  ->
+          Debug.trace "FollowerInMem" $
+          Debug.trace ("follower point " <> show followerPoint) $
+          Debug.trace ("intersection point " <> show ipoint) $
+          Debug.trace ("new chain " <> showChain newChain) $
+          Debug.trace ("successor block " <> show headerFields) $
             case pointSlot followerPoint `compare` pointSlot ipoint of
               -- If the follower point is more recent than the intersection point,
               -- we have to roll back the follower to the intersection point.
-              GT -> FollowerInMem $ RollBackTo ipoint
+              GT -> Debug.trace "GT" $ FollowerInMem $ RollBackTo ipoint
 
               -- The follower point and the intersection point are in the same
               -- slot. We have to be careful here, because one (or both) of them
@@ -551,7 +563,7 @@ switchFork ipoint newChain followerState =
               EQ
                 | pointHash followerPoint == pointHash ipoint
                   -- The same point, so no rollback needed.
-                -> followerState
+                -> Debug.trace "follower = intersection" $ followerState
                 | Just pointAfterRollStatePoint <- headerPoint <$>
                     AF.successorBlock (castPoint followerPoint) newChain
                 , pointAfterRollStatePoint == ipoint
@@ -560,7 +572,7 @@ switchFork ipoint newChain followerState =
                   -- that the intersection point is a regular block in the
                   -- same slot. As the follower point is older than the
                   -- intersection point, no rollback is needed.
-                -> followerState
+                -> Debug.trace "FooBar" followerState
                 | otherwise
                   -- Either the intersection point is the EBB before the
                   -- follower point (referring to the regular block in the same
@@ -569,7 +581,7 @@ switchFork ipoint newChain followerState =
                   -- we're dealing with two blocks (could be two EBBs) in the
                   -- same slot with a different hash, in which case we'll have
                   -- to rollback to the intersection point.
-                -> FollowerInMem $ RollBackTo ipoint
+                -> Debug.trace "otherwise" $ FollowerInMem $ RollBackTo ipoint
 
               -- The follower point is older than the intersection point, so we
               -- can keep rolling forward. Note that this does not mean the
@@ -577,9 +589,11 @@ switchFork ipoint newChain followerState =
               -- than @k@ might have been moved from the fragment to the
               -- ImmutableDB. This will be noticed when the next instruction is
               -- requested; we'll switch to the 'FollowerInImmutableDB' state.
-              LT -> followerState
+              LT -> Debug.trace "LT" followerState
           where
             followerPoint = followerRollStatePoint rollState
+            block = AF.successorBlock (castPoint followerPoint) newChain
+            headerFields = getHeaderFields <$> block
 
 -- | Close all open block and header 'Follower's.
 closeAllFollowers ::

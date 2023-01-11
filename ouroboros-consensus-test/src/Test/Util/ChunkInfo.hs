@@ -10,7 +10,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
   ChunkInfo
 -------------------------------------------------------------------------------}
 
-data SmallChunkInfo = SmallChunkInfo ChunkInfo
+newtype SmallChunkInfo = SmallChunkInfo ChunkInfo
   deriving (Show)
 
 instance Arbitrary SmallChunkInfo where

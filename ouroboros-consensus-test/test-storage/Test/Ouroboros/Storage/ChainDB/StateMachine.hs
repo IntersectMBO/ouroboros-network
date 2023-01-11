@@ -22,13 +22,20 @@
 module Test.Ouroboros.Storage.ChainDB.StateMachine (
     At (..)
   , Cmd (..)
+  , MaxClockSkew (..)
+  , Model
   , Resp (..)
   , Success (..)
+  , executeCommands
+  , initModel
+  , mkTestCfg
+  , smUnused
+  , step
   , tests
   ) where
 
 import           Codec.Serialise (Serialise)
-import           Control.Monad (replicateM, void)
+import           Control.Monad (replicateM, void, (>=>))
 import           Control.Tracer
 import           Data.Bifoldable
 import           Data.Bifunctor
@@ -1458,6 +1465,75 @@ smUnused maxClockSkew chunkInfo =
       (mkTestCfg chunkInfo)
       testInitExtLedger
       maxClockSkew
+
+executeCommands
+  :: MaxClockSkew
+  -> SmallChunkInfo
+  -> QSM.Commands (At Cmd Blk IO) (At Resp Blk IO)
+  -> IO (QSM.History (At Cmd Blk IO) (At Resp Blk IO), Property)
+executeCommands maxClockSkew (SmallChunkInfo chunkInfo) cmds =
+  let testCfg = mkTestCfg chunkInfo
+  in do
+    threadRegistry     <- unsafeNewRegistry
+    iteratorRegistry   <- unsafeNewRegistry
+    (tracer, getTrace) <- recordingTracerIORef
+    varCurSlot         <- uncheckedNewTVarM 0
+    varNextId          <- uncheckedNewTVarM 0
+    nodeDBs            <- emptyNodeDBs
+    let args = mkArgs testCfg chunkInfo testInitExtLedger threadRegistry nodeDBs tracer
+                      maxClockSkew varCurSlot
+
+    -- We might be closing a different ChainDB than the one we opened, as we
+    -- can reopen the ChainDB, swapping the ChainDB in the MVar.
+    (hist, model, res, trace) <- bracket (open args >>= newMVar) (readMVar >=> close) $
+       \varDB -> do
+          let env = ChainDBEnv
+                { varDB
+                , registry = iteratorRegistry
+                , varCurSlot
+                , varNextId
+                , varVolatileDbFs = nodeDBsVol nodeDBs
+                , args
+                }
+              sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger maxClockSkew
+          (hist, model, res) <- QSM.runCommands' sm' cmds
+          trace <- getTrace
+          return (hist, model, res, trace)
+
+    closeRegistry threadRegistry
+
+    -- 'closeDB' should have closed all open 'Follower's and 'Iterator's,
+    -- freeing up all resources, so there should be no more clean-up
+    -- actions left.
+    --
+    -- Note that this is only true because we're not simulating exceptions
+    -- (yet), in which case there /will be/ clean-up actions left. This is
+    -- exactly the reason for introducing the 'ResourceRegistry' in the
+    -- first place: to clean up resources in case exceptions get thrown.
+    remainingCleanups <- countResources iteratorRegistry
+    closeRegistry iteratorRegistry
+
+    -- Read the final MockFS of each database
+    fses <- atomically $ traverse readTVar nodeDBs
+    let
+        modelChain = Model.currentChain $ dbModel model
+        prop = counterexample ("Model chain: " <> condense modelChain)      $
+               counterexample ("TraceEvents: " <> unlines (map show trace)) $
+               tabulate "Chain length" [show (Chain.length modelChain)]     $
+               tabulate "TraceEvents" (map traceEventName trace)            $
+               res === Ok .&&.
+               prop_trace testCfg (dbModel model) trace .&&.
+               counterexample "ImmutableDB is leaking file handles"
+                              (Mock.numOpenHandles (nodeDBsImm fses) === 0) .&&.
+               counterexample "VolatileDB is leaking file handles"
+                              (Mock.numOpenHandles (nodeDBsVol fses) === 0) .&&.
+               counterexample "LedgerDB is leaking file handles"
+                              (Mock.numOpenHandles (nodeDBsLgr fses) === 0) .&&.
+               counterexample "There were registered clean-up actions"
+                              (remainingCleanups === 0)
+
+    return (hist, prop)
+
 
 prop_sequential :: MaxClockSkew -> SmallChunkInfo -> Property
 prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =

@@ -2,7 +2,9 @@ module Test.Ouroboros.Storage.ChainDB.Counterexamples where
 
 import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..))
 import qualified Cardano.Slotting.Slot as Slot
+import           Control.Monad.State
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainType (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Network.Block (BlockNo (..), ChainHash (..),
                      ChainUpdate (RollBack))
 import qualified Ouroboros.Network.Block as Network
@@ -10,30 +12,89 @@ import           Ouroboros.Network.Point (blockPointHash, blockPointSlot)
 import qualified Ouroboros.Network.Point as Network
 import           Test.Ouroboros.Storage.ChainDB.StateMachine hiding (BlockNo)
 import           Test.Ouroboros.Storage.TestBlock
-import           Test.QuickCheck (Property)
-import           Test.QuickCheck.Monadic (PropertyM, monadicIO)
-import           Test.StateMachine.Types (Command (..), Commands (..), Concrete,
-                     History, Reason, Reference (..), StateMachine,
-                     Symbolic (..), Var (..))
+import qualified Test.QuickCheck.Monadic as QC
+import           Test.QuickCheck.Monadic (monadicIO)
+import           Test.StateMachine.Types (Command (..), Commands (..),
+                     Reference (..), Symbolic (..), Var (..))
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+import           Test.Util.ChunkInfo (SmallChunkInfo (..))
 
 
+tests :: TestTree
+tests = testGroup "ChainDB QSM-derived unit tests" [
+  testProperty "small chain" prop_bogus
+  ]
 
 prop_bogus :: Property
-prop_bogus = monadicIO $ runCommands counterexample sm
-  where sm = undefined
-
-runCommands
-  :: Monad m
-  => Commands cmd resp
-  -> StateMachine model cmd m resp
-  -> PropertyM m (History cmd resp, model Concrete, Reason)
-runCommands sm cmds = do
-  (hist, model, res) <- runCommands sm cmds
-  return (hist, model, res)
+prop_bogus = monadicIO $ do
+  (_, prop) <- QC.run $ executeCommands maxClockSkew (SmallChunkInfo chunkInfo) commands
+  pure prop
+  where maxClockSkew = MaxClockSkew 100000
+        chunkInfo = UniformChunkSize (ChunkSize {chunkCanContainEBB = True, numRegularBlocks = 11})
 
 
-counterexample :: Commands (At Cmd TestBlock IO) (At Resp TestBlock IO)
-counterexample =
+-- commands' = do
+--   let genesis = undefined
+--   a1 <- addBlock genesis
+--   a2 <- addBlock a1
+
+
+-- Requirements
+-- - Comparison of hashed (because tie breaking depends on the hash)
+-- -
+
+tree :: [TestBlock]
+tree =
+  let fork i = TestBody { tbForkNo = i, tbIsValid = True }
+      b1 = firstEBB (const True) $ fork 0
+      b2 = mkNextBlock b1 0 $ fork 0
+      b3 = mkNextBlock b2 1 $ fork 0
+      b4 = mkNextBlock b2 1 $ fork 1
+      b5 = mkNextBlock b4 2 $ fork 1
+      b6 = mkNextBlock b3 2 $ fork 0
+  in [b1, b2, b3, b4, b5, b6]
+
+addBlock :: blk -> At Cmd blk m r
+addBlock b = At (AddBlock b)
+
+mkModel :: ChunkInfo -> MaxClockSkew -> Model TestBlock m r
+mkModel chunkInfo maxClockSkew =
+  let topLevelConfig = mkTestCfg chunkInfo
+        in initModel topLevelConfig testInitExtLedger maxClockSkew
+
+mkChunkInfo :: ChunkInfo
+mkChunkInfo = UniformChunkSize (ChunkSize {chunkCanContainEBB = True, numRegularBlocks = 11})
+
+mkMaxClockSkew :: MaxClockSkew
+mkMaxClockSkew = MaxClockSkew 100000
+
+mkCommands
+  :: Model blk m Symbolic
+  -> [At Cmd blk m Symbolic]
+  -> State (Model blk m Symbolic) (Commands (At Cmd blk m) (At Resp blk m))
+mkCommands model cmds = undefined
+  where
+    go acc []           = acc
+    go acc (cmd : rest) = undefined
+
+{--
+let (resp, counter') = runGenSym (mock model next) counter
+        put (transition model next resp)
+        go (size - 1) counter' (Command next resp (getUsedVars resp) : cmds)
+--}
+
+try :: IO ()
+try = do
+  let model :: Model TestBlock IO Symbolic
+      model = mkModel mkChunkInfo mkMaxClockSkew
+      resp = step model (addBlock $ head tree)
+  print resp
+  pure ()
+
+
+commands :: Commands (At Cmd TestBlock IO) (At Resp TestBlock IO)
+commands =
   Commands
     { unCommands =
         [ Command
@@ -61,12 +122,11 @@ counterexample =
                         Right
                           ( Point
                               ( Network.Point
-                                  ( ( Slot.At
+                                  ( Slot.At
                                         Network.Block
                                           { blockPointSlot = SlotNo 0,
                                             blockPointHash = TestHeaderHash (-1684377399790728946)
                                           }
-                                    )
                                   )
                               )
                           )
@@ -98,12 +158,11 @@ counterexample =
                         Right
                           ( Point
                               ( Network.Point
-                                  ( ( Slot.At
+                                  (  Slot.At
                                         Network.Block
                                           { blockPointSlot = SlotNo 0,
                                             blockPointHash = TestHeaderHash 2036412332245722423
                                           }
-                                    )
                                   )
                               )
                           )
@@ -135,12 +194,12 @@ counterexample =
                         Right
                           ( Point
                               ( Network.Point
-                                  ( ( Slot.At
+                                  ( Slot.At
                                         Network.Block
                                           { blockPointSlot = SlotNo 1,
                                             blockPointHash = TestHeaderHash (-8335835222620935469)
                                           }
-                                    )
+
                                   )
                               )
                           )
@@ -172,12 +231,11 @@ counterexample =
                         Right
                           ( Point
                               ( Network.Point
-                                  ( ( Slot.At
+                                  ( Slot.At
                                         Network.Block
                                           { blockPointSlot = SlotNo 3,
                                             blockPointHash = TestHeaderHash 7029085255816357683
                                           }
-                                    )
                                   )
                               )
                           )
@@ -213,12 +271,12 @@ counterexample =
                           ( MbPoint
                               ( Just
                                   ( Network.Point
-                                      ( ( Slot.At
+                                      ( Slot.At
                                             Network.Block
                                               { blockPointSlot = SlotNo 0,
                                                 blockPointHash = TestHeaderHash (-1684377399790728946)
                                               }
-                                        )
+
                                       )
                                   )
                               )
@@ -291,12 +349,12 @@ counterexample =
                         Right
                           ( Point
                               ( Network.Point
-                                  ( ( Slot.At
+                                  ( Slot.At
                                         Network.Block
                                           { blockPointSlot = SlotNo 3,
                                             blockPointHash = TestHeaderHash 5812820193101916369
                                           }
-                                    )
+
                                   )
                               )
                           )
@@ -314,12 +372,11 @@ counterexample =
                               ( Just
                                   ( RollBack
                                       ( Network.Point
-                                          ( ( Slot.At
+                                          ( Slot.At
                                                 Network.Block
                                                   { blockPointSlot = SlotNo 0,
                                                     blockPointHash = TestHeaderHash (-1684377399790728946)
                                                   }
-                                            )
                                           )
                                       )
                                   )

@@ -4,6 +4,7 @@ import           System.Info (os)
 
 import           Test.Tasty
 
+import qualified Test.Ouroboros.Storage.ChainDB.Counterexamples as Unit
 import qualified Test.Ouroboros.Storage.ChainDB.FollowerPromptness as FollowerPromptness
 import qualified Test.Ouroboros.Storage.ChainDB.GcSchedule as GcSchedule
 import qualified Test.Ouroboros.Storage.ChainDB.Iterator as Iterator
@@ -18,6 +19,7 @@ tests = testGroup "ChainDB" $ [
     , GcSchedule.tests
     , Model.tests
     , Paths.tests
+    , Unit.tests
     ] <>
     -- The ChainDB q-s-m test is flaky on Windows, see
     -- https://github.com/input-output-hk/ouroboros-network/issues/3874
