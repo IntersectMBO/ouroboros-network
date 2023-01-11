@@ -211,7 +211,7 @@ splitSized ::
   -> ( StrictFingerTree vr vi a
      , StrictFingerTree vr vi a
      )
-splitSized p = split p $ SplitRootMeasure $  \vr (l, r) ->
+splitSized p = split p $ SplitRootMeasure $ \vr (l, r) ->
   let
     (sizel, sizer) = (size (FT.measure l), size (FT.measure r))
   in
